@@ -18,8 +18,10 @@ public enum GlucoseSourceRegistry {
             // Plan 03 (G7, CGM-01/CGM-02) and Plan 02 (G6 + LibreLinkUp, CGM-03/CGM-04), then
             // retro-cleaned to a physical `git rm` in Phase 2.5 (D-01/D-07, CLEAN-03) — the source
             // files no longer exist on `main` at all; they are preserved on origin/dev/cgm-extra.
-            GlucoseSourceDescriptor(id: "dexcom-share", name: "Dexcom Share (cloud)",
-                                    sensors: ["Dexcom G6", "Dexcom G7"]) { _ in DexcomShareSource() },
+            GlucoseSourceDescriptor(
+                id: "dexcom-share", name: "Dexcom Share (cloud)",
+                sensors: ["Dexcom G6", "Dexcom G7"]
+            ) { _ in DexcomShareSource() }
         ]
         // xdrip-appgroup removed from narrow `main` — Phase 1, Plan 01 (CGM-05), then git rm'd
         // outright in Phase 2.5 (D-07, CLEAN-03); preserved on origin/dev/cgm-extra.
@@ -77,7 +79,7 @@ public enum GlucoseSourceRegistry {
     /// The persisted bounded-recovery state, or a fresh (all-zero) one if never written / undecodable.
     public static func loadRecoveryState() -> GlucoseSourceRecoveryState {
         guard let data = UserDefaults.standard.data(forKey: recoveryStateKey),
-              let decoded = try? JSONDecoder().decode(GlucoseSourceRecoveryState.self, from: data)
+            let decoded = try? JSONDecoder().decode(GlucoseSourceRecoveryState.self, from: data)
         else { return GlucoseSourceRecoveryState() }
         return decoded
     }
@@ -131,7 +133,8 @@ public enum GlucoseSourceRecoveryPolicy {
     /// Called at launch, BEFORE starting the source. Returns the next persisted state AND whether the
     /// source should start THIS launch.
     public static func decide(_ state: GlucoseSourceRecoveryState, wasClean: Bool, now: Date = Date())
-        -> (next: GlucoseSourceRecoveryState, shouldStart: Bool) {
+        -> (next: GlucoseSourceRecoveryState, shouldStart: Bool)
+    {
         var s = state
         if let until = s.disabledUntil, now >= until {
             // The bounded disable window elapsed — auto re-probe: clear the disable AND the tally so the
@@ -152,7 +155,7 @@ public enum GlucoseSourceRecoveryPolicy {
         // OOM / crash are all indistinguishable here), so this ONLY ever increments a bounded, windowed
         // tally; it never itself asserts that a crash occurred.
         if let last = s.lastUncleanStartAt, now.timeIntervalSince(last) > uncleanStartWindow {
-            s.uncleanStartCount = 0   // an isolated unclean exit outside the window, not a loop
+            s.uncleanStartCount = 0  // an isolated unclean exit outside the window, not a loop
         }
         s.uncleanStartCount += 1
         s.lastUncleanStartAt = now

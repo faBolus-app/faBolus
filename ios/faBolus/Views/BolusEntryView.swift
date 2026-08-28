@@ -52,14 +52,18 @@ struct BolusEntryView: View {
     /// Wall-clock (receive) time the CGM value last changed on the phone — used to catch a reading that
     /// landed in the last ~2 s before the user tapped deliver (the on-screen dose may not reflect it yet).
     @State private var lastCGMChangeAt: Date?
-    @State private var tick = Date()   // drives the live "N min ago" readout while the screen is open
+    @State private var tick = Date()  // drives the live "N min ago" readout while the screen is open
     /// Set when a fresh CGM pulled at delivery time would change the dose — asks the user which to use.
     @State private var cgmUpdate: CGMUpdatePrompt?
     /// `newBG == -1` means "no fresh CGM available" — the correction is dropped (carbs-only) rather than
     /// dosed off a stale on-screen value (audit C-04 fail-closed). `extended` routes the choice back to
     /// the matching delivery path so standard + extended share one confirm flow.
     private struct CGMUpdatePrompt: Identifiable {
-        let id = UUID(); let newBG: Int; let newUnits: Double; let oldUnits: Double; let extended: Bool
+        let id = UUID()
+        let newBG: Int
+        let newUnits: Double
+        let oldUnits: Double
+        let extended: Bool
         // Addendum B: when the reading is stale (not merely missing), the stale value + the dose it WOULD
         // produce, so the "CGM unavailable" prompt can offer a third choice — include the stale reading.
         // nil ⇒ no reading at all (nothing to include; carbs-only / cancel only), per StaleBolusPrompt.
@@ -75,9 +79,9 @@ struct BolusEntryView: View {
     /// (`calculate()`), never sticky, never default-selected.
     private struct CalcInputPrompt: Identifiable {
         let id = UUID()
-        let kind: CalcInputGate.Kind   // pure, unit-tested gate decision (faBolusCore)
+        let kind: CalcInputGate.Kind  // pure, unit-tested gate decision (faBolusCore)
         let extended: Bool
-        let overrideUnits: Double          // dose recomputed with the accepted override(s) applied
+        let overrideUnits: Double  // dose recomputed with the accepted override(s) applied
         let allowStaleIob: Bool
         let allowStaleTherapy: Bool
         let iobUnits: Double
@@ -95,7 +99,11 @@ struct BolusEntryView: View {
     /// (off the compose-time BG), used as the divergence comparison point so the guard catches a real CGM
     /// move, not the expected correction. Consumed-and-cleared at the top of `attemptDeliver` → per-attempt,
     /// never sticky. Remotes never reach any of this (they fail closed in `resolveRemoteDose`).
-    private struct AcceptedOverride { let allowStaleIob: Bool; let allowStaleTherapy: Bool; let baseline: Double }
+    private struct AcceptedOverride {
+        let allowStaleIob: Bool
+        let allowStaleTherapy: Bool
+        let baseline: Double
+    }
     @State private var acceptedOverride: AcceptedOverride?
     /// The pump never reported its bolus settings this attempt (`BolusRecommendation.therapyUnavailable`),
     /// so no dose can be safely sized — drives a cancel-only "settings not read yet" notice (fail-closed),
@@ -113,7 +121,12 @@ struct BolusEntryView: View {
 
     /// BG field binding that flags a user edit as `.manual` (auto-fills set `bg` directly + mark `.cgm`).
     private var bgField: Binding<String> {
-        Binding(get: { bg }, set: { bg = $0; bgSource = $0.isEmpty ? .none : .manual })
+        Binding(
+            get: { bg },
+            set: {
+                bg = $0
+                bgSource = $0.isEmpty ? .none : .manual
+            })
     }
     /// Auto-fill the correction BG from the current CGM when the user hasn't typed their own and the
     /// reading is fresh; keeps it live as new readings arrive. No-op once the user edits the field.
@@ -124,11 +137,16 @@ struct BolusEntryView: View {
         // mg/dL-scaled number into the mmol parser (e.g. 124 → 2234 mg/dL after ×18.0182), corrupting
         // the correction-dose input. Route through the SAME funnel the field's own parse uses.
         let s = settings.glucoseDisplayUnit.format(mgdl: g)
-        if bg != s { bg = s; bgSource = .cgm; if mode == .carbs { Task { await calculate() } } }
+        if bg != s {
+            bg = s
+            bgSource = .cgm
+            if mode == .carbs { Task { await calculate() } }
+        }
     }
     /// True when the shown dose leans on a CGM value that is now stale (advisory, not a block).
     private var staleCGMCorrection: Bool {
-        mode == .carbs && bgSource == .cgm && model.snapshot.isGlucoseStale && (settings.glucoseDisplayUnit.parse(bg) ?? 0) > 0
+        mode == .carbs && bgSource == .cgm && model.snapshot.isGlucoseStale
+            && (settings.glucoseDisplayUnit.parse(bg) ?? 0) > 0
     }
     /// A MANUALLY-typed correction BG outside the plausible physiological range
     /// `[GlucosePlausibility.minimum, .maximum]` (40–400 mg/dL). A typed value below 40 would hit
@@ -140,7 +158,8 @@ struct BolusEntryView: View {
     /// full implausible range (both the dangerous LOW and the merely-untrustworthy HIGH). Keys on the
     /// existing `.manual` discriminator, so an auto-filled (`.cgm`) value is never gated by this.
     private var manualBGImplausible: Bool {
-        bgSource == .manual && settings.glucoseDisplayUnit.parse(bg).map { !GlucosePlausibility.isPlausible(mgdl: $0) } ?? false
+        bgSource == .manual
+            && settings.glucoseDisplayUnit.parse(bg).map { !GlucosePlausibility.isPlausible(mgdl: $0) } ?? false
     }
 
     /// The entry-parse boundary. `bg` is typed in whichever unit `settings.glucoseDisplayUnit`
@@ -170,17 +189,33 @@ struct BolusEntryView: View {
     private func staleReadingMessage(mgdl: Int, carbsOnlyLabel: String) -> String {
         let value = settings.glucoseDisplayUnit.format(mgdl: mgdl)
         if settings.glucoseDisplayUnit == .mmol {
-            return String(format: String(localized: "Your CGM reading (%@ mmol/L) is stale and was left out of this dose. Include it in the correction, deliver carbs only (%@), or cancel."), value, carbsOnlyLabel)
+            return String(
+                format: String(
+                    localized:
+                        "Your CGM reading (%@ mmol/L) is stale and was left out of this dose. Include it in the correction, deliver carbs only (%@), or cancel."
+                ), value, carbsOnlyLabel)
         } else {
-            return String(format: String(localized: "Your CGM reading (%@ mg/dL) is stale and was left out of this dose. Include it in the correction, deliver carbs only (%@), or cancel."), value, carbsOnlyLabel)
+            return String(
+                format: String(
+                    localized:
+                        "Your CGM reading (%@ mg/dL) is stale and was left out of this dose. Include it in the correction, deliver carbs only (%@), or cancel."
+                ), value, carbsOnlyLabel)
         }
     }
     private func cgmChangedMessage(mgdl: Int, newLabel: String, oldLabel: String) -> String {
         let value = settings.glucoseDisplayUnit.format(mgdl: mgdl)
         if settings.glucoseDisplayUnit == .mmol {
-            return String(format: String(localized: "Your CGM changed while this dose was on screen. The new reading (%@ mmol/L) suggests %@ instead of %@."), value, newLabel, oldLabel)
+            return String(
+                format: String(
+                    localized:
+                        "Your CGM changed while this dose was on screen. The new reading (%@ mmol/L) suggests %@ instead of %@."
+                ), value, newLabel, oldLabel)
         } else {
-            return String(format: String(localized: "Your CGM changed while this dose was on screen. The new reading (%@ mg/dL) suggests %@ instead of %@."), value, newLabel, oldLabel)
+            return String(
+                format: String(
+                    localized:
+                        "Your CGM changed while this dose was on screen. The new reading (%@ mg/dL) suggests %@ instead of %@."
+                ), value, newLabel, oldLabel)
         }
     }
 
@@ -193,9 +228,9 @@ struct BolusEntryView: View {
     /// the fresh-changed default (harmless — the dialog isn't shown when `cgmUpdate` is nil).
     nonisolated static func staleCgmDialogTitle(newBG: Int?, staleBG: Int?) -> String {
         guard let newBG else { return "CGM updated" }
-        if newBG != -1 { return "CGM updated" }                 // fresh-changed reading
-        if staleBG != nil { return "CGM reading is stale" }     // stale-but-present (includable)
-        return "CGM unavailable"                                 // no reading at all
+        if newBG != -1 { return "CGM updated" }  // fresh-changed reading
+        if staleBG != nil { return "CGM reading is stale" }  // stale-but-present (includable)
+        return "CGM unavailable"  // no reading at all
     }
 
     private var staleCgmDialogTitle: String {
@@ -211,19 +246,23 @@ struct BolusEntryView: View {
         // §13 Rule-1 (A1): don't cite the calculator's number when it's sized off a hardcoded guess
         // (`!displaysNumericDose`) — the "suggested %.2f U" would trace to an uncited literal.
         guard mode == .carbs, carbs > 0, let rec = recommendation, rec.displaysNumericDose, rec.recommendedUnits > 0,
-              abs(units - rec.recommendedUnits) > AppModel.remoteDivergenceLimitUnits else { return nil }
-        return String(format: "Delivering %.2f U for %.0f g — the calculator suggested %.2f U. The carbs will still be recorded on the pump with this dose.",
-                      units, carbs, rec.recommendedUnits)
+            abs(units - rec.recommendedUnits) > AppModel.remoteDivergenceLimitUnits
+        else { return nil }
+        return String(
+            format:
+                "Delivering %.2f U for %.0f g — the calculator suggested %.2f U. The carbs will still be recorded on the pump with this dose.",
+            units, carbs, rec.recommendedUnits)
     }
     /// SG1: the calc-override disclosure, or nil. Pure `faBolusCore` disclosure — reads the pump's OWN
     /// op-115 target (never a hardcoded clinical constant) and NEVER gates, changes, or delays delivery.
     private var sg1Disclosure: StackingGuard.Disclosure? {
         guard let rec = recommendation else { return nil }
-        let disclosure = StackingGuard.calcOverride(enteredUnits: units, recommendedUnits: rec.recommendedUnits,
-                                                     displaysNumericDose: rec.displaysNumericDose,
-                                                     pumpIOBUnits: rec.iobUnits,
-                                                     glucoseMgdl: model.snapshot.glucose,
-                                                     targetMgdl: model.snapshot.targetBg)
+        let disclosure = StackingGuard.calcOverride(
+            enteredUnits: units, recommendedUnits: rec.recommendedUnits,
+            displaysNumericDose: rec.displaysNumericDose,
+            pumpIOBUnits: rec.iobUnits,
+            glucoseMgdl: model.snapshot.glucose,
+            targetMgdl: model.snapshot.targetBg)
         return disclosure.friction == .none ? nil : disclosure
     }
     /// SG2: the max-bolus proximity disclosure, or nil. Pure `faBolusCore` disclosure anchored solely on the
@@ -231,7 +270,8 @@ struct BolusEntryView: View {
     /// contract as `sg1Disclosure` above. Renders beside the existing "Exceeds pump max" label, an
     /// additional pump-anchored disclosure, not a replacement for it.
     private var sg2Disclosure: StackingGuard.Disclosure? {
-        let disclosure = StackingGuard.maxBolusProximity(enteredUnits: units, maxBolusUnits: model.snapshot.maxBolusUnits)
+        let disclosure = StackingGuard.maxBolusProximity(
+            enteredUnits: units, maxBolusUnits: model.snapshot.maxBolusUnits)
         return disclosure.friction == .none ? nil : disclosure
     }
     /// Out-of-insulin over-request disclosure: fires when the entered dose exceeds the
@@ -240,7 +280,8 @@ struct BolusEntryView: View {
     /// only" contract as `sg1Disclosure`/`sg2Disclosure` above. The pump is the physical enforcer of what it
     /// can actually deliver; this only tells the user honestly what it reported.
     private var insufficientReservoirDisclosure: StackingGuard.Disclosure? {
-        let disclosure = StackingGuard.insufficientReservoir(enteredUnits: units, reservoirUnits: model.snapshot.reservoirUnits)
+        let disclosure = StackingGuard.insufficientReservoir(
+            enteredUnits: units, reservoirUnits: model.snapshot.reservoirUnits)
         return disclosure.friction == .none ? nil : disclosure
     }
     /// SG3a: the escalating-friction disclosure, or nil. Pure `faBolusCore` disclosure — reads the pump's
@@ -253,12 +294,13 @@ struct BolusEntryView: View {
     /// applied at the confirm seam (`sg3aAppliedFriction` below).
     private var sg3aDisclosure: StackingGuard.Disclosure? {
         guard let rec = recommendation else { return nil }
-        let disclosure = StackingGuard.escalation(enteredUnits: units, recommendedUnits: rec.recommendedUnits,
-                                                   displaysNumericDose: rec.displaysNumericDose,
-                                                   pumpIOBUnits: rec.iobUnits,
-                                                   glucoseMgdl: model.snapshot.glucose,
-                                                   targetMgdl: model.snapshot.targetBg,
-                                                   maxBolusUnits: model.snapshot.maxBolusUnits)
+        let disclosure = StackingGuard.escalation(
+            enteredUnits: units, recommendedUnits: rec.recommendedUnits,
+            displaysNumericDose: rec.displaysNumericDose,
+            pumpIOBUnits: rec.iobUnits,
+            glucoseMgdl: model.snapshot.glucose,
+            targetMgdl: model.snapshot.targetBg,
+            maxBolusUnits: model.snapshot.maxBolusUnits)
         return disclosure.friction == .none ? nil : disclosure
     }
     /// The friction tier ACTUALLY applied at the confirm seam: when `stackingGuardFrictionEnabled` is off,
@@ -306,7 +348,8 @@ struct BolusEntryView: View {
     /// Shown in the "Recommended" card when the pump's bolus settings haven't been read yet, in
     /// place of a numeric dose sized off a hardcoded guess. Kept as a single constant so the wording has
     /// one home; no control flow or dose logic depends on the string.
-    static let awaitingPumpSettingsCopy = "Waiting to read this pump's bolus settings (carb ratio, correction factor, target). No dose can be recommended until they're read — check your pump connection."
+    static let awaitingPumpSettingsCopy =
+        "Waiting to read this pump's bolus settings (carb ratio, correction factor, target). No dose can be recommended until they're read — check your pump connection."
 
     /// SG3a `.reenter` exact-match rule: a re-typed value must equal `original` (within floating-point
     /// tolerance) to proceed — ANY other value is rejected/re-prompted, never delivered as a new (resized)
@@ -371,52 +414,73 @@ struct BolusEntryView: View {
     /// this is presentation ORDER only; the SET of items and their content is unchanged, and NOTHING active
     /// is ever dropped: a grey `.neutral`-tone blocker still classifies `.blocking`,
     /// never demoted below an orange advisory just because it isn't red.
-    static func rankedWarnings(overMax: Bool, maxUnits: Double, sg2Message: String?, childBlocked: Bool,
-                                pumpNotLinked: Bool, bolusInFlight: Bool, carbOverride: String?,
-                                sg1Message: String?,
-                                sg3aMessage: String?, insufficientReservoirMessage: String? = nil,
-                                noCartridge: Bool = false) -> [BolusWarning] {
+    static func rankedWarnings(
+        overMax: Bool, maxUnits: Double, sg2Message: String?, childBlocked: Bool,
+        pumpNotLinked: Bool, bolusInFlight: Bool, carbOverride: String?,
+        sg1Message: String?,
+        sg3aMessage: String?, insufficientReservoirMessage: String? = nil,
+        noCartridge: Bool = false
+    ) -> [BolusWarning] {
         var items: [BolusWarning] = []
         if overMax {
-            items.append(BolusWarning(
-                id: "overMax", text: "Exceeds pump max of \(String(format: "%.1f", maxUnits)) U",
-                systemImage: "exclamationmark.triangle.fill", severity: .blocking, tone: .danger))
+            items.append(
+                BolusWarning(
+                    id: "overMax", text: "Exceeds pump max of \(String(format: "%.1f", maxUnits)) U",
+                    systemImage: "exclamationmark.triangle.fill", severity: .blocking, tone: .danger))
         }
         if let sg2 = sg2Message {
-            items.append(BolusWarning(id: "sg2", text: sg2, systemImage: "exclamationmark.triangle",
-                                       severity: .advisory, tone: .caution))
+            items.append(
+                BolusWarning(
+                    id: "sg2", text: sg2, systemImage: "exclamationmark.triangle",
+                    severity: .advisory, tone: .caution))
         }
         if childBlocked {
-            items.append(BolusWarning(id: "childBlocked", text: "Bolus is disabled by child mode",
-                                       systemImage: "lock.fill", severity: .blocking, tone: .neutral))
+            items.append(
+                BolusWarning(
+                    id: "childBlocked", text: "Bolus is disabled by child mode",
+                    systemImage: "lock.fill", severity: .blocking, tone: .neutral))
         }
         if pumpNotLinked {
-            items.append(BolusWarning(id: "pumpNotLinked", text: BolusBlockReason.pumpNotLinked.userMessage,
-                                       systemImage: "exclamationmark.triangle.fill", severity: .blocking, tone: .neutral))
+            items.append(
+                BolusWarning(
+                    id: "pumpNotLinked", text: BolusBlockReason.pumpNotLinked.userMessage,
+                    systemImage: "exclamationmark.triangle.fill", severity: .blocking, tone: .neutral))
         }
         if bolusInFlight {
-            items.append(BolusWarning(id: "bolusInFlight", text: BolusBlockReason.bolusInFlight.userMessage,
-                                       systemImage: "exclamationmark.triangle.fill", severity: .blocking, tone: .neutral))
+            items.append(
+                BolusWarning(
+                    id: "bolusInFlight", text: BolusBlockReason.bolusInFlight.userMessage,
+                    systemImage: "exclamationmark.triangle.fill", severity: .blocking, tone: .neutral))
         }
         if noCartridge {
-            items.append(BolusWarning(id: "noCartridge", text: BolusBlockReason.noCartridge.userMessage,
-                                       systemImage: "exclamationmark.triangle.fill", severity: .blocking, tone: .neutral))
+            items.append(
+                BolusWarning(
+                    id: "noCartridge", text: BolusBlockReason.noCartridge.userMessage,
+                    systemImage: "exclamationmark.triangle.fill", severity: .blocking, tone: .neutral))
         }
         if let w = carbOverride {
-            items.append(BolusWarning(id: "carbOverride", text: w, systemImage: "pencil.and.outline",
-                                       severity: .advisory, tone: .caution))
+            items.append(
+                BolusWarning(
+                    id: "carbOverride", text: w, systemImage: "pencil.and.outline",
+                    severity: .advisory, tone: .caution))
         }
         if let sg1 = sg1Message {
-            items.append(BolusWarning(id: "sg1", text: sg1, systemImage: "exclamationmark.triangle",
-                                       severity: .advisory, tone: .caution))
+            items.append(
+                BolusWarning(
+                    id: "sg1", text: sg1, systemImage: "exclamationmark.triangle",
+                    severity: .advisory, tone: .caution))
         }
         if let sg3a = sg3aMessage {
-            items.append(BolusWarning(id: "sg3a", text: sg3a, systemImage: "exclamationmark.triangle",
-                                       severity: .advisory, tone: .caution))
+            items.append(
+                BolusWarning(
+                    id: "sg3a", text: sg3a, systemImage: "exclamationmark.triangle",
+                    severity: .advisory, tone: .caution))
         }
         if let insufficientReservoir = insufficientReservoirMessage {
-            items.append(BolusWarning(id: "insufficientReservoir", text: insufficientReservoir,
-                                       systemImage: "exclamationmark.triangle", severity: .advisory, tone: .caution))
+            items.append(
+                BolusWarning(
+                    id: "insufficientReservoir", text: insufficientReservoir,
+                    systemImage: "exclamationmark.triangle", severity: .advisory, tone: .caution))
         }
         // Stable partition (Swift's `filter` preserves relative order): all `.blocking` first, then all
         // `.advisory` — never re-sorted by tone/color, only by severity.
@@ -495,9 +559,11 @@ struct BolusEntryView: View {
             // Live CGM readout — refreshed on open and kept current while the screen is up.
             if let readout = cgmReadout {
                 let stale = model.snapshot.isGlucoseStale
-                Label(readout, systemImage: stale ? "sensor.tag.radiowaves.forward" : "sensor.tag.radiowaves.forward.fill")
-                    .font(.caption)
-                    .foregroundStyle(stale ? .orange : .secondary)
+                Label(
+                    readout, systemImage: stale ? "sensor.tag.radiowaves.forward" : "sensor.tag.radiowaves.forward.fill"
+                )
+                .font(.caption)
+                .foregroundStyle(stale ? .orange : .secondary)
             }
         }
     }
@@ -506,10 +572,13 @@ struct BolusEntryView: View {
         if let rec = recommendation {
             Section("Recommended") {
                 if rec.displaysNumericDose {
-                    LabeledContent("Recommended dose", value: String(format: "%.2f U", rec.recommendedUnits)).fontWeight(.semibold)
+                    LabeledContent("Recommended dose", value: String(format: "%.2f U", rec.recommendedUnits))
+                        .fontWeight(.semibold)
                     if settings.showBolusReasoning {
                         DisclosureGroup("Show reasoning", isExpanded: $showReasoning) {
-                            LabeledContent("Carb + correction", value: String(format: "%.2f U", rec.recommendedUnits + rec.iobUnits))
+                            LabeledContent(
+                                "Carb + correction",
+                                value: String(format: "%.2f U", rec.recommendedUnits + rec.iobUnits))
                             // Grey + age the IOB row when the active-insulin read is stale (or its
                             // age is unknown), via the shared `CalcInputFreshness` presentation — so the
                             // term the dose subtracts reads the same as a stale glucose row.
@@ -551,21 +620,23 @@ struct BolusEntryView: View {
         // below — presentation ORDER only, the block SET and the dose are untouched. Each rendered
         // Label is visually identical to its prior inline form (icon/color/font) — only on-screen
         // ORDER changes. See `BolusWarningRankingTests` for the ordering/classification/no-drop proof.
-        ForEach(Self.rankedWarnings(
-            overMax: overMax, maxUnits: maxUnits,
-            // SG1/SG2/SG3a disclosure TEXT is nil'd here so `rankedWarnings` has no SG advisory
-            // text to rank. `sg1Disclosure`/`sg2Disclosure`/`sg3aDisclosure` (and
-            // `sg3aAppliedFriction`) stay — only these three message arguments are suppressed.
-            sg2Message: nil,
-            childBlocked: !settings.childAllows(.bolus),
-            pumpNotLinked: model.bolusGate(amount: units, minimum: 0.05).reason == .pumpNotLinked,
-            bolusInFlight: model.bolusGate(amount: units, minimum: 0.05).reason == .bolusInFlight,
-            carbOverride: carbOverrideWarning,
-            sg1Message: nil,
-            sg3aMessage: nil,
-            insufficientReservoirMessage: insufficientReservoirDisclosure?.message,
-            noCartridge: model.bolusGate(amount: units, minimum: 0.05).reason == .noCartridge
-        )) { item in
+        ForEach(
+            Self.rankedWarnings(
+                overMax: overMax, maxUnits: maxUnits,
+                // SG1/SG2/SG3a disclosure TEXT is nil'd here so `rankedWarnings` has no SG advisory
+                // text to rank. `sg1Disclosure`/`sg2Disclosure`/`sg3aDisclosure` (and
+                // `sg3aAppliedFriction`) stay — only these three message arguments are suppressed.
+                sg2Message: nil,
+                childBlocked: !settings.childAllows(.bolus),
+                pumpNotLinked: model.bolusGate(amount: units, minimum: 0.05).reason == .pumpNotLinked,
+                bolusInFlight: model.bolusGate(amount: units, minimum: 0.05).reason == .bolusInFlight,
+                carbOverride: carbOverrideWarning,
+                sg1Message: nil,
+                sg3aMessage: nil,
+                insufficientReservoirMessage: insufficientReservoirDisclosure?.message,
+                noCartridge: model.bolusGate(amount: units, minimum: 0.05).reason == .noCartridge
+            )
+        ) { item in
             Label(item.text, systemImage: item.systemImage)
                 .font(item.tone.font)
                 .foregroundStyle(item.tone.color)
@@ -575,12 +646,21 @@ struct BolusEntryView: View {
     @ViewBuilder private var deliverSection: some View {
         Section("Deliver") {
             if delivering {
-                HStack { ProgressView(); Text("Delivering \(String(format: "%.2f U", units))…") }
+                HStack {
+                    ProgressView()
+                    Text("Delivering \(String(format: "%.2f U", units))…")
+                }
                 if model.capabilities.supportsBolusCancel {
-                    Button(role: .destructive) { Task { await model.cancelBolus() } } label: {
-                        HStack { Spacer(); Label("Cancel bolus", systemImage: "stop.fill"); Spacer() }
+                    Button(role: .destructive) {
+                        Task { await model.cancelBolus() }
+                    } label: {
+                        HStack {
+                            Spacer()
+                            Label("Cancel bolus", systemImage: "stop.fill")
+                            Spacer()
+                        }
                     }.buttonStyle(.borderedProminent).tint(.red)
-                    .accessibilityLabel("Cancel bolus")
+                        .accessibilityLabel("Cancel bolus")
                 }
             } else {
                 HStack(spacing: 6) {
@@ -598,7 +678,8 @@ struct BolusEntryView: View {
                     }
                     .contentShape(Rectangle())
                     .onTapGesture { focus = .units }
-                    Stepper("", value: unitsStep, in: 0...max(maxUnits, 0.01), step: settings.bolusIncrement).labelsHidden()
+                    Stepper("", value: unitsStep, in: 0...max(maxUnits, 0.01), step: settings.bolusIncrement)
+                        .labelsHidden()
                         .accessibilityLabel("Bolus units")
                 }
                 // §11 + Addendum B awareness: units mode showed NO CGM value/age (the readout lives in
@@ -608,18 +689,28 @@ struct BolusEntryView: View {
                 // and a modal on every units bolus would be alert fatigue).
                 if mode == .units, let readout = cgmReadout {
                     let staleR = model.snapshot.isGlucoseStale
-                    Label(readout, systemImage: staleR ? "sensor.tag.radiowaves.forward" : "sensor.tag.radiowaves.forward.fill")
-                        .font(.caption)
-                        .foregroundStyle(staleR ? .orange : .secondary)
+                    Label(
+                        readout,
+                        systemImage: staleR ? "sensor.tag.radiowaves.forward" : "sensor.tag.radiowaves.forward.fill"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(staleR ? .orange : .secondary)
                 }
                 deliverWarnings
-                Button { confirming = true } label: {
-                    HStack { Spacer(); Text(preparingDeliver ? "Checking CGM…" : "Bolus \(String(format: "%.2f U", units))"); Spacer() }
+                Button {
+                    confirming = true
+                } label: {
+                    HStack {
+                        Spacer()
+                        Text(preparingDeliver ? "Checking CGM…" : "Bolus \(String(format: "%.2f U", units))")
+                        Spacer()
+                    }
                 }
                 .buttonStyle(.borderedProminent).tint(AppTheme.insulin)
                 .disabled(!model.bolusGate(amount: units, minimum: 0.05).canBolus || preparingDeliver)
                 // The button reads its full dose ("Deliver 2.50 units"), not just "Bolus".
-                .accessibilityLabel(preparingDeliver ? "Checking CGM" : "Deliver \(String(format: "%.2f", units)) units")
+                .accessibilityLabel(
+                    preparingDeliver ? "Checking CGM" : "Deliver \(String(format: "%.2f", units)) units")
             }
         }
     }
@@ -630,12 +721,21 @@ struct BolusEntryView: View {
         if settings.extendedBolusEnabled && model.capabilities.supportsExtendedBolus && !delivering {
             Section("Extended (combo) bolus") {
                 Stepper("Deliver now: \(extendedNowPercent)%", value: $extendedNowPercent, in: 0...100, step: 10)
-                Stepper("Over \(durationLabel(extendedDurationMin))", value: $extendedDurationMin, in: 30...480, step: 30)
+                Stepper(
+                    "Over \(durationLabel(extendedDurationMin))", value: $extendedDurationMin, in: 30...480, step: 30)
                 let now = units * Double(extendedNowPercent) / 100
-                Text("\(String(format: "%.2f U", now)) now, \(String(format: "%.2f U", units - now)) over \(durationLabel(extendedDurationMin)). Min 0.40 U total.")
-                    .font(.caption2).foregroundStyle(.secondary)
-                Button { confirmingExtended = true } label: {
-                    HStack { Spacer(); Text("Extended bolus \(String(format: "%.2f U", units))"); Spacer() }
+                Text(
+                    "\(String(format: "%.2f U", now)) now, \(String(format: "%.2f U", units - now)) over \(durationLabel(extendedDurationMin)). Min 0.40 U total."
+                )
+                .font(.caption2).foregroundStyle(.secondary)
+                Button {
+                    confirmingExtended = true
+                } label: {
+                    HStack {
+                        Spacer()
+                        Text("Extended bolus \(String(format: "%.2f U", units))")
+                        Spacer()
+                    }
                 }
                 .buttonStyle(.bordered).tint(AppTheme.insulin)
                 .disabled(!model.bolusGate(amount: units, minimum: 0.4).canBolus || preparingDeliver)
@@ -682,12 +782,19 @@ struct BolusEntryView: View {
             // it (never from a stale value). The user can still type their own.
             // Same funnel fix as `syncBGFromCGM` — never write a bare mg/dL
             // Int into the display-unit-typed `bg` field.
-            if bg.isEmpty, let g = model.snapshot.glucose, !model.snapshot.isGlucoseStale { bg = settings.glucoseDisplayUnit.format(mgdl: g); bgSource = .cgm }
+            if bg.isEmpty, let g = model.snapshot.glucose, !model.snapshot.isGlucoseStale {
+                bg = settings.glucoseDisplayUnit.format(mgdl: g)
+                bgSource = .cgm
+            }
             if mode == .carbs { Task { await calculate() } }
             // Pull the freshest CGM AND the freshest calc inputs (op-115 CR/ISF/target + op-109
             // IOB) the moment the screen opens, so the IOB/therapy the recommendation is built from are
             // fresh from the start (never the ~10-min-stale cache).
-            Task { await model.refreshGlucoseNow(); await model.refreshCalcInputsNow(); syncBGFromCGM() }
+            Task {
+                await model.refreshGlucoseNow()
+                await model.refreshCalcInputsNow()
+                syncBGFromCGM()
+            }
         }
         // Recompute the recommendation live as carbs / BG change — no "Calculate" button needed.
         .onChange(of: carbsText) { _, _ in if mode == .carbs { Task { await calculate() } } }
@@ -709,7 +816,10 @@ struct BolusEntryView: View {
         }
         // Keep the CGM-sourced BG live as new readings arrive while the screen is open, and note when
         // the value changed so a just-landed reading (≤2 s before deliver) still triggers the re-check.
-        .onChange(of: model.snapshot.glucoseDate) { _, _ in lastCGMChangeAt = Date(); syncBGFromCGM() }
+        .onChange(of: model.snapshot.glucoseDate) { _, _ in
+            lastCGMChangeAt = Date()
+            syncBGFromCGM()
+        }
         // The async remote-approval resolution. A staged bolus (`pendingApproval !=
         // nil`) resolves LATER via `resolveRemoteApproval` — approved (→ actually delivers, `lastError
         // == nil`) or rejected/timed-out (→ `lastError` set). Only a non-nil→nil transition is a
@@ -723,8 +833,10 @@ struct BolusEntryView: View {
             // Pass model.lastError as the truthful non-success message — same
             // treatment as the confirmationSignal() seam below, so a rejected/timed-out child-mode
             // approval is no longer silent either.
-            present(BolusConfirmation.banner(for: signal, units: model.lastDeliveredUnits ?? resolved.units,
-                                             message: model.lastError))
+            present(
+                BolusConfirmation.banner(
+                    for: signal, units: model.lastDeliveredUnits ?? resolved.units,
+                    message: model.lastError))
         }
         // Keep the reading current while the user is actively on the screen — WITHOUT hammering the
         // pump. Every 60 s we tick the age label, but only spend a pump read when the shown value is
@@ -738,9 +850,10 @@ struct BolusEntryView: View {
                 try? await Task.sleep(nanoseconds: 60_000_000_000)
                 if Task.isCancelled { break }
                 ticks += 1
-                tick = Date()   // refresh the "N min ago" label
+                tick = Date()  // refresh the "N min ago" label
                 if let d = model.snapshot.glucoseDate, Date().timeIntervalSince(d) > 90 {
-                    await model.refreshGlucoseNow(); syncBGFromCGM()
+                    await model.refreshGlucoseNow()
+                    syncBGFromCGM()
                 }
             }
         }
@@ -762,124 +875,163 @@ struct BolusEntryView: View {
     @ViewBuilder
     private func withBolusConfirmationDialogs<V: View>(_ view: V) -> some View {
         view
-        .confirmationDialog("Deliver \(String(format: "%.2f U", units))?",
-                            isPresented: $confirming, titleVisibility: .visible) {
-            Button("Deliver \(String(format: "%.2f U", units))", role: .destructive) { handleStandardConfirm() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(confirmMessage)
-        }
-        .confirmationDialog(staleCgmDialogTitle,
-                            isPresented: Binding(get: { cgmUpdate != nil },
-                                                 set: { if !$0 { cgmUpdate = nil } }),
-                            titleVisibility: .visible) {
-            if let u = cgmUpdate {
-                if u.newBG == -1 {
-                    // Addendum B three-way: (1) include the stale reading — insulin-INCREASING, recomputed
-                    // WITH it — shown only when a stale reading exists; (2) carbs-only (drop the correction,
-                    // today's behavior); (3) cancel (sends nothing — a pure UI back-out).
-                    if let sbg = u.staleBG, let su = u.staleUnits {
-                        // Route through the SAME funnel as the adjacent
-                        // `message:` closure below so the button and the message never show two
-                        // different-looking numbers for the identical glucose value.
-                        Button("Include \(settings.glucoseDisplayUnit.format(mgdl: sbg)) \(settings.glucoseDisplayUnit == .mmol ? "mmol/L" : "mg/dL") → \(String(format: "%.2f U", su))") {
-                            let ext = u.extended; let carbsOnlyUnits = u.newUnits; cgmUpdate = nil
-                            // Defense-in-depth (Addendum B cap): the option is only ever OFFERED for a
-                            // within-window reading, but re-verify at TAP time through the SAME single bound
-                            // (`StaleBolusPrompt.mayOfferInclude` → `withinIncludableStaleness`). If the reading
-                            // aged past `maxIncludableStaleness` since the dialog opened, fail closed to the
-                            // carbs-only dose rather than dosing an insulin-INCREASING correction off a
-                            // now-too-old reading. Never over-delivers vs the choice the user was offered.
-                            if StaleBolusPrompt.mayOfferInclude(glucoseMgdl: sbg, glucoseDate: model.snapshot.glucoseDate) {
-                                Task { await deliverFrozen(freeze(units: su, bg: sbg, extended: ext)) }
-                            } else {
-                                Task { await deliverFrozen(freeze(units: carbsOnlyUnits, bg: nil, extended: ext)) }
+            .confirmationDialog(
+                "Deliver \(String(format: "%.2f U", units))?",
+                isPresented: $confirming, titleVisibility: .visible
+            ) {
+                Button("Deliver \(String(format: "%.2f U", units))", role: .destructive) { handleStandardConfirm() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(confirmMessage)
+            }
+            .confirmationDialog(
+                staleCgmDialogTitle,
+                isPresented: Binding(
+                    get: { cgmUpdate != nil },
+                    set: { if !$0 { cgmUpdate = nil } }),
+                titleVisibility: .visible
+            ) {
+                if let u = cgmUpdate {
+                    if u.newBG == -1 {
+                        // Addendum B three-way: (1) include the stale reading — insulin-INCREASING, recomputed
+                        // WITH it — shown only when a stale reading exists; (2) carbs-only (drop the correction,
+                        // today's behavior); (3) cancel (sends nothing — a pure UI back-out).
+                        if let sbg = u.staleBG, let su = u.staleUnits {
+                            // Route through the SAME funnel as the adjacent
+                            // `message:` closure below so the button and the message never show two
+                            // different-looking numbers for the identical glucose value.
+                            Button(
+                                "Include \(settings.glucoseDisplayUnit.format(mgdl: sbg)) \(settings.glucoseDisplayUnit == .mmol ? "mmol/L" : "mg/dL") → \(String(format: "%.2f U", su))"
+                            ) {
+                                let ext = u.extended
+                                let carbsOnlyUnits = u.newUnits
+                                cgmUpdate = nil
+                                // Defense-in-depth (Addendum B cap): the option is only ever OFFERED for a
+                                // within-window reading, but re-verify at TAP time through the SAME single bound
+                                // (`StaleBolusPrompt.mayOfferInclude` → `withinIncludableStaleness`). If the reading
+                                // aged past `maxIncludableStaleness` since the dialog opened, fail closed to the
+                                // carbs-only dose rather than dosing an insulin-INCREASING correction off a
+                                // now-too-old reading. Never over-delivers vs the choice the user was offered.
+                                if StaleBolusPrompt.mayOfferInclude(
+                                    glucoseMgdl: sbg, glucoseDate: model.snapshot.glucoseDate)
+                                {
+                                    Task { await deliverFrozen(freeze(units: su, bg: sbg, extended: ext)) }
+                                } else {
+                                    Task { await deliverFrozen(freeze(units: carbsOnlyUnits, bg: nil, extended: ext)) }
+                                }
                             }
                         }
-                    }
-                    Button("Deliver \(String(format: "%.2f U", u.newUnits)) (carbs only)", role: .destructive) {
-                        let ext = u.extended; cgmUpdate = nil
-                        Task { await deliverFrozen(freeze(units: u.newUnits, bg: nil, extended: ext)) }
-                    }
-                    Button("Cancel", role: .cancel) { cgmUpdate = nil }
-                } else {
-                    // Same funnel as the `message:` closure below.
-                    Button("Use \(settings.glucoseDisplayUnit.format(mgdl: u.newBG)) \(settings.glucoseDisplayUnit == .mmol ? "mmol/L" : "mg/dL") → \(String(format: "%.2f U", u.newUnits))") {
-                        // Same funnel fix as `syncBGFromCGM` — this button's own
-                        // label above already shows the converted figure; the field it writes into must match.
-                        bg = settings.glucoseDisplayUnit.format(mgdl: u.newBG); bgSource = .cgm; unitsText = Self.trimUnits(u.newUnits)
-                        let ext = u.extended; let bgv = u.newBG; let uu = u.newUnits; cgmUpdate = nil
-                        Task { await deliverFrozen(freeze(units: uu, bg: bgv, extended: ext)) }
-                    }
-                    Button("Deliver \(String(format: "%.2f U", u.oldUnits)) anyway", role: .destructive) {
-                        let ext = u.extended; let uu = u.oldUnits; let bgv = settings.glucoseDisplayUnit.parse(bg); cgmUpdate = nil
-                        Task { await deliverFrozen(freeze(units: uu, bg: bgv, extended: ext)) }
-                    }
-                    Button("Cancel", role: .cancel) { cgmUpdate = nil }
-                }
-            }
-        } message: {
-            if let u = cgmUpdate {
-                if u.newBG == -1 {
-                    if let sbg = u.staleBG {
-                        Text(staleReadingMessage(mgdl: sbg, carbsOnlyLabel: String(format: "%.2f U", u.newUnits)))
+                        Button("Deliver \(String(format: "%.2f U", u.newUnits)) (carbs only)", role: .destructive) {
+                            let ext = u.extended
+                            cgmUpdate = nil
+                            Task { await deliverFrozen(freeze(units: u.newUnits, bg: nil, extended: ext)) }
+                        }
+                        Button("Cancel", role: .cancel) { cgmUpdate = nil }
                     } else {
-                        Text("No fresh CGM reading is available, so the correction can't be applied. Deliver the carbs-only dose (\(String(format: "%.2f U", u.newUnits))) or cancel.")
+                        // Same funnel as the `message:` closure below.
+                        Button(
+                            "Use \(settings.glucoseDisplayUnit.format(mgdl: u.newBG)) \(settings.glucoseDisplayUnit == .mmol ? "mmol/L" : "mg/dL") → \(String(format: "%.2f U", u.newUnits))"
+                        ) {
+                            // Same funnel fix as `syncBGFromCGM` — this button's own
+                            // label above already shows the converted figure; the field it writes into must match.
+                            bg = settings.glucoseDisplayUnit.format(mgdl: u.newBG)
+                            bgSource = .cgm
+                            unitsText = Self.trimUnits(u.newUnits)
+                            let ext = u.extended
+                            let bgv = u.newBG
+                            let uu = u.newUnits
+                            cgmUpdate = nil
+                            Task { await deliverFrozen(freeze(units: uu, bg: bgv, extended: ext)) }
+                        }
+                        Button("Deliver \(String(format: "%.2f U", u.oldUnits)) anyway", role: .destructive) {
+                            let ext = u.extended
+                            let uu = u.oldUnits
+                            let bgv = settings.glucoseDisplayUnit.parse(bg)
+                            cgmUpdate = nil
+                            Task { await deliverFrozen(freeze(units: uu, bg: bgv, extended: ext)) }
+                        }
+                        Button("Cancel", role: .cancel) { cgmUpdate = nil }
                     }
-                } else {
-                    Text(cgmChangedMessage(mgdl: u.newBG, newLabel: String(format: "%.2f U", u.newUnits), oldLabel: String(format: "%.2f U", u.oldUnits)))
+                }
+            } message: {
+                if let u = cgmUpdate {
+                    if u.newBG == -1 {
+                        if let sbg = u.staleBG {
+                            Text(staleReadingMessage(mgdl: sbg, carbsOnlyLabel: String(format: "%.2f U", u.newUnits)))
+                        } else {
+                            Text(
+                                "No fresh CGM reading is available, so the correction can't be applied. Deliver the carbs-only dose (\(String(format: "%.2f U", u.newUnits))) or cancel."
+                            )
+                        }
+                    } else {
+                        Text(
+                            cgmChangedMessage(
+                                mgdl: u.newBG, newLabel: String(format: "%.2f U", u.newUnits),
+                                oldLabel: String(format: "%.2f U", u.oldUnits)))
+                    }
                 }
             }
-        }
-        .confirmationDialog("Extended bolus \(String(format: "%.2f U", units))?",
-                            isPresented: $confirmingExtended, titleVisibility: .visible) {
-            Button("Deliver extended \(String(format: "%.2f U", units))", role: .destructive) { Task { await attemptDeliver(extended: true) } }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            let now = units * Double(extendedNowPercent) / 100
-            Text("\(String(format: "%.2f U", now)) now, then \(String(format: "%.2f U", units - now)) over \(durationLabel(extendedDurationMin)). faBolus is experimental and not FDA-cleared.")
-        }
-        // The pump never reported its bolus settings this attempt, so no dose can be safely sized.
-        // Cancel-only (fail-closed) — NEVER a deliverable dose off a guessed carb ratio, and no false
-        // "last-known" label. The user retries once the pump reports its settings.
-        .alert("Pump settings not read yet", isPresented: $calcInputBlocked) {
-            Button("OK", role: .cancel) { calcInputBlocked = false }   // sends NOTHING
-        } message: {
-            Text("faBolus hasn't read this pump's bolus settings (carb ratio / correction factor / target) yet, so it can't size a dose. Wait a moment for the pump to connect, then try again.")
-        }
-        // A manually-typed BG outside the plausible range is blocked cancel-only (fail-closed) —
-        // never passed to `recommendBolus`, where D-04 would silently drop a low's dose-reducing effect.
-        .alert("Check your glucose", isPresented: $manualBGBlocked) {
-            Button("OK", role: .cancel) { manualBGBlocked = false }   // sends NOTHING
-        } message: {
-            Text("That glucose reading looks out of range — re-check your glucose before dosing.")
-        }
-        // The calc inputs weren't confirmed fresh this compose (`inputsVerified == false`). Present
-        // the WARNED two-way override — never a silent deliver. `cancel` sends nothing. The "use / include"
-        // button carries the exact dose it will deliver (recomputed off last-known values). No drop/zero-IOB
-        // option exists (that is the maximum-dose direction — prohibited by the frozen owner decision).
-        .confirmationDialog(calcInputDialogTitle,
-                            isPresented: Binding(get: { calcInputPrompt != nil },
-                                                 set: { if !$0 { calcInputPrompt = nil } }),
-                            titleVisibility: .visible) {
-            if let p = calcInputPrompt {
-                Button(calcInputUseLabel(p), role: .destructive) {
-                    // Accept the override for THIS attempt and RE-ENTER attemptDeliver — which now skips the
-                    // warning gate but still runs the fresh-CGM refresh + divergence guard + Addendum-B
-                    // stale-CGM three-way, with these flags threaded in. The button's dose is the baseline
-                    // for the divergence comparison; the delivered dose is the deliver-time recompute.
-                    acceptedOverride = AcceptedOverride(allowStaleIob: p.allowStaleIob,
-                                                        allowStaleTherapy: p.allowStaleTherapy,
-                                                        baseline: p.overrideUnits)
-                    let ext = p.extended
-                    calcInputPrompt = nil
-                    Task { await attemptDeliver(extended: ext) }
+            .confirmationDialog(
+                "Extended bolus \(String(format: "%.2f U", units))?",
+                isPresented: $confirmingExtended, titleVisibility: .visible
+            ) {
+                Button("Deliver extended \(String(format: "%.2f U", units))", role: .destructive) {
+                    Task { await attemptDeliver(extended: true) }
                 }
-                Button("Cancel", role: .cancel) { calcInputPrompt = nil }   // sends NOTHING
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                let now = units * Double(extendedNowPercent) / 100
+                Text(
+                    "\(String(format: "%.2f U", now)) now, then \(String(format: "%.2f U", units - now)) over \(durationLabel(extendedDurationMin)). faBolus is experimental and not FDA-cleared."
+                )
             }
-        } message: {
-            if let p = calcInputPrompt { Text(calcInputMessage(p)) }
-        }
+            // The pump never reported its bolus settings this attempt, so no dose can be safely sized.
+            // Cancel-only (fail-closed) — NEVER a deliverable dose off a guessed carb ratio, and no false
+            // "last-known" label. The user retries once the pump reports its settings.
+            .alert("Pump settings not read yet", isPresented: $calcInputBlocked) {
+                Button("OK", role: .cancel) { calcInputBlocked = false }  // sends NOTHING
+            } message: {
+                Text(
+                    "faBolus hasn't read this pump's bolus settings (carb ratio / correction factor / target) yet, so it can't size a dose. Wait a moment for the pump to connect, then try again."
+                )
+            }
+            // A manually-typed BG outside the plausible range is blocked cancel-only (fail-closed) —
+            // never passed to `recommendBolus`, where D-04 would silently drop a low's dose-reducing effect.
+            .alert("Check your glucose", isPresented: $manualBGBlocked) {
+                Button("OK", role: .cancel) { manualBGBlocked = false }  // sends NOTHING
+            } message: {
+                Text("That glucose reading looks out of range — re-check your glucose before dosing.")
+            }
+            // The calc inputs weren't confirmed fresh this compose (`inputsVerified == false`). Present
+            // the WARNED two-way override — never a silent deliver. `cancel` sends nothing. The "use / include"
+            // button carries the exact dose it will deliver (recomputed off last-known values). No drop/zero-IOB
+            // option exists (that is the maximum-dose direction — prohibited by the frozen owner decision).
+            .confirmationDialog(
+                calcInputDialogTitle,
+                isPresented: Binding(
+                    get: { calcInputPrompt != nil },
+                    set: { if !$0 { calcInputPrompt = nil } }),
+                titleVisibility: .visible
+            ) {
+                if let p = calcInputPrompt {
+                    Button(calcInputUseLabel(p), role: .destructive) {
+                        // Accept the override for THIS attempt and RE-ENTER attemptDeliver — which now skips the
+                        // warning gate but still runs the fresh-CGM refresh + divergence guard + Addendum-B
+                        // stale-CGM three-way, with these flags threaded in. The button's dose is the baseline
+                        // for the divergence comparison; the delivered dose is the deliver-time recompute.
+                        acceptedOverride = AcceptedOverride(
+                            allowStaleIob: p.allowStaleIob,
+                            allowStaleTherapy: p.allowStaleTherapy,
+                            baseline: p.overrideUnits)
+                        let ext = p.extended
+                        calcInputPrompt = nil
+                        Task { await attemptDeliver(extended: ext) }
+                    }
+                    Button("Cancel", role: .cancel) { calcInputPrompt = nil }  // sends NOTHING
+                }
+            } message: {
+                if let p = calcInputPrompt { Text(calcInputMessage(p)) }
+            }
     }
 
     /// SG3a's escalated-friction dialogs (`.confirmExtra`/`.reenter`), applied as a SEPARATE modifier group
@@ -897,14 +1049,18 @@ struct BolusEntryView: View {
             // the SAME dose (`sgOriginalUnits`, captured at the moment the standard dialog's Deliver was
             // tapped) — Cancel sends NOTHING; Deliver proceeds to the unchanged `attemptDeliver` path with
             // `units` unchanged (never resized by this step).
-            .confirmationDialog("Confirm again — deliver \(String(format: "%.2f U", sgOriginalUnits))?",
-                                isPresented: $sgConfirmExtra, titleVisibility: .visible) {
+            .confirmationDialog(
+                "Confirm again — deliver \(String(format: "%.2f U", sgOriginalUnits))?",
+                isPresented: $sgConfirmExtra, titleVisibility: .visible
+            ) {
                 Button("Deliver \(String(format: "%.2f U", sgOriginalUnits))", role: .destructive) {
                     Task { await attemptDeliver(extended: false) }
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("This dose is well above what the pump's calculator suggested. Confirm once more before delivering — the amount will not change.")
+                Text(
+                    "This dose is well above what the pump's calculator suggested. Confirm once more before delivering — the amount will not change."
+                )
             }
             // SG3a `.reenter`: the user must re-type the dose to proceed. A re-typed value that does not
             // EXACTLY match `sgOriginalUnits` (captured at the moment the standard dialog's Deliver was
@@ -916,7 +1072,8 @@ struct BolusEntryView: View {
                 Button("Confirm", role: .destructive) {
                     let candidate = sgReenterText
                     sgReenterText = ""
-                    if let retyped = Double(candidate), Self.reenterMatches(retyped: retyped, original: sgOriginalUnits) {
+                    if let retyped = Double(candidate), Self.reenterMatches(retyped: retyped, original: sgOriginalUnits)
+                    {
                         sgReenterMismatch = false
                         Task { await attemptDeliver(extended: false) }
                     } else {
@@ -985,17 +1142,17 @@ struct BolusEntryView: View {
     // Calc-input prompt copy (title / button / message), keyed on which input(s) were unconfirmed.
     private var calcInputDialogTitle: String {
         switch calcInputPrompt?.kind {
-        case .iob:            return "Active insulin not confirmed"
-        case .therapy:        return "Pump settings not confirmed"
-        case .both, .none:    return "Pump inputs not confirmed"
+        case .iob: return "Active insulin not confirmed"
+        case .therapy: return "Pump settings not confirmed"
+        case .both, .none: return "Pump inputs not confirmed"
         }
     }
     private func calcInputUseLabel(_ p: CalcInputPrompt) -> String {
         let dose = String(format: "%.2f U", p.overrideUnits)
         switch p.kind {
-        case .iob:     return "Use last-known IOB → \(dose)"
+        case .iob: return "Use last-known IOB → \(dose)"
         case .therapy: return "Use last-known settings → \(dose)"
-        case .both:    return "Use last-known & deliver \(dose)"
+        case .both: return "Use last-known & deliver \(dose)"
         }
     }
     private func calcInputMessage(_ p: CalcInputPrompt) -> String {
@@ -1003,9 +1160,11 @@ struct BolusEntryView: View {
         case .iob:
             return StaleIobPrompt.warningMessage(iobUnits: p.iobUnits, iobDate: p.iobDate)
         case .therapy:
-            return StaleTherapyPrompt.warningMessage(profile: p.assumedProfile, therapyDate: p.therapyDate, unit: settings.glucoseDisplayUnit)
+            return StaleTherapyPrompt.warningMessage(
+                profile: p.assumedProfile, therapyDate: p.therapyDate, unit: settings.glucoseDisplayUnit)
         case .both:
-            return StaleTherapyPrompt.warningMessage(profile: p.assumedProfile, therapyDate: p.therapyDate, unit: settings.glucoseDisplayUnit)
+            return StaleTherapyPrompt.warningMessage(
+                profile: p.assumedProfile, therapyDate: p.therapyDate, unit: settings.glucoseDisplayUnit)
                 + "\n\n" + StaleIobPrompt.warningMessage(iobUnits: p.iobUnits, iobDate: p.iobDate)
         }
     }
@@ -1016,14 +1175,18 @@ struct BolusEntryView: View {
 
     private func calculate() async {
         // Nothing entered yet → no recommendation card.
-        guard carbs > 0 || (settings.glucoseDisplayUnit.parse(bg) ?? 0) > 0 else { recommendation = nil; unitsText = ""; return }
+        guard carbs > 0 || (settings.glucoseDisplayUnit.parse(bg) ?? 0) > 0 else {
+            recommendation = nil
+            unitsText = ""
+            return
+        }
         // Generation token (audit C-04): a newer edit supersedes this calc, so an out-of-order async
         // result can't overwrite the field with a stale dose.
         calcSeq &+= 1
         let seq = calcSeq
-        calcInputPrompt = nil       // a changed dose re-requires the per-attempt freshness override
-        acceptedOverride = nil      // …and drops any override accepted for a prior compose
-        calcInputBlocked = false    // …and clears any prior "settings not read" block
+        calcInputPrompt = nil  // a changed dose re-requires the per-attempt freshness override
+        acceptedOverride = nil  // …and drops any override accepted for a prior compose
+        calcInputBlocked = false  // …and clears any prior "settings not read" block
         let rec = await model.recommendBolus(carbsGrams: carbs, bgMgdl: settings.glucoseDisplayUnit.parse(bg))
         guard seq == calcSeq else { return }
         recommendation = rec
@@ -1035,7 +1198,14 @@ struct BolusEntryView: View {
 
     /// Immutable, confirmed bolus (audit C-04): captured once at confirm time; delivery uses exactly
     /// these values and never re-reads live `@State` that could change under it.
-    private struct FrozenBolus { let units: Double; let carbsGrams: Double?; let bgMgdl: Int?; let iobUnits: Double?; let extendedNow: Double? ; let extendedDurationMin: Int? }
+    private struct FrozenBolus {
+        let units: Double
+        let carbsGrams: Double?
+        let bgMgdl: Int?
+        let iobUnits: Double?
+        let extendedNow: Double?
+        let extendedDurationMin: Int?
+    }
 
     /// Validate a correction against a FRESH CGM read, then freeze + deliver. Shared by the standard and
     /// extended paths (audit C-04 "same path"). For a CGM-based correction it pulls a fresh reading and:
@@ -1050,7 +1220,7 @@ struct BolusEntryView: View {
         // (`bgSource == .cgm` is never gated here). This changes WHEN a dose is allowed, not the math.
         if manualBGImplausible {
             manualBGBlocked = true
-            return   // sends NOTHING
+            return  // sends NOTHING
         }
         // The deliver-time gate is the PURE, unit-tested `CalcInputGate.decide` (faBolusCore) — no
         // gating logic lives inline here anymore. It fires ONLY in carbs mode, keys on `!inputsVerified`
@@ -1062,12 +1232,14 @@ struct BolusEntryView: View {
         // three-way) with the override threaded in. `cancel` sends nothing. Remotes never reach this — they
         // fail closed in `resolveRemoteDose`.
         if let rec = recommendation, calcInputPrompt == nil, !calcInputBlocked {
-            switch CalcInputGate.decide(isCarbsMode: mode == .carbs, inputsVerified: rec.inputsVerified,
-                                        iobStale: rec.iobStale, therapyStale: rec.therapyStale,
-                                        therapyAvailable: !rec.therapyUnavailable,
-                                        overrideAccepted: acceptedOverride != nil) {
+            switch CalcInputGate.decide(
+                isCarbsMode: mode == .carbs, inputsVerified: rec.inputsVerified,
+                iobStale: rec.iobStale, therapyStale: rec.therapyStale,
+                therapyAvailable: !rec.therapyUnavailable,
+                overrideAccepted: acceptedOverride != nil)
+            {
             case .proceed:
-                break   // fall through to the deliver machinery below
+                break  // fall through to the deliver machinery below
             case .blockNoTherapy:
                 // The pump has NEVER reported its bolus settings this attempt, so any dose would be sized off
                 // a hardcoded guess — no honest "last-known" to offer and a carb dose can't be sized without
@@ -1080,12 +1252,14 @@ struct BolusEntryView: View {
                 // the estimate (the divergence BASELINE). The ACTUAL delivered dose is the deliver-time
                 // recompute below (CGM path: fresh-read + divergence guard) or the min(baseline, fresh) cap
                 // (manual-BG path), so drift since compose is still caught.
-                let pre = await model.recommendBolus(carbsGrams: carbs, bgMgdl: settings.glucoseDisplayUnit.parse(bg),
-                                                     allowStaleIob: kind.allowStaleIob, allowStaleTherapy: kind.allowStaleTherapy)
-                calcInputPrompt = CalcInputPrompt(kind: kind, extended: extended, overrideUnits: pre.recommendedUnits,
-                                                  allowStaleIob: kind.allowStaleIob, allowStaleTherapy: kind.allowStaleTherapy,
-                                                  iobUnits: rec.iobUnits, iobDate: rec.iobDate,
-                                                  assumedProfile: rec.assumedProfile, therapyDate: rec.therapyParamsDate)
+                let pre = await model.recommendBolus(
+                    carbsGrams: carbs, bgMgdl: settings.glucoseDisplayUnit.parse(bg),
+                    allowStaleIob: kind.allowStaleIob, allowStaleTherapy: kind.allowStaleTherapy)
+                calcInputPrompt = CalcInputPrompt(
+                    kind: kind, extended: extended, overrideUnits: pre.recommendedUnits,
+                    allowStaleIob: kind.allowStaleIob, allowStaleTherapy: kind.allowStaleTherapy,
+                    iobUnits: rec.iobUnits, iobDate: rec.iobDate,
+                    assumedProfile: rec.assumedProfile, therapyDate: rec.therapyParamsDate)
                 return
             }
         }
@@ -1115,19 +1289,22 @@ struct BolusEntryView: View {
             // IOB/therapy apply while this fresh-CGM / stale-CGM machinery still governs the glucose term.
             await model.refreshCalcInputsNow()
             if let g = model.snapshot.glucose, !model.snapshot.isGlucoseStale {
-                let rec = await model.recommendBolus(carbsGrams: carbs, bgMgdl: g,
-                                                     allowStaleIob: ov?.allowStaleIob ?? false,
-                                                     allowStaleTherapy: ov?.allowStaleTherapy ?? false)
+                let rec = await model.recommendBolus(
+                    carbsGrams: carbs, bgMgdl: g,
+                    allowStaleIob: ov?.allowStaleIob ?? false,
+                    allowStaleTherapy: ov?.allowStaleTherapy ?? false)
                 let delta = abs(rec.recommendedUnits - priorUnits)
                 if delta > AppModel.remoteDivergenceLimitUnits || (justChanged && delta > 0.0001) {
-                    cgmUpdate = CGMUpdatePrompt(newBG: g, newUnits: rec.recommendedUnits, oldUnits: priorUnits, extended: extended)
-                    return   // wait for the user's choice in the CGM-updated dialog
+                    cgmUpdate = CGMUpdatePrompt(
+                        newBG: g, newUnits: rec.recommendedUnits, oldUnits: priorUnits, extended: extended)
+                    return  // wait for the user's choice in the CGM-updated dialog
                 }
                 // Within tolerance we deliver exactly the on-screen dose (`priorUnits`, what the
                 // Deliver button showed), so bind it to the BG it was actually computed from — NOT the
                 // just-pulled `g`. Recording the fresh `g` against the old units would attach a glucose
                 // value the dose wasn't derived from (a false pump/t:connect metadata pairing).
-                await deliverFrozen(freeze(units: priorUnits, bg: settings.glucoseDisplayUnit.parse(bg), extended: extended))
+                await deliverFrozen(
+                    freeze(units: priorUnits, bg: settings.glucoseDisplayUnit.parse(bg), extended: extended))
                 return
             }
             // Addendum B: CGM stale/missing — never SILENTLY correct off the stale on-screen value, EVEN when
@@ -1137,9 +1314,10 @@ struct BolusEntryView: View {
             // adds the "include it" option (insulin-INCREASING, per-attempt, recomputed WITH the stale
             // value). With no reading at all there is nothing to include → carbs-only / cancel only. The
             // override is threaded into each offered dose so last-known IOB/therapy still apply.
-            let carbsOnly = await model.recommendBolus(carbsGrams: carbs, bgMgdl: nil,
-                                                       allowStaleIob: ov?.allowStaleIob ?? false,
-                                                       allowStaleTherapy: ov?.allowStaleTherapy ?? false)
+            let carbsOnly = await model.recommendBolus(
+                carbsGrams: carbs, bgMgdl: nil,
+                allowStaleIob: ov?.allowStaleIob ?? false,
+                allowStaleTherapy: ov?.allowStaleTherapy ?? false)
             // Addendum B includable-age cap (iPhone fast-follow, mirrors the host `resolveRemoteDose` gate):
             // offer the "include the stale reading" option ONLY when the reading is within the includable
             // window `(staleAfter, maxIncludableStaleness]` — `StaleBolusPrompt.mayOfferInclude` routes through
@@ -1147,17 +1325,21 @@ struct BolusEntryView: View {
             // cap is too old to dose a correction from: fall through to the carbs-only / cancel branch below
             // (identical to "no includable reading") — never compute or offer a `withStale` correction off it.
             if let sg = model.snapshot.glucose,
-               StaleBolusPrompt.mayOfferInclude(glucoseMgdl: sg, glucoseDate: model.snapshot.glucoseDate) {
-                let withStale = await model.recommendBolus(carbsGrams: carbs, bgMgdl: sg,
-                                                           allowStaleIob: ov?.allowStaleIob ?? false,
-                                                           allowStaleTherapy: ov?.allowStaleTherapy ?? false)
-                cgmUpdate = CGMUpdatePrompt(newBG: -1, newUnits: carbsOnly.recommendedUnits, oldUnits: priorUnits,
-                                           extended: extended, staleBG: sg, staleUnits: withStale.recommendedUnits)
+                StaleBolusPrompt.mayOfferInclude(glucoseMgdl: sg, glucoseDate: model.snapshot.glucoseDate)
+            {
+                let withStale = await model.recommendBolus(
+                    carbsGrams: carbs, bgMgdl: sg,
+                    allowStaleIob: ov?.allowStaleIob ?? false,
+                    allowStaleTherapy: ov?.allowStaleTherapy ?? false)
+                cgmUpdate = CGMUpdatePrompt(
+                    newBG: -1, newUnits: carbsOnly.recommendedUnits, oldUnits: priorUnits,
+                    extended: extended, staleBG: sg, staleUnits: withStale.recommendedUnits)
             } else {
                 // No includable reading: none present, OR present but OLDER than the includable cap
                 // (`maxIncludableStaleness`). Carbs-only / cancel only — no Include choice, no stale-basis dose.
-                cgmUpdate = CGMUpdatePrompt(newBG: -1, newUnits: carbsOnly.recommendedUnits, oldUnits: priorUnits,
-                                           extended: extended)
+                cgmUpdate = CGMUpdatePrompt(
+                    newBG: -1, newUnits: carbsOnly.recommendedUnits, oldUnits: priorUnits,
+                    extended: extended)
             }
             return
         }
@@ -1171,8 +1353,9 @@ struct BolusEntryView: View {
         // carries the divergence-max IOB guard). Otherwise (UNITS mode, or a verified carbs dose off manual
         // BG) freeze the on-screen values as-is — in UNITS mode that is exactly the number the user dialed.
         if mode == .carbs, let ov {
-            let rec = await model.recommendBolus(carbsGrams: carbs, bgMgdl: settings.glucoseDisplayUnit.parse(bg),
-                                                 allowStaleIob: ov.allowStaleIob, allowStaleTherapy: ov.allowStaleTherapy)
+            let rec = await model.recommendBolus(
+                carbsGrams: carbs, bgMgdl: settings.glucoseDisplayUnit.parse(bg),
+                allowStaleIob: ov.allowStaleIob, allowStaleTherapy: ov.allowStaleTherapy)
             let capped = CalcInputGate.overrideDeliverUnits(baseline: ov.baseline, freshRecompute: rec.recommendedUnits)
             await deliverFrozen(freeze(units: capped, bg: settings.glucoseDisplayUnit.parse(bg), extended: extended))
         } else {
@@ -1184,18 +1367,20 @@ struct BolusEntryView: View {
     private func freeze(units u: Double, bg bgVal: Int?, extended: Bool) -> FrozenBolus {
         // Freeze the calculator IOB the recommendation used, so it's the value recorded on the
         // pump as bolusIOB metadata — not a live snapshot read at delivery time.
-        FrozenBolus(units: u, carbsGrams: carbs > 0 ? carbs : nil, bgMgdl: bgVal,
-                    iobUnits: recommendation?.iobUnits,
-                    extendedNow: extended ? u * Double(extendedNowPercent) / 100 : nil,
-                    extendedDurationMin: extended ? extendedDurationMin : nil)
+        FrozenBolus(
+            units: u, carbsGrams: carbs > 0 ? carbs : nil, bgMgdl: bgVal,
+            iobUnits: recommendation?.iobUnits,
+            extendedNow: extended ? u * Double(extendedNowPercent) / 100 : nil,
+            extendedDurationMin: extended ? extendedDurationMin : nil)
     }
 
     /// Deliver exactly the frozen proposal — the only place that calls the backend (audit C-04).
     private func deliverFrozen(_ f: FrozenBolus) async {
         delivering = true
         if let now = f.extendedNow, let dur = f.extendedDurationMin {
-            await model.deliverExtendedBolus(totalUnits: f.units, nowUnits: now, durationMinutes: dur,
-                                             carbsGrams: f.carbsGrams, bgMgdl: f.bgMgdl, iobUnits: f.iobUnits)
+            await model.deliverExtendedBolus(
+                totalUnits: f.units, nowUnits: now, durationMinutes: dur,
+                carbsGrams: f.carbsGrams, bgMgdl: f.bgMgdl, iobUnits: f.iobUnits)
         } else {
             // Carbs/BG go to the pump as recorded metadata (graph / t:connect / Control-IQ) and are logged
             // locally for the smart features — carb recording is centralized in the model.
@@ -1213,7 +1398,8 @@ struct BolusEntryView: View {
         let bannerUnits = model.lastDeliveredUnits ?? f.units
         let extended: BolusConfirmation.ExtendedDetail?
         if let now = f.extendedNow, !model.lastDeliveredWasCancelled {
-            extended = BolusConfirmation.ExtendedDetail(nowUnits: now, totalUnits: f.units, durationMinutes: f.extendedDurationMin ?? 0)
+            extended = BolusConfirmation.ExtendedDetail(
+                nowUnits: now, totalUnits: f.units, durationMinutes: f.extendedDurationMin ?? 0)
         } else {
             extended = nil
         }
@@ -1222,8 +1408,10 @@ struct BolusEntryView: View {
         // banner surfaces whichever string AppModel already resolved without needing to tell them
         // apart itself; when confirmationSignal() is .delivered, model.lastError is nil (by that same
         // read's own definition) and the message is simply unused.
-        present(BolusConfirmation.banner(for: confirmationSignal(), units: bannerUnits, extended: extended,
-                                         message: model.lastError))
+        present(
+            BolusConfirmation.banner(
+                for: confirmationSignal(), units: bannerUnits, extended: extended,
+                message: model.lastError))
         finishDelivery()
     }
 
@@ -1258,7 +1446,9 @@ struct BolusEntryView: View {
 
     private func finishDelivery() {
         if embedded {
-            unitsText = ""; carbsText = ""; recommendation = nil   // reset for the next one
+            unitsText = ""
+            carbsText = ""
+            recommendation = nil  // reset for the next one
         } else {
             dismiss()
         }
@@ -1273,4 +1463,3 @@ private extension View {
         if isAccessibility { self } else { self.fixedSize() }
     }
 }
-

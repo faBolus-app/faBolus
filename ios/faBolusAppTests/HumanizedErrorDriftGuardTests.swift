@@ -48,8 +48,9 @@ struct HumanizedErrorDriftGuardTests {
     }
 
     private static func source(_ relativePath: String) throws -> String {
-        let repoRoot = try #require(Self.repoRootURL(),
-                                     "could not resolve repo root from #filePath=\(#filePath)")
+        let repoRoot = try #require(
+            Self.repoRootURL(),
+            "could not resolve repo root from #filePath=\(#filePath)")
         let url = repoRoot.appendingPathComponent(relativePath)
         let raw = try String(contentsOf: url, encoding: .utf8)
         return Self.stripLineComments(raw)
@@ -66,7 +67,7 @@ struct HumanizedErrorDriftGuardTests {
         re.enumerateMatches(in: source, range: NSRange(location: 0, length: ns.length)) { match, _, _ in
             guard let match, match.numberOfRanges >= 2 else { return }
             let literal = ns.substring(with: match.range(at: 1))
-            if literal.contains(#"\("#) { return }   // interpolated dynamic fallback — not curated copy
+            if literal.contains(#"\("#) { return }  // interpolated dynamic fallback — not curated copy
             out.append(literal)
         }
         return out
@@ -76,8 +77,9 @@ struct HumanizedErrorDriftGuardTests {
 
     /// Mirrors `MainHUDView.humanizedDashboardError`'s three raw-shape checks.
     private static func looksRawDashboard(_ raw: String) -> Bool {
-        raw.range(of: #"couldn.t be completed\. \([^)]*error -?\d+\.?\)"#,
-                  options: [.regularExpression, .caseInsensitive]) != nil
+        raw.range(
+            of: #"couldn.t be completed\. \([^)]*error -?\d+\.?\)"#,
+            options: [.regularExpression, .caseInsensitive]) != nil
             || raw.range(of: #"^\S+#-?\d+\s"#, options: .regularExpression) != nil
             || raw.contains("Error Domain=")
     }
@@ -103,29 +105,39 @@ struct HumanizedErrorDriftGuardTests {
 
     @Test func curatedLastErrorLiteralsPassThroughDashboardHumanizerUnchanged() throws {
         var literals: [String] = []
-        for file in ["ios/faBolus/Data/AppModel.swift",
-                     "ios/faBolus/Data/App/PumpConnectionLifecycle.swift"] {
+        for file in [
+            "ios/faBolus/Data/AppModel.swift",
+            "ios/faBolus/Data/App/PumpConnectionLifecycle.swift"
+        ] {
             literals += Self.literals(assignedTo: "lastError", in: try Self.source(file))
         }
-        #expect(!literals.isEmpty,
-                "scan found no curated `lastError = \"…\"` literals — the source path or extractor broke")
+        #expect(
+            !literals.isEmpty,
+            "scan found no curated `lastError = \"…\"` literals — the source path or extractor broke")
         for literal in literals {
-            #expect(!Self.looksRawDashboard(literal),
-                    "curated lastError copy \"\(literal)\" is rewritten by humanizedDashboardError — it must pass through unchanged")
+            #expect(
+                !Self.looksRawDashboard(literal),
+                "curated lastError copy \"\(literal)\" is rewritten by humanizedDashboardError — it must pass through unchanged"
+            )
         }
     }
 
     @Test func curatedConnectionDetailLiteralsPassThroughHumanizerUnchanged() throws {
         var literals: [String] = []
-        for file in ["ios/faBolus/Data/App/PumpConnectionLifecycle.swift",
-                     "ios/faBolus/Data/TandemBackend.swift"] {
+        for file in [
+            "ios/faBolus/Data/App/PumpConnectionLifecycle.swift",
+            "ios/faBolus/Data/TandemBackend.swift"
+        ] {
             literals += Self.literals(assignedTo: "connectionDetail", in: try Self.source(file))
         }
-        #expect(!literals.isEmpty,
-                "scan found no curated `connectionDetail = \"…\"` literals — the source path or extractor broke")
+        #expect(
+            !literals.isEmpty,
+            "scan found no curated `connectionDetail = \"…\"` literals — the source path or extractor broke")
         for literal in literals {
-            #expect(!Self.looksRawConnection(literal),
-                    "curated connectionDetail copy \"\(literal)\" is rewritten by StatusRingView.humanized — it must pass through unchanged")
+            #expect(
+                !Self.looksRawConnection(literal),
+                "curated connectionDetail copy \"\(literal)\" is rewritten by StatusRingView.humanized — it must pass through unchanged"
+            )
         }
     }
 }

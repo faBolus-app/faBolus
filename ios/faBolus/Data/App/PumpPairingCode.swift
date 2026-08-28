@@ -12,8 +12,8 @@ import TandemAuth
 enum PumpPairingCode {
     /// True when `code` is a usable pump pairing code (a valid 6-digit OR a valid 16-char code).
     static func isValid(_ code: String) -> Bool {
-        (try? PairingAuth.processPairingCode(code, type: .short6Char)) != nil ||
-        (try? PairingAuth.processPairingCode(code, type: .long16Char)) != nil
+        (try? PairingAuth.processPairingCode(code, type: .short6Char)) != nil
+            || (try? PairingAuth.processPairingCode(code, type: .long16Char)) != nil
     }
 
     /// The pairing scheme the app will use for `code` (`.short6Char` JPAKE vs `.long16Char` legacy V1).

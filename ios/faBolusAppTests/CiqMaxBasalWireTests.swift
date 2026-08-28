@@ -115,7 +115,7 @@ import faBolusCore
     @MainActor
     @Test func absentMaxBasalUnitsPerHourOnTheWireKeepsTheSafeNilDefault() {
         let m = RemoteCommandWireFixture(link: FakeLink())
-        let cmd = RemoteCommand(kind: .statusRead)   // maxBasalUnitsPerHour never set ⇒ nil
+        let cmd = RemoteCommand(kind: .statusRead)  // maxBasalUnitsPerHour never set ⇒ nil
         m.handle(cmd)
         #expect(m.maxBasalUnitsPerHour == nil)
         #expect(m.maxBasalReadout == nil)
@@ -139,7 +139,7 @@ import faBolusCore
         #expect(m.maxBasalUnitsPerHour == 1.60)
         #expect(m.maxBasalReadout != nil)
 
-        let cmdCleared = RemoteCommand(kind: .statusRead)   // maxBasalUnitsPerHour absent ⇒ cleared
+        let cmdCleared = RemoteCommand(kind: .statusRead)  // maxBasalUnitsPerHour absent ⇒ cleared
         m.handle(cmdCleared)
         #expect(m.maxBasalUnitsPerHour == nil)
         #expect(m.maxBasalReadout == nil)

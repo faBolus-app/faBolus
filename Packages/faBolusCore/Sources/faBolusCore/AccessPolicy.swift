@@ -13,20 +13,26 @@ public enum AccessPolicy {
     /// Where an action originates. Determines which read-only flag applies and whether the child-lock
     /// bypass (an authenticated peer that passed its per-peer policy) is available.
     public enum Surface: String, CaseIterable, Sendable {
-        case phoneUI, quickBolusWidget, siriShortcuts      // local (this phone)
-        case garmin                                        // paired remote governed by remotesReadOnly + child
-        case macPeer, caregiverPhonePeer                   // authenticated peers (per-peer policy)
+        case phoneUI, quickBolusWidget, siriShortcuts  // local (this phone)
+        case garmin  // paired remote governed by remotesReadOnly + child
+        case macPeer, caregiverPhonePeer  // authenticated peers (per-peer policy)
 
         /// Local surfaces are subject to `phoneReadOnly`.
         public var isLocal: Bool {
-            switch self { case .phoneUI, .quickBolusWidget, .siriShortcuts: return true; default: return false }
+            switch self {
+            case .phoneUI, .quickBolusWidget, .siriShortcuts: return true
+            default: return false
+            }
         }
         /// Any non-local surface is a remote and is subject to `remotesReadOnly`.
         public var isRemote: Bool { !isLocal }
         /// Authenticated peers carry a per-peer `RemotePeerPolicy` and bypass child-mode (they are a
         /// separately-authenticated controller) — exactly the old `enforceChildLock: false` path.
         public var isAuthenticatedPeer: Bool {
-            switch self { case .macPeer, .caregiverPhonePeer: return true; default: return false }
+            switch self {
+            case .macPeer, .caregiverPhonePeer: return true
+            default: return false
+            }
         }
     }
 
@@ -84,19 +90,21 @@ public enum AccessPolicy {
         public var bolusPasscodeRequired: Bool
         public var bolusPasscodeSatisfied: Bool
 
-        public init(childModeEnabled: Bool, childAllowed: Set<ChildFeature>,
-                    phoneReadOnly: Bool, remotesReadOnly: Bool,
-                    advancedControlOptIn: Bool, capabilities: PumpCapabilities,
-                    hasRecentUnverifiedAck: Bool, peerPolicy: RemotePeerPolicy? = nil,
-                    modeContext: ModeGateContext = .init(),
-                    // Fail-closed default (§2.3): a caller that forgets to thread the per-surface remote
-                    // bolus enable must NOT silently arm Garmin bolusing. The one production call site
-                    // (AppModel) always passes the real persisted value; this default only guards a future
-                    // second call site.
-                    garminBolusEnabled: Bool = false,
-                    // Fail-closed defaults: `required=false` (no passcode ⇒ no extra gate, today's
-                    // behavior) but `satisfied=false`, so a required-but-unsatisfied pair always denies.
-                    bolusPasscodeRequired: Bool = false, bolusPasscodeSatisfied: Bool = false) {
+        public init(
+            childModeEnabled: Bool, childAllowed: Set<ChildFeature>,
+            phoneReadOnly: Bool, remotesReadOnly: Bool,
+            advancedControlOptIn: Bool, capabilities: PumpCapabilities,
+            hasRecentUnverifiedAck: Bool, peerPolicy: RemotePeerPolicy? = nil,
+            modeContext: ModeGateContext = .init(),
+            // Fail-closed default (§2.3): a caller that forgets to thread the per-surface remote
+            // bolus enable must NOT silently arm Garmin bolusing. The one production call site
+            // (AppModel) always passes the real persisted value; this default only guards a future
+            // second call site.
+            garminBolusEnabled: Bool = false,
+            // Fail-closed defaults: `required=false` (no passcode ⇒ no extra gate, today's
+            // behavior) but `satisfied=false`, so a required-but-unsatisfied pair always denies.
+            bolusPasscodeRequired: Bool = false, bolusPasscodeSatisfied: Bool = false
+        ) {
             self.childModeEnabled = childModeEnabled
             self.childAllowed = childAllowed
             self.phoneReadOnly = phoneReadOnly
@@ -120,31 +128,36 @@ public enum AccessPolicy {
         case remotesReadOnly
         case capabilityUnavailable
         case unverifiedAckRequired
-        case modeDisallowed(required: AppMode)   // P14: feature not in the active mode
-        case featureDisabledInMode               // P14: user turned this feature off within the mode
-        case remoteBolusDisabled                 // P15 §2.3: bolusing from this remote is turned off
-        case remoteBolusPasscodeRequired         // Garmin bolus needs the correct passcode
+        case modeDisallowed(required: AppMode)  // P14: feature not in the active mode
+        case featureDisabledInMode  // P14: user turned this feature off within the mode
+        case remoteBolusDisabled  // P15 §2.3: bolusing from this remote is turned off
+        case remoteBolusPasscodeRequired  // Garmin bolus needs the correct passcode
 
         public var userMessage: String {
             switch self {
-            case .notPermittedForPeer:  return "Not permitted for this remote."
-            case .childLocked(let f):   return "Locked (child mode): \(f.label.lowercased()) is disabled."
-            case .phoneReadOnly:        return "This action is disabled — the app is in read-only mode."
-            case .remotesReadOnly:      return "Remote control is turned off — remotes are read-only."
+            case .notPermittedForPeer: return "Not permitted for this remote."
+            case .childLocked(let f): return "Locked (child mode): \(f.label.lowercased()) is disabled."
+            case .phoneReadOnly: return "This action is disabled — the app is in read-only mode."
+            case .remotesReadOnly: return "Remote control is turned off — remotes are read-only."
             case .capabilityUnavailable: return "This pump doesn't support that action, or advanced control is off."
             case .unverifiedAckRequired: return "This needs the untested-feature warning acknowledged first."
             case .modeDisallowed(let m): return "Not available in your current mode — needs \(m.title) mode."
             case .featureDisabledInMode: return "This feature is turned off in your settings."
-            case .remoteBolusDisabled:  return "Bolusing from this device is turned off — enable it in faBolus on the phone."
-            case .remoteBolusPasscodeRequired: return "Enter the bolus passcode set in faBolus on your phone to bolus from this device."
+            case .remoteBolusDisabled:
+                return "Bolusing from this device is turned off — enable it in faBolus on the phone."
+            case .remoteBolusPasscodeRequired:
+                return "Enter the bolus passcode set in faBolus on your phone to bolus from this device."
             }
         }
     }
 
     public struct AccessDecision: Sendable, Equatable {
         public let allowed: Bool
-        public let reason: DenialReason?   // nil ⇔ allowed
-        public init(allowed: Bool, reason: DenialReason?) { self.allowed = allowed; self.reason = reason }
+        public let reason: DenialReason?  // nil ⇔ allowed
+        public init(allowed: Bool, reason: DenialReason?) {
+            self.allowed = allowed
+            self.reason = reason
+        }
         public static let allow = AccessDecision(allowed: true, reason: nil)
         public static func deny(_ r: DenialReason) -> AccessDecision { .init(allowed: false, reason: r) }
     }
@@ -152,13 +165,16 @@ public enum AccessPolicy {
     /// The single decision. **Fail-closed**: any gate that isn't satisfied denies; a peer with no verb for
     /// the action, or a context missing a required grant, is denied. Ordering reproduces today's precedence
     /// and messages.
-    public static func evaluate(_ action: GatedPumpWrite,
-                                surface: Surface,
-                                context: AccessContext) -> AccessDecision {
+    public static func evaluate(
+        _ action: GatedPumpWrite,
+        surface: Surface,
+        context: AccessContext
+    ) -> AccessDecision {
         // Gate 4 — per-peer permission (authenticated peers only). No verb for this action ⇒ fail closed.
         if surface.isAuthenticatedPeer {
             guard let perm = action.requiredPeerPermission,
-                  context.peerPolicy?.allows(perm) == true else {
+                context.peerPolicy?.allows(perm) == true
+            else {
                 return .deny(.notPermittedForPeer)
             }
         }
@@ -200,7 +216,8 @@ public enum AccessPolicy {
         // unaffected (`required` defaults false). Ordered after the enable gate so "bolusing off" still
         // takes precedence over "needs a passcode".
         if (action == .deliverBolus || action == .deliverExtendedBolus) && surface == .garmin
-            && context.bolusPasscodeRequired && !context.bolusPasscodeSatisfied {
+            && context.bolusPasscodeRequired && !context.bolusPasscodeSatisfied
+        {
             return .deny(.remoteBolusPasscodeRequired)
         }
 

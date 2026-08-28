@@ -158,7 +158,7 @@ import TandemMessages
     @MainActor
     @Test func absentHistoryMarkerFieldsOnTheWireKeepTheSafeNilDefault() {
         let m = RemoteCommandWireFixture(link: FakeLink())
-        let cmd = RemoteCommand(kind: .statusRead)   // marker fields never set ⇒ nil
+        let cmd = RemoteCommand(kind: .statusRead)  // marker fields never set ⇒ nil
         m.handle(cmd)
         #expect(m.lastAutoCorrectionDate == nil)
         #expect(m.ciqLastCouldNotDeliverDate == nil)
@@ -178,7 +178,7 @@ import TandemMessages
         #expect(m.lastAutoCorrectionDate == Date(timeIntervalSince1970: TimeInterval(epoch)))
         #expect(m.ciqLastCouldNotDeliverDate == Date(timeIntervalSince1970: TimeInterval(epoch)))
 
-        let cmdWithoutMarker = RemoteCommand(kind: .statusRead)   // fields absent this time
+        let cmdWithoutMarker = RemoteCommand(kind: .statusRead)  // fields absent this time
         m.handle(cmdWithoutMarker)
         #expect(m.lastAutoCorrectionDate == Date(timeIntervalSince1970: TimeInterval(epoch)))
         #expect(m.ciqLastCouldNotDeliverDate == Date(timeIntervalSince1970: TimeInterval(epoch)))

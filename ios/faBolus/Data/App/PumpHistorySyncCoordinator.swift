@@ -59,12 +59,12 @@ final class PumpHistorySyncCoordinator {
     /// gap window (recorded from the received records in `appendHistoryStreamFrame`, not the request
     /// cursor). `creditCurrentWindow()` credits ONLY the top-anchored contiguous received sub-range.
     private var receivedSeqsThisWindow: Set<UInt32> = []
-    private var backfillNextEnd: UInt32 = 0     // upper sequence number for the next page within currentGapWindow
-    private var backfillFirstSeq: UInt32 = 0    // lower bound of currentGapWindow
+    private var backfillNextEnd: UInt32 = 0  // upper sequence number for the next page within currentGapWindow
+    private var backfillFirstSeq: UInt32 = 0  // lower bound of currentGapWindow
     private var backfillPages = 0
     private var backfillTimer: Timer?
-    private static let backfillPageSize = 255   // numberOfLogs is one byte
-    private static let backfillMaxPages = 20    // safety cap (~5100 records total, across every window)
+    private static let backfillPageSize = 255  // numberOfLogs is one byte
+    private static let backfillMaxPages = 20  // safety cap (~5100 records total, across every window)
 
     // MARK: - R18: pure gap computation (unit-testable, no BLE)
 
@@ -74,8 +74,10 @@ final class PumpHistorySyncCoordinator {
     /// trailing FORWARD gap (records the pump logged during a disconnect) and any INTERIOR/non-sequential
     /// holes. Generalizes cleanly over any number of held ranges — subtracts each held range from the
     /// running remainder in turn.
-    static func missingRanges(pumpFirst: UInt32, pumpLast: UInt32, retentionFloor: UInt32,
-                              held: [ClosedRange<UInt32>]) -> [ClosedRange<UInt32>] {
+    static func missingRanges(
+        pumpFirst: UInt32, pumpLast: UInt32, retentionFloor: UInt32,
+        held: [ClosedRange<UInt32>]
+    ) -> [ClosedRange<UInt32>] {
         let lower = max(pumpFirst, retentionFloor)
         guard lower <= pumpLast else { return [] }
         var missing: [ClosedRange<UInt32>] = [lower...pumpLast]
@@ -108,8 +110,9 @@ final class PumpHistorySyncCoordinator {
     /// case calls this (via `TandemBackend`'s injected `beginGapSync` closure) whenever `m.numEntries > 0`.
     func beginGapSync(pumpFirst: UInt32, pumpLast: UInt32) {
         let held = AppSettings.shared.historyCoverage.ranges
-        let floor = Self.retentionFloorSequence(pumpFirst: pumpFirst, pumpLast: pumpLast,
-                                                retentionDays: AppSettings.shared.historyRetentionDays)
+        let floor = Self.retentionFloorSequence(
+            pumpFirst: pumpFirst, pumpLast: pumpLast,
+            retentionDays: AppSettings.shared.historyRetentionDays)
         let windows = Self.missingRanges(pumpFirst: pumpFirst, pumpLast: pumpLast, retentionFloor: floor, held: held)
         guard !windows.isEmpty else {
             // D-05: already fully synced against the pump's reported range — a check that confirms
@@ -124,7 +127,7 @@ final class PumpHistorySyncCoordinator {
         backfillBuffer.removeAll(keepingCapacity: true)
         backfillBoluses.removeAll(keepingCapacity: true)
         backfillEventLogs.removeAll(keepingCapacity: true)
-        receivedSeqsThisWindow.removeAll(keepingCapacity: true)   // WR-03: clean slate at the start of each sync
+        receivedSeqsThisWindow.removeAll(keepingCapacity: true)  // WR-03: clean slate at the start of each sync
         backfillPages = 0
         pendingGapWindows = windows
         advanceToNextGapWindow()
@@ -134,11 +137,12 @@ final class PumpHistorySyncCoordinator {
     /// empty or the safety cap (T-09.7-02) has already been reached.
     private func advanceToNextGapWindow() {
         guard !pendingGapWindows.isEmpty, backfillPages < Self.backfillMaxPages else {
-            finishBackfill(); return
+            finishBackfill()
+            return
         }
         let window = pendingGapWindows.removeFirst()
         currentGapWindow = window
-        receivedSeqsThisWindow.removeAll(keepingCapacity: true)   // WR-03: fresh per-window received-sequence accumulator
+        receivedSeqsThisWindow.removeAll(keepingCapacity: true)  // WR-03: fresh per-window received-sequence accumulator
         backfillFirstSeq = window.lowerBound
         backfillNextEnd = window.upperBound
         requestBackfillPage()
@@ -149,15 +153,19 @@ final class PumpHistorySyncCoordinator {
     /// 2), just driven by the gap-window queue instead of one unconditional range.
     private func requestBackfillPage() {
         guard backfillNextEnd >= backfillFirstSeq, backfillPages < Self.backfillMaxPages else {
-            creditCurrentWindowAndAdvance(); return
+            creditCurrentWindowAndAdvance()
+            return
         }
         let available = backfillNextEnd - backfillFirstSeq + 1
         let count = min(UInt32(Self.backfillPageSize), available)
-        guard count > 0 else { creditCurrentWindowAndAdvance(); return }
+        guard count > 0 else {
+            creditCurrentWindowAndAdvance()
+            return
+        }
         let startLog = backfillNextEnd - (count - 1)
         backfillPages += 1
         send(HistoryLogRequest(startLog: startLog, numberOfLogs: Int(count)))
-        backfillNextEnd = startLog > 0 ? startLog - 1 : 0   // next (older) page within this window
+        backfillNextEnd = startLog > 0 ? startLog - 1 : 0  // next (older) page within this window
         scheduleBackfillTick()
     }
 
@@ -220,11 +228,15 @@ final class PumpHistorySyncCoordinator {
     /// map, exactly like a safety-cap trip.
     func cancelHistorySync() {
         guard backfillActive else { return }
-        backfillTimer?.invalidate(); backfillTimer = nil
+        backfillTimer?.invalidate()
+        backfillTimer = nil
         creditCurrentWindow()
         backfillActive = false
-        pendingGapWindows.removeAll(); currentGapWindow = nil
-        backfillBuffer.removeAll(); backfillBoluses.removeAll(); backfillEventLogs.removeAll()
+        pendingGapWindows.removeAll()
+        currentGapWindow = nil
+        backfillBuffer.removeAll()
+        backfillBoluses.removeAll()
+        backfillEventLogs.removeAll()
         setHistorySyncState(.paused)
         onChange()
     }
@@ -235,10 +247,14 @@ final class PumpHistorySyncCoordinator {
     /// no-op when no backfill is active, mirroring `cancelHistorySync`'s guard shape.
     func abortWithSyncError(_ message: String) {
         guard backfillActive else { return }
-        backfillTimer?.invalidate(); backfillTimer = nil
+        backfillTimer?.invalidate()
+        backfillTimer = nil
         backfillActive = false
-        pendingGapWindows.removeAll(); currentGapWindow = nil
-        backfillBuffer.removeAll(); backfillBoluses.removeAll(); backfillEventLogs.removeAll()
+        pendingGapWindows.removeAll()
+        currentGapWindow = nil
+        backfillBuffer.removeAll()
+        backfillBoluses.removeAll()
+        backfillEventLogs.removeAll()
         setHistorySyncState(.error(message))
         onChange()
     }
@@ -252,9 +268,13 @@ final class PumpHistorySyncCoordinator {
         // never a red error. `.syncing` is the only in-progress state this can interrupt.
         if case .syncing = historySyncState() { setHistorySyncState(.paused) }
         backfillActive = false
-        backfillTimer?.invalidate(); backfillTimer = nil
-        backfillBuffer.removeAll(); backfillBoluses.removeAll(); backfillEventLogs.removeAll()
-        pendingGapWindows.removeAll(); currentGapWindow = nil
+        backfillTimer?.invalidate()
+        backfillTimer = nil
+        backfillBuffer.removeAll()
+        backfillBoluses.removeAll()
+        backfillEventLogs.removeAll()
+        pendingGapWindows.removeAll()
+        currentGapWindow = nil
     }
 
     /// Called by `PumpResponseApplier`'s `HistoryLogStreamResponse` case (via `TandemBackend`'s injected
@@ -273,7 +293,7 @@ final class PumpHistorySyncCoordinator {
         if let window = currentGapWindow {
             for e in m.events where window.contains(e.sequenceNum) { receivedSeqsThisWindow.insert(e.sequenceNum) }
         }
-        scheduleBackfillTick()   // debounce: page ends when frames stop arriving
+        scheduleBackfillTick()  // debounce: page ends when frames stop arriving
     }
 
     /// Merge the buffered CGM history into the chart. Places each reading at its TRUE pump-clock
@@ -281,21 +301,28 @@ final class PumpHistorySyncCoordinator {
     /// it aligns with the correct live `Date()`-stamped readings — no "anchor newest to now",
     /// which previously shifted older data forward onto the present.
     private func finishBackfill() {
-        backfillTimer?.invalidate(); backfillTimer = nil
+        backfillTimer?.invalidate()
+        backfillTimer = nil
         backfillActive = false
-        pendingGapWindows.removeAll(); currentGapWindow = nil
-        defer { backfillBuffer.removeAll(keepingCapacity: false); backfillBoluses.removeAll(keepingCapacity: false) }
+        pendingGapWindows.removeAll()
+        currentGapWindow = nil
+        defer {
+            backfillBuffer.removeAll(keepingCapacity: false)
+            backfillBoluses.removeAll(keepingCapacity: false)
+        }
         let now = Date()
         // VA-18: the pump logs time as local WALL-CLOCK (the clock reading shown on its face), so each
         // record must be placed using the UTC offset in effect at THAT record's own instant — not a single
         // offset captured today.
         #if DEBUG
-        let pumpTZ = historyBackfillTimeZoneForTesting ?? TimeZone.current   // VA-18 test seam (nil ⇒ TimeZone.current)
+        let pumpTZ = historyBackfillTimeZoneForTesting ?? TimeZone.current  // VA-18 test seam (nil ⇒ TimeZone.current)
         #else
         let pumpTZ = TimeZone.current
         #endif
-        var utcCal = Calendar(identifier: .gregorian); utcCal.timeZone = TimeZone(identifier: "UTC")!
-        var zoneCal = Calendar(identifier: .gregorian); zoneCal.timeZone = pumpTZ
+        var utcCal = Calendar(identifier: .gregorian)
+        utcCal.timeZone = TimeZone(identifier: "UTC")!
+        var zoneCal = Calendar(identifier: .gregorian)
+        zoneCal.timeZone = pumpTZ
         // CX-F-05 (review-sharpened, HIGH x2): FAILABLE — an un-synced pump clock, west travel, or a
         // forced-read failure can re-anchor a record's naive wall-clock components into an instant more
         // than `GlucoseFreshness.futureSkewTolerance` (5 min) beyond `now`. Reject, never clamp-to-now.
@@ -311,7 +338,7 @@ final class PumpHistorySyncCoordinator {
             withGlucoseHistory { history in
                 var merged = history
                 for b in backfillBuffer {
-                    guard let date = pumpDate(b.pumpSec) else { continue }   // CX-F-05: drop, never clamp
+                    guard let date = pumpDate(b.pumpSec) else { continue }  // CX-F-05: drop, never clamp
                     merged.append(GlucoseReading(date: date, mgdl: b.mgdl))
                 }
                 merged.sort { $0.date < $1.date }
@@ -338,13 +365,14 @@ final class PumpHistorySyncCoordinator {
                     let existingBolus = Set(markers.map { $0.date.timeIntervalSince1970.rounded() })
                     var existingIOB = Set(iob.map { $0.date.timeIntervalSince1970.rounded() })
                     for b in backfillBoluses {
-                        guard let date = pumpDate(b.pumpSec) else { continue }   // CX-F-05: drop, never clamp
+                        guard let date = pumpDate(b.pumpSec) else { continue }  // CX-F-05: drop, never clamp
                         let key = date.timeIntervalSince1970.rounded()
                         if !existingBolus.contains(key) {
                             markers.append(BolusMarker(date: date, units: b.units))
                         }
                         if b.iob > 0, !existingIOB.contains(key) {
-                            iob.append(IOBSample(date: date, iob: b.iob)); existingIOB.insert(key)
+                            iob.append(IOBSample(date: date, iob: b.iob))
+                            existingIOB.insert(key)
                         }
                     }
                     markers.sort { $0.date < $1.date }
@@ -364,10 +392,12 @@ final class PumpHistorySyncCoordinator {
                     // CX-F-05: drop, never clamp — a future-anchored event is dropped BEFORE `neutralEvent`
                     // (which takes a concrete, non-optional `Date`), consistent with the other loops.
                     guard !seen.contains(e.sequenceNum), let date = pumpDate(e.pumpTimeSec),
-                          let ne = Self.neutralEvent(e, date: date) else { continue }
-                    seen.insert(e.sequenceNum); events.append(ne)
+                        let ne = Self.neutralEvent(e, date: date)
+                    else { continue }
+                    seen.insert(e.sequenceNum)
+                    events.append(ne)
                 }
-                events.sort { $0.date > $1.date }          // newest first
+                events.sort { $0.date > $1.date }  // newest first
                 if events.count > 500 { events.removeLast(events.count - 500) }
                 finalEvents = events
             }
@@ -411,7 +441,8 @@ final class PumpHistorySyncCoordinator {
         }
         switch e {
         case let m as BolusCompletedHistoryLog:
-            return HistoryEvent(id: seq, date: date, category: .bolus, title: "Bolus delivered", detail: u(m.insulinDelivered))
+            return HistoryEvent(
+                id: seq, date: date, category: .bolus, title: "Bolus delivered", detail: u(m.insulinDelivered))
         case let m as BolusDeliveryHistoryLog where m.bolusSource == 7:
             // Phase 09.15 T1-3 (D-01, D-06 guardrail #4) — (b) pump-communicated fact:
             // `BolusDeliveryHistoryLog` already decodes `bolusSource`; `bolusSource == 7` marks a
@@ -419,9 +450,12 @@ final class PumpHistorySyncCoordinator {
             // surfaced into `PumpSnapshot.lastAutoCorrectionDate` above.
             return HistoryEvent(id: seq, date: date, category: .autoCorrection, title: "Control-IQ auto-corrected")
         case let m as BolexCompletedHistoryLog:
-            return HistoryEvent(id: seq, date: date, category: .bolus, title: "Extended bolus", detail: u(m.insulinDelivered))
+            return HistoryEvent(
+                id: seq, date: date, category: .bolus, title: "Extended bolus", detail: u(m.insulinDelivered))
         case let m as CarbEnteredHistoryLog:
-            return HistoryEvent(id: seq, date: date, category: .carbs, title: "Carbs entered", detail: String(format: "%.0f g", m.carbs))
+            return HistoryEvent(
+                id: seq, date: date, category: .carbs, title: "Carbs entered", detail: String(format: "%.0f g", m.carbs)
+            )
         case let m as BGHistoryLog:
             // WR-02 gap closure (04-07): the Logbook tab is a mainline surface, not debug-only —
             // route through the display-unit funnel like every other glucose display.
@@ -429,9 +463,13 @@ final class PumpHistorySyncCoordinator {
             let bgStr = "\(bgUnit.format(mgdl: m.bg)) \(bgUnit == .mmol ? "mmol/L" : "mg/dL")"
             return HistoryEvent(id: seq, date: date, category: .bg, title: "BG entered", detail: bgStr)
         case let m as BasalRateChangeHistoryLog:
-            return HistoryEvent(id: seq, date: date, category: .basal, title: "Basal rate change", detail: u(m.commandBasalRate) + "/hr")
+            return HistoryEvent(
+                id: seq, date: date, category: .basal, title: "Basal rate change", detail: u(m.commandBasalRate) + "/hr"
+            )
         case let m as TempRateActivatedHistoryLog:
-            return HistoryEvent(id: seq, date: date, category: .tempRate, title: "Temp rate started", detail: String(format: "%.0f%%", m.percent))
+            return HistoryEvent(
+                id: seq, date: date, category: .tempRate, title: "Temp rate started",
+                detail: String(format: "%.0f%%", m.percent))
         case is TempRateCompletedHistoryLog:
             return HistoryEvent(id: seq, date: date, category: .tempRate, title: "Temp rate ended")
         case is AaAutoBolusRejectedHistoryLog, is CorrectionDeclinedHistoryLog:
@@ -439,14 +477,18 @@ final class PumpHistorySyncCoordinator {
             // registered in `HistoryLogParser` but previously dropped here. Never speculates WHY
             // (D-06 guardrail #6). The latest instant is surfaced into
             // `PumpSnapshot.ciqLastCouldNotDeliverDate` above.
-            return HistoryEvent(id: seq, date: date, category: .couldNotDeliver,
-                                 title: "Control-IQ tried and couldn't deliver an automatic correction")
+            return HistoryEvent(
+                id: seq, date: date, category: .couldNotDeliver,
+                title: "Control-IQ tried and couldn't deliver an automatic correction")
         case let m as PumpingSuspendedHistoryLog:
-            return HistoryEvent(id: seq, date: date, category: .pumping, title: "Insulin suspended", detail: m.reasonId == 0 ? "" : "reason \(m.reasonId)")
+            return HistoryEvent(
+                id: seq, date: date, category: .pumping, title: "Insulin suspended",
+                detail: m.reasonId == 0 ? "" : "reason \(m.reasonId)")
         case is PumpingResumedHistoryLog:
             return HistoryEvent(id: seq, date: date, category: .pumping, title: "Insulin resumed")
         case let m as CartridgeFilledHistoryLog:
-            return HistoryEvent(id: seq, date: date, category: .cartridge, title: "Cartridge filled", detail: u(m.insulinActual))
+            return HistoryEvent(
+                id: seq, date: date, category: .cartridge, title: "Cartridge filled", detail: u(m.insulinActual))
         case is CannulaFilledHistoryLog:
             return HistoryEvent(id: seq, date: date, category: .cartridge, title: "Cannula filled")
         case is TubingFilledHistoryLog:
@@ -473,9 +515,10 @@ final class PumpHistorySyncCoordinator {
             let n = cgmAlertName(m.alertId)
             return HistoryEvent(id: seq, date: date, category: .alert, title: n.0, detail: n.1)
         case let m as ReminderActivatedHistoryLog:
-            return HistoryEvent(id: seq, date: date, category: .reminder, title: "Reminder", detail: "id \(m.reminderId)")
+            return HistoryEvent(
+                id: seq, date: date, category: .reminder, title: "Reminder", detail: "id \(m.reminderId)")
         default:
-            return nil   // skip unmapped / high-frequency records (e.g. CGM samples shown on the chart)
+            return nil  // skip unmapped / high-frequency records (e.g. CGM samples shown on the chart)
         }
     }
 }

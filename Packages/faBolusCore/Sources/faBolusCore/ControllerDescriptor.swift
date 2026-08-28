@@ -54,10 +54,12 @@ public struct ControllerDescriptor: Sendable, Equatable {
     /// ceiling on that modulation.
     public var basalModulation: BasalModulation
 
-    public init(variant: ControllerVariant, displayName: String,
-                automaticCorrection: AutomaticCorrection, activityPresets: [ActivityPreset],
-                drivingParameters: [TherapyParameter], targetsUserAdjustable: Bool,
-                basalModulation: BasalModulation) {
+    public init(
+        variant: ControllerVariant, displayName: String,
+        automaticCorrection: AutomaticCorrection, activityPresets: [ActivityPreset],
+        drivingParameters: [TherapyParameter], targetsUserAdjustable: Bool,
+        basalModulation: BasalModulation
+    ) {
         self.variant = variant
         self.displayName = displayName
         self.automaticCorrection = automaticCorrection
@@ -76,8 +78,8 @@ public struct ControllerDescriptor: Sendable, Equatable {
     /// own bits to what its controller does, so every future consumer reads it instead of re-deriving.
     public static func `for`(_ variant: ControllerVariant) -> ControllerDescriptor {
         switch variant {
-        case .none:         return .noController
-        case .controlIQ:    return .controlIQ
+        case .none: return .noController
+        case .controlIQ: return .controlIQ
         case .controlIQPro: return .controlIQPlus
         }
     }
@@ -100,8 +102,10 @@ public struct AutomaticCorrection: Sendable, Equatable {
     /// this long, which is exactly what the stacking-guard temp-rate alternative (Addendum A) works around.
     public var blockedByRecentBolusMinutes: Int?
 
-    public init(enabled: Bool, deliveredFraction: Double? = nil, targetMgdl: Double? = nil,
-                minIntervalMinutes: Int? = nil, blockedByRecentBolusMinutes: Int? = nil) {
+    public init(
+        enabled: Bool, deliveredFraction: Double? = nil, targetMgdl: Double? = nil,
+        minIntervalMinutes: Int? = nil, blockedByRecentBolusMinutes: Int? = nil
+    ) {
         self.enabled = enabled
         self.deliveredFraction = deliveredFraction
         self.targetMgdl = targetMgdl
@@ -129,8 +133,10 @@ public struct ActivityPreset: Sendable, Equatable, Identifiable {
     /// during Sleep; Control-IQ+ keeps them on.
     public var automaticCorrectionEnabled: Bool
 
-    public init(name: String, targetLowMgdl: Double, targetHighMgdl: Double,
-                suspendThresholdMgdl: Double? = nil, automaticCorrectionEnabled: Bool) {
+    public init(
+        name: String, targetLowMgdl: Double, targetHighMgdl: Double,
+        suspendThresholdMgdl: Double? = nil, automaticCorrectionEnabled: Bool
+    ) {
         self.name = name
         self.targetLowMgdl = targetLowMgdl
         self.targetHighMgdl = targetHighMgdl
@@ -163,12 +169,12 @@ public enum TherapyParameter: String, Sendable, Equatable, CaseIterable {
     /// Short human label for disclosure UI.
     public var label: String {
         switch self {
-        case .basalProfile:         return "Basal profile"
-        case .carbRatio:            return "Carb ratio"
-        case .correctionFactor:     return "Correction factor"
-        case .targetGlucose:        return "Glucose target"
-        case .bodyWeight:           return "Body weight"
-        case .totalDailyInsulin:    return "Total daily insulin"
+        case .basalProfile: return "Basal profile"
+        case .carbRatio: return "Carb ratio"
+        case .correctionFactor: return "Correction factor"
+        case .targetGlucose: return "Glucose target"
+        case .bodyWeight: return "Body weight"
+        case .totalDailyInsulin: return "Total daily insulin"
         case .adaptiveBasalLearning: return "Adaptive basal (learned)"
         }
     }
@@ -208,15 +214,17 @@ public extension ControllerDescriptor {
             minIntervalMinutes: 60, blockedByRecentBolusMinutes: 60),
         activityPresets: [
             // Sleep: tighter target band, and classic Control-IQ delivers NO automatic corrections here.
-            ActivityPreset(name: "Sleep", targetLowMgdl: 112.5, targetHighMgdl: 120,
-                           automaticCorrectionEnabled: false),
+            ActivityPreset(
+                name: "Sleep", targetLowMgdl: 112.5, targetHighMgdl: 120,
+                automaticCorrectionEnabled: false),
             // Exercise: higher target band and a raised suspension threshold.
-            ActivityPreset(name: "Exercise", targetLowMgdl: 140, targetHighMgdl: 160,
-                           suspendThresholdMgdl: 79, automaticCorrectionEnabled: false),
+            ActivityPreset(
+                name: "Exercise", targetLowMgdl: 140, targetHighMgdl: 160,
+                suspendThresholdMgdl: 79, automaticCorrectionEnabled: false)
         ],
         // Control-IQ is seeded by body weight + total daily insulin on top of the programmed profile.
         drivingParameters: [.basalProfile, .carbRatio, .correctionFactor, .bodyWeight, .totalDailyInsulin],
-        targetsUserAdjustable: false,   // Control-IQ's target is fixed and internal — not user-settable.
+        targetsUserAdjustable: false,  // Control-IQ's target is fixed and internal — not user-settable.
         basalModulation: .relativeToProfile(maxMultiple: nil))
 
     /// **Control-IQ+** (Mobi, and t:slim X2 on newer software). Identical to classic Control-IQ except it
@@ -230,10 +238,12 @@ public extension ControllerDescriptor {
             minIntervalMinutes: 60, blockedByRecentBolusMinutes: 60),
         activityPresets: [
             // Sleep on Control-IQ+ keeps automatic corrections ON (the discriminator's clinical meaning).
-            ActivityPreset(name: "Sleep", targetLowMgdl: 112.5, targetHighMgdl: 120,
-                           automaticCorrectionEnabled: true),
-            ActivityPreset(name: "Exercise", targetLowMgdl: 140, targetHighMgdl: 160,
-                           suspendThresholdMgdl: 79, automaticCorrectionEnabled: false),
+            ActivityPreset(
+                name: "Sleep", targetLowMgdl: 112.5, targetHighMgdl: 120,
+                automaticCorrectionEnabled: true),
+            ActivityPreset(
+                name: "Exercise", targetLowMgdl: 140, targetHighMgdl: 160,
+                suspendThresholdMgdl: 79, automaticCorrectionEnabled: false)
         ],
         drivingParameters: [.basalProfile, .carbRatio, .correctionFactor, .bodyWeight, .totalDailyInsulin],
         targetsUserAdjustable: false,

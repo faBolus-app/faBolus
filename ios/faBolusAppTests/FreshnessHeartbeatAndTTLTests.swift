@@ -47,13 +47,15 @@ import faBolusCore
         let ttl = WidgetSnapshot.connectionStaleAfter
 
         // Host killed: sample taken 30 s ago (fresh), but the last publish is well past the TTL.
-        let hostKilled = WidgetSnapshot(glucose: 120, glucoseDate: now.addingTimeInterval(-30),
-                                        connected: true, updatedAt: now.addingTimeInterval(-(ttl + 60)))
-        #expect(hostKilled.isConnectionStale(asOf: now))       // off updatedAt (>6 min), NOT glucoseDate (30 s)
+        let hostKilled = WidgetSnapshot(
+            glucose: 120, glucoseDate: now.addingTimeInterval(-30),
+            connected: true, updatedAt: now.addingTimeInterval(-(ttl + 60)))
+        #expect(hostKilled.isConnectionStale(asOf: now))  // off updatedAt (>6 min), NOT glucoseDate (30 s)
 
         // A live host that just published: same recent sample, but a fresh `updatedAt` → connection-fresh.
-        let live = WidgetSnapshot(glucose: 120, glucoseDate: now.addingTimeInterval(-30),
-                                  connected: true, updatedAt: now)
+        let live = WidgetSnapshot(
+            glucose: 120, glucoseDate: now.addingTimeInterval(-30),
+            connected: true, updatedAt: now)
         #expect(!live.isConnectionStale(asOf: now))
     }
 
@@ -66,12 +68,14 @@ import faBolusCore
         let ttl = WidgetSnapshot.connectionStaleAfter
 
         // Just inside the window → still fresh.
-        let justFresh = WidgetSnapshot(glucose: 120, connected: true,
-                                       updatedAt: now.addingTimeInterval(-(ttl - 5)))
+        let justFresh = WidgetSnapshot(
+            glucose: 120, connected: true,
+            updatedAt: now.addingTimeInterval(-(ttl - 5)))
         #expect(!justFresh.isConnectionStale(asOf: now))
         // Just past the window → stale.
-        let justStale = WidgetSnapshot(glucose: 120, connected: true,
-                                       updatedAt: now.addingTimeInterval(-(ttl + 5)))
+        let justStale = WidgetSnapshot(
+            glucose: 120, connected: true,
+            updatedAt: now.addingTimeInterval(-(ttl + 5)))
         #expect(justStale.isConnectionStale(asOf: now))
     }
 
@@ -88,17 +92,19 @@ import faBolusCore
         let now = Date()
         let ttl = WidgetSnapshot.connectionStaleAfter
 
-        let stale = WidgetSnapshot(glucose: 120, glucoseDate: now.addingTimeInterval(-30),
-                                   connected: true, updatedAt: now.addingTimeInterval(-(ttl + 60)))
+        let stale = WidgetSnapshot(
+            glucose: 120, glucoseDate: now.addingTimeInterval(-30),
+            connected: true, updatedAt: now.addingTimeInterval(-(ttl + 60)))
         // QuickBolusView.isConnected
-        #expect(!(stale.connected && !stale.isConnectionStale(asOf: now)))   // pad disabled despite connected==true
+        #expect(!(stale.connected && !stale.isConnectionStale(asOf: now)))  // pad disabled despite connected==true
         // StatusWidgetView.connectionStale
-        #expect(stale.isConnectionStale(asOf: now))                          // dateless metrics grey to "--"
+        #expect(stale.isConnectionStale(asOf: now))  // dateless metrics grey to "--"
 
-        let fresh = WidgetSnapshot(glucose: 120, glucoseDate: now.addingTimeInterval(-30),
-                                   connected: true, updatedAt: now)
-        #expect(fresh.connected && !fresh.isConnectionStale(asOf: now))      // pad enabled
-        #expect(!fresh.isConnectionStale(asOf: now))                         // metrics shown
+        let fresh = WidgetSnapshot(
+            glucose: 120, glucoseDate: now.addingTimeInterval(-30),
+            connected: true, updatedAt: now)
+        #expect(fresh.connected && !fresh.isConnectionStale(asOf: now))  // pad enabled
+        #expect(!fresh.isConnectionStale(asOf: now))  // metrics shown
     }
 
     // MARK: - WR-01/WR-02: the heartbeat/foreground refresh path (real seam, best-effort)
@@ -123,7 +129,7 @@ import faBolusCore
 
         // Previously fresh: a live reading arrives → refresh sees fresh (freshness edge false→true = clear).
         backend.seedFreshGlucose(120, at: Date())
-        #expect(posted.filter { $0.category == .cgmDataLoss }.isEmpty)   // no loss while fresh
+        #expect(posted.filter { $0.category == .cgmDataLoss }.isEmpty)  // no loss while fresh
 
         // Feed goes stale (a reading dated an hour ago): the fresh→stale edge raises exactly one loss.
         backend.seedFreshGlucose(120, at: Date().addingTimeInterval(-3600))
@@ -151,7 +157,7 @@ import faBolusCore
     @Test func heartbeatRefreshPathIsSafeAndSilentOnAColdDisconnectedModel() {
         let backend = MockBackend()
         let model = AppModel(source: backend, ledgerStoreURL: tempLedgerURL())
-        #expect(model.snapshot.connection == .disconnected)   // precondition: cold pump-only launch
+        #expect(model.snapshot.connection == .disconnected)  // precondition: cold pump-only launch
 
         var posted: [NotificationBroker.Message] = []
         model.notificationSink = { msg, _, _ in posted.append(msg) }
@@ -159,8 +165,8 @@ import faBolusCore
         model.publicRefresh()
         model.publicRefresh()
 
-        #expect(posted.filter { $0.category == .cgmDataLoss }.isEmpty)    // no data-loss (never was fresh)
-        #expect(posted.filter { $0.category == .pumpDisconnect }.isEmpty) // cold-down is not a drop
-        #expect(model.snapshot.connection == .disconnected)              // no BLE connect attempt issued
+        #expect(posted.filter { $0.category == .cgmDataLoss }.isEmpty)  // no data-loss (never was fresh)
+        #expect(posted.filter { $0.category == .pumpDisconnect }.isEmpty)  // cold-down is not a drop
+        #expect(model.snapshot.connection == .disconnected)  // no BLE connect attempt issued
     }
 }

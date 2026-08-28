@@ -47,7 +47,7 @@ import faBolusCore
         m.controllerVariant = .controlIQ
         m.controlIQEnabled = true
         var cmd = RemoteCommand(kind: .statusRead)
-        cmd.lockoutUntilEpochSec = Int(Date().timeIntervalSince1970) + 1800   // 30 min from now
+        cmd.lockoutUntilEpochSec = Int(Date().timeIntervalSince1970) + 1800  // 30 min from now
         cmd.ciqLockoutCountdownEnabled = false
         m.handle(cmd)
         #expect(m.lockoutUntilDate == nil)
@@ -71,7 +71,7 @@ import faBolusCore
     @Test func sleepExerciseFieldsLeakedWhileToggleOffAreSuppressedOnTheClient() {
         let m = RemoteCommandWireFixture(link: FakeLink())
         var cmd = RemoteCommand(kind: .statusRead)
-        cmd.controlIQMode = 2   // Exercise
+        cmd.controlIQMode = 2  // Exercise
         cmd.exerciseTimeRemainingSec = 900
         cmd.inSleepWindow = false
         cmd.ciqSleepExerciseAwarenessEnabled = false
@@ -102,7 +102,7 @@ import faBolusCore
     @MainActor
     @Test func legacyCommandWithMirrorKeysAbsentDefaultsToSafeBehaviorPerFeature() {
         let m = RemoteCommandWireFixture(link: FakeLink())
-        var cmd = RemoteCommand(kind: .statusRead)   // predates this plan: every mirror key absent
+        var cmd = RemoteCommand(kind: .statusRead)  // predates this plan: every mirror key absent
         cmd.ciqZone = ControlIQZone.increases.rawValue
         cmd.lockoutUntilEpochSec = Int(Date().timeIntervalSince1970) + 1800
         cmd.maxBasalUnitsPerHour = 4.0

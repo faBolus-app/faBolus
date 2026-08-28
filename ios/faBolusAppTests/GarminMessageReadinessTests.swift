@@ -42,19 +42,19 @@ struct GarminMessageReadinessTests {
     /// must NOT re-arm — messaging stays gated until characteristics are re-discovered.
     @Test func reconnectRequiresRediscoveryToRearm() {
         var r = GarminMessageReadiness()
-        r.characteristicsDiscovered()                 // ready
-        r.deviceStatusChanged(isConnected: false)     // link dropped → cleared
+        r.characteristicsDiscovered()  // ready
+        r.deviceStatusChanged(isConnected: false)  // link dropped → cleared
         #expect(r.canSend == false)
-        r.deviceStatusChanged(isConnected: true)      // reconnected transport, but NOT re-discovered
+        r.deviceStatusChanged(isConnected: true)  // reconnected transport, but NOT re-discovered
         #expect(r.canSend == false, "a reconnect must not re-arm readiness without a fresh discovery")
-        r.characteristicsDiscovered()                 // re-discovered
+        r.characteristicsDiscovered()  // re-discovered
         #expect(r.canSend == true)
     }
 
     @Test func connectedStatusWhileReadyLeavesReadyIntact() {
         var r = GarminMessageReadiness()
         r.characteristicsDiscovered()
-        r.deviceStatusChanged(isConnected: true)      // benign status refresh while already ready
+        r.deviceStatusChanged(isConnected: true)  // benign status refresh while already ready
         #expect(r.canSend == true)
     }
 }

@@ -21,8 +21,10 @@ enum CgmTestOutcome: Equatable {
     /// The pure Test-flow decision (change 3, D-13 UX) — kept pure and unit-testable, like
     /// `CgmCredentialsView.sourcesToTest` (`CgmSourceValidationTests`). See the case docs above for
     /// the priority order.
-    static func testOutcome(latest: GlucoseSample?, status: GlucoseSourceStatus,
-                             elapsed: TimeInterval, timeout: TimeInterval) -> CgmTestOutcome {
+    static func testOutcome(
+        latest: GlucoseSample?, status: GlucoseSourceStatus,
+        elapsed: TimeInterval, timeout: TimeInterval
+    ) -> CgmTestOutcome {
         if let latest { return .success(latest) }
         if case let .error(msg) = status { return .timeout(detail: msg) }
         if elapsed >= timeout { return .timeout(detail: nil) }

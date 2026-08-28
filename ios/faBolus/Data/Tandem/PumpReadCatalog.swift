@@ -52,7 +52,7 @@ enum PumpReadCatalog {
         CGMAlertStatusRequest.props.opCode: "CGM alerts",
         ReminderStatusRequest.props.opCode: "Reminders",
         MalfunctionStatusRequest.props.opCode: "Malfunctions",
-        CGMStatusRequest.props.opCode: "CGM session status",
+        CGMStatusRequest.props.opCode: "CGM session status"
     ]
 
     /// The set of read opcodes the app sends (derived from `readNamesByOpcode`).
@@ -76,7 +76,7 @@ enum PumpReadCatalog {
         SetModesRequest.props.opCode,
         EnterChangeCartridgeModeRequest.props.opCode,
         EnterFillTubingModeRequest.props.opCode,
-        FillCannulaRequest.props.opCode,
+        FillCannulaRequest.props.opCode
     ]
 
     /// Guardrail A: the delivery/control-WRITE opcodes that must NEVER be recorded in the read-only
@@ -112,7 +112,7 @@ enum PumpReadCatalog {
     /// than silently going quiet (CONTEXT.md "Q. CX-F-04").
     static let safetyRelevantReadOpcodes: Set<UInt8> = [
         LoadStatusRequest.props.opCode,
-        CGMAlertStatusRequest.props.opCode,
+        CGMAlertStatusRequest.props.opCode
     ]
 
     /// R2-10: the dose-input READ opcodes that feed the bolus calculator — op108 `ControlIQIOBRequest`
@@ -123,7 +123,7 @@ enum PumpReadCatalog {
     /// re-probed each connect (`startPolling`), and disclosed when currently unavailable (below).
     static let doseInputReadOpcodes: Set<UInt8> = [
         ControlIQIOBRequest.props.opCode,
-        BolusCalcDataSnapshotRequest.props.opCode,
+        BolusCalcDataSnapshotRequest.props.opCode
     ]
 
     /// CX-F-04: the CGM/pump-alert READ opcodes `PumpReadScheduler.alertRead()` sends as ONE unthrottled
@@ -149,7 +149,7 @@ enum PumpReadCatalog {
         AlarmStatusRequest.props.opCode,
         CGMAlertStatusRequest.props.opCode,
         ReminderStatusRequest.props.opCode,
-        MalfunctionStatusRequest.props.opCode,
+        MalfunctionStatusRequest.props.opCode
     ]
 
     /// One user-facing safety-degraded note per excluded safety-relevant read (transparency 4b). Empty when
@@ -164,8 +164,10 @@ enum PumpReadCatalog {
         // wrong here. The bolus calculator simply fail-closes and will not recommend a dose. Disclose that
         // explicitly, distinct from the op20 pre-guard note.
         for op in excludedOpcodes.intersection(doseInputReadOpcodes).sorted() {
-            notes.append("\(readName(for: op)) (op-\(op)) is unavailable on this pump — "
-                + "the bolus calculator can't confirm active insulin/therapy settings and will not recommend a dose.")
+            notes.append(
+                "\(readName(for: op)) (op-\(op)) is unavailable on this pump — "
+                    + "the bolus calculator can't confirm active insulin/therapy settings and will not recommend a dose."
+            )
         }
         return notes
     }

@@ -39,7 +39,7 @@ struct TandemBackendRawSnapshotTests {
     /// proof-of-absence oracle's whole reason to exist.
     @Test func rawActiveNotificationsRetainsALocallySnoozedAlertThatActiveNotificationsOmits() async throws {
         let fake = FakePumpTransport()
-        let b = TandemBackend(testTransport: fake)   // default isMobi=false ⇒ t:slim-like
+        let b = TandemBackend(testTransport: fake)  // default isMobi=false ⇒ t:slim-like
         b.injectStatusFrameForTesting(FakePumpTransport.alertStatusBitmap(1 << 5))
         let alert = try #require(b.activeNotifications.first(where: { $0.id == 5 }))
 
@@ -49,10 +49,12 @@ struct TandemBackendRawSnapshotTests {
         // Re-poll the SAME bitmap — the pump still reports the alert as active on its own bitmap.
         b.injectStatusFrameForTesting(FakePumpTransport.alertStatusBitmap(1 << 5))
 
-        #expect(!b.activeNotifications.contains(where: { $0.id == 5 }),
-                "the filtered list must OMIT a locally-snoozed alert (local-snooze IS a real filter)")
-        #expect(b.rawActiveNotifications?.contains(where: { $0.id == 5 }) == true,
-                "the RAW set must STILL CONTAIN it — local-snooze is not proof the pump cleared it")
+        #expect(
+            !b.activeNotifications.contains(where: { $0.id == 5 }),
+            "the filtered list must OMIT a locally-snoozed alert (local-snooze IS a real filter)")
+        #expect(
+            b.rawActiveNotifications?.contains(where: { $0.id == 5 }) == true,
+            "the RAW set must STILL CONTAIN it — local-snooze is not proof the pump cleared it")
     }
 
     /// When nothing is acknowledged, the raw set and the filtered set are identical (by identity).

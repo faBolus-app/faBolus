@@ -24,9 +24,9 @@ struct StackingGuardDisclosureHiddenBoundaryTests {
     /// Resolve the repo root by walking up from this file's own `#filePath`.
     private static var repoRoot: URL {
         URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()   // drop the filename → .../ios/faBolusAppTests
-            .deletingLastPathComponent()   // → .../ios
-            .deletingLastPathComponent()   // → repo root
+            .deletingLastPathComponent()  // drop the filename → .../ios/faBolusAppTests
+            .deletingLastPathComponent()  // → .../ios
+            .deletingLastPathComponent()  // → repo root
     }
 
     private static var bolusEntryViewSource: String {
@@ -83,24 +83,29 @@ struct StackingGuardDisclosureHiddenBoundaryTests {
     // against the checked-in source (RED against pre-Plan-2 main, GREEN once this task's edits land)
 
     @Test func sourceCompiles() {
-        #expect(!Self.bolusEntryViewSource.isEmpty,
-                "could not read BolusEntryView.swift at the resolved repo-root path — check #filePath resolution")
+        #expect(
+            !Self.bolusEntryViewSource.isEmpty,
+            "could not read BolusEntryView.swift at the resolved repo-root path — check #filePath resolution")
     }
 
     @Test func rankedWarningsCallSiteNoLongerPassesLiveSGDisclosureMessages() {
         let source = Self.bolusEntryViewSource
-        #expect(!source.contains("sg2Message: sg2Disclosure?.message"),
-                "the rankedWarnings call must not pass sg2Disclosure's live message (LOCK-06)")
-        #expect(!source.contains("sg1Message: sg1Disclosure?.message"),
-                "the rankedWarnings call must not pass sg1Disclosure's live message (LOCK-06)")
-        #expect(!source.contains("sg3aMessage: sg3aDisclosure?.message"),
-                "the rankedWarnings call must not pass sg3aDisclosure's live message (LOCK-06)")
+        #expect(
+            !source.contains("sg2Message: sg2Disclosure?.message"),
+            "the rankedWarnings call must not pass sg2Disclosure's live message (LOCK-06)")
+        #expect(
+            !source.contains("sg1Message: sg1Disclosure?.message"),
+            "the rankedWarnings call must not pass sg1Disclosure's live message (LOCK-06)")
+        #expect(
+            !source.contains("sg3aMessage: sg3aDisclosure?.message"),
+            "the rankedWarnings call must not pass sg3aDisclosure's live message (LOCK-06)")
     }
 
     @Test func confirmMessageNoLongerAppendsTheSG3aDisclosureMessage() {
         let source = Self.bolusEntryViewSource
-        #expect(!source.contains("let sg3a = sg3aDisclosure, let message = sg3a.message"),
-                "confirmMessage must not append the SG3a disclosure message (LOCK-06, the separate SG3a render site)")
+        #expect(
+            !source.contains("let sg3a = sg3aDisclosure, let message = sg3a.message"),
+            "confirmMessage must not append the SG3a disclosure message (LOCK-06, the separate SG3a render site)")
     }
 
     @Test func sg3aDisclosureComputationAndFrictionRoutingAreUntouched() {

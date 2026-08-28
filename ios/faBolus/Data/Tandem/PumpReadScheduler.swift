@@ -100,7 +100,9 @@ final class PumpReadScheduler {
         // SEVENTH fix cycle: never (re-)send an opcode the pump has already rejected with
         // ErrorResponse this connection-lifetime — see `badOpcodes`'s doc comment.
         guard !badOpcodes.contains(opcode) else {
-            Self.pairingLog.log("read send → \(typeName, privacy: .public) opcode=\(opcode, privacy: .public) result=skipped (previously rejected by pump)")
+            Self.pairingLog.log(
+                "read send → \(typeName, privacy: .public) opcode=\(opcode, privacy: .public) result=skipped (previously rejected by pump)"
+            )
             #if DEBUG
             onReadSkippedForTesting?(typeName, opcode)
             #endif
@@ -109,7 +111,8 @@ final class PumpReadScheduler {
         var sent = false
         do {
             let txId = try send(message)
-            Self.pairingLog.log("read send → \(typeName, privacy: .public) opcode=\(opcode, privacy: .public) result=sent")
+            Self.pairingLog.log(
+                "read send → \(typeName, privacy: .public) opcode=\(opcode, privacy: .public) result=sent")
             // Mechanism B (debug pump-pairing-loop-api25): remember this read's wire txId so an
             // opcode-less op77 `ErrorResponse` (real 2-byte currentStatus cargo `[0,0]` on this
             // API-2.5 t:slim X2) can be correlated back to the read that provoked it — see
@@ -118,7 +121,8 @@ final class PumpReadScheduler {
             recordOutstandingRead(txId: txId, opcode: opcode)
             sent = true
         } catch {
-            Self.pairingLog.log("read send → \(typeName, privacy: .public) opcode=\(opcode, privacy: .public) result=threw")
+            Self.pairingLog.log(
+                "read send → \(typeName, privacy: .public) opcode=\(opcode, privacy: .public) result=threw")
         }
         #if DEBUG
         onReadDispatchedForTesting?(typeName, opcode)
@@ -220,7 +224,8 @@ final class PumpReadScheduler {
         // reads, but the union bypasses `insertBadOpcode`'s guard, so mirror it here). NOT persisted: this is
         // authoritative-per-identity, re-derived each connect, kept distinct from the learned store.
         let id = pumpIdentityForStaticExclusion()
-        let staticExclusions = PumpKnownUnsupportedReads
+        let staticExclusions =
+            PumpKnownUnsupportedReads
             .unsupportedReadOpcodes(isMobi: id.isMobi, softwareVersion: id.softwareVersion)
             .subtracting(PumpReadCatalog.deliveryControlWriteOpcodes)
         badOpcodes.formUnion(staticExclusions)
@@ -279,14 +284,14 @@ final class PumpReadScheduler {
         if named != 0 {
             resolved = named
         } else if let byTxId = outstandingReads.last(where: { $0.txId == txId })?.opcode {
-            resolved = byTxId                                   // PRIMARY: the pump echoes the request txId in frame[1]
+            resolved = byTxId  // PRIMARY: the pump echoes the request txId in frame[1]
         } else if outstandingReads.count == 1, let only = outstandingReads.first?.opcode {
-            resolved = only                                    // unambiguous: exactly one read outstanding (no guess)
+            resolved = only  // unambiguous: exactly one read outstanding (no guess)
         } else {
-            resolved = 0                                       // WR-02: FAIL CLOSED — never guess the oldest
+            resolved = 0  // WR-02: FAIL CLOSED — never guess the oldest
         }
         if resolved != 0 {
-            insertBadOpcode(resolved)   // in-memory never-resend skip + durable per-pump persist (refinement)
+            insertBadOpcode(resolved)  // in-memory never-resend skip + durable per-pump persist (refinement)
             outstandingReads.removeAll { $0.opcode == resolved }
         }
         return resolved
@@ -381,7 +386,7 @@ final class PumpReadScheduler {
         guard isConnected() else { return }
         await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
             glucoseWaiters.append(cont)
-            if glucoseReadInFlight { return }   // join the in-flight read
+            if glucoseReadInFlight { return }  // join the in-flight read
             glucoseReadInFlight = true
             glucoseReadGeneration &+= 1
             let gen = glucoseReadGeneration
@@ -441,7 +446,7 @@ final class PumpReadScheduler {
         guard isConnected() else { return false }
         return await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
             calcInputWaiters.append(cont)
-            if calcInputReadInFlight { return }   // join the in-flight read; resumed with its result
+            if calcInputReadInFlight { return }  // join the in-flight read; resumed with its result
             calcInputReadInFlight = true
             calcInputGotIob = false
             calcInputGotTherapy = false
@@ -545,9 +550,11 @@ final class PumpReadScheduler {
     /// The fast tier's exact ordered read list (single source of truth for both the recurring `fastRead()`
     /// and the deferred identity-gated dispatch in `runIdentityGatedReadsOnce()`).
     private func fastReadMessages() -> [Message] {
-        [ControlIQIOBRequest(), CurrentEGVGuiDataRequest(),
-         InsulinStatusRequest(), LastBolusStatusV2Request(), CurrentBatteryV2Request(),
-         HomeScreenMirrorRequest(), LoadStatusRequest()]
+        [
+            ControlIQIOBRequest(), CurrentEGVGuiDataRequest(),
+            InsulinStatusRequest(), LastBolusStatusV2Request(), CurrentBatteryV2Request(),
+            HomeScreenMirrorRequest(), LoadStatusRequest()
+        ]
     }
 
     /// - Parameter includingIdentityGatedReads: when `false` (the pre-version burst inside `startPolling()`),
@@ -560,7 +567,10 @@ final class PumpReadScheduler {
     private func fastRead(includingIdentityGatedReads: Bool = true) {
         for r in fastReadMessages() {
             if !includingIdentityGatedReads,
-               PumpKnownUnsupportedReads.identityGatedReadOpcodes.contains(r.opCode) { continue }
+                PumpKnownUnsupportedReads.identityGatedReadOpcodes.contains(r.opCode)
+            {
+                continue
+            }
             sendStatusRead(r)
         }
     }
@@ -576,8 +586,10 @@ final class PumpReadScheduler {
     /// original 5. The static `PumpKnownUnsupportedReads` {op120,op146} entries + the TandemKit op120
     /// minApi floor stay as harmless belt-and-suspenders backstops if AAM is ever re-added.
     func alertRead() {
-        for r: Message in [AlertStatusRequest(), AlarmStatusRequest(), CGMAlertStatusRequest(),
-                           ReminderStatusRequest(), MalfunctionStatusRequest()] {
+        for r: Message in [
+            AlertStatusRequest(), AlarmStatusRequest(), CGMAlertStatusRequest(),
+            ReminderStatusRequest(), MalfunctionStatusRequest()
+        ] {
             sendStatusRead(r)
         }
     }
@@ -588,9 +600,11 @@ final class PumpReadScheduler {
         // PumpFeaturesV1Request (op 78→79) is an unsigned empty current-status read — same shape as
         // ApiVersionRequest — so it rides the same send path here, behind auth by construction
         // (staticRead only runs after pairing, via startPolling). Its reply feeds `capabilities` (P13).
-        for r: Message in [CurrentBasalStatusRequest(), BolusCalcDataSnapshotRequest(), TimeSinceResetRequest(),
-                           ApiVersionRequest(), PumpFeaturesV1Request(), ControlIQInfoV2Request(),
-                           BasalLimitSettingsRequest()] {
+        for r: Message in [
+            CurrentBasalStatusRequest(), BolusCalcDataSnapshotRequest(), TimeSinceResetRequest(),
+            ApiVersionRequest(), PumpFeaturesV1Request(), ControlIQInfoV2Request(),
+            BasalLimitSettingsRequest()
+        ] {
             sendStatusRead(r)
         }
     }
@@ -617,8 +631,8 @@ final class PumpReadScheduler {
     func cgmReadingDate(pumpSec: UInt32, now: Date) -> Date? {
         guard pumpSec > 0, let a = pumpTimeAnchor() else { return nil }
         let candidate = a.phone.addingTimeInterval(Double(Int64(pumpSec) - Int64(a.pump)))
-        if candidate > now.addingTimeInterval(60) { return nil }            // future → untrusted
-        if now.timeIntervalSince(candidate) > 24 * 60 * 60 { return nil }   // absurd past → untrusted
+        if candidate > now.addingTimeInterval(60) { return nil }  // future → untrusted
+        if now.timeIntervalSince(candidate) > 24 * 60 * 60 { return nil }  // absurd past → untrusted
         return candidate
     }
 
@@ -629,7 +643,8 @@ final class PumpReadScheduler {
     /// `applyEgvReading` itself).
     func schedulePredictiveBurst(afterReadingAt readingDate: Date) {
         guard predictivePollingEnabled else { return }
-        predictivePollTimer?.invalidate(); predictivePollTimer = nil
+        predictivePollTimer?.invalidate()
+        predictivePollTimer = nil
         let expected = readingDate.addingTimeInterval(Self.cgmIntervalSec)
         predictiveBurstDeadline = expected.addingTimeInterval(Self.predictiveWindowSec)
         let delay = max(1, expected.addingTimeInterval(-Self.predictiveLeadSec).timeIntervalSinceNow)
@@ -639,18 +654,23 @@ final class PumpReadScheduler {
     }
 
     private func runPredictiveBurst() {
-        predictivePollTimer?.invalidate(); predictivePollTimer = nil
+        predictivePollTimer?.invalidate()
+        predictivePollTimer = nil
         // Skip while a bolus is delivering (that path already fast-polls) or when disconnected.
         guard predictivePollingEnabled, isConnected() else { return }
         // SEVENTH fix cycle: both sends use `CurrentEGVGuiDataRequest` (V1, op34), never the V2
         // request — see `fastRead()`'s doc comment. `sendStatusRead` still applies the `badOpcodes`
         // guard here too, as a backstop for any OTHER read the pump ever rejects.
         sendStatusRead(CurrentEGVGuiDataRequest())
-        predictivePollTimer = Timer.scheduledTimer(withTimeInterval: Self.predictivePollEverySec, repeats: true) { [weak self] _ in
+        predictivePollTimer = Timer.scheduledTimer(withTimeInterval: Self.predictivePollEverySec, repeats: true) {
+            [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, self.isConnected(),
-                      let deadline = self.predictiveBurstDeadline, Date() < deadline else {
-                    self?.predictivePollTimer?.invalidate(); self?.predictivePollTimer = nil; return
+                    let deadline = self.predictiveBurstDeadline, Date() < deadline
+                else {
+                    self?.predictivePollTimer?.invalidate()
+                    self?.predictivePollTimer = nil
+                    return
                 }
                 self.sendStatusRead(CurrentEGVGuiDataRequest())
             }
@@ -666,9 +686,9 @@ final class PumpReadScheduler {
     /// `firePollTimerTickForTesting()` below — without waiting on a live 15s-repeating `Timer`.
     private func recurringPollTick() {
         pollTick += 1
-        scheduleAlertRead()                            // ~15 s
-        if pollTick % 4 == 0 { fastRead() }             // ~60 s
-        if pollTick % 40 == 0 { staticRead() }          // ~10 min
+        scheduleAlertRead()  // ~15 s
+        if pollTick % 4 == 0 { fastRead() }  // ~60 s
+        if pollTick % 40 == 0 { staticRead() }  // ~10 min
     }
 
     func startPolling() {
@@ -721,12 +741,14 @@ final class PumpReadScheduler {
         // op33 `ApiVersionResponse` identifies the pump, so a KNOWN-bad combo suppresses it before the first
         // send (owner req #2: gated fast reads go out AFTER the bootstrap version responses, never before).
         // The bootstrap-trio-first invariant is preserved (the trio is still sent first, synchronously).
-        fastRead(includingIdentityGatedReads: false); staticRead()
+        fastRead(includingIdentityGatedReads: false)
+        staticRead()
         scheduleAlertRead()
         pollTick = 0
         pollTimer?.invalidate()
-        predictivePollTimer?.invalidate(); predictivePollTimer = nil
-        onStartPollingCycleBegin()   // resets TandemBackend's lastCgmPumpSec = 0
+        predictivePollTimer?.invalidate()
+        predictivePollTimer = nil
+        onStartPollingCycleBegin()  // resets TandemBackend's lastCgmPumpSec = 0
         // Tick every 15 s: alerts every tick (~15 s, so a new alert appears quickly on phone +
         // watch), the fuller fast-read every 4th tick (~60 s), settings every ~10 min. Alert
         // reads are cheap empty-cargo requests, so the tighter cadence barely affects battery.
@@ -804,12 +826,17 @@ final class PumpReadScheduler {
     /// `TandemBackend.linkDroppedCleanup()`: the link is genuinely down and NOT always immediately
     /// followed by `startPolling()`, so — unlike `pausePollingForDelivery()` — the reference must be
     /// cleared too, or a stale invalidated `Timer` instance would sit in `pollTimer` indefinitely.
-    func invalidatePollTimerOnDisconnect() { pollTimer?.invalidate(); pollTimer = nil }
+    func invalidatePollTimerOnDisconnect() {
+        pollTimer?.invalidate()
+        pollTimer = nil
+    }
 
     /// `TandemBackend.disconnect()` / the `*ForTesting` seams below: stop BOTH timers entirely.
     func stopAllTimers() {
-        pollTimer?.invalidate(); pollTimer = nil
-        predictivePollTimer?.invalidate(); predictivePollTimer = nil
+        pollTimer?.invalidate()
+        pollTimer = nil
+        predictivePollTimer?.invalidate()
+        predictivePollTimer = nil
     }
 
     /// CR-01/CR-02 (R2-01/R2-05): advance the poll-cycle generation WITHOUT arming a new cycle. Called from
@@ -853,7 +880,8 @@ final class PumpReadScheduler {
     /// still stopped here (unrelated to this fix; same hygiene reason `startPollingForTesting()` stops it).
     func startPollingLeavingPollTimerRunningForTesting() {
         startPolling()
-        predictivePollTimer?.invalidate(); predictivePollTimer = nil
+        predictivePollTimer?.invalidate()
+        predictivePollTimer = nil
     }
     /// Test accessor: whether `pollTimer` currently holds a live (non-nil) `Timer`.
     var pollTimerIsActiveForTesting: Bool { pollTimer != nil }

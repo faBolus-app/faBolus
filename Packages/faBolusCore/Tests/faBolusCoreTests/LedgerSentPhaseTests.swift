@@ -74,9 +74,9 @@ final class LedgerSentPhaseTests: XCTestCase {
     /// upgrade. Hand-authored JSON, because that is exactly what an older build left on disk.
     func testLegacyRecordWithAnIdButNoPhaseFieldStillBlocks() throws {
         let json = """
-        {"cap":64,"order":["watch\\u001flegacy1"],
-         "entries":{"watch\\u001flegacy1":{"doseKey":"u:2","state":"delivering","bolusId":5150}}}
-        """
+            {"cap":64,"order":["watch\\u001flegacy1"],
+             "entries":{"watch\\u001flegacy1":{"doseKey":"u:2","state":"delivering","bolusId":5150}}}
+            """
         let l = try JSONDecoder().decode(RemoteBolusLedger.self, from: Data(json.utf8))
         let u = l.unreconciled()
         XCTAssertEqual(u.count, 1)
@@ -88,9 +88,9 @@ final class LedgerSentPhaseTests: XCTestCase {
     /// user behind a permanent block for a bolus that was never sent.
     func testLegacyRecordWithNoIdRemainsAutoClearable() throws {
         let json = """
-        {"cap":64,"order":["local\\u001flegacy2"],
-         "entries":{"local\\u001flegacy2":{"doseKey":"u:1","state":"delivering"}}}
-        """
+            {"cap":64,"order":["local\\u001flegacy2"],
+             "entries":{"local\\u001flegacy2":{"doseKey":"u:1","state":"delivering"}}}
+            """
         let l = try JSONDecoder().decode(RemoteBolusLedger.self, from: Data(json.utf8))
         let u = l.unreconciled()
         XCTAssertEqual(u.count, 1)

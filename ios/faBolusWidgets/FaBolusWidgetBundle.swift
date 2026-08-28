@@ -9,10 +9,10 @@ import faBolusDesign
 @main
 struct FaBolusWidgetBundle: WidgetBundle {
     var body: some Widget {
-        GlucoseWidget()   // BG + trend (Lock Screen + Home Screen small)
-        StatusWidget()    // Overview (Home Screen medium)
-        BolusWidget()     // Tap-to-bolus shortcut (deep-links into the app)
-        QuickBolusWidget() // Preset bolus with a 1-2-3 confirm (delivers via the app)
+        GlucoseWidget()  // BG + trend (Lock Screen + Home Screen small)
+        StatusWidget()  // Overview (Home Screen medium)
+        BolusWidget()  // Tap-to-bolus shortcut (deep-links into the app)
+        QuickBolusWidget()  // Preset bolus with a 1-2-3 confirm (delivers via the app)
     }
 }
 

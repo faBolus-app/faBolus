@@ -15,9 +15,11 @@ enum WidgetPublisher {
     /// racing sibling test. `staleAfterSec`/`hideAfterSec` are passed in (from `GlucoseFreshness` at the
     /// call site) so the test can pin them deterministically.
     @MainActor
-    static func makeSnapshot(_ s: PumpSnapshot, history: [GlucoseReading], alerts: [String],
-                             staleAfterSec: TimeInterval, hideAfterSec: TimeInterval?,
-                             hasSnoozeEligibleAlert: Bool = false) -> WidgetSnapshot {
+    static func makeSnapshot(
+        _ s: PumpSnapshot, history: [GlucoseReading], alerts: [String],
+        staleAfterSec: TimeInterval, hideAfterSec: TimeInterval?,
+        hasSnoozeEligibleAlert: Bool = false
+    ) -> WidgetSnapshot {
         // Phase 09.26-04 (D-14) — widened from 48 (~4h @ 5-min cadence) to 96 (~8h) so the App-Group
         // snapshot carries enough raw history for consumers that want a denser series (originally
         // added for the since-removed Live Activity's 6h plot-range option, Phase 7 07-01 FEAT-01).
@@ -28,7 +30,7 @@ enum WidgetPublisher {
         return WidgetSnapshot(
             glucose: s.glucose,
             glucoseDate: s.glucoseDate,
-            trendArrow: s.trend,          // Unicode arrow, same as the HUD
+            trendArrow: s.trend,  // Unicode arrow, same as the HUD
             iobUnits: s.iobUnits,
             reservoirUnits: s.reservoirUnits,
             batteryPercent: s.batteryPercent,
@@ -80,12 +82,15 @@ enum WidgetPublisher {
     }
 
     @MainActor
-    static func publish(_ s: PumpSnapshot, history: [GlucoseReading], alerts: [String] = [],
-                        bolusLocked: Bool = false, bolusLockReason: String = "",
-                        hasSnoozeEligibleAlert: Bool = false) {
-        let snap = makeSnapshot(s, history: history, alerts: alerts,
-                                staleAfterSec: GlucoseFreshness.staleAfter, hideAfterSec: GlucoseFreshness.hideAfter,
-                                hasSnoozeEligibleAlert: hasSnoozeEligibleAlert)
+    static func publish(
+        _ s: PumpSnapshot, history: [GlucoseReading], alerts: [String] = [],
+        bolusLocked: Bool = false, bolusLockReason: String = "",
+        hasSnoozeEligibleAlert: Bool = false
+    ) {
+        let snap = makeSnapshot(
+            s, history: history, alerts: alerts,
+            staleAfterSec: GlucoseFreshness.staleAfter, hideAfterSec: GlucoseFreshness.hideAfter,
+            hasSnoozeEligibleAlert: hasSnoozeEligibleAlert)
         WidgetStore.save(snap)
         // Phase 5 (D-13, 05-03) — the same choke point drives the opt-in app-icon badge. The opt-in
         // gate + freshness live inside GlucoseBadge, so this stays a thin call; the arbiter timer

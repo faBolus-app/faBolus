@@ -23,9 +23,9 @@ public enum NotificationBroker {
     /// categories that must reach the user regardless of settings/quiet-hours/rate-limit/budget.
     public enum Category: String, CaseIterable, Sendable, Codable {
         // The §6 never-disableable safety categories.
-        case pumpDisconnect          // the pump link dropped while it was connected/bolusing
-        case bolusReconciliation     // the AUTHORITATIVE result of a bolus, incl. a resolved indeterminate
-        case cgmDataLoss             // the app stopped receiving CGM data (distinct from a pump-raised CGM alert)
+        case pumpDisconnect  // the pump link dropped while it was connected/bolusing
+        case bolusReconciliation  // the AUTHORITATIVE result of a bolus, incl. a resolved indeterminate
+        case cgmDataLoss  // the app stopped receiving CGM data (distinct from a pump-raised CGM alert)
         /// tslim-reconnect-loop (Phase B, item 5): the pump link keeps FLAPPING — a bounded run of
         /// live→reconnecting re-pair/re-drop cycles the reconnect ladder folds to `.connecting`, so
         /// `SafetyEdge.connection` (and the muteable `pumpDisconnect` alert) stay silent through it. This
@@ -42,22 +42,23 @@ public enum NotificationBroker {
         /// snooze, quiet-hours, rate-limit, budget, or the `.cgmDataLoss` toggle.
         case urgentLowGlucose
         // Governed (suppressible) categories.
-        case pumpAlert               // a pump-raised alert/alarm/reminder surfaced as a notification
-        case remoteBolusRejected     // a remote-initiated bolus was REFUSED before delivery (policy / divergence / stale approval — never reached the pump)
-        case bolusDeliveryFailed     // a bolus that was ATTEMPTED-but-failed or BLOCKED and did NOT dose — distinct from an INDETERMINATE outcome, whose authoritative resolution the never-suppressible `bolusReconciliation` owns
+        case pumpAlert  // a pump-raised alert/alarm/reminder surfaced as a notification
+        case remoteBolusRejected  // a remote-initiated bolus was REFUSED before delivery (policy / divergence / stale approval — never reached the pump)
+        case bolusDeliveryFailed  // a bolus that was ATTEMPTED-but-failed or BLOCKED and did NOT dose — distinct from an INDETERMINATE outcome, whose authoritative resolution the never-suppressible `bolusReconciliation` owns
         /// REMED-17: an outcome we do not YET know — a point-in-time heads-up, immediate + GOVERNED
         /// (user-silenceable, honors quiet-hours/budget, does NOT break through DND — the owner's Gentle
         /// disposition). The AUTHORITATIVE resolution is `bolusReconciliation` (never-suppressible,
         /// durable, DND-breaking) — this category is never persisted and never replayed on relaunch.
         case bolusIndeterminate
-        case modeReminder            // an activity/sleep mode reminder
-        case mealReminder            // meal-timing reminders — the tightest defaults + their own sub-budget
+        case modeReminder  // an activity/sleep mode reminder
+        case mealReminder  // meal-timing reminders — the tightest defaults + their own sub-budget
 
         /// A safety category the user cannot turn off and that bypasses quiet-hours / rate-limit / budget.
         public var neverSuppressible: Bool {
             switch self {
             case .pumpDisconnect, .bolusReconciliation, .cgmDataLoss, .pumpConnectionUnstable,
-                 .urgentLowGlucose: return true
+                .urgentLowGlucose:
+                return true
             default: return false
             }
         }
@@ -99,17 +100,17 @@ public enum NotificationBroker {
 
         public var label: String {
             switch self {
-            case .pumpDisconnect:     return "Pump disconnected"
+            case .pumpDisconnect: return "Pump disconnected"
             case .bolusReconciliation: return "Bolus result"
-            case .cgmDataLoss:        return "CGM data loss"
+            case .cgmDataLoss: return "CGM data loss"
             case .pumpConnectionUnstable: return "Pump connection unstable"
-            case .urgentLowGlucose:   return "Urgent low glucose (backup CGM)"
-            case .pumpAlert:          return "Pump alerts"
+            case .urgentLowGlucose: return "Urgent low glucose (backup CGM)"
+            case .pumpAlert: return "Pump alerts"
             case .remoteBolusRejected: return "Remote bolus rejected"
             case .bolusDeliveryFailed: return "Bolus delivery failed"
             case .bolusIndeterminate: return "Bolus outcome unknown"
-            case .modeReminder:       return "Activity / sleep reminders"
-            case .mealReminder:       return "Meal reminders"
+            case .modeReminder: return "Activity / sleep reminders"
+            case .mealReminder: return "Meal reminders"
             }
         }
     }
@@ -142,11 +143,16 @@ public enum NotificationBroker {
         /// untyped `userInfo` (the Message doesn't carry one), so a caller populating this field is the
         /// only way a protected alert ID can influence urgency.
         public var safetyClass: AlertSafetyClass?
-        public init(category: Category, severity: Severity, title: String, body: String,
-                    dedupeKey: String, episodeKey: String? = nil, safetyClass: AlertSafetyClass? = nil) {
-            self.category = category; self.severity = severity
-            self.title = title; self.body = body
-            self.dedupeKey = dedupeKey; self.episodeKey = episodeKey ?? dedupeKey
+        public init(
+            category: Category, severity: Severity, title: String, body: String,
+            dedupeKey: String, episodeKey: String? = nil, safetyClass: AlertSafetyClass? = nil
+        ) {
+            self.category = category
+            self.severity = severity
+            self.title = title
+            self.body = body
+            self.dedupeKey = dedupeKey
+            self.episodeKey = episodeKey ?? dedupeKey
             self.safetyClass = safetyClass
         }
     }
@@ -184,9 +190,11 @@ public enum NotificationBroker {
         /// key decodes to `nil`, which reads as "not acknowledged" (safe). Consulted ONLY at the trio
         /// short-circuit in `decide()`, nowhere else.
         public var userAcknowledgedSafetyDisable: Bool?
-        public init(enabled: Bool, quietStartMinuteOfDay: Int = 0, quietEndMinuteOfDay: Int = 0,
-                    minIntervalSeconds: TimeInterval = 0, allowCriticalBreakthrough: Bool = true,
-                    userAcknowledgedSafetyDisable: Bool? = nil) {
+        public init(
+            enabled: Bool, quietStartMinuteOfDay: Int = 0, quietEndMinuteOfDay: Int = 0,
+            minIntervalSeconds: TimeInterval = 0, allowCriticalBreakthrough: Bool = true,
+            userAcknowledgedSafetyDisable: Bool? = nil
+        ) {
             self.enabled = enabled
             self.quietStartMinuteOfDay = quietStartMinuteOfDay
             self.quietEndMinuteOfDay = quietEndMinuteOfDay
@@ -214,7 +222,8 @@ public enum NotificationBroker {
         public var dailyTotal: Int
         public var dailyMeal: Int
         public init(dailyTotal: Int = 40, dailyMeal: Int = 6) {
-            self.dailyTotal = dailyTotal; self.dailyMeal = dailyMeal
+            self.dailyTotal = dailyTotal
+            self.dailyMeal = dailyMeal
         }
     }
 
@@ -224,8 +233,8 @@ public enum NotificationBroker {
     /// (rate-limit), the day's delivered counts (budget), and the episodes already notified. Pure data —
     /// the app persists it; `NotificationBroker` never mutates it in place, it returns the next state.
     public struct State: Sendable, Equatable, Codable {
-        public var lastDeliveredAt: [String: Date]   // keyed by Category.rawValue
-        public var dayKey: String                    // the calendar day the counters belong to
+        public var lastDeliveredAt: [String: Date]  // keyed by Category.rawValue
+        public var dayKey: String  // the calendar day the counters belong to
         public var deliveredToday: Int
         public var mealDeliveredToday: Int
         public var notifiedEpisodes: Set<String>
@@ -233,12 +242,17 @@ public enum NotificationBroker {
         /// already-persisted v1 blob (written before this field existed) still decodes — a missing key →
         /// `nil` → treated as no snooze, rather than failing the whole decode and dropping the day counters.
         public var snoozedUntil: [String: Date]?
-        public init(lastDeliveredAt: [String: Date] = [:], dayKey: String = "",
-                    deliveredToday: Int = 0, mealDeliveredToday: Int = 0,
-                    notifiedEpisodes: Set<String> = [], snoozedUntil: [String: Date]? = nil) {
-            self.lastDeliveredAt = lastDeliveredAt; self.dayKey = dayKey
-            self.deliveredToday = deliveredToday; self.mealDeliveredToday = mealDeliveredToday
-            self.notifiedEpisodes = notifiedEpisodes; self.snoozedUntil = snoozedUntil
+        public init(
+            lastDeliveredAt: [String: Date] = [:], dayKey: String = "",
+            deliveredToday: Int = 0, mealDeliveredToday: Int = 0,
+            notifiedEpisodes: Set<String> = [], snoozedUntil: [String: Date]? = nil
+        ) {
+            self.lastDeliveredAt = lastDeliveredAt
+            self.dayKey = dayKey
+            self.deliveredToday = deliveredToday
+            self.mealDeliveredToday = mealDeliveredToday
+            self.notifiedEpisodes = notifiedEpisodes
+            self.snoozedUntil = snoozedUntil
         }
     }
 
@@ -253,19 +267,22 @@ public enum NotificationBroker {
         public var dismissed: Int
         public var actedUpon: Int
         public init(delivered: Int = 0, dismissed: Int = 0, actedUpon: Int = 0) {
-            self.delivered = delivered; self.dismissed = dismissed; self.actedUpon = actedUpon
+            self.delivered = delivered
+            self.dismissed = dismissed
+            self.actedUpon = actedUpon
         }
     }
 
     // MARK: - Decision
 
     public enum SuppressionReason: String, Sendable, Equatable {
-        case categoryDisabled, snoozed, quietHours, rateLimited, dailyBudgetReached, mealBudgetReached, episodeAlreadyNotified
+        case categoryDisabled, snoozed, quietHours, rateLimited, dailyBudgetReached, mealBudgetReached,
+            episodeAlreadyNotified
     }
 
     public struct Decision: Sendable, Equatable {
         public let deliver: Bool
-        public let reason: SuppressionReason?   // nil ⇔ deliver
+        public let reason: SuppressionReason?  // nil ⇔ deliver
         /// The state to persist AFTER acting on this decision (counters/timestamps advanced iff delivered).
         public let nextState: State
     }
@@ -275,17 +292,21 @@ public enum NotificationBroker {
     /// dedupe/episode tracking works) — no setting, quiet-hour, rate-limit, or budget can drop it. Ordering
     /// for governed categories: category enabled → episode-not-already-notified → quiet-hours → rate-limit →
     /// budget. `settings` is looked up per category (falling back to that category's defaults).
-    public static func decide(_ message: Message,
-                              settings: [Category: CategorySettings],
-                              state: State,
-                              budget: Budget = Budget(),
-                              now: Date,
-                              calendar: Calendar = .current) -> Decision {
+    public static func decide(
+        _ message: Message,
+        settings: [Category: CategorySettings],
+        state: State,
+        budget: Budget = Budget(),
+        now: Date,
+        calendar: Calendar = .current
+    ) -> Decision {
         var s = state
         // Roll the daily counters over at a day boundary.
         let today = Self.dayKey(now, calendar: calendar)
         if s.dayKey != today {
-            s.dayKey = today; s.deliveredToday = 0; s.mealDeliveredToday = 0
+            s.dayKey = today
+            s.deliveredToday = 0
+            s.mealDeliveredToday = 0
         }
 
         func record() -> State {
@@ -358,7 +379,8 @@ public enum NotificationBroker {
             if cfg.inQuietHours(minute: minute) { return suppress(.quietHours) }
 
             if cfg.minIntervalSeconds > 0, let last = s.lastDeliveredAt[message.category.rawValue],
-               now.timeIntervalSince(last) < cfg.minIntervalSeconds {
+                now.timeIntervalSince(last) < cfg.minIntervalSeconds
+            {
                 return suppress(.rateLimited)
             }
 
@@ -416,9 +438,9 @@ public enum NotificationBroker {
     /// `.other` alerts follow the user's `AlertRule`s normally; every protected class is NEVER auto-snoozed
     /// or auto-dismissed by a rule.
     public enum AlertSafetyClass: String, Sendable, Codable, CaseIterable {
-        case occlusion        // occlusion / pump malfunction (already an alarm, protected here independently)
-        case cgmDataLoss      // CGM unavailable / sensor failed / out-of-range / failed connection
-        case lowInsulin       // low insulin / empty reservoir
+        case occlusion  // occlusion / pump malfunction (already an alarm, protected here independently)
+        case cgmDataLoss  // CGM unavailable / sensor failed / out-of-range / failed connection
+        case lowInsulin  // low insulin / empty reservoir
         case other
         public var isForceProtected: Bool { self != .other }
     }
@@ -429,9 +451,11 @@ public enum NotificationBroker {
     /// could auto-snooze/dismiss a CGM-loss or low-insulin alert (kinds 1/3). For `.other`, delegates to
     /// the pure, tested `AlertRuleEngine.action`. The backend calls THIS instead of `AlertRuleEngine`
     /// directly at its notification-merge chokepoint.
-    public static func autoSuppression(for alert: PumpAlert, safetyClass: AlertSafetyClass,
-                                       rules: [AlertRule], now: Date, calendar: Calendar = .current,
-                                       glucose: Int?) -> AlertAction? {
+    public static func autoSuppression(
+        for alert: PumpAlert, safetyClass: AlertSafetyClass,
+        rules: [AlertRule], now: Date, calendar: Calendar = .current,
+        glucose: Int?
+    ) -> AlertAction? {
         if safetyClass.isForceProtected { return nil }
         return AlertRuleEngine.action(for: alert, rules: rules, now: now, calendar: calendar, glucose: glucose)
     }

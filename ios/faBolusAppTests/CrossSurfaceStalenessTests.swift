@@ -45,7 +45,7 @@ import faBolusCore
     /// from receipt — on the remote client, on the widget substrate, and via the shared policy.
     @Test func staleSampleAgesFromSourceNotReceiveTimeOnEverySurface() {
         let now = Date()
-        let sourceEpoch = Int(now.timeIntervalSince1970) - 3600      // taken 60 min ago
+        let sourceEpoch = Int(now.timeIntervalSince1970) - 3600  // taken 60 min ago
         let sourceDate = Date(timeIntervalSince1970: TimeInterval(sourceEpoch))
 
         // --- RemoteCommandWireFixture (Apple Watch / Mac / remote-iPhone shared base) ---
@@ -56,17 +56,18 @@ import faBolusCore
         #expect(abs(model.glucoseDate!.timeIntervalSince1970 - Double(sourceEpoch)) < 2)
         #expect(model.ageMinutes! >= 59 && model.ageMinutes! <= 61)
         #expect(model.ageLabel == "1h ago")
-        #expect(model.isGlucoseStale)          // 60 min ≫ any configured stale threshold
+        #expect(model.isGlucoseStale)  // 60 min ≫ any configured stale threshold
 
         // --- WidgetSnapshot (every widget family + the complication) ---
         // Built exactly as `RemoteCommandWireFixture.publishSnapshot` builds it
         // (Shared/RemoteCommandWireFixture.swift:233): `glucoseDate` is the SAMPLE time, `updatedAt` is the
         // PUBLISH/receive time. `updatedAt` is deliberately `now` (a brand-new publish) — staleness
         // must key off `glucoseDate`, so a fresh publish of an old sample stays stale.
-        let snap = WidgetSnapshot(glucose: model.glucose, glucoseDate: model.glucoseDate,
-                                  updatedAt: now, staleAfterSec: 5 * 60, hideAfterSec: nil)
+        let snap = WidgetSnapshot(
+            glucose: model.glucose, glucoseDate: model.glucoseDate,
+            updatedAt: now, staleAfterSec: 5 * 60, hideAfterSec: nil)
         #expect(snap.glucoseDate == sourceDate)
-        #expect(snap.isStale(asOf: now))       // off glucoseDate (60 min), NOT updatedAt (0 min)
+        #expect(snap.isStale(asOf: now))  // off glucoseDate (60 min), NOT updatedAt (0 min)
 
         // --- GlucoseFreshness (the phone HUD + the one shared policy) ---
         #expect(GlucoseFreshness.isStale(sourceDate, now: now))
@@ -84,7 +85,7 @@ import faBolusCore
         model.handle(cmd)
         #expect(model.glucose == 120)
         #expect(model.glucoseDate == nil)
-        #expect(model.isGlucoseStale)          // unknown age → stale, never fresh
+        #expect(model.isGlucoseStale)  // unknown age → stale, never fresh
         #expect(model.ageLabel == nil)
 
         // Widget substrate: a value with no sample date is stale at any `now`, and is shown (marked)
@@ -131,7 +132,7 @@ import faBolusCore
     /// fresh on every surface.
     @Test func freshSampleReadsFreshOnEverySurface() {
         let now = Date()
-        let sourceEpoch = Int(now.timeIntervalSince1970) - 30       // taken 30 s ago
+        let sourceEpoch = Int(now.timeIntervalSince1970) - 30  // taken 30 s ago
         let sourceDate = Date(timeIntervalSince1970: TimeInterval(sourceEpoch))
 
         let model = RemoteCommandWireFixture(link: FakeLink())
@@ -139,8 +140,9 @@ import faBolusCore
         #expect(!model.isGlucoseStale)
         #expect(model.ageMinutes == 0)
 
-        let snap = WidgetSnapshot(glucose: 120, glucoseDate: sourceDate,
-                                  updatedAt: now, staleAfterSec: 5 * 60)
+        let snap = WidgetSnapshot(
+            glucose: 120, glucoseDate: sourceDate,
+            updatedAt: now, staleAfterSec: 5 * 60)
         #expect(!snap.isStale(asOf: now))
         #expect(!GlucoseFreshness.isStale(sourceDate, now: now))
     }

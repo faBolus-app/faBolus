@@ -87,10 +87,12 @@ public struct Stored<Value> {
     /// Full designated initializer — takes explicit read/write closures. Callers use the typed
     /// convenience initializers below (Bool/Int/Double/String/`RawRepresentable<String>` enum); this
     /// one exists so a future shape (e.g. a JSON-encoded type) can still opt in without a new wrapper.
-    public init(wrappedValue: Value, _ key: String, store: UserDefaults = .standard,
-                onChange: ((Value) -> Void)? = nil,
-                read: @escaping (UserDefaults, String) -> Value?,
-                write: @escaping (UserDefaults, String, Value) -> Void) {
+    public init(
+        wrappedValue: Value, _ key: String, store: UserDefaults = .standard,
+        onChange: ((Value) -> Void)? = nil,
+        read: @escaping (UserDefaults, String) -> Value?,
+        write: @escaping (UserDefaults, String, Value) -> Void
+    ) {
         self.defaultValue = wrappedValue
         self.key = key
         self.store = store
@@ -101,38 +103,50 @@ public struct Stored<Value> {
 }
 
 extension Stored where Value == Bool {
-    public init(wrappedValue: Bool, _ key: String, store: UserDefaults = .standard,
-                onChange: ((Bool) -> Void)? = nil) {
-        self.init(wrappedValue: wrappedValue, key, store: store, onChange: onChange,
-                   read: { d, k in d.object(forKey: k) as? Bool },
-                   write: { d, k, v in d.set(v, forKey: k) })
+    public init(
+        wrappedValue: Bool, _ key: String, store: UserDefaults = .standard,
+        onChange: ((Bool) -> Void)? = nil
+    ) {
+        self.init(
+            wrappedValue: wrappedValue, key, store: store, onChange: onChange,
+            read: { d, k in d.object(forKey: k) as? Bool },
+            write: { d, k, v in d.set(v, forKey: k) })
     }
 }
 
 extension Stored where Value == Int {
-    public init(wrappedValue: Int, _ key: String, store: UserDefaults = .standard,
-                onChange: ((Int) -> Void)? = nil) {
-        self.init(wrappedValue: wrappedValue, key, store: store, onChange: onChange,
-                   read: { d, k in d.object(forKey: k) as? Int },
-                   write: { d, k, v in d.set(v, forKey: k) })
+    public init(
+        wrappedValue: Int, _ key: String, store: UserDefaults = .standard,
+        onChange: ((Int) -> Void)? = nil
+    ) {
+        self.init(
+            wrappedValue: wrappedValue, key, store: store, onChange: onChange,
+            read: { d, k in d.object(forKey: k) as? Int },
+            write: { d, k, v in d.set(v, forKey: k) })
     }
 }
 
 extension Stored where Value == Double {
-    public init(wrappedValue: Double, _ key: String, store: UserDefaults = .standard,
-                onChange: ((Double) -> Void)? = nil) {
-        self.init(wrappedValue: wrappedValue, key, store: store, onChange: onChange,
-                   read: { d, k in d.object(forKey: k) as? Double },
-                   write: { d, k, v in d.set(v, forKey: k) })
+    public init(
+        wrappedValue: Double, _ key: String, store: UserDefaults = .standard,
+        onChange: ((Double) -> Void)? = nil
+    ) {
+        self.init(
+            wrappedValue: wrappedValue, key, store: store, onChange: onChange,
+            read: { d, k in d.object(forKey: k) as? Double },
+            write: { d, k, v in d.set(v, forKey: k) })
     }
 }
 
 extension Stored where Value == String {
-    public init(wrappedValue: String, _ key: String, store: UserDefaults = .standard,
-                onChange: ((String) -> Void)? = nil) {
-        self.init(wrappedValue: wrappedValue, key, store: store, onChange: onChange,
-                   read: { d, k in d.string(forKey: k) },
-                   write: { d, k, v in d.set(v, forKey: k) })
+    public init(
+        wrappedValue: String, _ key: String, store: UserDefaults = .standard,
+        onChange: ((String) -> Void)? = nil
+    ) {
+        self.init(
+            wrappedValue: wrappedValue, key, store: store, onChange: onChange,
+            read: { d, k in d.string(forKey: k) },
+            write: { d, k, v in d.set(v, forKey: k) })
     }
 }
 
@@ -140,10 +154,13 @@ extension Stored where Value == String {
 /// encoding the pre-conversion `d.set(x.rawValue, forKey:)` / `BolusMode(rawValue: d.string(forKey:))`
 /// idiom used.
 extension Stored where Value: RawRepresentable, Value.RawValue == String {
-    public init(wrappedValue: Value, _ key: String, store: UserDefaults = .standard,
-                onChange: ((Value) -> Void)? = nil) {
-        self.init(wrappedValue: wrappedValue, key, store: store, onChange: onChange,
-                   read: { d, k in d.string(forKey: k).flatMap(Value.init(rawValue:)) },
-                   write: { d, k, v in d.set(v.rawValue, forKey: k) })
+    public init(
+        wrappedValue: Value, _ key: String, store: UserDefaults = .standard,
+        onChange: ((Value) -> Void)? = nil
+    ) {
+        self.init(
+            wrappedValue: wrappedValue, key, store: store, onChange: onChange,
+            read: { d, k in d.string(forKey: k).flatMap(Value.init(rawValue:)) },
+            write: { d, k, v in d.set(v.rawValue, forKey: k) })
     }
 }

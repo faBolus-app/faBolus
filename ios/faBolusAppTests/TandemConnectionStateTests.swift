@@ -18,10 +18,10 @@ struct TandemConnectionStateTests {
 
     @Test func poweredOffNeverStaysConnectedAndSurfacesReason() {
         let b = backend()
-        b.setConnectionForTesting(.connected)          // pretend we were linked…
-        b.applyClientState(.poweredOff)                // …then the radio powers off
-        #expect(b.snapshot.connection == .disconnected)   // must NOT stay .connected (the old default:break bug)
-        #expect(!b.snapshot.isLinked)                     // so the bolus gate refuses delivery
+        b.setConnectionForTesting(.connected)  // pretend we were linked…
+        b.applyClientState(.poweredOff)  // …then the radio powers off
+        #expect(b.snapshot.connection == .disconnected)  // must NOT stay .connected (the old default:break bug)
+        #expect(!b.snapshot.isLinked)  // so the bolus gate refuses delivery
         #expect(b.snapshot.connectionDetail == "Bluetooth is off")
     }
 
@@ -40,7 +40,7 @@ struct TandemConnectionStateTests {
         let b = backend()
         b.applyClientState(.disconnected)
         #expect(b.snapshot.connection == .disconnected)
-        #expect(b.snapshot.connectionDetail == nil)   // "Disconnected" already says enough
+        #expect(b.snapshot.connectionDetail == nil)  // "Disconnected" already says enough
     }
 
     @Test func reconnectClearsStaleReason() {
@@ -51,7 +51,7 @@ struct TandemConnectionStateTests {
         // CR-01 (R2-01): bare BLE `.ready` now publishes the not-yet-usable `.connecting` (the usable
         // `.connected` is published only at the polling/onPaired moment). The stale reason must still clear.
         #expect(b.snapshot.connection == .connecting)
-        #expect(b.snapshot.connectionDetail == nil)   // stale "Bluetooth is off" must not linger
+        #expect(b.snapshot.connectionDetail == nil)  // stale "Bluetooth is off" must not linger
     }
 
     @Test func transportErrorPreservesItsReason() {
@@ -94,7 +94,9 @@ struct TandemConnectionStateTests {
         // a drop): must NOT flip to `.disconnected` — the reconnect window has to stay `.connecting`.
         b.setConnectionForTesting(.connecting)
         b.applyClientError(LinkErr())
-        #expect(b.snapshot.connection == .connecting, "the reconnect window must stay .connecting, never flicker .disconnected")
+        #expect(
+            b.snapshot.connection == .connecting,
+            "the reconnect window must stay .connecting, never flicker .disconnected")
     }
 
     /// The reconnect-window ordering the kit actually produces on a genuine drop: `applyClientError` (the
@@ -107,9 +109,9 @@ struct TandemConnectionStateTests {
         struct DropErr: LocalizedError { var errorDescription: String? { "peer disconnected" } }
         b.setConnectionForTesting(.connected)
         var observed: [PumpConnectionState] = [b.snapshot.connection]
-        b.applyClientError(DropErr())            // kit's didError — fires before the .connecting didChange
+        b.applyClientError(DropErr())  // kit's didError — fires before the .connecting didChange
         observed.append(b.snapshot.connection)
-        b.applyClientState(.connecting)          // kit's didChange(.connecting)
+        b.applyClientState(.connecting)  // kit's didChange(.connecting)
         observed.append(b.snapshot.connection)
         // No down state anywhere in the reconnect window…
         #expect(!observed.contains(.disconnected))
@@ -134,10 +136,10 @@ struct TandemConnectionStateTests {
     /// fix closes; `.reconnectExhausted` used to have no explicit case).
     @Test func reconnectExhaustedSurfacesAsErrorWithActionableGuidance() {
         let b = backend()
-        b.setConnectionForTesting(.connected)             // pretend we were linked…
-        b.applyClientState(.reconnectExhausted)            // …then the ladder gives up
+        b.setConnectionForTesting(.connected)  // pretend we were linked…
+        b.applyClientState(.reconnectExhausted)  // …then the ladder gives up
         #expect(b.snapshot.connection == .error)
-        #expect(!b.snapshot.isLinked)                      // so the bolus gate refuses delivery
+        #expect(!b.snapshot.isLinked)  // so the bolus gate refuses delivery
         #expect(b.snapshot.connectionDetail?.contains("t:connect") == true)
     }
 

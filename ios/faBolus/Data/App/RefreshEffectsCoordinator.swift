@@ -14,7 +14,9 @@ final class RefreshEffectsCoordinator {
 
     // MARK: - Safety / notification sinks (D-01/D-02 — per-action, no back-pointer)
     /// Bound to `AppModel.postSafety(_:severity:title:body:dedupeKey:)`.
-    var postSafety: (NotificationBroker.Category, NotificationBroker.Severity, String, String, String) -> Void = { _, _, _, _, _ in }
+    var postSafety: (NotificationBroker.Category, NotificationBroker.Severity, String, String, String) -> Void = {
+        _, _, _, _, _ in
+    }
     /// Bound to `AppModel.withdrawNotifications(_:)`.
     var withdrawNotifications: ([String]) -> Void = { _ in }
     /// Bound to `AppModel.scheduleDisconnectEscalation()`.
@@ -55,34 +57,37 @@ final class RefreshEffectsCoordinator {
     /// reassignment — D-03/D-04); the coordinator computes the four safety edges itself and dispatches only
     /// the resulting actions. `pumpDisconnectKey`/`cgmDataLossKey` are `AppModel`'s private dedupe-key
     /// constants, passed in so their single source of truth stays on `AppModel`.
-    func performEffects(snapshot: PumpSnapshot,
-                        glucoseHistory: [GlucoseReading],
-                        provenance: GlucoseProvenance,
-                        bolusMarkers: [BolusMarker],
-                        activeNotifications: [PumpAlert],
-                        widgetBolusLocked: Bool,
-                        widgetBolusLockReason: String,
-                        cgmFresh: Bool,
-                        urgentLowNow: Bool,
-                        alertsChanged: Bool,
-                        canControlModes: Bool,
-                        pumpDisconnectKey: String,
-                        pumpConnectionUnstableKey: String,
-                        cgmDataLossKey: String,
-                        prevConnection: PumpConnectionState?,
-                        prevGlucoseFresh: Bool,
-                        prevUrgentLowActive: Bool,
-                        prevLastArmedGlucoseDate: Date?) {
+    func performEffects(
+        snapshot: PumpSnapshot,
+        glucoseHistory: [GlucoseReading],
+        provenance: GlucoseProvenance,
+        bolusMarkers: [BolusMarker],
+        activeNotifications: [PumpAlert],
+        widgetBolusLocked: Bool,
+        widgetBolusLockReason: String,
+        cgmFresh: Bool,
+        urgentLowNow: Bool,
+        alertsChanged: Bool,
+        canControlModes: Bool,
+        pumpDisconnectKey: String,
+        pumpConnectionUnstableKey: String,
+        cgmDataLossKey: String,
+        prevConnection: PumpConnectionState?,
+        prevGlucoseFresh: Bool,
+        prevUrgentLowActive: Bool,
+        prevLastArmedGlucoseDate: Date?
+    ) {
         // §6 safety (never-suppressible): pump-link drop, fired once on the edge; withdrawn on reconnect.
         let connectionEdge = SafetyEdge.connection(prev: prevConnection, now: snapshot.connection)
         recordStep("connectionEdge:\(Self.tag(connectionEdge))")
         switch connectionEdge {
         case .raise:
-            postSafety(.pumpDisconnect, .error, "Pump disconnected",
-                       "faBolus lost the connection to your pump. \(DisconnectEscalation.pumpButtonsInstruction)",
-                       pumpDisconnectKey)
-            scheduleDisconnectEscalation()   // S7: delayed re-notification ladder
-            onConnectionDropped(snapshot.connectionDetail)   // §5.2.8 telemetry + F7 BLE session-log
+            postSafety(
+                .pumpDisconnect, .error, "Pump disconnected",
+                "faBolus lost the connection to your pump. \(DisconnectEscalation.pumpButtonsInstruction)",
+                pumpDisconnectKey)
+            scheduleDisconnectEscalation()  // S7: delayed re-notification ladder
+            onConnectionDropped(snapshot.connectionDetail)  // §5.2.8 telemetry + F7 BLE session-log
         case .clear:
             // tslim-reconnect-loop (Phase B, item 5): a genuine reconnect withdraws the non-muteable
             // `pumpConnectionUnstable` flap alert on the SAME edge as `pumpDisconnect` + its escalation steps.
@@ -95,16 +100,18 @@ final class RefreshEffectsCoordinator {
         recordStep("freshnessEdge:\(Self.tag(freshnessEdge))")
         switch freshnessEdge {
         case .raise:
-            postSafety(.cgmDataLoss, .warning, "CGM data lost",
-                       "faBolus stopped receiving CGM readings. Check your sensor and transmitter.",
-                       cgmDataLossKey)
+            postSafety(
+                .cgmDataLoss, .warning, "CGM data lost",
+                "faBolus stopped receiving CGM readings. Check your sensor and transmitter.",
+                cgmDataLossKey)
             onGlucoseBadgeClear()
         case .clear: withdrawNotifications([cgmDataLossKey])
         case .none: break
         }
         // CX-F-02: pre-arm/cancel the background staleness watchdog off the SAME cgmFresh signal.
-        let stalenessEdge = StalenessWatchdogEdge.decide(cgmFresh: cgmFresh, glucoseDate: snapshot.glucoseDate,
-                                                         lastArmedDate: prevLastArmedGlucoseDate)
+        let stalenessEdge = StalenessWatchdogEdge.decide(
+            cgmFresh: cgmFresh, glucoseDate: snapshot.glucoseDate,
+            lastArmedDate: prevLastArmedGlucoseDate)
         switch stalenessEdge {
         case .arm(let date):
             recordStep("stalenessWatchdog:arm")
@@ -125,7 +132,8 @@ final class RefreshEffectsCoordinator {
             // `.cgmDataLoss` — so disabling the plain "CGM data lost" banner can never silently silence
             // this urgent-low backstop. The banner (line ~116) and the CX-F-02 staleness watchdog keep
             // using `.cgmDataLoss`, unchanged.
-            postSafety(.urgentLowGlucose, .critical, UrgentLowAlarm.title, UrgentLowAlarm.body, UrgentLowAlarm.dedupeKey)
+            postSafety(
+                .urgentLowGlucose, .critical, UrgentLowAlarm.title, UrgentLowAlarm.body, UrgentLowAlarm.dedupeKey)
         case .clear:
             withdrawNotifications([UrgentLowAlarm.dedupeKey])
         case .none: break
@@ -163,6 +171,10 @@ final class RefreshEffectsCoordinator {
 
     /// Flat-tag encoding of a `SafetyEdge` decision for `recordStep` (matches the Task-1 recorder tags).
     private static func tag(_ e: SafetyEdge) -> String {
-        switch e { case .none: return "none"; case .raise: return "raise"; case .clear: return "clear" }
+        switch e {
+        case .none: return "none"
+        case .raise: return "raise"
+        case .clear: return "clear"
+        }
     }
 }

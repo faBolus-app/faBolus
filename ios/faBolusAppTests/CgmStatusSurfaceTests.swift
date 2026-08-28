@@ -13,8 +13,8 @@ struct CgmStatusSurfaceTests {
 
     private let configured: [(id: String, name: String)] = [
         (id: "dexcom-g7-ble", name: "Dexcom G7 / ONE+ (direct BLE)"),
-        (id: "dexcom-share",  name: "Dexcom Share (cloud)"),
-        (id: "nightscout",    name: "Nightscout (any CGM)"),
+        (id: "dexcom-share", name: "Dexcom Share (cloud)"),
+        (id: "nightscout", name: "Nightscout (any CGM)")
     ]
 
     // MARK: - Classification
@@ -32,8 +32,9 @@ struct CgmStatusSurfaceTests {
         #expect(active.count == 1, "exactly one source must be the active failover")
         #expect(active.first?.id == "dexcom-g7-ble")
         for r in rows where r.id != "dexcom-g7-ble" {
-            #expect(r.classification == .configuredNotSelected,
-                    "\(r.id) should be configured-but-not-selected, was \(r.classification)")
+            #expect(
+                r.classification == .configuredNotSelected,
+                "\(r.id) should be configured-but-not-selected, was \(r.classification)")
         }
     }
 
@@ -47,8 +48,9 @@ struct CgmStatusSurfaceTests {
             armedStatusCaseName: "connected", armedAgeSeconds: 30)
 
         #expect(rows.first { $0.id == "dexcom-g7-ble" }?.classification == .armedPumpLive)
-        #expect(rows.allSatisfy { $0.classification != .activeFailover },
-                "with the pump live, no source may be marked active failover")
+        #expect(
+            rows.allSatisfy { $0.classification != .activeFailover },
+            "with the pump live, no source may be marked active failover")
     }
 
     /// F-18: a source SELECTED but not yet ARMED (the selection takes effect on relaunch) is shown as
@@ -57,15 +59,17 @@ struct CgmStatusSurfaceTests {
     @Test func selectedButNotYetArmedIsDistinctFromTheLiveArmedSource() {
         let rows = CgmStatusView.rows(
             configured: configured,
-            selectedId: "dexcom-share",   // user just picked Share…
-            armedId: "dexcom-g7-ble",     // …but G7 is still the running instance until relaunch
+            selectedId: "dexcom-share",  // user just picked Share…
+            armedId: "dexcom-g7-ble",  // …but G7 is still the running instance until relaunch
             provenance: .failover(sourceID: "dexcom-g7-ble", reason: .pumpStale),
             armedStatusCaseName: "connected", armedAgeSeconds: 60)
 
-        #expect(rows.first { $0.id == "dexcom-share" }?.classification == .selectedNotArmed,
-                "the newly-selected-but-unarmed source must read as selected-not-armed (F-18)")
-        #expect(rows.first { $0.id == "dexcom-g7-ble" }?.classification == .activeFailover,
-                "the still-running source keeps driving the live failover")
+        #expect(
+            rows.first { $0.id == "dexcom-share" }?.classification == .selectedNotArmed,
+            "the newly-selected-but-unarmed source must read as selected-not-armed (F-18)")
+        #expect(
+            rows.first { $0.id == "dexcom-g7-ble" }?.classification == .activeFailover,
+            "the still-running source keeps driving the live failover")
     }
 
     // MARK: - Live status/age attach only to the armed source
@@ -128,12 +132,13 @@ struct CgmStatusSurfaceTests {
     @Test func selectionStatusSubtitleNeverContradictsNotSelectedForANilOrStaleSelection() {
         let result = CgmStatusView.selectionStatusSubtitle(
             selected: nil,
-            armedId: "healthkit",   // stale: still "armed" per old state, but no longer selectable
+            armedId: "healthkit",  // stale: still "armed" per old state, but no longer selectable
             provenance: .failover(sourceID: "healthkit", reason: .pumpStale))
 
         #expect(result.text == "Pump only — no failover source selected")
-        #expect(!result.text.localizedCaseInsensitiveContains("selected —"),
-                "a nil (stale/invalid) selection must never render as 'Selected — …' — the WR-01 contradiction")
+        #expect(
+            !result.text.localizedCaseInsensitiveContains("selected —"),
+            "a nil (stale/invalid) selection must never render as 'Selected — …' — the WR-01 contradiction")
         #expect(result.isActive == false)
     }
 

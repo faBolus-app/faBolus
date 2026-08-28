@@ -60,8 +60,10 @@ final class GarminDismissReceiptStore: @unchecked Sendable {
     func persist(peer: String, requestId: String, alertId: Int, alertKind: Int, now: Date = Date()) {
         var all = allReceipts()
         all.removeAll { $0.peer == peer && $0.requestId == requestId }
-        all.append(GarminDismissReceipt(peer: peer, requestId: requestId, alertId: alertId,
-                                        alertKind: alertKind, createdAt: now, acked: false))
+        all.append(
+            GarminDismissReceipt(
+                peer: peer, requestId: requestId, alertId: alertId,
+                alertKind: alertKind, createdAt: now, acked: false))
         if all.count > Self.cap { all.removeFirst(all.count - Self.cap) }
         save(all)
     }

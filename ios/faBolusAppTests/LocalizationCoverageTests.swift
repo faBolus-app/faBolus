@@ -28,8 +28,9 @@ struct LocalizationCoverageTests {
     }
 
     private static func catalog() throws -> [String: Any] {
-        let repoRoot = try #require(Self.repoRootURL(),
-                                     "could not resolve repo root from #filePath=\(#filePath)")
+        let repoRoot = try #require(
+            Self.repoRootURL(),
+            "could not resolve repo root from #filePath=\(#filePath)")
         let url = repoRoot.appendingPathComponent("ios/faBolus/Localizable.xcstrings")
         let data = try Data(contentsOf: url)
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
@@ -43,9 +44,10 @@ struct LocalizationCoverageTests {
     private static func englishValue(forKey key: String, in strings: [String: Any]) -> String? {
         guard let entry = strings[key] as? [String: Any] else { return nil }
         if let localizations = entry["localizations"] as? [String: Any],
-           let en = localizations["en"] as? [String: Any],
-           let stringUnit = en["stringUnit"] as? [String: Any],
-           let value = stringUnit["value"] as? String {
+            let en = localizations["en"] as? [String: Any],
+            let stringUnit = en["stringUnit"] as? [String: Any],
+            let value = stringUnit["value"] as? String
+        {
             return value
         }
         return key
@@ -69,7 +71,7 @@ struct LocalizationCoverageTests {
         "Confirm to deliver.": "Confirm to deliver.",
         "Bolus delivered": "Bolus delivered",
         "%@ delivered": "%@ delivered",
-        "%@ now, %@ total over %@": "%1$@ now, %2$@ total over %3$@",
+        "%@ now, %@ total over %@": "%1$@ now, %2$@ total over %3$@"
     ]
 
     @Test func allSafetyCriticalDoseCopyIsCatalogRouted() throws {
@@ -78,8 +80,9 @@ struct LocalizationCoverageTests {
         for (key, expectedValue) in Self.expectedKeys {
             let actual = Self.englishValue(forKey: key, in: strings)
             #expect(actual != nil, "Localizable.xcstrings is missing the safety-critical dose-copy key \(key)")
-            #expect(actual == expectedValue,
-                    "Localizable.xcstrings key \(key) resolved to \(String(describing: actual)), expected \(expectedValue)")
+            #expect(
+                actual == expectedValue,
+                "Localizable.xcstrings key \(key) resolved to \(String(describing: actual)), expected \(expectedValue)")
         }
     }
 

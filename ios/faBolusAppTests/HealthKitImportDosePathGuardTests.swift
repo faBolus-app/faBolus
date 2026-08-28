@@ -30,7 +30,7 @@ struct HealthKitImportDosePathGuardTests {
         "Packages/faBolusCore/Sources/faBolusCore/BolusMath.swift",
         "Packages/faBolusCore/Sources/faBolusCore/GlucoseArbiter.swift",
         "ios/faBolus/Data/TandemBackend.swift",
-        "ios/faBolus/Data/Tandem/PumpTransport.swift",
+        "ios/faBolus/Data/Tandem/PumpTransport.swift"
     ]
 
     /// The forbidden HealthKit-import/export symbols. Held as plain string constants — this scan
@@ -38,26 +38,32 @@ struct HealthKitImportDosePathGuardTests {
     private static let forbiddenSymbols = ["HealthKitHistoryImporter", "HealthKitExporter"]
 
     @Test func doseSourcePathFilesResolveAndAreNonTrivial() throws {
-        let root = try #require(Self.repoRootURL(),
-                                "could not resolve the repo root from #filePath=\(#filePath)")
+        let root = try #require(
+            Self.repoRootURL(),
+            "could not resolve the repo root from #filePath=\(#filePath)")
         for relativePath in Self.doseSourcePathRelativePaths {
             let url = root.appendingPathComponent(relativePath)
-            let source = try #require(try? String(contentsOf: url, encoding: .utf8),
-                                      "could not resolve \(relativePath) — path resolution likely broke")
+            let source = try #require(
+                try? String(contentsOf: url, encoding: .utf8),
+                "could not resolve \(relativePath) — path resolution likely broke")
             #expect(source.count > 200, "\(relativePath) resolved implausibly short — path resolution likely broke")
         }
     }
 
     @Test func doseSourcePathFilesContainNoHealthKitImportExportSymbols() throws {
-        let root = try #require(Self.repoRootURL(),
-                                "could not resolve the repo root from #filePath=\(#filePath)")
+        let root = try #require(
+            Self.repoRootURL(),
+            "could not resolve the repo root from #filePath=\(#filePath)")
         for relativePath in Self.doseSourcePathRelativePaths {
             let url = root.appendingPathComponent(relativePath)
-            let source = try #require(try? String(contentsOf: url, encoding: .utf8),
-                                      "could not resolve \(relativePath) — path resolution likely broke")
+            let source = try #require(
+                try? String(contentsOf: url, encoding: .utf8),
+                "could not resolve \(relativePath) — path resolution likely broke")
             for symbol in Self.forbiddenSymbols {
-                #expect(!source.contains(symbol),
-                        "D-05 violated — forbidden HealthKit import/export symbol '\(symbol)' found in \(relativePath). Imported HealthKit history must land ONLY in GlucoseHistoryStore.ingest*, never the signed dose path.")
+                #expect(
+                    !source.contains(symbol),
+                    "D-05 violated — forbidden HealthKit import/export symbol '\(symbol)' found in \(relativePath). Imported HealthKit history must land ONLY in GlucoseHistoryStore.ingest*, never the signed dose path."
+                )
             }
         }
     }

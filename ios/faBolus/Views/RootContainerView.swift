@@ -10,14 +10,19 @@ struct RootContainerView: View {
 
     var body: some View {
         RootTabView(model: model)
-        .environment(router)
-        .environment(modeStore)
-        // Skippable "Connect your pump" step, shown once while there's no stored pairing.
-        .fullScreenCover(isPresented: .init(
-            get: { modeStore.hasCompletedOnboarding && !modeStore.hasCompletedPumpOnboarding && !model.hasStoredPairing },
-            set: { _ in }
-        )) {
-            ConnectPumpOnboardingView(model: model, modeStore: modeStore)
-        }
+            .environment(router)
+            .environment(modeStore)
+            // Skippable "Connect your pump" step, shown once while there's no stored pairing.
+            .fullScreenCover(
+                isPresented: .init(
+                    get: {
+                        modeStore.hasCompletedOnboarding && !modeStore.hasCompletedPumpOnboarding
+                            && !model.hasStoredPairing
+                    },
+                    set: { _ in }
+                )
+            ) {
+                ConnectPumpOnboardingView(model: model, modeStore: modeStore)
+            }
     }
 }

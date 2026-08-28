@@ -89,8 +89,9 @@ struct StatusWidgetView: View {
                 metric("syringe", "Active Insulin", connectionStale ? "--" : String(format: "%.2f U", snap.iobUnits))
                 metric("drop", "Reservoir", connectionStale ? "--" : "\(Int(snap.reservoirUnits)) U")
                 if let u = snap.lastBolusUnits, let d = snap.lastBolusDate {
-                    metric("clock.arrow.circlepath", "Last bolus",
-                           "\(String(format: "%.2f U", u)) · \(d.formatted(.relative(presentation: .numeric)))")
+                    metric(
+                        "clock.arrow.circlepath", "Last bolus",
+                        "\(String(format: "%.2f U", u)) · \(d.formatted(.relative(presentation: .numeric)))")
                 } else {
                     // Phase 09.27-02 (D-04/D-05) — routes the glyph + "Charging" text through the
                     // SAME `BatteryChargingPresentation.make` helper every other battery-rendering
@@ -101,7 +102,8 @@ struct StatusWidgetView: View {
                     // helper also fixes that pre-existing bug: a not-charging medium widget now
                     // correctly renders the level-appropriate glyph (`battery.0/.25/.50/.75/.100`)
                     // instead of always showing a full battery below 88%.
-                    let battery = BatteryChargingPresentation.make(percent: snap.batteryPercent, charging: snap.batteryCharging)
+                    let battery = BatteryChargingPresentation.make(
+                        percent: snap.batteryPercent, charging: snap.batteryCharging)
                     // WR-02 review fix: consume the centralized `valueText` instead of
                     // re-interpolating the "N% · Charging" string here. WR-02 (R2-09): once the snapshot's
                     // publish time is stale (host killed), the battery value greys to "--" — it is a
@@ -130,8 +132,12 @@ struct StatusWidgetView: View {
 struct Sparkline: View {
     let points: [WidgetSnapshot.Point]
 
-    private var lo: Int { min(points.map { $0.mgdl }.min() ?? WidgetGlucoseThresholds.low, WidgetGlucoseThresholds.low) }
-    private var hi: Int { max(points.map { $0.mgdl }.max() ?? WidgetGlucoseThresholds.high, WidgetGlucoseThresholds.high) }
+    private var lo: Int {
+        min(points.map { $0.mgdl }.min() ?? WidgetGlucoseThresholds.low, WidgetGlucoseThresholds.low)
+    }
+    private var hi: Int {
+        max(points.map { $0.mgdl }.max() ?? WidgetGlucoseThresholds.high, WidgetGlucoseThresholds.high)
+    }
 
     // E5: plot x PROPORTIONAL to each point's own timestamp, not the array index — so a gap in the data
     // (a dropped relay, a sensor gap) shows as a horizontal gap instead of being compressed into evenly
@@ -155,8 +161,15 @@ struct Sparkline: View {
             ZStack {
                 // In-range band (70–180).
                 Rectangle().fill(.green.opacity(0.12))
-                    .frame(height: max(0, y(WidgetGlucoseThresholds.low, size.height) - y(WidgetGlucoseThresholds.high, size.height)))
-                    .position(x: size.width / 2, y: (y(WidgetGlucoseThresholds.low, size.height) + y(WidgetGlucoseThresholds.high, size.height)) / 2)
+                    .frame(
+                        height: max(
+                            0,
+                            y(WidgetGlucoseThresholds.low, size.height) - y(WidgetGlucoseThresholds.high, size.height))
+                    )
+                    .position(
+                        x: size.width / 2,
+                        y: (y(WidgetGlucoseThresholds.low, size.height) + y(WidgetGlucoseThresholds.high, size.height))
+                            / 2)
 
                 if points.count > 1 {
                     Path { p in

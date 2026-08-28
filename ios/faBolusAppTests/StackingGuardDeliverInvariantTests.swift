@@ -33,7 +33,8 @@ struct StackingGuardDeliverInvariantTests {
         fake.script(BolusPermissionResponse.props.opCode, .frame(FakePumpTransport.permissionGranted(bolusId: bolusId)))
         fake.script(initiateOp, .frame(FakePumpTransport.initiateAccepted(bolusId: bolusId)))
         fake.script(statusOp, .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: bolusId)))
-        fake.script(lastOp, .frame(FakePumpTransport.lastBolus(bolusId: bolusId, deliveredMilliunits: deliveredMilliunits)))
+        fake.script(
+            lastOp, .frame(FakePumpTransport.lastBolus(bolusId: bolusId, deliveredMilliunits: deliveredMilliunits)))
         return (backend, fake)
     }
 
@@ -45,9 +46,10 @@ struct StackingGuardDeliverInvariantTests {
         let target = 120
         let glucose = 180
 
-        let disclosure = StackingGuard.calcOverride(enteredUnits: entered, recommendedUnits: recommended,
-                                                     displaysNumericDose: true, pumpIOBUnits: 0.4,
-                                                     glucoseMgdl: glucose, targetMgdl: target)
+        let disclosure = StackingGuard.calcOverride(
+            enteredUnits: entered, recommendedUnits: recommended,
+            displaysNumericDose: true, pumpIOBUnits: 0.4,
+            glucoseMgdl: glucose, targetMgdl: target)
         #expect(disclosure.friction != .none)
     }
 
@@ -63,16 +65,17 @@ struct StackingGuardDeliverInvariantTests {
         // Re-confirm SG1 is active for this exact scenario, coupled to the delivery assertion below —
         // if a future edit makes SG1 stop firing here, this test fails LOUDLY rather than silently
         // asserting delivered==consented against a scenario where SG1 was never active.
-        let disclosure = StackingGuard.calcOverride(enteredUnits: entered, recommendedUnits: recommended,
-                                                     displaysNumericDose: true, pumpIOBUnits: 0.4,
-                                                     glucoseMgdl: glucose, targetMgdl: target)
+        let disclosure = StackingGuard.calcOverride(
+            enteredUnits: entered, recommendedUnits: recommended,
+            displaysNumericDose: true, pumpIOBUnits: 0.4,
+            glucoseMgdl: glucose, targetMgdl: target)
         #expect(disclosure.friction != .none)
 
         let (backend, fake) = makeDeliveringBackend(deliveredMilliunits: 6000)
         let delivered = try await backend.deliverBolus(units: entered, carbsGrams: nil, bgMgdl: glucose, iobUnits: 0.4)
-        #expect(delivered == entered)                 // exactly the consented dose, not the calculator's suggestion
+        #expect(delivered == entered)  // exactly the consented dose, not the calculator's suggestion
         #expect(!backend.deliveryOutcomeUnknown)
-        _ = fake                                       // keep the fake alive for the duration of the assertion
+        _ = fake  // keep the fake alive for the duration of the assertion
     }
 
     /// (c) op-109 IOB parity: the IOB a surface would display equals the snapshot's IOB (the same op-109
@@ -103,9 +106,9 @@ struct StackingGuardDeliverInvariantTests {
 
         let (backend, fake) = makeDeliveringBackend(deliveredMilliunits: 25000)
         let delivered = try await backend.deliverBolus(units: entered, carbsGrams: nil, bgMgdl: nil, iobUnits: 0)
-        #expect(delivered == entered)                 // exactly the consented dose, not clamped to a lower number
+        #expect(delivered == entered)  // exactly the consented dose, not clamped to a lower number
         #expect(!backend.deliveryOutcomeUnknown)
-        _ = fake                                       // keep the fake alive for the duration of the assertion
+        _ = fake  // keep the fake alive for the duration of the assertion
     }
 
     /// (e) SG3a extension (plan 04): with SG3a escalated to `.disclose` (SG1 fires, override ratio below
@@ -113,15 +116,16 @@ struct StackingGuardDeliverInvariantTests {
     /// transport still delivers exactly the consented units — same coupled-pair proof as (b)/(d) above.
     @Test func deliveredEqualsConsentedWhileSG3aDiscloseFires() async throws {
         let entered = 2.5
-        let recommended = 2.0   // ratio 1.25 — below the default confirmExtraOverrideRatio (1.5)
+        let recommended = 2.0  // ratio 1.25 — below the default confirmExtraOverrideRatio (1.5)
         let target = 120
         let glucose = 180
         let maxBolusUnits = 25.0
 
-        let escalation = StackingGuard.escalation(enteredUnits: entered, recommendedUnits: recommended,
-                                                   displaysNumericDose: true, pumpIOBUnits: 0.4,
-                                                   glucoseMgdl: glucose, targetMgdl: target,
-                                                   maxBolusUnits: maxBolusUnits)
+        let escalation = StackingGuard.escalation(
+            enteredUnits: entered, recommendedUnits: recommended,
+            displaysNumericDose: true, pumpIOBUnits: 0.4,
+            glucoseMgdl: glucose, targetMgdl: target,
+            maxBolusUnits: maxBolusUnits)
         #expect(escalation.friction == .disclose)
 
         let (backend, fake) = makeDeliveringBackend(deliveredMilliunits: 2500)
@@ -137,15 +141,16 @@ struct StackingGuardDeliverInvariantTests {
     /// dose before it reaches this path.
     @Test func deliveredEqualsConsentedWhileSG3aConfirmExtraFires() async throws {
         let entered = 3.5
-        let recommended = 2.0   // ratio 1.75 — between confirmExtraOverrideRatio (1.5) and reenterOverrideRatio (2.0)
+        let recommended = 2.0  // ratio 1.75 — between confirmExtraOverrideRatio (1.5) and reenterOverrideRatio (2.0)
         let target = 120
         let glucose = 180
         let maxBolusUnits = 25.0
 
-        let escalation = StackingGuard.escalation(enteredUnits: entered, recommendedUnits: recommended,
-                                                   displaysNumericDose: true, pumpIOBUnits: 0.4,
-                                                   glucoseMgdl: glucose, targetMgdl: target,
-                                                   maxBolusUnits: maxBolusUnits)
+        let escalation = StackingGuard.escalation(
+            enteredUnits: entered, recommendedUnits: recommended,
+            displaysNumericDose: true, pumpIOBUnits: 0.4,
+            glucoseMgdl: glucose, targetMgdl: target,
+            maxBolusUnits: maxBolusUnits)
         #expect(escalation.friction == .confirmExtra)
 
         let (backend, fake) = makeDeliveringBackend(deliveredMilliunits: 3500)
@@ -163,15 +168,16 @@ struct StackingGuardDeliverInvariantTests {
     /// never reach this deliver call as a resized amount (T-01-08).
     @Test func deliveredEqualsConsentedWhileSG3aReenterFires() async throws {
         let entered = 8.0
-        let recommended = 2.0   // ratio 4.0 — far above the default reenterOverrideRatio (2.0)
+        let recommended = 2.0  // ratio 4.0 — far above the default reenterOverrideRatio (2.0)
         let target = 120
         let glucose = 180
         let maxBolusUnits = 25.0
 
-        let escalation = StackingGuard.escalation(enteredUnits: entered, recommendedUnits: recommended,
-                                                   displaysNumericDose: true, pumpIOBUnits: 0.4,
-                                                   glucoseMgdl: glucose, targetMgdl: target,
-                                                   maxBolusUnits: maxBolusUnits)
+        let escalation = StackingGuard.escalation(
+            enteredUnits: entered, recommendedUnits: recommended,
+            displaysNumericDose: true, pumpIOBUnits: 0.4,
+            glucoseMgdl: glucose, targetMgdl: target,
+            maxBolusUnits: maxBolusUnits)
         #expect(escalation.friction == .reenter)
 
         // The re-type gate: only an EXACT match of the originally-entered/consented dose proceeds.
@@ -183,7 +189,7 @@ struct StackingGuardDeliverInvariantTests {
 
         let (backend, fake) = makeDeliveringBackend(deliveredMilliunits: 8000)
         let delivered = try await backend.deliverBolus(units: entered, carbsGrams: nil, bgMgdl: glucose, iobUnits: 0.4)
-        #expect(delivered == entered)                 // exactly the consented dose, never the mismatched retype
+        #expect(delivered == entered)  // exactly the consented dose, never the mismatched retype
         #expect(!backend.deliveryOutcomeUnknown)
         _ = fake
     }

@@ -31,14 +31,20 @@ struct BolusPasscodeGateTests {
         let s = AppSettings.shared
         let child = s.childModeEnabled, ro = s.phoneReadOnly, adv = s.advancedControlEnabled
         let rro = s.remotesReadOnly, gbe = s.garminBolusEnabled
-        s.childModeEnabled = false; s.phoneReadOnly = false; s.advancedControlEnabled = true
-        s.remotesReadOnly = false; s.garminBolusEnabled = true
+        s.childModeEnabled = false
+        s.phoneReadOnly = false
+        s.advancedControlEnabled = true
+        s.remotesReadOnly = false
+        s.garminBolusEnabled = true
         BolusPasscodeStore.useInMemoryBackingForTests = true
         await body()
         BolusPasscodeStore.setPasscode(nil)
         BolusPasscodeStore.useInMemoryBackingForTests = false
-        s.childModeEnabled = child; s.phoneReadOnly = ro; s.advancedControlEnabled = adv
-        s.remotesReadOnly = rro; s.garminBolusEnabled = gbe
+        s.childModeEnabled = child
+        s.phoneReadOnly = ro
+        s.advancedControlEnabled = adv
+        s.remotesReadOnly = rro
+        s.garminBolusEnabled = gbe
     }
 
     @Test func garminDeliverDeniedWithoutOrWrongPasscodeAllowedWithCorrect() async {

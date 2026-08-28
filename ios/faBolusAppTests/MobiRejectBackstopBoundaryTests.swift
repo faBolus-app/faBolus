@@ -36,7 +36,7 @@ struct MobiRejectBackstopBoundaryTests {
         // The transition: a mid-session identity flip via the backend's `onChange` → `AppModel.refresh()`
         // — precisely what a real backgrounded Mobi (re)discovery drives, with zero foreground UI.
         backend.simulatePumpIdentityChange(isMobi: true)
-        #expect(model.snapshot.pumpModel == .mobi)   // the momentary-true fact (RESEARCH Pitfall 3)
+        #expect(model.snapshot.pumpModel == .mobi)  // the momentary-true fact (RESEARCH Pitfall 3)
 
         // `MobiRejectBackstop`'s re-arm hop is a `Task { @MainActor in ... }` (see its doc comment) —
         // it's merely ENQUEUED at the synchronous point above, not run yet. Give the main actor's queue
@@ -86,9 +86,12 @@ struct MobiRejectBackstopBoundaryTests {
         let backstop = MobiRejectBackstop(model: model)
         backstop.start()
 
-        backend.seedFreshGlucose(150)   // an unrelated snapshot change, to exercise the re-arm loop
+        backend.seedFreshGlucose(150)  // an unrelated snapshot change, to exercise the re-arm loop
         var iterations = 0
-        while iterations < 10 { await Task.yield(); iterations += 1 }
+        while iterations < 10 {
+            await Task.yield()
+            iterations += 1
+        }
 
         #expect(model.snapshot.pumpModel != .mobi)
         #expect(model.lastError == nil)

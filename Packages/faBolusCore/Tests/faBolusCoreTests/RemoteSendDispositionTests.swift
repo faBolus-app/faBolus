@@ -15,12 +15,12 @@ final class RemoteSendDispositionTests: XCTestCase {
     /// Every command that reaches the pump, or authorizes something that does.
     private static let mutating: [RemoteCommand.Kind] = [
         .bolusRequest, .bolusConfirm, .cancelBolus, .suspendPump, .resumePump,
-        .dismissAlert, .bolusApprovalRequest, .bolusApprovalResponse, .sealed,
+        .dismissAlert, .bolusApprovalRequest, .bolusApprovalResponse, .sealed
     ]
     /// Display/handshake traffic. Queuing these is desirable — a watch that was out of range catches up.
     private static let nonMutating: [RemoteCommand.Kind] = [
         .bolusStatus, .statusRead,
-        .authHello, .authChallenge, .authProof, .authResult,
+        .authHello, .authChallenge, .authProof, .authResult
     ]
 
     /// The two lists together must be the whole enum. If a case is added and left unclassified, this
@@ -31,7 +31,7 @@ final class RemoteSendDispositionTests: XCTestCase {
         let all: [RemoteCommand.Kind] = [
             .bolusRequest, .bolusConfirm, .bolusStatus, .cancelBolus, .statusRead, .dismissAlert,
             .suspendPump, .resumePump, .authHello, .authChallenge, .authProof, .authResult,
-            .sealed, .bolusApprovalRequest, .bolusApprovalResponse,
+            .sealed, .bolusApprovalRequest, .bolusApprovalResponse
         ]
         XCTAssertEqual(classified.count, all.count, "a RemoteCommand.Kind is unclassified")
         for k in all { XCTAssertTrue(classified.contains(k.rawValue), "\(k.rawValue) unclassified") }
@@ -43,15 +43,17 @@ final class RemoteSendDispositionTests: XCTestCase {
 
     func testMutatingCommandIsNeverQueuedWhenUnreachable() {
         for k in Self.mutating {
-            XCTAssertEqual(RemoteSendDisposition.decide(kind: k, isReachable: false),
-                           .reportUndeliverable, "\(k.rawValue) must not be queued")
+            XCTAssertEqual(
+                RemoteSendDisposition.decide(kind: k, isReachable: false),
+                .reportUndeliverable, "\(k.rawValue) must not be queued")
         }
     }
 
     func testMutatingCommandIsNeverQueuedAfterALiveSendFails() {
         for k in Self.mutating {
-            XCTAssertEqual(RemoteSendDisposition.decide(kind: k, isReachable: true, liveSendFailed: true),
-                           .reportUndeliverable, "\(k.rawValue) must not fall back to the queue")
+            XCTAssertEqual(
+                RemoteSendDisposition.decide(kind: k, isReachable: true, liveSendFailed: true),
+                .reportUndeliverable, "\(k.rawValue) must not fall back to the queue")
         }
     }
 
@@ -63,8 +65,9 @@ final class RemoteSendDispositionTests: XCTestCase {
 
     func testNonMutatingCommandFallsBackToTheQueueWhenALiveSendFails() {
         for k in Self.nonMutating {
-            XCTAssertEqual(RemoteSendDisposition.decide(kind: k, isReachable: true, liveSendFailed: true),
-                           .queue)
+            XCTAssertEqual(
+                RemoteSendDisposition.decide(kind: k, isReachable: true, liveSendFailed: true),
+                .queue)
         }
     }
 

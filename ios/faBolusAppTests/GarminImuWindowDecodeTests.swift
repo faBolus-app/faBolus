@@ -64,8 +64,10 @@ struct GarminImuWindowDecodeTests {
 
     @Test func v2DequantizesWithinScaleResolutionOfOriginals() {
         let ch = 6, n = 10
-        let scale: [Double] = [8.0 / 32767.0, 8.0 / 32767.0, 8.0 / 32767.0,
-                                2000.0 / 32767.0, 2000.0 / 32767.0, 2000.0 / 32767.0]
+        let scale: [Double] = [
+            8.0 / 32767.0, 8.0 / 32767.0, 8.0 / 32767.0,
+            2000.0 / 32767.0, 2000.0 / 32767.0, 2000.0 / 32767.0
+        ]
         // Synthetic window: n*ch samples within each channel's assumed full-scale range.
         var samples: [Float] = []
         for i in 0..<(n * ch) {
@@ -81,8 +83,9 @@ struct GarminImuWindowDecodeTests {
         #expect(out.count == samples.count)
         for i in 0..<samples.count {
             let resolution = scale[i % ch]
-            #expect(abs(Double(out[i]) - Double(samples[i])) <= resolution + 1e-6,
-                    "dequantized value must be within one scale-step of the original")
+            #expect(
+                abs(Double(out[i]) - Double(samples[i])) <= resolution + 1e-6,
+                "dequantized value must be within one scale-step of the original")
         }
     }
 
@@ -110,7 +113,7 @@ struct GarminImuWindowDecodeTests {
     @Test func v2ScaleLengthMismatchDecodesEmpty() {
         let dict: [String: Any] = [
             "v": 2, "ch": 6, "n": 10,
-            "scale": [1.0, 2.0] as [Any],   // wrong length (should be 6)
+            "scale": [1.0, 2.0] as [Any],  // wrong length (should be 6)
             "data": [Int](repeating: 0, count: 120) as [Any]
         ]
         #expect(GarminImuWindowDecode.decode(dict).isEmpty)
@@ -120,14 +123,14 @@ struct GarminImuWindowDecodeTests {
         let dict: [String: Any] = [
             "v": 2, "ch": 6, "n": 10,
             "scale": [Double](repeating: 1.0, count: 6) as [Any],
-            "data": [Int](repeating: 0, count: 10) as [Any]   // should be 10*6*2 = 120
+            "data": [Int](repeating: 0, count: 10) as [Any]  // should be 10*6*2 = 120
         ]
         #expect(GarminImuWindowDecode.decode(dict).isEmpty)
     }
 
     @Test func v2OversizedNChDecodesEmpty() {
         let dict: [String: Any] = [
-            "v": 2, "ch": 6, "n": 100_000,   // n*ch far exceeds maxTotalSamples
+            "v": 2, "ch": 6, "n": 100_000,  // n*ch far exceeds maxTotalSamples
             "scale": [Double](repeating: 1.0, count: 6) as [Any],
             "data": [Int](repeating: 0, count: 2) as [Any]
         ]
@@ -136,7 +139,10 @@ struct GarminImuWindowDecodeTests {
 
     @Test func v2ZeroChOrZeroNDecodesEmpty() {
         #expect(GarminImuWindowDecode.decode(["v": 2, "ch": 0, "n": 10, "scale": [], "data": []]).isEmpty)
-        #expect(GarminImuWindowDecode.decode(["v": 2, "ch": 6, "n": 0, "scale": [Double](repeating: 1.0, count: 6), "data": []]).isEmpty)
+        #expect(
+            GarminImuWindowDecode.decode([
+                "v": 2, "ch": 6, "n": 0, "scale": [Double](repeating: 1.0, count: 6), "data": []
+            ]).isEmpty)
     }
 
     @Test func v2MissingChOrNDecodesEmpty() {
@@ -148,7 +154,7 @@ struct GarminImuWindowDecodeTests {
         let dict: [String: Any] = [
             "v": 2, "ch": 1, "n": 1,
             "scale": [1.0] as [Any],
-            "data": [999] as [Any]   // not a valid byte (0...255)
+            "data": [999] as [Any]  // not a valid byte (0...255)
         ]
         #expect(GarminImuWindowDecode.decode(dict).isEmpty)
     }

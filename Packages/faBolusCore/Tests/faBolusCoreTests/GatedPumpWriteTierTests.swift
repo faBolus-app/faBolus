@@ -7,12 +7,13 @@ struct GatedPumpWriteTierTests {
 
     @Test func clinicianTierSetIsExactlyTheClinicalParameters() {
         let clinician = Set(GatedPumpWrite.clinicianTierWrites.map(\.rawValue))
-        #expect(clinician == [
-            "setControlIQ", "setMaxBolus", "setMaxBasal",
-            "createProfile", "setActiveProfile", "deleteProfile",
-            "addProfileSegment", "modifyProfileSegment", "deleteProfileSegment",
-            "setCgmHighLowAlert",
-        ])
+        #expect(
+            clinician == [
+                "setControlIQ", "setMaxBolus", "setMaxBasal",
+                "createProfile", "setActiveProfile", "deleteProfile",
+                "addProfileSegment", "modifyProfileSegment", "deleteProfileSegment",
+                "setCgmHighLowAlert"
+            ])
     }
 
     @Test func everythingElseIsUserTierAndNoReachableWriteIsFixed() {
@@ -21,9 +22,11 @@ struct GatedPumpWriteTierTests {
             #expect(w.requiredTier != .fixed, "\(w.rawValue): a reachable write can't be .fixed")
         }
         // Delivery + operational + the cosmetic rename are user-tier (the person owns them day to day).
-        for w in [GatedPumpWrite.deliverBolus, .cancelBolus, .dismissNotification, .suspendDelivery,
-                  .resumeDelivery, .setTempBasal, .setMode, .renameProfile, .syncTimeToNow,
-                  .setLowInsulinAlert, .startG7Session] {
+        for w in [
+            GatedPumpWrite.deliverBolus, .cancelBolus, .dismissNotification, .suspendDelivery,
+            .resumeDelivery, .setTempBasal, .setMode, .renameProfile, .syncTimeToNow,
+            .setLowInsulinAlert, .startG7Session
+        ] {
             #expect(w.requiredTier == .user, "\(w.rawValue) should be user-tier")
         }
     }

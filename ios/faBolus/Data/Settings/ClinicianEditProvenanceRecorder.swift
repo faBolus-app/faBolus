@@ -19,9 +19,11 @@ final class ClinicianEditProvenanceRecorder {
     /// themselves" from "we did it".
     private var lastManualModeChangeAt: Date?
 
-    init(settingChangeStore: StoredSettingChangeStore = StoredSettingChangeStore(
-        url: StoredSettingChangeStore.defaultURL(appGroupID: WidgetStore.appGroup)
-            ?? URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("setting-change-log.json"))) {
+    init(
+        settingChangeStore: StoredSettingChangeStore = StoredSettingChangeStore(
+            url: StoredSettingChangeStore.defaultURL(appGroupID: WidgetStore.appGroup)
+                ?? URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("setting-change-log.json"))
+    ) {
         self.settingChangeStore = settingChangeStore
     }
 
@@ -29,33 +31,42 @@ final class ClinicianEditProvenanceRecorder {
     /// caller's own `lastError == nil` check at the moment of the write, taken as a VALUE — this type
     /// never reads `lastError` itself) AND the value actually changed. So a blocked, failed, or no-op
     /// edit records nothing.
-    func recordClinicianEditIfChanged(_ key: SettingKey, before: BackupValue?, afterOnSuccess after: BackupValue,
-                                       succeeded: Bool) {
+    func recordClinicianEditIfChanged(
+        _ key: SettingKey, before: BackupValue?, afterOnSuccess after: BackupValue,
+        succeeded: Bool
+    ) {
         guard succeeded, before != after else { return }
-        settingChangeStore.record(StoredSettingChange(
-            key: key, before: before, after: after, provenance: .selfSet,
-            atSeconds: Int(Date().timeIntervalSince1970)))
+        settingChangeStore.record(
+            StoredSettingChange(
+                key: key, before: before, after: after, provenance: .selfSet,
+                atSeconds: Int(Date().timeIntervalSince1970)))
     }
 
     /// §2.1(2): record `.selfSet` provenance for each CHANGED therapy field of a profile segment. Keyed
     /// on the segment's START TIME — its stable identity across the pump's index-renumbering (S7 /
     /// `SettingKey` doc). Fail-open and only on a successful, value-changing edit (both guarded by
     /// `recordClinicianEditIfChanged`).
-    func recordSegmentEditIfChanged(idpId: Int, startMinutes: Int,
-                                     beforeBasal: Double?, afterBasal: Double,
-                                     beforeCR: Double?, afterCR: Double,
-                                     beforeISF: Int?, afterISF: Int,
-                                     beforeTarget: Int?, afterTarget: Int,
-                                     succeeded: Bool) {
+    func recordSegmentEditIfChanged(
+        idpId: Int, startMinutes: Int,
+        beforeBasal: Double?, afterBasal: Double,
+        beforeCR: Double?, afterCR: Double,
+        beforeISF: Int?, afterISF: Int,
+        beforeTarget: Int?, afterTarget: Int,
+        succeeded: Bool
+    ) {
         func key(_ f: String) -> SettingKey { .segment(idpId: idpId, startMinutes: startMinutes, field: f) }
-        recordClinicianEditIfChanged(key("basalRate"), before: beforeBasal.map(BackupValue.double),
-                                     afterOnSuccess: .double(afterBasal), succeeded: succeeded)
-        recordClinicianEditIfChanged(key("carbRatio"), before: beforeCR.map(BackupValue.double),
-                                     afterOnSuccess: .double(afterCR), succeeded: succeeded)
-        recordClinicianEditIfChanged(key("isf"), before: beforeISF.map(BackupValue.int),
-                                     afterOnSuccess: .int(afterISF), succeeded: succeeded)
-        recordClinicianEditIfChanged(key("targetBg"), before: beforeTarget.map(BackupValue.int),
-                                     afterOnSuccess: .int(afterTarget), succeeded: succeeded)
+        recordClinicianEditIfChanged(
+            key("basalRate"), before: beforeBasal.map(BackupValue.double),
+            afterOnSuccess: .double(afterBasal), succeeded: succeeded)
+        recordClinicianEditIfChanged(
+            key("carbRatio"), before: beforeCR.map(BackupValue.double),
+            afterOnSuccess: .double(afterCR), succeeded: succeeded)
+        recordClinicianEditIfChanged(
+            key("isf"), before: beforeISF.map(BackupValue.int),
+            afterOnSuccess: .int(afterISF), succeeded: succeeded)
+        recordClinicianEditIfChanged(
+            key("targetBg"), before: beforeTarget.map(BackupValue.int),
+            afterOnSuccess: .int(afterTarget), succeeded: succeeded)
     }
 
     /// §2.1(2) B1(a): the per-field provenance for one profile segment, for the editor's origin badges.
@@ -81,16 +92,19 @@ final class ClinicianEditProvenanceRecorder {
     /// visible audit trail. Fail-open: skipped entirely when the store failed closed (don't scribble on
     /// an unreadable store), and `recordBaseline` never throws. Keyed on the segment START TIME (its
     /// stable identity). Unconditional on any write-success bit — a profile READ, not a gated write.
-    func recordConsensusBaselineIfAbsent(idpId: Int, startMinutes: Int,
-                                          basalRate: Double, carbRatio: Double, isf: Int, targetBg: Int) {
+    func recordConsensusBaselineIfAbsent(
+        idpId: Int, startMinutes: Int,
+        basalRate: Double, carbRatio: Double, isf: Int, targetBg: Int
+    ) {
         let outcome = settingChangeStore.loadOutcome()
         if outcome.failedClosed { return }
         let now = Int(Date().timeIntervalSince1970)
         func baseline(_ field: String, _ value: BackupValue) {
             let key = SettingKey.segment(idpId: idpId, startMinutes: startMinutes, field: field)
             guard outcome.log.current(key) == nil else { return }
-            settingChangeStore.recordBaseline(StoredSettingChange(
-                key: key, before: nil, after: value, provenance: .consensusDefault, atSeconds: now))
+            settingChangeStore.recordBaseline(
+                StoredSettingChange(
+                    key: key, before: nil, after: value, provenance: .consensusDefault, atSeconds: now))
         }
         baseline("basalRate", .double(basalRate))
         baseline("carbRatio", .double(carbRatio))
@@ -111,7 +125,8 @@ final class ClinicianEditProvenanceRecorder {
     func latestManualEditOrModeChange() -> Date? {
         var candidates: [Date] = []
         if let latestEditSeconds = settingChangeStore.load().latest
-            .filter({ $0.provenance != .consensusDefault }).map(\.atSeconds).max() {
+            .filter({ $0.provenance != .consensusDefault }).map(\.atSeconds).max()
+        {
             candidates.append(Date(timeIntervalSince1970: Double(latestEditSeconds)))
         }
         if let mode = lastManualModeChangeAt { candidates.append(mode) }

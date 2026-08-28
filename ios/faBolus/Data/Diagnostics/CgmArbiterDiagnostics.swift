@@ -32,9 +32,11 @@ enum CgmArbiterDiagnostics {
     ///   - sourceStatuses: the configured failover source(s), as `(id, status)` pairs read directly
     ///     from each `GlucoseSource.status` — never re-derived.
     ///   - enabled: the SAME shared "Share local diagnostics" opt-in every other section gates on.
-    static func section(provenance: GlucoseProvenance,
-                         sourceStatuses: [(id: String, status: GlucoseSourceStatus)],
-                         enabled: Bool) -> String {
+    static func section(
+        provenance: GlucoseProvenance,
+        sourceStatuses: [(id: String, status: GlucoseSourceStatus)],
+        enabled: Bool
+    ) -> String {
         var lines: [String] = ["", "[CGM arbiter]"]
         guard enabled else {
             lines.append("Turn on “Share local diagnostics” above to start collecting CGM-arbiter data.")

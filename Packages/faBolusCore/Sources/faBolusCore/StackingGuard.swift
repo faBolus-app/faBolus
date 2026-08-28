@@ -78,12 +78,14 @@ public enum StackingGuard {
     ///
     /// `pumpIOBUnits` is accepted (op-109 `swan6hrIOB`, the same value later plans' SG2 stacking check reads)
     /// and surfaced as optional `detail` context when SG1 fires — it never affects whether SG1 fires.
-    public static func calcOverride(enteredUnits: Double,
-                                    recommendedUnits: Double,
-                                    displaysNumericDose: Bool,
-                                    pumpIOBUnits: Double,
-                                    glucoseMgdl: Int?,
-                                    targetMgdl: Int) -> Disclosure {
+    public static func calcOverride(
+        enteredUnits: Double,
+        recommendedUnits: Double,
+        displaysNumericDose: Bool,
+        pumpIOBUnits: Double,
+        glucoseMgdl: Int?,
+        targetMgdl: Int
+    ) -> Disclosure {
         guard displaysNumericDose else { return .none }
         guard enteredUnits > 0 else { return .none }
         guard let glucose = glucoseMgdl, glucose > targetMgdl else { return .none }
@@ -91,15 +93,18 @@ public enum StackingGuard {
         // Full-override branch — BEFORE any ratio. A nonzero entered dose against a zero recommendation
         // discloses without ever computing entered/recommended (no NaN/inf can leak into the message).
         if recommendedUnits == 0 {
-            return Disclosure(friction: .disclose,
-                              message: "You're entering \(Self.formatUnits(enteredUnits)) U — the pump's calculator did not suggest a dose.",
-                              detail: Self.iobDetail(pumpIOBUnits))
+            return Disclosure(
+                friction: .disclose,
+                message:
+                    "You're entering \(Self.formatUnits(enteredUnits)) U — the pump's calculator did not suggest a dose.",
+                detail: Self.iobDetail(pumpIOBUnits))
         }
 
         guard enteredUnits > recommendedUnits else { return .none }
-        return Disclosure(friction: .disclose,
-                          message: "You're entering more than the pump's calculator suggested.",
-                          detail: Self.iobDetail(pumpIOBUnits))
+        return Disclosure(
+            friction: .disclose,
+            message: "You're entering more than the pump's calculator suggested.",
+            detail: Self.iobDetail(pumpIOBUnits))
     }
 
     // MARK: - SG2: max-bolus proximity disclosure
@@ -119,8 +124,11 @@ public enum StackingGuard {
     public static func maxBolusProximity(enteredUnits: Double, maxBolusUnits: Double) -> Disclosure {
         guard maxBolusUnits > 0 else { return .none }
         guard enteredUnits >= maxBolusUnits else { return .none }
-        return Disclosure(friction: .disclose,
-                          message: "You're entering \(Self.formatUnits(enteredUnits)) U — at or above this pump's maximum bolus of \(Self.formatUnits(maxBolusUnits)) U.")
+        return Disclosure(
+            friction: .disclose,
+            message:
+                "You're entering \(Self.formatUnits(enteredUnits)) U — at or above this pump's maximum bolus of \(Self.formatUnits(maxBolusUnits)) U."
+        )
     }
 
     // MARK: - insufficientReservoir: out-of-insulin over-request disclosure (D-01)
@@ -142,8 +150,11 @@ public enum StackingGuard {
     public static func insufficientReservoir(enteredUnits: Double, reservoirUnits: Double) -> Disclosure {
         guard reservoirUnits >= 0 else { return .none }
         guard enteredUnits > reservoirUnits else { return .none }
-        return Disclosure(friction: .disclose,
-                          message: "You're entering \(Self.formatUnits(enteredUnits)) U — more than the \(Self.formatUnits(reservoirUnits)) U reported remaining in the pump's reservoir. The pump may refuse or short-deliver this dose.")
+        return Disclosure(
+            friction: .disclose,
+            message:
+                "You're entering \(Self.formatUnits(enteredUnits)) U — more than the \(Self.formatUnits(reservoirUnits)) U reported remaining in the pump's reservoir. The pump may refuse or short-deliver this dose."
+        )
     }
 
     // MARK: - SG3a: escalating friction (SG1 override magnitude + SG2 max-proximity)
@@ -197,16 +208,19 @@ public enum StackingGuard {
     /// Monotonic in override magnitude: a strictly larger `enteredUnits` (all else held fixed) never steps
     /// the friction level DOWN, because the ratio and the max-proximity signal are each monotonic in
     /// `enteredUnits` and the ladder above only ever steps up as either crosses its cut-point.
-    public static func escalation(enteredUnits: Double,
-                                  recommendedUnits: Double,
-                                  displaysNumericDose: Bool,
-                                  pumpIOBUnits: Double,
-                                  glucoseMgdl: Int?,
-                                  targetMgdl: Int,
-                                  maxBolusUnits: Double) -> Disclosure {
-        let sg1 = calcOverride(enteredUnits: enteredUnits, recommendedUnits: recommendedUnits,
-                               displaysNumericDose: displaysNumericDose, pumpIOBUnits: pumpIOBUnits,
-                               glucoseMgdl: glucoseMgdl, targetMgdl: targetMgdl)
+    public static func escalation(
+        enteredUnits: Double,
+        recommendedUnits: Double,
+        displaysNumericDose: Bool,
+        pumpIOBUnits: Double,
+        glucoseMgdl: Int?,
+        targetMgdl: Int,
+        maxBolusUnits: Double
+    ) -> Disclosure {
+        let sg1 = calcOverride(
+            enteredUnits: enteredUnits, recommendedUnits: recommendedUnits,
+            displaysNumericDose: displaysNumericDose, pumpIOBUnits: pumpIOBUnits,
+            glucoseMgdl: glucoseMgdl, targetMgdl: targetMgdl)
         guard sg1.friction != .none else { return .none }
 
         let sg2 = maxBolusProximity(enteredUnits: enteredUnits, maxBolusUnits: maxBolusUnits)
@@ -216,21 +230,26 @@ public enum StackingGuard {
         // guard. The most extreme tier: there is no basis at all to measure "how much" of an override this
         // is, so it goes straight to `.reenter` rather than ever dividing by zero.
         if recommendedUnits == 0 {
-            return Disclosure(friction: .reenter,
-                              message: "You're entering \(Self.formatUnits(enteredUnits)) U with no calculator suggestion to compare against — please re-enter to confirm.",
-                              detail: sg1.detail)
+            return Disclosure(
+                friction: .reenter,
+                message:
+                    "You're entering \(Self.formatUnits(enteredUnits)) U with no calculator suggestion to compare against — please re-enter to confirm.",
+                detail: sg1.detail)
         }
 
         let ratio = enteredUnits / recommendedUnits
         if ratio >= reenterOverrideRatio {
-            return Disclosure(friction: .reenter,
-                              message: "This dose is far above what the pump's calculator suggested — please re-enter to confirm.",
-                              detail: sg1.detail)
+            return Disclosure(
+                friction: .reenter,
+                message: "This dose is far above what the pump's calculator suggested — please re-enter to confirm.",
+                detail: sg1.detail)
         }
         if ratio >= confirmExtraOverrideRatio || atOrAboveMax {
-            return Disclosure(friction: .confirmExtra,
-                              message: "This dose is well above what the pump's calculator suggested — please confirm before delivering.",
-                              detail: sg1.detail)
+            return Disclosure(
+                friction: .confirmExtra,
+                message:
+                    "This dose is well above what the pump's calculator suggested — please confirm before delivering.",
+                detail: sg1.detail)
         }
         return Disclosure(friction: .disclose, message: sg1.message, detail: sg1.detail)
     }
@@ -245,9 +264,11 @@ public enum StackingGuard {
     /// schedulable until a saline-bench check of temp-rate-while-Control-IQ-on unblocks it (`PROJECT.md`
     /// Out-of-Scope). Returns `.none` unconditionally — no default branch, no recommended-dose comparison,
     /// no units field, under every input.
-    public static func tempRateOffer(iobUnits: Double,
-                                     glucoseMgdl: Int?,
-                                     controlIQEnabled: Bool) -> Disclosure {
+    public static func tempRateOffer(
+        iobUnits: Double,
+        glucoseMgdl: Int?,
+        controlIQEnabled: Bool
+    ) -> Disclosure {
         .none
     }
 

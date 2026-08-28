@@ -37,11 +37,13 @@ import faBolusCore
         let link = CapturingLink()
         let m = RemoteCommandWireFixture(link: link)
         var cmd = RemoteCommand(kind: .statusRead)
-        cmd.carbRatio = 10; cmd.isf = 50; cmd.targetBg = 100
+        cmd.carbRatio = 10
+        cmd.isf = 50
+        cmd.targetBg = 100
         if let bg { cmd.bgMgdl = Double(bg) }
         cmd.glucoseEpochSec = Int(Date().timeIntervalSince1970 - ageMinutes * 60)
         m.handle(cmd)
-        link.sent.removeAll()          // drop nothing was sent on handle, but be explicit
+        link.sent.removeAll()  // drop nothing was sent on handle, but be explicit
         return (m, link)
     }
 
@@ -72,7 +74,7 @@ import faBolusCore
         let cmd = link.sent.last
         #expect(cmd?.kind == .bolusRequest)
         #expect(cmd?.carbsGrams == 30)
-        #expect(cmd?.bgMgdl == 200)        // the stale value IS used for the correction here
+        #expect(cmd?.bgMgdl == 200)  // the stale value IS used for the correction here
         // Divergence-guard consistency: the estimate on the wire equals the estimate computed with the
         // SAME (stale) bg the host will recompute with.
         #expect(cmd?.remoteEstimateUnits == m.estimatedUnits(forCarbs: 30, includeStaleBG: true))
@@ -80,10 +82,10 @@ import faBolusCore
 
     @Test func carbsOnlyDropsTheStaleValue() {
         let (m, link) = model(bg: 200, ageMinutes: 60)
-        m.deliverCarbs(30)                 // default includeStaleBG == false ⇒ today's behavior
+        m.deliverCarbs(30)  // default includeStaleBG == false ⇒ today's behavior
         let cmd = link.sent.last
         #expect(cmd?.carbsGrams == 30)
-        #expect(cmd?.bgMgdl == nil)        // stale value dropped from the correction
+        #expect(cmd?.bgMgdl == nil)  // stale value dropped from the correction
         #expect(cmd?.remoteEstimateUnits == m.estimatedUnits(forCarbs: 30))
     }
 
@@ -126,7 +128,7 @@ import faBolusCore
         let (m, link) = model(bg: 150, ageMinutes: 0.5)
         m.deliverCarbs(30, includeStaleBG: true)
         let a = link.sent.last
-        m.deliverCarbs(30)                 // includeStaleBG == false
+        m.deliverCarbs(30)  // includeStaleBG == false
         let b = link.sent.last
         #expect(a?.bgMgdl == 150)
         #expect(b?.bgMgdl == 150)
@@ -141,14 +143,16 @@ import faBolusCore
         let link = CapturingLink()
         let m = RemoteCommandWireFixture(link: link)
         var cmd = RemoteCommand(kind: .statusRead)
-        cmd.carbRatio = 10; cmd.isf = 50; cmd.targetBg = 100
-        cmd.iobEpochSec = Int(Date().timeIntervalSince1970 - 10)            // 10 s old → fresh
-        cmd.therapyEpochSec = Int(Date().timeIntervalSince1970 - 24 * 3600) // 24 h old → stale
+        cmd.carbRatio = 10
+        cmd.isf = 50
+        cmd.targetBg = 100
+        cmd.iobEpochSec = Int(Date().timeIntervalSince1970 - 10)  // 10 s old → fresh
+        cmd.therapyEpochSec = Int(Date().timeIntervalSince1970 - 24 * 3600)  // 24 h old → stale
         m.handle(cmd)
         #expect(m.iobDate != nil)
         #expect(m.therapyDate != nil)
-        #expect(!m.isIobStale)                 // fresh IOB
-        #expect(m.isTherapyStale)              // stale therapy
+        #expect(!m.isIobStale)  // fresh IOB
+        #expect(m.isTherapyStale)  // stale therapy
         #expect(m.iobAgeLabel != nil)
         #expect(m.therapyAgeLabel != nil)
     }
@@ -159,7 +163,9 @@ import faBolusCore
         let link = CapturingLink()
         let m = RemoteCommandWireFixture(link: link)
         var cmd = RemoteCommand(kind: .statusRead)
-        cmd.carbRatio = 10; cmd.isf = 50; cmd.targetBg = 100
+        cmd.carbRatio = 10
+        cmd.isf = 50
+        cmd.targetBg = 100
         m.handle(cmd)
         #expect(m.iobDate == nil)
         #expect(m.therapyDate == nil)
@@ -177,9 +183,11 @@ import faBolusCore
         let link = CapturingLink()
         let m = RemoteCommandWireFixture(link: link)
         var cmd = RemoteCommand(kind: .statusRead, bgMgdl: 150)
-        cmd.carbRatio = 10; cmd.isf = 50; cmd.targetBg = 100
-        cmd.glucoseEpochSec = Int(Date().timeIntervalSince1970 - 30)         // fresh CGM
-        cmd.iobEpochSec = Int(Date().timeIntervalSince1970 - 24 * 3600)      // stale IOB
+        cmd.carbRatio = 10
+        cmd.isf = 50
+        cmd.targetBg = 100
+        cmd.glucoseEpochSec = Int(Date().timeIntervalSince1970 - 30)  // fresh CGM
+        cmd.iobEpochSec = Int(Date().timeIntervalSince1970 - 24 * 3600)  // stale IOB
         cmd.therapyEpochSec = Int(Date().timeIntervalSince1970 - 24 * 3600)  // stale therapy
         m.handle(cmd)
         link.sent.removeAll()
@@ -189,7 +197,7 @@ import faBolusCore
         let sent = link.sent.last
         #expect(sent?.kind == .bolusRequest)
         #expect(sent?.carbsGrams == 30)
-        #expect(sent?.bgMgdl == 150)                     // fresh CGM used; calc staleness didn't alter it
-        #expect(sent?.remoteEstimateUnits == est)        // estimate unchanged by calc-input staleness
+        #expect(sent?.bgMgdl == 150)  // fresh CGM used; calc staleness didn't alter it
+        #expect(sent?.remoteEstimateUnits == est)  // estimate unchanged by calc-input staleness
     }
 }

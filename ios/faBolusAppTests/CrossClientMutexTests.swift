@@ -20,7 +20,8 @@ struct CrossClientMutexTests {
         let ledgerURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("s6-ledger-\(UUID().uuidString).json")
         let model = AppModel(source: backend, ledgerStoreURL: ledgerURL)
-        let rec = EchoRecorder(); rec.attach(to: model)
+        let rec = EchoRecorder()
+        rec.attach(to: model)
         await backend.connect()
         return (model, backend, rec)
     }
@@ -79,9 +80,9 @@ struct CrossClientMutexTests {
             let startIob = backend.snapshot.iobUnits
             await model.remoteDeliver(requestId: "garmin-1", units: 2.0, from: .garmin, peerId: "garmin")
             await model.remoteDeliver(requestId: "garmin-2", units: 2.0, from: .garmin, peerId: "garmin")
-            #expect(backend.snapshot.iobUnits == startIob + 2.0)   // only the FIRST dose delivered
+            #expect(backend.snapshot.iobUnits == startIob + 2.0)  // only the FIRST dose delivered
             #expect(rec.delivered("garmin-1"))
-            #expect(!rec.delivered("garmin-2"))                     // recency guard refused the recompose
+            #expect(!rec.delivered("garmin-2"))  // recency guard refused the recompose
             #expect(rec.message("garmin-2")?.contains("matching bolus was just delivered") == true)
         }
     }
@@ -95,7 +96,7 @@ struct CrossClientMutexTests {
             let startIob = backend.snapshot.iobUnits
             await model.remoteDeliver(requestId: "garmin-3", units: 2.0, from: .garmin, peerId: "garmin")
             await model.remoteDeliver(requestId: "garmin-4", units: 1.5, from: .garmin, peerId: "garmin")
-            #expect(backend.snapshot.iobUnits == startIob + 3.5)   // both distinct doses delivered
+            #expect(backend.snapshot.iobUnits == startIob + 3.5)  // both distinct doses delivered
             #expect(rec.delivered("garmin-3"))
             #expect(rec.delivered("garmin-4"))
         }
@@ -113,10 +114,14 @@ private enum AppSettingsGate {
         let s = AppSettings.shared
         let child = s.childModeEnabled, ro = s.remotesReadOnly, adv = s.advancedControlEnabled
         let gb = s.garminBolusEnabled
-        s.childModeEnabled = false; s.remotesReadOnly = false; s.advancedControlEnabled = true
+        s.childModeEnabled = false
+        s.remotesReadOnly = false
+        s.advancedControlEnabled = true
         s.garminBolusEnabled = true
         await body()
-        s.childModeEnabled = child; s.remotesReadOnly = ro; s.advancedControlEnabled = adv
+        s.childModeEnabled = child
+        s.remotesReadOnly = ro
+        s.advancedControlEnabled = adv
         s.garminBolusEnabled = gb
     }
 }

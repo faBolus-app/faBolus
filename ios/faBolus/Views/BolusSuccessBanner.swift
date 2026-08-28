@@ -71,8 +71,10 @@ enum BolusConfirmation {
     /// convention. `message` is the caller's already-resolved
     /// non-success copy (`model.lastError`) — only consulted for `.failed`; omitting it (the default)
     /// preserves the original silent behavior for callers that haven't been updated yet.
-    static func banner(for signal: Signal, units: Double, extended: ExtendedDetail? = nil,
-                        message: String? = nil) -> BolusSuccessBanner? {
+    static func banner(
+        for signal: Signal, units: Double, extended: ExtendedDetail? = nil,
+        message: String? = nil
+    ) -> BolusSuccessBanner? {
         switch signal {
         case .staged:
             return nil
@@ -81,8 +83,9 @@ enum BolusConfirmation {
             // rather than show an empty/generic warning (mirrors the original "never a false banner"
             // property, applied to "never an empty one" too).
             guard let message else { return nil }
-            return BolusSuccessBanner(kind: .warning, primary: String(localized: "Bolus not delivered"),
-                                       secondary: message)
+            return BolusSuccessBanner(
+                kind: .warning, primary: String(localized: "Bolus not delivered"),
+                secondary: message)
         case .delivered:
             // Route the delivered-amount/combo templates through Localizable.xcstrings. Numeric
             // formatting (`"%.2f U"`/`"%d min"`) is pre-rendered into plain strings and interpolated as
@@ -91,10 +94,11 @@ enum BolusConfirmation {
             let primary = String(localized: "Bolus delivered")
             let secondary: String
             if let extended {
-                secondary = String(format: String(localized: "%@ now, %@ total over %@"),
-                                    String(format: "%.2f U", extended.nowUnits),
-                                    String(format: "%.2f U", extended.totalUnits),
-                                    String(format: "%d min", extended.durationMinutes))
+                secondary = String(
+                    format: String(localized: "%@ now, %@ total over %@"),
+                    String(format: "%.2f U", extended.nowUnits),
+                    String(format: "%.2f U", extended.totalUnits),
+                    String(format: "%d min", extended.durationMinutes))
             } else {
                 secondary = String(format: String(localized: "%@ delivered"), String(format: "%.2f U", units))
             }

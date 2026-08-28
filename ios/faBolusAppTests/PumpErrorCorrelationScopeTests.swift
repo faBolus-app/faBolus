@@ -40,10 +40,11 @@ struct PumpErrorCorrelationScopeTests {
     @Test func aControlWriteNackNamingAReadCollidingOpcodeNeverBlacklistsTheRead() {
         let b = TandemBackend(testTransport: FakePumpTransport())
         let op164 = SetTempRateRequest.props.opCode
-        #expect(op164 == LastBolusStatusV2Request.props.opCode)   // proven collision
+        #expect(op164 == LastBolusStatusV2Request.props.opCode)  // proven collision
         b.injectControlFrameForTesting(FakePumpTransport.errorResponse(requestOpCode: op164, errorCode: 6))
-        #expect(!b.badOpcodesForTesting.contains(op164),
-                "a .control write NACK naming op164 must NEVER suppress the colliding LastBolusStatusV2 READ (CR-01)")
+        #expect(
+            !b.badOpcodesForTesting.contains(op164),
+            "a .control write NACK naming op164 must NEVER suppress the colliding LastBolusStatusV2 READ (CR-01)")
         #expect(b.badOpcodesForTesting.isEmpty, "no read may be blacklisted by a control-write rejection")
     }
 
@@ -51,10 +52,11 @@ struct PumpErrorCorrelationScopeTests {
     @Test func aControlWriteNackNamingOp144NeverBlacklistsTheBatteryRead() {
         let b = TandemBackend(testTransport: FakePumpTransport())
         let op144 = EnterChangeCartridgeModeRequest.props.opCode
-        #expect(op144 == CurrentBatteryV2Request.props.opCode)   // proven collision
+        #expect(op144 == CurrentBatteryV2Request.props.opCode)  // proven collision
         b.injectControlFrameForTesting(FakePumpTransport.errorResponse(requestOpCode: op144, errorCode: 6))
-        #expect(!b.badOpcodesForTesting.contains(op144),
-                "a .control write NACK naming op144 must NEVER suppress the colliding CurrentBatteryV2 READ (CR-01)")
+        #expect(
+            !b.badOpcodesForTesting.contains(op144),
+            "a .control write NACK naming op144 must NEVER suppress the colliding CurrentBatteryV2 READ (CR-01)")
     }
 
     // MARK: - WR-01: an opcode-less control op77 never correlates to an outstanding READ
@@ -62,11 +64,12 @@ struct PumpErrorCorrelationScopeTests {
     /// With op20 the sole outstanding READ (txId 0), an OPCODE-LESS op77 on `.control` whose echoed txId (0)
     /// would otherwise correlate to op20 must NOT blacklist it — a control op77 says nothing about reads.
     @Test func anOpcodeLessControlOp77NeverBlacklistsAnOutstandingRead() async {
-        let b = TandemBackend(testTransport: FakePumpTransport())   // connected
-        await b.refreshLoadStatus()                                 // op20 outstanding, txId 0
+        let b = TandemBackend(testTransport: FakePumpTransport())  // connected
+        await b.refreshLoadStatus()  // op20 outstanding, txId 0
         b.injectControlFrameForTesting(FakePumpTransport.errorResponse(requestOpCode: 0, errorCode: 0, txId: 0))
-        #expect(!b.badOpcodesForTesting.contains(loadStatusOpcode),
-                "a .control op77 must never correlate to / suppress an outstanding currentStatus READ (WR-01)")
+        #expect(
+            !b.badOpcodesForTesting.contains(loadStatusOpcode),
+            "a .control op77 must never correlate to / suppress an outstanding currentStatus READ (WR-01)")
         #expect(b.badOpcodesForTesting.isEmpty)
     }
 
@@ -98,20 +101,22 @@ struct PumpErrorCorrelationScopeTests {
         #expect(b.outstandingReadsForTesting.count > 1, "must be ambiguous (more than one outstanding)")
         // txId 200 is never assigned in the burst (txIds are a small 0-based counter).
         b.injectStatusFrameForTesting(FakePumpTransport.errorResponse(requestOpCode: 0, errorCode: 0, txId: 200))
-        #expect(b.badOpcodesForTesting.isEmpty,
-                "an op77 whose txId matches no outstanding read must FAIL CLOSED — never guess the FIFO-oldest (WR-02)")
+        #expect(
+            b.badOpcodesForTesting.isEmpty,
+            "an op77 whose txId matches no outstanding read must FAIL CLOSED — never guess the FIFO-oldest (WR-02)")
     }
 
     /// The single-outstanding on-demand path still self-heals WITHOUT a txId echo (unambiguous): exactly one
     /// read outstanding → resolve to it. (Proves WR-02's fail-closed change didn't break the wizard path.)
     @Test func aSoleOutstandingReadSelfHealsEvenWithoutATxIdEcho() async {
         let b = TandemBackend(testTransport: FakePumpTransport())
-        await b.refreshLoadStatus()                                 // op20 sole outstanding, txId 0
+        await b.refreshLoadStatus()  // op20 sole outstanding, txId 0
         // Inject an op77 with a txId (77) that does NOT match op20's txId (0) — the exactly-one-outstanding
         // shortcut must still resolve to op20.
         b.injectStatusFrameForTesting(FakePumpTransport.errorResponse(requestOpCode: 0, errorCode: 0, txId: 77))
-        #expect(b.badOpcodesForTesting.contains(loadStatusOpcode),
-                "with exactly one read outstanding, an opcode-less op77 resolves to it unambiguously (WR-02)")
+        #expect(
+            b.badOpcodesForTesting.contains(loadStatusOpcode),
+            "with exactly one read outstanding, an opcode-less op77 resolves to it unambiguously (WR-02)")
     }
 
     // MARK: - WR-03: non-vacuous burst correlation — txId echo picks the right read, not the oldest
@@ -127,17 +132,22 @@ struct PumpErrorCorrelationScopeTests {
         b.releaseIdentityGatedReadsForTesting()
         let op20 = loadStatusOpcode
         guard let op20TxId = b.outstandingReadsForTesting.first(where: { $0.opcode == op20 })?.txId else {
-            Issue.record("op20 must be one of the outstanding reads after the burst"); return
+            Issue.record("op20 must be one of the outstanding reads after the burst")
+            return
         }
         guard let oldest = b.outstandingReadsForTesting.first?.opcode else {
-            Issue.record("the burst must leave reads outstanding"); return
+            Issue.record("the burst must leave reads outstanding")
+            return
         }
         #expect(oldest != op20, "op20 is fastRead()'s LAST send — the FIFO-oldest must be a DIFFERENT read")
         b.injectStatusFrameForTesting(FakePumpTransport.errorResponse(requestOpCode: 0, errorCode: 0, txId: op20TxId))
-        #expect(b.badOpcodesForTesting.contains(op20),
-                "the op77's echoed txId identifies op20 — it must be the read blacklisted (WR-03)")
-        #expect(!b.badOpcodesForTesting.contains(oldest),
-                "the FIFO-oldest read must NOT be blacklisted — correlation is by txId echo, not by guessing oldest (WR-03)")
+        #expect(
+            b.badOpcodesForTesting.contains(op20),
+            "the op77's echoed txId identifies op20 — it must be the read blacklisted (WR-03)")
+        #expect(
+            !b.badOpcodesForTesting.contains(oldest),
+            "the FIFO-oldest read must NOT be blacklisted — correlation is by txId echo, not by guessing oldest (WR-03)"
+        )
     }
 
     /// Negative: an op77 echoing an EARLIER read's txId blacklists THAT read (by txId), and op20 is left
@@ -145,16 +155,20 @@ struct PumpErrorCorrelationScopeTests {
     @Test func aBurstOp77EchoingAnEarlierReadsTxIdDoesNotBlacklistLoadStatus() {
         let b = TandemBackend(testTransport: FakePumpTransport())
         b.startPollingForTesting()
-        b.releaseIdentityGatedReadsForTesting()   // op20 identity-gated → released so it is outstanding too
+        b.releaseIdentityGatedReadsForTesting()  // op20 identity-gated → released so it is outstanding too
         let op20 = loadStatusOpcode
         guard let earlier = b.outstandingReadsForTesting.first(where: { $0.opcode != op20 }) else {
-            Issue.record("expected at least one non-op20 outstanding read"); return
+            Issue.record("expected at least one non-op20 outstanding read")
+            return
         }
-        b.injectStatusFrameForTesting(FakePumpTransport.errorResponse(requestOpCode: 0, errorCode: 0, txId: earlier.txId))
-        #expect(b.badOpcodesForTesting.contains(earlier.opcode),
-                "the op77's echoed txId identifies the earlier read — that read is blacklisted (WR-03)")
-        #expect(!b.badOpcodesForTesting.contains(op20),
-                "op20 must NOT be blacklisted when the op77's txId points at a different read (WR-03)")
+        b.injectStatusFrameForTesting(
+            FakePumpTransport.errorResponse(requestOpCode: 0, errorCode: 0, txId: earlier.txId))
+        #expect(
+            b.badOpcodesForTesting.contains(earlier.opcode),
+            "the op77's echoed txId identifies the earlier read — that read is blacklisted (WR-03)")
+        #expect(
+            !b.badOpcodesForTesting.contains(op20),
+            "op20 must NOT be blacklisted when the op77's txId points at a different read (WR-03)")
     }
 }
 
@@ -173,10 +187,12 @@ struct CalcInputGuardedSendTests {
         var dispatched: [UInt8] = []
         s.onReadDispatchedForTesting = { _, op in dispatched.append(op) }
         _ = await s.refreshCalcInputsConfirmed()
-        #expect(dispatched.contains(BolusCalcDataSnapshotRequest.props.opCode),
-                "op-115 must route through the guarded sendStatusRead path (IN-02)")
-        #expect(dispatched.contains(ControlIQIOBRequest.props.opCode),
-                "op-109 must route through the guarded sendStatusRead path (IN-02)")
+        #expect(
+            dispatched.contains(BolusCalcDataSnapshotRequest.props.opCode),
+            "op-115 must route through the guarded sendStatusRead path (IN-02)")
+        #expect(
+            dispatched.contains(ControlIQIOBRequest.props.opCode),
+            "op-109 must route through the guarded sendStatusRead path (IN-02)")
     }
 
     /// Corollary: a calc-input read the pump has rejected is now SKIPPED by the never-resend guard, not
@@ -186,11 +202,12 @@ struct CalcInputGuardedSendTests {
         s.isConnected = { true }
         s.send = { _ in 0 }
         s.calcInputRefreshTimeout = 0.05
-        s.insertBadOpcode(ControlIQIOBRequest.props.opCode)   // op-109 previously rejected (a READ)
+        s.insertBadOpcode(ControlIQIOBRequest.props.opCode)  // op-109 previously rejected (a READ)
         var skipped: [UInt8] = []
         s.onReadSkippedForTesting = { _, op in skipped.append(op) }
         _ = await s.refreshCalcInputsConfirmed()
-        #expect(skipped.contains(ControlIQIOBRequest.props.opCode),
-                "a rejected calc-input read must be skipped by the badOpcodes guard, not re-sent (IN-02)")
+        #expect(
+            skipped.contains(ControlIQIOBRequest.props.opCode),
+            "a rejected calc-input read must be skipped by the badOpcodes guard, not re-sent (IN-02)")
     }
 }

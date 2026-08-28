@@ -42,12 +42,14 @@ import faBolusCore
     /// Mirrors `MacBolusEntryView.gate` (the model-fed axes): the Mac reads link + in-flight + read-only
     /// off the relayed state and passes them straight to the shared gate.
     private func macGate(_ m: RemoteCommandWireFixture, amount: Double, isCarbs: Bool = false)
-        -> (canBolus: Bool, reason: BolusBlockReason?) {
+        -> (canBolus: Bool, reason: BolusBlockReason?)
+    {
         let access: AccessPolicy.AccessDecision = m.readOnly ? .deny(.remotesReadOnly) : .allow
         let maxV = isCarbs ? 200 : (m.maxBolusUnits > 0 ? m.maxBolusUnits : 25)
-        return BolusGate.evaluate(reachable: m.reachable, linked: m.pumpConnected,
-                                  bolusInFlight: m.bolusInFlight, amount: amount,
-                                  minimum: isCarbs ? 1 : 0.05, maximum: maxV, access: access)
+        return BolusGate.evaluate(
+            reachable: m.reachable, linked: m.pumpConnected,
+            bolusInFlight: m.bolusInFlight, amount: amount,
+            minimum: isCarbs ? 1 : 0.05, maximum: maxV, access: access)
     }
 
     // MARK: seams
@@ -59,10 +61,13 @@ import faBolusCore
     @Test func remoteAdoptsPhoneActiveModeWithPermissiveLegacyDefault() {
         func modelWithMode(_ raw: String?) -> RemoteCommandWireFixture {
             let m = RemoteCommandWireFixture(link: FakeLink())
-            var cmd = RemoteCommand(kind: .statusRead); cmd.message = "Connected"; cmd.activeMode = raw
-            m.handle(cmd); return m
+            var cmd = RemoteCommand(kind: .statusRead)
+            cmd.message = "Connected"
+            cmd.activeMode = raw
+            m.handle(cmd)
+            return m
         }
-        let extendedNeeds = GatedPumpWrite.deliverExtendedBolus.requiredMode   // .advanced
+        let extendedNeeds = GatedPumpWrite.deliverExtendedBolus.requiredMode  // .advanced
 
         // Absent ⇒ legacy host ⇒ permissive default; the extended affordance stays available.
         let legacy = modelWithMode(nil)
@@ -82,15 +87,18 @@ import faBolusCore
     @Test func linkAndInFlightSeamsMapEveryConnectionString() {
         // Before any push, nothing is linked and nothing is in flight.
         let fresh = RemoteCommandWireFixture(link: FakeLink())
-        #expect(!fresh.pumpConnected); #expect(!fresh.bolusInFlight)
+        #expect(!fresh.pumpConnected)
+        #expect(!fresh.bolusInFlight)
 
         // Connected: linked, not in flight.
         let connected = model(connection: PumpConnectionState.connected.rawValue)
-        #expect(connected.pumpConnected); #expect(!connected.bolusInFlight)
+        #expect(connected.pumpConnected)
+        #expect(!connected.bolusInFlight)
 
         // Delivering: still linked (a dose is running), AND in flight — the two axes are independent.
         let bolusing = model(connection: PumpConnectionState.bolusing.rawValue)
-        #expect(bolusing.pumpConnected); #expect(bolusing.bolusInFlight)
+        #expect(bolusing.pumpConnected)
+        #expect(bolusing.bolusInFlight)
 
         // Every down state: neither linked nor in flight.
         for down in [PumpConnectionState.disconnected, .scanning, .connecting, .error] {
@@ -104,24 +112,28 @@ import faBolusCore
 
     @Test func connectedInBoundsAllows() {
         let g = macGate(model(connection: PumpConnectionState.connected.rawValue), amount: 2.0)
-        #expect(g.canBolus); #expect(g.reason == nil)
+        #expect(g.canBolus)
+        #expect(g.reason == nil)
     }
 
     @Test func droppedPumpLinkBlocksWithReason() {
         // The pre-fix Mac allowed this (it checked only reachability) — the concrete tightening.
         let g = macGate(model(connection: PumpConnectionState.disconnected.rawValue), amount: 2.0)
-        #expect(!g.canBolus); #expect(g.reason == .pumpNotLinked)
+        #expect(!g.canBolus)
+        #expect(g.reason == .pumpNotLinked)
     }
 
     @Test func readOnlyBlocksWithReason() {
         // The other pre-fix hole: read-only was ignored, so the Mac showed a tappable button host-rejected.
         let g = macGate(model(connection: PumpConnectionState.connected.rawValue, readOnly: true), amount: 2.0)
-        #expect(!g.canBolus); #expect(g.reason == .accessDenied(.remotesReadOnly))
+        #expect(!g.canBolus)
+        #expect(g.reason == .accessDenied(.remotesReadOnly))
     }
 
     @Test func inFlightBlocksWithReason() {
         let g = macGate(model(connection: PumpConnectionState.bolusing.rawValue), amount: 2.0)
-        #expect(!g.canBolus); #expect(g.reason == .bolusInFlight)
+        #expect(!g.canBolus)
+        #expect(g.reason == .bolusInFlight)
     }
 
     @Test func unreachableDominates() {
@@ -130,13 +142,15 @@ import faBolusCore
         let m = model(connection: PumpConnectionState.connected.rawValue)
         m.reachable = false
         let g = macGate(m, amount: 2.0)
-        #expect(!g.canBolus); #expect(g.reason == .remoteUnreachable)
+        #expect(!g.canBolus)
+        #expect(g.reason == .remoteUnreachable)
     }
 
     @Test func belowMinimumStaysQuietBounds() {
         // An empty/too-small field disables via a bounds reason (the button stays disabled, no nag label).
         let g = macGate(model(connection: PumpConnectionState.connected.rawValue), amount: 0)
-        #expect(!g.canBolus); #expect(g.reason == .belowMinimum(0.05))
+        #expect(!g.canBolus)
+        #expect(g.reason == .belowMinimum(0.05))
     }
 
     // MARK: shared bolusGate / bolusAvailability (remote-iPhone open button + sheet; seeds the watch)
@@ -146,15 +160,16 @@ import faBolusCore
         #expect(model(connection: PumpConnectionState.connected.rawValue).bolusAvailability.canBolus)
         #expect(model(connection: PumpConnectionState.disconnected.rawValue).bolusAvailability.reason == .pumpNotLinked)
         #expect(model(connection: PumpConnectionState.bolusing.rawValue).bolusAvailability.reason == .bolusInFlight)
-        #expect(model(connection: PumpConnectionState.connected.rawValue, readOnly: true)
-                    .bolusAvailability.reason == .accessDenied(.remotesReadOnly))
+        #expect(
+            model(connection: PumpConnectionState.connected.rawValue, readOnly: true)
+                .bolusAvailability.reason == .accessDenied(.remotesReadOnly))
         let unreachable = model(connection: PumpConnectionState.connected.rawValue)
         unreachable.reachable = false
         #expect(unreachable.bolusAvailability.reason == .remoteUnreachable)
     }
 
     @Test func bolusGateChecksAmountBoundsInUnits() {
-        let m = model(connection: PumpConnectionState.connected.rawValue)   // maxBolusUnits default 25
+        let m = model(connection: PumpConnectionState.connected.rawValue)  // maxBolusUnits default 25
         #expect(m.bolusGate(amount: 2.0, minimum: 0.05).canBolus)
         #expect(m.bolusGate(amount: 0.0, minimum: 0.05).reason == .belowMinimum(0.05))
         #expect(m.bolusGate(amount: 99, minimum: 0.05).reason == .aboveMax(25))
@@ -171,18 +186,21 @@ import faBolusCore
 
         // A statusRead carrying the capability sets the mirror (Mobi ⇒ true ⇒ "Clear").
         let m = RemoteCommandWireFixture(link: FakeLink())
-        var on = RemoteCommand(kind: .statusRead); on.supportsRemoteAlertDismiss = true
+        var on = RemoteCommand(kind: .statusRead)
+        on.supportsRemoteAlertDismiss = true
         m.handle(on)
         #expect(m.canDismissAlertOnPump)
 
         // Absent field keeps the last-known value (keep-current idiom) — a later push that omits it must
         // not silently flip the label back.
-        var absent = RemoteCommand(kind: .statusRead); absent.message = PumpConnectionState.connected.rawValue
+        var absent = RemoteCommand(kind: .statusRead)
+        absent.message = PumpConnectionState.connected.rawValue
         m.handle(absent)
         #expect(m.canDismissAlertOnPump)
 
         // A push can narrow it to false (a t:slim host), flipping the label to "Snooze".
-        var off = RemoteCommand(kind: .statusRead); off.supportsRemoteAlertDismiss = false
+        var off = RemoteCommand(kind: .statusRead)
+        off.supportsRemoteAlertDismiss = false
         m.handle(off)
         #expect(!m.canDismissAlertOnPump)
     }

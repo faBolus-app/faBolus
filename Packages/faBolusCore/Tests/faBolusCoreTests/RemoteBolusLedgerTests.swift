@@ -15,7 +15,7 @@ final class RemoteBolusLedgerTests: XCTestCase {
 
     func testDuplicateInFlightBlocked() {
         var l = RemoteBolusLedger()
-        _ = l.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0))   // delivering, not yet settled
+        _ = l.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0))  // delivering, not yet settled
         XCTAssertEqual(l.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0)), .duplicateInFlight)
     }
 
@@ -23,8 +23,9 @@ final class RemoteBolusLedgerTests: XCTestCase {
         var l = RemoteBolusLedger()
         _ = l.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0))
         l.settle(peerId: "watch", requestId: "r1", status: "delivered", message: nil, deliveredUnits: 2.0)
-        XCTAssertEqual(l.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0)),
-                       .replay(status: "delivered", message: nil, deliveredUnits: 2.0))
+        XCTAssertEqual(
+            l.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0)),
+            .replay(status: "delivered", message: nil, deliveredUnits: 2.0))
     }
 
     func testReusedIdWithDifferentDoseIsConflict() {
@@ -39,8 +40,9 @@ final class RemoteBolusLedgerTests: XCTestCase {
         _ = l.begin(peerId: "peer", requestId: "r9", doseKey: key(nil, 30, 120))
         l.settle(peerId: "peer", requestId: "r9", status: "failed", message: "not connected")
         // A retry with the SAME id replays the failure rather than delivering.
-        XCTAssertEqual(l.begin(peerId: "peer", requestId: "r9", doseKey: key(nil, 30, 120)),
-                       .replay(status: "failed", message: "not connected", deliveredUnits: nil))
+        XCTAssertEqual(
+            l.begin(peerId: "peer", requestId: "r9", doseKey: key(nil, 30, 120)),
+            .replay(status: "failed", message: "not connected", deliveredUnits: nil))
     }
 
     func testDifferentPeersAreIndependent() {
@@ -52,9 +54,11 @@ final class RemoteBolusLedgerTests: XCTestCase {
 
     func testEvictionOnlyDropsTerminalEntries() {
         var l = RemoteBolusLedger(cap: 2)
-        _ = l.begin(peerId: "p", requestId: "a", doseKey: key(1)); l.settle(peerId: "p", requestId: "a", status: "delivered")
-        _ = l.begin(peerId: "p", requestId: "b", doseKey: key(1)); l.settle(peerId: "p", requestId: "b", status: "delivered")
-        _ = l.begin(peerId: "p", requestId: "c", doseKey: key(1))   // over cap → evicts oldest TERMINAL ("a")
+        _ = l.begin(peerId: "p", requestId: "a", doseKey: key(1))
+        l.settle(peerId: "p", requestId: "a", status: "delivered")
+        _ = l.begin(peerId: "p", requestId: "b", doseKey: key(1))
+        l.settle(peerId: "p", requestId: "b", status: "delivered")
+        _ = l.begin(peerId: "p", requestId: "c", doseKey: key(1))  // over cap → evicts oldest TERMINAL ("a")
         // "a" (terminal, beyond retention) was forgotten → new again.
         XCTAssertEqual(l.begin(peerId: "p", requestId: "a", doseKey: key(1)), .proceed)
         // "c" is still tracked in-flight.
@@ -65,8 +69,8 @@ final class RemoteBolusLedgerTests: XCTestCase {
 
     func testInFlightEntriesAreNeverEvicted() {
         var l = RemoteBolusLedger(cap: 1)
-        _ = l.begin(peerId: "p", requestId: "a", doseKey: key(1))   // delivering, over cap already
-        _ = l.begin(peerId: "p", requestId: "b", doseKey: key(1))   // also in-flight
+        _ = l.begin(peerId: "p", requestId: "a", doseKey: key(1))  // delivering, over cap already
+        _ = l.begin(peerId: "p", requestId: "b", doseKey: key(1))  // also in-flight
         // Neither is terminal, so nothing is dropped — an in-flight delivery must never be forgotten.
         XCTAssertEqual(l.begin(peerId: "p", requestId: "a", doseKey: key(1)), .duplicateInFlight)
         XCTAssertEqual(l.begin(peerId: "p", requestId: "b", doseKey: key(1)), .duplicateInFlight)
@@ -76,7 +80,7 @@ final class RemoteBolusLedgerTests: XCTestCase {
         var l = RemoteBolusLedger()
         _ = l.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0))
         l.markDelivering(peerId: "watch", requestId: "r1", bolusId: 77)
-        l.markIndeterminate(peerId: "watch", requestId: "r1")   // FB-02: outcome unknown
+        l.markIndeterminate(peerId: "watch", requestId: "r1")  // FB-02: outcome unknown
         XCTAssertEqual(l.state(peerId: "watch", requestId: "r1"), .indeterminate)
         // A retry must NOT re-deliver an unknown-outcome bolus.
         XCTAssertEqual(l.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0)), .duplicateInFlight)
@@ -129,10 +133,12 @@ final class RemoteBolusLedgerTests: XCTestCase {
     /// `completeUntilFirstUserAuthentication`, and never with `.completeFileProtection` (which locks the
     /// file whenever the device locks and would break reconciliation).
     func testLedgerFileProtectionIsAfterFirstUnlockNotComplete() {
-        XCTAssertTrue(RemoteBolusLedgerStore.fileProtection.contains(.completeFileProtectionUntilFirstUserAuthentication),
-                      "ledger must be protected at AfterFirstUnlock")
-        XCTAssertFalse(RemoteBolusLedgerStore.fileProtection.contains(.completeFileProtection),
-                       ".complete would make the ledger unreadable at a locked relaunch and break reconciliation")
+        XCTAssertTrue(
+            RemoteBolusLedgerStore.fileProtection.contains(.completeFileProtectionUntilFirstUserAuthentication),
+            "ledger must be protected at AfterFirstUnlock")
+        XCTAssertFalse(
+            RemoteBolusLedgerStore.fileProtection.contains(.completeFileProtection),
+            ".complete would make the ledger unreadable at a locked relaunch and break reconciliation")
     }
 
     /// A save writes a real file and a fresh store round-trips it (the write options — atomic +
@@ -152,8 +158,9 @@ final class RemoteBolusLedgerTests: XCTestCase {
         let outcome = RemoteBolusLedgerStore(url: url).loadOutcome()
         XCTAssertFalse(outcome.failedClosed)
         var reloaded = outcome.ledger
-        XCTAssertEqual(reloaded.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0)),
-                       .replay(status: "delivered", message: nil, deliveredUnits: 2.0))
+        XCTAssertEqual(
+            reloaded.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0)),
+            .replay(status: "delivered", message: nil, deliveredUnits: 2.0))
     }
 
     // MARK: - Phase 09-03 (D-05): `RemoteBolusLedger.blockReason` pure precedence — zero AppModel.
@@ -177,42 +184,52 @@ final class RemoteBolusLedgerTests: XCTestCase {
         "A previous bolus outcome is unconfirmed — check the pump/t:connect before dosing again."
 
     func testBlockReasonIsNilWhenNothingIsSetAndNothingIsUnresolved() {
-        XCTAssertNil(RemoteBolusLedger.blockReason(noDurableStore: false, ledgerFailedClosed: false,
-                                                   terminalSaveFailed: false, unresolved: [],
-                                                   inFlightDeliveryKey: nil))
+        XCTAssertNil(
+            RemoteBolusLedger.blockReason(
+                noDurableStore: false, ledgerFailedClosed: false,
+                terminalSaveFailed: false, unresolved: [],
+                inFlightDeliveryKey: nil))
     }
 
     func testBlockReasonNoDurableStoreOutranksEveryOtherFlagAndUnresolvedEntries() {
         let unresolved: [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool)] =
             [("watch", "r1", 42, true)]
-        XCTAssertEqual(RemoteBolusLedger.blockReason(noDurableStore: true, ledgerFailedClosed: true,
-                                                     terminalSaveFailed: true, unresolved: unresolved,
-                                                     inFlightDeliveryKey: nil), Self.noDurableStoreMessage)
+        XCTAssertEqual(
+            RemoteBolusLedger.blockReason(
+                noDurableStore: true, ledgerFailedClosed: true,
+                terminalSaveFailed: true, unresolved: unresolved,
+                inFlightDeliveryKey: nil), Self.noDurableStoreMessage)
     }
 
     func testBlockReasonLedgerFailedClosedOutranksTerminalSaveFailedAndUnresolved() {
         let unresolved: [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool)] =
             [("watch", "r1", 42, true)]
-        XCTAssertEqual(RemoteBolusLedger.blockReason(noDurableStore: false, ledgerFailedClosed: true,
-                                                     terminalSaveFailed: true, unresolved: unresolved,
-                                                     inFlightDeliveryKey: nil), Self.ledgerFailedClosedMessage)
+        XCTAssertEqual(
+            RemoteBolusLedger.blockReason(
+                noDurableStore: false, ledgerFailedClosed: true,
+                terminalSaveFailed: true, unresolved: unresolved,
+                inFlightDeliveryKey: nil), Self.ledgerFailedClosedMessage)
     }
 
     func testBlockReasonTerminalSaveFailedOutranksASimultaneouslyUnresolvedEntry() {
         let unresolved: [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool)] =
             [("watch", "stuck-with-id", 9001, true)]
-        XCTAssertEqual(RemoteBolusLedger.blockReason(noDurableStore: false, ledgerFailedClosed: false,
-                                                     terminalSaveFailed: true, unresolved: unresolved,
-                                                     inFlightDeliveryKey: nil), Self.terminalSaveFailedMessage)
+        XCTAssertEqual(
+            RemoteBolusLedger.blockReason(
+                noDurableStore: false, ledgerFailedClosed: false,
+                terminalSaveFailed: true, unresolved: unresolved,
+                inFlightDeliveryKey: nil), Self.terminalSaveFailedMessage)
     }
 
     func testBlockReasonLiveInFlightUsesTheWaitMessageNotTheCheckThePumpOne() {
         let unresolved: [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool)] =
             [("local", "r1", nil, true)]
-        XCTAssertEqual(RemoteBolusLedger.blockReason(noDurableStore: false, ledgerFailedClosed: false,
-                                                     terminalSaveFailed: false, unresolved: unresolved,
-                                                     inFlightDeliveryKey: (peerId: "local", requestId: "r1")),
-                       Self.liveInFlightMessage)
+        XCTAssertEqual(
+            RemoteBolusLedger.blockReason(
+                noDurableStore: false, ledgerFailedClosed: false,
+                terminalSaveFailed: false, unresolved: unresolved,
+                inFlightDeliveryKey: (peerId: "local", requestId: "r1")),
+            Self.liveInFlightMessage)
     }
 
     func testBlockReasonGenuinelyUnresolvedEntryUsesTheCheckThePumpMessage() {
@@ -220,9 +237,11 @@ final class RemoteBolusLedgerTests: XCTestCase {
         // relaunch after a crash).
         let unresolved: [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool)] =
             [("watch", "crashed-mid-delivery", 5555, true)]
-        XCTAssertEqual(RemoteBolusLedger.blockReason(noDurableStore: false, ledgerFailedClosed: false,
-                                                     terminalSaveFailed: false, unresolved: unresolved,
-                                                     inFlightDeliveryKey: nil), Self.genuinelyUnresolvedMessage)
+        XCTAssertEqual(
+            RemoteBolusLedger.blockReason(
+                noDurableStore: false, ledgerFailedClosed: false,
+                terminalSaveFailed: false, unresolved: unresolved,
+                inFlightDeliveryKey: nil), Self.genuinelyUnresolvedMessage)
     }
 
     func testBlockReasonMixedInFlightAndUnresolvedEntriesUsesTheCheckThePumpMessage() {
@@ -230,10 +249,12 @@ final class RemoteBolusLedgerTests: XCTestCase {
         // `allSatisfy` gate must fail closed to the "check the pump" wording, not the transient one.
         let unresolved: [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool)] =
             [("local", "r1", nil, true), ("watch", "crashed-mid-delivery", 5555, true)]
-        XCTAssertEqual(RemoteBolusLedger.blockReason(noDurableStore: false, ledgerFailedClosed: false,
-                                                     terminalSaveFailed: false, unresolved: unresolved,
-                                                     inFlightDeliveryKey: (peerId: "local", requestId: "r1")),
-                       Self.genuinelyUnresolvedMessage)
+        XCTAssertEqual(
+            RemoteBolusLedger.blockReason(
+                noDurableStore: false, ledgerFailedClosed: false,
+                terminalSaveFailed: false, unresolved: unresolved,
+                inFlightDeliveryKey: (peerId: "local", requestId: "r1")),
+            Self.genuinelyUnresolvedMessage)
     }
 
     // MARK: - R2-12: terminal-outcome re-echo query (terminalOutcomes)
@@ -255,9 +276,9 @@ final class RemoteBolusLedgerTests: XCTestCase {
 
     func testTerminalOutcomesExcludesNonTerminalEntries() {
         var l = RemoteBolusLedger()
-        _ = l.begin(peerId: "garmin", requestId: "awaiting", doseKey: key(1.0))   // begun, never settled
+        _ = l.begin(peerId: "garmin", requestId: "awaiting", doseKey: key(1.0))  // begun, never settled
         _ = l.begin(peerId: "garmin", requestId: "delivering", doseKey: key(3.0))
-        l.markDelivering(peerId: "garmin", requestId: "delivering", bolusId: 7)    // delivering, never settled
+        l.markDelivering(peerId: "garmin", requestId: "delivering", bolusId: 7)  // delivering, never settled
         XCTAssertTrue(l.terminalOutcomes(peerId: "garmin").isEmpty)
     }
 
@@ -303,7 +324,8 @@ final class RemoteBolusLedgerTests: XCTestCase {
         _ = l.begin(peerId: "peerA", requestId: "req1", doseKey: key(2.0))
         l.settle(peerId: "peerA", requestId: "req1", status: "delivered", deliveredUnits: 2.0, now: t0)
         // A FRESH requestId, same content, 2s later: flagged as a recent duplicate.
-        XCTAssertTrue(l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: key(2.0), now: t0.addingTimeInterval(2)))
+        XCTAssertTrue(
+            l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: key(2.0), now: t0.addingTimeInterval(2)))
     }
 
     func testRecentlyDeliveredDuplicateExpiresAfterWindow() {
@@ -312,7 +334,8 @@ final class RemoteBolusLedgerTests: XCTestCase {
         _ = l.begin(peerId: "peerA", requestId: "req1", doseKey: key(2.0))
         l.settle(peerId: "peerA", requestId: "req1", status: "delivered", deliveredUnits: 2.0, now: t0)
         let window = RemoteBolusLedger.recentDuplicateWindowSec
-        XCTAssertFalse(l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: key(2.0), now: t0.addingTimeInterval(window + 1)))
+        XCTAssertFalse(
+            l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: key(2.0), now: t0.addingTimeInterval(window + 1)))
     }
 
     func testDifferentDoseKeyWithinWindowIsNotFlagged() {
@@ -320,7 +343,8 @@ final class RemoteBolusLedgerTests: XCTestCase {
         let t0 = Date(timeIntervalSince1970: 1_000_000)
         _ = l.begin(peerId: "peerA", requestId: "req1", doseKey: key(2.0))
         l.settle(peerId: "peerA", requestId: "req1", status: "delivered", deliveredUnits: 2.0, now: t0)
-        XCTAssertFalse(l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: key(5.0), now: t0.addingTimeInterval(2)))
+        XCTAssertFalse(
+            l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: key(5.0), now: t0.addingTimeInterval(2)))
     }
 
     /// Addresses codex HIGH: `settle()` sets `.terminal` for EVERY outcome, so a naive "scan terminal
@@ -333,7 +357,8 @@ final class RemoteBolusLedgerTests: XCTestCase {
         // sentToPump == false (never reached markDelivering/markSent), deliveredUnits nil ⇒ a clean
         // pre-pump failure (e.g. rejected/errored before the pump write).
         l.settle(peerId: "peerA", requestId: "req1", status: "failed", message: "not connected", now: t0)
-        XCTAssertFalse(l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: key(2.0), now: t0.addingTimeInterval(2)))
+        XCTAssertFalse(
+            l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: key(2.0), now: t0.addingTimeInterval(2)))
     }
 
     func testZeroUnitCancellationDoesNotPopulateRecencyIndex() {
@@ -342,7 +367,8 @@ final class RemoteBolusLedgerTests: XCTestCase {
         _ = l.begin(peerId: "peerA", requestId: "req1", doseKey: key(2.0))
         // sentToPump == false, deliveredUnits == 0 ⇒ a genuine 0 U cancellation before the pump write.
         l.settle(peerId: "peerA", requestId: "req1", status: "cancelled", deliveredUnits: 0, now: t0)
-        XCTAssertFalse(l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: key(2.0), now: t0.addingTimeInterval(2)))
+        XCTAssertFalse(
+            l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: key(2.0), now: t0.addingTimeInterval(2)))
     }
 
     /// A 0 U outcome that DID reach the pump (`sentToPump == true`) is still ambiguous — the pump may have
@@ -352,9 +378,10 @@ final class RemoteBolusLedgerTests: XCTestCase {
         var l = RemoteBolusLedger()
         let t0 = Date(timeIntervalSince1970: 1_000_000)
         _ = l.begin(peerId: "peerA", requestId: "req1", doseKey: key(2.0))
-        l.markDelivering(peerId: "peerA", requestId: "req1", bolusId: 55)   // sentToPump ⇒ true
+        l.markDelivering(peerId: "peerA", requestId: "req1", bolusId: 55)  // sentToPump ⇒ true
         l.settle(peerId: "peerA", requestId: "req1", status: "cancelled", deliveredUnits: 0, now: t0)
-        XCTAssertTrue(l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: key(2.0), now: t0.addingTimeInterval(2)))
+        XCTAssertTrue(
+            l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: key(2.0), now: t0.addingTimeInterval(2)))
     }
 
     /// Fail-closed: an ambiguous (may-have-delivered) outcome DOES block a recompose.
@@ -364,7 +391,8 @@ final class RemoteBolusLedgerTests: XCTestCase {
         _ = l.begin(peerId: "peerA", requestId: "req1", doseKey: key(2.0))
         l.markDelivering(peerId: "peerA", requestId: "req1", bolusId: 77)
         l.markIndeterminate(peerId: "peerA", requestId: "req1", now: t0)
-        XCTAssertTrue(l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: key(2.0), now: t0.addingTimeInterval(2)))
+        XCTAssertTrue(
+            l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: key(2.0), now: t0.addingTimeInterval(2)))
     }
 
     /// begin()'s own (peer,requestId) key semantics are UNCHANGED by this additive guard — a same-requestId
@@ -376,12 +404,14 @@ final class RemoteBolusLedgerTests: XCTestCase {
         _ = l.begin(peerId: "peerA", requestId: "req1", doseKey: key(2.0))
         l.settle(peerId: "peerA", requestId: "req1", status: "delivered", deliveredUnits: 2.0, now: t0)
         // Same (peer,requestId) → replay, exactly as before.
-        XCTAssertEqual(l.begin(peerId: "peerA", requestId: "req1", doseKey: key(2.0)),
-                       .replay(status: "delivered", message: nil, deliveredUnits: 2.0))
+        XCTAssertEqual(
+            l.begin(peerId: "peerA", requestId: "req1", doseKey: key(2.0)),
+            .replay(status: "delivered", message: nil, deliveredUnits: 2.0))
         // Same requestId, different content → conflict, exactly as before.
         XCTAssertEqual(l.begin(peerId: "peerA", requestId: "req1", doseKey: key(9.0)), .conflict)
         // The recency guard itself still separately flags the original doseKey.
-        XCTAssertTrue(l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: key(2.0), now: t0.addingTimeInterval(2)))
+        XCTAssertTrue(
+            l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: key(2.0), now: t0.addingTimeInterval(2)))
     }
 
     /// The recency guard is scoped PER PEER: a settled-echo-loss retry is the SAME actor recomposing its
@@ -394,9 +424,11 @@ final class RemoteBolusLedgerTests: XCTestCase {
         _ = l.begin(peerId: "local", requestId: "local:abc", doseKey: key(1.0))
         l.settle(peerId: "local", requestId: "local:abc", status: "delivered", deliveredUnits: 1.0, now: t0)
         // Same content, but a DIFFERENT peer ⇒ not flagged for that peer.
-        XCTAssertFalse(l.hasRecentlyDeliveredDuplicate(peerId: "garmin", doseKey: key(1.0), now: t0.addingTimeInterval(2)))
+        XCTAssertFalse(
+            l.hasRecentlyDeliveredDuplicate(peerId: "garmin", doseKey: key(1.0), now: t0.addingTimeInterval(2)))
         // The SAME peer ("local") is still flagged for its own content.
-        XCTAssertTrue(l.hasRecentlyDeliveredDuplicate(peerId: "local", doseKey: key(1.0), now: t0.addingTimeInterval(2)))
+        XCTAssertTrue(
+            l.hasRecentlyDeliveredDuplicate(peerId: "local", doseKey: key(1.0), now: t0.addingTimeInterval(2)))
     }
 
     /// `hasExistingEntry` lets a caller skip the recency guard for a genuine protocol retry of the SAME
@@ -405,10 +437,10 @@ final class RemoteBolusLedgerTests: XCTestCase {
     func testHasExistingEntryTracksAnyLifecycleState() {
         var l = RemoteBolusLedger()
         XCTAssertFalse(l.hasExistingEntry(peerId: "watch", requestId: "new-id"))
-        _ = l.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0))   // awaiting
+        _ = l.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0))  // awaiting
         XCTAssertTrue(l.hasExistingEntry(peerId: "watch", requestId: "r1"))
         l.settle(peerId: "watch", requestId: "r1", status: "delivered", deliveredUnits: 2.0)
         XCTAssertTrue(l.hasExistingEntry(peerId: "watch", requestId: "r1"))
-        XCTAssertFalse(l.hasExistingEntry(peerId: "garmin", requestId: "r1"))   // different peer, same id string
+        XCTAssertFalse(l.hasExistingEntry(peerId: "garmin", requestId: "r1"))  // different peer, same id string
     }
 }

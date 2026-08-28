@@ -31,10 +31,12 @@ struct CartridgeReadinessFailClosedTests {
     @Test func defaultSnapshotReadsUnknownNotFailOpenReady() {
         let s = PumpSnapshot()
         #expect(s.cartridgeLoadState == 6, "the idle/unknown default")
-        #expect(s.cartridgeReadiness == .unknown,
-                "the fail-open default must read UNKNOWN, never a confirmed .ready")
-        #expect(s.cartridgeReadyForBolus,
-                "the dose-path block decision must still ALLOW when unknown — no permanent block")
+        #expect(
+            s.cartridgeReadiness == .unknown,
+            "the fail-open default must read UNKNOWN, never a confirmed .ready")
+        #expect(
+            s.cartridgeReadyForBolus,
+            "the dose-path block decision must still ALLOW when unknown — no permanent block")
     }
 
     /// A CONFIRMED non-loading op-20 reply reads `.ready`.
@@ -78,15 +80,17 @@ struct CartridgeReadinessFailClosedTests {
     /// confirmed, the cartridge pre-check stays UNKNOWN — never a fail-open confirmed-ready — yet the dose
     /// path is NOT permanently blocked (it relies on the pump's own rejection + the reservoir guard).
     @Test func anExcludedLoadStatusLeavesReadinessUnknownNotFailOpenReady() async {
-        let b = TandemBackend(testTransport: FakePumpTransport())   // testTransport init → connected
-        await b.refreshLoadStatus()                                 // op-20 out (txId 0), now outstanding
+        let b = TandemBackend(testTransport: FakePumpTransport())  // testTransport init → connected
+        await b.refreshLoadStatus()  // op-20 out (txId 0), now outstanding
         b.injectStatusFrameForTesting(FakePumpTransport.errorResponse(requestOpCode: 0, errorCode: 0))
         #expect(b.badOpcodesForTesting.contains(loadStatusOpcode), "op-20 is now auto-excluded")
 
-        #expect(b.snapshot.cartridgeReadiness == .unknown,
-                "an auto-excluded op-20 must leave the cartridge pre-check UNKNOWN, never confirmed-ready")
+        #expect(
+            b.snapshot.cartridgeReadiness == .unknown,
+            "an auto-excluded op-20 must leave the cartridge pre-check UNKNOWN, never confirmed-ready")
         #expect(!b.snapshot.cartridgeLoadStateConfirmed)
-        #expect(b.snapshot.cartridgeReadyForBolus,
-                "the dose path must NOT be permanently blocked on an op-20-excluded pump (relies on pump)")
+        #expect(
+            b.snapshot.cartridgeReadyForBolus,
+            "the dose path must NOT be permanently blocked on an op-20-excluded pump (relies on pump)")
     }
 }

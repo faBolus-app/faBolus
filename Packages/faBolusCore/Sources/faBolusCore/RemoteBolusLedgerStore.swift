@@ -44,8 +44,9 @@ public final class RemoteBolusLedgerStore: RemoteBolusLedgerPersisting {
         if let appGroupID, let g = fm.containerURL(forSecurityApplicationGroupIdentifier: appGroupID) {
             dir = g
         } else {
-            dir = try? fm.url(for: .applicationSupportDirectory, in: .userDomainMask,
-                              appropriateFor: nil, create: true)
+            dir = try? fm.url(
+                for: .applicationSupportDirectory, in: .userDomainMask,
+                appropriateFor: nil, create: true)
         }
         return dir?.appendingPathComponent("remote-bolus-ledger.json")
     }
@@ -80,7 +81,8 @@ public final class RemoteBolusLedgerStore: RemoteBolusLedgerPersisting {
         // File exists but won't read/decode ⇒ it may be masking an unresolved delivery ⇒ FAIL CLOSED.
         // Do NOT silently convert corruption into an empty, delivery-enabled ledger.
         guard let data = try? Data(contentsOf: url),
-              let ledger = try? JSONDecoder().decode(RemoteBolusLedger.self, from: data) else {
+            let ledger = try? JSONDecoder().decode(RemoteBolusLedger.self, from: data)
+        else {
             return LoadOutcome(ledger: RemoteBolusLedger(cap: cap), failedClosed: true)
         }
         return LoadOutcome(ledger: ledger, failedClosed: false)

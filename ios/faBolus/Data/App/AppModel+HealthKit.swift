@@ -26,7 +26,7 @@ extension HealthKitExporter: HealthKitExportDestination {}
 
 extension AppModel {
 
-#if FABOLUS_HEALTHKIT
+    #if FABOLUS_HEALTHKIT
 
     #if DEBUG
     /// Test seam: substitute the HealthKit import source (a fake) so a test can assert
@@ -52,7 +52,8 @@ extension AppModel {
     /// regardless of this gate. `internal` (was `private`) — still called from `AppModel.refresh()`.
     func maybeAutoImportAppleHealth() {
         guard AppSettings.shared.healthKitAutoImportEnabled,
-              Date().timeIntervalSince(lastHealthKitAutoImport) > 3600 else { return }
+            Date().timeIntervalSince(lastHealthKitAutoImport) > 3600
+        else { return }
         lastHealthKitAutoImport = Date()
         Task { [weak self] in await self?.runHealthKitImport(since: Date().addingTimeInterval(-30 * 86400)) }
     }
@@ -79,18 +80,21 @@ extension AppModel {
         }
         if enabled.contains(.insulin) {
             let insulin = await source.importInsulinHistory(since: since)
-            history?.ingestBoluses(insulin.map { BolusMarker(date: $0.date, units: $0.units) },
-                                   sourceID: "healthkit-import")
+            history?.ingestBoluses(
+                insulin.map { BolusMarker(date: $0.date, units: $0.units) },
+                sourceID: "healthkit-import")
         }
         if enabled.contains(.heartRate) {
             let hr = await source.importHeartRateHistory(since: since)
             history?.ingestHeartRate(hr, sourceID: "healthkit")
         }
         if enabled.contains(.glucose) {
-            let existingSlots = Set((history?.glucose(in: since...Date()) ?? [])
-                .map { Int($0.date.timeIntervalSince1970 / 300) })
-            let glucose = await source.importGlucoseGapFill(since: since, existingSlots: existingSlots,
-                                                             sourceID: HealthKitHistoryImporter.glucoseImportSourceID)
+            let existingSlots = Set(
+                (history?.glucose(in: since...Date()) ?? [])
+                    .map { Int($0.date.timeIntervalSince1970 / 300) })
+            let glucose = await source.importGlucoseGapFill(
+                since: since, existingSlots: existingSlots,
+                sourceID: HealthKitHistoryImporter.glucoseImportSourceID)
             history?.ingestGlucose(glucose, sourceID: HealthKitHistoryImporter.glucoseImportSourceID, priority: 10)
         }
     }
@@ -146,7 +150,8 @@ extension AppModel {
     /// (was `private`) — still called from `AppModel.refresh()`.
     func maybeAutoExportAppleHealth() {
         guard AppSettings.shared.healthKitAutoExportEnabled,
-              Date().timeIntervalSince(lastHealthKitAutoExport) >= 60 else { return }
+            Date().timeIntervalSince(lastHealthKitAutoExport) >= 60
+        else { return }
         lastHealthKitAutoExport = Date()
         Task { [weak self] in await self?.runHealthKitAutoExport() }
     }
@@ -170,8 +175,10 @@ extension AppModel {
             // CR-01: exclude HealthKit-imported carbs — this window is the app's ENTIRE carb
             // history (unbounded), so without the exclusion a carb imported from Health on the
             // last import cycle would look "never exported" and get written straight back out.
-            let carbs = history?.carbs(in: Date.distantPast...Date(),
-                                       excludingSourceIDs: Self.healthKitImportSourceIDs) ?? []
+            let carbs =
+                history?.carbs(
+                    in: Date.distantPast...Date(),
+                    excludingSourceIDs: Self.healthKitImportSourceIDs) ?? []
             await destination.exportNewCarbs(carbs)
         }
         if settings.healthKitExportInsulinEnabled {
@@ -182,5 +189,5 @@ extension AppModel {
         }
     }
 
-#endif
+    #endif
 }

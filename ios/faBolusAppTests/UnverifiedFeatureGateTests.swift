@@ -22,7 +22,7 @@ struct UnverifiedFeatureGateTests {
         gate.request("X") { ran += 1 }
         gate.proceed()
         #expect(ran == 1)
-        gate.proceed()          // pending was cleared — no double-run
+        gate.proceed()  // pending was cleared — no double-run
         #expect(ran == 1)
     }
 
@@ -32,7 +32,7 @@ struct UnverifiedFeatureGateTests {
         gate.request("X") { ran = true }
         gate.cancel()
         #expect(!ran)
-        gate.proceed()          // nothing pending after cancel
+        gate.proceed()  // nothing pending after cancel
         #expect(!ran)
     }
 }

@@ -35,8 +35,9 @@ struct BolusSuccessBannerDriftGuardTests {
     }
 
     private static func bannerSource() throws -> String {
-        let repoRoot = try #require(Self.repoRootURL(),
-                                     "could not resolve repo root from #filePath=\(#filePath)")
+        let repoRoot = try #require(
+            Self.repoRootURL(),
+            "could not resolve repo root from #filePath=\(#filePath)")
         let url = repoRoot.appendingPathComponent("ios/faBolus/Views/BolusSuccessBanner.swift")
         let raw = try String(contentsOf: url, encoding: .utf8)
         return Self.stripLineComments(raw)
@@ -44,18 +45,22 @@ struct BolusSuccessBannerDriftGuardTests {
 
     @Test func checkmarkUsesPlainColorGreen() throws {
         let source = try Self.bannerSource()
-        #expect(source.contains("Color.green"),
-                "BolusSuccessBanner.swift's checkmark must use plain Color.green (outside comments)")
+        #expect(
+            source.contains("Color.green"),
+            "BolusSuccessBanner.swift's checkmark must use plain Color.green (outside comments)")
     }
 
     @Test func noReferenceToClinicalInRangeBandToken() throws {
         let source = try Self.bannerSource()
-        #expect(!source.contains("AppTheme.inRange"),
-                "BolusSuccessBanner.swift must not reference the §13-locked AppTheme.inRange band token in code (semantic collision)")
+        #expect(
+            !source.contains("AppTheme.inRange"),
+            "BolusSuccessBanner.swift must not reference the §13-locked AppTheme.inRange band token in code (semantic collision)"
+        )
     }
 
     @Test func fileResolutionActuallyFoundTheRepoRoot() {
-        #expect(Self.repoRootURL() != nil,
-                "drift-guard could not locate the repo root — path resolution broke (#filePath=\(#filePath))")
+        #expect(
+            Self.repoRootURL() != nil,
+            "drift-guard could not locate the repo root — path resolution broke (#filePath=\(#filePath))")
     }
 }

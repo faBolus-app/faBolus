@@ -41,7 +41,8 @@ struct BolusIndeterminateNotificationTests {
         let ledgerURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("17-13-ledger-\(UUID().uuidString).json")
         let model = AppModel(source: backend, ledgerStoreURL: ledgerURL)
-        let rec = EchoRecorder(); rec.attach(to: model)
+        let rec = EchoRecorder()
+        rec.attach(to: model)
         if connected { await backend.connect() }
         return (model, backend, rec)
     }
@@ -51,8 +52,14 @@ struct BolusIndeterminateNotificationTests {
     private func withCleanSettings(_ body: () async throws -> Void) async rethrows {
         let s = AppSettings.shared
         let ro = s.phoneReadOnly, child = s.childModeEnabled, mode = s.appMode
-        s.phoneReadOnly = false; s.childModeEnabled = false; s.appMode = .advanced
-        defer { s.phoneReadOnly = ro; s.childModeEnabled = child; s.appMode = mode }
+        s.phoneReadOnly = false
+        s.childModeEnabled = false
+        s.appMode = .advanced
+        defer {
+            s.phoneReadOnly = ro
+            s.childModeEnabled = child
+            s.appMode = mode
+        }
         try await body()
     }
 
@@ -77,8 +84,9 @@ struct BolusIndeterminateNotificationTests {
             #expect(indeterminate.first?.title == Self.lockedCopy)
             #expect(indeterminate.first?.body == Self.lockedCopy)
             #expect(indeterminate.first?.severity == .warning)
-            #expect(posted.allSatisfy { $0.category != .bolusDeliveryFailed },
-                    "an indeterminate outcome must never post a delivery-FAILED notification")
+            #expect(
+                posted.allSatisfy { $0.category != .bolusDeliveryFailed },
+                "an indeterminate outcome must never post a delivery-FAILED notification")
             for m in indeterminate {
                 #expect(!m.title.lowercased().contains(Self.doseDidNotHappenWord))
                 #expect(!m.body.lowercased().contains(Self.doseDidNotHappenWord))
@@ -131,7 +139,10 @@ struct BolusIndeterminateNotificationTests {
 
     // MARK: - Task 2 RED: widget (deliverWidgetBolus)
 
-    @Test func widgetIndeterminatePostsExactlyOneGovernedNotificationConvergesUserCopyButEchoesTheUnchangedShorterMessage() async {
+    @Test
+    func widgetIndeterminatePostsExactlyOneGovernedNotificationConvergesUserCopyButEchoesTheUnchangedShorterMessage()
+        async
+    {
         await withCleanSettings {
             let (model, backend, rec) = await makeModel(connected: true)
             backend.forceIndeterminateNextDelivery = true
@@ -150,14 +161,16 @@ struct BolusIndeterminateNotificationTests {
             // PEER WIRE: the `.unknown` echo message stays the ORIGINAL shorter string, byte-identical.
             #expect(rec.last?.requestId == "w-indet-notif")
             #expect(rec.last?.status == .unknown)
-            #expect(rec.last?.message == Self.widgetEchoMessage,
-                    "the widget's .unknown echo payload must remain byte-identical to its original shorter string")
+            #expect(
+                rec.last?.message == Self.widgetEchoMessage,
+                "the widget's .unknown echo payload must remain byte-identical to its original shorter string")
         }
     }
 
     // MARK: - Task 2 RED: echo-payload-unchanged (peer wire byte-identity, standalone assertions)
 
-    @Test func widgetUnknownEchoMessageIsByteIdenticalToItsOriginalShorterStringRegardlessOfUserCopyConvergence() async {
+    @Test func widgetUnknownEchoMessageIsByteIdenticalToItsOriginalShorterStringRegardlessOfUserCopyConvergence() async
+    {
         await withCleanSettings {
             let (model, backend, rec) = await makeModel(connected: true)
             backend.forceIndeterminateNextDelivery = true
@@ -208,7 +221,8 @@ struct BolusIndeterminateNotificationTests {
     // NOT a raw pre-governance notificationSink capture.)
 
     private func at(_ h: Int, _ m: Int) -> Date {
-        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
         return cal.date(from: DateComponents(year: 2026, month: 1, day: 1, hour: h, minute: m))!
     }
     private func isolatedStore(_ name: String) -> UserDefaults {
@@ -218,7 +232,8 @@ struct BolusIndeterminateNotificationTests {
         return d
     }
 
-    @Test func indeterminateAndReconciliationDeliverThroughTheRealBrokerWithDistinctIdentifiersAndNeitherCoalescesTheOther() {
+    @Test
+    func indeterminateAndReconciliationDeliverThroughTheRealBrokerWithDistinctIdentifiersAndNeitherCoalescesTheOther() {
         let rt = NotificationRuntime(store: isolatedStore(#function))
         let indeterminateMsg = NotificationBroker.Message(
             category: .bolusIndeterminate, severity: .warning, title: Self.lockedCopy, body: Self.lockedCopy,
@@ -227,8 +242,12 @@ struct BolusIndeterminateNotificationTests {
             category: .bolusReconciliation, severity: .info, title: "Bolus delivered", body: "Reconciled: 1.0 U.",
             dedupeKey: "reconcile-local-X")
         var identifiers: [String] = []
-        let d1 = NotificationPoster.post(indeterminateMsg, runtime: rt, now: at(9, 0)) { identifiers.append($0.identifier) }
-        let d2 = NotificationPoster.post(reconciliationMsg, runtime: rt, now: at(9, 1)) { identifiers.append($0.identifier) }
+        let d1 = NotificationPoster.post(indeterminateMsg, runtime: rt, now: at(9, 0)) {
+            identifiers.append($0.identifier)
+        }
+        let d2 = NotificationPoster.post(reconciliationMsg, runtime: rt, now: at(9, 1)) {
+            identifiers.append($0.identifier)
+        }
         #expect(d1.deliver, "the immediate governed heads-up must deliver under a normal config")
         #expect(d2.deliver, "the never-suppressible authoritative resolution must always deliver")
         #expect(Set(identifiers).count == 2, "distinct OS identifiers — neither post coalesces the other")
@@ -246,10 +265,18 @@ struct BolusIndeterminateNotificationTests {
             category: .bolusReconciliation, severity: .warning, title: "Bolus not delivered",
             body: "Interrupted before the pump accepted it — not delivered.", dedupeKey: "reconcile-local-Y")
         var identifiers: [String] = []
-        let dIndet = NotificationPoster.post(indeterminateMsg, runtime: rt, now: at(9, 0)) { identifiers.append($0.identifier) }
-        let dRecon = NotificationPoster.post(reconciliationMsg, runtime: rt, now: at(9, 1)) { identifiers.append($0.identifier) }
-        #expect(!dIndet.deliver && dIndet.reason == .categoryDisabled,
-                "a governed .bolusIndeterminate honors a user disable — proving it is genuinely governed, not a safety trio member")
-        #expect(dRecon.deliver, "the never-suppressible .bolusReconciliation is unaffected by the governed category's settings")
+        let dIndet = NotificationPoster.post(indeterminateMsg, runtime: rt, now: at(9, 0)) {
+            identifiers.append($0.identifier)
+        }
+        let dRecon = NotificationPoster.post(reconciliationMsg, runtime: rt, now: at(9, 1)) {
+            identifiers.append($0.identifier)
+        }
+        #expect(
+            !dIndet.deliver && dIndet.reason == .categoryDisabled,
+            "a governed .bolusIndeterminate honors a user disable — proving it is genuinely governed, not a safety trio member"
+        )
+        #expect(
+            dRecon.deliver,
+            "the never-suppressible .bolusReconciliation is unaffected by the governed category's settings")
     }
 }

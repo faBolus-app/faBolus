@@ -12,28 +12,35 @@ import faBolusCore
 struct ProfileSegmentProvenanceTests {
     private func openGatesAndMakeModel() async -> (AppModel, MockBackend, StoredSettingChangeStore) {
         let s = AppSettings.shared
-        s.phoneReadOnly = false; s.childModeEnabled = false; s.advancedControlEnabled = true; s.appMode = .advanced
-        let backend = MockBackend()   // Mobi / .mobiAdvanced
-        let ledgerURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("s21l-\(UUID().uuidString).json")
+        s.phoneReadOnly = false
+        s.childModeEnabled = false
+        s.advancedControlEnabled = true
+        s.appMode = .advanced
+        let backend = MockBackend()  // Mobi / .mobiAdvanced
+        let ledgerURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(
+            "s21l-\(UUID().uuidString).json")
         let model = AppModel(source: backend, ledgerStoreURL: ledgerURL)
-        let storeURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("s21p-\(UUID().uuidString).json")
+        let storeURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(
+            "s21p-\(UUID().uuidString).json")
         model.settingChangeStore = StoredSettingChangeStore(url: storeURL)
         await backend.connect()
-        model.acknowledgeUnverifiedTherapy()   // satisfy the untested-feature ack (S6); provenance is S8/§2.1(2)
+        model.acknowledgeUnverifiedTherapy()  // satisfy the untested-feature ack (S6); provenance is S8/§2.1(2)
         return (model, backend, model.settingChangeStore)
     }
 
     @Test func modifyProfileSegmentRecordsChangedFieldsOnly() async {
         let (model, _, store) = await openGatesAndMakeModel()
-        await model.refreshProfileSegments(idpId: 0)   // mock seeds a default segment at index 0 / start 0
+        await model.refreshProfileSegments(idpId: 0)  // mock seeds a default segment at index 0 / start 0
         guard let seg = model.snapshot.viewedProfileSegments.first(where: { $0.segmentIndex == 0 }) else {
-            Issue.record("mock did not seed a viewed segment"); return
+            Issue.record("mock did not seed a viewed segment")
+            return
         }
         // Change ONLY the basal rate; keep CR / ISF / target the same.
-        await model.modifyProfileSegment(idpId: 0, segmentIndex: 0, startTimeMinutes: seg.startTimeMinutes,
-                                         basalRateUnitsPerHour: seg.basalRateUnitsPerHour + 0.15,
-                                         carbRatioGramsPerUnit: seg.carbRatioGramsPerUnit,
-                                         isf: seg.isf, targetBg: seg.targetBg)
+        await model.modifyProfileSegment(
+            idpId: 0, segmentIndex: 0, startTimeMinutes: seg.startTimeMinutes,
+            basalRateUnitsPerHour: seg.basalRateUnitsPerHour + 0.15,
+            carbRatioGramsPerUnit: seg.carbRatioGramsPerUnit,
+            isf: seg.isf, targetBg: seg.targetBg)
         #expect(model.lastError == nil)
         let r = store.load()
         // The changed field is recorded as .selfSet, and it IS a real entry in the audit trail…
@@ -44,21 +51,23 @@ struct ProfileSegmentProvenanceTests {
         for field in ["isf", "carbRatio", "targetBg"] {
             let key = SettingKey.segment(idpId: 0, startMinutes: seg.startTimeMinutes, field: field)
             #expect(r.provenance(key) == .consensusDefault)
-            #expect(r.current(key)?.before == nil)           // a pure baseline: nothing to revert to
-            #expect(r.history(key).isEmpty)                   // not a change → not in the audit log
+            #expect(r.current(key)?.before == nil)  // a pure baseline: nothing to revert to
+            #expect(r.history(key).isEmpty)  // not a change → not in the audit log
         }
     }
 
     @Test func addProfileSegmentRecordsAllFourFieldsAsSelfSet() async {
         let (model, _, store) = await openGatesAndMakeModel()
         await model.refreshProfileSegments(idpId: 0)
-        await model.addProfileSegment(idpId: 0, startTimeMinutes: 720,
-                                      basalRateUnitsPerHour: 1.2, carbRatioGramsPerUnit: 8, isf: 45, targetBg: 110)
+        await model.addProfileSegment(
+            idpId: 0, startTimeMinutes: 720,
+            basalRateUnitsPerHour: 1.2, carbRatioGramsPerUnit: 8, isf: 45, targetBg: 110)
         #expect(model.lastError == nil)
         let r = store.load()
         for field in ["basalRate", "carbRatio", "isf", "targetBg"] {
-            #expect(r.provenance(.segment(idpId: 0, startMinutes: 720, field: field)) == .selfSet,
-                    "\(field) of a new segment must record .selfSet provenance")
+            #expect(
+                r.provenance(.segment(idpId: 0, startMinutes: 720, field: field)) == .selfSet,
+                "\(field) of a new segment must record .selfSet provenance")
         }
     }
 
@@ -70,16 +79,18 @@ struct ProfileSegmentProvenanceTests {
         let (model, _, _) = await openGatesAndMakeModel()
         await model.refreshProfileSegments(idpId: 0)
         guard let seg = model.snapshot.viewedProfileSegments.first(where: { $0.segmentIndex == 0 }) else {
-            Issue.record("mock did not seed a viewed segment"); return
+            Issue.record("mock did not seed a viewed segment")
+            return
         }
-        await model.modifyProfileSegment(idpId: 0, segmentIndex: 0, startTimeMinutes: seg.startTimeMinutes,
-                                         basalRateUnitsPerHour: seg.basalRateUnitsPerHour + 0.15,
-                                         carbRatioGramsPerUnit: seg.carbRatioGramsPerUnit,
-                                         isf: seg.isf, targetBg: seg.targetBg)
+        await model.modifyProfileSegment(
+            idpId: 0, segmentIndex: 0, startTimeMinutes: seg.startTimeMinutes,
+            basalRateUnitsPerHour: seg.basalRateUnitsPerHour + 0.15,
+            carbRatioGramsPerUnit: seg.carbRatioGramsPerUnit,
+            isf: seg.isf, targetBg: seg.targetBg)
         let prov = model.segmentFieldProvenance(idpId: 0, startMinutes: seg.startTimeMinutes)
-        #expect(prov != nil)                                   // healthy store → not nil
-        #expect(prov?["basalRate"] == .selfSet)                // the edited field
-        #expect(prov?["carbRatio"] == .consensusDefault)       // untouched → consensus default
+        #expect(prov != nil)  // healthy store → not nil
+        #expect(prov?["basalRate"] == .selfSet)  // the edited field
+        #expect(prov?["carbRatio"] == .consensusDefault)  // untouched → consensus default
         #expect(prov?["isf"] == .consensusDefault)
         #expect(prov?["targetBg"] == .consensusDefault)
     }

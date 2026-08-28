@@ -28,7 +28,7 @@ struct PumpConnectionLifecycleCharacterizationTests {
     private static let expectedTeardownOrder = [
         "completeGlucoseRead", "completeCalcInputRead", "failPumpWaiters", "historyLinkDropped",
         "historyStatusReset", "detectedIsMobiReset", "pumpFeatureBitsReset", "stopAllTimers",
-        "notePollCycleEnded", "coordinatorCleared", "authKeyCleared", "cancelPairingWatchdog",
+        "notePollCycleEnded", "coordinatorCleared", "authKeyCleared", "cancelPairingWatchdog"
     ]
 
     // MARK: - Call-order recorder (review concern #5)
@@ -43,8 +43,9 @@ struct PumpConnectionLifecycleCharacterizationTests {
 
         b.applyClientState(.connecting)
 
-        #expect(recorded == Self.expectedTeardownOrder,
-                "the teardown call order must be byte-identical to the pre-move sequence")
+        #expect(
+            recorded == Self.expectedTeardownOrder,
+            "the teardown call order must be byte-identical to the pre-move sequence")
         #expect(b.snapshot.connection == .connecting)
     }
 
@@ -101,11 +102,11 @@ struct PumpConnectionLifecycleCharacterizationTests {
         var recorded: [String] = []
         b.onLinkDroppedCleanupStepForTesting = { recorded.append($0) }
 
-        b.applyClientState(.disconnected)              // real teardown #1
+        b.applyClientState(.disconnected)  // real teardown #1
         #expect(recorded == Self.expectedTeardownOrder, "precondition: the first drop ran the full teardown")
         recorded.removeAll()
 
-        b.applyClientState(.connecting)                // NOT live (we are already .disconnected) — must be a no-op
+        b.applyClientState(.connecting)  // NOT live (we are already .disconnected) — must be a no-op
         #expect(recorded.isEmpty, "a not-live climb into .connecting must not re-run the teardown a second time")
         #expect(b.snapshot.connection == .connecting)
     }
@@ -119,11 +120,11 @@ struct PumpConnectionLifecycleCharacterizationTests {
         b.setConnectionForTesting(.connected)
         var sends: [(typeName: String, opcode: UInt8, cargoBytes: Int)] = []
         b.onPairingSendForTesting = { typeName, opcode, cargoBytes in sends.append((typeName, opcode, cargoBytes)) }
-        b.beginPairingForTesting(code: "abcd1234ijkl5678")   // valid 16-char → legacy V1 handshake
+        b.beginPairingForTesting(code: "abcd1234ijkl5678")  // valid 16-char → legacy V1 handshake
         #expect(sends.count == 1, "precondition: the handshake sent its first message")
         #expect(b.pairingCoordinatorIsLiveForTesting, "precondition: the coordinator is live")
 
-        b.applyClientState(.disconnected)               // the real link-drop teardown
+        b.applyClientState(.disconnected)  // the real link-drop teardown
         #expect(b.pairingCoordinatorIsLiveForTesting == false, "the coordinator must be torn down by the drop")
         sends.removeAll()
 
@@ -146,7 +147,7 @@ struct PumpConnectionLifecycleCharacterizationTests {
     @Test func watchdogTimeoutFailsClosedAndCancelIsIdempotent() {
         let b = TandemBackend(testTransport: FakePumpTransport(), authKey: [])
         b.pairingTimeoutSecForTesting = 0.05
-        b.beginPairingForTesting(code: "123456")   // fresh JPAKE
+        b.beginPairingForTesting(code: "123456")  // fresh JPAKE
         #expect(b.pairingCoordinatorIsLiveForTesting)
 
         b.firePairingWatchdogForTesting()
@@ -164,7 +165,10 @@ struct PumpConnectionLifecycleCharacterizationTests {
 
     private let bolusId = 5678
     private func capture(_ op: () async throws -> Double) async -> Error? {
-        do { _ = try await op(); return nil } catch { return error }
+        do {
+            _ = try await op()
+            return nil
+        } catch { return error }
     }
     private func isIndeterminate(_ e: Error?) -> Bool { (e as? BolusError)?.isIndeterminate ?? false }
 
@@ -175,8 +179,9 @@ struct PumpConnectionLifecycleCharacterizationTests {
         fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
         fake.script(BolusPermissionResponse.props.opCode, .frame(FakePumpTransport.permissionGranted(bolusId: bolusId)))
         fake.script(InitiateBolusResponse.props.opCode, .frame(FakePumpTransport.initiateAccepted(bolusId: bolusId)))
-        fake.script(CurrentBolusStatusResponse.props.opCode,
-                    .frame(FakePumpTransport.currentBolusStatus(statusId: 1, bolusId: bolusId)))
+        fake.script(
+            CurrentBolusStatusResponse.props.opCode,
+            .frame(FakePumpTransport.currentBolusStatus(statusId: 1, bolusId: bolusId)))
 
         var recorded: [String] = []
         b.onLinkDroppedCleanupStepForTesting = { recorded.append($0) }
@@ -188,8 +193,9 @@ struct PumpConnectionLifecycleCharacterizationTests {
 
         #expect(isIndeterminate(e), "a mid-delivery link drop is an indeterminate outcome")
         #expect(b.deliveryOutcomeUnknown, "the indeterminate delivery holds the global block")
-        #expect(recorded == Self.expectedTeardownOrder,
-                "the mid-delivery drop must run the same teardown order as any other link drop")
+        #expect(
+            recorded == Self.expectedTeardownOrder,
+            "the mid-delivery drop must run the same teardown order as any other link drop")
     }
 
     // MARK: - CRC gate + ResponseParser.parse + HMAC handoff MUST STAY in TandemBackend
@@ -200,10 +206,14 @@ struct PumpConnectionLifecycleCharacterizationTests {
     @Test func crcGateAndResponseParserStayPhysicallyInTandemBackend() throws {
         let source = try Self.readSource(relativeTo: "ios/faBolus/Data/TandemBackend.swift")
         let body = try Self.balancedFunctionBody(
-            signaturePrefix: "public func pumpClient(_ c: PumpBLEClient, didReceiveFrame frame: [UInt8], on ch: Characteristic) {",
+            signaturePrefix:
+                "public func pumpClient(_ c: PumpBLEClient, didReceiveFrame frame: [UInt8], on ch: Characteristic) {",
             in: source)
-        #expect(body.contains("calculateCRC16"), "the CRC-16 gate must still live in TandemBackend.swift's didReceiveFrame")
-        #expect(body.contains("ResponseParser.parse"), "ResponseParser.parse must still live in TandemBackend.swift's didReceiveFrame")
+        #expect(
+            body.contains("calculateCRC16"), "the CRC-16 gate must still live in TandemBackend.swift's didReceiveFrame")
+        #expect(
+            body.contains("ResponseParser.parse"),
+            "ResponseParser.parse must still live in TandemBackend.swift's didReceiveFrame")
     }
 
     // MARK: - VA-06: op33 now forwards the REAL negotiated apiVersion (reverses the CX-T-04 deferral)
@@ -217,14 +227,18 @@ struct PumpConnectionLifecycleCharacterizationTests {
     ///  (b) the `TandemBackend` binding forwards it into `client.setDeviceContext(apiVersion:)`.
     @Test func op33ForwardsRealNegotiatedApiVersionIntoTheSendGate_VA06() throws {
         let applierSource = try Self.readSource(relativeTo: "ios/faBolus/Data/Tandem/PumpResponseApplier.swift")
-        #expect(applierSource.contains("ApiVersion(major: m.majorVersion, minor: m.minorVersion)"),
-                "VA-06: the op33 case must build the REAL negotiated ApiVersion from the frame's major.minor")
+        #expect(
+            applierSource.contains("ApiVersion(major: m.majorVersion, minor: m.minorVersion)"),
+            "VA-06: the op33 case must build the REAL negotiated ApiVersion from the frame's major.minor")
 
         let backendSource = try Self.readSource(relativeTo: "ios/faBolus/Data/TandemBackend.swift")
-        #expect(backendSource.contains("client.setDeviceContext(model: isMobi ? .mobi : .tslim, apiVersion: apiVersion, trusted: trusted)"),
-                "VA-06: the op33 device-context binding must forward the real apiVersion (NOT nil) into the send gate")
-        #expect(!backendSource.contains("apiVersion: nil"),
-                "VA-06: the op33 device-context binding must no longer pass apiVersion: nil")
+        #expect(
+            backendSource.contains(
+                "client.setDeviceContext(model: isMobi ? .mobi : .tslim, apiVersion: apiVersion, trusted: trusted)"),
+            "VA-06: the op33 device-context binding must forward the real apiVersion (NOT nil) into the send gate")
+        #expect(
+            !backendSource.contains("apiVersion: nil"),
+            "VA-06: the op33 device-context binding must no longer pass apiVersion: nil")
     }
 
     /// The pre-op33 identity BRIDGES in `PumpConnectionLifecycle` (a fresh `didDiscover`, and the C8
@@ -234,18 +248,22 @@ struct PumpConnectionLifecycleCharacterizationTests {
     /// intentional, so a future edit can't silently regress it into guessing an apiVersion pre-op33.
     @Test func preOp33IdentityBridgesStayModelOnly() throws {
         let lifecycleSource = try Self.readSource(relativeTo: "ios/faBolus/Data/App/PumpConnectionLifecycle.swift")
-        #expect(lifecycleSource.contains("setDeviceContext(model: isMobi ? .mobi : .tslim, apiVersion: nil, trusted: true)"),
-                "the pre-op33 bridges (didDiscover + C8 reapply) stay MODEL-only (apiVersion nil) — op33 supplies the real version this cycle")
+        #expect(
+            lifecycleSource.contains(
+                "setDeviceContext(model: isMobi ? .mobi : .tslim, apiVersion: nil, trusted: true)"),
+            "the pre-op33 bridges (didDiscover + C8 reapply) stay MODEL-only (apiVersion nil) — op33 supplies the real version this cycle"
+        )
     }
 
     // MARK: - Source-scan helpers (mirrors HistoryLogSyncDeliveryBoundaryTests' established pattern)
 
     private static func readSource(relativeTo path: String) throws -> String {
         let testFileURL = URL(fileURLWithPath: #filePath)
-        let repoRoot = testFileURL
-            .deletingLastPathComponent()   // drop the filename → .../ios/faBolusAppTests
-            .deletingLastPathComponent()   // → .../ios
-            .deletingLastPathComponent()   // → repo root
+        let repoRoot =
+            testFileURL
+            .deletingLastPathComponent()  // drop the filename → .../ios/faBolusAppTests
+            .deletingLastPathComponent()  // → .../ios
+            .deletingLastPathComponent()  // → repo root
         return try String(contentsOf: repoRoot.appendingPathComponent(path), encoding: .utf8)
     }
 
@@ -260,8 +278,12 @@ struct PumpConnectionLifecycleCharacterizationTests {
         for line in lines[startIdx...] {
             collected.append(line)
             for ch in line {
-                if ch == "{" { depth += 1; opened = true }
-                else if ch == "}" { depth -= 1 }
+                if ch == "{" {
+                    depth += 1
+                    opened = true
+                } else if ch == "}" {
+                    depth -= 1
+                }
             }
             if opened && depth <= 0 { break }
         }

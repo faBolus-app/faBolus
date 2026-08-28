@@ -103,7 +103,7 @@ struct AppModelReferenceAuditTests {
         // `ios/faBolus/Data/AppModel.swift` at runtime (its `source(_:)` helper reads each file in a
         // `["ios/faBolus/Data/AppModel.swift", …]` list and extracts curated `lastError`/
         // `connectionDetail` literals) — ACTIVE, matched by the quoted-full-path runtime-read marker.
-        "HumanizedErrorDriftGuardTests.swift",
+        "HumanizedErrorDriftGuardTests.swift"
     ]
 
     /// COMMENT-ONLY: cites `"AppModel.swift"` in a doc comment / line-number pin; never opens the
@@ -126,7 +126,7 @@ struct AppModelReferenceAuditTests {
         // explaining where the truthful `lastError` string is already resolved — never opens the
         // file at runtime, so it is COMMENT-ONLY on this file's specific axis (17-10 classification
         // gap closure — this suite exists precisely to catch drift like this).
-        "BolusOutcomeBannerTests.swift",
+        "BolusOutcomeBannerTests.swift"
     ]
 
     /// Substrings that, if present in a FILE's source, indicate it opens/reads
@@ -151,7 +151,7 @@ struct AppModelReferenceAuditTests {
         // `for file in ["ios/faBolus/Data/AppModel.swift", …]` read loop). No COMMENT-ONLY file contains
         // this exact quoted full path (verified) — prose cites `AppModel.swift`/`AppModel.swift:NNNN`, not
         // the quoted repo-relative path — so it's a reliable active-read signal.
-        "\"ios/faBolus/Data/AppModel.swift\"",
+        "\"ios/faBolus/Data/AppModel.swift\""
     ]
 
     // MARK: - Tests
@@ -166,16 +166,22 @@ struct AppModelReferenceAuditTests {
         let classified = Self.activeScanFiles.union(Self.commentOnlyFiles)
 
         let unclassified = found.subtracting(classified)
-        #expect(unclassified.isEmpty,
-                "New AppModel.swift-referencing file(s) not yet classified in the 16-01 retarget map: \(unclassified.sorted())")
+        #expect(
+            unclassified.isEmpty,
+            "New AppModel.swift-referencing file(s) not yet classified in the 16-01 retarget map: \(unclassified.sorted())"
+        )
 
         let noLongerReferencing = classified.subtracting(found)
-        #expect(noLongerReferencing.isEmpty,
-                "Classified file(s) no longer reference AppModel.swift — retarget map is stale: \(noLongerReferencing.sorted())")
+        #expect(
+            noLongerReferencing.isEmpty,
+            "Classified file(s) no longer reference AppModel.swift — retarget map is stale: \(noLongerReferencing.sorted())"
+        )
 
         // A path-resolution bug (e.g. `ios/faBolusAppTests` not found) must fail loudly, not pass
         // vacuously with zero files found.
-        #expect(found.count >= 10, "fewer AppModel.swift references were found than the phase currently ships — path resolution likely broke")
+        #expect(
+            found.count >= 10,
+            "fewer AppModel.swift references were found than the phase currently ships — path resolution likely broke")
     }
 
     /// Every file classified ACTIVE must actually contain one of the runtime-read markers — proving
@@ -183,10 +189,14 @@ struct AppModelReferenceAuditTests {
     @Test func activeScanFilesActuallyReadAppModelSwiftAtRuntime() throws {
         let dir = try Self.testsDirURL()
         for name in Self.activeScanFiles {
-            let source = try #require(Self.readSource(dir.appendingPathComponent(name)),
-                                      "could not read \(name)")
+            let source = try #require(
+                Self.readSource(dir.appendingPathComponent(name)),
+                "could not read \(name)")
             let hasMarker = Self.activeRuntimeReadMarkers.contains { source.contains($0) }
-            #expect(hasMarker, "\(name) is classified ACTIVE but contains none of the known runtime-read markers — reclassify or update the marker list")
+            #expect(
+                hasMarker,
+                "\(name) is classified ACTIVE but contains none of the known runtime-read markers — reclassify or update the marker list"
+            )
         }
     }
 
@@ -195,10 +205,14 @@ struct AppModelReferenceAuditTests {
     @Test func commentOnlyFilesNeverOpenAppModelSwiftAtRuntime() throws {
         let dir = try Self.testsDirURL()
         for name in Self.commentOnlyFiles {
-            let source = try #require(Self.readSource(dir.appendingPathComponent(name)),
-                                      "could not read \(name)")
+            let source = try #require(
+                Self.readSource(dir.appendingPathComponent(name)),
+                "could not read \(name)")
             let hasMarker = Self.activeRuntimeReadMarkers.contains { source.contains($0) }
-            #expect(!hasMarker, "\(name) is classified COMMENT-ONLY but contains a runtime-read marker — it actually IS an active scan; reclassify")
+            #expect(
+                !hasMarker,
+                "\(name) is classified COMMENT-ONLY but contains a runtime-read marker — it actually IS an active scan; reclassify"
+            )
         }
     }
 
@@ -207,7 +221,8 @@ struct AppModelReferenceAuditTests {
     /// that only cites the filename in prose must not — proving the checker discriminates instead of
     /// vacuously agreeing with whatever it's handed.
     @Test func markerCheckerDiscriminatesActiveFromCommentOnly() {
-        let activeLike = "let url = repoRoot.appendingPathComponent(\"ios/faBolus/Data/AppModel.swift\")\nlet source = try String(contentsOf: url)"
+        let activeLike =
+            "let url = repoRoot.appendingPathComponent(\"ios/faBolus/Data/AppModel.swift\")\nlet source = try String(contentsOf: url)"
         let commentLike = "/// See `AppModel.swift:1327` for the one dependency this carve must not break."
         #expect(Self.activeRuntimeReadMarkers.contains { activeLike.contains($0) })
         #expect(!Self.activeRuntimeReadMarkers.contains { commentLike.contains($0) })

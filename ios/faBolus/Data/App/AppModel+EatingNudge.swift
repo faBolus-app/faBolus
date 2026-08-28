@@ -22,7 +22,7 @@ extension AppModel {
         guard let p = accelPipeline.predict(rawWindow: raw) else { return }
         latestAccelProb = p
         lastAccelWindowAt = Date()
-        lastAccelWindowRaw = raw            // retained on-device to label if the user gives feedback
+        lastAccelWindowRaw = raw  // retained on-device to label if the user gives feedback
         #endif
     }
 
@@ -50,7 +50,7 @@ extension AppModel {
             eatingPersonalization.recordFeedback(eating: true, window: lastAccelWindowRaw)
         }
         #endif
-        lastEatingPositiveAt = Date()   // de-dupe against the silent pre-bolus positive path
+        lastEatingPositiveAt = Date()  // de-dupe against the silent pre-bolus positive path
         eatingLocation.recordMealHere()
         eatingNudge = nil
     }
@@ -70,10 +70,14 @@ extension AppModel {
     /// `internal` (was `private` in `AppModel.swift`) — still called from `AppModel.refresh()` there.
     func updateEatingNudge() {
         #if !FABOLUS_NUDGE
-        eatingNudge = nil; return   // Smart Assist (eating detection) needs the faBolusNudge SDK
+        eatingNudge = nil
+        return  // Smart Assist (eating detection) needs the faBolusNudge SDK
         #else
         guard AppSettings.shared.eatingNudgesEnabled else {
-            eatingNudge = nil; setWantAccelSensing(false); eatingLocation.setEnabled(false); return
+            eatingNudge = nil
+            setWantAccelSensing(false)
+            eatingLocation.setEnabled(false)
+            return
         }
         var cfg = AppSettings.shared.eatingTriggerConfig
         // On-device threshold adaptation: raise the wrist threshold by the learned bias (fewer false
@@ -82,7 +86,10 @@ extension AppModel {
             cfg.accelThreshold = min(0.98, cfg.accelThreshold + eatingPersonalization.thresholdBias)
         }
         eatingLocation.setEnabled(cfg.locationEnabled)
-        if let d = try? JSONEncoder().encode(cfg), d != lastEatingConfig { eatingEngine.setConfig(cfg); lastEatingConfig = d }
+        if let d = try? JSONEncoder().encode(cfg), d != lastEatingConfig {
+            eatingEngine.setConfig(cfg)
+            lastEatingConfig = d
+        }
         guard let history else { return }
 
         let range = Date().addingTimeInterval(-2 * 3600)...Date()
@@ -99,21 +106,24 @@ extension AppModel {
         let wantAccel = cfg.mode.usesAccel && (cfg.mode == .cgmThenAccel ? (meal?.score ?? 0) >= 0.3 : true)
         setWantAccelSensing(wantAccel)
 
-        let minsSinceBolus = bolusMarkers.map(\.date).max()
+        let minsSinceBolus =
+            bolusMarkers.map(\.date).max()
             .map { Date().timeIntervalSince($0) / 60 } ?? .greatestFiniteMagnitude
         // Accel is only valid while the wrist is actively streaming (stale windows → treat as unavailable).
         let accelFresh = Date().timeIntervalSince(lastAccelWindowAt) < 120 ? latestAccelProb : nil
-        let signals = EatingSignals(accelProb: cfg.mode.usesAccel ? accelFresh : nil,
-                                    cgmMealScore: meal?.score, minutesSinceBolus: minsSinceBolus,
-                                    atMealPlace: cfg.locationEnabled ? eatingLocation.isAtMealPlace() : nil)
+        let signals = EatingSignals(
+            accelProb: cfg.mode.usesAccel ? accelFresh : nil,
+            cgmMealScore: meal?.score, minutesSinceBolus: minsSinceBolus,
+            atMealPlace: cfg.locationEnabled ? eatingLocation.isAtMealPlace() : nil)
 
         // Silent positive training example: eating is *recognized* but the nudge is gated by a recent
         // bolus → you pre-bolused. No prompt (you already dosed), but label it a true meal for the
         // on-device personalizer/trainer. Debounced to ~one per meal; window passed only when fresh.
         if AppSettings.shared.eatingLearnFromFeedback,
-           eatingEngine.signalsMet(signals),
-           minsSinceBolus < Double(cfg.minMinutesSinceBolus),
-           Date().timeIntervalSince(lastEatingPositiveAt) > 90 * 60 {
+            eatingEngine.signalsMet(signals),
+            minsSinceBolus < Double(cfg.minMinutesSinceBolus),
+            Date().timeIntervalSince(lastEatingPositiveAt) > 90 * 60
+        {
             lastEatingPositiveAt = Date()
             eatingPersonalization.recordFeedback(eating: true, window: accelFresh != nil ? lastAccelWindowRaw : nil)
             eatingLocation.recordMealHere()
@@ -130,7 +140,8 @@ extension AppModel {
     /// (a false alert), then clear it.
     public func dismissEatingNudge() {
         #if FABOLUS_NUDGE
-        alertIntel.record("eating", .dismissed); saveAlertIntel()
+        alertIntel.record("eating", .dismissed)
+        saveAlertIntel()
         if AppSettings.shared.eatingLearnFromFeedback {
             eatingPersonalization.recordFeedback(eating: false, window: lastAccelWindowRaw)
         }

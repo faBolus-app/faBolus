@@ -19,17 +19,21 @@ public enum CgmTrend {
         case "FortyFiveDown": return .falling
         case "SingleDown": return .down
         case "DoubleDown": return .downDown
-        default: return nil     // absent / NONE / NOT COMPUTABLE / RATE OUT OF RANGE → no arrow
+        default: return nil  // absent / NONE / NOT COMPUTABLE / RATE OUT OF RANGE → no arrow
         }
     }
 
     /// Dexcom Share numeric trend (1…7). 0 None, 8 NotComputable, 9 RateOutOfRange, other → no trend.
     public static func dexcom(_ n: Int) -> GlucoseTrend? {
         switch n {
-        case 1: return .upUp; case 2: return .up; case 3: return .rising
+        case 1: return .upUp
+        case 2: return .up
+        case 3: return .rising
         case 4: return .flat
-        case 5: return .falling; case 6: return .down; case 7: return .downDown
-        default: return nil     // 0 None / 8 NotComputable / 9 RateOutOfRange / other → no arrow
+        case 5: return .falling
+        case 6: return .down
+        case 7: return .downDown
+        default: return nil  // 0 None / 8 NotComputable / 9 RateOutOfRange / other → no arrow
         }
     }
 
@@ -50,9 +54,12 @@ public enum CgmTrend {
     /// LibreLinkUp `TrendArrow` (1…5). 3 is Flat (steady); absent/unknown → no trend.
     public static func libre(_ n: Int) -> GlucoseTrend? {
         switch n {
-        case 1: return .down; case 2: return .falling; case 3: return .flat
-        case 4: return .rising; case 5: return .up
-        default: return nil     // absent / unknown → no arrow
+        case 1: return .down
+        case 2: return .falling
+        case 3: return .flat
+        case 4: return .rising
+        case 5: return .up
+        default: return nil  // absent / unknown → no arrow
         }
     }
 

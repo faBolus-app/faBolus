@@ -18,17 +18,17 @@ import TandemMessages
 /// `DebugMenuView.pumpReadExclusionsSection` and the diagnostics export both render.
 @Suite struct CapabilityDiagnosticsTransparencyTests {
 
-    private var cartridgeOpcode: UInt8 { LoadStatusRequest.props.opCode }          // op-20 (safety-relevant)
-    private var batteryOpcode: UInt8 { CurrentBatteryV2Request.props.opCode }      // op-144 (not safety-relevant)
-    private var iobOpcode: UInt8 { ControlIQIOBRequest.props.opCode }              // op-108 (dose input)
-    private var calcSnapshotOpcode: UInt8 { BolusCalcDataSnapshotRequest.props.opCode } // op-115 (dose input)
+    private var cartridgeOpcode: UInt8 { LoadStatusRequest.props.opCode }  // op-20 (safety-relevant)
+    private var batteryOpcode: UInt8 { CurrentBatteryV2Request.props.opCode }  // op-144 (not safety-relevant)
+    private var iobOpcode: UInt8 { ControlIQIOBRequest.props.opCode }  // op-108 (dose input)
+    private var calcSnapshotOpcode: UInt8 { BolusCalcDataSnapshotRequest.props.opCode }  // op-115 (dose input)
 
     // MARK: - 4a — human-readable read names
 
     @Test func readNameMapsKnownReadsAndFallsBackForUnknown() {
         #expect(PumpReadCatalog.readName(for: cartridgeOpcode) == "Cartridge/load status")
         #expect(PumpReadCatalog.readName(for: ControlIQIOBRequest.props.opCode) == "Control-IQ IOB")
-        #expect(PumpReadCatalog.readName(for: 47) == "op-47")   // unknown opcode → stable fallback
+        #expect(PumpReadCatalog.readName(for: 47) == "op-47")  // unknown opcode → stable fallback
     }
 
     @Test func rejectedOpcodeLabelIsHumanReadableForKnownReads() {
@@ -37,10 +37,12 @@ import TandemMessages
     }
 
     @Test func rejectedOpcodesLineRendersHumanReadableNamesNotBareDecimals() {
-        let block = CapabilityDiagnostics.section(capabilities: .mobiAdvanced,
-                                                  badOpcodes: [cartridgeOpcode], enabled: true)
-        #expect(block.contains("Rejected opcodes: Cartridge/load status (op-20)"),
-                "an excluded read must be surfaced by name, not a bare decimal opcode")
+        let block = CapabilityDiagnostics.section(
+            capabilities: .mobiAdvanced,
+            badOpcodes: [cartridgeOpcode], enabled: true)
+        #expect(
+            block.contains("Rejected opcodes: Cartridge/load status (op-20)"),
+            "an excluded read must be surfaced by name, not a bare decimal opcode")
         // The old bare-decimal form ("Rejected opcodes: 20") must be gone.
         #expect(!block.contains("Rejected opcodes: 20"))
     }
@@ -53,24 +55,29 @@ import TandemMessages
         #expect(notes.first?.contains("Cartridge/load status (op-20)") == true)
         #expect(notes.first?.contains("relying on the pump's own protection") == true)
 
-        let block = CapabilityDiagnostics.section(capabilities: .mobiAdvanced,
-                                                  badOpcodes: [cartridgeOpcode], enabled: true)
-        #expect(block.contains("Safety note: Cartridge/load status (op-20) is unavailable"),
-                "an excluded SAFETY-relevant read must surface a user-facing 'relying on the pump' note")
+        let block = CapabilityDiagnostics.section(
+            capabilities: .mobiAdvanced,
+            badOpcodes: [cartridgeOpcode], enabled: true)
+        #expect(
+            block.contains("Safety note: Cartridge/load status (op-20) is unavailable"),
+            "an excluded SAFETY-relevant read must surface a user-facing 'relying on the pump' note")
     }
 
     @Test func excludingANonSafetyReadEmitsNoSafetyNote() {
         #expect(PumpReadCatalog.safetyDegradedNotes(excludedOpcodes: [batteryOpcode]).isEmpty)
-        let block = CapabilityDiagnostics.section(capabilities: .mobiAdvanced,
-                                                  badOpcodes: [batteryOpcode], enabled: true)
-        #expect(!block.contains("Safety note:"),
-                "excluding a non-safety read (battery) must NOT fabricate a safety-degraded note")
+        let block = CapabilityDiagnostics.section(
+            capabilities: .mobiAdvanced,
+            badOpcodes: [batteryOpcode], enabled: true)
+        #expect(
+            !block.contains("Safety note:"),
+            "excluding a non-safety read (battery) must NOT fabricate a safety-degraded note")
     }
 
     @Test func disabledOptInStillRendersNoOpcodeOrSafetyDetail() {
         // The safety note rides the SAME opt-in gate as every other capability/opcode value (Pitfall 3).
-        let block = CapabilityDiagnostics.section(capabilities: .mobiAdvanced,
-                                                  badOpcodes: [cartridgeOpcode], enabled: false)
+        let block = CapabilityDiagnostics.section(
+            capabilities: .mobiAdvanced,
+            badOpcodes: [cartridgeOpcode], enabled: false)
         #expect(!block.contains("Cartridge/load status"))
         #expect(!block.contains("Safety note:"))
     }
@@ -83,24 +90,30 @@ import TandemMessages
     @Test func excludedDoseInputIOBReadEmitsADoseSpecificNoteNotTheOp20Wording() {
         let notes = PumpReadCatalog.safetyDegradedNotes(excludedOpcodes: [iobOpcode])
         #expect(notes.count == 1)
-        #expect(notes.first?.contains("Control-IQ IOB (op-\(iobOpcode))") == true,
-                "the dose-input note must name the read (human-readable + opcode)")
-        #expect(notes.first?.contains("will not recommend a dose") == true,
-                "op108 unavailable must disclose the calculator fail-closes and won't recommend a dose")
-        #expect(notes.allSatisfy { !$0.contains("own protection") },
-                "a dose-input read must NOT reuse the op20 'relying on the pump's own protection' wording")
+        #expect(
+            notes.first?.contains("Control-IQ IOB (op-\(iobOpcode))") == true,
+            "the dose-input note must name the read (human-readable + opcode)")
+        #expect(
+            notes.first?.contains("will not recommend a dose") == true,
+            "op108 unavailable must disclose the calculator fail-closes and won't recommend a dose")
+        #expect(
+            notes.allSatisfy { !$0.contains("own protection") },
+            "a dose-input read must NOT reuse the op20 'relying on the pump's own protection' wording")
     }
 
     /// Same for op115 (therapy settings: CR/ISF/target/max) — the other dose-input read.
     @Test func excludedBolusCalcSnapshotReadEmitsADoseSpecificNote() {
         let notes = PumpReadCatalog.safetyDegradedNotes(excludedOpcodes: [calcSnapshotOpcode])
         #expect(notes.count == 1)
-        #expect(notes.first?.contains("Bolus-calculator settings (op-\(calcSnapshotOpcode))") == true,
-                "the dose-input note must name the read (human-readable + opcode)")
-        #expect(notes.first?.contains("will not recommend a dose") == true,
-                "op115 unavailable must disclose the calculator fail-closes and won't recommend a dose")
-        #expect(notes.allSatisfy { !$0.contains("own protection") },
-                "a dose-input read must NOT reuse the op20 'relying on the pump's own protection' wording")
+        #expect(
+            notes.first?.contains("Bolus-calculator settings (op-\(calcSnapshotOpcode))") == true,
+            "the dose-input note must name the read (human-readable + opcode)")
+        #expect(
+            notes.first?.contains("will not recommend a dose") == true,
+            "op115 unavailable must disclose the calculator fail-closes and won't recommend a dose")
+        #expect(
+            notes.allSatisfy { !$0.contains("own protection") },
+            "a dose-input read must NOT reuse the op20 'relying on the pump's own protection' wording")
     }
 
     /// The two wordings are DISTINCT and coexist: excluding both op20 (safety pre-guard read) and op108
@@ -109,9 +122,11 @@ import TandemMessages
     @Test func op20AndADoseInputReadEmitTwoDistinctNotes() {
         let notes = PumpReadCatalog.safetyDegradedNotes(excludedOpcodes: [cartridgeOpcode, iobOpcode])
         #expect(notes.count == 2, "each excluded safety/dose read gets its own note")
-        #expect(notes.contains { $0.contains("own protection") },
-                "op20 keeps its 'relying on the pump's own protection' pre-guard note")
-        #expect(notes.contains { $0.contains("will not recommend a dose") },
-                "op108 gets the distinct dose-input 'will not recommend a dose' note")
+        #expect(
+            notes.contains { $0.contains("own protection") },
+            "op20 keeps its 'relying on the pump's own protection' pre-guard note")
+        #expect(
+            notes.contains { $0.contains("will not recommend a dose") },
+            "op108 gets the distinct dose-input 'will not recommend a dose' note")
     }
 }

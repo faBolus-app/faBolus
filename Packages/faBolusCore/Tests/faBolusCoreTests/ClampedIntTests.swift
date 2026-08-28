@@ -16,9 +16,9 @@ import Foundation
     }
 
     @Test func finiteOutOfRangeClampsToBounds() {
-        #expect(clampedInt(-5, max: 100) == 0)          // below default min (0)
-        #expect(clampedInt(250, max: 100) == 100)       // above max
-        #expect(clampedInt(-5, min: 10, max: 100) == 10) // below explicit min
+        #expect(clampedInt(-5, max: 100) == 0)  // below default min (0)
+        #expect(clampedInt(250, max: 100) == 100)  // above max
+        #expect(clampedInt(-5, min: 10, max: 100) == 10)  // below explicit min
     }
 
     /// The headline crash-class values: a bare `Int(_:)` on any of these traps.

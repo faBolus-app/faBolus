@@ -8,7 +8,7 @@ import Foundation
 /// safety action would be the unsafe direction). VA-02: an absent stamp on a freshness-sensitive command
 /// is refused as stale (fail-closed, retryable) — its age can't be verified, so it must not be trusted.
 struct RemoteCommandFreshnessTests {
-    private let now = Date(timeIntervalSince1970: 2_000_000_000)   // well under the Int32.max (2038) ceiling
+    private let now = Date(timeIntervalSince1970: 2_000_000_000)  // well under the Int32.max (2038) ceiling
 
     /// A command of `kind` whose `sentAt` is `ageSec` before `now` (negative ageSec = stamped in the future).
     private func cmd(_ kind: RemoteCommand.Kind, ageSec: Int?) -> RemoteCommand {
@@ -19,11 +19,15 @@ struct RemoteCommandFreshnessTests {
 
     @Test func freshDeliveryCommandIsAccepted() {
         #expect(!RemoteCommandFreshness.isStale(cmd(.bolusRequest, ageSec: 5), now: now))
-        #expect(!RemoteCommandFreshness.isStale(cmd(.bolusRequest, ageSec: Int(RemoteCommandFreshness.maxAgeSec) - 1), now: now))
+        #expect(
+            !RemoteCommandFreshness.isStale(
+                cmd(.bolusRequest, ageSec: Int(RemoteCommandFreshness.maxAgeSec) - 1), now: now))
     }
 
     @Test func staleDeliveryAuthorizingCommandsAreRejected() {
-        #expect(RemoteCommandFreshness.isStale(cmd(.bolusRequest, ageSec: Int(RemoteCommandFreshness.maxAgeSec) + 1), now: now))
+        #expect(
+            RemoteCommandFreshness.isStale(
+                cmd(.bolusRequest, ageSec: Int(RemoteCommandFreshness.maxAgeSec) + 1), now: now))
         #expect(RemoteCommandFreshness.isStale(cmd(.bolusRequest, ageSec: 3600), now: now))
         // The whole insulin-INCREASING set is gated, not just bolusRequest.
         #expect(RemoteCommandFreshness.isStale(cmd(.bolusConfirm, ageSec: 3600), now: now))
@@ -33,7 +37,9 @@ struct RemoteCommandFreshnessTests {
 
     @Test func aStampTooFarInTheFutureIsRejected() {
         // Beyond the skew tolerance → can't trust the age → fail closed.
-        #expect(RemoteCommandFreshness.isStale(cmd(.bolusRequest, ageSec: -(Int(RemoteCommandFreshness.futureSkewToleranceSec) + 5)), now: now))
+        #expect(
+            RemoteCommandFreshness.isStale(
+                cmd(.bolusRequest, ageSec: -(Int(RemoteCommandFreshness.futureSkewToleranceSec) + 5)), now: now))
         // A small future skew (clocks not perfectly aligned) is tolerated.
         #expect(!RemoteCommandFreshness.isStale(cmd(.bolusRequest, ageSec: -5), now: now))
     }
@@ -59,37 +65,42 @@ struct RemoteCommandFreshnessTests {
     /// VA-07 host-side: a request composed BEFORE the host's most recent bolus delivery is superseded (the
     /// remote dosed off pre-bolus state), so applying it now is a double-dose hazard.
     @Test func composeSupersededWhenHostDeliveredStrictlyAfterCompose() {
-        #expect(RemoteCommandFreshness.composeSupersededByHostDelivery(
-            sentAt: 1_000_000_000,
-            lastHostDeliveryAt: Date(timeIntervalSince1970: 1_000_000_050)))
+        #expect(
+            RemoteCommandFreshness.composeSupersededByHostDelivery(
+                sentAt: 1_000_000_000,
+                lastHostDeliveryAt: Date(timeIntervalSince1970: 1_000_000_050)))
     }
 
     /// A host delivery BEFORE the compose time did not act on this request's state → not superseded.
     @Test func composeNotSupersededWhenHostDeliveredBeforeCompose() {
-        #expect(!RemoteCommandFreshness.composeSupersededByHostDelivery(
-            sentAt: 1_000_000_000,
-            lastHostDeliveryAt: Date(timeIntervalSince1970: 1_000_000_000 - 50)))
+        #expect(
+            !RemoteCommandFreshness.composeSupersededByHostDelivery(
+                sentAt: 1_000_000_000,
+                lastHostDeliveryAt: Date(timeIntervalSince1970: 1_000_000_000 - 50)))
     }
 
     /// Equal timestamps are NOT superseded — the check is strict `>`.
     @Test func composeNotSupersededWhenHostDeliveredAtExactlyComposeTime() {
-        #expect(!RemoteCommandFreshness.composeSupersededByHostDelivery(
-            sentAt: 1_000_000_000,
-            lastHostDeliveryAt: Date(timeIntervalSince1970: 1_000_000_000)))
+        #expect(
+            !RemoteCommandFreshness.composeSupersededByHostDelivery(
+                sentAt: 1_000_000_000,
+                lastHostDeliveryAt: Date(timeIntervalSince1970: 1_000_000_000)))
     }
 
     /// No compose stamp to compare against → no supersession possible (VA-02 freshness + the access gate
     /// remain the other lines of defense).
     @Test func composeNotSupersededWhenSentAtIsAbsent() {
-        #expect(!RemoteCommandFreshness.composeSupersededByHostDelivery(
-            sentAt: nil,
-            lastHostDeliveryAt: Date(timeIntervalSince1970: 1_000_000_050)))
+        #expect(
+            !RemoteCommandFreshness.composeSupersededByHostDelivery(
+                sentAt: nil,
+                lastHostDeliveryAt: Date(timeIntervalSince1970: 1_000_000_050)))
     }
 
     /// No prior host delivery → nothing could have superseded the request.
     @Test func composeNotSupersededWhenNoPriorHostDelivery() {
-        #expect(!RemoteCommandFreshness.composeSupersededByHostDelivery(
-            sentAt: 1_000_000_000,
-            lastHostDeliveryAt: nil))
+        #expect(
+            !RemoteCommandFreshness.composeSupersededByHostDelivery(
+                sentAt: 1_000_000_000,
+                lastHostDeliveryAt: nil))
     }
 }

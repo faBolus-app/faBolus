@@ -8,7 +8,10 @@ public struct GlucoseReading: Identifiable, Sendable, Equatable {
     public let id = UUID()
     public let date: Date
     public let mgdl: Int
-    public init(date: Date, mgdl: Int) { self.date = date; self.mgdl = mgdl }
+    public init(date: Date, mgdl: Int) {
+        self.date = date
+        self.mgdl = mgdl
+    }
 }
 
 /// Insulin-on-board sample over time, for the chart's IOB overlay.
@@ -16,7 +19,10 @@ public struct IOBSample: Identifiable, Sendable, Equatable {
     public let id = UUID()
     public let date: Date
     public let iob: Double
-    public init(date: Date, iob: Double) { self.date = date; self.iob = iob }
+    public init(date: Date, iob: Double) {
+        self.date = date
+        self.iob = iob
+    }
 }
 
 /// A delivered bolus marked on the chart (vertical bar, height ∝ units).
@@ -24,7 +30,10 @@ public struct BolusMarker: Identifiable, Sendable, Equatable {
     public let id = UUID()
     public let date: Date
     public let units: Double
-    public init(date: Date, units: Double) { self.date = date; self.units = units }
+    public init(date: Date, units: Double) {
+        self.date = date
+        self.units = units
+    }
 }
 
 public enum GlucoseTrend: String, Sendable {
@@ -65,17 +74,22 @@ public enum GlucoseRange: Sendable {
     case low, inRange, high, urgentHigh
     public static func classify(_ mgdl: Int) -> GlucoseRange {
         switch mgdl {
-        case ..<GlucoseThresholds.low: return .low                                    // < 70
-        case GlucoseThresholds.low...GlucoseThresholds.high: return .inRange           // 70…180 (closed)
-        case (GlucoseThresholds.high + 1)...GlucoseThresholds.veryHigh: return .high   // 181…250
-        default: return .urgentHigh                                                    // > 250
+        case ..<GlucoseThresholds.low: return .low  // < 70
+        case GlucoseThresholds.low...GlucoseThresholds.high: return .inRange  // 70…180 (closed)
+        case (GlucoseThresholds.high + 1)...GlucoseThresholds.veryHigh: return .high  // 181…250
+        default: return .urgentHigh  // > 250
         }
     }
 
     /// Stable 0…3 band index (`low=0, inRange=1, high=2, urgentHigh=3`) — the single definition the
     /// remote client and widget snapshot delegate to instead of re-hardcoding the same 70/180/250 switch.
     public var index: Int {
-        switch self { case .low: return 0; case .inRange: return 1; case .high: return 2; case .urgentHigh: return 3 }
+        switch self {
+        case .low: return 0
+        case .inRange: return 1
+        case .high: return 2
+        case .urgentHigh: return 3
+        }
     }
 
     /// F4 (A5) — the non-color redundancy channel for the glucose band (WCAG 1.4.1 "use of color"):
@@ -129,7 +143,7 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// When the current glucose reading was taken. Used to hide readings older than 6 minutes.
     public var glucoseDate: Date? = nil
     public var trend: String = GlucoseTrend.flat.rawValue
-    public var iobUnits: Double = 0          // Active Insulin
+    public var iobUnits: Double = 0  // Active Insulin
     /// When `iobUnits` (op-109 ControlIQIOBResponse) was last received from the pump. Used by the dose path
     /// to prove the active-insulin term is fresh before subtracting it, and to grey/age the IOB row —
     /// exactly like `glucoseDate` for the glucose feed. nil ⇒ unknown age ⇒ treated as stale.
@@ -150,9 +164,9 @@ public struct PumpSnapshot: Sendable, Equatable {
     public var maxBolusUnits: Double = 25
     // Bolus-calculator settings (from the pump), shared with remotes so they can compute
     // carbs→units locally.
-    public var carbRatio: Double = 0    // grams per unit
-    public var isf: Int = 0             // correction factor, mg/dL per unit
-    public var targetBg: Int = 0        // mg/dL
+    public var carbRatio: Double = 0  // grams per unit
+    public var isf: Int = 0  // correction factor, mg/dL per unit
+    public var targetBg: Int = 0  // mg/dL
     /// When the therapy parameters above (op-115 BolusCalcDataSnapshotResponse — carb ratio / ISF / target
     /// / max) were last received from the pump. One op-115 frame resolves the ACTIVE profile+segment to a
     /// self-consistent set, so a single stamp governs all three. Used by the dose path to prove they are
@@ -162,7 +176,7 @@ public struct PumpSnapshot: Sendable, Equatable {
     // Workstream B (controlX2 parity) status fields.
     /// Pump model detection (from ApiVersionResponse). Mobi gates advanced control.
     public var isMobi: Bool = false
-    public var pumpModelName: String = ""       // e.g. "t:slim X2" / "Mobi"
+    public var pumpModelName: String = ""  // e.g. "t:slim X2" / "Mobi"
     public var softwareVersion: String = ""
     /// Current basal delivery rate (units/hr) and whether delivery is suspended.
     public var basalRateUnitsPerHour: Double = 0
@@ -232,7 +246,7 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// downstream, never duplicated here.
     public var lockoutUntilDate: Date? {
         guard let start = lastAutoCorrectionDate,
-              let windowMinutes = controllerDescriptor.automaticCorrection.blockedByRecentBolusMinutes
+            let windowMinutes = controllerDescriptor.automaticCorrection.blockedByRecentBolusMinutes
         else { return nil }
         return start.addingTimeInterval(TimeInterval(windowMinutes) * 60)
     }
@@ -307,9 +321,9 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// `.unknown`), unchanged. Distinct from `RemoteCommand.canBolus` (the bolus-attempt gate).
     public var cartridgeReadyRemoteWire: Bool? {
         switch cartridgeReadiness {
-        case .ready:    return true
+        case .ready: return true
         case .notReady: return false
-        case .unknown:  return nil
+        case .unknown: return nil
         }
     }
     /// Control-IQ settings (from ControlIQInfoV1), for the settings screen to prefill.
@@ -418,23 +432,26 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// itself — this is the single mutual-exclusivity choke point (a live mode is always exactly
     /// one of normal/sleep/exercise, so exactly one preset — or none — is ever selected here).
     public var ciqActivityPreset: ActivityPreset? {
-        SleepExerciseAwareness.activePreset(mode: ControlIQActivity(rawMode: controlIQMode),
-                                            descriptor: controllerDescriptor)
+        SleepExerciseAwareness.activePreset(
+            mode: ControlIQActivity(rawMode: controlIQMode),
+            descriptor: controllerDescriptor)
     }
     /// The compact single-line fact D-09.5 propagates to every remote surface (Watch/Garmin/Mac's
     /// base line): "Sleep — AutoBolus off" / "Exercise — ends 4:20". `nil` under
     /// `SleepExerciseAwareness.compactLine`'s own fail-closed guards.
     public var ciqActivityCompactLine: String? {
-        SleepExerciseAwareness.compactLine(mode: ControlIQActivity(rawMode: controlIQMode),
-                                           descriptor: controllerDescriptor,
-                                           exerciseTimeRemainingSec: exerciseTimeRemainingSec)
+        SleepExerciseAwareness.compactLine(
+            mode: ControlIQActivity(rawMode: controlIQMode),
+            descriptor: controllerDescriptor,
+            exerciseTimeRemainingSec: exerciseTimeRemainingSec)
     }
     /// The verbose Sleep window text (iPhone/Mac only, per the UI-SPEC Assumption): "Current
     /// window: {start}–{end}" when `inSleepWindow` is true and both minute-of-day bounds are known,
     /// else `nil` (SP-5 fail-closed — never a partial/garbled window string).
     public var ciqSleepWindowLine: String? {
         guard inSleepWindow == true, let s = sleepWindowStartMinute, let e = sleepWindowEndMinute else { return nil }
-        return "Current window: \(SleepExerciseAwareness.minuteOfDayString(s))–\(SleepExerciseAwareness.minuteOfDayString(e))"
+        return
+            "Current window: \(SleepExerciseAwareness.minuteOfDayString(s))–\(SleepExerciseAwareness.minuteOfDayString(e))"
     }
 }
 
@@ -451,8 +468,10 @@ public enum SleepWindowDerivation {
     /// Day-bit mapping (CONFIRMED, matches `PumpSleepScheduleSlot.activeDays`'s documented ordering):
     /// Monday=bit0…Sunday=bit6. `Calendar.weekday` is Sunday=1…Saturday=7, so `todayBit = (weekday +
     /// 5) % 7` converts one to the other.
-    public static func activeWindow(slots: [PumpSleepScheduleSlot], now: Date = Date(),
-                                     calendar: Calendar = .current) -> (startMinute: Int, endMinute: Int)? {
+    public static func activeWindow(
+        slots: [PumpSleepScheduleSlot], now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> (startMinute: Int, endMinute: Int)? {
         let comps = calendar.dateComponents([.hour, .minute, .weekday], from: now)
         guard let weekday = comps.weekday else { return nil }
         let nowMinute = (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
@@ -558,15 +577,19 @@ public enum SleepExerciseAwareness {
     /// base line): "Sleep — AutoBolus off" / "Exercise — ends 4:20". `nil` when normal mode, no
     /// matching preset, or — for Exercise only — the timer is unknown (SP-5 fail-closed; Sleep's
     /// compact fact never depends on the timer).
-    public static func compactLine(mode: ControlIQActivity, descriptor: ControllerDescriptor,
-                                    exerciseTimeRemainingSec: Int?, now: Date = Date(),
-                                    calendar: Calendar = .current) -> String? {
+    public static func compactLine(
+        mode: ControlIQActivity, descriptor: ControllerDescriptor,
+        exerciseTimeRemainingSec: Int?, now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> String? {
         guard let preset = activePreset(mode: mode, descriptor: descriptor) else { return nil }
         switch mode {
         case .normal: return nil
         case .sleep: return "Sleep — \(autoBolusWords(preset))"
         case .exercise:
-            guard let ends = endsAtLabel(seconds: exerciseTimeRemainingSec, now: now, calendar: calendar) else { return nil }
+            guard let ends = endsAtLabel(seconds: exerciseTimeRemainingSec, now: now, calendar: calendar) else {
+                return nil
+            }
             return "Exercise — \(ends)"
         }
     }
@@ -620,8 +643,12 @@ public enum MaxBasalFraction {
     /// uses. `headline` ALWAYS contains "basal"; `detail` ALWAYS shows both the current and configured
     /// max U/hr together (never the % alone). Both are guaranteed (by the copy-audit test) to never
     /// contain a `forbiddenMisconstrualWords` entry.
-    public static func label(currentUnitsPerHour: Double, maxUnitsPerHour: Double) -> (headline: String, detail: String)? {
-        guard let f = fraction(currentUnitsPerHour: currentUnitsPerHour, maxUnitsPerHour: maxUnitsPerHour) else { return nil }
+    public static func label(currentUnitsPerHour: Double, maxUnitsPerHour: Double) -> (
+        headline: String, detail: String
+    )? {
+        guard let f = fraction(currentUnitsPerHour: currentUnitsPerHour, maxUnitsPerHour: maxUnitsPerHour) else {
+            return nil
+        }
         let pct = Int((f * 100).rounded())
         let headline = "\(pct)% of your configured max basal rate"
         let detail = String(format: "%.2f / %.2f U/hr", currentUnitsPerHour, maxUnitsPerHour)
@@ -660,16 +687,20 @@ public enum CiqCeilingFlags {
     /// REGARDLESS of `snapshotValue` (belt-and-suspenders: even if a future pin advance populated the
     /// snapshot field, this gate alone still decides emission onto the wire, D-06 guardrail #5/#6
     /// fail-closed idiom).
-    public static func wireMaxBolusEventsExceeded(benchVerified: Bool = benchVerifiedDefault,
-                                                   snapshotValue: Bool?) -> Bool? {
+    public static func wireMaxBolusEventsExceeded(
+        benchVerified: Bool = benchVerifiedDefault,
+        snapshotValue: Bool?
+    ) -> Bool? {
         benchVerified ? snapshotValue : nil
     }
 
     /// Same gate as `wireMaxBolusEventsExceeded`, but for the INDEPENDENT `maxIobEventsExceeded` flag —
     /// a deliberately separate function (never a shared "wireFlags" that could accidentally couple the
     /// two), matching the "always exactly two independent booleans" requirement (D-05).
-    public static func wireMaxIobEventsExceeded(benchVerified: Bool = benchVerifiedDefault,
-                                                 snapshotValue: Bool?) -> Bool? {
+    public static func wireMaxIobEventsExceeded(
+        benchVerified: Bool = benchVerifiedDefault,
+        snapshotValue: Bool?
+    ) -> Bool? {
         benchVerified ? snapshotValue : nil
     }
 }
@@ -685,8 +716,8 @@ public enum PumpAlertKind: Int, Sendable, Equatable, Hashable, Codable, CaseIter
     public var label: String {
         switch self {
         case .reminder: return "Reminder"
-        case .alert:    return "Alert"
-        case .alarm:    return "Alarm"
+        case .alert: return "Alert"
+        case .alarm: return "Alarm"
         case .cgmAlert: return "CGM alert"
         }
     }
@@ -698,8 +729,8 @@ public enum PumpAlertKind: Int, Sendable, Equatable, Hashable, Codable, CaseIter
     /// kind that isn't mapped here is never under-alerted.)
     public var wireSeverityTier: String {
         switch self {
-        case .alarm:    return "critical"
-        case .alert:    return "high"
+        case .alarm: return "critical"
+        case .alert: return "high"
         case .cgmAlert: return "high"
         case .reminder: return "info"
         }
@@ -711,13 +742,17 @@ public enum PumpAlertKind: Int, Sendable, Equatable, Hashable, Codable, CaseIter
 }
 
 public struct PumpAlert: Identifiable, Sendable, Equatable {
-    public let id: Int          // backend's stable id (e.g. bitmap index) — used for remote mapping
+    public let id: Int  // backend's stable id (e.g. bitmap index) — used for remote mapping
     public let kind: PumpAlertKind
     public let title: String
     public let detail: String
     public let isDismissable: Bool
     public init(id: Int, kind: PumpAlertKind, title: String, detail: String = "", isDismissable: Bool = true) {
-        self.id = id; self.kind = kind; self.title = title; self.detail = detail; self.isDismissable = isDismissable
+        self.id = id
+        self.kind = kind
+        self.title = title
+        self.detail = detail
+        self.isDismissable = isDismissable
     }
 }
 
@@ -773,26 +808,35 @@ public struct PumpCapabilities: Sendable, Equatable {
     /// NEVER gated by this flag (RESEARCH Pitfall 2) — only the write UI checks it.
     public var supportsSleepScheduleWrite: Bool
 
-    public init(supportsCarbEntry: Bool = true, supportsBolusCancel: Bool = true,
-                supportsAlertClear: Bool = true, supportsRemoteAlertDismiss: Bool = true,
-                supportsHistoryBackfill: Bool = true,
-                supportsPairing: Bool = true, supportsExtendedBolus: Bool = true,
-                supportsSuspendResume: Bool = false, supportsTempBasal: Bool = false,
-                supportsModes: Bool = false, supportsProfiles: Bool = false,
-                supportsControlIQSettings: Bool = false, supportsCgmSession: Bool = false,
-                supportsCartridgeFill: Bool = false, supportsLimits: Bool = false,
-                supportsTimeSync: Bool = false, supportsSounds: Bool = false,
-                supportsReminders: Bool = false, supportsSleepScheduleWrite: Bool = false) {
-        self.supportsSounds = supportsSounds; self.supportsReminders = supportsReminders
-        self.supportsCarbEntry = supportsCarbEntry; self.supportsBolusCancel = supportsBolusCancel
+    public init(
+        supportsCarbEntry: Bool = true, supportsBolusCancel: Bool = true,
+        supportsAlertClear: Bool = true, supportsRemoteAlertDismiss: Bool = true,
+        supportsHistoryBackfill: Bool = true,
+        supportsPairing: Bool = true, supportsExtendedBolus: Bool = true,
+        supportsSuspendResume: Bool = false, supportsTempBasal: Bool = false,
+        supportsModes: Bool = false, supportsProfiles: Bool = false,
+        supportsControlIQSettings: Bool = false, supportsCgmSession: Bool = false,
+        supportsCartridgeFill: Bool = false, supportsLimits: Bool = false,
+        supportsTimeSync: Bool = false, supportsSounds: Bool = false,
+        supportsReminders: Bool = false, supportsSleepScheduleWrite: Bool = false
+    ) {
+        self.supportsSounds = supportsSounds
+        self.supportsReminders = supportsReminders
+        self.supportsCarbEntry = supportsCarbEntry
+        self.supportsBolusCancel = supportsBolusCancel
         self.supportsAlertClear = supportsAlertClear
         self.supportsRemoteAlertDismiss = supportsRemoteAlertDismiss
         self.supportsHistoryBackfill = supportsHistoryBackfill
-        self.supportsPairing = supportsPairing; self.supportsExtendedBolus = supportsExtendedBolus
-        self.supportsSuspendResume = supportsSuspendResume; self.supportsTempBasal = supportsTempBasal
-        self.supportsModes = supportsModes; self.supportsProfiles = supportsProfiles
-        self.supportsControlIQSettings = supportsControlIQSettings; self.supportsCgmSession = supportsCgmSession
-        self.supportsCartridgeFill = supportsCartridgeFill; self.supportsLimits = supportsLimits
+        self.supportsPairing = supportsPairing
+        self.supportsExtendedBolus = supportsExtendedBolus
+        self.supportsSuspendResume = supportsSuspendResume
+        self.supportsTempBasal = supportsTempBasal
+        self.supportsModes = supportsModes
+        self.supportsProfiles = supportsProfiles
+        self.supportsControlIQSettings = supportsControlIQSettings
+        self.supportsCgmSession = supportsCgmSession
+        self.supportsCartridgeFill = supportsCartridgeFill
+        self.supportsLimits = supportsLimits
         self.supportsTimeSync = supportsTimeSync
         self.supportsSleepScheduleWrite = supportsSleepScheduleWrite
     }
@@ -803,7 +847,7 @@ public struct PumpCapabilities: Sendable, Equatable {
         supportsSuspendResume: true, supportsTempBasal: true, supportsModes: true,
         supportsProfiles: true, supportsControlIQSettings: true, supportsCgmSession: true,
         supportsCartridgeFill: true, supportsLimits: true, supportsTimeSync: true,
-        supportsReminders: true,   // supportsSounds intentionally off — see deferral note
+        supportsReminders: true,  // supportsSounds intentionally off — see deferral note
         supportsSleepScheduleWrite: true)
 
     /// True if any advanced-control capability is available (gates the Pump Control entry).
@@ -836,8 +880,10 @@ public struct PumpFeatureBits: Sendable, Equatable {
     /// any capability gate, so `PumpCapabilities.derive` deliberately ignores it.
     public var controlIQProSupported: Bool
 
-    public init(controlIQSupported: Bool = false, basalLimitSupported: Bool = false,
-                blePumpControlSupported: Bool = false, controlIQProSupported: Bool = false) {
+    public init(
+        controlIQSupported: Bool = false, basalLimitSupported: Bool = false,
+        blePumpControlSupported: Bool = false, controlIQProSupported: Bool = false
+    ) {
         self.controlIQSupported = controlIQSupported
         self.basalLimitSupported = basalLimitSupported
         self.blePumpControlSupported = blePumpControlSupported
@@ -913,7 +959,11 @@ public enum PumpModel: String, Sendable, Equatable, CaseIterable {
 
     /// User-facing model brand name. Empty for `.unknown` (no model detected yet — show nothing).
     public var displayName: String {
-        switch self { case .tslimX2: return "t:slim X2"; case .mobi: return "Mobi"; case .unknown: return "" }
+        switch self {
+        case .tslimX2: return "t:slim X2"
+        case .mobi: return "Mobi"
+        case .unknown: return ""
+        }
     }
 
     /// Manufacturer legal name. Both current models are Tandem; kept as a property (not a literal) so the
@@ -923,7 +973,11 @@ public enum PumpModel: String, Sendable, Equatable, CaseIterable {
     /// Stable lowercase token recorded as backup provenance in a settings-backup's metadata (so a restore
     /// can warn on a model mismatch). Kept stable across UI copy changes.
     public var backupToken: String {
-        switch self { case .tslimX2: return "tslim"; case .mobi: return "mobi"; case .unknown: return "unknown" }
+        switch self {
+        case .tslimX2: return "tslim"
+        case .mobi: return "mobi"
+        case .unknown: return "unknown"
+        }
     }
 
     /// Whether this model uses a **savable fixed pairing PIN** (Mobi) rather than a per-session pairing
@@ -972,11 +1026,17 @@ extension PumpCapabilities {
         // Master gate: a pump that doesn't advertise BLE pump control can't be controlled over BLE, so
         // reflect that by narrowing every advanced capability off (nothing else is reachable).
         if !f.blePumpControlSupported {
-            caps.supportsSuspendResume = false; caps.supportsTempBasal = false
-            caps.supportsModes = false; caps.supportsProfiles = false
-            caps.supportsControlIQSettings = false; caps.supportsCgmSession = false
-            caps.supportsCartridgeFill = false; caps.supportsLimits = false
-            caps.supportsTimeSync = false; caps.supportsSounds = false; caps.supportsReminders = false
+            caps.supportsSuspendResume = false
+            caps.supportsTempBasal = false
+            caps.supportsModes = false
+            caps.supportsProfiles = false
+            caps.supportsControlIQSettings = false
+            caps.supportsCgmSession = false
+            caps.supportsCartridgeFill = false
+            caps.supportsLimits = false
+            caps.supportsTimeSync = false
+            caps.supportsSounds = false
+            caps.supportsReminders = false
             caps.supportsSleepScheduleWrite = false
             return caps
         }
@@ -1010,8 +1070,11 @@ public struct PumpSleepScheduleSlot: Sendable, Equatable, Identifiable {
     public var startMinute: Int
     public var endMinute: Int
     public init(slot: Int, enabled: Bool, activeDays: Int, startMinute: Int, endMinute: Int) {
-        self.slot = slot; self.enabled = enabled; self.activeDays = activeDays
-        self.startMinute = startMinute; self.endMinute = endMinute
+        self.slot = slot
+        self.enabled = enabled
+        self.activeDays = activeDays
+        self.startMinute = startMinute
+        self.endMinute = endMinute
     }
 }
 
@@ -1024,7 +1087,9 @@ public struct PumpProfileInfo: Sendable, Equatable, Identifiable {
     /// Insulin duration (DIA) for this profile, minutes. 0 = unknown/not read.
     public var insulinDurationMinutes: Int
     public init(idpId: Int, name: String, active: Bool, insulinDurationMinutes: Int = 0) {
-        self.idpId = idpId; self.name = name; self.active = active
+        self.idpId = idpId
+        self.name = name
+        self.active = active
         self.insulinDurationMinutes = insulinDurationMinutes
     }
 }
@@ -1039,11 +1104,17 @@ public struct PumpProfileSegment: Sendable, Equatable, Identifiable {
     public var carbRatioGramsPerUnit: Double
     public var isf: Int
     public var targetBg: Int
-    public init(idpId: Int, segmentIndex: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double,
-                carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) {
-        self.idpId = idpId; self.segmentIndex = segmentIndex; self.startTimeMinutes = startTimeMinutes
-        self.basalRateUnitsPerHour = basalRateUnitsPerHour; self.carbRatioGramsPerUnit = carbRatioGramsPerUnit
-        self.isf = isf; self.targetBg = targetBg
+    public init(
+        idpId: Int, segmentIndex: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double,
+        carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int
+    ) {
+        self.idpId = idpId
+        self.segmentIndex = segmentIndex
+        self.startTimeMinutes = startTimeMinutes
+        self.basalRateUnitsPerHour = basalRateUnitsPerHour
+        self.carbRatioGramsPerUnit = carbRatioGramsPerUnit
+        self.isf = isf
+        self.targetBg = targetBg
     }
 }
 

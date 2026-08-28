@@ -29,15 +29,16 @@ struct RootTabView: View {
     /// Pure / static so it's unit-testable without the TabView (mirrors the `resolveSelection` idiom).
     enum RootAlert { case remoteBolus, remoteControl, pumpSwitch }
     static func activeAlert(hasRemoteBolus: Bool, hasRemoteControl: Bool, pumpSwitch: Bool) -> RootAlert? {
-        if hasRemoteBolus   { return .remoteBolus }
+        if hasRemoteBolus { return .remoteBolus }
         if hasRemoteControl { return .remoteControl }
-        if pumpSwitch       { return .pumpSwitch }
+        if pumpSwitch { return .pumpSwitch }
         return nil
     }
     private var active: RootAlert? {
-        Self.activeAlert(hasRemoteBolus: model.pendingRemoteBolus != nil,
-                         hasRemoteControl: model.pendingRemoteControl != nil,
-                         pumpSwitch: model.pendingPumpSwitch)
+        Self.activeAlert(
+            hasRemoteBolus: model.pendingRemoteBolus != nil,
+            hasRemoteControl: model.pendingRemoteControl != nil,
+            pumpSwitch: model.pendingPumpSwitch)
     }
 
     var body: some View {
@@ -63,7 +64,10 @@ struct RootTabView: View {
         }
         .onChange(of: model.openBolusRequested) { _, requested in
             // Widget deep link → Bolus tab (no-op in read-only, where the tab is hidden).
-            if requested { if !settings.phoneReadOnly { selection = 1 }; model.openBolusRequested = false }
+            if requested {
+                if !settings.phoneReadOnly { selection = 1 }
+                model.openBolusRequested = false
+            }
         }
         .onChange(of: settings.phoneReadOnly) { _, isReadOnly in
             // Never strand the user on a tab the toggle just hid.
@@ -74,10 +78,14 @@ struct RootTabView: View {
         // and every `confirmMessage` part now read from one frozen value instead of two independent
         // live reads of `model.pendingRemoteBolus`, so the confirmed amount can never drift between
         // the two even if the model updates while the alert is on screen.
-        .alert(String(localized: "Remote bolus request"), isPresented: .constant(active == .remoteBolus),
-               presenting: model.pendingRemoteBolus) { p in
-            Button(String(format: String(localized: "Deliver %@"), String(format: "%.2f U", p.units)),
-                   role: .destructive) {
+        .alert(
+            String(localized: "Remote bolus request"), isPresented: .constant(active == .remoteBolus),
+            presenting: model.pendingRemoteBolus
+        ) { p in
+            Button(
+                String(format: String(localized: "Deliver %@"), String(format: "%.2f U", p.units)),
+                role: .destructive
+            ) {
                 Task { await model.confirmRemoteBolus() }
             }
             Button(String(localized: "Reject"), role: .cancel) { model.rejectRemoteBolus() }
@@ -111,22 +119,31 @@ struct RootTabView: View {
         }
         .alert("Remote pump-control request", isPresented: .constant(active == .remoteControl)) {
             let action = model.pendingRemoteControl?.action
-            Button(action == .suspend ? "Suspend insulin" : "Resume insulin", role: action == .suspend ? .destructive : nil) {
+            Button(
+                action == .suspend ? "Suspend insulin" : "Resume insulin", role: action == .suspend ? .destructive : nil
+            ) {
                 Task { await model.confirmRemoteControl() }
             }
             Button("Reject", role: .cancel) { model.rejectRemoteControl() }
         } message: {
-            Text("A remote requested to \(model.pendingRemoteControl?.action == .suspend ? "suspend" : "resume") insulin delivery. Confirm on the phone to proceed.")
+            Text(
+                "A remote requested to \(model.pendingRemoteControl?.action == .suspend ? "suspend" : "resume") insulin delivery. Confirm on the phone to proceed."
+            )
         }
         // A DIFFERENT pump connected. Its therapy values were already refreshed automatically;
         // offer to also reset pump-specific app settings so two pumps' configs don't mix.
-        .alert("A different pump is connected", isPresented: Binding(
-            get: { active == .pumpSwitch },
-            set: { if !$0 { model.pendingPumpSwitch = false } })) {
+        .alert(
+            "A different pump is connected",
+            isPresented: Binding(
+                get: { active == .pumpSwitch },
+                set: { if !$0 { model.pendingPumpSwitch = false } })
+        ) {
             Button("Reset pump settings", role: .destructive) { model.resetPumpRelevantSettingsAfterSwitch() }
             Button("Keep everything", role: .cancel) { model.keepSettingsAfterPumpSwitch() }
         } message: {
-            Text("This pump is different from the one faBolus last used, so its therapy values were refreshed automatically. Reset pump-specific app settings too — Control-IQ automation, pump time-sync, alert rules, and the therapy change history — back to defaults? Your display preferences and CGM setup are kept either way.")
+            Text(
+                "This pump is different from the one faBolus last used, so its therapy values were refreshed automatically. Reset pump-specific app settings too — Control-IQ automation, pump time-sync, alert rules, and the therapy change history — back to defaults? Your display preferences and CGM setup are kept either way."
+            )
         }
     }
 }

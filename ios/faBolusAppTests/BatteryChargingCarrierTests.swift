@@ -62,12 +62,14 @@ import faBolusCore
         cmd.batteryPercent = 42
         cmd.batteryCharging = true
         model.handle(cmd)
-        #expect(model.batteryCharging == true)   // sanity: ingest side already verified by WR-01 tests
+        #expect(model.batteryCharging == true)  // sanity: ingest side already verified by WR-01 tests
 
         model.publishSnapshot()
         let snap = WidgetStore.load()
         #expect(snap?.batteryPercent == 42)
-        #expect(snap?.batteryCharging == true, "the Watch's WidgetSnapshot must carry the real charging state, not the false default")
+        #expect(
+            snap?.batteryCharging == true,
+            "the Watch's WidgetSnapshot must carry the real charging state, not the false default")
     }
 
     /// The fail-closed counterpart: a legacy/absent wire key must publish `batteryCharging == false`,
@@ -77,7 +79,7 @@ import faBolusCore
         let model = RemoteCommandWireFixture(link: FakeLink())
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.batteryPercent = 17
-        model.handle(cmd)   // batteryCharging absent on the wire
+        model.handle(cmd)  // batteryCharging absent on the wire
 
         model.publishSnapshot()
         let snap = WidgetStore.load()
@@ -98,10 +100,12 @@ import faBolusCore
         model.handle(chargingCmd)
         #expect(model.batteryCharging == true)
 
-        var droppedKeyCmd = RemoteCommand(kind: .statusRead)   // batteryCharging left nil (dropped/legacy)
+        var droppedKeyCmd = RemoteCommand(kind: .statusRead)  // batteryCharging left nil (dropped/legacy)
         droppedKeyCmd.batteryPercent = 55
         model.handle(droppedKeyCmd)
-        #expect(model.batteryCharging == false, "an absent key must NOT keep the last-known 'Charging' claim (WR-01 fail-closed fix)")
+        #expect(
+            model.batteryCharging == false,
+            "an absent key must NOT keep the last-known 'Charging' claim (WR-01 fail-closed fix)")
     }
 
     /// A fresh model that never received the field stays fail-closed `false` (D-03's default,

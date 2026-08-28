@@ -15,7 +15,7 @@ struct UnpairAdvisoryTests {
             #expect(!UnpairAdvisory.requiresChargingBaseToRepair(model))
             let msg = UnpairAdvisory.confirmationMessage(for: model)
             #expect(!msg.localizedCaseInsensitiveContains("charging base"))
-            #expect(!msg.isEmpty)   // still a real confirmation, just without the base caveat
+            #expect(!msg.isEmpty)  // still a real confirmation, just without the base caveat
         }
     }
 
@@ -30,8 +30,9 @@ struct UnpairAdvisoryTests {
         #expect(UnpairAdvisory.resolvedModel(snapshotModel: .unknown, storedIsMobi: false) == .tslimX2)
         // Never recorded ⇒ unknown ⇒ the plain note (no false charging-base claim).
         #expect(UnpairAdvisory.resolvedModel(snapshotModel: .unknown, storedIsMobi: nil) == .unknown)
-        #expect(UnpairAdvisory.requiresChargingBaseToRepair(
-            UnpairAdvisory.resolvedModel(snapshotModel: .unknown, storedIsMobi: true)))
+        #expect(
+            UnpairAdvisory.requiresChargingBaseToRepair(
+                UnpairAdvisory.resolvedModel(snapshotModel: .unknown, storedIsMobi: true)))
     }
 
     /// A4 (§2.2.3, owner 2026-08-09): the unpair flow gates on a backup-or-skip choice BEFORE it completes.
@@ -39,7 +40,7 @@ struct UnpairAdvisoryTests {
     /// present — the invariant the two-stage SwiftUI flow implements.
     @Test func unpairFlowOffersBackupBeforeTheConfirm() {
         #expect(UnpairAdvisory.steps == [.backupChoice, .confirm])
-        #expect(UnpairAdvisory.steps.first == .backupChoice)   // backup is offered first — can't be skipped silently
+        #expect(UnpairAdvisory.steps.first == .backupChoice)  // backup is offered first — can't be skipped silently
         #expect(UnpairAdvisory.steps.last == .confirm)
         #expect(!UnpairAdvisory.backupPromptTitle.isEmpty)
         #expect(UnpairAdvisory.backupPromptMessage.localizedCaseInsensitiveContains("back"))

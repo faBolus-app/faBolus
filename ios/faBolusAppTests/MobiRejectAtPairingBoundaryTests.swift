@@ -31,9 +31,11 @@ struct MobiRejectAtPairingBoundaryTests {
     private func withClean(_ body: () async -> Void) async {
         let s = AppSettings.shared
         let child = s.childModeEnabled, phoneRO = s.phoneReadOnly
-        s.childModeEnabled = false; s.phoneReadOnly = false
+        s.childModeEnabled = false
+        s.phoneReadOnly = false
         await body()
-        s.childModeEnabled = child; s.phoneReadOnly = phoneRO
+        s.childModeEnabled = child
+        s.phoneReadOnly = phoneRO
     }
 
     @Test func mobiNamedPeripheralIsRejectedBeforePairingCompletes() {

@@ -31,7 +31,7 @@ import faBolusCore
     @Test func lockoutUntilDateIsNilWhenTheControllerCannotAutoCorrect() {
         var snap = PumpSnapshot()
         snap.lastAutoCorrectionDate = Date()
-        snap.controllerVariant = .none   // ControllerDescriptor.none has no documented window
+        snap.controllerVariant = .none  // ControllerDescriptor.none has no documented window
         #expect(snap.lockoutUntilDate == nil)
     }
 
@@ -110,7 +110,7 @@ import faBolusCore
         cmd.controllerVariant = ControllerVariant.controlIQ.rawValue
         cmd.controlIQEnabled = true
         let windowMinutes = ControllerDescriptor.controlIQ.automaticCorrection.blockedByRecentBolusMinutes!
-        let until = Date().addingTimeInterval(TimeInterval(windowMinutes) * 60 * 0.5)   // halfway through
+        let until = Date().addingTimeInterval(TimeInterval(windowMinutes) * 60 * 0.5)  // halfway through
         cmd.lockoutUntilEpochSec = Int(until.timeIntervalSince1970)
         m.handle(cmd)
         let fraction = m.lockoutRemainingFraction
@@ -130,9 +130,9 @@ import faBolusCore
         cmd.controlIQEnabled = true
         cmd.lockoutUntilEpochSec = Int(Date().addingTimeInterval(-3600).timeIntervalSince1970)
         m.handle(cmd)
-        #expect(m.lockoutUntilDate != nil)   // the date DID parse...
-        #expect(m.lockoutRemainingFraction == nil)   // ...but the fraction fails closed
-        #expect(m.lockoutAvailableAt == nil)   // and the paired "available at" label follows suit
+        #expect(m.lockoutUntilDate != nil)  // the date DID parse...
+        #expect(m.lockoutRemainingFraction == nil)  // ...but the fraction fails closed
+        #expect(m.lockoutAvailableAt == nil)  // and the paired "available at" label follows suit
     }
 
     /// Fail-closed: no controller (`.none`) never produces a fraction even with a future epoch present.
@@ -161,7 +161,7 @@ import faBolusCore
         m.handle(cmdWithLockout)
         #expect(m.lockoutUntilDate != nil)
 
-        let cmdWithoutLockout = RemoteCommand(kind: .statusRead)   // key absent this time
+        let cmdWithoutLockout = RemoteCommand(kind: .statusRead)  // key absent this time
         m.handle(cmdWithoutLockout)
         #expect(m.lockoutUntilDate == nil)
         #expect(m.lockoutRemainingFraction == nil)

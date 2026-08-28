@@ -28,8 +28,11 @@ struct BackendRegistryTests {
         let key = "selectedBackendId"
         let saved = UserDefaults.standard.string(forKey: key)
         defer {
-            if let saved { UserDefaults.standard.set(saved, forKey: key) }
-            else { UserDefaults.standard.removeObject(forKey: key) }
+            if let saved {
+                UserDefaults.standard.set(saved, forKey: key)
+            } else {
+                UserDefaults.standard.removeObject(forKey: key)
+            }
         }
         body()
     }
@@ -42,13 +45,16 @@ struct BackendRegistryTests {
         withRestoredSelection {
             BackendRegistry.select(Self.demoBackendId)
             let resolved = BackendRegistry.selected()
-            #expect(resolved.id == Self.demoBackendId,
-                    "the demo id must resolve to itself, not silently fall back to a different backend")
+            #expect(
+                resolved.id == Self.demoBackendId,
+                "the demo id must resolve to itself, not silently fall back to a different backend")
             let instance = resolved.make()
-            #expect(instance is MockBackend,
-                    "the onboarding demo button must resolve to a MockBackend, never TandemBackend")
-            #expect(!(instance is TandemBackend),
-                    "the onboarding demo button must never resolve to the REAL TandemBackend (Pitfall 1)")
+            #expect(
+                instance is MockBackend,
+                "the onboarding demo button must resolve to a MockBackend, never TandemBackend")
+            #expect(
+                !(instance is TandemBackend),
+                "the onboarding demo button must never resolve to the REAL TandemBackend (Pitfall 1)")
         }
     }
 

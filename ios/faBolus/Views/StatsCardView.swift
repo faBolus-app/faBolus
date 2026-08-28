@@ -78,7 +78,9 @@ struct StatsCardView: View {
         // Report all FIVE bands as their own NON-OVERLAPPING percentages, so a VoiceOver user hears
         // the same five distinct segments a sighted user sees. A cumulative "low" (veryLow+low) that
         // folded "very high" into "high" would not match the 5-segment bar.
-        .accessibilityLabel("Time in range \(pct(s.timeInRangePct)), very low \(pct(s.veryLowPct)), low \(pct(s.lowPct)), high \(pct(s.highPct)), very high \(pct(s.veryHighPct))")
+        .accessibilityLabel(
+            "Time in range \(pct(s.timeInRangePct)), very low \(pct(s.veryLowPct)), low \(pct(s.lowPct)), high \(pct(s.highPct)), very high \(pct(s.veryHighPct))"
+        )
     }
 
     private func band(_ pctVal: Double, _ color: Color, _ geo: GeometryProxy) -> some View {

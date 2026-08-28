@@ -4,23 +4,23 @@ import Foundation
 /// Viewing status is always allowed; everything here is off by default (a new peer is view-only) and
 /// granted per-peer by the host. Mirrors the `ChildFeature` allow-set model.
 public enum RemotePermission: String, Codable, CaseIterable, Sendable, Identifiable {
-    case bolus            // standard bolus
-    case extendedBolus    // extended / combo bolus
-    case cancelBolus      // stop a running bolus
-    case dismissAlerts    // clear/snooze pump alerts
-    case suspendResume    // suspend / resume insulin
-    case approveBolus     // answer a reverse-approval request for a host-initiated bolus (audit A-06)
+    case bolus  // standard bolus
+    case extendedBolus  // extended / combo bolus
+    case cancelBolus  // stop a running bolus
+    case dismissAlerts  // clear/snooze pump alerts
+    case suspendResume  // suspend / resume insulin
+    case approveBolus  // answer a reverse-approval request for a host-initiated bolus (audit A-06)
 
     public var id: String { rawValue }
 
     public var label: String {
         switch self {
-        case .bolus:         return "Deliver boluses"
+        case .bolus: return "Deliver boluses"
         case .extendedBolus: return "Extended (combo) bolus"
-        case .cancelBolus:   return "Cancel a running bolus"
+        case .cancelBolus: return "Cancel a running bolus"
         case .dismissAlerts: return "Clear / snooze alerts"
         case .suspendResume: return "Suspend / resume insulin"
-        case .approveBolus:  return "Approve this phone's boluses"
+        case .approveBolus: return "Approve this phone's boluses"
         }
     }
 }
@@ -44,7 +44,8 @@ public struct RemotePeerPolicy: Codable, Equatable, Sendable {
     public var permissions: Set<RemotePermission>
     public var approvalMode: RemoteApprovalMode
     public init(permissions: Set<RemotePermission> = [], approvalMode: RemoteApprovalMode = .auto) {
-        self.permissions = permissions; self.approvalMode = approvalMode
+        self.permissions = permissions
+        self.approvalMode = approvalMode
     }
     public func allows(_ p: RemotePermission) -> Bool { permissions.contains(p) }
     /// Read-only = no insulin-affecting or write permissions at all (status viewing only).

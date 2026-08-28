@@ -35,7 +35,8 @@ struct NudgeDeliveryBoundaryTests {
         fake.script(BolusPermissionResponse.props.opCode, .frame(FakePumpTransport.permissionGranted(bolusId: bolusId)))
         fake.script(initiateOp, .frame(FakePumpTransport.initiateAccepted(bolusId: bolusId)))
         fake.script(statusOp, .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: bolusId)))
-        fake.script(lastOp, .frame(FakePumpTransport.lastBolus(bolusId: bolusId, deliveredMilliunits: deliveredMilliunits)))
+        fake.script(
+            lastOp, .frame(FakePumpTransport.lastBolus(bolusId: bolusId, deliveredMilliunits: deliveredMilliunits)))
         return (backend, fake)
     }
 
@@ -48,15 +49,15 @@ struct NudgeDeliveryBoundaryTests {
     /// `StackingGuardDeliverInvariantTests.deliveredEqualsConsentedWhileSG1Fires`, inverted into a
     /// MUST-NOT-REACH shape per D-03).
     @Test func deliveredEqualsExplicitDoseNeverNudgeEstimate() async throws {
-        let liveNudge = EatingAlert(estimatedCarbs: 60, at: Date())   // deliberately != the entered dose below
-        let entered = 3.2                                            // the ONLY number that should reach the pump
+        let liveNudge = EatingAlert(estimatedCarbs: 60, at: Date())  // deliberately != the entered dose below
+        let entered = 3.2  // the ONLY number that should reach the pump
 
         let (backend, fake) = makeDeliveringBackend(deliveredMilliunits: 3200)
         let delivered = try await backend.deliverBolus(units: entered, carbsGrams: nil, bgMgdl: nil, iobUnits: 0)
-        #expect(delivered == entered)                          // exactly the entered dose
-        #expect(delivered != liveNudge.estimatedCarbs)          // guards against a future accidental wiring of the estimate into the dose
+        #expect(delivered == entered)  // exactly the entered dose
+        #expect(delivered != liveNudge.estimatedCarbs)  // guards against a future accidental wiring of the estimate into the dose
         #expect(!backend.deliveryOutcomeUnknown)
-        _ = fake   // keep the fake alive for the duration of the assertion
+        _ = fake  // keep the fake alive for the duration of the assertion
     }
 
     /// `EatingAlert.estimatedCarbs` surfaces ONLY through `.message` (D-02/D-05a/D-05c) — there is no
@@ -94,20 +95,23 @@ struct NudgeDeliveryBoundaryTests {
         let forbidden = ["deliverBolus", "deliverExtendedBolus", "remoteDeliver", "perform(totalMu"]
 
         let testFileURL = URL(fileURLWithPath: #filePath)
-        let repoRoot = testFileURL
-            .deletingLastPathComponent()   // drop the filename → .../ios/faBolusAppTests
-            .deletingLastPathComponent()   // → .../ios
-            .deletingLastPathComponent()   // → repo root
+        let repoRoot =
+            testFileURL
+            .deletingLastPathComponent()  // drop the filename → .../ios/faBolusAppTests
+            .deletingLastPathComponent()  // → .../ios
+            .deletingLastPathComponent()  // → repo root
 
         // Scope (1): whole-file negative scan — both files are delivery-symbol-free today.
         let wholeFileTargets = [
             repoRoot.appendingPathComponent("Packages/faBolusCore/Sources/faBolusCore/EatingTrigger.swift"),
-            repoRoot.appendingPathComponent("ios/faBolus/Data/App/SmartAssist.swift"),
+            repoRoot.appendingPathComponent("ios/faBolus/Data/App/SmartAssist.swift")
         ]
         for url in wholeFileTargets {
             let contents = try String(contentsOf: url, encoding: .utf8)
             for symbol in forbidden {
-                #expect(!contents.contains(symbol), "Forbidden delivery-seam symbol '\(symbol)' found in \(url.lastPathComponent)")
+                #expect(
+                    !contents.contains(symbol),
+                    "Forbidden delivery-seam symbol '\(symbol)' found in \(url.lastPathComponent)")
             }
         }
 
@@ -120,12 +124,15 @@ struct NudgeDeliveryBoundaryTests {
         let eatingNudgeFunctionSignatures = [
             "func eatingNudgeActedOn(",
             "func updateEatingNudge(",
-            "func dismissEatingNudge(",
+            "func dismissEatingNudge("
         ]
         for signature in eatingNudgeFunctionSignatures {
             let slice = try Self.balancedFunctionBody(signaturePrefix: signature, in: eatingNudgeSource)
             for symbol in forbidden {
-                #expect(!slice.contains(symbol), "Forbidden delivery-seam symbol '\(symbol)' found in AppModel+EatingNudge.swift's \(signature) body")
+                #expect(
+                    !slice.contains(symbol),
+                    "Forbidden delivery-seam symbol '\(symbol)' found in AppModel+EatingNudge.swift's \(signature) body"
+                )
             }
         }
     }
@@ -145,8 +152,12 @@ struct NudgeDeliveryBoundaryTests {
         for line in lines[startIdx...] {
             collected.append(line)
             for ch in line {
-                if ch == "{" { depth += 1; opened = true }
-                else if ch == "}" { depth -= 1 }
+                if ch == "{" {
+                    depth += 1
+                    opened = true
+                } else if ch == "}" {
+                    depth -= 1
+                }
             }
             if opened && depth <= 0 { break }
         }

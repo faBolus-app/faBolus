@@ -104,7 +104,7 @@ import faBolusCore
     @MainActor
     @Test func absentSuspendFieldsOnTheWireKeepTheSafeNilDefault() {
         let m = RemoteCommandWireFixture(link: FakeLink())
-        let cmd = RemoteCommand(kind: .statusRead)   // suspend fields never set ⇒ nil
+        let cmd = RemoteCommand(kind: .statusRead)  // suspend fields never set ⇒ nil
         m.handle(cmd)
         #expect(m.ciqSuspendedForLow == nil)
         #expect(m.ciqSuspendStartDate == nil)
@@ -124,7 +124,7 @@ import faBolusCore
         #expect(m.ciqSuspendedForLow == true)
         #expect(m.ciqSuspendStartDate == Date(timeIntervalSince1970: TimeInterval(epoch)))
 
-        let cmdCleared = RemoteCommand(kind: .statusRead)   // fields absent ⇒ attribution cleared
+        let cmdCleared = RemoteCommand(kind: .statusRead)  // fields absent ⇒ attribution cleared
         m.handle(cmdCleared)
         #expect(m.ciqSuspendedForLow == nil)
         #expect(m.ciqSuspendStartDate == nil)
@@ -144,7 +144,7 @@ import faBolusCore
     @Test func genericSuspendWithoutCiqAttributionNeverImpliesControlIQPaused() {
         var snap = PumpSnapshot()
         snap.deliverySuspended = true
-        snap.ciqSuspendedForLow = false   // pump's own control-state says NOT CIQ-caused
+        snap.ciqSuspendedForLow = false  // pump's own control-state says NOT CIQ-caused
         #expect(snap.ciqSuspendedForLow != true)
     }
 
@@ -153,7 +153,7 @@ import faBolusCore
     @Test func absentCiqAttributionOnAGenericSuspendAlsoNeverImpliesControlIQPaused() {
         var snap = PumpSnapshot()
         snap.deliverySuspended = true
-        snap.ciqSuspendedForLow = nil   // never read / unknown
+        snap.ciqSuspendedForLow = nil  // never read / unknown
         #expect(snap.ciqSuspendedForLow != true)
     }
 

@@ -145,7 +145,9 @@ final class PumpConnectionLifecycle {
     /// Fold a kit BLE state into the snapshot.
     func applyClientState(_ state: PumpBLEClient.State) {
         switch state {
-        case .scanning: snapshot.connection = .scanning; snapshot.connectionDetail = nil
+        case .scanning:
+            snapshot.connection = .scanning
+            snapshot.connectionDetail = nil
         case .connecting, .discovering:
             // CR-02 (R2-05): an unintended BLE drop often surfaces HERE as `.connecting` (the kit skips the
             // `.disconnected` flicker and goes straight to reconnecting), so `linkDroppedCleanup()` — which
@@ -158,7 +160,8 @@ final class PumpConnectionLifecycle {
             // Keep `.connecting` (not `.disconnected`) so the reconnect-window semantics pinned by
             // `TandemConnectionStateTests` are preserved. All teardown lives in CR-01's `linkDroppedCleanup()`.
             let wasLive = snapshot.connection == .connected || snapshot.connection == .bolusing
-            snapshot.connection = .connecting; snapshot.connectionDetail = nil
+            snapshot.connection = .connecting
+            snapshot.connectionDetail = nil
             if wasLive { linkDroppedCleanup() }
             // tslim-reconnect-loop (Phase B, item 5): a live-link → `.connecting` transition IS one
             // re-pair/re-drop flap cycle — exactly the edge `SafetyEdge.connection` folds to `.none`. Count
@@ -185,13 +188,14 @@ final class PumpConnectionLifecycle {
             // `markUsableAndStartPolling()`. This closes the ghost-"Connected" window where a lost handshake
             // frame or a thrown pairing write would otherwise pin a green HUD that never polls and never
             // escalates staleness. Keep `linkDidBecomeReady()` (transport-level recovery signal).
-            snapshot.connection = .connecting; snapshot.connectionDetail = nil
-            bgSession.linkDidBecomeReady()   // debug pump-background-disconnect: reconnect recovered → release the H1 window
+            snapshot.connection = .connecting
+            snapshot.connectionDetail = nil
+            bgSession.linkDidBecomeReady()  // debug pump-background-disconnect: reconnect recovered → release the H1 window
         case .disconnected, .idle, .poweredOff, .unauthorized, .unsupported, .resetting:
             snapshot.connection = .disconnected
             snapshot.connectionDetail = Self.linkDetail(for: state)
             linkDroppedCleanup()
-            bgSession.linkDidTerminate()   // debug pump-background-disconnect: link down & NOT retrying → release the H1 window
+            bgSession.linkDidTerminate()  // debug pump-background-disconnect: link down & NOT retrying → release the H1 window
         case .reconnectExhausted:
             // The kit's reconnect ladder gave up (`maxReconnectAttempts` consecutive cycles that never
             // held `.ready` long enough to count as recovered — see `PumpBLEClient.readyStabilityWindow`).
@@ -202,9 +206,10 @@ final class PumpConnectionLifecycle {
             // already given during setup, see `MainHUDView`). `.error` (not `.disconnected`) so this
             // doesn't read as a plain, retryable drop — automatic retry has actually stopped.
             snapshot.connection = .error
-            snapshot.connectionDetail = "Pairing keeps dropping — close t:connect if it's open (only one app can connect to the pump at a time), then try again."
+            snapshot.connectionDetail =
+                "Pairing keeps dropping — close t:connect if it's open (only one app can connect to the pump at a time), then try again."
             linkDroppedCleanup()
-            bgSession.linkDidTerminate()   // debug pump-background-disconnect: ladder gave up → release the H1 window
+            bgSession.linkDidTerminate()  // debug pump-background-disconnect: ladder gave up → release the H1 window
         default:
             // `.unknown` (startup) or any future kit state: fail the DISPLAY safe to disconnected — never
             // leave a stale connected/linked state showing. (Was `default: break`.) Reachable via
@@ -256,9 +261,12 @@ final class PumpConnectionLifecycle {
         // reconnect state machine regresses (the codex-C1-shaped hazard this phase closes). This makes
         // the function self-defensive rather than relying solely on the cross-file
         // `linkDroppedCleanup()`/`forgetPairing()` nil-ing convention.
-        guard target == storeId else { detectedIsMobi = nil; return }
+        guard target == storeId else {
+            detectedIsMobi = nil
+            return
+        }
         guard let isMobi = TrustedPumpIdentityStore.isMobi(for: storeId) else { return }
-        detectedIsMobi = isMobi   // codex C8: restore the app-side name-authority signal
+        detectedIsMobi = isMobi  // codex C8: restore the app-side name-authority signal
         // Regression fix (debug `tslim-misidentified-as-mobi`): also restore the PUBLISHED model fields
         // `applyDidDiscover` sets, not only the private `detectedIsMobi` above. On a `didDiscover`-bypass
         // fast-path reconnect (cold launch → `connectKnownPeripheral`) the snapshot starts empty
@@ -278,11 +286,11 @@ final class PumpConnectionLifecycle {
     /// the "Disconnected" label already says enough (plain disconnect, idle-but-powered-on).
     private static func linkDetail(for state: PumpBLEClient.State) -> String? {
         switch state {
-        case .poweredOff:   return "Bluetooth is off"
+        case .poweredOff: return "Bluetooth is off"
         case .unauthorized: return "Bluetooth permission denied — enable it in Settings"
-        case .unsupported:  return "Bluetooth unavailable on this device"
-        case .resetting:    return "Bluetooth is resetting…"
-        default:            return nil
+        case .unsupported: return "Bluetooth unavailable on this device"
+        case .resetting: return "Bluetooth is resetting…"
+        default: return nil
         }
     }
 
@@ -323,7 +331,8 @@ final class PumpConnectionLifecycle {
     }
 
     func cancelPairingWatchdog() {
-        cancelWatchdog(pairingWatchdogToken); pairingWatchdogToken = nil
+        cancelWatchdog(pairingWatchdogToken)
+        pairingWatchdogToken = nil
     }
 
     /// R2-07: a quick-pair RESUME failed (a handshake `onError` or a watchdog timeout on the resume path).
@@ -339,8 +348,10 @@ final class PumpConnectionLifecycle {
         coordinator = nil
         if resumeRetryCount < Self.maxResumeRetries {
             resumeRetryCount += 1
-            Self.pairingLog.log("pairing resume retry \(self.resumeRetryCount, privacy: .public)/\(Self.maxResumeRetries, privacy: .public) — keeping stored secret")
-            linkDroppedCleanup()   // drops the auth key (delivery gate fails closed), stops timers
+            Self.pairingLog.log(
+                "pairing resume retry \(self.resumeRetryCount, privacy: .public)/\(Self.maxResumeRetries, privacy: .public) — keeping stored secret"
+            )
+            linkDroppedCleanup()  // drops the auth key (delivery gate fails closed), stops timers
             #if DEBUG
             resumeRetryActionForTesting = .reestablish
             #endif
@@ -361,7 +372,8 @@ final class PumpConnectionLifecycle {
             resumeRetryCount = 0
             linkDroppedCleanup()
             snapshot.connection = .error
-            snapshot.connectionDetail = "Couldn’t reconnect securely. Tap to retry — or Forget Pairing in Settings to re-pair."
+            snapshot.connectionDetail =
+                "Couldn’t reconnect securely. Tap to retry — or Forget Pairing in Settings to re-pair."
             onChange?()
         }
     }
@@ -379,9 +391,10 @@ final class PumpConnectionLifecycle {
         } else {
             coordinator = nil
             linkDroppedCleanup()
-            client?.disconnect()   // re-enter the kit's bounded reconnect ladder
+            client?.disconnect()  // re-enter the kit's bounded reconnect ladder
             snapshot.connection = .error
-            snapshot.connectionDetail = "Pairing didn’t finish — close t:connect if it’s open (only one app can connect to the pump at a time), then try again."
+            snapshot.connectionDetail =
+                "Pairing didn’t finish — close t:connect if it’s open (only one app can connect to the pump at a time), then try again."
             onChange?()
         }
     }
@@ -447,31 +460,49 @@ final class PumpConnectionLifecycle {
         if !pairingCode.isEmpty {
             let code = pairingCode
             switch PairingAuth.detectType(code) {
-            case .short6Char:                                   // modern EC-JPAKE, resumable
-                guard let full = try? PairingCoordinator(pairingCode: code) else { markUsableAndStartPolling(); return }
+            case .short6Char:  // modern EC-JPAKE, resumable
+                guard let full = try? PairingCoordinator(pairingCode: code) else {
+                    markUsableAndStartPolling()
+                    return
+                }
                 coord = full
                 schemeName = "JPAKE (fresh)"
-                onFirstPair = { [weak self] in PairingStore.save(full.derivedSecret); self?.pairingCode = "" }
-            case .long16Char:                                   // legacy V1 — no resume, persist the code
-                guard let v1 = try? LegacyPairingCoordinator(pairingCode: code) else { markUsableAndStartPolling(); return }
+                onFirstPair = { [weak self] in
+                    PairingStore.save(full.derivedSecret)
+                    self?.pairingCode = ""
+                }
+            case .long16Char:  // legacy V1 — no resume, persist the code
+                guard let v1 = try? LegacyPairingCoordinator(pairingCode: code) else {
+                    markUsableAndStartPolling()
+                    return
+                }
                 coord = v1
                 schemeName = "V1/legacy (fresh)"
-                onFirstPair = { [weak self] in PairingStore.saveV1Code(code); self?.pairingCode = "" }
+                onFirstPair = { [weak self] in
+                    PairingStore.saveV1Code(code)
+                    self?.pairingCode = ""
+                }
             }
-        } else if let v1Code = PairingStore.loadV1Code() {      // legacy reconnect: silent full re-challenge
+        } else if let v1Code = PairingStore.loadV1Code() {  // legacy reconnect: silent full re-challenge
             guard let v1 = try? LegacyPairingCoordinator(pairingCode: v1Code) else {
-                PairingStore.clear(); markUsableAndStartPolling(); return
+                PairingStore.clear()
+                markUsableAndStartPolling()
+                return
             }
-            coord = v1; onFirstPair = nil; schemeName = "V1/legacy (resume re-challenge)"
-        } else if let stored = PairingStore.load() {            // modern reconnect: JPAKE quick-pair resume
-            coord = PairingCoordinator(resumeDerivedSecret: stored); onFirstPair = nil
+            coord = v1
+            onFirstPair = nil
+            schemeName = "V1/legacy (resume re-challenge)"
+        } else if let stored = PairingStore.load() {  // modern reconnect: JPAKE quick-pair resume
+            coord = PairingCoordinator(resumeDerivedSecret: stored)
+            onFirstPair = nil
             schemeName = "JPAKE (quick-pair resume)"
         } else {
-            markUsableAndStartPolling(); return   // no code and no saved pairing — reads will be rejected
+            markUsableAndStartPolling()
+            return  // no code and no saved pairing — reads will be rejected
         }
         Self.pairingLog.log("pairing scheme selected → \(schemeName, privacy: .public)")
 
-        coord.onSendRequest = { [weak self] msg in   // AUTHORIZATION passes the interlock
+        coord.onSendRequest = { [weak self] msg in  // AUTHORIZATION passes the interlock
             // Logs type name + opcode + CARGO byte count (payload only, before framing/CRC/HMAC —
             // recomputing the actual wire length would need a second, duplicate `Packetize` call with
             // its own txId, out of step with the one `send()` actually uses) + send outcome. Never logs
@@ -482,12 +513,14 @@ final class PumpConnectionLifecycle {
             let cargoBytes = msg.cargo.count
             do {
                 try c.send(msg)
-                Self.pairingLog.log("""
+                Self.pairingLog.log(
+                    """
                     pairing send → \(typeName, privacy: .public) opcode=\(opcode, privacy: .public) \
                     cargoBytes=\(cargoBytes, privacy: .public) result=sent
                     """)
             } catch {
-                Self.pairingLog.log("""
+                Self.pairingLog.log(
+                    """
                     pairing send → \(typeName, privacy: .public) opcode=\(opcode, privacy: .public) \
                     cargoBytes=\(cargoBytes, privacy: .public) result=threw
                     """)
@@ -499,7 +532,7 @@ final class PumpConnectionLifecycle {
         coord.onError = { [weak self] _ in
             guard let self else { return }
             Self.pairingLog.log("pairing outcome → error")
-            self.cancelPairingWatchdog()   // CR-01: pairing resolved (error) — disarm the watchdog
+            self.cancelPairingWatchdog()  // CR-01: pairing resolved (error) — disarm the watchdog
             if onFirstPair == nil {
                 // R2-07: a quick-pair RESUME failed. NEVER auto-wipe the stored secret — a transient link
                 // glitch must not force a full manual re-pair. Retry the resume (bounded, on the live link);
@@ -514,11 +547,11 @@ final class PumpConnectionLifecycle {
         }
         coord.onPaired = { [weak self] key, _ in
             Self.pairingLog.log("pairing outcome → paired")
-            self?.cancelPairingWatchdog()   // CR-01: pairing resolved (success) — disarm the watchdog
-            self?.resumeRetryCount = 0   // R2-07: a successful pair clears the resume-retry budget
+            self?.cancelPairingWatchdog()  // CR-01: pairing resolved (success) — disarm the watchdog
+            self?.resumeRetryCount = 0  // R2-07: a successful pair clears the resume-retry budget
             self?.authenticationKey = key
-            onFirstPair?()   // first full pair: persist the derived secret (JPAKE) or the code (V1)
-            self?.markUsableAndStartPolling()   // CR-01: publish `.connected` + start polling at the single usable moment
+            onFirstPair?()  // first full pair: persist the derived secret (JPAKE) or the code (V1)
+            self?.markUsableAndStartPolling()  // CR-01: publish `.connected` + start polling at the single usable moment
             // FB-02: if a prior bolus outcome was left unknown (e.g. we reconnected after a mid-bolus
             // drop), reconcile it against the pump now so new deliveries can unblock.
             Task { [weak self] in await self?.reconcileIndeterminateDelivery() }

@@ -19,18 +19,25 @@ final class MacPairingTests: XCTestCase {
         let (clientId, pN, mN) = makeExchange()
         let secret = MacPairing.secret(code: "123456")
         let macProof = MacPairing.proof(secret: secret, label: "mac", phoneNonce: pN, macNonce: mN, clientId: clientId)
-        let phoneProof = MacPairing.proof(secret: secret, label: "phone", phoneNonce: pN, macNonce: mN, clientId: clientId)
+        let phoneProof = MacPairing.proof(
+            secret: secret, label: "phone", phoneNonce: pN, macNonce: mN, clientId: clientId)
         // Each side verifies the other's proof.
-        XCTAssertTrue(MacPairing.verify(macProof, secret: secret, label: "mac", phoneNonce: pN, macNonce: mN, clientId: clientId))
-        XCTAssertTrue(MacPairing.verify(phoneProof, secret: secret, label: "phone", phoneNonce: pN, macNonce: mN, clientId: clientId))
+        XCTAssertTrue(
+            MacPairing.verify(macProof, secret: secret, label: "mac", phoneNonce: pN, macNonce: mN, clientId: clientId))
+        XCTAssertTrue(
+            MacPairing.verify(
+                phoneProof, secret: secret, label: "phone", phoneNonce: pN, macNonce: mN, clientId: clientId))
     }
 
     func testWrongCodeFails() {
         let (clientId, pN, mN) = makeExchange()
-        let macProof = MacPairing.proof(secret: MacPairing.secret(code: "123456"),
-                                        label: "mac", phoneNonce: pN, macNonce: mN, clientId: clientId)
-        XCTAssertFalse(MacPairing.verify(macProof, secret: MacPairing.secret(code: "000000"),
-                                         label: "mac", phoneNonce: pN, macNonce: mN, clientId: clientId))
+        let macProof = MacPairing.proof(
+            secret: MacPairing.secret(code: "123456"),
+            label: "mac", phoneNonce: pN, macNonce: mN, clientId: clientId)
+        XCTAssertFalse(
+            MacPairing.verify(
+                macProof, secret: MacPairing.secret(code: "000000"),
+                label: "mac", phoneNonce: pN, macNonce: mN, clientId: clientId))
     }
 
     func testProofBoundToRoleAndNonces() {
@@ -38,11 +45,19 @@ final class MacPairingTests: XCTestCase {
         let secret = MacPairing.secret(code: "424242")
         let macProof = MacPairing.proof(secret: secret, label: "mac", phoneNonce: pN, macNonce: mN, clientId: clientId)
         // A Mac proof must not verify as a phone proof (role binding prevents reflection).
-        XCTAssertFalse(MacPairing.verify(macProof, secret: secret, label: "phone", phoneNonce: pN, macNonce: mN, clientId: clientId))
+        XCTAssertFalse(
+            MacPairing.verify(
+                macProof, secret: secret, label: "phone", phoneNonce: pN, macNonce: mN, clientId: clientId))
         // Different nonce -> fails (freshness).
-        XCTAssertFalse(MacPairing.verify(macProof, secret: secret, label: "mac", phoneNonce: MacPairing.newNonce(), macNonce: mN, clientId: clientId))
+        XCTAssertFalse(
+            MacPairing.verify(
+                macProof, secret: secret, label: "mac", phoneNonce: MacPairing.newNonce(), macNonce: mN,
+                clientId: clientId))
         // Different client id -> fails.
-        XCTAssertFalse(MacPairing.verify(macProof, secret: secret, label: "mac", phoneNonce: pN, macNonce: mN, clientId: MacPairing.newClientId()))
+        XCTAssertFalse(
+            MacPairing.verify(
+                macProof, secret: secret, label: "mac", phoneNonce: pN, macNonce: mN, clientId: MacPairing.newClientId()
+            ))
     }
 
     func testTokenReconnectProof() {
@@ -50,8 +65,11 @@ final class MacPairingTests: XCTestCase {
         let (clientId, pN, mN) = makeExchange()
         let token = MacPairing.newToken()
         let proof = MacPairing.proof(secret: token, label: "mac", phoneNonce: pN, macNonce: mN, clientId: clientId)
-        XCTAssertTrue(MacPairing.verify(proof, secret: token, label: "mac", phoneNonce: pN, macNonce: mN, clientId: clientId))
-        XCTAssertFalse(MacPairing.verify(proof, secret: MacPairing.newToken(), label: "mac", phoneNonce: pN, macNonce: mN, clientId: clientId))
+        XCTAssertTrue(
+            MacPairing.verify(proof, secret: token, label: "mac", phoneNonce: pN, macNonce: mN, clientId: clientId))
+        XCTAssertFalse(
+            MacPairing.verify(
+                proof, secret: MacPairing.newToken(), label: "mac", phoneNonce: pN, macNonce: mN, clientId: clientId))
     }
 
     func testSealedTokenRoundTrip() throws {

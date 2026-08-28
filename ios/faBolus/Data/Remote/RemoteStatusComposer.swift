@@ -28,45 +28,47 @@ enum RemoteStatusComposer {
         let alertList = inputs.activeNotifications.map {
             // Carry the phone-classified salience tier so the watch's F3/R4 gate has a
             // reliable per-alert signal (the watch fails an absent one closed to "critical").
-            RemoteCommand.RemoteAlert(id: $0.id, kind: $0.kind.rawValue, title: $0.title,
-                                      severity: $0.kind.wireSeverityTier)
+            RemoteCommand.RemoteAlert(
+                id: $0.id, kind: $0.kind.rawValue, title: $0.title,
+                severity: $0.kind.wireSeverityTier)
         }
         let recent = inputs.includeHistory ? Array(inputs.glucoseHistory.suffix(288)) : []
         let history = inputs.includeHistory ? recent.map { $0.mgdl } : nil
         let historyEpochs = inputs.includeHistory ? recent.map { Int($0.date.timeIntervalSince1970) } : nil
-        var cmd = RemoteCommand(kind: .statusRead, units: s.iobUnits,
-                             bgMgdl: s.glucose.map(Double.init), message: s.connection.rawValue,
-                             trend: GlucoseTrend.token(from: s.trend),
-                             carbRatio: s.carbRatio > 0 ? s.carbRatio : nil,
-                             isf: s.isf > 0 ? Double(s.isf) : nil,
-                             targetBg: s.targetBg > 0 ? Double(s.targetBg) : nil,
-                             // §2.3: the max the remotes gate on (their entry cap + their own `BolusGate`)
-                             // is the pump max clamped to the optional remote-only ceiling — computed by
-                             // `AppModel.remoteBolusMaximum` and passed in as `inputs.remoteMax` (INV-A).
-                             maxBolusUnits: inputs.remoteMax,
-                             reservoirUnits: s.reservoirUnits,
-                             batteryPercent: Double(s.batteryPercent),
-                             lastBolusUnits: s.lastBolusUnits,
-                             basalRate: s.basalRateUnitsPerHour,
-                             glucoseAgeSec: age,
-                             // Group A: send the pump's own reading time, not just an age computed
-                             // here — an age is already wrong by however long this message is in
-                             // flight, and a receiver cannot tell it apart from "absent".
-                             glucoseEpochSec: s.glucoseDate.map { Int($0.timeIntervalSince1970) },
-                             history: (history?.isEmpty ?? true) ? nil : history,
-                             historyEpochs: (historyEpochs?.isEmpty ?? true) ? nil : historyEpochs,
-                             alerts: alertList,
-                             bolusMode: settings.bolusMode,
-                             bolusIncrement: settings.bolusIncrement,
-                             carbIncrement: settings.carbIncrement,
-                             screenOrder: settings.garminScreenOrder,
-                             defaultScreen: settings.garminDefaultScreen,
-                             glucoseStaleMinutes: settings.glucoseStaleMinutes,
-                             glucoseHideDelayMinutes: settings.glucoseHideDelayMinutes,
-                             detailsOrder: settings.watchDetailsOrder,   // remotes use the watch-specific order
-                             watchChartRanges: settings.watchChartRanges,
-                             garminComplicationDisplay: settings.garminComplicationDisplay,
-                             remotesReadOnly: settings.remotesReadOnly)
+        var cmd = RemoteCommand(
+            kind: .statusRead, units: s.iobUnits,
+            bgMgdl: s.glucose.map(Double.init), message: s.connection.rawValue,
+            trend: GlucoseTrend.token(from: s.trend),
+            carbRatio: s.carbRatio > 0 ? s.carbRatio : nil,
+            isf: s.isf > 0 ? Double(s.isf) : nil,
+            targetBg: s.targetBg > 0 ? Double(s.targetBg) : nil,
+            // §2.3: the max the remotes gate on (their entry cap + their own `BolusGate`)
+            // is the pump max clamped to the optional remote-only ceiling — computed by
+            // `AppModel.remoteBolusMaximum` and passed in as `inputs.remoteMax` (INV-A).
+            maxBolusUnits: inputs.remoteMax,
+            reservoirUnits: s.reservoirUnits,
+            batteryPercent: Double(s.batteryPercent),
+            lastBolusUnits: s.lastBolusUnits,
+            basalRate: s.basalRateUnitsPerHour,
+            glucoseAgeSec: age,
+            // Group A: send the pump's own reading time, not just an age computed
+            // here — an age is already wrong by however long this message is in
+            // flight, and a receiver cannot tell it apart from "absent".
+            glucoseEpochSec: s.glucoseDate.map { Int($0.timeIntervalSince1970) },
+            history: (history?.isEmpty ?? true) ? nil : history,
+            historyEpochs: (historyEpochs?.isEmpty ?? true) ? nil : historyEpochs,
+            alerts: alertList,
+            bolusMode: settings.bolusMode,
+            bolusIncrement: settings.bolusIncrement,
+            carbIncrement: settings.carbIncrement,
+            screenOrder: settings.garminScreenOrder,
+            defaultScreen: settings.garminDefaultScreen,
+            glucoseStaleMinutes: settings.glucoseStaleMinutes,
+            glucoseHideDelayMinutes: settings.glucoseHideDelayMinutes,
+            detailsOrder: settings.watchDetailsOrder,  // remotes use the watch-specific order
+            watchChartRanges: settings.watchChartRanges,
+            garminComplicationDisplay: settings.garminComplicationDisplay,
+            remotesReadOnly: settings.remotesReadOnly)
         // Mirror the phone's Garmin clock-face preference to the remotes (analog vs digital), replacing
         // the old on-watch tap toggle. Unconditional like garminComplicationDisplay ⇒ "absent" means a
         // legacy host; the Garmin app keeps its digital default until it parses this.
@@ -125,7 +127,8 @@ enum RemoteStatusComposer {
         // (t:slim X2). Emitted UNCONDITIONALLY (mirrors supportsDismissAck's own unconditional emission
         // above) so a Mobi reply carries `false`, never omitted — the two capabilities can never both be
         // true for the same connected pump.
-        cmd.supportsRawAlertSnapshot = RemoteStatusComposer.buildSupportsRawSnapshot && !inputs.supportsRemoteAlertDismiss
+        cmd.supportsRawAlertSnapshot =
+            RemoteStatusComposer.buildSupportsRawSnapshot && !inputs.supportsRemoteAlertDismiss
         // Fail-closed empty/absent/staleness rule: emit `rawAlerts` ONLY when the capability is
         // true AND the host's raw set is KNOWN (non-nil) — the connected-but-first-poll-not-yet-done
         // window (raw still nil) OMITS rawAlerts, never fabricating an authoritative empty `[]`. A
@@ -222,7 +225,7 @@ enum RemoteStatusComposer {
         cmd.alertAudibleMinSeverity = settings.alertAudibleMinSeverity
         cmd.alertCriticalOverridesDnd = settings.alertCriticalOverridesDnd
         cmd.garminComplicationSlots = settings.garminComplicationSlots
-        if let requestId = inputs.requestId { cmd.requestId = requestId }   // R2-15: echo the incoming statusRead's id for true correlation
+        if let requestId = inputs.requestId { cmd.requestId = requestId }  // R2-15: echo the incoming statusRead's id for true correlation
         return cmd
     }
 }
@@ -278,9 +281,9 @@ struct RemoteStatusInputs {
 /// the `RemoteCommand` fields they feed, not the underlying `AppSettings` property names, so the
 /// composer body reads exactly like the pre-move code did.
 struct RemoteStatusSettings {
-    let bolusMode: String                    // AppSettings.watchDefaultBolusMode.rawValue
-    let bolusIncrement: Double               // AppSettings.watchBolusIncrement
-    let carbIncrement: Double                // AppSettings.watchCarbIncrement
+    let bolusMode: String  // AppSettings.watchDefaultBolusMode.rawValue
+    let bolusIncrement: Double  // AppSettings.watchBolusIncrement
+    let carbIncrement: Double  // AppSettings.watchCarbIncrement
     let garminScreenOrder: [String]
     let garminDefaultScreen: String
     let glucoseStaleMinutes: Int
@@ -296,7 +299,7 @@ struct RemoteStatusSettings {
     let glucosePlotFloorSmall: Int?
     let glucosePlotCeilingSmall: Int?
     let garminBolusEnabled: Bool
-    let activeModeRawValue: String           // AppSettings.appMode.rawValue
+    let activeModeRawValue: String  // AppSettings.appMode.rawValue
     let ciqStateReadoutsEnabled: Bool
     let ciqLockoutCountdownEnabled: Bool
     let ciqMaxBasalReadoutEnabled: Bool

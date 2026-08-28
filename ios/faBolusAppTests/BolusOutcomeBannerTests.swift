@@ -21,11 +21,13 @@ struct BolusOutcomeBannerTests {
 
     @Test func failedSignalWithMessageProducesNonNilWarningBanner() {
         let banner = BolusConfirmation.banner(for: .failed, units: 2.50, message: "The pump rejected the request.")
-        #expect(banner != nil,
-                "a non-delivered outcome with a known message must surface a truthful warning banner, not silence")
+        #expect(
+            banner != nil,
+            "a non-delivered outcome with a known message must surface a truthful warning banner, not silence")
         #expect(banner?.secondary == "The pump rejected the request.")
-        #expect(banner?.primary != "Bolus delivered",
-                "a non-delivered outcome must never show the success banner's primary line")
+        #expect(
+            banner?.primary != "Bolus delivered",
+            "a non-delivered outcome must never show the success banner's primary line")
     }
 
     /// The indeterminate outcome is distinguished only inside frozen `AppModel` (`:1927`) — this banner
@@ -35,8 +37,9 @@ struct BolusOutcomeBannerTests {
         let indeterminateMessage = "Bolus sent but outcome is unknown — verify on the pump before retrying."
         let banner = BolusConfirmation.banner(for: .failed, units: 2.50, message: indeterminateMessage)
         #expect(banner != nil)
-        #expect(banner?.secondary == indeterminateMessage,
-                "the indeterminate copy (from AppModel's already-accurate lastError) must surface verbatim")
+        #expect(
+            banner?.secondary == indeterminateMessage,
+            "the indeterminate copy (from AppModel's already-accurate lastError) must surface verbatim")
     }
 
     // MARK: - Regression pins (existing D-04/D-05 safety properties, unchanged)
@@ -67,7 +70,8 @@ struct BolusOutcomeBannerTests {
         // Content equality is preserved (kind/primary/secondary) for any consumer relying on it.
         #expect(first == second)
         // …but each construction gets its own presentation token.
-        #expect(first?.token != second?.token,
-                "each banner construction must have a unique per-presentation token (WR-04)")
+        #expect(
+            first?.token != second?.token,
+            "each banner construction must have a unique per-presentation token (WR-04)")
     }
 }

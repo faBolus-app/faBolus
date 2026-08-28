@@ -23,7 +23,10 @@ struct FirstLaunchDefaultsTests {
         // thresholds. Save + restore them so this exit test never perturbs another suite.
         let savedStale = GlucoseFreshness.staleAfter
         let savedHide = GlucoseFreshness.hideAfter
-        defer { GlucoseFreshness.staleAfter = savedStale; GlucoseFreshness.hideAfter = savedHide }
+        defer {
+            GlucoseFreshness.staleAfter = savedStale
+            GlucoseFreshness.hideAfter = savedHide
+        }
 
         // A brand-new, empty suite = first launch: every value falls back to its init default.
         let suiteName = "FirstLaunchDefaultsTests.\(UUID().uuidString)"
@@ -32,15 +35,15 @@ struct FirstLaunchDefaultsTests {
         let settings = AppSettings(defaults: defaults)
 
         #expect(settings.garminBolusEnabled == false)
-        #expect(settings.autoSyncPumpTime == false)     // E2: no silent pump-clock write without opt-in
+        #expect(settings.autoSyncPumpTime == false)  // E2: no silent pump-clock write without opt-in
         // Phase 5 (05-03, D-13/D-14, SC-4): the app-icon glucose badge is opt-in — OFF on a fresh install.
         #expect(settings.glucoseBadgeEnabled == false)
 
         // Remote-bolus passcode: route through the DEBUG in-memory backing (the app-hosted test target
         // can't write the Keychain) and assert nothing is required on a fresh install.
         BolusPasscodeStore.useInMemoryBackingForTests = true
-        BolusPasscodeStore.setPasscode(nil)             // fresh slate: no passcode set
-        defer { BolusPasscodeStore.setPasscode(nil) }   // leave no residue for other suites
+        BolusPasscodeStore.setPasscode(nil)  // fresh slate: no passcode set
+        defer { BolusPasscodeStore.setPasscode(nil) }  // leave no residue for other suites
         #expect(BolusPasscodeStore.isRequired == false)
     }
 }

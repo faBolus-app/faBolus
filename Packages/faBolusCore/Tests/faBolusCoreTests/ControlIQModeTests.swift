@@ -25,14 +25,14 @@ struct ControlIQModeTests {
 
     @Test func stateAndCommandDoNotCollideThroughTheTypes() {
         // The whole point: raw `1` is ambiguous (sleep STATE vs sleepOn COMMAND); the types disambiguate.
-        #expect(ControlIQActivity(rawMode: 1) == .sleep)       // 1 as a state
-        #expect(ModeCommand.sleepOn.bitmap == 1)               // 1 as a command
-        #expect(ControlIQActivity(rawMode: 2) == .exercise)    // 2 as a state
-        #expect(ModeCommand.sleepOff.bitmap == 2)              // 2 as a command — a DIFFERENT meaning
+        #expect(ControlIQActivity(rawMode: 1) == .sleep)  // 1 as a state
+        #expect(ModeCommand.sleepOn.bitmap == 1)  // 1 as a command
+        #expect(ControlIQActivity(rawMode: 2) == .exercise)  // 2 as a state
+        #expect(ModeCommand.sleepOff.bitmap == 2)  // 2 as a command — a DIFFERENT meaning
     }
 
     @Test func clearCommandReturnsToNormal() {
-        #expect(ControlIQActivity.normal.clearCommand == nil)          // nothing to clear
+        #expect(ControlIQActivity.normal.clearCommand == nil)  // nothing to clear
         #expect(ControlIQActivity.sleep.clearCommand == .sleepOff)
         #expect(ControlIQActivity.exercise.clearCommand == .exerciseOff)
     }
@@ -53,14 +53,18 @@ struct ControlIQModeTests {
         // Configurable (Mobi) ⇒ allowed for EVERY variant, including `.none` (the safety-critical case:
         // feature bits not yet read must not block a legitimate Mobi config write).
         for v in ControllerVariant.allCases {
-            #expect(ControlIQPrecondition.configBlockReason(supportsControlIQConfig: true, controllerVariant: v) == nil,
-                    "a remotely-configurable pump must never be blocked (variant \(v))")
+            #expect(
+                ControlIQPrecondition.configBlockReason(supportsControlIQConfig: true, controllerVariant: v) == nil,
+                "a remotely-configurable pump must never be blocked (variant \(v))")
         }
         // Not remotely configurable, but the pump HAS a Control-IQ controller (t:slim X2) ⇒ the specific
         // "change it on the pump" message.
-        let tslim = ControlIQPrecondition.configBlockReason(supportsControlIQConfig: false, controllerVariant: .controlIQ)
+        let tslim = ControlIQPrecondition.configBlockReason(
+            supportsControlIQConfig: false, controllerVariant: .controlIQ)
         #expect(tslim == "Control-IQ can only be changed on the pump itself for this model.")
-        #expect(ControlIQPrecondition.configBlockReason(supportsControlIQConfig: false, controllerVariant: .controlIQPro) == tslim)
+        #expect(
+            ControlIQPrecondition.configBlockReason(supportsControlIQConfig: false, controllerVariant: .controlIQPro)
+                == tslim)
         // Not configurable AND no controller present ⇒ the plain "no Control-IQ" message (a DIFFERENT,
         // more accurate string than the t:slim case).
         let noCtrl = ControlIQPrecondition.configBlockReason(supportsControlIQConfig: false, controllerVariant: .none)

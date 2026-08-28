@@ -15,7 +15,7 @@ public enum GlucoseProvenance: Equatable, Sendable {
     case pump
     case failover(sourceID: String, reason: Reason)
     public enum Reason: String, Sendable, Equatable {
-        case pumpStale    // the pump had a reading but it went stale
+        case pumpStale  // the pump had a reading but it went stale
         case pumpMissing  // the pump has no reading at all
     }
     /// True while the CURRENTLY-SHOWN live value came from a failover source rather than the pump —
@@ -39,7 +39,8 @@ public enum UrgentLowAlarm {
     public static let thresholdMgdl = 55
     public static let dedupeKey = "safety.cgmUrgentLow"
     public static let title = "Urgent low glucose (backup CGM)"
-    public static let body = "A backup CGM source is reporting an urgent-low reading while the pump's own CGM feed is unavailable. This is advisory only — verify and treat per your care plan."
+    public static let body =
+        "A backup CGM source is reporting an urgent-low reading while the pump's own CGM feed is unavailable. This is advisory only — verify and treat per your care plan."
 
     /// True iff `mgdl` is at/below `thresholdMgdl` AND the reading is showing via a FAILOVER provenance.
     /// A `nil` mgdl (no live value at all) is never active.
@@ -53,9 +54,11 @@ public enum UrgentLowAlarm {
 public enum GlucoseArbiter {
     /// Produce the snapshot + history the app should publish, given the pump's own data and the
     /// current failover source (if any), plus the provenance of the live value.
-    public static func merge(pumpSnapshot snap: PumpSnapshot,
-                             pumpHistory: [GlucoseReading],
-                             source: GlucoseSource?) -> (PumpSnapshot, [GlucoseReading], GlucoseProvenance) {
+    public static func merge(
+        pumpSnapshot snap: PumpSnapshot,
+        pumpHistory: [GlucoseReading],
+        source: GlucoseSource?
+    ) -> (PumpSnapshot, [GlucoseReading], GlucoseProvenance) {
         let pumpFresh = snap.glucose != nil && !GlucoseFreshness.isStale(snap.glucoseDate)
         guard !pumpFresh, let source, let sample = source.latest, !sample.isStale else {
             // Pump is fresh, or there is no usable failover — publish pump data unchanged.
@@ -69,8 +72,10 @@ public enum GlucoseArbiter {
         s.trend = sample.trend?.rawValue ?? ""
         s.cgmActive = true
         let reason: GlucoseProvenance.Reason = (snap.glucose == nil) ? .pumpMissing : .pumpStale
-        return (s, mergeHistory(pump: pumpHistory, source: source.history),
-                .failover(sourceID: sample.sourceID, reason: reason))
+        return (
+            s, mergeHistory(pump: pumpHistory, source: source.history),
+            .failover(sourceID: sample.sourceID, reason: reason)
+        )
     }
 
     /// Union of pump + source history, de-duplicated into 5-minute buckets (pump wins ties so the

@@ -9,7 +9,7 @@ struct HeartRateSchemaAbsenceGuardTests {
     /// The two source-of-truth files of the signed command contract (per check-schema-drift.sh).
     static let signedContractFiles = [
         "Packages/faBolusCore/Sources/faBolusCore/RemoteCommand.swift",
-        "schema/command.schema.json",
+        "schema/command.schema.json"
     ]
 
     /// Heart-rate tokens banned from the signed command contract. Matched case-insensitively
@@ -43,8 +43,10 @@ struct HeartRateSchemaAbsenceGuardTests {
             }
             let source = try String(contentsOf: url, encoding: .utf8).lowercased()
             for token in Self.bannedHeartRateTokens {
-                #expect(!source.contains(token),
-                        "D-07/D-18.2 violated — \(relativePath) contains banned heart-rate token '\(token)'. HR is chart context only and must be routed out-of-band (HealthKit + the Garmin envelope in GarminRemoteBridge.swift) before RemoteCommand.fromValidated, never added to the signed command schema.")
+                #expect(
+                    !source.contains(token),
+                    "D-07/D-18.2 violated — \(relativePath) contains banned heart-rate token '\(token)'. HR is chart context only and must be routed out-of-band (HealthKit + the Garmin envelope in GarminRemoteBridge.swift) before RemoteCommand.fromValidated, never added to the signed command schema."
+                )
             }
         }
     }
@@ -53,8 +55,9 @@ struct HeartRateSchemaAbsenceGuardTests {
 
     @Test func fileResolutionActuallyFoundBothContractFiles() {
         for relativePath in Self.signedContractFiles {
-            #expect(Self.resolve(relativePath) != nil,
-                    "path resolution broke — could not resolve \(relativePath); the HR-absence scan would pass vacuously")
+            #expect(
+                Self.resolve(relativePath) != nil,
+                "path resolution broke — could not resolve \(relativePath); the HR-absence scan would pass vacuously")
         }
     }
 }

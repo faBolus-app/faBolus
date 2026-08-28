@@ -42,10 +42,10 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
 
     /// The access gate an action currently routes through in `AppModel`.
     public enum Gate: String, Sendable, CaseIterable {
-        case ledgeredDelivery   // runLedgeredDelivery: durable idempotency + global delivery block
-        case unverifiedAck      // runGatedTherapy: one-shot untested-feature ack (wraps runControl)
-        case controlInterlock   // runControl: child-mode + phone read-only
-        case childOnly          // child-mode only (NOT read-only) — see the note above
+        case ledgeredDelivery  // runLedgeredDelivery: durable idempotency + global delivery block
+        case unverifiedAck  // runGatedTherapy: one-shot untested-feature ack (wraps runControl)
+        case controlInterlock  // runControl: child-mode + phone read-only
+        case childOnly  // child-mode only (NOT read-only) — see the note above
     }
 
     /// The gate this action currently routes through. The `switch` is exhaustive, so adding a case without
@@ -57,25 +57,26 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
         case .cancelBolus, .dismissNotification:
             return .childOnly
         case .createProfile, .setActiveProfile, .renameProfile, .deleteProfile,
-             .addProfileSegment, .modifyProfileSegment, .deleteProfileSegment, .setCgmHighLowAlert,
-             // The therapy-DEFINING writes that used to bypass the acknowledgment gate.
-             // Control-IQ config, max bolus, and max basal change how the pump doses, so they must be
-             // ack-covered like IDP CRUD. (The ack LIFETIME by tier — one-time clinician for these — is
-             // S8's refinement; here they gain the same coverage the IDP writes have.)
-             .setControlIQ, .setMaxBolus, .setMaxBasal,
-             // setSleepSchedule — flag semantics + slots 1-3 are unverified on hardware, so
-             // it needs the same one-shot untested-feature ack as the other unverified writes above.
-             .setSleepSchedule:
+            .addProfileSegment, .modifyProfileSegment, .deleteProfileSegment, .setCgmHighLowAlert,
+            // The therapy-DEFINING writes that used to bypass the acknowledgment gate.
+            // Control-IQ config, max bolus, and max basal change how the pump doses, so they must be
+            // ack-covered like IDP CRUD. (The ack LIFETIME by tier — one-time clinician for these — is
+            // S8's refinement; here they gain the same coverage the IDP writes have.)
+            .setControlIQ, .setMaxBolus, .setMaxBasal,
+            // setSleepSchedule — flag semantics + slots 1-3 are unverified on hardware, so
+            // it needs the same one-shot untested-feature ack as the other unverified writes above.
+            .setSleepSchedule:
             return .unverifiedAck
         case .suspendDelivery, .resumeDelivery, .setTempBasal, .stopTempBasal, .setMode, .playFindMyPump,
-             .startG6Session, .startG7Session, .setSensorType, .stopCgmSession,
-             .enterChangeCartridgeMode, .exitChangeCartridgeMode, .enterFillTubingMode, .exitFillTubingMode, .fillCannula,
-             .syncTimeToNow,
-             // Operational alert reminders are self-tier (no therapy-edit ack): they configure WHEN the
-             // pump warns, not how it doses. `setCgmHighLowAlert` is the exception — a glucose threshold —
-             // and stays ack-gated above. `syncTimeToNow` is a clock sync (its auto-path can't prompt).
-             .setLowInsulinAlert, .setAutoOffAlert, .setSiteChangeReminder, .setAlertSnooze,
-             .setCgmOutOfRangeAlert, .setCgmRiseFallAlert:
+            .startG6Session, .startG7Session, .setSensorType, .stopCgmSession,
+            .enterChangeCartridgeMode, .exitChangeCartridgeMode, .enterFillTubingMode, .exitFillTubingMode,
+            .fillCannula,
+            .syncTimeToNow,
+            // Operational alert reminders are self-tier (no therapy-edit ack): they configure WHEN the
+            // pump warns, not how it doses. `setCgmHighLowAlert` is the exception — a glucose threshold —
+            // and stays ack-gated above. `syncTimeToNow` is a clock sync (its auto-path can't prompt).
+            .setLowInsulinAlert, .setAutoOffAlert, .setSiteChangeReminder, .setAlertSnooze,
+            .setCgmOutOfRangeAlert, .setCgmRiseFallAlert:
             return .controlInterlock
         }
     }
@@ -91,7 +92,7 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
         case .deliverBolus, .deliverExtendedBolus: return .bolus
         case .cancelBolus: return .cancelBolus
         case .dismissNotification: return .dismissAlerts
-        default: return .advancedControl   // every .controlInterlock / .unverifiedAck write
+        default: return .advancedControl  // every .controlInterlock / .unverifiedAck write
         }
     }
 

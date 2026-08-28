@@ -65,21 +65,26 @@ class PollingGlucoseSource: GlucoseSource {
     }
 
     init(id: String, priority: Int, activeInterval: TimeInterval = 60, idleInterval: TimeInterval = 600) {
-        self.id = id; self.priority = priority
-        self.activeInterval = activeInterval; self.idleInterval = idleInterval
+        self.id = id
+        self.priority = priority
+        self.activeInterval = activeInterval
+        self.idleInterval = idleInterval
     }
 
     func start() async {
         guard !started else { return }
         started = true
-        status = .searching; onChange?()
+        status = .searching
+        onChange?()
         restartLoop(pollNow: true)
     }
 
     func stop() {
         started = false
-        task?.cancel(); task = nil
-        status = .idle; onChange?()
+        task?.cancel()
+        task = nil
+        status = .idle
+        onChange?()
     }
 
     /// Ramp up (poll now + fast cadence) when the primary goes stale; back off to the idle cadence
@@ -87,7 +92,7 @@ class PollingGlucoseSource: GlucoseSource {
     func setPrimaryHealthy(_ healthy: Bool) {
         guard started, healthy != primaryHealthy else { return }
         primaryHealthy = healthy
-        restartLoop(pollNow: !healthy)   // became stale → fetch immediately
+        restartLoop(pollNow: !healthy)  // became stale → fetch immediately
     }
 
     private func restartLoop(pollNow: Bool) {
@@ -109,14 +114,15 @@ class PollingGlucoseSource: GlucoseSource {
 
     private func tick() async {
         do {
-            let readings = try await poll()   // newest-last
-            recordPollOutcome(success: true)   // D-07: a good poll resets the backoff
+            let readings = try await poll()  // newest-last
+            recordPollOutcome(success: true)  // D-07: a good poll resets the backoff
             ingest(readings)
         } catch SourceError.needsSetup {
             // A missing config is not an endpoint failure — don't widen the backoff for it.
-            status = .needsSetup; onChange?()
+            status = .needsSetup
+            onChange?()
         } catch let e {
-            recordPollOutcome(success: false)   // D-07: repeated auth/fetch failure widens the cadence
+            recordPollOutcome(success: false)  // D-07: repeated auth/fetch failure widens the cadence
             status = .error((e as? LocalizedError)?.errorDescription ?? "\(e)")
             onChange?()
         }
@@ -130,7 +136,9 @@ class PollingGlucoseSource: GlucoseSource {
     /// pattern) so app-target hygiene tests can feed readings directly without a live poll loop.
     func ingest(_ readings: [GlucoseSample]) {
         guard let newest = readings.max(by: { $0.date < $1.date }) else {
-            status = .stale; onChange?(); return
+            status = .stale
+            onChange?()
+            return
         }
         // C2-02: monotonic-by-timestamp — a late/stale poll must never step `latest` backward in time.
         // Only a STRICTLY newer timestamp replaces the currently-held reading; an older-or-equal

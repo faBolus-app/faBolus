@@ -31,8 +31,10 @@ struct StatusRingView: View {
                 .stroke(AppTheme.ringColor(snapshot.connection).opacity(0.25), lineWidth: 10)
             Circle()
                 .trim(from: 0, to: snapshot.connection == .disconnected ? 0.05 : 1)
-                .stroke(AppTheme.ringColor(snapshot.connection),
-                        style: StrokeStyle(lineWidth: 10, lineCap: .round))
+                .stroke(
+                    AppTheme.ringColor(snapshot.connection),
+                    style: StrokeStyle(lineWidth: 10, lineCap: .round)
+                )
                 .rotationEffect(.degrees(-90))
                 .animation(.easeInOut, value: snapshot.connection)
 

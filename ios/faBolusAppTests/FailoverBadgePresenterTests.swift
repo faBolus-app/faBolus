@@ -89,49 +89,56 @@ struct FailoverBadgePresenterTests {
     private static let t0 = Date(timeIntervalSince1970: 2_000_000)
 
     @Test func newSampleAtSameValuePushes() {
-        #expect(FailoverBadgePresenter.shouldPushStatus(
-            newGlucose: 100, newGlucoseDate: Self.t0.addingTimeInterval(300),
-            lastGlucose: 100, lastGlucoseDate: Self.t0,
-            newConnection: .connected, lastConnection: .connected,
-            secondsSinceLastPush: 1))
+        #expect(
+            FailoverBadgePresenter.shouldPushStatus(
+                newGlucose: 100, newGlucoseDate: Self.t0.addingTimeInterval(300),
+                lastGlucose: 100, lastGlucoseDate: Self.t0,
+                newConnection: .connected, lastConnection: .connected,
+                secondsSinceLastPush: 1))
     }
 
     @Test func identicalSampleWithinThrottleDoesNotPush() {
-        #expect(!FailoverBadgePresenter.shouldPushStatus(
-            newGlucose: 100, newGlucoseDate: Self.t0,
-            lastGlucose: 100, lastGlucoseDate: Self.t0,
-            newConnection: .connected, lastConnection: .connected,
-            secondsSinceLastPush: 1))
+        #expect(
+            !FailoverBadgePresenter.shouldPushStatus(
+                newGlucose: 100, newGlucoseDate: Self.t0,
+                lastGlucose: 100, lastGlucoseDate: Self.t0,
+                newConnection: .connected, lastConnection: .connected,
+                secondsSinceLastPush: 1))
     }
 
     @Test func throttleWindowElapsedForcesAPush() {
-        #expect(FailoverBadgePresenter.shouldPushStatus(
-            newGlucose: 100, newGlucoseDate: Self.t0,
-            lastGlucose: 100, lastGlucoseDate: Self.t0,
-            newConnection: .connected, lastConnection: .connected,
-            secondsSinceLastPush: 16))
+        #expect(
+            FailoverBadgePresenter.shouldPushStatus(
+                newGlucose: 100, newGlucoseDate: Self.t0,
+                lastGlucose: 100, lastGlucoseDate: Self.t0,
+                newConnection: .connected, lastConnection: .connected,
+                secondsSinceLastPush: 16))
     }
 
     @Test func connectionChangeAlwaysPushes() {
-        #expect(FailoverBadgePresenter.shouldPushStatus(
-            newGlucose: 100, newGlucoseDate: Self.t0, lastGlucose: 100, lastGlucoseDate: Self.t0,
-            newConnection: .disconnected, lastConnection: .connected, secondsSinceLastPush: 1))
+        #expect(
+            FailoverBadgePresenter.shouldPushStatus(
+                newGlucose: 100, newGlucoseDate: Self.t0, lastGlucose: 100, lastGlucoseDate: Self.t0,
+                newConnection: .disconnected, lastConnection: .connected, secondsSinceLastPush: 1))
     }
 
     @Test func bolusingAlwaysPushes() {
-        #expect(FailoverBadgePresenter.shouldPushStatus(
-            newGlucose: 100, newGlucoseDate: Self.t0, lastGlucose: 100, lastGlucoseDate: Self.t0,
-            newConnection: .bolusing, lastConnection: .bolusing, secondsSinceLastPush: 1))
+        #expect(
+            FailoverBadgePresenter.shouldPushStatus(
+                newGlucose: 100, newGlucoseDate: Self.t0, lastGlucose: 100, lastGlucoseDate: Self.t0,
+                newConnection: .bolusing, lastConnection: .bolusing, secondsSinceLastPush: 1))
     }
 
     @Test func customThrottleIsRespected() {
-        #expect(!FailoverBadgePresenter.shouldPushStatus(
-            newGlucose: 100, newGlucoseDate: Self.t0, lastGlucose: 100, lastGlucoseDate: Self.t0,
-            newConnection: .connected, lastConnection: .connected,
-            secondsSinceLastPush: 25, throttle: 30))
-        #expect(FailoverBadgePresenter.shouldPushStatus(
-            newGlucose: 100, newGlucoseDate: Self.t0, lastGlucose: 100, lastGlucoseDate: Self.t0,
-            newConnection: .connected, lastConnection: .connected,
-            secondsSinceLastPush: 31, throttle: 30))
+        #expect(
+            !FailoverBadgePresenter.shouldPushStatus(
+                newGlucose: 100, newGlucoseDate: Self.t0, lastGlucose: 100, lastGlucoseDate: Self.t0,
+                newConnection: .connected, lastConnection: .connected,
+                secondsSinceLastPush: 25, throttle: 30))
+        #expect(
+            FailoverBadgePresenter.shouldPushStatus(
+                newGlucose: 100, newGlucoseDate: Self.t0, lastGlucose: 100, lastGlucoseDate: Self.t0,
+                newConnection: .connected, lastConnection: .connected,
+                secondsSinceLastPush: 31, throttle: 30))
     }
 }

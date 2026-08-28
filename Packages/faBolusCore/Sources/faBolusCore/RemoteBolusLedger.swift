@@ -19,10 +19,10 @@ public struct RemoteBolusLedger: Codable, Sendable {
 
     /// Lifecycle of a tracked request. Anything not `terminal` blocks a re-delivery of the same id.
     public enum State: String, Codable, Sendable {
-        case awaiting      // begun, not yet written to the pump
-        case delivering    // written to the pump; outcome not yet known
-        case indeterminate // outcome unknown (timeout/disconnect after the initiate write — FB-02)
-        case terminal      // known outcome recorded
+        case awaiting  // begun, not yet written to the pump
+        case delivering  // written to the pump; outcome not yet known
+        case indeterminate  // outcome unknown (timeout/disconnect after the initiate write — FB-02)
+        case terminal  // known outcome recorded
     }
 
     public enum Decision: Sendable, Equatable {
@@ -56,11 +56,16 @@ public struct RemoteBolusLedger: Codable, Sendable {
         var usedIncludedStaleBG: Bool = false
 
         init(doseKey: String, state: State, usedIncludedStaleBG: Bool = false) {
-            self.doseKey = doseKey; self.state = state; self.usedIncludedStaleBG = usedIncludedStaleBG
+            self.doseKey = doseKey
+            self.state = state
+            self.usedIncludedStaleBG = usedIncludedStaleBG
         }
         // Tolerant decode so a ledger persisted before `sentToPump`/`usedIncludedStaleBG` existed still
         // loads (both default false).
-        private enum K: String, CodingKey { case doseKey, state, terminalStatus, terminalMessage, deliveredUnits, bolusId, sentToPump, usedIncludedStaleBG }
+        private enum K: String, CodingKey {
+            case doseKey, state, terminalStatus, terminalMessage, deliveredUnits, bolusId, sentToPump,
+                usedIncludedStaleBG
+        }
         init(from d: Decoder) throws {
             let c = try d.container(keyedBy: K.self)
             doseKey = try c.decode(String.self, forKey: .doseKey)
@@ -134,15 +139,18 @@ public struct RemoteBolusLedger: Codable, Sendable {
     /// Record intent to deliver. Returns the decision the caller must honor. `usedIncludedStaleBG` is a
     /// DURABLE provenance sidecar only (Addendum B): it is stored on a freshly-created entry but plays NO
     /// part in the decision — `doseKey`, conflict, replay, and in-flight logic are all unchanged.
-    public mutating func begin(peerId: String, requestId: String, doseKey: String,
-                               usedIncludedStaleBG: Bool = false) -> Decision {
+    public mutating func begin(
+        peerId: String, requestId: String, doseKey: String,
+        usedIncludedStaleBG: Bool = false
+    ) -> Decision {
         let k = key(peerId, requestId)
         if let e = entries[k] {
             if e.doseKey != doseKey { return .conflict }
             switch e.state {
             case .terminal:
-                return .replay(status: e.terminalStatus ?? "unknown",
-                               message: e.terminalMessage, deliveredUnits: e.deliveredUnits)
+                return .replay(
+                    status: e.terminalStatus ?? "unknown",
+                    message: e.terminalMessage, deliveredUnits: e.deliveredUnits)
             case .awaiting, .delivering, .indeterminate:
                 return .duplicateInFlight
             }
@@ -163,20 +171,29 @@ public struct RemoteBolusLedger: Codable, Sendable {
         // and auto-clear the delivery block on a dose that may well have landed.
         mutate(peerId, requestId) {
             $0.state = .delivering
-            if let bolusId { $0.bolusId = bolusId; $0.sentToPump = true }
+            if let bolusId {
+                $0.bolusId = bolusId
+                $0.sentToPump = true
+            }
         }
     }
 
     /// Record the pump-assigned bolus id (for later reconciliation) without changing state.
     public mutating func setBolusId(peerId: String, requestId: String, bolusId: Int) {
-        mutate(peerId, requestId) { $0.bolusId = bolusId; $0.sentToPump = true }
+        mutate(peerId, requestId) {
+            $0.bolusId = bolusId
+            $0.sentToPump = true
+        }
     }
 
     /// Round-3 §5: the pump granted permission and assigned `bolusId` — record it AND flip the explicit
     /// `sentToPump` phase, together, so a durable save of this transition proves the initiate is
     /// imminent/issued. The host persists (throwing) right after and only proceeds to initiate on success.
     public mutating func markSent(peerId: String, requestId: String, bolusId: Int) {
-        mutate(peerId, requestId) { $0.bolusId = bolusId; $0.sentToPump = true }
+        mutate(peerId, requestId) {
+            $0.bolusId = bolusId
+            $0.sentToPump = true
+        }
     }
 
     /// Whether this request's initiate is imminent/issued (permission granted + id durably recorded).
@@ -208,8 +225,10 @@ public struct RemoteBolusLedger: Codable, Sendable {
     ///   is deliberately EXCLUDED — it must never block a legitimate retry (Addresses codex HIGH: this
     ///   method sets `.terminal` for EVERY outcome, so a naive "scan terminal entries" would wrongly flag
     ///   those too).
-    public mutating func settle(peerId: String, requestId: String, status: String,
-                                message: String? = nil, deliveredUnits: Double? = nil, now: Date = Date()) {
+    public mutating func settle(
+        peerId: String, requestId: String, status: String,
+        message: String? = nil, deliveredUnits: Double? = nil, now: Date = Date()
+    ) {
         let k = key(peerId, requestId)
         guard var e = entries[k] else { return }
         e.state = .terminal
@@ -229,9 +248,11 @@ public struct RemoteBolusLedger: Codable, Sendable {
     /// `recentAuthoritativeDeliveries` doc comment). NEVER consulted by `begin()` itself; callers must
     /// query this SEPARATELY, before `begin()`, to close the cross-requestId gap the exactly-once key
     /// cannot see.
-    public func hasRecentlyDeliveredDuplicate(peerId: String, doseKey: String,
-                                              within window: TimeInterval = recentDuplicateWindowSec,
-                                              now: Date = Date()) -> Bool {
+    public func hasRecentlyDeliveredDuplicate(
+        peerId: String, doseKey: String,
+        within window: TimeInterval = recentDuplicateWindowSec,
+        now: Date = Date()
+    ) -> Bool {
         guard let at = recentAuthoritativeDeliveries[recencyKey(peerId, doseKey)] else { return false }
         return now.timeIntervalSince(at) <= window
     }
@@ -279,7 +300,8 @@ public struct RemoteBolusLedger: Codable, Sendable {
             // while the state is still `awaiting`, immediately before the initiate write. A crash in
             // that window leaves a record that must be reconciled against pump history — skipping it
             // (as "not yet written") would clear the block on a bolus that may have been issued.
-            let midFlight = e.state == .delivering || e.state == .indeterminate
+            let midFlight =
+                e.state == .delivering || e.state == .indeterminate
                 || (e.state == .awaiting && sent)
             guard midFlight else { return nil }
             let parts = k.split(separator: "\u{1F}", maxSplits: 1, omittingEmptySubsequences: false)
@@ -290,7 +312,9 @@ public struct RemoteBolusLedger: Codable, Sendable {
 
     /// R2-12: the terminal outcomes recorded for `peerId`, oldest→newest, for re-echoing to a remote that may
     /// have missed them across an app restart. Read-only; does not mutate ledger state.
-    public func terminalOutcomes(peerId: String) -> [(requestId: String, status: String, message: String?, deliveredUnits: Double?)] {
+    public func terminalOutcomes(peerId: String) -> [(
+        requestId: String, status: String, message: String?, deliveredUnits: Double?
+    )] {
         order.compactMap { k in
             guard let e = entries[k], e.state == .terminal else { return nil }
             let parts = k.split(separator: "\u{1F}", maxSplits: 1, omittingEmptySubsequences: false)
@@ -325,9 +349,11 @@ public extension RemoteBolusLedger {
     ///     (evaluating it triggers the lazy ledger load that sets `ledgerFailedClosed`, so the caller must
     ///     compute it before calling this function).
     ///   - inFlightDeliveryKey: the (peer, requestId) currently delivering in THIS process, if any.
-    static func blockReason(noDurableStore: Bool, ledgerFailedClosed: Bool, terminalSaveFailed: Bool,
-                            unresolved: [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool)],
-                            inFlightDeliveryKey: (peerId: String, requestId: String)?) -> String? {
+    static func blockReason(
+        noDurableStore: Bool, ledgerFailedClosed: Bool, terminalSaveFailed: Bool,
+        unresolved: [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool)],
+        inFlightDeliveryKey: (peerId: String, requestId: String)?
+    ) -> String? {
         if noDurableStore {
             return "Delivery is locked: no durable safety store is available on this device. Delivery stays "
                 + "disabled until a storage location can be created."
@@ -351,7 +377,8 @@ public extension RemoteBolusLedger {
             // (e.g. a crash mid-delivery, found at relaunch) that needs manual pump verification. Only the
             // latter should tell the user to check the pump.
             if let live = inFlightDeliveryKey,
-               unresolved.allSatisfy({ $0.peerId == live.peerId && $0.requestId == live.requestId }) {
+                unresolved.allSatisfy({ $0.peerId == live.peerId && $0.requestId == live.requestId })
+            {
                 return "A bolus is already being delivered — wait for it to finish before sending another."
             }
             return "A previous bolus outcome is unconfirmed — check the pump/t:connect before dosing again."

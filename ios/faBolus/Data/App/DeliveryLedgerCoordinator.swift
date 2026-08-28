@@ -32,7 +32,9 @@ final class DeliveryLedgerCoordinator {
     /// Bound to `AppModel.connectionTelemetry.recordReconciliation`.
     var recordReconciliation: (ConnectionTelemetry.ReconcileOutcome) -> Void = { _ in }
     /// Bound to `AppModel`'s private `postSafety(_:severity:title:body:dedupeKey:)`.
-    var postSafety: (NotificationBroker.Category, NotificationBroker.Severity, String, String, String) -> Void = { _, _, _, _, _ in }
+    var postSafety: (NotificationBroker.Category, NotificationBroker.Severity, String, String, String) -> Void = {
+        _, _, _, _, _ in
+    }
     /// Bound to `AppModel.refresh()`.
     var refresh: () -> Void = {}
     /// Mirrors the freshly computed block reason into `AppModel`'s own `@Observable` stored property
@@ -72,9 +74,11 @@ final class DeliveryLedgerCoordinator {
     ///   a store that throws on a chosen save, or reports a corrupt load). Takes precedence over
     ///   `ledgerStoreURL`. Production leaves it nil. `forceNoDurableStore` exercises the §5.8
     ///   no-storage-location block, which the filesystem path can't reproduce on a normal test host.
-    init(ledgerStoreURL: URL? = nil,
-         ledgerStore: (any RemoteBolusLedgerPersisting)? = nil,
-         forceNoDurableStore: Bool = false) {
+    init(
+        ledgerStoreURL: URL? = nil,
+        ledgerStore: (any RemoteBolusLedgerPersisting)? = nil,
+        forceNoDurableStore: Bool = false
+    ) {
         // Round-3 §5.8: require a DURABLE store (App Group / test override). If none exists, do NOT fall
         // back to a volatile /tmp file — create a placeholder store but keep delivery disabled via
         // `noDurableStore` (surfaced as a recoverable block), so a bolus is never tracked in a store that
@@ -86,7 +90,9 @@ final class DeliveryLedgerCoordinator {
             let durableURL = ledgerStoreURL ?? RemoteBolusLedgerStore.defaultURL(appGroupID: WidgetStore.appGroup)
             if durableURL == nil || forceNoDurableStore { self.noDurableStore = true }
             self.remoteBolusLedgerStore = RemoteBolusLedgerStore(
-                url: durableURL ?? URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("remote-bolus-ledger-unavailable.json"))
+                url: durableURL
+                    ?? URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(
+                        "remote-bolus-ledger-unavailable.json"))
         }
     }
 
@@ -139,8 +145,10 @@ final class DeliveryLedgerCoordinator {
     func commitInFlightBolusId(_ bolusId: Int) async -> Bool {
         guard let key = inFlightDeliveryKey else { return false }
         remoteBolusLedger.markSent(peerId: key.peerId, requestId: key.requestId, bolusId: bolusId)
-        do { try remoteBolusLedgerStore.save(remoteBolusLedger); return true }
-        catch { return false }
+        do {
+            try remoteBolusLedgerStore.save(remoteBolusLedger)
+            return true
+        } catch { return false }
     }
 
     // MARK: - Global delivery block (P0)
@@ -152,9 +160,10 @@ final class DeliveryLedgerCoordinator {
         // this is the ONLY caller in the app target, so the strings have one source of truth with
         // zero-`AppModel` unit coverage in `RemoteBolusLedgerTests`. Byte-identical to the inline copy
         // Wave 1's `LedgerBlockPrecedenceGuardTests` pinned.
-        return RemoteBolusLedger.blockReason(noDurableStore: noDurableStore, ledgerFailedClosed: ledgerFailedClosed,
-                                             terminalSaveFailed: terminalSaveFailed, unresolved: unresolved,
-                                             inFlightDeliveryKey: inFlightDeliveryKey)
+        return RemoteBolusLedger.blockReason(
+            noDurableStore: noDurableStore, ledgerFailedClosed: ledgerFailedClosed,
+            terminalSaveFailed: terminalSaveFailed, unresolved: unresolved,
+            inFlightDeliveryKey: inFlightDeliveryKey)
     }
     /// Recompute the current block reason and push it through `onDeliveryBlockChanged`. Exposed
     /// (not `private`) so `AppModel.init` can force one SYNCHRONOUS publish of any ledger state restored
@@ -169,9 +178,10 @@ final class DeliveryLedgerCoordinator {
     /// writing a fresh clean ledger, so delivery can resume. Never called automatically.
     func clearDeliveryBlockAfterVerification() {
         for entry in remoteBolusLedger.unreconciled() {
-            remoteBolusLedger.settle(peerId: entry.peerId, requestId: entry.requestId,
-                                     status: RemoteCommand.Status.delivered.rawValue,
-                                     message: "Cleared after manual verification on the pump.")
+            remoteBolusLedger.settle(
+                peerId: entry.peerId, requestId: entry.requestId,
+                status: RemoteCommand.Status.delivered.rawValue,
+                message: "Cleared after manual verification on the pump.")
         }
         // Round-3 §5.6: only release the block once the clean ledger is durably saved.
         do {
@@ -268,17 +278,21 @@ final class DeliveryLedgerCoordinator {
     /// ledger is unreadable, (2) records intent DURABLY before the first pump write, (3) tags the in-flight
     /// entry so the pump's assigned bolus id is persisted before initiate, and (4) settles /
     /// marks-indeterminate on outcome. `onStarted` fires only after intent is durably recorded.
-    func runLedgeredDelivery(peerId: String, requestId: String, doseKey: String,
-                             usedIncludedStaleBG: Bool = false,
-                             onStarted: (() -> Void)? = nil,
-                             deliver: () async throws -> Double) async -> DeliveryOutcome {
+    func runLedgeredDelivery(
+        peerId: String, requestId: String, doseKey: String,
+        usedIncludedStaleBG: Bool = false,
+        onStarted: (() -> Void)? = nil,
+        deliver: () async throws -> Double
+    ) async -> DeliveryOutcome {
         // Global block: survives restart via the durable ledger; corrupt ledger fails closed.
         if let reason = computeDeliveryBlockReason() { return .blocked(reason) }
 
         // `usedIncludedStaleBG` is DURABLE provenance only (Addendum B): recorded on a new ledger entry,
         // never part of `doseKey` or the conflict/replay/in-flight decision.
-        switch remoteBolusLedger.begin(peerId: peerId, requestId: requestId, doseKey: doseKey,
-                                       usedIncludedStaleBG: usedIncludedStaleBG) {
+        switch remoteBolusLedger.begin(
+            peerId: peerId, requestId: requestId, doseKey: doseKey,
+            usedIncludedStaleBG: usedIncludedStaleBG)
+        {
         case .proceed: break
         case .duplicateInFlight: return .duplicateInFlight
         case .replay(let s, let m, let u): return .replay(status: s, message: m, deliveredUnits: u)
@@ -288,10 +302,10 @@ final class DeliveryLedgerCoordinator {
         // Durable point (FB-03): mark delivering + persist atomically BEFORE the first pump write. If the
         // intent can't be recorded, refuse to deliver (a crash after an unrecorded write could double-dose).
         remoteBolusLedger.markDelivering(peerId: peerId, requestId: requestId)
-        do { try remoteBolusLedgerStore.save(remoteBolusLedger) }
-        catch {
-            remoteBolusLedger.settle(peerId: peerId, requestId: requestId,
-                                     status: RemoteCommand.Status.failed.rawValue, message: "Could not record delivery intent")
+        do { try remoteBolusLedgerStore.save(remoteBolusLedger) } catch {
+            remoteBolusLedger.settle(
+                peerId: peerId, requestId: requestId,
+                status: RemoteCommand.Status.failed.rawValue, message: "Could not record delivery intent")
             persistLedger()
             return .failed("Could not record delivery intent — not delivered.")
         }
@@ -303,10 +317,11 @@ final class DeliveryLedgerCoordinator {
         do {
             let delivered = try await deliver()
             let cancelled = lastBolusCancelled()
-            remoteBolusLedger.settle(peerId: peerId, requestId: requestId,
-                                     status: (cancelled ? RemoteCommand.Status.cancelled : .delivered).rawValue,
-                                     deliveredUnits: delivered)
-            persistTerminalOrBlock()   // §5.6: keep the block until this terminal state is durably saved
+            remoteBolusLedger.settle(
+                peerId: peerId, requestId: requestId,
+                status: (cancelled ? RemoteCommand.Status.cancelled : .delivered).rawValue,
+                deliveredUnits: delivered)
+            persistTerminalOrBlock()  // §5.6: keep the block until this terminal state is durably saved
             return .delivered(units: delivered, cancelled: cancelled)
         } catch let e as BolusError where e.isIndeterminate {
             // FB-02: sent but outcome unknown → leave the entry unreconciled (keeps the GLOBAL block on)
@@ -316,8 +331,9 @@ final class DeliveryLedgerCoordinator {
             persistLedger()
             return .indeterminate
         } catch {
-            remoteBolusLedger.settle(peerId: peerId, requestId: requestId,
-                                     status: RemoteCommand.Status.failed.rawValue, message: error.localizedDescription)
+            remoteBolusLedger.settle(
+                peerId: peerId, requestId: requestId,
+                status: RemoteCommand.Status.failed.rawValue, message: error.localizedDescription)
             persistTerminalOrBlock()
             return .failed(error.localizedDescription)
         }
@@ -330,7 +346,10 @@ final class DeliveryLedgerCoordinator {
     /// reconciled by that id; a mismatch/`.unavailable` keeps it blocked (verify on the pump).
     func reconcileUnresolvedDeliveries() async {
         let unresolved = remoteBolusLedger.unreconciled()
-        guard !unresolved.isEmpty else { refreshDeliveryBlock(); return }
+        guard !unresolved.isEmpty else {
+            refreshDeliveryBlock()
+            return
+        }
         var changed = false
         for entry in unresolved {
             // Round-3 §5: decide from the EXPLICIT phase, not merely a missing id. `sentToPump == false`
@@ -338,36 +357,40 @@ final class DeliveryLedgerCoordinator {
             // initiate write) → safe to settle as not-delivered. `sentToPump == true` means the initiate is
             // imminent/issued → reconcile by id; stay blocked unless the pump authoritatively resolves it.
             if !entry.sentToPump {
-                remoteBolusLedger.settle(peerId: entry.peerId, requestId: entry.requestId,
-                                         status: RemoteCommand.Status.failed.rawValue,
-                                         message: "Interrupted before the pump accepted it — not delivered.",
-                                         deliveredUnits: 0)
-                postSafety(.bolusReconciliation, .warning, "Bolus not delivered",
-                           "A bolus that was interrupted never reached the pump (0 U). Re-enter it if you still need it.",
-                           "reconcile-\(entry.peerId)-\(entry.requestId)")
-                recordReconciliation(.notDelivered)   // §5.2.8
+                remoteBolusLedger.settle(
+                    peerId: entry.peerId, requestId: entry.requestId,
+                    status: RemoteCommand.Status.failed.rawValue,
+                    message: "Interrupted before the pump accepted it — not delivered.",
+                    deliveredUnits: 0)
+                postSafety(
+                    .bolusReconciliation, .warning, "Bolus not delivered",
+                    "A bolus that was interrupted never reached the pump (0 U). Re-enter it if you still need it.",
+                    "reconcile-\(entry.peerId)-\(entry.requestId)")
+                recordReconciliation(.notDelivered)  // §5.2.8
                 changed = true
                 continue
             }
-            guard let bolusId = entry.bolusId else { continue }   // sent but no id (rare) → stay blocked
+            guard let bolusId = entry.bolusId else { continue }  // sent but no id (rare) → stay blocked
             switch await reconcile(bolusId) {
             case .resolved(let delivered, let cancelled):
-                remoteBolusLedger.settle(peerId: entry.peerId, requestId: entry.requestId,
-                                         status: (cancelled ? RemoteCommand.Status.cancelled : .delivered).rawValue,
-                                         message: "Reconciled from pump history.", deliveredUnits: delivered)
+                remoteBolusLedger.settle(
+                    peerId: entry.peerId, requestId: entry.requestId,
+                    status: (cancelled ? RemoteCommand.Status.cancelled : .delivered).rawValue,
+                    message: "Reconciled from pump history.", deliveredUnits: delivered)
                 let f = formatUnits(delivered)
-                postSafety(.bolusReconciliation,
-                           .info,
-                           cancelled ? "Bolus cancelled" : "Bolus delivered",
-                           cancelled
-                               ? "Reconciled from the pump: \(f) U delivered before it was cancelled."
-                               : "Reconciled from the pump: \(f) U delivered.",
-                           "reconcile-\(entry.peerId)-\(entry.requestId)")
-                recordReconciliation(cancelled ? .cancelled : .delivered)   // §5.2.8
+                postSafety(
+                    .bolusReconciliation,
+                    .info,
+                    cancelled ? "Bolus cancelled" : "Bolus delivered",
+                    cancelled
+                        ? "Reconciled from the pump: \(f) U delivered before it was cancelled."
+                        : "Reconciled from the pump: \(f) U delivered.",
+                    "reconcile-\(entry.peerId)-\(entry.requestId)")
+                recordReconciliation(cancelled ? .cancelled : .delivered)  // §5.2.8
                 changed = true
             case .unavailable:
-                recordReconciliation(.unavailable)   // §5.2.8: stayed unresolved
-                break   // stay blocked; retry on next reconnect / manual verification
+                recordReconciliation(.unavailable)  // §5.2.8: stayed unresolved
+                break  // stay blocked; retry on next reconnect / manual verification
             }
         }
         // Round-3 §5.6: release the block only once the settled ledger is durably saved.

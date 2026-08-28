@@ -31,13 +31,16 @@ enum PairingStore {
 
     static func save(_ secret: [UInt8]) {
         #if DEBUG
-        if useInMemoryBackingForTests { memSecret = secret; return }
+        if useInMemoryBackingForTests {
+            memSecret = secret
+            return
+        }
         #endif
         let data = Data(secret)
         let base: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
+            kSecAttrAccount as String: account
         ]
         SecItemDelete(base as CFDictionary)
         var add = base
@@ -55,25 +58,31 @@ enum PairingStore {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecMatchLimit as String: kSecMatchLimitOne
         ]
         var out: CFTypeRef?
         guard SecItemCopyMatching(query as CFDictionary, &out) == errSecSuccess,
-              let data = out as? Data, !data.isEmpty else { return nil }
+            let data = out as? Data, !data.isEmpty
+        else { return nil }
         return [UInt8](data)
     }
 
     static func clear() {
         #if DEBUG
-        if useInMemoryBackingForTests { memSecret = nil; memV1Code = nil; return }
+        if useInMemoryBackingForTests {
+            memSecret = nil
+            memV1Code = nil
+            return
+        }
         #endif
         // Wipe whichever scheme is stored — JPAKE derived secret AND/OR legacy V1 code.
         for acct in [account, v1CodeAccount] {
-            SecItemDelete([
-                kSecClass as String: kSecClassGenericPassword,
-                kSecAttrService as String: service,
-                kSecAttrAccount as String: acct,
-            ] as CFDictionary)
+            SecItemDelete(
+                [
+                    kSecClass as String: kSecClassGenericPassword,
+                    kSecAttrService as String: service,
+                    kSecAttrAccount as String: acct
+                ] as CFDictionary)
         }
     }
 
@@ -83,12 +92,15 @@ enum PairingStore {
     /// (V1 has no resume — the code drives a silent full re-challenge each connect).
     static func saveV1Code(_ code: String) {
         #if DEBUG
-        if useInMemoryBackingForTests { memV1Code = code; return }
+        if useInMemoryBackingForTests {
+            memV1Code = code
+            return
+        }
         #endif
         let base: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: v1CodeAccount,
+            kSecAttrAccount as String: v1CodeAccount
         ]
         SecItemDelete(base as CFDictionary)
         var add = base
@@ -106,11 +118,11 @@ enum PairingStore {
             kSecAttrService as String: service,
             kSecAttrAccount as String: v1CodeAccount,
             kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecMatchLimit as String: kSecMatchLimitOne
         ]
         var out: CFTypeRef?
         guard SecItemCopyMatching(query as CFDictionary, &out) == errSecSuccess,
-              let data = out as? Data, let s = String(data: data, encoding: .utf8), !s.isEmpty
+            let data = out as? Data, let s = String(data: data, encoding: .utf8), !s.isEmpty
         else { return nil }
         return s
     }
@@ -128,12 +140,15 @@ enum PairingStore {
 
     static func savePin(_ pin: String) {
         #if DEBUG
-        if useInMemoryBackingForTests { memPin = pin; return }
+        if useInMemoryBackingForTests {
+            memPin = pin
+            return
+        }
         #endif
         let base: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: pinAccount,
+            kSecAttrAccount as String: pinAccount
         ]
         SecItemDelete(base as CFDictionary)
         var add = base
@@ -151,23 +166,27 @@ enum PairingStore {
             kSecAttrService as String: service,
             kSecAttrAccount as String: pinAccount,
             kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecMatchLimit as String: kSecMatchLimitOne
         ]
         var out: CFTypeRef?
         guard SecItemCopyMatching(query as CFDictionary, &out) == errSecSuccess,
-              let data = out as? Data, let s = String(data: data, encoding: .utf8), !s.isEmpty
+            let data = out as? Data, let s = String(data: data, encoding: .utf8), !s.isEmpty
         else { return nil }
         return s
     }
 
     static func clearPin() {
         #if DEBUG
-        if useInMemoryBackingForTests { memPin = nil; return }
+        if useInMemoryBackingForTests {
+            memPin = nil
+            return
+        }
         #endif
-        SecItemDelete([
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: pinAccount,
-        ] as CFDictionary)
+        SecItemDelete(
+            [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: pinAccount
+            ] as CFDictionary)
     }
 }

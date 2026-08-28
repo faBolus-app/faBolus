@@ -27,8 +27,9 @@ struct StaleCgmDialogTitleTests {
 
     @Test func staleButPresentReadingIsNotCgmUnavailable() {
         let title = BolusEntryView.staleCgmDialogTitle(newBG: -1, staleBG: 120)
-        #expect(title != "CGM unavailable",
-                "a stale-but-present, includable reading must never sit under a 'CGM unavailable' title (F-15)")
+        #expect(
+            title != "CGM unavailable",
+            "a stale-but-present, includable reading must never sit under a 'CGM unavailable' title (F-15)")
         #expect(title == "CGM reading is stale")
     }
 
@@ -37,7 +38,9 @@ struct StaleCgmDialogTitleTests {
     @Test func theThreeCasesProduceThreeDistinctTitles() {
         let fresh = BolusEntryView.staleCgmDialogTitle(newBG: 140, staleBG: nil)
         let stale = BolusEntryView.staleCgmDialogTitle(newBG: -1, staleBG: 120)
-        let none  = BolusEntryView.staleCgmDialogTitle(newBG: -1, staleBG: nil)
-        #expect(Set([fresh, stale, none]).count == 3, "no-reading / stale-but-present / fresh-changed must be three distinct titles")
+        let none = BolusEntryView.staleCgmDialogTitle(newBG: -1, staleBG: nil)
+        #expect(
+            Set([fresh, stale, none]).count == 3,
+            "no-reading / stale-but-present / fresh-changed must be three distinct titles")
     }
 }

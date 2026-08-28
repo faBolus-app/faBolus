@@ -37,8 +37,9 @@ struct CgmFailoverUiRefactorGuardTests {
     /// rather than silently passing every other `#expect` below because the read source is empty.
     @Test func sourceFilesResolveFromFilePath() throws {
         for path in [Self.settingsViewPath, Self.statusViewPath] {
-            #expect(Self.readSource(path) != nil,
-                    "path resolution broke: could not read \(path) from #filePath=\(#filePath)")
+            #expect(
+                Self.readSource(path) != nil,
+                "path resolution broke: could not read \(path) from #filePath=\(#filePath)")
         }
     }
 
@@ -53,7 +54,9 @@ struct CgmFailoverUiRefactorGuardTests {
 
     @Test func section2FooterIsPresent() throws {
         let source = try #require(Self.readSource(Self.settingsViewPath))
-        #expect(source.contains("Enter credentials for the selected source (if it needs any) and confirm it can get a reading."))
+        #expect(
+            source.contains(
+                "Enter credentials for the selected source (if it needs any) and confirm it can get a reading."))
     }
 
     @Test func section3FooterIsPresent() throws {
@@ -110,12 +113,14 @@ struct CgmFailoverUiRefactorGuardTests {
         // Header-specific markers (`Text("…")`) to avoid matching the unrelated
         // `SettingsIndex.entries` "Glucose staleness" keyword string, which appears earlier in the file.
         guard let statusIdx = source.range(of: "Text(\"3. Status\")")?.lowerBound,
-              let stalenessIdx = source.range(of: "Text(\"Glucose staleness\")")?.lowerBound else {
+            let stalenessIdx = source.range(of: "Text(\"Glucose staleness\")")?.lowerBound
+        else {
             Issue.record("could not locate both header markers in SettingsView.swift")
             return
         }
-        #expect(statusIdx < stalenessIdx,
-                "\"3. Status\" must come before \"Glucose staleness\" in CgmSettingsView's body")
+        #expect(
+            statusIdx < stalenessIdx,
+            "\"3. Status\" must come before \"Glucose staleness\" in CgmSettingsView's body")
     }
 
     // MARK: - Task 3: status-page "Last test result" echo
@@ -123,7 +128,10 @@ struct CgmFailoverUiRefactorGuardTests {
     @Test func lastTestResultSectionHeaderAndFooterArePresent() throws {
         let source = try #require(Self.readSource(Self.statusViewPath))
         #expect(source.contains("Last test result"))
-        #expect(source.contains("A read-only echo of the most recent Test you ran on the CGM credentials & testing page. This page never re-runs the test itself."))
+        #expect(
+            source.contains(
+                "A read-only echo of the most recent Test you ran on the CGM credentials & testing page. This page never re-runs the test itself."
+            ))
     }
 
     @Test func lastTestResultNeverTestedCopyIsPresent() throws {
@@ -149,7 +157,8 @@ struct CgmFailoverUiRefactorGuardTests {
     /// D-03: the status page is a deliberately passive read — it must never trigger the Test flow.
     @Test func statusViewNeverTriggersStartCgmTest() throws {
         let source = try #require(Self.readSource(Self.statusViewPath))
-        #expect(!source.contains("startCgmTest"),
-                "CgmStatusView must not reference startCgmTest — the Test action stays on the Configure page (D-03)")
+        #expect(
+            !source.contains("startCgmTest"),
+            "CgmStatusView must not reference startCgmTest — the Test action stays on the Configure page (D-03)")
     }
 }

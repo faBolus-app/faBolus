@@ -96,7 +96,7 @@ struct GlucoseWidgetView: View {
             }
             .containerBackground(.clear, for: .widget)
 
-        default: // .systemSmall
+        default:  // .systemSmall
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(bg).font(.system(size: 44, weight: .bold, design: .rounded)).foregroundStyle(color)

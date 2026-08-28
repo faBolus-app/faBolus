@@ -12,7 +12,11 @@ import CoreLocation
 @MainActor
 final class EatingLocationGate: NSObject, CLLocationManagerDelegate {
     /// A learned meal place (coarse lat/lon). Rounded so we never persist a precise fix.
-    private struct Place: Codable { let lat: Double; let lon: Double; var hits: Int }
+    private struct Place: Codable {
+        let lat: Double
+        let lon: Double
+        var hits: Int
+    }
 
     private let manager = CLLocationManager()
     private let radiusMeters: CLLocationDistance = 150
@@ -46,7 +50,8 @@ final class EatingLocationGate: NSObject, CLLocationManagerDelegate {
     /// the engine treats `nil` as "don't gate").
     func isAtMealPlace() -> Bool? {
         guard enabled, places.count >= minPlacesBeforeGating, let loc = lastLocation,
-              Date().timeIntervalSince(loc.timestamp) < 30 * 60 else { return nil }
+            Date().timeIntervalSince(loc.timestamp) < 30 * 60
+        else { return nil }
         return places.contains { CLLocation(latitude: $0.lat, longitude: $0.lon).distance(from: loc) <= radiusMeters }
     }
 
@@ -59,14 +64,19 @@ final class EatingLocationGate: NSObject, CLLocationManagerDelegate {
         }) {
             places[i].hits += 1
         } else {
-            places.append(Place(lat: (loc.coordinate.latitude * 1000).rounded() / 1000,
-                                lon: (loc.coordinate.longitude * 1000).rounded() / 1000, hits: 1))
+            places.append(
+                Place(
+                    lat: (loc.coordinate.latitude * 1000).rounded() / 1000,
+                    lon: (loc.coordinate.longitude * 1000).rounded() / 1000, hits: 1))
         }
         Self.save(places, storeKey)
     }
 
     /// Wipe learned places (Settings → reset).
-    func reset() { places = []; Self.save(places, storeKey) }
+    func reset() {
+        places = []
+        Self.save(places, storeKey)
+    }
     var learnedPlaceCount: Int { places.count }
 
     // MARK: CLLocationManagerDelegate (delivered on the main run loop → assume main isolation)
@@ -78,7 +88,8 @@ final class EatingLocationGate: NSObject, CLLocationManagerDelegate {
         MainActor.assumeIsolated {
             let s = self.manager.authorizationStatus
             if self.enabled, s == .authorizedWhenInUse || s == .authorizedAlways {
-                self.manager.startMonitoringSignificantLocationChanges(); self.manager.requestLocation()
+                self.manager.startMonitoringSignificantLocationChanges()
+                self.manager.requestLocation()
             }
         }
     }
@@ -86,7 +97,8 @@ final class EatingLocationGate: NSObject, CLLocationManagerDelegate {
     // MARK: persistence (on-device only)
     private static func load(_ key: String) -> [Place] {
         guard let d = UserDefaults.standard.data(forKey: key),
-              let p = try? JSONDecoder().decode([Place].self, from: d) else { return [] }
+            let p = try? JSONDecoder().decode([Place].self, from: d)
+        else { return [] }
         return p
     }
     private static func save(_ places: [Place], _ key: String) {

@@ -49,9 +49,11 @@ final class NotificationRuntime {
     var budget: NotificationBroker.Budget
 
     /// App-Group-backed by default so every process that posts shares one governed state.
-    init(store: UserDefaults? = UserDefaults(suiteName: WidgetStore.appGroup),
-         settings: [NotificationBroker.Category: NotificationBroker.CategorySettings]? = nil,
-         budget: NotificationBroker.Budget = .init()) {
+    init(
+        store: UserDefaults? = UserDefaults(suiteName: WidgetStore.appGroup),
+        settings: [NotificationBroker.Category: NotificationBroker.CategorySettings]? = nil,
+        budget: NotificationBroker.Budget = .init()
+    ) {
         let store = store ?? .standard
         self.store = store
         self.budget = budget
@@ -63,7 +65,8 @@ final class NotificationRuntime {
             self.settings = Self.loadSettings(store, NotificationRuntime.settingsKey)
         }
         if let data = store.data(forKey: stateKey),
-           let decoded = try? JSONDecoder().decode(NotificationBroker.State.self, from: data) {
+            let decoded = try? JSONDecoder().decode(NotificationBroker.State.self, from: data)
+        {
             self.state = decoded
         } else {
             self.state = .init()
@@ -92,23 +95,28 @@ final class NotificationRuntime {
     /// opening it or tapping an action (CLEAR / SNOOZE / default) → `actedUpon`.
     func recordResponse(categoryRawValue raw: String, actionIdentifier: String) {
         bumpTelemetry(raw) {
-            if actionIdentifier == UNNotificationDismissActionIdentifier { $0.dismissed += 1 }
-            else { $0.actedUpon += 1 }
+            if actionIdentifier == UNNotificationDismissActionIdentifier {
+                $0.dismissed += 1
+            } else {
+                $0.actedUpon += 1
+            }
         }
     }
 
     private func bumpTelemetry(_ key: String, _ mutate: (inout NotificationBroker.CategoryTelemetry) -> Void) {
         guard telemetryEnabled else { return }
-        telemetry = Self.loadTelemetry(store, telemetryKey)   // read-modify-write (sibling processes)
+        telemetry = Self.loadTelemetry(store, telemetryKey)  // read-modify-write (sibling processes)
         var t = telemetry[key] ?? .init()
         mutate(&t)
         telemetry[key] = t
         if let data = try? JSONEncoder().encode(telemetry) { store.set(data, forKey: telemetryKey) }
     }
 
-    private static func loadTelemetry(_ store: UserDefaults, _ key: String) -> [String: NotificationBroker.CategoryTelemetry] {
+    private static func loadTelemetry(_ store: UserDefaults, _ key: String) -> [String: NotificationBroker
+        .CategoryTelemetry]
+    {
         guard let data = store.data(forKey: key),
-              let decoded = try? JSONDecoder().decode([String: NotificationBroker.CategoryTelemetry].self, from: data)
+            let decoded = try? JSONDecoder().decode([String: NotificationBroker.CategoryTelemetry].self, from: data)
         else { return [:] }
         return decoded
     }
@@ -117,11 +125,15 @@ final class NotificationRuntime {
     /// `loadTelemetry`), falling back to `.defaults(for:)` for every category the blob is missing (a
     /// fresh install, or a category added after the blob was first written) — every category is always
     /// present in the returned dictionary.
-    private static func loadSettings(_ store: UserDefaults, _ key: String) -> [NotificationBroker.Category: NotificationBroker.CategorySettings] {
-        var merged = Dictionary(uniqueKeysWithValues:
-            NotificationBroker.Category.allCases.map { ($0, NotificationBroker.CategorySettings.defaults(for: $0)) })
+    private static func loadSettings(_ store: UserDefaults, _ key: String) -> [NotificationBroker.Category:
+        NotificationBroker.CategorySettings]
+    {
+        var merged = Dictionary(
+            uniqueKeysWithValues:
+                NotificationBroker.Category.allCases.map { ($0, NotificationBroker.CategorySettings.defaults(for: $0)) }
+        )
         guard let data = store.data(forKey: key),
-              let decoded = try? JSONDecoder().decode([String: NotificationBroker.CategorySettings].self, from: data)
+            let decoded = try? JSONDecoder().decode([String: NotificationBroker.CategorySettings].self, from: data)
         else { return merged }
         for (raw, cfg) in decoded {
             guard let category = NotificationBroker.Category(rawValue: raw) else { continue }
@@ -149,7 +161,8 @@ final class NotificationRuntime {
         // Re-read the store first: a sibling process (a mode-reminder intent) may have advanced the
         // counters since we loaded. Last-writer-wins is fine for notification governance.
         if let data = store.data(forKey: stateKey),
-           let decoded = try? JSONDecoder().decode(NotificationBroker.State.self, from: data) {
+            let decoded = try? JSONDecoder().decode(NotificationBroker.State.self, from: data)
+        {
             state = decoded
         }
         // Re-read settings ONLY when a blob actually exists, so a test (or a caller) that constructed this
@@ -158,8 +171,9 @@ final class NotificationRuntime {
         if store.data(forKey: settingsKey) != nil {
             settings = Self.loadSettings(store, settingsKey)
         }
-        let decision = NotificationBroker.decide(message, settings: settings, state: state,
-                                                 budget: budget, now: now)
+        let decision = NotificationBroker.decide(
+            message, settings: settings, state: state,
+            budget: budget, now: now)
         state = decision.nextState
         persist()
         return decision
@@ -177,7 +191,8 @@ final class NotificationRuntime {
     func snooze(_ category: NotificationBroker.Category, until: Date) {
         guard !category.neverSuppressible else { return }
         if let data = store.data(forKey: stateKey),
-           let decoded = try? JSONDecoder().decode(NotificationBroker.State.self, from: data) {
+            let decoded = try? JSONDecoder().decode(NotificationBroker.State.self, from: data)
+        {
             state = decoded
         }
         state = NotificationBroker.snooze(state, category: category, until: until)
@@ -201,18 +216,19 @@ enum NotificationPoster {
     /// a `UNTimeIntervalNotificationTrigger` so a pump-disconnect escalation step is delivered by the OS at
     /// its elapsed time even while the app is suspended — a user who walked away still gets the escalation.
     @discardableResult
-    static func post(_ message: NotificationBroker.Message,
-                     runtime: NotificationRuntime,
-                     userInfo: [AnyHashable: Any] = [:],
-                     categoryId: String = "",
-                     trigger: UNNotificationTrigger? = nil,
-                     allowCritical: Bool = false,
-                     now: Date = Date(),
-                     add: (UNNotificationRequest) -> Void = { UNUserNotificationCenter.current().add($0) }
+    static func post(
+        _ message: NotificationBroker.Message,
+        runtime: NotificationRuntime,
+        userInfo: [AnyHashable: Any] = [:],
+        categoryId: String = "",
+        trigger: UNNotificationTrigger? = nil,
+        allowCritical: Bool = false,
+        now: Date = Date(),
+        add: (UNNotificationRequest) -> Void = { UNUserNotificationCenter.current().add($0) }
     ) -> NotificationBroker.Decision {
         let decision = runtime.evaluate(message, now: now)
         guard decision.deliver else { return decision }
-        runtime.recordDelivered(message.category)   // telemetry (opt-in; no-op otherwise)
+        runtime.recordDelivered(message.category)  // telemetry (opt-in; no-op otherwise)
         let content = UNMutableNotificationContent()
         content.title = message.title
         content.body = message.body
@@ -271,8 +287,10 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     /// How long a "Snooze" action suppresses a category. A fixed default (no per-category setting UI yet).
     static let snoozeSeconds: TimeInterval = 2 * 60 * 60
 
-    init(model: AppModel, runtime: NotificationRuntime = NotificationRuntime(),
-         safetyAlertStore: SafetyAlertStore = SafetyAlertStore()) {
+    init(
+        model: AppModel, runtime: NotificationRuntime = NotificationRuntime(),
+        safetyAlertStore: SafetyAlertStore = SafetyAlertStore()
+    ) {
         self.model = model
         self.runtime = runtime
         self.safetyAlertStore = safetyAlertStore
@@ -343,7 +361,8 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     private nonisolated static func fetchCriticalAlertGranted() async -> Bool {
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         #if DEBUG
-        print("NotificationCoordinator.refreshGrantState: criticalAlertSetting=\(settings.criticalAlertSetting.rawValue)")
+        print(
+            "NotificationCoordinator.refreshGrantState: criticalAlertSetting=\(settings.criticalAlertSetting.rawValue)")
         #endif
         return settings.criticalAlertSetting == .enabled
     }
@@ -390,23 +409,28 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     /// `brokerCategory` userInfo. Extracted (non-`private`) so the matching contract is directly
     /// unit-testable with plainly-constructed `UNNotificationRequest`s, without a real
     /// `UNUserNotificationCenter`.
-    static func identifiers(for category: NotificationBroker.Category, in requests: [UNNotificationRequest]) -> [String] {
+    static func identifiers(for category: NotificationBroker.Category, in requests: [UNNotificationRequest]) -> [String]
+    {
         requests.filter { ($0.content.userInfo["brokerCategory"] as? String) == category.rawValue }.map(\.identifier)
     }
 
     /// Same filter, for the delivered-notification shape (`UNNotification.request`) — kept separate from
     /// `identifiers(for:in:)` because `UNNotification` has no public initializer, so this half can't be
     /// driven by a plain unit test the way the pending half can.
-    static func identifiers(for category: NotificationBroker.Category, inDelivered delivered: [UNNotification]) -> [String] {
+    static func identifiers(for category: NotificationBroker.Category, inDelivered delivered: [UNNotification])
+        -> [String]
+    {
         identifiers(for: category, in: delivered.map(\.request))
     }
 
     // MARK: Posting
 
     @discardableResult
-    func post(_ message: NotificationBroker.Message,
-              userInfo: [AnyHashable: Any] = [:], categoryId: String = "",
-              trigger: UNNotificationTrigger? = nil, deadline: Date? = nil) -> NotificationBroker.Decision {
+    func post(
+        _ message: NotificationBroker.Message,
+        userInfo: [AnyHashable: Any] = [:], categoryId: String = "",
+        trigger: UNNotificationTrigger? = nil, deadline: Date? = nil
+    ) -> NotificationBroker.Decision {
         // Default a governed category to its registered id (which carries the SNOOZE action) unless the
         // caller already supplied one (pump alerts pass PUMP_ALERT for their CLEAR action).
         let cat = categoryId.isEmpty ? Self.categoryIdentifier(for: message.category) : categoryId
@@ -419,13 +443,15 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         // using the plain poster unchanged. `deadline` (the absolute fire time for a delayed escalation
         // step) is meaningful only on this branch — ignored otherwise.
         if message.category.neverSuppressible {
-            return SafetyAlertPoster.post(message, store: safetyAlertStore, runtime: runtime, userInfo: userInfo,
-                                          categoryId: cat, trigger: trigger, deadline: deadline,
-                                          allowCritical: allowCritical, add: { [center] in center.add($0) })
+            return SafetyAlertPoster.post(
+                message, store: safetyAlertStore, runtime: runtime, userInfo: userInfo,
+                categoryId: cat, trigger: trigger, deadline: deadline,
+                allowCritical: allowCritical, add: { [center] in center.add($0) })
         }
-        return NotificationPoster.post(message, runtime: runtime, userInfo: userInfo,
-                                       categoryId: cat, trigger: trigger, allowCritical: allowCritical,
-                                       add: { [center] in center.add($0) })
+        return NotificationPoster.post(
+            message, runtime: runtime, userInfo: userInfo,
+            categoryId: cat, trigger: trigger, allowCritical: allowCritical,
+            add: { [center] in center.add($0) })
     }
 
     // MARK: S7 — pump-disconnect escalation ladder
@@ -444,8 +470,9 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
             // CX-F-03 depth: the persisted `deadline` is the absolute fire time (`now + afterSeconds`),
             // so a replay on a later launch re-derives a strictly-positive interval relative to a FRESH
             // `now`, rather than ever reusing this step's original (now stale) `afterSeconds` directly.
-            post(msg, trigger: UNTimeIntervalNotificationTrigger(timeInterval: step.afterSeconds, repeats: false),
-                 deadline: now.addingTimeInterval(step.afterSeconds))
+            post(
+                msg, trigger: UNTimeIntervalNotificationTrigger(timeInterval: step.afterSeconds, repeats: false),
+                deadline: now.addingTimeInterval(step.afterSeconds))
         }
     }
 
@@ -506,13 +533,15 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         // touches only the replay path — the persist-before-post ordering for the enabled case is unchanged.
         var suppressedDisabledKeys: [String] = []
         for entry in safetyAlertStore.unresolvedEntries() {
-            let msg = NotificationBroker.Message(category: entry.category, severity: entry.severity,
-                                                 title: entry.title, body: entry.body, dedupeKey: entry.dedupeKey)
+            let msg = NotificationBroker.Message(
+                category: entry.category, severity: entry.severity,
+                title: entry.title, body: entry.body, dedupeKey: entry.dedupeKey)
             let trigger = Self.replayTrigger(deadline: entry.deadline, now: now)
-            let decision = NotificationPoster.post(msg, runtime: runtime,
-                                    userInfo: entry.userInfo.mapValues { $0 as Any },
-                                    categoryId: entry.categoryIdentifier, trigger: trigger,
-                                    allowCritical: allowCritical, now: now, add: { [center] in center.add($0) })
+            let decision = NotificationPoster.post(
+                msg, runtime: runtime,
+                userInfo: entry.userInfo.mapValues { $0 as Any },
+                categoryId: entry.categoryIdentifier, trigger: trigger,
+                allowCritical: allowCritical, now: now, add: { [center] in center.add($0) })
             if !decision.deliver, decision.reason == .categoryDisabled {
                 suppressedDisabledKeys.append(entry.dedupeKey)
             }
@@ -550,7 +579,9 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
             // on a t:slim). Lower-priority pump ALERTS still surface. We skip WITHOUT recording it as posted,
             // so turning the opt-out back off re-surfaces a still-active alarm on the next sync. This gates
             // ONLY the pump-mirrored `.pumpAlert` path; the never-suppressible safety trio posts elsewhere.
-            if Self.suppressesMirroredAlarm(kind: n.kind, optedOut: AppSettings.shared.suppressMirroredPumpAlarms) { continue }
+            if Self.suppressesMirroredAlarm(kind: n.kind, optedOut: AppSettings.shared.suppressMirroredPumpAlarms) {
+                continue
+            }
             let k = key(n)
             postedPumpAlerts.insert(k)
             // CC-12/CX-F-08: populate the TYPED safety marker from the pump's OWN alert identity
@@ -572,7 +603,7 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
             center.removeDeliveredNotifications(withIdentifiers: gone)
             center.removePendingNotificationRequests(withIdentifiers: gone)
             postedPumpAlerts.subtract(gone)
-            for k in gone { runtime.forgetEpisode(k) }   // a genuine re-raise should notify again
+            for k in gone { runtime.forgetEpisode(k) }  // a genuine re-raise should notify again
         }
     }
 
@@ -589,38 +620,47 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     /// this, so it didn't reproduce locally). If a second registrar is ever added, revisit with a
     /// main-actor-hopping merge rather than reintroducing a `self`-capturing background completion.
     private func registerCategories() {
-        let clear = UNNotificationAction(identifier: "CLEAR", title: "Clear",
-                                         options: [.authenticationRequired])
+        let clear = UNNotificationAction(
+            identifier: "CLEAR", title: "Clear",
+            options: [.authenticationRequired])
         let snooze = UNNotificationAction(identifier: "SNOOZE", title: "Snooze 2h", options: [])
         // Pump alerts: dismiss-on-pump (CLEAR) + snooze the category. Every OTHER governed (suppressible)
         // category gets a snooze action, keyed by its raw value. Safety categories are never registered
         // with a snooze action, so they cannot be snoozed from a notification.
         var cats: Set<UNNotificationCategory> = [
-            UNNotificationCategory(identifier: Self.pumpAlertCategory, actions: [clear, snooze],
-                                   intentIdentifiers: [], options: [])
+            UNNotificationCategory(
+                identifier: Self.pumpAlertCategory, actions: [clear, snooze],
+                intentIdentifiers: [], options: [])
         ]
         for c in NotificationBroker.Category.allCases where !c.neverSuppressible && c != .pumpAlert {
-            cats.insert(UNNotificationCategory(identifier: c.rawValue, actions: [snooze],
-                                               intentIdentifiers: [], options: []))
+            cats.insert(
+                UNNotificationCategory(
+                    identifier: c.rawValue, actions: [snooze],
+                    intentIdentifiers: [], options: []))
         }
         center.setNotificationCategories(cats)
     }
 
     // MARK: Delegate
 
-    nonisolated func userNotificationCenter(_ c: UNUserNotificationCenter, willPresent n: UNNotification,
-                                            withCompletionHandler h: @escaping (UNNotificationPresentationOptions) -> Void) {
+    nonisolated func userNotificationCenter(
+        _ c: UNUserNotificationCenter, willPresent n: UNNotification,
+        withCompletionHandler h: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
         h([.banner, .sound])
     }
 
-    nonisolated func userNotificationCenter(_ c: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
-                                            withCompletionHandler h: @escaping () -> Void) {
+    nonisolated func userNotificationCenter(
+        _ c: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+        withCompletionHandler h: @escaping () -> Void
+    ) {
         let info = response.notification.request.content.userInfo
         let action = response.actionIdentifier
         if action == "CLEAR", let id = info["id"] as? Int, let kind = info["kind"] as? Int {
             Task { @MainActor in await self.model?.dismissAlert(id: id, kind: kind) }
         } else if action == "SNOOZE", let raw = info["brokerCategory"] as? String,
-                  let cat = NotificationBroker.Category(rawValue: raw) {
+            let cat = NotificationBroker.Category(rawValue: raw)
+        {
             Task { @MainActor in self.runtime.snooze(cat, until: Date().addingTimeInterval(Self.snoozeSeconds)) }
         }
         // Telemetry (opt-in): attribute the user's response to its category — dismiss (swipe) vs acted-upon
@@ -659,7 +699,7 @@ enum SafetyEdge: Equatable {
     ///     `.disconnected` is the throttled auto-reconnect ladder and recovers silently (its give-up is the
     ///     `.error` case above), so it does NOT raise — this is what keeps a momentary background drop quiet.
     static func connection(prev: PumpConnectionState?, now: PumpConnectionState) -> SafetyEdge {
-        guard let prev else { return .none }   // first observation (cold launch) is never a "drop"
+        guard let prev else { return .none }  // first observation (cold launch) is never a "drop"
         let prevDown = prev == .disconnected || prev == .error
         // Terminal "gave up" — always alarm unless we were already down (no re-fire on a steady down state).
         if now == .error && !prevDown { return .raise }
@@ -700,7 +740,7 @@ enum SafetyEdge: Equatable {
 /// ~2 s cycle) feeds each flap and acts on the returned decision. Unit-testable without any BLE/transport.
 struct ConnectionFlapDetector: Equatable {
     /// The rolling window over which flap cycles are counted.
-    static let window: TimeInterval = 120   // 2 minutes
+    static let window: TimeInterval = 120  // 2 minutes
     /// The number of flap cycles within `window` that escalates to the non-muteable state.
     static let threshold = 5
 

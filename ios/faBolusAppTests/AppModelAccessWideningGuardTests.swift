@@ -76,7 +76,7 @@ struct AppModelAccessWideningGuardTests {
         "internal var lastHealthKitAutoImport = Date.distantPast",
         "internal lazy var healthKitExportDestination: HealthKitExportDestination",
         "internal var lastHealthKitAutoExport = Date.distantPast",
-        "internal var alertIntel = AppModel.loadAlertIntel()",
+        "internal var alertIntel = AppModel.loadAlertIntel()"
     ]
 
     /// The ONE new (not widened — it never existed before, so there is no `private`->`internal`
@@ -108,17 +108,21 @@ struct AppModelAccessWideningGuardTests {
         #expect(source.count > 10_000, "AppModel.swift resolved implausibly short — path resolution likely broke")
 
         for declaration in Self.widenedStoredPropertyDeclarations {
-            #expect(source.contains(declaration),
-                    "Expected widened declaration missing from AppModel.swift: '\(declaration)'")
+            #expect(
+                source.contains(declaration),
+                "Expected widened declaration missing from AppModel.swift: '\(declaration)'")
         }
 
         let allLines = Self.allExplicitInternalDeclarationLines(in: source)
-        let expectedCount = Self.widenedStoredPropertyDeclarations.count + 1   // +1 for the new seam
-        #expect(allLines.count == expectedCount,
-                "Found \(allLines.count) explicit-`internal` declaration lines in AppModel.swift, expected exactly \(expectedCount) (the enumerated 17 widened + the 1 new seam). Extra or missing lines:\n\(allLines.joined(separator: "\n"))")
+        let expectedCount = Self.widenedStoredPropertyDeclarations.count + 1  // +1 for the new seam
+        #expect(
+            allLines.count == expectedCount,
+            "Found \(allLines.count) explicit-`internal` declaration lines in AppModel.swift, expected exactly \(expectedCount) (the enumerated 17 widened + the 1 new seam). Extra or missing lines:\n\(allLines.joined(separator: "\n"))"
+        )
 
-        #expect(source.contains(Self.newInternalSeamDeclaration),
-                "Expected new internal seam missing from AppModel.swift: '\(Self.newInternalSeamDeclaration)'")
+        #expect(
+            source.contains(Self.newInternalSeamDeclaration),
+            "Expected new internal seam missing from AppModel.swift: '\(Self.newInternalSeamDeclaration)'")
     }
 
     /// No dose/gate member was widened: `deliveryLedgerCoordinator` (the dose-adjacent ledger/
@@ -130,27 +134,40 @@ struct AppModelAccessWideningGuardTests {
     @Test func noDoseOrGateMemberWasWidened() throws {
         let source = try Self.appModelSource()
 
-        #expect(source.contains("private let deliveryLedgerCoordinator: DeliveryLedgerCoordinator"),
-                "deliveryLedgerCoordinator must stay `private` — it is dose-adjacent and must never be widened by an advisory carve")
-        #expect(!source.contains("internal let deliveryLedgerCoordinator"),
-                "deliveryLedgerCoordinator must never appear as `internal` — this carve reads it only via the read-only privacyExportLedgerSnapshot seam")
-        #expect(!source.contains("internal var deliveryLedgerCoordinator"),
-                "deliveryLedgerCoordinator must never appear as `internal`")
+        #expect(
+            source.contains("private let deliveryLedgerCoordinator: DeliveryLedgerCoordinator"),
+            "deliveryLedgerCoordinator must stay `private` — it is dose-adjacent and must never be widened by an advisory carve"
+        )
+        #expect(
+            !source.contains("internal let deliveryLedgerCoordinator"),
+            "deliveryLedgerCoordinator must never appear as `internal` — this carve reads it only via the read-only privacyExportLedgerSnapshot seam"
+        )
+        #expect(
+            !source.contains("internal var deliveryLedgerCoordinator"),
+            "deliveryLedgerCoordinator must never appear as `internal`")
 
         // 16-05 retarget (CX-A-08): these two keys moved OUT of AppModel.swift entirely (a dedicated
         // coordinator extraction, not a same-type widening) — assert the negative here (never
         // reappears in AppModel.swift) AND the positive against their actual new file, so this stays
         // a loud, non-vacuous proof rather than an assertion the move made permanently unreachable.
-        #expect(!source.contains("lastPersistedGlucoseKeys"),
-                "lastPersistedGlucoseKeys must no longer appear in AppModel.swift at all — it moved to HistoryPersistenceCoordinator.swift (16-05)")
-        #expect(!source.contains("lastPersistedBolusKeys"),
-                "lastPersistedBolusKeys must no longer appear in AppModel.swift at all — it moved to HistoryPersistenceCoordinator.swift (16-05)")
+        #expect(
+            !source.contains("lastPersistedGlucoseKeys"),
+            "lastPersistedGlucoseKeys must no longer appear in AppModel.swift at all — it moved to HistoryPersistenceCoordinator.swift (16-05)"
+        )
+        #expect(
+            !source.contains("lastPersistedBolusKeys"),
+            "lastPersistedBolusKeys must no longer appear in AppModel.swift at all — it moved to HistoryPersistenceCoordinator.swift (16-05)"
+        )
 
         let coordinatorSource = try Self.historyPersistenceCoordinatorSource()
-        #expect(coordinatorSource.contains("private var lastPersistedGlucoseKeys: Set<TimeInterval>"),
-                "lastPersistedGlucoseKeys must stay `private` in HistoryPersistenceCoordinator.swift — no method outside the coordinator touches it")
-        #expect(coordinatorSource.contains("private var lastPersistedBolusKeys: Set<TimeInterval>"),
-                "lastPersistedBolusKeys must stay `private` in HistoryPersistenceCoordinator.swift — no method outside the coordinator touches it")
+        #expect(
+            coordinatorSource.contains("private var lastPersistedGlucoseKeys: Set<TimeInterval>"),
+            "lastPersistedGlucoseKeys must stay `private` in HistoryPersistenceCoordinator.swift — no method outside the coordinator touches it"
+        )
+        #expect(
+            coordinatorSource.contains("private var lastPersistedBolusKeys: Set<TimeInterval>"),
+            "lastPersistedBolusKeys must stay `private` in HistoryPersistenceCoordinator.swift — no method outside the coordinator touches it"
+        )
     }
 
     /// Fault-injection proof for the line-scan helper itself (mirrors `AppModelReferenceAuditTests`'
@@ -191,8 +208,10 @@ struct AppModelAccessWideningGuardTests {
         let bareForms = ["internal var ", "internal let ", "internal lazy var "]
         for comment in comments {
             for form in bareForms {
-                #expect(!comment.contains(form),
-                        "AppModel.swift comment prose contains a bare `\(form.trimmingCharacters(in: .whitespaces))` — backtick-quote it (e.g. `` `\(form.trimmingCharacters(in: .whitespaces))` ``) so it cannot inflate the widened-declaration count. Offending comment: '\(comment)'")
+                #expect(
+                    !comment.contains(form),
+                    "AppModel.swift comment prose contains a bare `\(form.trimmingCharacters(in: .whitespaces))` — backtick-quote it (e.g. `` `\(form.trimmingCharacters(in: .whitespaces))` ``) so it cannot inflate the widened-declaration count. Offending comment: '\(comment)'"
+                )
             }
         }
     }

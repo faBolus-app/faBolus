@@ -53,8 +53,10 @@ import Foundation
         }
         let source = try Self.sourceText(relativeTo: root, path: "ios/faBolus/Views/NotificationSettingsView.swift")
         #expect(!source.isEmpty, "NotificationSettingsView.swift read as empty — scan would pass vacuously")
-        #expect(!source.contains(Self.staleDraftMarker),
-                "NotificationSettingsView.swift still carries the stale clinical-review draft-marker prefix (§13 is recorded cleared — this is leaked internal process jargon, D1-05/D3-02)")
+        #expect(
+            !source.contains(Self.staleDraftMarker),
+            "NotificationSettingsView.swift still carries the stale clinical-review draft-marker prefix (§13 is recorded cleared — this is leaked internal process jargon, D1-05/D3-02)"
+        )
     }
 
     @Test func connectPumpOnboardingViewSurfacesFirstRunRegulatoryCopy() throws {
@@ -64,8 +66,10 @@ import Foundation
         }
         let source = try Self.sourceText(relativeTo: root, path: "ios/faBolus/Views/ConnectPumpOnboardingView.swift")
         #expect(!source.isEmpty, "ConnectPumpOnboardingView.swift read as empty — scan would pass vacuously")
-        #expect(source.contains("RegulatoryCopy.firstRun"),
-                "ConnectPumpOnboardingView.swift does not surface RegulatoryCopy.firstRun — the first-run experimental/not-FDA-cleared framing is missing from the actual first-run screen (D1-04)")
+        #expect(
+            source.contains("RegulatoryCopy.firstRun"),
+            "ConnectPumpOnboardingView.swift does not surface RegulatoryCopy.firstRun — the first-run experimental/not-FDA-cleared framing is missing from the actual first-run screen (D1-04)"
+        )
     }
 
     /// D2-08 (WINDOWS ledger #24): the decorative hero antenna glyph at the top of the first-run
@@ -83,13 +87,17 @@ import Foundation
         let source = try Self.sourceText(relativeTo: root, path: "ios/faBolus/Views/ConnectPumpOnboardingView.swift")
         #expect(!source.isEmpty, "ConnectPumpOnboardingView.swift read as empty — scan would pass vacuously")
         guard let symbolRange = source.range(of: "antenna.radiowaves.left.and.right") else {
-            Issue.record("ConnectPumpOnboardingView.swift no longer contains the hero antenna glyph — this guard's anchor is stale and would pass vacuously")
+            Issue.record(
+                "ConnectPumpOnboardingView.swift no longer contains the hero antenna glyph — this guard's anchor is stale and would pass vacuously"
+            )
             return
         }
         // Modifier chain follows the Image on the next few lines; a short window keeps the assertion
         // bound to the hero icon rather than the whole file.
         let window = source[symbolRange.upperBound...].prefix(200)
-        #expect(window.contains(".accessibilityHidden(true)"),
-                "ConnectPumpOnboardingView.swift's decorative hero antenna icon is not .accessibilityHidden(true) — VoiceOver would announce its raw SF Symbol name (D2-08, WINDOWS ledger #24)")
+        #expect(
+            window.contains(".accessibilityHidden(true)"),
+            "ConnectPumpOnboardingView.swift's decorative hero antenna icon is not .accessibilityHidden(true) — VoiceOver would announce its raw SF Symbol name (D2-08, WINDOWS ledger #24)"
+        )
     }
 }

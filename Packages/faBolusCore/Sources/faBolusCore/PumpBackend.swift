@@ -70,8 +70,10 @@ public protocol PumpBackend: AnyObject {
     /// existing callers and remotes are unchanged and fail closed. ONLY the iPhone host compose flow ever
     /// passes `true`, and ONLY after an explicit warning (`StaleIobPrompt` / `StaleTherapyPrompt`); remotes
     /// (`resolveRemoteDose`) MUST never plumb it through, so a remote can never dose off unconfirmed inputs.
-    func recommendBolus(carbsGrams: Double, bgMgdl: Int?,
-                        allowStaleIob: Bool, allowStaleTherapy: Bool) async -> BolusRecommendation
+    func recommendBolus(
+        carbsGrams: Double, bgMgdl: Int?,
+        allowStaleIob: Bool, allowStaleTherapy: Bool
+    ) async -> BolusRecommendation
     /// Request the newest CGM reading from the pump **now** and wait briefly for it (bounded), so a
     /// correction is computed off the freshest possible value. Best-effort: returns when the reading
     /// arrives or a short timeout elapses. Default no-op for backends that can't force a read.
@@ -97,8 +99,10 @@ public protocol PumpBackend: AnyObject {
     /// `durationMinutes`. Total must be ≥ 0.40 U. Returns the actual delivered-so-far units. Optional
     /// — backends that don't support it use the throwing default. `carbsGrams`/`bgMgdl`/`iobUnits` are
     /// recorded metadata (see `deliverBolus`).
-    func deliverExtendedBolus(totalUnits: Double, nowUnits: Double, durationMinutes: Int,
-                              carbsGrams: Double?, bgMgdl: Int?, iobUnits: Double?) async throws -> Double
+    func deliverExtendedBolus(
+        totalUnits: Double, nowUnits: Double, durationMinutes: Int,
+        carbsGrams: Double?, bgMgdl: Int?, iobUnits: Double?
+    ) async throws -> Double
     func cancelBolus() async
     /// True if the most recent `deliverBolus` was cancelled before completing.
     var lastBolusCancelled: Bool { get }
@@ -200,21 +204,25 @@ public protocol PumpBackend: AnyObject {
     /// 0...1439 by the implementation.
     func setSleepSchedule(slot: Int, enabled: Bool, activeDays: Int, startMinute: Int, endMinute: Int) async throws
     // Pump sounds — annunciation level per category (0 audioHigh … 3 vibrate).
-    func setPumpSounds(quickBolus: Int, general: Int, reminder: Int, alert: Int, alarm: Int, cgmA: Int, cgmB: Int) async throws
+    func setPumpSounds(quickBolus: Int, general: Int, reminder: Int, alert: Int, alarm: Int, cgmA: Int, cgmB: Int)
+        async throws
     // Insulin-delivery profiles (IDP). Switch/rename/delete are insulin-affecting (change active basal).
     func refreshProfiles() async
     func setActiveProfile(idpId: Int) async throws
     func renameProfile(idpId: Int, name: String) async throws
     func deleteProfile(idpId: Int) async throws
     /// Create a new profile with one initial time-segment (starting at midnight).
-    func createProfile(name: String, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double,
-                        isf: Int, targetBg: Int, insulinDurationMinutes: Int) async throws
+    func createProfile(
+        name: String, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double,
+        isf: Int, targetBg: Int, insulinDurationMinutes: Int) async throws
     /// Read a profile's time-segments into `snapshot.viewedProfileSegments`.
     func refreshProfileSegments(idpId: Int) async
-    func addProfileSegment(idpId: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double,
-                           carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async throws
-    func modifyProfileSegment(idpId: Int, segmentIndex: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double,
-                              carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async throws
+    func addProfileSegment(
+        idpId: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double,
+        carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async throws
+    func modifyProfileSegment(
+        idpId: Int, segmentIndex: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double,
+        carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async throws
     func deleteProfileSegment(idpId: Int, segmentIndex: Int) async throws
     // Reminders / alert thresholds (non-insulin config).
     func setLowInsulinAlert(thresholdUnits: Int) async throws
@@ -229,9 +237,9 @@ public protocol PumpBackend: AnyObject {
 
 /// The prime-cannula bounds the UI allows (defense-in-depth on an insulin-dispensing step).
 public enum FillLimits {
-    public static let maxCannulaMilliunits = 1000   // 1.0 U — Tandem cannula prime is ~0.3 U. Deliberate cap
-                                                     // (CX-T-07/Pitfall 4): NOT raised alongside the kit's
-                                                     // FillCannulaRequest 3000 mU ceiling.
+    public static let maxCannulaMilliunits = 1000  // 1.0 U — Tandem cannula prime is ~0.3 U. Deliberate cap
+    // (CX-T-07/Pitfall 4): NOT raised alongside the kit's
+    // FillCannulaRequest 3000 mU ceiling.
     /// CX-T-07 (Pitfall 4, upstream-invalid): 0 is never a valid fill — pumpX2's `FillCannulaRequest`
     /// throws on `primeSizeMilliUnits <= 0`. The app-side clamp must not leave 0 reachable (two-layer
     /// defense: the kit init is the primary boundary, this clamp is the secondary one).
@@ -352,8 +360,10 @@ public extension PumpBackend {
     /// unhonored "use last-known" simply keeps the surface blocked, never dosing off unconfirmed inputs), so
     /// community backends + the conformance stub get correct safety for free. `TandemBackend` / `MockBackend`
     /// override this with the real last-known recompute.
-    func recommendBolus(carbsGrams: Double, bgMgdl: Int?,
-                        allowStaleIob: Bool, allowStaleTherapy: Bool) async -> BolusRecommendation {
+    func recommendBolus(
+        carbsGrams: Double, bgMgdl: Int?,
+        allowStaleIob: Bool, allowStaleTherapy: Bool
+    ) async -> BolusRecommendation {
         await recommendBolus(carbsGrams: carbsGrams, bgMgdl: bgMgdl)
     }
     func refreshGlucoseNow() async {}
@@ -376,17 +386,23 @@ public extension PumpBackend {
     }
     /// Extended convenience without carb/BG/IOB metadata.
     func deliverExtendedBolus(totalUnits: Double, nowUnits: Double, durationMinutes: Int) async throws -> Double {
-        try await deliverExtendedBolus(totalUnits: totalUnits, nowUnits: nowUnits,
-                                       durationMinutes: durationMinutes, carbsGrams: nil, bgMgdl: nil, iobUnits: nil)
+        try await deliverExtendedBolus(
+            totalUnits: totalUnits, nowUnits: nowUnits,
+            durationMinutes: durationMinutes, carbsGrams: nil, bgMgdl: nil, iobUnits: nil)
     }
-    func deliverExtendedBolus(totalUnits: Double, nowUnits: Double, durationMinutes: Int,
-                              carbsGrams: Double?, bgMgdl: Int?) async throws -> Double {
-        try await deliverExtendedBolus(totalUnits: totalUnits, nowUnits: nowUnits,
-                                       durationMinutes: durationMinutes, carbsGrams: carbsGrams, bgMgdl: bgMgdl, iobUnits: nil)
+    func deliverExtendedBolus(
+        totalUnits: Double, nowUnits: Double, durationMinutes: Int,
+        carbsGrams: Double?, bgMgdl: Int?
+    ) async throws -> Double {
+        try await deliverExtendedBolus(
+            totalUnits: totalUnits, nowUnits: nowUnits,
+            durationMinutes: durationMinutes, carbsGrams: carbsGrams, bgMgdl: bgMgdl, iobUnits: nil)
     }
     /// Default: backends that don't support extended boluses throw.
-    func deliverExtendedBolus(totalUnits: Double, nowUnits: Double, durationMinutes: Int,
-                              carbsGrams: Double?, bgMgdl: Int?, iobUnits: Double?) async throws -> Double { throw ControlError.notSupported }
+    func deliverExtendedBolus(
+        totalUnits: Double, nowUnits: Double, durationMinutes: Int,
+        carbsGrams: Double?, bgMgdl: Int?, iobUnits: Double?
+    ) async throws -> Double { throw ControlError.notSupported }
     func suspendDelivery() async throws { throw ControlError.notSupported }
     func resumeDelivery() async throws { throw ControlError.notSupported }
     func setTempBasal(percent: Int, durationMinutes: Int) async throws { throw ControlError.notSupported }
@@ -409,30 +425,48 @@ public extension PumpBackend {
     func setMaxBolus(units: Double) async throws { throw ControlError.notSupported }
     func setMaxBasal(unitsPerHour: Double) async throws { throw ControlError.notSupported }
     func syncTimeToNow() async throws { throw ControlError.notSupported }
-    func setControlIQ(enabled: Bool, weightLbs: Int, totalDailyInsulinUnits: Int) async throws { throw ControlError.notSupported }
-    func setSleepSchedule(slot: Int, enabled: Bool, activeDays: Int, startMinute: Int, endMinute: Int) async throws { throw ControlError.notSupported }
+    func setControlIQ(enabled: Bool, weightLbs: Int, totalDailyInsulinUnits: Int) async throws {
+        throw ControlError.notSupported
+    }
+    func setSleepSchedule(slot: Int, enabled: Bool, activeDays: Int, startMinute: Int, endMinute: Int) async throws {
+        throw ControlError.notSupported
+    }
     func refreshControlIQSettings() async {}
     func refreshSleepSchedule() async {}
-    func setPumpSounds(quickBolus: Int, general: Int, reminder: Int, alert: Int, alarm: Int, cgmA: Int, cgmB: Int) async throws { throw ControlError.notSupported }
+    func setPumpSounds(quickBolus: Int, general: Int, reminder: Int, alert: Int, alarm: Int, cgmA: Int, cgmB: Int)
+        async throws
+    { throw ControlError.notSupported }
     func refreshProfiles() async {}
     func setActiveProfile(idpId: Int) async throws { throw ControlError.notSupported }
     func renameProfile(idpId: Int, name: String) async throws { throw ControlError.notSupported }
     func deleteProfile(idpId: Int) async throws { throw ControlError.notSupported }
-    func createProfile(name: String, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double,
-                       isf: Int, targetBg: Int, insulinDurationMinutes: Int) async throws { throw ControlError.notSupported }
+    func createProfile(
+        name: String, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double,
+        isf: Int, targetBg: Int, insulinDurationMinutes: Int
+    ) async throws { throw ControlError.notSupported }
     func refreshProfileSegments(idpId: Int) async {}
-    func addProfileSegment(idpId: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double,
-                           carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async throws { throw ControlError.notSupported }
-    func modifyProfileSegment(idpId: Int, segmentIndex: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double,
-                              carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async throws { throw ControlError.notSupported }
+    func addProfileSegment(
+        idpId: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double,
+        carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int
+    ) async throws { throw ControlError.notSupported }
+    func modifyProfileSegment(
+        idpId: Int, segmentIndex: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double,
+        carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int
+    ) async throws { throw ControlError.notSupported }
     func deleteProfileSegment(idpId: Int, segmentIndex: Int) async throws { throw ControlError.notSupported }
     func setLowInsulinAlert(thresholdUnits: Int) async throws { throw ControlError.notSupported }
     func setAutoOffAlert(enabled: Bool, durationMinutes: Int) async throws { throw ControlError.notSupported }
-    func setSiteChangeReminder(enabled: Bool, days: Int, timeOfDayMinutes: Int) async throws { throw ControlError.notSupported }
+    func setSiteChangeReminder(enabled: Bool, days: Int, timeOfDayMinutes: Int) async throws {
+        throw ControlError.notSupported
+    }
     func setAlertSnooze(enabled: Bool, durationMinutes: Int) async throws { throw ControlError.notSupported }
-    func setCgmHighLowAlert(alertType: Int, thresholdMgdl: Int, repeatMinutes: Int, enabled: Bool) async throws { throw ControlError.notSupported }
+    func setCgmHighLowAlert(alertType: Int, thresholdMgdl: Int, repeatMinutes: Int, enabled: Bool) async throws {
+        throw ControlError.notSupported
+    }
     func setCgmOutOfRangeAlert(enabled: Bool, delayMinutes: Int) async throws { throw ControlError.notSupported }
-    func setCgmRiseFallAlert(alertType: Int, enabled: Bool, mgdlPerMin: Int) async throws { throw ControlError.notSupported }
+    func setCgmRiseFallAlert(alertType: Int, enabled: Bool, mgdlPerMin: Int) async throws {
+        throw ControlError.notSupported
+    }
 }
 
 public enum BolusError: Error, LocalizedError {
@@ -465,7 +499,8 @@ public enum BolusError: Error, LocalizedError {
         case .unverifiedInputs(let r): return "Pump settings not verified: \(r)."
         case .noCartridge(let r): return "Cartridge not loaded: \(r)."
         case .possiblyOutOfInsulin(let reservoirUnits, let nackDetail):
-            return "Pump refused the bolus (\(nackDetail)); last known reservoir was \(reservoirUnits) u — this may be due to insufficient insulin."
+            return
+                "Pump refused the bolus (\(nackDetail)); last known reservoir was \(reservoirUnits) u — this may be due to insufficient insulin."
         }
     }
     /// True for an outcome that must block new deliveries until reconciled (FB-02).

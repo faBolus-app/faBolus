@@ -46,8 +46,11 @@ struct SettingsReachabilityGuardTests {
     private static func allSwiftFiles(under root: URL) -> [URL] {
         let fm = FileManager.default
         let skipDirNames: Set<String> = [".build", "DerivedData", "Pods", ".git", "node_modules"]
-        guard let enumerator = fm.enumerator(at: root, includingPropertiesForKeys: [.isDirectoryKey],
-                                              options: [.skipsHiddenFiles]) else { return [] }
+        guard
+            let enumerator = fm.enumerator(
+                at: root, includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles])
+        else { return [] }
         var results: [URL] = []
         for case let url as URL in enumerator {
             let name = url.lastPathComponent
@@ -81,8 +84,9 @@ struct SettingsReachabilityGuardTests {
 
         for d in SettingsCatalog.descriptors where !Self.debugExemptKeys.contains(d.key) {
             let referenced = combinedSource.contains(".\(d.key)") || combinedSource.contains("\"\(d.key)\"")
-            #expect(referenced,
-                    "\(d.key) has no reachable UI reference under ios/faBolus/Views/ and is not debug-exempt")
+            #expect(
+                referenced,
+                "\(d.key) has no reachable UI reference under ios/faBolus/Views/ and is not debug-exempt")
         }
     }
 
@@ -97,8 +101,9 @@ struct SettingsReachabilityGuardTests {
 
         for key in Self.debugExemptKeys {
             let referenced = combinedSource.contains(".\(key)") || combinedSource.contains("\"\(key)\"")
-            #expect(referenced,
-                    "debug-exempt key \(key) is not referenced anywhere — should be removed, not exempted")
+            #expect(
+                referenced,
+                "debug-exempt key \(key) is not referenced anywhere — should be removed, not exempted")
         }
     }
 }

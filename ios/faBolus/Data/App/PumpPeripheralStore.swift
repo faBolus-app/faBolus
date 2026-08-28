@@ -18,9 +18,9 @@ enum PumpPeripheralStore {
 
 /// B4 — the outcome of a pump-switch check on a fresh connection.
 enum PumpSwitchOutcome: Equatable {
-    case firstConnect   // no prior pump on record ⇒ just remember this one; nothing to reset
-    case samePump       // same identity as last handled ⇒ nothing to do
-    case switched       // a DIFFERENT pump (sim↔real, or a different real pump) ⇒ reset pump-specific state
+    case firstConnect  // no prior pump on record ⇒ just remember this one; nothing to reset
+    case samePump  // same identity as last handled ⇒ nothing to do
+    case switched  // a DIFFERENT pump (sim↔real, or a different real pump) ⇒ reset pump-specific state
 }
 
 /// B4 — remembers which pump the app last RAN THROUGH the pump-switch check, so a connect to a DIFFERENT

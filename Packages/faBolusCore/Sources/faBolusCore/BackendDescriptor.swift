@@ -9,6 +9,8 @@ public struct BackendDescriptor: Identifiable, Sendable {
     /// Builds a fresh backend instance. `@MainActor` because backends are main-actor bound.
     public let make: @MainActor () -> PumpBackend
     public init(id: String, name: String, make: @escaping @MainActor () -> PumpBackend) {
-        self.id = id; self.name = name; self.make = make
+        self.id = id
+        self.name = name
+        self.make = make
     }
 }

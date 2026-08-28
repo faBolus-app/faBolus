@@ -42,7 +42,7 @@ struct CgmCredentialsView: View {
     /// selectable with no explainer. G7 / HealthKit / xDrip App Group were the three that had none.
     static let configuredSectionSourceIds: Set<String> = {
         let ids: Set<String> = [
-            "dexcom-share",
+            "dexcom-share"
         ]
         // Pinned equal to GlucoseSourceRegistry.enabled's id set
         // (`CgmConfigSectionCopyGuardTests.everyRegistrySourceHasAConfigSection`).
@@ -66,7 +66,8 @@ struct CgmCredentialsView: View {
     nonisolated static func waitingHeadline(kind: GlucoseConnectionKind, sourceName: String) -> String {
         switch kind {
         case .localBLE:
-            return "Waiting for the next Dexcom reading — up to ~5 min. Keep the Dexcom app running; you can leave this screen and we'll keep listening."
+            return
+                "Waiting for the next Dexcom reading — up to ~5 min. Keep the Dexcom app running; you can leave this screen and we'll keep listening."
         case .cloudPoll:
             return "Checking your credentials and connection to \(sourceName)… this usually takes a few seconds."
         case .localOnDevice:
@@ -74,15 +75,20 @@ struct CgmCredentialsView: View {
         }
     }
 
-    nonisolated static func timeoutHeadline(kind: GlucoseConnectionKind, sourceName: String, elapsedSeconds: Int) -> String {
+    nonisolated static func timeoutHeadline(kind: GlucoseConnectionKind, sourceName: String, elapsedSeconds: Int)
+        -> String
+    {
         switch kind {
         case .localBLE:
             let minutes = max(1, elapsedSeconds / 60)
-            return "No reading yet after \(minutes) min — make sure the Dexcom app is running; try toggling its Bluetooth."
+            return
+                "No reading yet after \(minutes) min — make sure the Dexcom app is running; try toggling its Bluetooth."
         case .cloudPoll:
-            return "No reading after \(max(1, elapsedSeconds))s from \(sourceName) — check your username/password and internet connection."
+            return
+                "No reading after \(max(1, elapsedSeconds))s from \(sourceName) — check your username/password and internet connection."
         case .localOnDevice:
-            return "No reading yet from \(sourceName) — make sure the upstream app (e.g. xDrip or Eversense) is installed and actively syncing glucose on this device."
+            return
+                "No reading yet from \(sourceName) — make sure the upstream app (e.g. xDrip or Eversense) is installed and actively syncing glucose on this device."
         }
     }
 
@@ -130,12 +136,14 @@ struct CgmCredentialsView: View {
     nonisolated static func actionableErrorCopy(_ raw: String, kind: GlucoseConnectionKind) -> String {
         let lower = raw.lowercased()
         if lower.contains("401") || lower.contains("403") || lower.contains("unauthorized")
-            || lower.contains("forbidden") {
+            || lower.contains("forbidden")
+        {
             return "Sign-in was rejected — check your username and password for this source."
         }
         if lower.contains("http 5") || lower.contains("timed out") || lower.contains("timeout")
             || lower.contains("network") || lower.contains("offline")
-            || lower.contains("could not connect") || lower.contains("not connected to the internet") {
+            || lower.contains("could not connect") || lower.contains("not connected to the internet")
+        {
             return "Couldn't reach the service — check your internet connection, then try again."
         }
         if lower.contains("http 4") || lower.contains("unexpected response") || lower.contains("bad") {
@@ -146,9 +154,10 @@ struct CgmCredentialsView: View {
         }
         // Fallback: NEVER echo the raw technical string; give category-appropriate next steps.
         switch kind {
-        case .cloudPoll:     return "Couldn't get a reading — check your credentials and internet connection."
-        case .localOnDevice: return "Couldn't get a reading — make sure the upstream app is installed and syncing on this device."
-        case .localBLE:      return "Couldn't get a reading — make sure the official Dexcom app is running."
+        case .cloudPoll: return "Couldn't get a reading — check your credentials and internet connection."
+        case .localOnDevice:
+            return "Couldn't get a reading — make sure the upstream app is installed and syncing on this device."
+        case .localBLE: return "Couldn't get a reading — make sure the official Dexcom app is running."
         }
     }
 
@@ -168,7 +177,9 @@ struct CgmCredentialsView: View {
             } header: {
                 Text("Dexcom Share")
             } footer: {
-                Text("Your Dexcom account with Share enabled and uploading. Cloud-only and can lag — a backup feed for G6.")
+                Text(
+                    "Your Dexcom account with Share enabled and uploading. Cloud-only and can lag — a backup feed for G6."
+                )
             }
 
             Section {
@@ -178,7 +189,8 @@ struct CgmCredentialsView: View {
                 } label: {
                     HStack {
                         Image(systemName: "checkmark.circle")
-                        Text(model.cgmTestInProgress ? "Testing…" : "Test \(selectedSourceName ?? "selected source")").fontWeight(.semibold)
+                        Text(model.cgmTestInProgress ? "Testing…" : "Test \(selectedSourceName ?? "selected source")")
+                            .fontWeight(.semibold)
                         Spacer()
                     }
                 }
@@ -193,8 +205,10 @@ struct CgmCredentialsView: View {
                     case .waiting:
                         VStack(alignment: .leading, spacing: 6) {
                             Text(waitingHeadline()).font(.subheadline)
-                            ProgressView(value: model.cgmTestTimeoutSeconds > 0
-                                         ? min(1, Double(model.cgmTestElapsedSeconds) / Double(model.cgmTestTimeoutSeconds)) : 0)
+                            ProgressView(
+                                value: model.cgmTestTimeoutSeconds > 0
+                                    ? min(1, Double(model.cgmTestElapsedSeconds) / Double(model.cgmTestTimeoutSeconds))
+                                    : 0)
                             Text(elapsedLabel(seconds: model.cgmTestElapsedSeconds))
                                 .font(.caption).foregroundStyle(.secondary)
                         }
@@ -225,7 +239,9 @@ struct CgmCredentialsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
             } footer: {
-                Text("Credentials save automatically (applied the next time the app launches, like the fallback selection itself). **Test** observes the fallback source that's already running in the background, so a reading it already has shows instantly.")
+                Text(
+                    "Credentials save automatically (applied the next time the app launches, like the fallback selection itself). **Test** observes the fallback source that's already running in the background, so a reading it already has shows instantly."
+                )
             }
         }
         .navigationTitle("CGM credentials & testing")

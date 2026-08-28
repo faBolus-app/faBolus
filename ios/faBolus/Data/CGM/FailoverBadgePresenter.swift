@@ -31,7 +31,7 @@ enum FailoverBadgePresenter {
         let name = shortSourceName(full)
         switch reason {
         case .pumpMissing: return (name, "Showing \(full) — the pump has no CGM reading.")
-        case .pumpStale:   return (name, "Showing \(full) — the pump's CGM reading went stale.")
+        case .pumpStale: return (name, "Showing \(full) — the pump's CGM reading went stale.")
         }
     }
 
@@ -53,10 +53,12 @@ enum FailoverBadgePresenter {
     /// instantly), and continuously while a bolus is in progress; otherwise at most once per throttle
     /// window to spare phone + watch battery. Pure, so the cadence rule is unit-testable. Moved
     /// verbatim from `AppModel.shouldPushStatus` (was already `nonisolated static`).
-    static func shouldPushStatus(newGlucose: Int?, newGlucoseDate: Date?,
-                                  lastGlucose: Int?, lastGlucoseDate: Date?,
-                                  newConnection: PumpConnectionState, lastConnection: PumpConnectionState?,
-                                  secondsSinceLastPush: TimeInterval, throttle: TimeInterval = 15) -> Bool {
+    static func shouldPushStatus(
+        newGlucose: Int?, newGlucoseDate: Date?,
+        lastGlucose: Int?, lastGlucoseDate: Date?,
+        newConnection: PumpConnectionState, lastConnection: PumpConnectionState?,
+        secondsSinceLastPush: TimeInterval, throttle: TimeInterval = 15
+    ) -> Bool {
         let newSample = newGlucose != lastGlucose || newGlucoseDate != lastGlucoseDate
         let connChanged = newConnection != lastConnection
         let bolusing = newConnection == .bolusing

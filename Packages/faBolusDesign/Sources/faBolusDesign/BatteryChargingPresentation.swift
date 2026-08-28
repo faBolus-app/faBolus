@@ -41,11 +41,11 @@ public enum BatteryChargingPresentation {
             // Byte-identical to the pre-09.27 `StatusPillsView.batteryIcon` level->glyph switch —
             // this helper is now the ONE place that owns that mapping (D-05 drift-guard).
             switch percent {
-            case ...5:   symbol = "battery.0"
-            case ...37:  symbol = "battery.25"
-            case ...62:  symbol = "battery.50"
-            case ...87:  symbol = "battery.75"
-            default:     symbol = "battery.100"
+            case ...5: symbol = "battery.0"
+            case ...37: symbol = "battery.25"
+            case ...62: symbol = "battery.50"
+            case ...87: symbol = "battery.75"
+            default: symbol = "battery.100"
             }
         }
         return BatteryPresentation(

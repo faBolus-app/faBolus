@@ -43,13 +43,13 @@ struct GlucoseStatusGlyphGuardTests {
     /// The band-glyph forms this guard forbids inside a glucose surface. Deliberately NOT a bare
     /// `symbolName` string — see file doc comment.
     static let bandGlyphNeedles = [
-        "BandIndicator(", "band.symbolName", "band?.symbolName",
+        "BandIndicator(", "band.symbolName", "band?.symbolName"
     ]
 
     /// WR-02: the four literal SF Symbol strings `GlucoseRange.symbolName` used to produce before its
     /// deletion — forbidden ONLY on a line that also contains a ternary (`?`), see file doc comment.
     static let bandGlyphSymbolNeedles = [
-        "arrow.down.circle.fill", "checkmark.circle.fill", "arrow.up.circle.fill", "exclamationmark.triangle.fill",
+        "arrow.down.circle.fill", "checkmark.circle.fill", "arrow.up.circle.fill", "exclamationmark.triangle.fill"
     ]
 
     /// The real CGM trend-arrow tokens that must survive the band-glyph removal — every pinned surface
@@ -71,7 +71,7 @@ struct GlucoseStatusGlyphGuardTests {
     static let pinnedSurfaces = [
         "ios/faBolus/Views/StatusRingView.swift",
         "ios/faBolusWidgets/GlucoseWidget.swift",
-        "ios/faBolusWidgets/StatusWidget.swift",
+        "ios/faBolusWidgets/StatusWidget.swift"
     ]
 
     // MARK: - Repo enumeration (mirrors BandDriftGuardTests' idiom)
@@ -116,8 +116,12 @@ struct GlucoseStatusGlyphGuardTests {
         for line in lines[startIdx...] {
             collected.append(line)
             for ch in line {
-                if ch == "{" { depth += 1; opened = true }
-                else if ch == "}" { depth -= 1 }
+                if ch == "{" {
+                    depth += 1
+                    opened = true
+                } else if ch == "}" {
+                    depth -= 1
+                }
             }
             if opened && depth <= 0 { break }
         }
@@ -140,9 +144,11 @@ struct GlucoseStatusGlyphGuardTests {
         var blocks: [[String]] = [[]]
         for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            let isBoundary = trimmed.hasPrefix("case ") || trimmed.hasPrefix("default:")
-                || trimmed.range(of: #"^(private |internal |public |fileprivate |static )*(struct|func) \w"#,
-                                  options: .regularExpression) != nil
+            let isBoundary =
+                trimmed.hasPrefix("case ") || trimmed.hasPrefix("default:")
+                || trimmed.range(
+                    of: #"^(private |internal |public |fileprivate |static )*(struct|func) \w"#,
+                    options: .regularExpression) != nil
             if isBoundary { blocks.append([]) }
             blocks[blocks.count - 1].append(line)
         }
@@ -174,8 +180,9 @@ struct GlucoseStatusGlyphGuardTests {
     /// `MacQuickBolusWidget` delivered/failed status icons — see file doc comment). Loud-not-vacuous:
     /// asserts the scanned count equals eight — the full pinned list, not a partial/broken scan.
     @Test func noPinnedSurfaceContainsABandGlyph() throws {
-        let repoRoot = try #require(Self.repoRootURL(),
-                                     "could not resolve repo root from #filePath=\(#filePath)")
+        let repoRoot = try #require(
+            Self.repoRootURL(),
+            "could not resolve repo root from #filePath=\(#filePath)")
         var scanned = 0
         var violations: [String] = []
 
@@ -190,15 +197,20 @@ struct GlucoseStatusGlyphGuardTests {
             for line in stripped.split(separator: "\n", omittingEmptySubsequences: false) {
                 guard line.contains("?") else { continue }
                 for needle in Self.bandGlyphSymbolNeedles where line.contains(needle) {
-                    violations.append("\(path) hardcodes a ternary-selected band SF Symbol '\(needle)': \(line.trimmingCharacters(in: .whitespaces))")
+                    violations.append(
+                        "\(path) hardcodes a ternary-selected band SF Symbol '\(needle)': \(line.trimmingCharacters(in: .whitespaces))"
+                    )
                 }
             }
         }
 
-        #expect(violations.isEmpty,
-                "Band-glyph regression guard violated:\n\(violations.joined(separator: "\n"))")
-        #expect(scanned == 3,
-                "expected to scan all 3 pinned glucose surfaces under \(repoRoot.path), scanned \(scanned) — scan broke (would otherwise pass vacuously)")
+        #expect(
+            violations.isEmpty,
+            "Band-glyph regression guard violated:\n\(violations.joined(separator: "\n"))")
+        #expect(
+            scanned == 3,
+            "expected to scan all 3 pinned glucose surfaces under \(repoRoot.path), scanned \(scanned) — scan broke (would otherwise pass vacuously)"
+        )
     }
 
     /// Prong 2 (trend-arrow survives — presence): every pinned surface still renders its trend token
@@ -209,8 +221,9 @@ struct GlucoseStatusGlyphGuardTests {
     /// `contains` can't express since several pinned surfaces legitimately render the trend arrow once
     /// EACH across multiple independent regions/families). Loud-not-vacuous: scanned count == 3.
     @Test func everyPinnedSurfaceStillRendersItsTrendToken() throws {
-        let repoRoot = try #require(Self.repoRootURL(),
-                                     "could not resolve repo root from #filePath=\(#filePath)")
+        let repoRoot = try #require(
+            Self.repoRootURL(),
+            "could not resolve repo root from #filePath=\(#filePath)")
         var scanned = 0
         var missing: [String] = []
 
@@ -225,10 +238,13 @@ struct GlucoseStatusGlyphGuardTests {
             }
         }
 
-        #expect(missing.isEmpty,
-                "Trend-arrow regression:\n\(missing.joined(separator: "\n"))")
-        #expect(scanned == 3,
-                "expected to scan all 3 pinned glucose surfaces under \(repoRoot.path), scanned \(scanned) — scan broke (would otherwise pass vacuously)")
+        #expect(
+            missing.isEmpty,
+            "Trend-arrow regression:\n\(missing.joined(separator: "\n"))")
+        #expect(
+            scanned == 3,
+            "expected to scan all 3 pinned glucose surfaces under \(repoRoot.path), scanned \(scanned) — scan broke (would otherwise pass vacuously)"
+        )
     }
 
     /// Prong 2b (trend-arrow survives — uniqueness, WR-01): every independent render block
@@ -243,8 +259,9 @@ struct GlucoseStatusGlyphGuardTests {
     /// .swift`). Loud-not-vacuous:
     /// scanned == 3.
     @Test func everyRenderBlockRendersItsTrendArrowAtMostOnce() throws {
-        let repoRoot = try #require(Self.repoRootURL(),
-                                     "could not resolve repo root from #filePath=\(#filePath)")
+        let repoRoot = try #require(
+            Self.repoRootURL(),
+            "could not resolve repo root from #filePath=\(#filePath)")
         var scanned = 0
         var violations: [String] = []
 
@@ -257,15 +274,20 @@ struct GlucoseStatusGlyphGuardTests {
                 let count = Self.countTrendRenders(in: block)
                 if count > 1 {
                     let firstLine = block.split(separator: "\n").first.map(String.init) ?? "<empty>"
-                    violations.append("\(path): render block starting '\(firstLine.trimmingCharacters(in: .whitespaces))' renders the trend arrow \(count) times (expected at most 1)")
+                    violations.append(
+                        "\(path): render block starting '\(firstLine.trimmingCharacters(in: .whitespaces))' renders the trend arrow \(count) times (expected at most 1)"
+                    )
                 }
             }
         }
 
-        #expect(violations.isEmpty,
-                "Duplicate trend-arrow render:\n\(violations.joined(separator: "\n"))")
-        #expect(scanned == 3,
-                "expected to scan all 3 pinned glucose surfaces under \(repoRoot.path), scanned \(scanned) — scan broke (would otherwise pass vacuously)")
+        #expect(
+            violations.isEmpty,
+            "Duplicate trend-arrow render:\n\(violations.joined(separator: "\n"))")
+        #expect(
+            scanned == 3,
+            "expected to scan all 3 pinned glucose surfaces under \(repoRoot.path), scanned \(scanned) — scan broke (would otherwise pass vacuously)"
+        )
     }
 
     /// CR-01 GUARD (09.29 review): every pinned surface's (comment-stripped) source contains BOTH the
@@ -277,8 +299,9 @@ struct GlucoseStatusGlyphGuardTests {
     /// review's own words: "the existing text-scan guard can't verify accessibility wiring." Loud-not-
     /// vacuous: scanned == 3.
     @Test func everyPinnedSurfaceSpeaksTheZoneWordToVoiceOver() throws {
-        let repoRoot = try #require(Self.repoRootURL(),
-                                     "could not resolve repo root from #filePath=\(#filePath)")
+        let repoRoot = try #require(
+            Self.repoRootURL(),
+            "could not resolve repo root from #filePath=\(#filePath)")
         var scanned = 0
         var missing: [String] = []
 
@@ -288,38 +311,49 @@ struct GlucoseStatusGlyphGuardTests {
             let stripped = Self.stripLineComments(raw)
             scanned += 1
             let hasZoneWord = stripped.contains(Self.zoneWordNeedle)
-            let hasAccessibilityAnnotation = stripped.contains("accessibilityLabel(") || stripped.contains("accessibilityValue(")
+            let hasAccessibilityAnnotation =
+                stripped.contains("accessibilityLabel(") || stripped.contains("accessibilityValue(")
             if !(hasZoneWord && hasAccessibilityAnnotation) {
-                missing.append("\(path) is missing the VoiceOver zone-word cue (needs both '\(Self.zoneWordNeedle)' and an accessibilityLabel(/accessibilityValue( call)")
+                missing.append(
+                    "\(path) is missing the VoiceOver zone-word cue (needs both '\(Self.zoneWordNeedle)' and an accessibilityLabel(/accessibilityValue( call)"
+                )
             }
         }
 
-        #expect(missing.isEmpty,
-                "VoiceOver zone-word regression:\n\(missing.joined(separator: "\n"))")
-        #expect(scanned == 3,
-                "expected to scan all 3 pinned glucose surfaces under \(repoRoot.path), scanned \(scanned) — scan broke (would otherwise pass vacuously)")
+        #expect(
+            missing.isEmpty,
+            "VoiceOver zone-word regression:\n\(missing.joined(separator: "\n"))")
+        #expect(
+            scanned == 3,
+            "expected to scan all 3 pinned glucose surfaces under \(repoRoot.path), scanned \(scanned) — scan broke (would otherwise pass vacuously)"
+        )
     }
 
     /// Loud-not-vacuous plumbing check (mirrors `BandDriftGuardTests.fileResolutionActuallyFoundTheRepoRoot`):
     /// a path-resolution bug must fail loudly, not pass vacuously. Also pins the exact surface count.
     @Test func guardResolvesRepoRootAndScansAllThreeGlucoseSurfaces() throws {
-        let repoRoot = try #require(Self.repoRootURL(),
-                                     "guard could not locate the repo root — path resolution broke (#filePath=\(#filePath))")
-        #expect(Self.pinnedSurfaces.count == 3,
-                "expected exactly 3 pinned glucose surfaces (09.29-DIAGNOSIS.md §A, minus the Mac + Watch + Live Activity surfaces removed by 03-01/03-03/07-01 delete-on-main) — pin list drifted")
+        let repoRoot = try #require(
+            Self.repoRootURL(),
+            "guard could not locate the repo root — path resolution broke (#filePath=\(#filePath))")
+        #expect(
+            Self.pinnedSurfaces.count == 3,
+            "expected exactly 3 pinned glucose surfaces (09.29-DIAGNOSIS.md §A, minus the Mac + Watch + Live Activity surfaces removed by 03-01/03-03/07-01 delete-on-main) — pin list drifted"
+        )
         var scannedSurfaces = 0
         for path in Self.pinnedSurfaces {
             let url = repoRoot.appendingPathComponent(path)
-            #expect(FileManager.default.fileExists(atPath: url.path),
-                    "pinned glucose surface does not exist at \(url.path)")
+            #expect(
+                FileManager.default.fileExists(atPath: url.path),
+                "pinned glucose surface does not exist at \(url.path)")
             guard (try? String(contentsOf: url, encoding: .utf8)) != nil else {
                 Issue.record("pinned glucose surface could not be read at \(url.path)")
                 continue
             }
             scannedSurfaces += 1
         }
-        #expect(scannedSurfaces == 3,
-                "expected to actually read all 3 pinned glucose surfaces — plumbing broke (would otherwise pass vacuously)")
+        #expect(
+            scannedSurfaces == 3,
+            "expected to actually read all 3 pinned glucose surfaces — plumbing broke (would otherwise pass vacuously)")
     }
 
     /// IN-02 (09.29 review): direct unit coverage for `balancedSlice` — previously dead code with no
@@ -335,11 +369,13 @@ struct GlucoseStatusGlyphGuardTests {
             "}",
             "struct Bar {",
             "    doOther()",
-            "}",
+            "}"
         ]
         let slice = Self.balancedSlice(startingAt: 0, in: lines)
         #expect(slice.contains("doSomething()"), "expected the slice to include its own nested content")
-        #expect(!slice.contains("doOther()"), "expected the slice to stop at its own matching close brace, not spill into the next block")
+        #expect(
+            !slice.contains("doOther()"),
+            "expected the slice to stop at its own matching close brace, not spill into the next block")
         #expect(slice.hasPrefix("struct Foo {"), "expected the slice to start at the requested line")
     }
 }

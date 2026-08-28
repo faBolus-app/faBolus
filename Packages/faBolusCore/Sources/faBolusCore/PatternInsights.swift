@@ -11,12 +11,28 @@ public final class PatternInsights {
     /// Lightweight glucose sample for the insights algorithm (mg/dL as `Double`). Nested to stay
     /// namespaced under `PatternInsights` and avoid colliding with faBolusCore's `GlucoseReading`
     /// (which carries an `Int` mg/dL) or any host-app type.
-    public struct CGMPoint { public let mgdl: Double; public let date: Date
-        public init(mgdl: Double, date: Date) { self.mgdl = mgdl; self.date = date } }
-    public struct Carbs { public let grams: Double; public let date: Date
-        public init(grams: Double, date: Date) { self.grams = grams; self.date = date } }
+    public struct CGMPoint {
+        public let mgdl: Double
+        public let date: Date
+        public init(mgdl: Double, date: Date) {
+            self.mgdl = mgdl
+            self.date = date
+        }
+    }
+    public struct Carbs {
+        public let grams: Double
+        public let date: Date
+        public init(grams: Double, date: Date) {
+            self.grams = grams
+            self.date = date
+        }
+    }
 
-    public struct Insight { public let title: String; public let detail: String; public let severity: Int } // 0 info … 2 act
+    public struct Insight {
+        public let title: String
+        public let detail: String
+        public let severity: Int
+    }  // 0 info … 2 act
 
     public struct Config {
         public var low = 70.0, high = 180.0, minDays = 3.0
@@ -40,24 +56,35 @@ public final class PatternInsights {
         let cal = Calendar.current
 
         // hourly time-below / time-above / mean
-        var lowN = [Int](repeating: 0, count: 24), highN = [Int](repeating: 0, count: 24), n = [Int](repeating: 0, count: 24)
+        var lowN = [Int](repeating: 0, count: 24), highN = [Int](repeating: 0, count: 24),
+            n = [Int](repeating: 0, count: 24)
         for p in g {
-            let h = cal.component(.hour, from: p.date); n[h] += 1
-            if p.mgdl < cfg.low { lowN[h] += 1 }; if p.mgdl > cfg.high { highN[h] += 1 }
+            let h = cal.component(.hour, from: p.date)
+            n[h] += 1
+            if p.mgdl < cfg.low { lowN[h] += 1 }
+            if p.mgdl > cfg.high { highN[h] += 1 }
         }
         // worst low-risk hour cluster
-        if let (h, frac) = (0..<24).compactMap({ n[$0] > 20 ? ($0, Double(lowN[$0])/Double(n[$0])) : nil })
-                                    .max(by: { $0.1 < $1.1 }), frac > 0.06 {
-            out.append(.init(title: "Recurring lows around \(hourLabel(h))",
-                             detail: "About \(Int(frac*100))% of readings near \(hourLabel(h)) are below \(glucoseText(Int(cfg.low), unit: unit)). Consider less insulin / a snack before then, or discuss basal timing.",
-                             severity: 2))
+        if let (h, frac) = (0..<24).compactMap({ n[$0] > 20 ? ($0, Double(lowN[$0]) / Double(n[$0])) : nil })
+            .max(by: { $0.1 < $1.1 }), frac > 0.06
+        {
+            out.append(
+                .init(
+                    title: "Recurring lows around \(hourLabel(h))",
+                    detail:
+                        "About \(Int(frac*100))% of readings near \(hourLabel(h)) are below \(glucoseText(Int(cfg.low), unit: unit)). Consider less insulin / a snack before then, or discuss basal timing.",
+                    severity: 2))
         }
         // worst high-time cluster
-        if let (h, frac) = (0..<24).compactMap({ n[$0] > 20 ? ($0, Double(highN[$0])/Double(n[$0])) : nil })
-                                    .max(by: { $0.1 < $1.1 }), frac > 0.5 {
-            out.append(.init(title: "Highs concentrated around \(hourLabel(h))",
-                             detail: "Readings near \(hourLabel(h)) are above \(glucoseText(Int(cfg.high), unit: unit)) ~\(Int(frac*100))% of the time.",
-                             severity: 1))
+        if let (h, frac) = (0..<24).compactMap({ n[$0] > 20 ? ($0, Double(highN[$0]) / Double(n[$0])) : nil })
+            .max(by: { $0.1 < $1.1 }), frac > 0.5
+        {
+            out.append(
+                .init(
+                    title: "Highs concentrated around \(hourLabel(h))",
+                    detail:
+                        "Readings near \(hourLabel(h)) are above \(glucoseText(Int(cfg.high), unit: unit)) ~\(Int(frac*100))% of the time.",
+                    severity: 1))
         }
         // dawn phenomenon: rise between ~3am and ~7am on most days
         var dawnRises: [Double] = []
@@ -67,22 +94,30 @@ public final class PatternInsights {
             let b = day.last { cal.component(.hour, from: $0.date) == 7 }
             if let a, let b, b.mgdl - a.mgdl > 0 { dawnRises.append(b.mgdl - a.mgdl) }
         }
-        if dawnRises.count >= 3, dawnRises.filter({ $0 > 30 }).count >= Int(0.5*Double(dawnRises.count)) {
-            let avg = dawnRises.reduce(0,+)/Double(dawnRises.count)
-            out.append(.init(title: "Dawn rise most mornings",
-                             detail: "Glucose rises on average \(glucoseText(Int(avg), unit: unit)) between 3–7am. A basal adjustment before dawn may help — discuss with your clinician.",
-                             severity: 1))
+        if dawnRises.count >= 3, dawnRises.filter({ $0 > 30 }).count >= Int(0.5 * Double(dawnRises.count)) {
+            let avg = dawnRises.reduce(0, +) / Double(dawnRises.count)
+            out.append(
+                .init(
+                    title: "Dawn rise most mornings",
+                    detail:
+                        "Glucose rises on average \(glucoseText(Int(avg), unit: unit)) between 3–7am. A basal adjustment before dawn may help — discuss with your clinician.",
+                    severity: 1))
         }
         // overall TIR
         let tir = Double(g.filter { $0.mgdl >= cfg.low && $0.mgdl <= cfg.high }.count) / Double(g.count)
-        out.append(.init(title: "Time in range: \(Int(tir*100))%",
-                         detail: "Over the last \(Int(span)) days, \(Int(tir*100))% of readings were \(rangeText(Int(cfg.low), Int(cfg.high), unit: unit)).",
-                         severity: tir < 0.6 ? 1 : 0))
+        out.append(
+            .init(
+                title: "Time in range: \(Int(tir*100))%",
+                detail:
+                    "Over the last \(Int(span)) days, \(Int(tir*100))% of readings were \(rangeText(Int(cfg.low), Int(cfg.high), unit: unit)).",
+                severity: tir < 0.6 ? 1 : 0))
         return out.sorted { $0.severity > $1.severity }
     }
 
     private func hourLabel(_ h: Int) -> String {
-        let am = h < 12; let hr = h % 12 == 0 ? 12 : h % 12; return "\(hr)\(am ? "am" : "pm")"
+        let am = h < 12
+        let hr = h % 12 == 0 ? 12 : h % 12
+        return "\(hr)\(am ? "am" : "pm")"
     }
 
     /// A single glucose figure in `unit`'s display text (e.g. `"70 mg/dL"` / `"3.9 mmol/L"`). `.mgdl`

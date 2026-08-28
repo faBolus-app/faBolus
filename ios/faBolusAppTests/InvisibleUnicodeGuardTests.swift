@@ -20,7 +20,7 @@ struct InvisibleUnicodeGuardTests {
     /// U+FEFF (zero-width no-break space / BOM), U+2060 (word joiner).
     static let invisibleCodePoints: [Unicode.Scalar] = [
         Unicode.Scalar(0x200B)!, Unicode.Scalar(0x200C)!, Unicode.Scalar(0x200D)!,
-        Unicode.Scalar(0xFEFF)!, Unicode.Scalar(0x2060)!,
+        Unicode.Scalar(0xFEFF)!, Unicode.Scalar(0x2060)!
     ]
 
     // MARK: - Repo enumeration (mirrors BandDriftGuardTests' idiom)
@@ -48,10 +48,13 @@ struct InvisibleUnicodeGuardTests {
     private static func allSwiftFiles(under root: URL) -> [URL] {
         let fm = FileManager.default
         let skipDirNames: Set<String> = [
-            ".build", "DerivedData", "Pods", ".git", "node_modules",
+            ".build", "DerivedData", "Pods", ".git", "node_modules"
         ]
-        guard let enumerator = fm.enumerator(at: root, includingPropertiesForKeys: [.isDirectoryKey],
-                                              options: [.skipsHiddenFiles]) else { return [] }
+        guard
+            let enumerator = fm.enumerator(
+                at: root, includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles])
+        else { return [] }
         var results: [URL] = []
         for case let url as URL in enumerator {
             let name = url.lastPathComponent
@@ -70,7 +73,7 @@ struct InvisibleUnicodeGuardTests {
         [
             repoRoot.appendingPathComponent("ios/faBolus"),
             repoRoot.appendingPathComponent("Shared"),
-            repoRoot.appendingPathComponent("Packages/faBolusCore"),
+            repoRoot.appendingPathComponent("Packages/faBolusCore")
         ]
     }
 
@@ -81,8 +84,9 @@ struct InvisibleUnicodeGuardTests {
     /// files, so a broken path/enumerator regression fails loudly instead of passing vacuously (mirrors
     /// `BandDriftGuardTests`' own `scannedBlocks > 0` / `fileResolutionActuallyFoundTheRepoRoot` pattern).
     @Test func noInvisibleUnicodeInScannedTrees() throws {
-        let repoRoot = try #require(Self.repoRootURL(),
-                                     "could not resolve repo root from #filePath=\(#filePath)")
+        let repoRoot = try #require(
+            Self.repoRootURL(),
+            "could not resolve repo root from #filePath=\(#filePath)")
         var filesScanned = 0
         var violations: [String] = []
 
@@ -100,9 +104,12 @@ struct InvisibleUnicodeGuardTests {
             }
         }
 
-        #expect(violations.isEmpty,
-                "Invisible-Unicode guard violated (C6-03):\n\(violations.joined(separator: "\n"))")
-        #expect(filesScanned > 0,
-                "expected to scan at least one .swift file across ios/faBolus, Shared, Packages/faBolusCore — walk broke (would otherwise pass vacuously)")
+        #expect(
+            violations.isEmpty,
+            "Invisible-Unicode guard violated (C6-03):\n\(violations.joined(separator: "\n"))")
+        #expect(
+            filesScanned > 0,
+            "expected to scan at least one .swift file across ios/faBolus, Shared, Packages/faBolusCore — walk broke (would otherwise pass vacuously)"
+        )
     }
 }

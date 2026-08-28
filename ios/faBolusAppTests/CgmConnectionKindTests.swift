@@ -17,11 +17,11 @@ struct CgmConnectionKindTests {
     /// Nightscout ("nightscout") was removed from narrow `main` in Phase 5 (HEALTH-02, see
     /// dev/nightscout's REINTEGRATION.md) — narrow main's table is Share-only.
     private static let expected: [String: GlucoseConnectionKind] = [
-        "dexcom-share": .cloudPoll,
-        // "xdrip-appgroup" removed from `main` in Phase 1, Plan 01 (CGM-05).
-        // "dexcom-g6-ble" / "librelinkup" removed from `main` in Phase 1, Plan 02 (CGM-03/CGM-04).
-        // "dexcom-g7-ble" removed from `main` in Phase 1, Plan 03 (CGM-01/CGM-02) — with it gone,
-        // narrow main has NO remaining `.localBLE` source (see the gated assertion below).
+        "dexcom-share": .cloudPoll
+            // "xdrip-appgroup" removed from `main` in Phase 1, Plan 01 (CGM-05).
+            // "dexcom-g6-ble" / "librelinkup" removed from `main` in Phase 1, Plan 02 (CGM-03/CGM-04).
+            // "dexcom-g7-ble" removed from `main` in Phase 1, Plan 03 (CGM-01/CGM-02) — with it gone,
+            // narrow main has NO remaining `.localBLE` source (see the gated assertion below).
     ]
 
     /// Every registered source classifies itself correctly (BLE / cloud / on-device). Iterates the
@@ -29,8 +29,9 @@ struct CgmConnectionKindTests {
     @Test func everyRegisteredSourceClassifiesItsConnectionKind() {
         let enabled = GlucoseSourceRegistry.enabled
         // Guard against silent registry drift: the classification table must cover every enabled id.
-        #expect(Set(enabled.map(\.id)) == Set(Self.expected.keys),
-                "the registry's enabled ids must match the classification table exactly")
+        #expect(
+            Set(enabled.map(\.id)) == Set(Self.expected.keys),
+            "the registry's enabled ids must match the classification table exactly")
 
         for descriptor in enabled {
             guard let source = GlucoseSourceRegistry.make(id: descriptor.id) else {
@@ -41,8 +42,9 @@ struct CgmConnectionKindTests {
                 Issue.record("no expected connectionKind for \(descriptor.id)")
                 continue
             }
-            #expect(source.connectionKind == want,
-                    "\(descriptor.id) must classify as \(want), got \(source.connectionKind)")
+            #expect(
+                source.connectionKind == want,
+                "\(descriptor.id) must classify as \(want), got \(source.connectionKind)")
         }
     }
 

@@ -34,24 +34,25 @@ struct PumpDeliveryOpcodeScopeGuardTests {
     /// collide with a read opcode.
     @Test func exclusionSetCoversTheCoreDeliveryAndControlWrites() {
         let excl = PumpReadCatalog.deliveryControlWriteOpcodes
-        #expect(excl.contains(InitiateBolusRequest.props.opCode))          // op-158
-        #expect(excl.contains(BolusPermissionRequest.props.opCode))        // op-162
-        #expect(excl.contains(BolusPermissionReleaseRequest.props.opCode)) // op-240
-        #expect(excl.contains(CancelBolusRequest.props.opCode))            // op-160
-        #expect(excl.contains(SuspendPumpingRequest.props.opCode))         // op-156
-        #expect(excl.contains(ResumePumpingRequest.props.opCode))          // op-154
-        #expect(excl.contains(StopTempRateRequest.props.opCode))           // op-166
-        #expect(excl.contains(SetModesRequest.props.opCode))               // op-204
-        #expect(excl.contains(EnterFillTubingModeRequest.props.opCode))    // op-148
-        #expect(excl.contains(FillCannulaRequest.props.opCode))            // op-152
+        #expect(excl.contains(InitiateBolusRequest.props.opCode))  // op-158
+        #expect(excl.contains(BolusPermissionRequest.props.opCode))  // op-162
+        #expect(excl.contains(BolusPermissionReleaseRequest.props.opCode))  // op-240
+        #expect(excl.contains(CancelBolusRequest.props.opCode))  // op-160
+        #expect(excl.contains(SuspendPumpingRequest.props.opCode))  // op-156
+        #expect(excl.contains(ResumePumpingRequest.props.opCode))  // op-154
+        #expect(excl.contains(StopTempRateRequest.props.opCode))  // op-166
+        #expect(excl.contains(SetModesRequest.props.opCode))  // op-204
+        #expect(excl.contains(EnterFillTubingModeRequest.props.opCode))  // op-148
+        #expect(excl.contains(FillCannulaRequest.props.opCode))  // op-152
         #expect(!excl.isEmpty)
     }
 
     /// THE core "can't intersect by construction" assertion: the exclusion set and the read opcode set — the
     /// only opcodes that may legitimately enter `badOpcodes` — are DISJOINT.
     @Test func exclusionSetIsDisjointFromEveryCurrentStatusRead() {
-        #expect(PumpReadCatalog.deliveryControlWriteOpcodes
-            .isDisjoint(with: PumpReadCatalog.currentStatusReadOpcodes),
+        #expect(
+            PumpReadCatalog.deliveryControlWriteOpcodes
+                .isDisjoint(with: PumpReadCatalog.currentStatusReadOpcodes),
             "the read-only never-resend set and the delivery/control-write set must be disjoint")
     }
 
@@ -62,11 +63,13 @@ struct PumpDeliveryOpcodeScopeGuardTests {
     /// fail-closed guardrail and the dose-input re-probe allowlist coexist without interfering.
     @Test func doseInputReadSetIsDisjointFromDeliveryWritesAndIsASubsetOfReads() {
         #expect(!PumpReadCatalog.doseInputReadOpcodes.isEmpty)
-        #expect(PumpReadCatalog.doseInputReadOpcodes
-            .isDisjoint(with: PumpReadCatalog.deliveryControlWriteOpcodes),
+        #expect(
+            PumpReadCatalog.doseInputReadOpcodes
+                .isDisjoint(with: PumpReadCatalog.deliveryControlWriteOpcodes),
             "the dose-input read allowlist and the delivery/control-write guard set must be DISJOINT (R2-10)")
-        #expect(PumpReadCatalog.doseInputReadOpcodes
-            .isSubset(of: PumpReadCatalog.currentStatusReadOpcodes),
+        #expect(
+            PumpReadCatalog.doseInputReadOpcodes
+                .isSubset(of: PumpReadCatalog.currentStatusReadOpcodes),
             "dose-input reads are currentStatus reads — they live in the read space, not the write space")
     }
 
@@ -77,8 +80,8 @@ struct PumpDeliveryOpcodeScopeGuardTests {
     @Test func readCollidingWriteOpcodesAreNotInTheGuardSetAndAreControlCharacteristic() {
         let tempRate = SetTempRateRequest.props.opCode
         let enterCartridge = EnterChangeCartridgeModeRequest.props.opCode
-        #expect(tempRate == LastBolusStatusV2Request.props.opCode)         // proven collision (op-164)
-        #expect(enterCartridge == CurrentBatteryV2Request.props.opCode)    // proven collision (op-144)
+        #expect(tempRate == LastBolusStatusV2Request.props.opCode)  // proven collision (op-164)
+        #expect(enterCartridge == CurrentBatteryV2Request.props.opCode)  // proven collision (op-144)
         #expect(!PumpReadCatalog.deliveryControlWriteOpcodes.contains(tempRate))
         #expect(!PumpReadCatalog.deliveryControlWriteOpcodes.contains(enterCartridge))
         // The WRITE twins are on `.control`; the READ twins on `.currentStatus` (badOpcodes is a read gate).
@@ -93,8 +96,9 @@ struct PumpDeliveryOpcodeScopeGuardTests {
     @Test func insertBadOpcodeRefusesEveryDeliveryControlWriteOpcode() {
         let s = scheduler()
         for op in PumpReadCatalog.deliveryControlWriteOpcodes { s.insertBadOpcode(op) }
-        #expect(s.badOpcodesForTesting.isDisjoint(with: PumpReadCatalog.deliveryControlWriteOpcodes),
-                "a delivery/control-write opcode must never be recorded in the read-only never-resend set")
+        #expect(
+            s.badOpcodesForTesting.isDisjoint(with: PumpReadCatalog.deliveryControlWriteOpcodes),
+            "a delivery/control-write opcode must never be recorded in the read-only never-resend set")
         #expect(s.badOpcodesForTesting.isEmpty, "nothing but delivery opcodes was offered — none may stick")
     }
 
@@ -102,9 +106,10 @@ struct PumpDeliveryOpcodeScopeGuardTests {
     /// READ (LastBolusStatusV2). The guardrail must not over-block reads.
     @Test func insertBadOpcodeStillLearnsAReadCollidingOpcodeAsABadRead() {
         let s = scheduler()
-        s.insertBadOpcode(LastBolusStatusV2Request.props.opCode)   // op-164, a currentStatus read
-        #expect(s.badOpcodesForTesting.contains(LastBolusStatusV2Request.props.opCode),
-                "a read-colliding opcode must remain learnable as a bad READ — the guard is not over-broad")
+        s.insertBadOpcode(LastBolusStatusV2Request.props.opCode)  // op-164, a currentStatus read
+        #expect(
+            s.badOpcodesForTesting.contains(LastBolusStatusV2Request.props.opCode),
+            "a read-colliding opcode must remain learnable as a bad READ — the guard is not over-broad")
     }
 
     // MARK: - resolveErrorResponse's insert path can't record a delivery opcode
@@ -113,11 +118,12 @@ struct PumpDeliveryOpcodeScopeGuardTests {
     /// resolveErrorResponse returns it for the diagnostic log but never suppresses it.
     @Test func resolveErrorResponseNeverRecordsANamedDeliveryOpcode() {
         let s = scheduler()
-        let initiate = InitiateBolusRequest.props.opCode                    // op-158, pure delivery
+        let initiate = InitiateBolusRequest.props.opCode  // op-158, pure delivery
         let resolved = s.resolveErrorResponse(requestCodeId: Int(initiate), txId: 0)
         #expect(resolved == initiate, "the named opcode is still returned for the standing diagnostic log")
-        #expect(!s.badOpcodesForTesting.contains(initiate),
-                "a delivery opcode named in an op77 cargo must never enter the never-resend set")
+        #expect(
+            !s.badOpcodesForTesting.contains(initiate),
+            "a delivery opcode named in an op77 cargo must never enter the never-resend set")
     }
 
     /// The FIFO/txId correlation path can only ever resolve to a READ (it consults `outstandingReads`, which
@@ -140,12 +146,14 @@ struct PumpDeliveryOpcodeScopeGuardTests {
     @Test func startPollingHydrationFiltersDeliveryOpcodes() {
         let s = scheduler()
         let initiate = InitiateBolusRequest.props.opCode
-        let cartridgeRead = LoadStatusRequest.props.opCode                  // op-20, a legitimate read
+        let cartridgeRead = LoadStatusRequest.props.opCode  // op-20, a legitimate read
         s.loadPersistedBadOpcodes = { [initiate, cartridgeRead] }
         s.startPollingForTesting()
-        #expect(!s.badOpcodesForTesting.contains(initiate),
-                "a persisted delivery opcode must be filtered out of the hydration union")
-        #expect(s.badOpcodesForTesting.contains(cartridgeRead),
-                "a legitimately persisted READ opcode must still hydrate into the never-resend set")
+        #expect(
+            !s.badOpcodesForTesting.contains(initiate),
+            "a persisted delivery opcode must be filtered out of the hydration union")
+        #expect(
+            s.badOpcodesForTesting.contains(cartridgeRead),
+            "a legitimately persisted READ opcode must still hydrate into the never-resend set")
     }
 }

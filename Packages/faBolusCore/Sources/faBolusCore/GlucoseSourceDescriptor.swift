@@ -18,8 +18,13 @@ public struct GlucoseSourceDescriptor: Identifiable, Sendable {
     /// CoreBluetooth SIGABRT (the dup-restore-identifier crash D-06 fixes). Most descriptor closures
     /// ignore the flag entirely (`{ _ in SomeSource() }`).
     public let make: @MainActor (_ restoreStateEnabled: Bool) -> GlucoseSource
-    public init(id: String, name: String, sensors: [String] = [],
-                make: @escaping @MainActor (_ restoreStateEnabled: Bool) -> GlucoseSource) {
-        self.id = id; self.name = name; self.sensors = sensors; self.make = make
+    public init(
+        id: String, name: String, sensors: [String] = [],
+        make: @escaping @MainActor (_ restoreStateEnabled: Bool) -> GlucoseSource
+    ) {
+        self.id = id
+        self.name = name
+        self.sensors = sensors
+        self.make = make
     }
 }

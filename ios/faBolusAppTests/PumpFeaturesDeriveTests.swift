@@ -15,10 +15,10 @@ struct PumpFeaturesDeriveTests {
     private func cargo(_ v: UInt64) -> [UInt8] { (0..<8).map { UInt8((v >> (UInt64($0) * 8)) & 0xFF) } }
 
     // Named bits from PumpFeaturesV1Response.
-    private let controlIQ: UInt64 = 1024          // bit 10
-    private let basalLimit: UInt64 = 262144       // bit 18
-    private let controlIQPro: UInt64 = 8388608    // bit 23
-    private let blePumpControl: UInt64 = 268435456 // bit 28
+    private let controlIQ: UInt64 = 1024  // bit 10
+    private let basalLimit: UInt64 = 262144  // bit 18
+    private let controlIQPro: UInt64 = 8388608  // bit 23
+    private let blePumpControl: UInt64 = 268435456  // bit 28
 
     @Test func featureBitsMapEachAccessor() {
         let r = PumpFeaturesV1Response(cargo: cargo(controlIQ | blePumpControl))  // basalLimit + Pro NOT set
@@ -27,7 +27,7 @@ struct PumpFeaturesDeriveTests {
         #expect(bits.blePumpControlSupported)
         #expect(!bits.basalLimitSupported)
         #expect(!bits.controlIQProSupported)
-        #expect(bits.controllerVariant == .controlIQ)   // CIQ present, Pro absent ⇒ classic
+        #expect(bits.controllerVariant == .controlIQ)  // CIQ present, Pro absent ⇒ classic
     }
 
     @Test func controlIQProBitDiscriminatesTheControllerVariant() {
@@ -37,7 +37,8 @@ struct PumpFeaturesDeriveTests {
         #expect(bits.controlIQProSupported)
         #expect(bits.controllerVariant == .controlIQPro)
         // No CIQ bit at all ⇒ no controller, regardless of other bits.
-        #expect(TandemBackend.featureBits(from: PumpFeaturesV1Response(cargo: cargo(blePumpControl)))
+        #expect(
+            TandemBackend.featureBits(from: PumpFeaturesV1Response(cargo: cargo(blePumpControl)))
                 .controllerVariant == .none)
     }
 
@@ -53,10 +54,10 @@ struct PumpFeaturesDeriveTests {
         let caps = PumpCapabilities.derive(isMobi: true, features: TandemBackend.featureBits(from: r))
         #expect(caps.supportsControlIQSettings)
         #expect(!caps.supportsLimits)
-        #expect(caps.supportsModes)   // preset floor preserved
+        #expect(caps.supportsModes)  // preset floor preserved
 
         // Same pump reporting no BLE pump control → all advanced control collapses.
-        let noControl = PumpFeaturesV1Response(cargo: cargo(controlIQ | basalLimit)) // bit 28 clear
+        let noControl = PumpFeaturesV1Response(cargo: cargo(controlIQ | basalLimit))  // bit 28 clear
         let capsNoControl = PumpCapabilities.derive(
             isMobi: true, features: TandemBackend.featureBits(from: noControl))
         #expect(!capsNoControl.supportsAnyAdvancedControl)

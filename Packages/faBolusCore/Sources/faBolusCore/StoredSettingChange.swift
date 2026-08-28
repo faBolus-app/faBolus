@@ -12,9 +12,9 @@ import Foundation
 /// §13 provenance vocabulary (chosen over §2.1's "unchanged": a consensus default IS a provenance; the
 /// absence of a record is what "unchanged" means).
 public enum SettingProvenance: String, Codable, Sendable, CaseIterable {
-    case consensusDefault   // a published/guideline default the user never changed
-    case clinicianSet       // set with clinical guidance (the §2.1 clinician tier)
-    case selfSet            // the user set it themselves
+    case consensusDefault  // a published/guideline default the user never changed
+    case clinicianSet  // set with clinical guidance (the §2.1 clinician tier)
+    case selfSet  // the user set it themselves
 
     /// §2.1(2) B1(a) — the SF Symbol paired with `ClinicianTierAck.label(for:)` so the provenance badge
     /// carries a non-color cue too (a book for a published default, a stethoscope for clinician-set, a
@@ -22,8 +22,8 @@ public enum SettingProvenance: String, Codable, Sendable, CaseIterable {
     public var symbolName: String {
         switch self {
         case .consensusDefault: return "book.closed"
-        case .clinicianSet:     return "stethoscope"
-        case .selfSet:          return "person.fill"
+        case .clinicianSet: return "stethoscope"
+        case .selfSet: return "person.fill"
         }
     }
 }
@@ -65,10 +65,15 @@ public struct StoredSettingChange: Codable, Sendable, Equatable {
     public var provenance: SettingProvenance
     public var atSeconds: Int
 
-    public init(key: SettingKey, before: BackupValue?, after: BackupValue,
-                provenance: SettingProvenance, atSeconds: Int) {
-        self.key = key; self.before = before; self.after = after
-        self.provenance = provenance; self.atSeconds = atSeconds
+    public init(
+        key: SettingKey, before: BackupValue?, after: BackupValue,
+        provenance: SettingProvenance, atSeconds: Int
+    ) {
+        self.key = key
+        self.before = before
+        self.after = after
+        self.provenance = provenance
+        self.atSeconds = atSeconds
     }
 }
 
@@ -84,9 +89,13 @@ public struct SettingChangeLog: Codable, Sendable, Equatable {
     /// Chronological audit trail (oldest first), bounded by the store's cap.
     public var log: [StoredSettingChange]
 
-    public init(version: Int = SettingChangeLog.currentVersion,
-                latest: [StoredSettingChange] = [], log: [StoredSettingChange] = []) {
-        self.version = version; self.latest = latest; self.log = log
+    public init(
+        version: Int = SettingChangeLog.currentVersion,
+        latest: [StoredSettingChange] = [], log: [StoredSettingChange] = []
+    ) {
+        self.version = version
+        self.latest = latest
+        self.log = log
     }
 
     /// Record a change: replace the key's `latest` entry and append to the audit log (trimming the oldest
@@ -140,11 +149,15 @@ public struct SettingChangeLog: Codable, Sendable, Equatable {
         let iso = ISO8601DateFormatter()
         iso.timeZone = TimeZone(identifier: "UTC")
         let entries = history()
-        var lines = ["faBolus setting change log — \(entries.count) entr\(entries.count == 1 ? "y" : "ies") (newest first)"]
+        var lines = [
+            "faBolus setting change log — \(entries.count) entr\(entries.count == 1 ? "y" : "ies") (newest first)"
+        ]
         for c in entries {
             let when = iso.string(from: Date(timeIntervalSince1970: TimeInterval(c.atSeconds)))
             let before = c.before?.displayString ?? "—"
-            lines.append("\(when) · \(c.key.field): \(before) → \(c.after.displayString) (\(ClinicianTierAck.label(for: c.provenance)))")
+            lines.append(
+                "\(when) · \(c.key.field): \(before) → \(c.after.displayString) (\(ClinicianTierAck.label(for: c.provenance)))"
+            )
         }
         return lines.joined(separator: "\n")
     }

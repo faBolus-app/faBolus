@@ -5,13 +5,14 @@ final class CoreModelTests: XCTestCase {
 
     func testGlucoseStaleness() {
         var s = PumpSnapshot()
-        XCTAssertFalse(s.isGlucoseStale)                 // no glucose at all → not "stale" per rule
-        s.glucose = 120; s.glucoseDate = nil
-        XCTAssertTrue(s.isGlucoseStale)                  // have a value but unknown age → stale
+        XCTAssertFalse(s.isGlucoseStale)  // no glucose at all → not "stale" per rule
+        s.glucose = 120
+        s.glucoseDate = nil
+        XCTAssertTrue(s.isGlucoseStale)  // have a value but unknown age → stale
         s.glucoseDate = Date()
-        XCTAssertFalse(s.isGlucoseStale)                 // fresh
+        XCTAssertFalse(s.isGlucoseStale)  // fresh
         s.glucoseDate = Date().addingTimeInterval(-7 * 60)
-        XCTAssertTrue(s.isGlucoseStale)                  // older than 6 min
+        XCTAssertTrue(s.isGlucoseStale)  // older than 6 min
     }
 
     func testGlucoseRangeBoundaries() {
@@ -55,10 +56,11 @@ final class CoreModelTests: XCTestCase {
 
     func testCapabilitiesFullDefaults() {
         let c = PumpCapabilities.full
-        XCTAssertTrue(c.supportsCarbEntry && c.supportsBolusCancel && c.supportsAlertClear
-                      && c.supportsHistoryBackfill && c.supportsPairing)
+        XCTAssertTrue(
+            c.supportsCarbEntry && c.supportsBolusCancel && c.supportsAlertClear
+                && c.supportsHistoryBackfill && c.supportsPairing)
         let limited = PumpCapabilities(supportsCarbEntry: false)
         XCTAssertFalse(limited.supportsCarbEntry)
-        XCTAssertTrue(limited.supportsBolusCancel)   // others default true
+        XCTAssertTrue(limited.supportsBolusCancel)  // others default true
     }
 }

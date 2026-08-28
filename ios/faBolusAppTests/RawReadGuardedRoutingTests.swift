@@ -66,9 +66,12 @@ struct RawReadGuardedRoutingTests {
         let (backend, _) = makeBackend()
         var dispatched: [UInt8] = []
         backend.onReadDispatchedForTesting = { _, op in dispatched.append(op) }
-        backend.injectStatusFrameForTesting(Self.profileStatusFrame(numberOfProfiles: 2, slotIds: [2, 5, -1, -1, -1, -1]))
-        #expect(dispatched.filter { $0 == idpSettingsOpcode }.count == 2,
-                "each IDPSettingsRequest must now dispatch through the guarded sendStatusRead path (fires onReadDispatchedForTesting)")
+        backend.injectStatusFrameForTesting(
+            Self.profileStatusFrame(numberOfProfiles: 2, slotIds: [2, 5, -1, -1, -1, -1]))
+        #expect(
+            dispatched.filter { $0 == idpSettingsOpcode }.count == 2,
+            "each IDPSettingsRequest must now dispatch through the guarded sendStatusRead path (fires onReadDispatchedForTesting)"
+        )
     }
 
     /// `IDPSettingsResponse` → `IDPSegmentRequest` segment cascade likewise routes through the guarded path.
@@ -78,8 +81,9 @@ struct RawReadGuardedRoutingTests {
         var dispatched: [UInt8] = []
         backend.onReadDispatchedForTesting = { _, op in dispatched.append(op) }
         backend.injectStatusFrameForTesting(Self.idpSettingsFrame(idpId: 5, numberOfProfileSegments: 3))
-        #expect(dispatched.filter { $0 == idpSegmentOpcode }.count == 3,
-                "each IDPSegmentRequest for the viewed profile must dispatch through the guarded path")
+        #expect(
+            dispatched.filter { $0 == idpSegmentOpcode }.count == 3,
+            "each IDPSegmentRequest for the viewed profile must dispatch through the guarded path")
     }
 
     /// The auto-on-connect history-status read (op58, off an unsolicited `TimeSinceResetResponse`) now
@@ -92,8 +96,9 @@ struct RawReadGuardedRoutingTests {
         var dispatched: [UInt8] = []
         backend.onReadDispatchedForTesting = { _, op in dispatched.append(op) }
         backend.injectStatusFrameForTesting(FakePumpTransport.timeResponse())
-        #expect(dispatched.contains(historyStatusOpcode),
-                "the once-per-connection history-status read must dispatch through the guarded path")
+        #expect(
+            dispatched.contains(historyStatusOpcode),
+            "the once-per-connection history-status read must dispatch through the guarded path")
     }
 
     // MARK: - (b) GUARD: a seeded badOpcode now SKIPS these reads (impossible pre-item-4)
@@ -107,20 +112,25 @@ struct RawReadGuardedRoutingTests {
         var skipped: [UInt8] = []
         backend.onReadSkippedForTesting = { _, op in skipped.append(op) }
 
-        backend.injectStatusFrameForTesting(Self.profileStatusFrame(numberOfProfiles: 2, slotIds: [2, 5, -1, -1, -1, -1]))
+        backend.injectStatusFrameForTesting(
+            Self.profileStatusFrame(numberOfProfiles: 2, slotIds: [2, 5, -1, -1, -1, -1]))
 
-        #expect(!fake.sent.contains { $0.opCode == idpSettingsOpcode },
-                "a badOpcode-guarded IDPSettings read must NOT reach the wire — the item-4 reroute now honors badOpcodes")
-        #expect(skipped.filter { $0 == idpSettingsOpcode }.count == 2,
-                "both IDPSettings sends must be SKIPPED by the never-resend guard (graceful self-heal)")
+        #expect(
+            !fake.sent.contains { $0.opCode == idpSettingsOpcode },
+            "a badOpcode-guarded IDPSettings read must NOT reach the wire — the item-4 reroute now honors badOpcodes")
+        #expect(
+            skipped.filter { $0 == idpSettingsOpcode }.count == 2,
+            "both IDPSettings sends must be SKIPPED by the never-resend guard (graceful self-heal)")
     }
 
     /// GRACEFUL: when the read is NOT in `badOpcodes` (the owner's supported pump), the guarded path sends
     /// it exactly as before — proving item 4 never hard-disables a read that works.
     @Test func unseededIdpReadStillReachesTheWire_gracefulWhenSupported() {
         let (backend, fake) = makeBackend()
-        backend.injectStatusFrameForTesting(Self.profileStatusFrame(numberOfProfiles: 1, slotIds: [3, -1, -1, -1, -1, -1]))
-        #expect(fake.sent.contains { $0.opCode == idpSettingsOpcode && Int($0.cargo[0]) == 3 },
-                "an unrejected IDP read still goes out on the wire — the guard only skips a rejected opcode")
+        backend.injectStatusFrameForTesting(
+            Self.profileStatusFrame(numberOfProfiles: 1, slotIds: [3, -1, -1, -1, -1, -1]))
+        #expect(
+            fake.sent.contains { $0.opCode == idpSettingsOpcode && Int($0.cargo[0]) == 3 },
+            "an unrejected IDP read still goes out on the wire — the guard only skips a rejected opcode")
     }
 }

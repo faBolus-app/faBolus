@@ -58,21 +58,27 @@ struct SleepScheduleWriteBoundaryTests {
         let forbidden = ["delivery: true", ".allowDelivery"]
 
         let testFileURL = URL(fileURLWithPath: #filePath)
-        let repoRoot = testFileURL
-            .deletingLastPathComponent()   // drop the filename → .../ios/faBolusAppTests
-            .deletingLastPathComponent()   // → .../ios
-            .deletingLastPathComponent()   // → repo root
+        let repoRoot =
+            testFileURL
+            .deletingLastPathComponent()  // drop the filename → .../ios/faBolusAppTests
+            .deletingLastPathComponent()  // → .../ios
+            .deletingLastPathComponent()  // → repo root
         let tandemBackendURL = repoRoot.appendingPathComponent("ios/faBolus/Data/TandemBackend.swift")
         let source = try String(contentsOf: tandemBackendURL, encoding: .utf8)
 
         let slice = try Self.balancedFunctionBody(signaturePrefix: "func setSleepSchedule(", in: source)
         for symbol in forbidden {
-            #expect(!slice.contains(symbol), "Forbidden delivery-enabling symbol '\(symbol)' found in TandemBackend.setSleepSchedule's body")
+            #expect(
+                !slice.contains(symbol),
+                "Forbidden delivery-enabling symbol '\(symbol)' found in TandemBackend.setSleepSchedule's body")
         }
         // Positive proof (not just an absence-of-forbidden-symbols check): the function DOES send under
         // the non-delivery policy — the scan actually inspects the right thing.
-        #expect(slice.contains("delivery: false"), "TandemBackend.setSleepSchedule must send via sendControl(..., delivery: false)")
-        #expect(slice.contains("sendControl("), "TandemBackend.setSleepSchedule must route through the sendControl funnel")
+        #expect(
+            slice.contains("delivery: false"),
+            "TandemBackend.setSleepSchedule must send via sendControl(..., delivery: false)")
+        #expect(
+            slice.contains("sendControl("), "TandemBackend.setSleepSchedule must route through the sendControl funnel")
     }
 
     /// Locate a function by its declaration-line signature prefix (e.g. `"func foo("`) and return the
@@ -90,8 +96,12 @@ struct SleepScheduleWriteBoundaryTests {
         for line in lines[startIdx...] {
             collected.append(line)
             for ch in line {
-                if ch == "{" { depth += 1; opened = true }
-                else if ch == "}" { depth -= 1 }
+                if ch == "{" {
+                    depth += 1
+                    opened = true
+                } else if ch == "}" {
+                    depth -= 1
+                }
             }
             if opened && depth <= 0 { break }
         }

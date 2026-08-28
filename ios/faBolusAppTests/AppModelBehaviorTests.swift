@@ -57,7 +57,8 @@ struct AppModelBehaviorTests {
         let ledgerURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("appmodel-ledger-\(UUID().uuidString).json")
         let model = AppModel(source: backend, ledgerStoreURL: ledgerURL)
-        let rec = EchoRecorder(); rec.attach(to: model)
+        let rec = EchoRecorder()
+        rec.attach(to: model)
         if connected { await backend.connect() }
         return (model, backend, rec)
     }
@@ -76,8 +77,11 @@ struct AppModelBehaviorTests {
         let ro = s.phoneReadOnly, child = s.childModeEnabled, allowed = s.childAllowed, adv = s.advancedControlEnabled
         let rro = s.remotesReadOnly, clr = s.readOnlyAllowAlertClear
         let mode = s.appMode
-        s.phoneReadOnly = false; s.childModeEnabled = false; s.advancedControlEnabled = true
-        s.remotesReadOnly = false; s.readOnlyAllowAlertClear = false
+        s.phoneReadOnly = false
+        s.childModeEnabled = false
+        s.advancedControlEnabled = true
+        s.remotesReadOnly = false
+        s.readOnlyAllowAlertClear = false
         // P14 S2: baseline Advanced so the mode gate is a no-op for every existing test; a mode test sets
         // it explicitly. Restored below.
         s.appMode = .advanced
@@ -85,12 +89,18 @@ struct AppModelBehaviorTests {
         // clear it so a peer grant set by one test can't leak into the next (the suite is serialized).
         let d = UserDefaults.standard
         let peerPolicies = d.data(forKey: "remotePeerPolicies"), peerQR = d.data(forKey: "remotePeerHighEntropy")
-        d.removeObject(forKey: "remotePeerPolicies"); d.removeObject(forKey: "remotePeerHighEntropy")
+        d.removeObject(forKey: "remotePeerPolicies")
+        d.removeObject(forKey: "remotePeerHighEntropy")
         defer {
-            s.phoneReadOnly = ro; s.childModeEnabled = child; s.childAllowed = allowed
-            s.advancedControlEnabled = adv; s.remotesReadOnly = rro; s.readOnlyAllowAlertClear = clr
+            s.phoneReadOnly = ro
+            s.childModeEnabled = child
+            s.childAllowed = allowed
+            s.advancedControlEnabled = adv
+            s.remotesReadOnly = rro
+            s.readOnlyAllowAlertClear = clr
             s.appMode = mode
-            d.set(peerPolicies, forKey: "remotePeerPolicies"); d.set(peerQR, forKey: "remotePeerHighEntropy")
+            d.set(peerPolicies, forKey: "remotePeerPolicies")
+            d.set(peerQR, forKey: "remotePeerHighEntropy")
         }
         try await body()
     }
@@ -128,7 +138,7 @@ struct AppModelBehaviorTests {
             await model.remoteDeliver(requestId: "d2", carbsGrams: 30, remoteEstimate: dose + 0.5, peerId: "watch")
             #expect(rec.last?.status == .failed)
             #expect(rec.last?.message?.contains("Dose changed") == true)
-            #expect(rec.count(.delivering) == 0)   // never reached the backend
+            #expect(rec.count(.delivering) == 0)  // never reached the backend
         }
     }
 
@@ -158,10 +168,10 @@ struct AppModelBehaviorTests {
     /// rejects (divergence) rather than mislabeling it "No insulin needed" — and the watch never hangs.
     @Test func zeroCarbCorrectionRoutesThroughCarbPathAndRejectsWhenStale() async {
         try? await withCleanSettings {
-            let (model, _, rec) = await makeModel(connected: true)   // mock glucose is stale (no date)
+            let (model, _, rec) = await makeModel(connected: true)  // mock glucose is stale (no date)
             await model.remoteDeliver(requestId: "z1", carbsGrams: 0, remoteEstimate: 1.5, peerId: "watch")
             #expect(rec.last?.status == .failed)
-            #expect(rec.last?.message?.contains("Dose changed") == true)   // carb path, NOT "No insulin needed"
+            #expect(rec.last?.message?.contains("Dose changed") == true)  // carb path, NOT "No insulin needed"
             #expect(rec.count(.delivering) == 0)
         }
     }
@@ -171,9 +181,9 @@ struct AppModelBehaviorTests {
     @Test func zeroCarbCorrectionDeliversWithFreshBG() async {
         try? await withCleanSettings {
             let (model, backend, rec) = await makeModel(connected: true)
-            backend.seedFreshGlucose(260)   // fresh, high → a real correction
+            backend.seedFreshGlucose(260)  // fresh, high → a real correction
             let dose = await model.recommendBolus(carbsGrams: 0, bgMgdl: 260).recommendedUnits
-            #expect(dose > 0)                                          // sanity: a real correction
+            #expect(dose > 0)  // sanity: a real correction
             await model.remoteDeliver(requestId: "z2", carbsGrams: 0, remoteEstimate: dose, peerId: "watch")
             #expect(rec.last?.status == .delivered)
         }
@@ -185,14 +195,15 @@ struct AppModelBehaviorTests {
         try? await withCleanSettings {
             let (model, _, _) = await makeModel()
             let dose = await model.recommendBolus(carbsGrams: 45, bgMgdl: nil).recommendedUnits
-            #expect(dose > 0)   // sanity: 45 g must resolve to a nonzero dose
+            #expect(dose > 0)  // sanity: 45 g must resolve to a nonzero dose
             // A carb request carries NO units (the classic C-02 "confirm 0.00 U" shape).
-            await model.presentRemoteBolus(requestId: "f1", units: 0, carbsGrams: 45,
-                                           remoteEstimate: dose, peerId: "watch")
+            await model.presentRemoteBolus(
+                requestId: "f1", units: 0, carbsGrams: 45,
+                remoteEstimate: dose, peerId: "watch")
             let pending = model.pendingRemoteBolus
             #expect(pending != nil)
-            #expect((pending?.units ?? 0) > 0)                       // never the requested 0
-            #expect(abs((pending?.units ?? -1) - dose) < tol)        // the real frozen dose
+            #expect((pending?.units ?? 0) > 0)  // never the requested 0
+            #expect(abs((pending?.units ?? -1) - dose) < tol)  // the real frozen dose
             #expect(pending?.carbsGrams == 45)
         }
     }
@@ -201,8 +212,9 @@ struct AppModelBehaviorTests {
         try? await withCleanSettings {
             let (model, _, rec) = await makeModel(connected: true)
             let dose = await model.recommendBolus(carbsGrams: 45, bgMgdl: nil).recommendedUnits
-            await model.presentRemoteBolus(requestId: "f2", units: 0, carbsGrams: 45,
-                                           remoteEstimate: dose, peerId: "watch")
+            await model.presentRemoteBolus(
+                requestId: "f2", units: 0, carbsGrams: 45,
+                remoteEstimate: dose, peerId: "watch")
             await model.confirmRemoteBolus()
             #expect(model.pendingRemoteBolus == nil)
             #expect(rec.last?.status == .delivered)
@@ -213,8 +225,9 @@ struct AppModelBehaviorTests {
     @Test func presentMissingEstimateSetsNoPending() async {
         try? await withCleanSettings {
             let (model, _, rec) = await makeModel()
-            await model.presentRemoteBolus(requestId: "f3", units: 0, carbsGrams: 30,
-                                           remoteEstimate: nil, peerId: "watch")
+            await model.presentRemoteBolus(
+                requestId: "f3", units: 0, carbsGrams: 30,
+                remoteEstimate: nil, peerId: "watch")
             #expect(model.pendingRemoteBolus == nil)
             #expect(rec.last?.status == .failed)
         }
@@ -224,8 +237,9 @@ struct AppModelBehaviorTests {
         try? await withCleanSettings {
             let (model, _, rec) = await makeModel()
             let dose = await model.recommendBolus(carbsGrams: 30, bgMgdl: nil).recommendedUnits
-            await model.presentRemoteBolus(requestId: "f4", units: 0, carbsGrams: 30,
-                                           remoteEstimate: dose, peerId: "watch")
+            await model.presentRemoteBolus(
+                requestId: "f4", units: 0, carbsGrams: 30,
+                remoteEstimate: dose, peerId: "watch")
             #expect(model.pendingRemoteBolus != nil)
             model.rejectRemoteBolus()
             #expect(model.pendingRemoteBolus == nil)
@@ -239,12 +253,13 @@ struct AppModelBehaviorTests {
         try? await withCleanSettings {
             let (model, _, _) = await makeModel()
             let dose = await model.recommendBolus(carbsGrams: 30, bgMgdl: nil).recommendedUnits
-            await model.presentRemoteBolus(requestId: "f5", units: 0, carbsGrams: 30,
-                                           remoteEstimate: dose, peerId: "mac")
+            await model.presentRemoteBolus(
+                requestId: "f5", units: 0, carbsGrams: 30,
+                remoteEstimate: dose, peerId: "mac")
             model.clearPendingRemoteBolus(forPeer: "otherPhone")
-            #expect(model.pendingRemoteBolus != nil)   // different peer → untouched
+            #expect(model.pendingRemoteBolus != nil)  // different peer → untouched
             model.clearPendingRemoteBolus(forPeer: "mac")
-            #expect(model.pendingRemoteBolus == nil)    // bound peer → dropped
+            #expect(model.pendingRemoteBolus == nil)  // bound peer → dropped
         }
     }
 
@@ -285,11 +300,13 @@ struct AppModelBehaviorTests {
             var posted2: [NotificationBroker.Message] = []
             m2.notificationSink = { msg, _, _ in posted2.append(msg) }
             let r2 = await m2.deliverWidgetBolus(requestId: "df-indet", units: 1.0)
-            #expect(r2.error != nil)   // "verify on the pump"
-            #expect(posted2.filter { $0.category == .bolusIndeterminate }.count == 1,
-                    "an indeterminate outcome must post exactly one governed .bolusIndeterminate heads-up")
-            #expect(posted2.allSatisfy { $0.category != .bolusDeliveryFailed },
-                    "an indeterminate outcome must never post a delivery-FAILED notification")
+            #expect(r2.error != nil)  // "verify on the pump"
+            #expect(
+                posted2.filter { $0.category == .bolusIndeterminate }.count == 1,
+                "an indeterminate outcome must post exactly one governed .bolusIndeterminate heads-up")
+            #expect(
+                posted2.allSatisfy { $0.category != .bolusDeliveryFailed },
+                "an indeterminate outcome must never post a delivery-FAILED notification")
         }
     }
 
@@ -332,27 +349,33 @@ struct AppModelBehaviorTests {
             // delivery is refused on every remote surface; the phone (local) is untouched.
             AppSettings.shared.remotesReadOnly = true
             for s in remotes {
-                #expect(model.accessDecision(.deliverBolus, from: s, peerId: "mac").reason == .remotesReadOnly,
-                        "deliverBolus on \(s.rawValue) must be remotesReadOnly-blocked (owner decision)")
+                #expect(
+                    model.accessDecision(.deliverBolus, from: s, peerId: "mac").reason == .remotesReadOnly,
+                    "deliverBolus on \(s.rawValue) must be remotesReadOnly-blocked (owner decision)")
             }
-            #expect(model.accessDecision(.deliverBolus, from: .phoneUI).allowed,
-                    "the phone's own bolus is governed by phoneReadOnly, not remotesReadOnly")
+            #expect(
+                model.accessDecision(.deliverBolus, from: .phoneUI).allowed,
+                "the phone's own bolus is governed by phoneReadOnly, not remotesReadOnly")
             // …but cancel + dismiss are `.childOnly` — a safety STOP / low-risk clear survives read-only
             // on every remote surface (never read-only-blocked).
             for s in remotes {
-                #expect(model.accessDecision(.cancelBolus, from: s, peerId: "mac").allowed,
-                        "cancel (safety STOP) must survive remotesReadOnly on \(s.rawValue)")
-                #expect(model.accessDecision(.dismissNotification, from: s, peerId: "mac").allowed,
-                        "dismiss must survive remotesReadOnly on \(s.rawValue)")
+                #expect(
+                    model.accessDecision(.cancelBolus, from: s, peerId: "mac").allowed,
+                    "cancel (safety STOP) must survive remotesReadOnly on \(s.rawValue)")
+                #expect(
+                    model.accessDecision(.dismissNotification, from: s, peerId: "mac").allowed,
+                    "dismiss must survive remotesReadOnly on \(s.rawValue)")
             }
             // The new, MORE restrictive peer invariant (F-3): an authenticated peer is denied EVERY
             // action, including the safety-STOP cancel/dismiss that survive remotesReadOnly on every
             // other remote — there is no possible producer of a permission grant anymore.
             for s: S in [.macPeer, .caregiverPhonePeer] {
-                #expect(model.accessDecision(.deliverBolus, from: s, peerId: "mac").reason == .notPermittedForPeer,
-                        "deliverBolus on \(s.rawValue) must be denied (no possible peer grant)")
-                #expect(!model.accessDecision(.cancelBolus, from: s, peerId: "mac").allowed,
-                        "cancel on \(s.rawValue) must ALSO be denied — an authenticated peer has zero permissions")
+                #expect(
+                    model.accessDecision(.deliverBolus, from: s, peerId: "mac").reason == .notPermittedForPeer,
+                    "deliverBolus on \(s.rawValue) must be denied (no possible peer grant)")
+                #expect(
+                    !model.accessDecision(.cancelBolus, from: s, peerId: "mac").allowed,
+                    "cancel on \(s.rawValue) must ALSO be denied — an authenticated peer has zero permissions")
             }
 
             // Phase 7 (07-04, FEAT-04, D-05, SAFETY): the "Fail-closed: fully locked (child on with
@@ -383,8 +406,9 @@ struct AppModelBehaviorTests {
             // an authenticated peer too (no `requiredPeerPermission` for `.setTempBasal` ⇒ Gate 4 alone
             // already denies it, independent of the mode gate or any peer grant — F-3/Pitfall F).
             for s in S.allCases {
-                #expect(!model.accessDecision(.setTempBasal, from: s, peerId: "mac").allowed,
-                        "setTempBasal must be denied in Simple on \(s.rawValue)")
+                #expect(
+                    !model.accessDecision(.setTempBasal, from: s, peerId: "mac").allowed,
+                    "setTempBasal must be denied in Simple on \(s.rawValue)")
             }
             // On a local surface (everything else open) the reason is specifically the mode gate.
             #expect(model.accessDecision(.setTempBasal, from: .phoneUI).reason == .modeDisallowed(required: .advanced))
@@ -395,12 +419,14 @@ struct AppModelBehaviorTests {
             // mode gate this test exercises. Excluded from this loop; pinned separately right below.
             #expect(model.accessDecision(.deliverBolus, from: .phoneUI).allowed)
             for s in S.allCases where !s.isAuthenticatedPeer {
-                #expect(model.accessDecision(.cancelBolus, from: s, peerId: "mac").allowed,
-                        "cancel (safety STOP) must survive Simple mode on \(s.rawValue)")
+                #expect(
+                    model.accessDecision(.cancelBolus, from: s, peerId: "mac").allowed,
+                    "cancel (safety STOP) must survive Simple mode on \(s.rawValue)")
             }
             for s: S in [.macPeer, .caregiverPhonePeer] {
-                #expect(!model.accessDecision(.cancelBolus, from: s, peerId: "mac").allowed,
-                        "cancel on \(s.rawValue) is denied by Gate 4 (no possible peer grant), not the mode gate")
+                #expect(
+                    !model.accessDecision(.cancelBolus, from: s, peerId: "mac").allowed,
+                    "cancel on \(s.rawValue) is denied by Gate 4 (no possible peer grant), not the mode gate")
             }
             // Advanced mode restores the advanced write (proves the wiring reads the live value, not a const).
             AppSettings.shared.appMode = .advanced
@@ -446,7 +472,7 @@ struct AppModelBehaviorTests {
     /// — even on a Mobi with the capability — and allowed once it is on.
     @Test func controlWriteBlockedAtFunnelWhenAdvancedControlOptInOff() async {
         try? await withCleanSettings {
-            let (m, _, _) = await makeModel(connected: true)   // MockBackend: Mobi + .mobiAdvanced
+            let (m, _, _) = await makeModel(connected: true)  // MockBackend: Mobi + .mobiAdvanced
             AppSettings.shared.advancedControlEnabled = false
             #expect(m.accessDecision(.setTempBasal, from: .phoneUI).reason == .capabilityUnavailable)
             AppSettings.shared.advancedControlEnabled = true
@@ -472,7 +498,7 @@ struct AppModelBehaviorTests {
     /// backend write.
     @Test func inverseControlIQPreconditionsRefusedAtFunnel() async {
         try? await withCleanSettings {
-            let (m, backend, _) = await makeModel(connected: true)   // MockBackend defaults Control-IQ ON
+            let (m, backend, _) = await makeModel(connected: true)  // MockBackend defaults Control-IQ ON
             AppSettings.shared.advancedControlEnabled = true
 
             // Temp rate while Control-IQ is ON → refused with the temp-rate reason.
@@ -497,7 +523,7 @@ struct AppModelBehaviorTests {
     /// build (never in the default build or CI, which always builds with the flag off).
     @Test func inverseControlIQPreconditionOverturnedUnderExperimentalFlag() async {
         try? await withCleanSettings {
-            let (m, backend, _) = await makeModel(connected: true)   // MockBackend defaults Control-IQ ON
+            let (m, backend, _) = await makeModel(connected: true)  // MockBackend defaults Control-IQ ON
             AppSettings.shared.advancedControlEnabled = true
 
             // Temp rate while Control-IQ is ON → the CIQ-off refusal does NOT fire; the write reaches
@@ -519,13 +545,13 @@ struct AppModelBehaviorTests {
     ///   reaches the pump — even with an acknowledgment present, the compat check runs first.
     @Test func controlIQConfigCompatibilityRefusedAtFunnel() async {
         try? await withCleanSettings {
-            let (m, backend, _) = await makeModel(connected: true)   // Mobi, .mobiAdvanced caps
-            #expect(backend.snapshot.controllerVariant == .none)     // bits unread — must NOT block
+            let (m, backend, _) = await makeModel(connected: true)  // Mobi, .mobiAdvanced caps
+            #expect(backend.snapshot.controllerVariant == .none)  // bits unread — must NOT block
             m.acknowledgeUnverifiedTherapy()
             await m.setControlIQ(enabled: false, weightLbs: 150, totalDailyInsulinUnits: 40)
             #expect(m.lastError == nil)
-            #expect(backend.controlWriteCount == 1)                  // reached the pump
-            #expect(backend.snapshot.controlIQEnabled == false)      // and applied
+            #expect(backend.controlWriteCount == 1)  // reached the pump
+            #expect(backend.snapshot.controlIQEnabled == false)  // and applied
 
             // t:slim: not remotely configurable → refused before the funnel, nothing reaches the pump.
             let tslim = MockBackend(isMobi: false)
@@ -533,13 +559,15 @@ struct AppModelBehaviorTests {
                 .appendingPathComponent("s11-\(UUID().uuidString).json")
             let mt = AppModel(source: tslim, ledgerStoreURL: url)
             await tslim.connect()
-            mt.acknowledgeUnverifiedTherapy()   // present on purpose: the compat pre-flight still wins
+            mt.acknowledgeUnverifiedTherapy()  // present on purpose: the compat pre-flight still wins
             await mt.setControlIQ(enabled: true, weightLbs: 150, totalDailyInsulinUnits: 40)
-            #expect(mt.lastError == ControlIQPrecondition.configBlockReason(
-                supportsControlIQConfig: tslim.capabilities.supportsControlIQSettings,
-                controllerVariant: tslim.snapshot.controllerVariant))
-            #expect(tslim.controlWriteCount == 0)                    // never reached the pump
-            #expect(mt.hasRecentUnverifiedAck)                       // ack NOT consumed (blocked before the funnel)
+            #expect(
+                mt.lastError
+                    == ControlIQPrecondition.configBlockReason(
+                        supportsControlIQConfig: tslim.capabilities.supportsControlIQSettings,
+                        controllerVariant: tslim.snapshot.controllerVariant))
+            #expect(tslim.controlWriteCount == 0)  // never reached the pump
+            #expect(mt.hasRecentUnverifiedAck)  // ack NOT consumed (blocked before the funnel)
         }
     }
 
@@ -551,22 +579,22 @@ struct AppModelBehaviorTests {
             let iob0 = backend.snapshot.iobUnits
             await model.remoteDeliver(requestId: "i1", units: 1.0, peerId: "watch")
             let iobAfterFirst = backend.snapshot.iobUnits
-            await model.remoteDeliver(requestId: "i1", units: 1.0, peerId: "watch")   // exact duplicate
+            await model.remoteDeliver(requestId: "i1", units: 1.0, peerId: "watch")  // exact duplicate
             let iobAfterReplay = backend.snapshot.iobUnits
             // MockBackend adds `units` to IOB on each real delivery; a replay must not deliver again.
-            #expect(iobAfterFirst > iob0 + 0.9)                          // first delivery happened
-            #expect(abs(iobAfterReplay - iobAfterFirst) < 0.05)          // replay did NOT deliver
-            #expect(rec.count(.delivering) == 1)                          // backend touched exactly once
-            #expect(rec.last?.status == .delivered)                       // replay re-echoes the terminal result
+            #expect(iobAfterFirst > iob0 + 0.9)  // first delivery happened
+            #expect(abs(iobAfterReplay - iobAfterFirst) < 0.05)  // replay did NOT deliver
+            #expect(rec.count(.delivering) == 1)  // backend touched exactly once
+            #expect(rec.last?.status == .delivered)  // replay re-echoes the terminal result
         }
     }
 
     @Test func sameIdDifferentDoseFailsClosed() async {
         try? await withCleanSettings {
             let (model, _, rec) = await makeModel(connected: true)
-            await model.remoteDeliver(requestId: "i2", units: 1.0, peerId: "watch")   // delivers
+            await model.remoteDeliver(requestId: "i2", units: 1.0, peerId: "watch")  // delivers
             #expect(rec.last?.status == .delivered)
-            await model.remoteDeliver(requestId: "i2", units: 2.0, peerId: "watch")   // same id, different dose
+            await model.remoteDeliver(requestId: "i2", units: 2.0, peerId: "watch")  // same id, different dose
             #expect(rec.last?.status == .failed)
             #expect(rec.last?.message?.lowercased().contains("different dose") == true)
         }
@@ -584,8 +612,8 @@ struct AppModelBehaviorTests {
             await model.remoteDeliver(requestId: "u1", carbsGrams: 30, remoteEstimate: dose, peerId: "watch")
             #expect(rec.last?.status == .failed)
             #expect(rec.last?.message?.lowercased().contains("not verified") == true)
-            #expect(rec.count(.delivering) == 0)                       // never reached the backend
-            #expect(abs(backend.snapshot.iobUnits - iob0) < tol)       // nothing delivered
+            #expect(rec.count(.delivering) == 0)  // never reached the backend
+            #expect(abs(backend.snapshot.iobUnits - iob0) < tol)  // nothing delivered
         }
     }
 
@@ -596,13 +624,13 @@ struct AppModelBehaviorTests {
             let (model, backend, rec) = await makeModel(connected: true)
             backend.forceIndeterminateNextDelivery = true
             await model.remoteDeliver(requestId: "x1", units: 2.0, peerId: "watch")
-            #expect(rec.last?.status == .unknown)                      // NOT .failed
+            #expect(rec.last?.status == .unknown)  // NOT .failed
             #expect(rec.count(.delivered) == 0)
             let deliveringAfterFirst = rec.count(.delivering)
             // A retry of the SAME request must not re-deliver (ledger is indeterminate, not terminal).
             await model.remoteDeliver(requestId: "x1", units: 2.0, peerId: "watch")
-            #expect(rec.count(.delivering) == deliveringAfterFirst)    // no new delivery attempt
-            #expect(rec.count(.delivered) == 0)                        // still never delivered
+            #expect(rec.count(.delivering) == deliveringAfterFirst)  // no new delivery attempt
+            #expect(rec.count(.delivered) == 0)  // still never delivered
         }
     }
 
@@ -613,20 +641,24 @@ struct AppModelBehaviorTests {
             // Two AppModels sharing ONE ledger file = the same install across a relaunch.
             let sharedURL = URL(fileURLWithPath: NSTemporaryDirectory())
                 .appendingPathComponent("shared-ledger-\(UUID().uuidString).json")
-            let backend1 = MockBackend(); await backend1.connect()
+            let backend1 = MockBackend()
+            await backend1.connect()
             let model1 = AppModel(source: backend1, ledgerStoreURL: sharedURL)
-            let rec1 = EchoRecorder(); rec1.attach(to: model1)
+            let rec1 = EchoRecorder()
+            rec1.attach(to: model1)
             await model1.remoteDeliver(requestId: "dur1", units: 1.5, peerId: "watch")
             #expect(rec1.last?.status == .delivered)
 
             // "Relaunch": a fresh model loads the persisted ledger and must NOT re-deliver dur1.
-            let backend2 = MockBackend(); await backend2.connect()
+            let backend2 = MockBackend()
+            await backend2.connect()
             let iob0 = backend2.snapshot.iobUnits
             let model2 = AppModel(source: backend2, ledgerStoreURL: sharedURL)
-            let rec2 = EchoRecorder(); rec2.attach(to: model2)
+            let rec2 = EchoRecorder()
+            rec2.attach(to: model2)
             await model2.remoteDeliver(requestId: "dur1", units: 1.5, peerId: "watch")
-            #expect(rec2.count(.delivering) == 0)                      // no second delivery after relaunch
-            #expect(abs(backend2.snapshot.iobUnits - iob0) < tol)      // backend2 untouched
+            #expect(rec2.count(.delivering) == 0)  // no second delivery after relaunch
+            #expect(abs(backend2.snapshot.iobUnits - iob0) < tol)  // backend2 untouched
         }
     }
 
@@ -639,11 +671,12 @@ struct AppModelBehaviorTests {
         try? await withCleanSettings {
             let (model, backend, _) = await makeModel(connected: true)
             #expect(!model.hasRecentUnverifiedAck)
-            await model.createProfile(name: "Test", basalRateUnitsPerHour: 0.8, carbRatioGramsPerUnit: 10,
-                                      isf: 40, targetBg: 110, insulinDurationMinutes: 300)
-            #expect(backend.idpWriteCount == 0)                        // backend never hit
-            #expect(model.lastError != nil)                            // fail-closed reason surfaced
-            #expect(model.snapshot.profiles.isEmpty)                   // and no profile appeared
+            await model.createProfile(
+                name: "Test", basalRateUnitsPerHour: 0.8, carbRatioGramsPerUnit: 10,
+                isf: 40, targetBg: 110, insulinDurationMinutes: 300)
+            #expect(backend.idpWriteCount == 0)  // backend never hit
+            #expect(model.lastError != nil)  // fail-closed reason surfaced
+            #expect(model.snapshot.profiles.isEmpty)  // and no profile appeared
         }
     }
 
@@ -654,17 +687,19 @@ struct AppModelBehaviorTests {
             let (model, backend, _) = await makeModel(connected: true)
             model.acknowledgeUnverifiedTherapy()
             #expect(model.hasRecentUnverifiedAck)
-            await model.createProfile(name: "Test", basalRateUnitsPerHour: 0.8, carbRatioGramsPerUnit: 10,
-                                      isf: 40, targetBg: 110, insulinDurationMinutes: 300)
-            #expect(backend.idpWriteCount == 1)                        // reached the backend once
+            await model.createProfile(
+                name: "Test", basalRateUnitsPerHour: 0.8, carbRatioGramsPerUnit: 10,
+                isf: 40, targetBg: 110, insulinDurationMinutes: 300)
+            #expect(backend.idpWriteCount == 1)  // reached the backend once
             #expect(model.lastError == nil)
             #expect(model.snapshot.profiles.count == 1)
 
             // One-shot: the ack was consumed, so the next write is refused again (no accidental repeat).
             #expect(!model.hasRecentUnverifiedAck)
-            await model.createProfile(name: "Test2", basalRateUnitsPerHour: 0.8, carbRatioGramsPerUnit: 10,
-                                      isf: 40, targetBg: 110, insulinDurationMinutes: 300)
-            #expect(backend.idpWriteCount == 1)                        // still only the first write
+            await model.createProfile(
+                name: "Test2", basalRateUnitsPerHour: 0.8, carbRatioGramsPerUnit: 10,
+                isf: 40, targetBg: 110, insulinDurationMinutes: 300)
+            #expect(backend.idpWriteCount == 1)  // still only the first write
             #expect(model.lastError != nil)
         }
     }
@@ -703,23 +738,52 @@ struct AppModelBehaviorTests {
         let idp: @MainActor (MockBackend) -> Int = { $0.idpWriteCount }
         let ctl: @MainActor (MockBackend) -> Int = { $0.controlWriteCount }
         let entries: [(String, @MainActor (AppModel) async -> Void, @MainActor (MockBackend) -> Int)] = [
-            ("createProfile",       { await $0.createProfile(name: "P", basalRateUnitsPerHour: 0.8, carbRatioGramsPerUnit: 10, isf: 40, targetBg: 110, insulinDurationMinutes: 300) }, idp),
-            ("setActiveProfile",    { await $0.setActiveProfile(idpId: 1) }, idp),
-            ("renameProfile",       { await $0.renameProfile(idpId: 1, name: "New") }, idp),
-            ("deleteProfile",       { await $0.deleteProfile(idpId: 1) }, idp),
-            ("addProfileSegment",   { await $0.addProfileSegment(idpId: 1, startTimeMinutes: 60, basalRateUnitsPerHour: 0.8, carbRatioGramsPerUnit: 10, isf: 40, targetBg: 110) }, idp),
-            ("modifyProfileSegment",{ await $0.modifyProfileSegment(idpId: 1, segmentIndex: 0, startTimeMinutes: 0, basalRateUnitsPerHour: 0.8, carbRatioGramsPerUnit: 10, isf: 40, targetBg: 110) }, idp),
-            ("deleteProfileSegment",{ await $0.deleteProfileSegment(idpId: 1, segmentIndex: 0) }, idp),
-            ("setCgmHighLowAlert",  { await $0.setCgmHighLowAlert(alertType: 0, thresholdMgdl: 180, repeatMinutes: 0, enabled: true) }, idp),
-            ("setControlIQ",        { await $0.setControlIQ(enabled: true, weightLbs: 150, totalDailyInsulinUnits: 40) }, ctl),
-            ("setMaxBolus",         { await $0.setMaxBolus(units: 10) }, ctl),
-            ("setMaxBasal",         { await $0.setMaxBasal(unitsPerHour: 3) }, ctl),
-            ("setSleepSchedule",    { await $0.setSleepSchedule(slot: 0, enabled: true, activeDays: 1, startMinute: 1320, endMinute: 360) }, ctl),
+            (
+                "createProfile",
+                {
+                    await $0.createProfile(
+                        name: "P", basalRateUnitsPerHour: 0.8, carbRatioGramsPerUnit: 10, isf: 40, targetBg: 110,
+                        insulinDurationMinutes: 300)
+                }, idp
+            ),
+            ("setActiveProfile", { await $0.setActiveProfile(idpId: 1) }, idp),
+            ("renameProfile", { await $0.renameProfile(idpId: 1, name: "New") }, idp),
+            ("deleteProfile", { await $0.deleteProfile(idpId: 1) }, idp),
+            (
+                "addProfileSegment",
+                {
+                    await $0.addProfileSegment(
+                        idpId: 1, startTimeMinutes: 60, basalRateUnitsPerHour: 0.8, carbRatioGramsPerUnit: 10, isf: 40,
+                        targetBg: 110)
+                }, idp
+            ),
+            (
+                "modifyProfileSegment",
+                {
+                    await $0.modifyProfileSegment(
+                        idpId: 1, segmentIndex: 0, startTimeMinutes: 0, basalRateUnitsPerHour: 0.8,
+                        carbRatioGramsPerUnit: 10, isf: 40, targetBg: 110)
+                }, idp
+            ),
+            ("deleteProfileSegment", { await $0.deleteProfileSegment(idpId: 1, segmentIndex: 0) }, idp),
+            (
+                "setCgmHighLowAlert",
+                { await $0.setCgmHighLowAlert(alertType: 0, thresholdMgdl: 180, repeatMinutes: 0, enabled: true) }, idp
+            ),
+            ("setControlIQ", { await $0.setControlIQ(enabled: true, weightLbs: 150, totalDailyInsulinUnits: 40) }, ctl),
+            ("setMaxBolus", { await $0.setMaxBolus(units: 10) }, ctl),
+            ("setMaxBasal", { await $0.setMaxBasal(unitsPerHour: 3) }, ctl),
+            (
+                "setSleepSchedule",
+                { await $0.setSleepSchedule(slot: 0, enabled: true, activeDays: 1, startMinute: 1320, endMinute: 360) },
+                ctl
+            )
         ]
         // R3-F / P14 S6: these entries must equal the declared ack-gated set EXACTLY — a new `.unverifiedAck`
         // case added to `GatedPumpWrite` (or one removed here) fails this, so the test and the authoritative
         // declared set that seeds P8 cannot silently drift apart.
-        #expect(Set(entries.map(\.0)) == Set(GatedPumpWrite.allCases.filter { $0.gate == .unverifiedAck }.map(\.rawValue)))
+        #expect(
+            Set(entries.map(\.0)) == Set(GatedPumpWrite.allCases.filter { $0.gate == .unverifiedAck }.map(\.rawValue)))
         for (name, invoke, count) in entries {
             try? await withCleanSettings {
                 let (model, backend, _) = await makeModel(connected: true)
@@ -747,14 +811,15 @@ struct AppModelBehaviorTests {
     @Test func frozenIobIsDeliveredNotLiveIob() async {
         try? await withCleanSettings {
             let (model, backend, _) = await makeModel(connected: true)
-            backend.setLiveIob(2.0)                          // IOB at approval time
+            backend.setLiveIob(2.0)  // IOB at approval time
             // Glucose is stale in the mock → carbs-only dose 30/10 = 3.0 U (IOB doesn't move a carbs-only
             // dose), so the estimate 3.0 clears the divergence guard regardless of IOB.
-            await model.presentRemoteBolus(requestId: "fb04", units: 0, carbsGrams: 30, remoteEstimate: 3.0, peerId: "watch")
-            #expect(model.pendingRemoteBolus != nil)         // frozen + awaiting confirmation
-            backend.setLiveIob(0.1)                          // live IOB drops AFTER the freeze
+            await model.presentRemoteBolus(
+                requestId: "fb04", units: 0, carbsGrams: 30, remoteEstimate: 3.0, peerId: "watch")
+            #expect(model.pendingRemoteBolus != nil)  // frozen + awaiting confirmation
+            backend.setLiveIob(0.1)  // live IOB drops AFTER the freeze
             await model.confirmRemoteBolus()
-            #expect(backend.lastDeliver?.iob == 2.0)         // delivered the FROZEN IOB, not live 0.1
+            #expect(backend.lastDeliver?.iob == 2.0)  // delivered the FROZEN IOB, not live 0.1
             #expect(backend.lastDeliver?.carbs == 30)
         }
     }
@@ -764,7 +829,8 @@ struct AppModelBehaviorTests {
         try? await withCleanSettings {
             let (model, backend, _) = await makeModel(connected: true)
             backend.setLiveIob(0.0)
-            await model.presentRemoteBolus(requestId: "fb04z", units: 0, carbsGrams: 30, remoteEstimate: 3.0, peerId: "watch")
+            await model.presentRemoteBolus(
+                requestId: "fb04z", units: 0, carbsGrams: 30, remoteEstimate: 3.0, peerId: "watch")
             backend.setLiveIob(5.0)
             await model.confirmRemoteBolus()
             #expect(backend.lastDeliver?.iob == 0.0)
@@ -780,29 +846,33 @@ struct AppModelBehaviorTests {
         try? await withCleanSettings {
             let sharedURL = URL(fileURLWithPath: NSTemporaryDirectory())
                 .appendingPathComponent("p0-block-\(UUID().uuidString).json")
-            let backend1 = MockBackend(); await backend1.connect()
+            let backend1 = MockBackend()
+            await backend1.connect()
             let model1 = AppModel(source: backend1, ledgerStoreURL: sharedURL)
-            let rec1 = EchoRecorder(); rec1.attach(to: model1)
+            let rec1 = EchoRecorder()
+            rec1.attach(to: model1)
             backend1.forceIndeterminateNextDelivery = true
             await model1.remoteDeliver(requestId: "p0a", units: 2.0, peerId: "watch")
             #expect(rec1.last?.status == .unknown)
-            #expect(model1.deliveryGloballyBlocked)                     // same-session block is up
+            #expect(model1.deliveryGloballyBlocked)  // same-session block is up
             let assignedId = backend1.lastAssignedBolusId
-            #expect(assignedId != nil)                                  // id was persisted before initiate
+            #expect(assignedId != nil)  // id was persisted before initiate
 
             // A DIFFERENT remote request is now refused (not just the same id).
             let iob1 = backend1.snapshot.iobUnits
             await model1.remoteDeliver(requestId: "p0b", units: 1.0, peerId: "watch")
             #expect(rec1.count(.delivered) == 0)
-            #expect(abs(backend1.snapshot.iobUnits - iob1) < tol)       // nothing delivered
+            #expect(abs(backend1.snapshot.iobUnits - iob1) < tol)  // nothing delivered
 
             // "Relaunch": a fresh model loads the durable ledger. The id-bearing record can't reconcile
             // (pump has no matching result), so the GLOBAL block must persist across the restart.
-            let backend2 = MockBackend(); await backend2.connect()
+            let backend2 = MockBackend()
+            await backend2.connect()
             let model2 = AppModel(source: backend2, ledgerStoreURL: sharedURL)
-            let rec2 = EchoRecorder(); rec2.attach(to: model2)
-            await model2.reconcileUnresolvedDeliveries()               // deterministic (init also schedules it)
-            #expect(model2.deliveryGloballyBlocked)                     // relaunch cannot erase the block
+            let rec2 = EchoRecorder()
+            rec2.attach(to: model2)
+            await model2.reconcileUnresolvedDeliveries()  // deterministic (init also schedules it)
+            #expect(model2.deliveryGloballyBlocked)  // relaunch cannot erase the block
 
             // Local delivery after relaunch is blocked too.
             let iob2 = backend2.snapshot.iobUnits
@@ -818,7 +888,8 @@ struct AppModelBehaviorTests {
         try? await withCleanSettings {
             let sharedURL = URL(fileURLWithPath: NSTemporaryDirectory())
                 .appendingPathComponent("p0-recon-\(UUID().uuidString).json")
-            let backend1 = MockBackend(); await backend1.connect()
+            let backend1 = MockBackend()
+            await backend1.connect()
             let model1 = AppModel(source: backend1, ledgerStoreURL: sharedURL)
             backend1.forceIndeterminateNextDelivery = true
             await model1.remoteDeliver(requestId: "p0c", units: 2.0, peerId: "watch")
@@ -826,12 +897,14 @@ struct AppModelBehaviorTests {
             #expect(model1.deliveryGloballyBlocked)
 
             // Relaunch + the pump now reports that exact bolus id as delivered.
-            let backend2 = MockBackend(); await backend2.connect()
+            let backend2 = MockBackend()
+            await backend2.connect()
             backend2.reconcileResultsById[id] = .resolved(deliveredUnits: 2.0, cancelled: false)
             let model2 = AppModel(source: backend2, ledgerStoreURL: sharedURL)
-            let rec2 = EchoRecorder(); rec2.attach(to: model2)
+            let rec2 = EchoRecorder()
+            rec2.attach(to: model2)
             await model2.reconcileUnresolvedDeliveries()
-            #expect(!model2.deliveryGloballyBlocked)                    // authoritative match released it
+            #expect(!model2.deliveryGloballyBlocked)  // authoritative match released it
 
             // Delivery works again.
             await model2.remoteDeliver(requestId: "p0d", units: 1.0, peerId: "watch")
@@ -848,14 +921,15 @@ struct AppModelBehaviorTests {
             // Hand-craft a persisted ledger with an interrupted (no-id) delivering entry.
             var ledger = RemoteBolusLedger()
             _ = ledger.begin(peerId: "local", requestId: "crashed1", doseKey: "u:1")
-            ledger.markDelivering(peerId: "local", requestId: "crashed1")   // no bolus id
+            ledger.markDelivering(peerId: "local", requestId: "crashed1")  // no bolus id
             try RemoteBolusLedgerStore(url: sharedURL).save(ledger)
 
-            let backend = MockBackend(); await backend.connect()
+            let backend = MockBackend()
+            await backend.connect()
             let model = AppModel(source: backend, ledgerStoreURL: sharedURL)
-            #expect(model.deliveryGloballyBlocked)                      // blocked on load (fail safe)
+            #expect(model.deliveryGloballyBlocked)  // blocked on load (fail safe)
             await model.reconcileUnresolvedDeliveries()
-            #expect(!model.deliveryGloballyBlocked)                     // no-id ⇒ never sent ⇒ cleared
+            #expect(!model.deliveryGloballyBlocked)  // no-id ⇒ never sent ⇒ cleared
         }
     }
 
@@ -870,10 +944,11 @@ struct AppModelBehaviorTests {
             ledger.markDelivering(peerId: "watch", requestId: "sent1", bolusId: 7777)
             try RemoteBolusLedgerStore(url: sharedURL).save(ledger)
 
-            let backend = MockBackend(); await backend.connect()   // no reconcileResultsById[7777] ⇒ unavailable
+            let backend = MockBackend()
+            await backend.connect()  // no reconcileResultsById[7777] ⇒ unavailable
             let model = AppModel(source: backend, ledgerStoreURL: sharedURL)
             await model.reconcileUnresolvedDeliveries()
-            #expect(model.deliveryGloballyBlocked)                      // stays blocked; outcome unknown
+            #expect(model.deliveryGloballyBlocked)  // stays blocked; outcome unknown
         }
     }
 
@@ -885,18 +960,19 @@ struct AppModelBehaviorTests {
                 .appendingPathComponent("p0-corrupt-\(UUID().uuidString).json")
             try? Data("{ this is not valid ledger json".utf8).write(to: sharedURL)
 
-            let backend = MockBackend(); await backend.connect()
+            let backend = MockBackend()
+            await backend.connect()
             let model = AppModel(source: backend, ledgerStoreURL: sharedURL)
-            #expect(model.deliveryGloballyBlocked)                      // fail closed on corruption
+            #expect(model.deliveryGloballyBlocked)  // fail closed on corruption
 
             let iob0 = backend.snapshot.iobUnits
             await model.deliverBolus(units: 1.0)
-            #expect(abs(backend.snapshot.iobUnits - iob0) < tol)        // no delivery while locked
+            #expect(abs(backend.snapshot.iobUnits - iob0) < tol)  // no delivery while locked
 
             model.clearDeliveryBlockAfterVerification()
             #expect(!model.deliveryGloballyBlocked)
             await model.deliverBolus(units: 1.0)
-            #expect(backend.snapshot.iobUnits > iob0)                   // delivery resumes after clear
+            #expect(backend.snapshot.iobUnits > iob0)  // delivery resumes after clear
         }
     }
 
@@ -906,17 +982,19 @@ struct AppModelBehaviorTests {
         try? await withCleanSettings {
             let sharedURL = URL(fileURLWithPath: NSTemporaryDirectory())
                 .appendingPathComponent("p0-once-\(UUID().uuidString).json")
-            let backend1 = MockBackend(); await backend1.connect()
+            let backend1 = MockBackend()
+            await backend1.connect()
             let model1 = AppModel(source: backend1, ledgerStoreURL: sharedURL)
             backend1.forceIndeterminateNextDelivery = true
             await model1.remoteDeliver(requestId: "once1", units: 2.0, peerId: "watch")
-            #expect(backend1.lastAssignedBolusId != nil)               // one initiate attempt on backend1
+            #expect(backend1.lastAssignedBolusId != nil)  // one initiate attempt on backend1
 
-            let backend2 = MockBackend(); await backend2.connect()
+            let backend2 = MockBackend()
+            await backend2.connect()
             let model2 = AppModel(source: backend2, ledgerStoreURL: sharedURL)
             await model2.reconcileUnresolvedDeliveries()
             await model2.remoteDeliver(requestId: "once2", units: 2.0, peerId: "watch")
-            #expect(backend2.lastAssignedBolusId == nil)               // blocked ⇒ backend2 never initiated
+            #expect(backend2.lastAssignedBolusId == nil)  // blocked ⇒ backend2 never initiated
         }
     }
 
@@ -939,25 +1017,26 @@ struct AppModelBehaviorTests {
         try? await withCleanSettings {
             let (model, backend, rec) = await makeModel(connected: true)
             let savedGarmin = AppSettings.shared.garminBolusEnabled
-            AppSettings.shared.garminBolusEnabled = true                 // §2.3: opt in the Garmin surface
+            AppSettings.shared.garminBolusEnabled = true  // §2.3: opt in the Garmin surface
             defer { AppSettings.shared.garminBolusEnabled = savedGarmin }
 
             // A prior host delivery stamps `lastHostDeliveryAt = Date()` (local path emits no `.delivering`).
             let iob0 = backend.snapshot.iobUnits
             await model.deliverBolus(units: 1.0)
             let iobAfterHost = backend.snapshot.iobUnits
-            #expect(iobAfterHost > iob0 + 0.9)                          // the host bolus really delivered
-            #expect(rec.count(.delivering) == 0)                        // the local path never echoes .delivering
+            #expect(iobAfterHost > iob0 + 0.9)  // the host bolus really delivered
+            #expect(rec.count(.delivering) == 0)  // the local path never echoes .delivering
 
             // A remote request COMPOSED 120 s ago (before that stamp) → superseded → refused pre-backend.
-            await model.remoteDeliver(requestId: "r-old", units: 1.0,
-                                      sentAt: Int(Date().timeIntervalSince1970) - 120,
-                                      from: .garmin, peerId: "garmin")
+            await model.remoteDeliver(
+                requestId: "r-old", units: 1.0,
+                sentAt: Int(Date().timeIntervalSince1970) - 120,
+                from: .garmin, peerId: "garmin")
             #expect(rec.last?.status == .failed)
             #expect(rec.last?.message?.contains("delivered after this request was created") == true)
             #expect(model.lastError?.contains("delivered after this request was created") == true)
-            #expect(rec.count(.delivering) == 0)                        // the SECOND request never reached the backend
-            #expect(abs(backend.snapshot.iobUnits - iobAfterHost) < tol) // and delivered no second bolus
+            #expect(rec.count(.delivering) == 0)  // the SECOND request never reached the backend
+            #expect(abs(backend.snapshot.iobUnits - iobAfterHost) < tol)  // and delivered no second bolus
         }
     }
 
@@ -972,18 +1051,20 @@ struct AppModelBehaviorTests {
             defer { AppSettings.shared.garminBolusEnabled = savedGarmin }
 
             let iob0 = backend.snapshot.iobUnits
-            await model.deliverBolus(units: 1.0)                        // stamps lastHostDeliveryAt = now
+            await model.deliverBolus(units: 1.0)  // stamps lastHostDeliveryAt = now
             #expect(backend.snapshot.iobUnits > iob0 + 0.9)
 
             // `sentAt` 120 s in the FUTURE (after the stamp) ⇒ compose guard does NOT fire. remoteDeliver is
             // called directly (bypasses the VA-02 transport freshness gate), so a future stamp is fine here.
-            await model.remoteDeliver(requestId: "r-new", units: 1.0,
-                                      sentAt: Int(Date().timeIntervalSince1970) + 120,
-                                      from: .garmin, peerId: "garmin")
+            await model.remoteDeliver(
+                requestId: "r-new", units: 1.0,
+                sentAt: Int(Date().timeIntervalSince1970) + 120,
+                from: .garmin, peerId: "garmin")
             // The supersession message never appears on ANY echo …
-            #expect(rec.commands.allSatisfy {
-                ($0.message?.contains("delivered after this request was created") ?? false) == false
-            })
+            #expect(
+                rec.commands.allSatisfy {
+                    ($0.message?.contains("delivered after this request was created") ?? false) == false
+                })
             // … and the request proceeds to a normal delivery instead.
             #expect(rec.last?.status == .delivered)
         }
@@ -997,7 +1078,7 @@ struct AppModelBehaviorTests {
         try? await withCleanSettings {
             let (model, _, _) = await makeModel()
             #expect(model.statusCommand(includeHistory: true, replyingTo: "req-123").requestId == "req-123")
-            #expect(model.statusCommand(includeHistory: true).requestId != "req-123")   // fresh id when not replying
+            #expect(model.statusCommand(includeHistory: true).requestId != "req-123")  // fresh id when not replying
         }
     }
 }

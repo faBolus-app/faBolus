@@ -28,10 +28,13 @@ struct PreIdentitySendContractTests {
     @Test func noPreIdentitySendIsEverModelRestricted() {
         let scheduler = PumpReadScheduler()
         var captured: [any Message] = []
-        scheduler.send = { msg in captured.append(msg); return 0 }
+        scheduler.send = { msg in
+            captured.append(msg)
+            return 0
+        }
         scheduler.isConnected = { true }
-        scheduler.startPollingForTesting()   // bootstrap trio + fastRead(includingIdentityGatedReads:false) + staticRead()
-        scheduler.alertRead()                // the deferred burst — captured directly (see class doc, asyncAfter nuance)
+        scheduler.startPollingForTesting()  // bootstrap trio + fastRead(includingIdentityGatedReads:false) + staticRead()
+        scheduler.alertRead()  // the deferred burst — captured directly (see class doc, asyncAfter nuance)
 
         // Paths PumpReadScheduler does NOT own, enumerated from source (RE-DERIVE if these sources change —
         // Phase 16 moved the app's Data/ tree; anchors re-confirmed against live source 2026-08-26):
@@ -47,18 +50,23 @@ struct PreIdentitySendContractTests {
         //    `lastBolusStatus()` [`LastBolusStatusV2Request`] fast path, then on a miss `HistoryLogStatusRequest`
         //    to learn the range, then bounded `HistoryLogRequest(startLog:numberOfLogs:)` pages.
         let outOfSchedulerPaths: [any Message] = [
-            Jpake1aRequest(), Jpake1bRequest(), Jpake2Request(), Jpake3SessionKeyRequest(), Jpake4KeyConfirmationRequest(),
+            Jpake1aRequest(), Jpake1bRequest(), Jpake2Request(), Jpake3SessionKeyRequest(),
+            Jpake4KeyConfirmationRequest(),
             CentralChallengeRequest(), PumpChallengeRequest(),
-            HistoryLogStatusRequest(), HistoryLogRequest(startLog: 0, numberOfLogs: 1), LastBolusStatusV2Request(),
+            HistoryLogStatusRequest(), HistoryLogRequest(startLog: 0, numberOfLogs: 1), LastBolusStatusV2Request()
         ]
 
-        #expect(!captured.isEmpty,
-                "the dynamic capture must have actually captured something from the real scheduler — an empty capture would make this test vacuously true")
+        #expect(
+            !captured.isEmpty,
+            "the dynamic capture must have actually captured something from the real scheduler — an empty capture would make this test vacuously true"
+        )
 
-        let client = PumpBLEClient()   // fresh, unidentified: connectedPumpModel == nil, identityTrusted == false
+        let client = PumpBLEClient()  // fresh, unidentified: connectedPumpModel == nil, identityTrusted == false
         for message in captured + outOfSchedulerPaths {
-            #expect(client.identityGateError(for: message) == nil,
-                    "\(type(of: message)) (opcode \(message.opCode)) must never be refused pre-identity — reconnection would deadlock")
+            #expect(
+                client.identityGateError(for: message) == nil,
+                "\(type(of: message)) (opcode \(message.opCode)) must never be refused pre-identity — reconnection would deadlock"
+            )
         }
     }
 }

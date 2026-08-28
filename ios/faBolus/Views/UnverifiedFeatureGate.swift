@@ -36,7 +36,9 @@ final class UnverifiedFeatureGate {
         // here (right before the gated action runs) — that's what lets `createProfile`, segment CRUD,
         // the CGM high/low alert, and backup-restore reconfigure pass their fail-closed policy check.
         AppModel.shared?.acknowledgeUnverifiedTherapy()
-        let p = pending; pending = nil; p?()
+        let p = pending
+        pending = nil
+        p?()
     }
     func cancel() { pending = nil }
 }
@@ -50,7 +52,9 @@ extension View {
             Button("Use it anyway", role: .destructive) { gate.proceed() }
             Button("Cancel", role: .cancel) { gate.cancel() }
         } message: {
-            Text("⚠️ \(gate.feature) has NOT been verified on a real pump and will likely not work — it may do nothing or behave unexpectedly. It's a best-guess implementation from the protocol, not confirmed on hardware.\n\nOnly continue if you understand the risk and are watching the pump to confirm what actually happened.")
+            Text(
+                "⚠️ \(gate.feature) has NOT been verified on a real pump and will likely not work — it may do nothing or behave unexpectedly. It's a best-guess implementation from the protocol, not confirmed on hardware.\n\nOnly continue if you understand the risk and are watching the pump to confirm what actually happened."
+            )
         }
     }
 }

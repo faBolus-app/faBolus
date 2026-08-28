@@ -21,20 +21,26 @@ struct CiqCeilingFlagsGateTests {
         // snapshot value happens to be — proving the emission gate, not merely the input, is what keeps
         // this off the wire.
         for snapshotValue: Bool? in [true, false, nil] {
-            #expect(CiqCeilingFlags.wireMaxBolusEventsExceeded(benchVerified: false, snapshotValue: snapshotValue) == nil,
-                    "maxBolusEventsExceeded must never emit pre-bench (snapshotValue=\(String(describing: snapshotValue)))")
-            #expect(CiqCeilingFlags.wireMaxIobEventsExceeded(benchVerified: false, snapshotValue: snapshotValue) == nil,
-                    "maxIobEventsExceeded must never emit pre-bench (snapshotValue=\(String(describing: snapshotValue)))")
+            #expect(
+                CiqCeilingFlags.wireMaxBolusEventsExceeded(benchVerified: false, snapshotValue: snapshotValue) == nil,
+                "maxBolusEventsExceeded must never emit pre-bench (snapshotValue=\(String(describing: snapshotValue)))")
+            #expect(
+                CiqCeilingFlags.wireMaxIobEventsExceeded(benchVerified: false, snapshotValue: snapshotValue) == nil,
+                "maxIobEventsExceeded must never emit pre-bench (snapshotValue=\(String(describing: snapshotValue)))")
         }
     }
 
     @Test func defaultArgumentWiresToBenchVerifiedDefault() {
         // A call site that omits `benchVerified` (the production shape) must resolve identically to
         // passing `benchVerifiedDefault` explicitly — never emitted pre-bench even by omission.
-        #expect(CiqCeilingFlags.wireMaxBolusEventsExceeded(snapshotValue: true)
-                == CiqCeilingFlags.wireMaxBolusEventsExceeded(benchVerified: CiqCeilingFlags.benchVerifiedDefault, snapshotValue: true))
-        #expect(CiqCeilingFlags.wireMaxIobEventsExceeded(snapshotValue: true)
-                == CiqCeilingFlags.wireMaxIobEventsExceeded(benchVerified: CiqCeilingFlags.benchVerifiedDefault, snapshotValue: true))
+        #expect(
+            CiqCeilingFlags.wireMaxBolusEventsExceeded(snapshotValue: true)
+                == CiqCeilingFlags.wireMaxBolusEventsExceeded(
+                    benchVerified: CiqCeilingFlags.benchVerifiedDefault, snapshotValue: true))
+        #expect(
+            CiqCeilingFlags.wireMaxIobEventsExceeded(snapshotValue: true)
+                == CiqCeilingFlags.wireMaxIobEventsExceeded(
+                    benchVerified: CiqCeilingFlags.benchVerifiedDefault, snapshotValue: true))
     }
 
     @Test func hypotheticallyVerifiedTheTwoFlagsStayIndependent() {
@@ -46,7 +52,8 @@ struct CiqCeilingFlagsGateTests {
         #expect(CiqCeilingFlags.wireMaxIobEventsExceeded(benchVerified: true, snapshotValue: true) == true)
         #expect(CiqCeilingFlags.wireMaxIobEventsExceeded(benchVerified: true, snapshotValue: false) == false)
         // One true, the other false, simultaneously — proves they are not merged/coupled.
-        #expect(CiqCeilingFlags.wireMaxBolusEventsExceeded(benchVerified: true, snapshotValue: true)
+        #expect(
+            CiqCeilingFlags.wireMaxBolusEventsExceeded(benchVerified: true, snapshotValue: true)
                 != CiqCeilingFlags.wireMaxIobEventsExceeded(benchVerified: true, snapshotValue: false))
     }
 

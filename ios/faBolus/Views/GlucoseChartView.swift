@@ -126,21 +126,25 @@ struct GlucoseChartView: View {
         return max(4, (max(iobPeak, bolusPeak) * 1.1).rounded(.up))
     }
     private func scaleUnits(_ u: Double) -> Double {
-        GlucosePlotScale.scaleUnits(u, unitMax: iobMax, floor: AppSettings.shared.glucosePlotFloor,
-                                     ceiling: AppSettings.shared.glucosePlotCeiling)
+        GlucosePlotScale.scaleUnits(
+            u, unitMax: iobMax, floor: AppSettings.shared.glucosePlotFloor,
+            ceiling: AppSettings.shared.glucosePlotCeiling)
     }
 
     var body: some View {
         Chart {
             if showGlucose {
-                RectangleMark(yStart: .value("Low", GlucoseThresholds.low), yEnd: .value("High", GlucoseThresholds.high))
-                    .foregroundStyle(AppTheme.inRange.opacity(0.12))
+                RectangleMark(
+                    yStart: .value("Low", GlucoseThresholds.low), yEnd: .value("High", GlucoseThresholds.high)
+                )
+                .foregroundStyle(AppTheme.inRange.opacity(0.12))
                 ForEach(visible) { r in
                     // Symmetric clamp — an out-of-range reading pins to the visible top/bottom
                     // edge instead of being clipped out of the plot by chartYScale's domain. Display
                     // only: r.mgdl itself (used for the point's color below) is never altered.
-                    let plottedY = GlucosePlotScale.clamp(r.mgdl, floor: AppSettings.shared.glucosePlotFloor,
-                                                           ceiling: AppSettings.shared.glucosePlotCeiling)
+                    let plottedY = GlucosePlotScale.clamp(
+                        r.mgdl, floor: AppSettings.shared.glucosePlotFloor,
+                        ceiling: AppSettings.shared.glucosePlotCeiling)
                     // Color stays the primary cue, but the SHAPE is an added, non-color
                     // channel — a colorblind user can still tell low/in-range/high apart.
                     let symbolKind = GlucoseChartAccessibility.symbolKind(for: r.mgdl)
@@ -152,16 +156,20 @@ struct GlucoseChartView: View {
             }
             if showBolusBars {
                 ForEach(visibleBoluses) { b in
-                    RuleMark(x: .value("Time", b.date),
-                             yStart: .value("Base", gLo), yEnd: .value("Bolus", scaleUnits(b.units)))
-                        .foregroundStyle(AppTheme.insulin.opacity(0.55)).lineStyle(.init(lineWidth: 3))
+                    RuleMark(
+                        x: .value("Time", b.date),
+                        yStart: .value("Base", gLo), yEnd: .value("Bolus", scaleUnits(b.units))
+                    )
+                    .foregroundStyle(AppTheme.insulin.opacity(0.55)).lineStyle(.init(lineWidth: 3))
                 }
             }
             if showIOB {
                 ForEach(visibleIOB) { s in
-                    LineMark(x: .value("Time", s.date), y: .value("IOB", scaleUnits(s.iob)),
-                             series: .value("Series", "IOB"))
-                        .foregroundStyle(AppTheme.insulin).interpolationMethod(.monotone)
+                    LineMark(
+                        x: .value("Time", s.date), y: .value("IOB", scaleUnits(s.iob)),
+                        series: .value("Series", "IOB")
+                    )
+                    .foregroundStyle(AppTheme.insulin).interpolationMethod(.monotone)
                 }
             }
         }
@@ -169,13 +177,17 @@ struct GlucoseChartView: View {
         .chartYScale(domain: gLo...gHi)
         .chartYAxis {
             if showGlucose {
-                AxisMarks(position: .leading, values: [GlucoseThresholds.low, 120, GlucoseThresholds.high, GlucoseThresholds.veryHigh]) { value in
+                AxisMarks(
+                    position: .leading,
+                    values: [GlucoseThresholds.low, 120, GlucoseThresholds.high, GlucoseThresholds.veryHigh]
+                ) { value in
                     AxisGridLine()
                     AxisValueLabel { if let v = value.as(Int.self) { Text(unit.format(mgdl: v)) } }
                 }
             }
             if showUnitsAxis {
-                AxisMarks(position: .trailing, values: [scaleUnits(0), scaleUnits(iobMax / 2), scaleUnits(iobMax)]) { value in
+                AxisMarks(position: .trailing, values: [scaleUnits(0), scaleUnits(iobMax / 2), scaleUnits(iobMax)]) {
+                    value in
                     AxisValueLabel {
                         if let p = value.as(Double.self) {
                             // Recovery reads BOTH bounds via the same shared math scaleUnits used,
@@ -191,14 +203,17 @@ struct GlucoseChartView: View {
         }
         .chartXAxis {
             AxisMarks(values: .stride(by: .hour, count: xStride)) { _ in
-                AxisGridLine(); AxisValueLabel(format: .dateTime.hour())
+                AxisGridLine()
+                AxisValueLabel(format: .dateTime.hour())
             }
         }
         // Lets VoiceOver swipe through individual glucose data points (value + band word)
         // instead of announcing the chart as a single opaque image. Empty when glucose is hidden —
         // nothing to describe in that state.
-        .accessibilityChartDescriptor(GlucoseChartAccessibilityRepresentable(
-            readings: showGlucose ? visible : [], unit: unit))
+        .accessibilityChartDescriptor(
+            GlucoseChartAccessibilityRepresentable(
+                readings: showGlucose ? visible : [], unit: unit)
+        )
         .overlay(alignment: .topLeading) {
             // This axis caption is the only persistent unit label the chart
             // draws — hidden entirely when off, never a bare fallback (the axis itself stays labeled

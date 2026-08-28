@@ -35,7 +35,8 @@ struct CiqAwarenessScopeGuardTests {
     /// body) from a Swift source string, whitespace-normalized so formatting-only changes don't trip the
     /// guard — only an actual signature change does.
     private static func functionSignatures(in source: String) -> Set<String> {
-        let pattern = #"(?:public\s+)?(?:static\s+)?func\s+[A-Za-z_][A-Za-z0-9_]*\s*\([^{}]*\)(?:\s*->\s*[^{\n]+?)?\s*(?=\{)"#
+        let pattern =
+            #"(?:public\s+)?(?:static\s+)?func\s+[A-Za-z_][A-Za-z0-9_]*\s*\([^{}]*\)(?:\s*->\s*[^{\n]+?)?\s*(?=\{)"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
         let ns = source as NSString
         let matches = regex.matches(in: source, range: NSRange(location: 0, length: ns.length))
@@ -64,9 +65,14 @@ struct CiqAwarenessScopeGuardTests {
         var closeIdx: String.Index?
         while idx < source.endIndex {
             let c = source[idx]
-            if c == "{" { depth += 1 } else if c == "}" {
+            if c == "{" {
+                depth += 1
+            } else if c == "}" {
                 depth -= 1
-                if depth == 0 { closeIdx = idx; break }
+                if depth == 0 {
+                    closeIdx = idx
+                    break
+                }
             }
             idx = source.index(after: idx)
         }
@@ -88,7 +94,7 @@ struct CiqAwarenessScopeGuardTests {
         // T2-1 (09.15-11): `CiqCeilingFlags.wireMaxBolusEventsExceeded`/`.wireMaxIobEventsExceeded` return
         // a fail-closed OPTIONAL status flag (nil pre-bench, never a dose/units value) — the nilable
         // counterpart of the already-allowed bare `Bool` above.
-        "Bool?",
+        "Bool?"
     ]
 
     /// Extracts the substring after the LAST `-> ` in a normalized signature (its return type), or `nil`
@@ -108,7 +114,10 @@ struct CiqAwarenessScopeGuardTests {
     /// The Control-IQ-awareness TYPE bodies to scan for prong (a), as (file, type-declaration marker)
     /// pairs. See the suite doc-comment's maintenance note — extend this as later plans add new types.
     private static let knownCiqAwarenessSignatureSources: [(file: String, typeMarker: String)] = [
-        ("Packages/faBolusCore/Sources/faBolusCore/AutoCorrectionDisclosure.swift", "public enum AutoCorrectionDisclosure"),
+        (
+            "Packages/faBolusCore/Sources/faBolusCore/AutoCorrectionDisclosure.swift",
+            "public enum AutoCorrectionDisclosure"
+        ),
         ("Packages/faBolusCore/Sources/faBolusCore/Models.swift", "public enum ControlIQZone"),
         // Phase 23 (23-01, D-06): `ControlIQDisableWarning` (formerly here, moved verbatim from the
         // deleted `Views/PumpWizardViews.swift` in Phase 9) was deleted outright — the whole type + its
@@ -123,7 +132,7 @@ struct CiqAwarenessScopeGuardTests {
         ("Packages/faBolusCore/Sources/faBolusCore/ControlIQMode.swift", "public enum CiqPlusTempRate"),
         // T2-1 (09.15-11): the direct CIQ-ceiling-flags bench+emission gate — both `wireMax*Exceeded`
         // functions return `Bool?` (already an allowed shape), never a dose/units value.
-        ("Packages/faBolusCore/Sources/faBolusCore/Models.swift", "public enum CiqCeilingFlags"),
+        ("Packages/faBolusCore/Sources/faBolusCore/Models.swift", "public enum CiqCeilingFlags")
     ]
 
     @Test func noCiqAwarenessFunctionReturnsADoseShapedType() throws {
@@ -138,11 +147,14 @@ struct CiqAwarenessScopeGuardTests {
                 continue
             }
             let sigs = Self.functionSignatures(in: region)
-            #expect(!sigs.isEmpty, "'\(marker)' region yielded zero function signatures — region resolution likely broke")
+            #expect(
+                !sigs.isEmpty, "'\(marker)' region yielded zero function signatures — region resolution likely broke")
             for sig in sigs {
                 totalSignaturesChecked += 1
-                #expect(Self.isCiqAllowedReturnShape(sig),
-                        "'\(marker)': signature '\(sig)' returns a shape outside {Double?, String?, String, Bool, ControlIQZone?} — possible dose-shaped return (D-06 guardrail #1)")
+                #expect(
+                    Self.isCiqAllowedReturnShape(sig),
+                    "'\(marker)': signature '\(sig)' returns a shape outside {Double?, String?, String, Bool, ControlIQZone?} — possible dose-shaped return (D-06 guardrail #1)"
+                )
             }
         }
         // A path/region-resolution bug must fail loudly, not pass vacuously with zero signatures checked.
@@ -151,7 +163,10 @@ struct CiqAwarenessScopeGuardTests {
         // slim (D-09) removes `ambientIndicator`/`lockoutMessage`, leaving only `lockoutRemainingFraction`.
         // Live count across the 5 surviving sources post-slim: AutoCorrectionDisclosure=1,
         // ControlIQZone=1, MaxBasalFraction=3, CiqPlusTempRate=1, CiqCeilingFlags=2 == 8.
-        #expect(totalSignaturesChecked >= 8, "fewer CIQ-awareness signatures were found than the phase currently ships — path/region resolution likely broke")
+        #expect(
+            totalSignaturesChecked >= 8,
+            "fewer CIQ-awareness signatures were found than the phase currently ships — path/region resolution likely broke"
+        )
     }
 
     /// Fault-injection proof for the prong-(a) checker (guardrail #1): since production code cannot be
@@ -165,19 +180,23 @@ struct CiqAwarenessScopeGuardTests {
             "static func recommendedDoseUnits() -> Double",
             "static func suggestedBolusUnits(zone: ControlIQZone) -> Double",
             "func maxBolusMilliunits() -> UInt32",
-            "static func ceilingRemainingUnits(descriptor: ControllerDescriptor) -> Int",
+            "static func ceilingRemainingUnits(descriptor: ControllerDescriptor) -> Int"
         ]
         for sig in forbiddenSynthetic {
-            #expect(!Self.isCiqAllowedReturnShape(sig), "checker failed to reject a dose-shaped synthetic signature: \(sig)")
+            #expect(
+                !Self.isCiqAllowedReturnShape(sig), "checker failed to reject a dose-shaped synthetic signature: \(sig)"
+            )
         }
         let realAllowed = [
             "public static func lockoutRemainingFraction(descriptor: ControllerDescriptor, controllerEnabled: Bool, lockoutStartDate: Date?, now: Date) -> Double?",
             "static func shouldWarn(descriptor: ControllerDescriptor) -> Bool",
             "static func title(descriptor: ControllerDescriptor) -> String",
-            "public static func fromControlStateType(_ raw: Int) -> ControlIQZone?",
+            "public static func fromControlStateType(_ raw: Int) -> ControlIQZone?"
         ]
         for sig in realAllowed {
-            #expect(Self.isCiqAllowedReturnShape(sig), "checker incorrectly rejected a real, currently-shipped signature: \(sig)")
+            #expect(
+                Self.isCiqAllowedReturnShape(sig),
+                "checker incorrectly rejected a real, currently-shipped signature: \(sig)")
         }
     }
 
@@ -204,7 +223,7 @@ struct CiqAwarenessScopeGuardTests {
         // T2-1 (09.15-11): the direct CIQ-ceiling-flags bench+emission gate — same rationale as
         // `CiqPlusTempRate` above; `ciqMaxBolusEventsExceeded`/`ciqMaxIobEventsExceeded` were already
         // pinned here in advance by an earlier plan.
-        "CiqCeilingFlags",
+        "CiqCeilingFlags"
     ]
 
     /// Scans `region` for every token in `forbiddenCiqAwarenessSymbols`, recording an `Issue` (via the
@@ -224,31 +243,44 @@ struct CiqAwarenessScopeGuardTests {
             ("deliverBolus", "public func deliverBolus(units:"),
             ("deliverExtendedBolus", "public func deliverExtendedBolus(totalUnits:"),
             ("validateDeliver", "private func validateDeliver(total:"),
-            ("perform", "private func perform(totalMu:"),
+            ("perform", "private func perform(totalMu:")
         ]
         for (name, marker) in deliverRegions {
             guard let region = Self.balancedBraceRegion(in: backendSource, afterMarker: marker) else {
                 Issue.record("could not find a balanced-brace region for TandemBackend.\(name) (marker '\(marker)')")
                 continue
             }
-            #expect(region.count > 20, "TandemBackend.\(name) region resolved suspiciously short — path/region resolution likely broke")
-            #expect(Self.regionContainsAnyForbiddenSymbol(region) == nil,
-                    "TandemBackend.\(name) references forbidden CIQ-awareness symbol '\(Self.regionContainsAnyForbiddenSymbol(region) ?? "?")' (D-06 guardrail #2)")
+            #expect(
+                region.count > 20,
+                "TandemBackend.\(name) region resolved suspiciously short — path/region resolution likely broke")
+            #expect(
+                Self.regionContainsAnyForbiddenSymbol(region) == nil,
+                "TandemBackend.\(name) references forbidden CIQ-awareness symbol '\(Self.regionContainsAnyForbiddenSymbol(region) ?? "?")' (D-06 guardrail #2)"
+            )
         }
 
         guard let bolusMathSource = Self.readSource("Packages/faBolusCore/Sources/faBolusCore/BolusMath.swift") else {
-            Issue.record("could not resolve Packages/faBolusCore/Sources/faBolusCore/BolusMath.swift from #filePath=\(#filePath)")
+            Issue.record(
+                "could not resolve Packages/faBolusCore/Sources/faBolusCore/BolusMath.swift from #filePath=\(#filePath)"
+            )
             return
         }
-        #expect(Self.regionContainsAnyForbiddenSymbol(bolusMathSource) == nil,
-                "BolusMath.swift references forbidden CIQ-awareness symbol '\(Self.regionContainsAnyForbiddenSymbol(bolusMathSource) ?? "?")' (D-06 guardrail #2)")
+        #expect(
+            Self.regionContainsAnyForbiddenSymbol(bolusMathSource) == nil,
+            "BolusMath.swift references forbidden CIQ-awareness symbol '\(Self.regionContainsAnyForbiddenSymbol(bolusMathSource) ?? "?")' (D-06 guardrail #2)"
+        )
 
-        guard let gatedWriteSource = Self.readSource("Packages/faBolusCore/Sources/faBolusCore/GatedPumpWrite.swift") else {
-            Issue.record("could not resolve Packages/faBolusCore/Sources/faBolusCore/GatedPumpWrite.swift from #filePath=\(#filePath)")
+        guard let gatedWriteSource = Self.readSource("Packages/faBolusCore/Sources/faBolusCore/GatedPumpWrite.swift")
+        else {
+            Issue.record(
+                "could not resolve Packages/faBolusCore/Sources/faBolusCore/GatedPumpWrite.swift from #filePath=\(#filePath)"
+            )
             return
         }
-        #expect(Self.regionContainsAnyForbiddenSymbol(gatedWriteSource) == nil,
-                "GatedPumpWrite.swift references forbidden CIQ-awareness symbol '\(Self.regionContainsAnyForbiddenSymbol(gatedWriteSource) ?? "?")' (D-06 guardrail #2)")
+        #expect(
+            Self.regionContainsAnyForbiddenSymbol(gatedWriteSource) == nil,
+            "GatedPumpWrite.swift references forbidden CIQ-awareness symbol '\(Self.regionContainsAnyForbiddenSymbol(gatedWriteSource) ?? "?")' (D-06 guardrail #2)"
+        )
     }
 
     /// Fault-injection proof for prong (b): a synthetic COPY of the real `perform()` region with a
@@ -259,16 +291,24 @@ struct CiqAwarenessScopeGuardTests {
     /// trip it.
     @Test func theForbiddenSymbolScanCatchesAnInjectedReference() throws {
         guard let backendSource = Self.readSource("ios/faBolus/Data/TandemBackend.swift"),
-              let region = Self.balancedBraceRegion(in: backendSource, afterMarker: "private func perform(totalMu:") else {
+            let region = Self.balancedBraceRegion(in: backendSource, afterMarker: "private func perform(totalMu:")
+        else {
             Issue.record("could not resolve TandemBackend.swift perform() region for the fault-injection check")
             return
         }
-        #expect(Self.regionContainsAnyForbiddenSymbol(region) == nil,
-                "the REAL perform() region must be clean before the fault-injection check is meaningful")
-        for poison in ["snapshot.ciqZone", "ControlIQZone.increases", "AutoCorrectionDisclosure.lockoutRemainingFraction"] {
-            let poisoned = region + "\nlet _ = \(poison) // FAULT-INJECTED for scan verification only, never committed to production\n"
-            #expect(Self.regionContainsAnyForbiddenSymbol(poisoned) != nil,
-                    "the scan failed to catch an injected reference to '\(poison)' — it would not go RED for a real regression")
+        #expect(
+            Self.regionContainsAnyForbiddenSymbol(region) == nil,
+            "the REAL perform() region must be clean before the fault-injection check is meaningful")
+        for poison in [
+            "snapshot.ciqZone", "ControlIQZone.increases", "AutoCorrectionDisclosure.lockoutRemainingFraction"
+        ] {
+            let poisoned =
+                region
+                + "\nlet _ = \(poison) // FAULT-INJECTED for scan verification only, never committed to production\n"
+            #expect(
+                Self.regionContainsAnyForbiddenSymbol(poisoned) != nil,
+                "the scan failed to catch an injected reference to '\(poison)' — it would not go RED for a real regression"
+            )
         }
     }
 }

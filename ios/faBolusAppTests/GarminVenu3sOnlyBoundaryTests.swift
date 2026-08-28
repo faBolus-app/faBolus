@@ -36,9 +36,13 @@ struct GarminVenu3sOnlyBoundaryTests {
     private func withClean(_ body: () async -> Void) async {
         let s = AppSettings.shared
         let child = s.childModeEnabled, rro = s.remotesReadOnly, gbe = s.garminBolusEnabled
-        s.childModeEnabled = false; s.remotesReadOnly = false; s.garminBolusEnabled = true
+        s.childModeEnabled = false
+        s.remotesReadOnly = false
+        s.garminBolusEnabled = true
         await body()
-        s.childModeEnabled = child; s.remotesReadOnly = rro; s.garminBolusEnabled = gbe
+        s.childModeEnabled = child
+        s.remotesReadOnly = rro
+        s.garminBolusEnabled = gbe
     }
 
     @Test func garminRemotePathStillDeliversABolusRequest() async {
@@ -46,14 +50,15 @@ struct GarminVenu3sOnlyBoundaryTests {
             let (model, backend, box) = makeModel()
             await backend.connect()
 
-            await model.remoteDeliver(requestId: "boundary", units: 1.0, passcode: nil,
-                                      from: .garmin, peerId: "garmin")
+            await model.remoteDeliver(
+                requestId: "boundary", units: 1.0, passcode: nil,
+                from: .garmin, peerId: "garmin")
 
             // A non-failed bolusStatus echo (delivered/cancelled) — or, failing that, the MockBackend
             // recorded the matching deliverBolus call — proves the kept `.garmin` seam still delivers.
             let deliveredOrCancelled = box.echoes.contains {
-                $0.requestId == "boundary" && $0.kind == .bolusStatus &&
-                ($0.status == .delivered || $0.status == .cancelled)
+                $0.requestId == "boundary" && $0.kind == .bolusStatus
+                    && ($0.status == .delivered || $0.status == .cancelled)
             }
             let backendRecordedTheDeliver = backend.lastDeliver?.units == 1.0
             #expect(deliveredOrCancelled || backendRecordedTheDeliver)
@@ -76,8 +81,8 @@ struct GarminVenu3sOnlyBoundaryTests {
 
             #expect(out.error == nil)
             let deliveredOrCancelled = box.echoes.contains {
-                $0.requestId == "boundary-widget-units" && $0.kind == .bolusStatus &&
-                ($0.status == .delivered || $0.status == .cancelled)
+                $0.requestId == "boundary-widget-units" && $0.kind == .bolusStatus
+                    && ($0.status == .delivered || $0.status == .cancelled)
             }
             let backendRecordedTheDeliver = backend.lastDeliver?.units == 1.0
             #expect(deliveredOrCancelled || backendRecordedTheDeliver)
@@ -95,9 +100,10 @@ struct GarminVenu3sOnlyBoundaryTests {
             await backend.connect()
             let est = await model.recommendBolus(carbsGrams: 20, bgMgdl: nil).recommendedUnits
 
-            await model.presentRemoteBolus(requestId: "boundary-widget-carbs", units: 0, carbsGrams: 20,
-                                           bgMgdl: nil, remoteEstimate: est,
-                                           from: .quickBolusWidget, peerId: "widget")
+            await model.presentRemoteBolus(
+                requestId: "boundary-widget-carbs", units: 0, carbsGrams: 20,
+                bgMgdl: nil, remoteEstimate: est,
+                from: .quickBolusWidget, peerId: "widget")
 
             #expect(model.pendingRemoteBolus != nil)
             #expect(model.pendingRemoteBolus?.carbsGrams == 20)

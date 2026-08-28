@@ -18,8 +18,8 @@ import TandemBLE
 @Suite(.serialized) @MainActor
 struct TrendArrowGateTests {
     private func backend() -> TandemBackend { TandemBackend(testTransport: FakePumpTransport()) }
-    private let noArrow = 0   // HomeScreenMirrorResponse.CGMTrendIcon.noArrow
-    private let upIcon  = 2   // .up  → "↑"
+    private let noArrow = 0  // HomeScreenMirrorResponse.CGMTrendIcon.noArrow
+    private let upIcon = 2  // .up  → "↑"
 
     @Test func pumpNoArrowIsNeverOverwrittenByDerivedArrow() {
         let b = backend()

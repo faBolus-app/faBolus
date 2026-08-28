@@ -20,7 +20,9 @@ enum CompileGateAudit {
         tokens.formUnion(["graphdetail"])
         tokens.formUnion(["retrospective", "insights"])
         tokens.formUnion(["badge"])
-        tokens.formUnion(["siri", "shortcuts automation", "auto exercise", "auto sleep", "auto profile activation", "auto temp rate"])
+        tokens.formUnion([
+            "siri", "shortcuts automation", "auto exercise", "auto sleep", "auto profile activation", "auto temp rate"
+        ])
         // Concatenated so `.contains` does not match live "Garmin analog clock face" ("lock" in "clock").
         tokens.formUnion(["childmode"])
         // Concatenated so `.contains` does not match live "Notification controls" ("quiet hours").
@@ -54,16 +56,16 @@ struct SettingsCatalogTests {
     /// Declared here so the drift guard can tolerate their absence on a fresh `AppSettings` without weakening it.
     private let conditionalBackupKeys: Set<String> = [
         "glucoseHideDelayMinutes", "remoteBolusCeiling",
-        "glucosePlotFloorSmall", "glucosePlotCeilingSmall",
+        "glucosePlotFloorSmall", "glucosePlotCeilingSmall"
     ]
 
     // MARK: Coverage
 
     @Test func descriptorsCoverExactly48UniqueKeys() {
         #expect(SettingsCatalog.descriptors.count == 35)
-        #expect(SettingsCatalog.byKey.count == 35)   // Dictionary(uniqueKeysWithValues:) also traps on dup
+        #expect(SettingsCatalog.byKey.count == 35)  // Dictionary(uniqueKeysWithValues:) also traps on dup
         let keys = SettingsCatalog.descriptors.map(\.key)
-        #expect(Set(keys).count == keys.count)       // no duplicate literal
+        #expect(Set(keys).count == keys.count)  // no duplicate literal
     }
 
     // MARK: Golden equivalence — the catalog's backup set == what backupSnapshot actually emits
@@ -76,7 +78,7 @@ struct SettingsCatalogTests {
         #expect(snapshotKeys.isSubset(of: SettingsCatalog.backedUpKeys))
         let unconditional = SettingsCatalog.backedUpKeys.subtracting(conditionalBackupKeys)
         #expect(unconditional.isSubset(of: snapshotKeys))
-        #expect(SettingsCatalog.backedUpKeys.count == 35)                      // 31 unconditional + 4 conditional
+        #expect(SettingsCatalog.backedUpKeys.count == 35)  // 31 unconditional + 4 conditional
         #expect(conditionalBackupKeys.isSubset(of: SettingsCatalog.backedUpKeys))
     }
 
@@ -95,17 +97,19 @@ struct SettingsCatalogTests {
     @Test @MainActor func restoreToleratesLegacyBasalScheduleKeys() {
         let base = AppSettings.shared.backupSnapshot()
         var legacy = base
-        legacy["basalScheduleByHour"] = .data(Data([0, 1, 2, 3]))   // stand-in for the old [Double] cache blob
+        legacy["basalScheduleByHour"] = .data(Data([0, 1, 2, 3]))  // stand-in for the old [Double] cache blob
         legacy["basalScheduleSource"] = .string("Nightscout")
         // Survive a full JSON encode→decode like a real on-disk backup, not just an in-memory dict.
-        let backup = FaBolusBackup(meta: .init(createdAt: Date(), appVersion: "test",
-                                               pumpModel: "unknown", deviceName: "test"),
-                                   appSettings: legacy)
+        let backup = FaBolusBackup(
+            meta: .init(
+                createdAt: Date(), appVersion: "test",
+                pumpModel: "unknown", deviceName: "test"),
+            appSettings: legacy)
         let decoded = try? FaBolusBackup.decode(backup.encoded())
         #expect(decoded != nil, "a legacy backup carrying removed keys must still decode")
-        #expect(decoded?.appSettings?["basalScheduleByHour"] != nil)   // the unknown key round-trips…
-        AppSettings.shared.applyBackup(decoded?.appSettings ?? [:])    // …and applying it must not crash
-        #expect(AppSettings.shared.backupSnapshot() == base)           // removed keys ignored; nothing changed
+        #expect(decoded?.appSettings?["basalScheduleByHour"] != nil)  // the unknown key round-trips…
+        AppSettings.shared.applyBackup(decoded?.appSettings ?? [:])  // …and applying it must not crash
+        #expect(AppSettings.shared.backupSnapshot() == base)  // removed keys ignored; nothing changed
     }
 
     /// The `childAllowed` set is the ONLY `Set`-backed persisted value, and `Set` serializes to a JSON array
@@ -157,8 +161,8 @@ struct SettingsCatalogTests {
     @Test func simpleModeIsANonEmptyProperSubsetOfAdvanced() {
         let simple = SettingsCatalog.descriptors.filter { $0.isVisible(in: .simple) }.map(\.key)
         let advanced = SettingsCatalog.descriptors.filter { $0.isVisible(in: .advanced) }.map(\.key)
-        #expect(!simple.isEmpty)                       // Simple is a real, usable subset
-        #expect(simple.count < advanced.count)         // …and strictly fewer than Advanced sees
+        #expect(!simple.isEmpty)  // Simple is a real, usable subset
+        #expect(simple.count < advanced.count)  // …and strictly fewer than Advanced sees
         #expect(Set(simple).isSubset(of: Set(advanced)))
     }
 
@@ -191,12 +195,12 @@ struct SettingsCatalogTests {
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         let fresh = AppSettings(defaults: defaults)
-        #expect(fresh.advancedControlEnabled == false)   // default OFF, unchanged
+        #expect(fresh.advancedControlEnabled == false)  // default OFF, unchanged
 
-        fresh.advancedControlEnabled = true   // the property setter itself is unchanged (still writable —
+        fresh.advancedControlEnabled = true  // the property setter itself is unchanged (still writable —
         // no force-set pin — the toggle that called this setter is what's gone, not the setter itself)
         let reloaded = AppSettings(defaults: defaults)
-        #expect(reloaded.advancedControlEnabled == true)   // persists like any ordinary flag
+        #expect(reloaded.advancedControlEnabled == true)  // persists like any ordinary flag
 
         // But `advancedControlAllowed` stays false regardless, via the OTHER operand — the t:slim-only
         // `.full` capability preset floors every advanced capability OFF (Models.swift:762-785).
@@ -213,14 +217,14 @@ struct SettingsCatalogTests {
         let suiteName = "SettingsCatalogTests.glucoseDisplayUnit.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        defaults.set("mmol", forKey: "glucoseDisplayUnit")   // simulate a pre-Phase-8 stored value
+        defaults.set("mmol", forKey: "glucoseDisplayUnit")  // simulate a pre-Phase-8 stored value
 
         let fresh = AppSettings(defaults: defaults)
-        #expect(fresh.glucoseDisplayUnit == .mgdl)   // force-set pin wins over the stored value
+        #expect(fresh.glucoseDisplayUnit == .mgdl)  // force-set pin wins over the stored value
 
-        fresh.glucoseDisplayUnit = .mmol   // the property setter itself is unchanged (still writable)…
+        fresh.glucoseDisplayUnit = .mmol  // the property setter itself is unchanged (still writable)…
         let reloaded = AppSettings(defaults: defaults)
-        #expect(reloaded.glucoseDisplayUnit == .mgdl)   // …but the NEXT init still force-sets .mgdl
+        #expect(reloaded.glucoseDisplayUnit == .mgdl)  // …but the NEXT init still force-sets .mgdl
     }
 
     /// `showGlucoseUnitLabels` is not a catalog row; the accessor remains as an unregistered flag.
@@ -236,11 +240,11 @@ struct SettingsCatalogTests {
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         let fresh = AppSettings(defaults: defaults)
-        #expect(fresh.showGlucoseUnitLabels == false)   // default OFF
+        #expect(fresh.showGlucoseUnitLabels == false)  // default OFF
 
         fresh.showGlucoseUnitLabels = true
         let reloaded = AppSettings(defaults: defaults)
-        #expect(reloaded.showGlucoseUnitLabels == true)   // persisted across re-init
+        #expect(reloaded.showGlucoseUnitLabels == true)  // persisted across re-init
     }
 
     // MARK: Glucose plot bounds
@@ -281,7 +285,7 @@ struct SettingsCatalogTests {
         let suiteName = "SettingsCatalogTests.glucosePlotBoundsSnap.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        defaults.set(320, forKey: "glucosePlotCeiling")   // legacy out-of-set value
+        defaults.set(320, forKey: "glucosePlotCeiling")  // legacy out-of-set value
 
         let fresh = AppSettings(defaults: defaults)
         #expect(AppSettings.glucosePlotCeilingOptions.contains(fresh.glucosePlotCeiling))
@@ -319,7 +323,7 @@ struct SettingsCatalogTests {
 
         reloaded.glucosePlotFloorSmall = nil
         reloaded.glucosePlotCeilingSmall = nil
-        #expect(defaults.object(forKey: "glucosePlotFloorSmall") == nil)   // key removed, not just nulled
+        #expect(defaults.object(forKey: "glucosePlotFloorSmall") == nil)  // key removed, not just nulled
         #expect(defaults.object(forKey: "glucosePlotCeilingSmall") == nil)
         let afterClear = AppSettings(defaults: defaults)
         #expect(afterClear.glucosePlotFloorSmall == nil)
@@ -332,7 +336,7 @@ struct SettingsCatalogTests {
         let suiteName = "SettingsCatalogTests.glucosePlotSmallOverrideSnap.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        defaults.set(320, forKey: "glucosePlotFloorSmall")     // legacy out-of-set value
+        defaults.set(320, forKey: "glucosePlotFloorSmall")  // legacy out-of-set value
         defaults.set(320, forKey: "glucosePlotCeilingSmall")
 
         let fresh = AppSettings(defaults: defaults)
@@ -349,7 +353,7 @@ struct SettingsCatalogTests {
         let suiteName = "SettingsCatalogTests.glucosePlotSmallOverridePartial.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        defaults.set(50, forKey: "glucosePlotFloorSmall")   // only the floor half persisted
+        defaults.set(50, forKey: "glucosePlotFloorSmall")  // only the floor half persisted
 
         let fresh = AppSettings(defaults: defaults)
         #expect(fresh.glucosePlotFloorSmall == nil)
@@ -385,49 +389,57 @@ struct SettingsCatalogTests {
     @Test func noOrphanedCompileGatedSettingsOnCurrentBuild() {
         let orphans = CompileGateAudit.orphanedSettingsIndexEntries(
             forGatedOffTokens: CompileGateAudit.gatedOffSearchTokens)
-        #expect(orphans.isEmpty,
-                "a compile-gated-off feature still has a live SettingsIndex row: \(orphans.map(\.title))")
+        #expect(
+            orphans.isEmpty,
+            "a compile-gated-off feature still has a live SettingsIndex row: \(orphans.map(\.title))")
     }
 
     /// The helper is not a tautology: a token owned by a still-present row must flag that row.
     @Test func orphanDetectorIsNonVacuous() {
         let orphans = CompileGateAudit.orphanedSettingsIndexEntries(
             forGatedOffTokens: ["Failover CGM source"])
-        #expect(!orphans.isEmpty,
-                "the §6c helper must detect a dangling settings row for a removed feature")
+        #expect(
+            !orphans.isEmpty,
+            "the §6c helper must detect a dangling settings row for a removed feature")
         #expect(orphans.contains { $0.title == "Failover CGM source" })
     }
 
     /// "xdrip" is not advertised by any live `SettingsIndex` row.
     @Test func xdripRemovalLeavesNoOrphanedSettingsIndexEntry() {
         let orphans = CompileGateAudit.orphanedSettingsIndexEntries(forGatedOffTokens: ["xdrip"])
-        #expect(orphans.isEmpty,
-                "xDrip was removed but a SettingsIndex row still advertises it: \(orphans.map(\.title))")
+        #expect(
+            orphans.isEmpty,
+            "xDrip was removed but a SettingsIndex row still advertises it: \(orphans.map(\.title))")
     }
 
     /// "libre" / "xdrip" are not advertised by any live `SettingsIndex` row.
     @Test func g6AndLibreLinkUpRemovalLeavesNoOrphanedSettingsIndexEntry() {
         let orphans = CompileGateAudit.orphanedSettingsIndexEntries(forGatedOffTokens: ["libre", "xdrip"])
-        #expect(orphans.isEmpty,
-                "G6/LibreLinkUp were removed but a SettingsIndex row still advertises them: \(orphans.map(\.title))")
+        #expect(
+            orphans.isEmpty,
+            "G6/LibreLinkUp were removed but a SettingsIndex row still advertises them: \(orphans.map(\.title))")
     }
 
     /// Backup/restore tokens are not advertised by `SettingsIndex` or `SettingsExtraIndex`.
     @Test func backupRestoreRemovalLeavesNoOrphanedSettingsIndexEntry() {
         let tokens = Set(["icloud", "restore", "files", "import"])
         let orphans = CompileGateAudit.orphanedSettingsIndexEntries(forGatedOffTokens: tokens)
-        #expect(orphans.isEmpty,
-                "Backup & restore was removed but a SettingsIndex row still advertises it: \(orphans.map(\.title))")
+        #expect(
+            orphans.isEmpty,
+            "Backup & restore was removed but a SettingsIndex row still advertises it: \(orphans.map(\.title))")
         let extraOrphans = SettingsExtraIndex.entries.filter { entry in tokens.contains { entry.matches($0) } }
-        #expect(extraOrphans.isEmpty,
-                "Backup & restore was removed but a SettingsExtraIndex row still advertises it: \(extraOrphans.map(\.title))")
+        #expect(
+            extraOrphans.isEmpty,
+            "Backup & restore was removed but a SettingsExtraIndex row still advertises it: \(extraOrphans.map(\.title))"
+        )
     }
 
     /// Advanced-control tokens are not advertised by any live `SettingsIndex` row.
     @Test func advancedControlRemovalLeavesNoOrphanedSettingsIndexEntry() {
         let tokens = Set(["suspend resume", "temp basal", "cartridge", "advancedcontrol"])
         let orphans = CompileGateAudit.orphanedSettingsIndexEntries(forGatedOffTokens: tokens)
-        #expect(orphans.isEmpty,
-                "Advanced control was removed but a SettingsIndex row still advertises it: \(orphans.map(\.title))")
+        #expect(
+            orphans.isEmpty,
+            "Advanced control was removed but a SettingsIndex row still advertises it: \(orphans.map(\.title))")
     }
 }

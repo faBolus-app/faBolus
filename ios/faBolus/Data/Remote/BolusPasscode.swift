@@ -57,7 +57,8 @@ enum BolusPasscodeStore {
     /// `upsertBlob`) since this is establishing a FIRST item, not exercising the replace logic itself.
     static func seedLegacyBlobForTesting(pin: String) {
         let salt = [UInt8](repeating: 0xAB, count: 16)
-        deleteBlob(); clearLockout()
+        deleteBlob()
+        clearLockout()
         _ = upsertBlob(hex(salt) + ":" + legacyHash(pin: pin, salt: salt))
     }
     #endif
@@ -81,19 +82,20 @@ enum BolusPasscodeStore {
     @discardableResult
     static func setPasscode(_ pin: String?) -> Bool {
         guard let pin, !pin.isEmpty else {
-            deleteBlob(); clearLockout()                          // explicit clear — always succeeds
+            deleteBlob()
+            clearLockout()  // explicit clear — always succeeds
             return true
         }
-        guard isValidFormat(pin) else { return false }             // reject malformed BEFORE touching the store
+        guard isValidFormat(pin) else { return false }  // reject malformed BEFORE touching the store
         var salt = [UInt8](repeating: 0, count: 16)
         var rngStatus = SecRandomCopyBytes(kSecRandomDefault, salt.count, &salt)
         #if DEBUG
         if let injected = injectedRNGStatus { rngStatus = injected }
         #endif
-        guard rngStatus == errSecSuccess else { return false }     // a bad salt never becomes the gate
+        guard rngStatus == errSecSuccess else { return false }  // a bad salt never becomes the gate
         guard let blob = hashV2(pin: pin, salt: salt, iterations: pbkdf2Iterations) else { return false }
-        guard upsertBlob(blob) else { return false }                // atomic replace; old blob left intact on failure
-        clearLockout()                                              // only reached once the replace succeeded
+        guard upsertBlob(blob) else { return false }  // atomic replace; old blob left intact on failure
+        clearLockout()  // only reached once the replace succeeded
         return true
     }
 
@@ -113,7 +115,7 @@ enum BolusPasscodeStore {
     /// that survives relaunch. Never hard-locks. VA-29: PBKDF2 for `v2:` blobs, with transparent migration of
     /// an old SHA-256 `"salt:hash"` blob on a successful verify.
     static func verify(_ pin: String) -> Bool {
-        guard lockoutRemaining <= 0 else { return false }        // backing off — don't even hash
+        guard lockoutRemaining <= 0 else { return false }  // backing off — don't even hash
         guard let stored = load() else { return false }
 
         var matched = false
@@ -121,10 +123,11 @@ enum BolusPasscodeStore {
             // v2:saltHex:iterations:hashHex — PBKDF2 verification.
             let parts = stored.split(separator: ":", maxSplits: 3, omittingEmptySubsequences: false)
             if parts.count == 4,
-               let salt = bytes(String(parts[1])),
-               let iterations = Int(parts[2]),
-               let derived = pbkdf2(pin: pin, salt: salt, iterations: iterations),
-               let storedHash = bytes(String(parts[3])) {
+                let salt = bytes(String(parts[1])),
+                let iterations = Int(parts[2]),
+                let derived = pbkdf2(pin: pin, salt: salt, iterations: iterations),
+                let storedHash = bytes(String(parts[3]))
+            {
                 // WR-03: constant-time compare over raw hash bytes (not `hex(...) == String`),
                 // so verification time doesn't leak how many leading hash bytes matched.
                 matched = constantTimeEquals(derived, storedHash)
@@ -134,9 +137,10 @@ enum BolusPasscodeStore {
             // Legacy "saltHex:hashHex" SHA-256 blob — verify with the old scheme, then migrate on success.
             let parts = stored.split(separator: ":")
             if parts.count == 2, let salt = bytes(String(parts[0])),
-               let storedHash = bytes(String(parts[1])),
-               // WR-03: constant-time compare over raw hash bytes, matching the v2 path.
-               constantTimeEquals(legacyHashBytes(pin: pin, salt: salt), storedHash) {
+                let storedHash = bytes(String(parts[1])),
+                // WR-03: constant-time compare over raw hash bytes, matching the v2 path.
+                constantTimeEquals(legacyHashBytes(pin: pin, salt: salt), storedHash)
+            {
                 matched = true
                 // VA-29 migration: silently upgrade to a PBKDF2 `v2:` blob on this correct entry (fresh salt).
                 // CX-F-10: the SAME atomic-upsert guarantee applies here — a failed upgrade store leaves the
@@ -146,7 +150,7 @@ enum BolusPasscodeStore {
                 var newSalt = [UInt8](repeating: 0, count: 16)
                 _ = SecRandomCopyBytes(kSecRandomDefault, newSalt.count, &newSalt)
                 if let upgraded = hashV2(pin: pin, salt: newSalt, iterations: pbkdf2Iterations) {
-                    _ = upsertBlob(upgraded)   // never delete-then-add — on failure the legacy blob remains
+                    _ = upsertBlob(upgraded)  // never delete-then-add — on failure the legacy blob remains
                 }
             }
         }
@@ -174,7 +178,7 @@ enum BolusPasscodeStore {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
+            kSecAttrAccount as String: account
         ]
     }
 
@@ -194,8 +198,9 @@ enum BolusPasscodeStore {
         }
         #endif
         let data = Data(blob.utf8)
-        let updateStatus = SecItemUpdate(keychainBase as CFDictionary,
-                                          [kSecValueData as String: data] as CFDictionary)
+        let updateStatus = SecItemUpdate(
+            keychainBase as CFDictionary,
+            [kSecValueData as String: data] as CFDictionary)
         if updateStatus == errSecItemNotFound {
             // Nothing to update — this is a first-set, not a replace. Add fresh.
             var add = keychainBase
@@ -214,7 +219,10 @@ enum BolusPasscodeStore {
 
     private static func deleteBlob() {
         #if DEBUG
-        if useInMemoryBackingForTests { memBlob = nil; return }
+        if useInMemoryBackingForTests {
+            memBlob = nil
+            return
+        }
         #endif
         SecItemDelete(keychainBase as CFDictionary)
     }
@@ -228,7 +236,7 @@ enum BolusPasscodeStore {
         q[kSecMatchLimit as String] = kSecMatchLimitOne
         var out: CFTypeRef?
         guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess,
-              let data = out as? Data, let s = String(data: data, encoding: .utf8), !s.isEmpty
+            let data = out as? Data, let s = String(data: data, encoding: .utf8), !s.isEmpty
         else { return nil }
         return s
     }
@@ -239,7 +247,7 @@ enum BolusPasscodeStore {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: lockoutAccount,
+            kSecAttrAccount as String: lockoutAccount
         ]
     }
 
@@ -247,7 +255,10 @@ enum BolusPasscodeStore {
     private static func storeLockout(fails: Int, lockUntil: Double) {
         let blob = "\(fails):\(lockUntil)"
         #if DEBUG
-        if useInMemoryBackingForTests { memLockout = blob; return }
+        if useInMemoryBackingForTests {
+            memLockout = blob
+            return
+        }
         #endif
         SecItemDelete(lockoutKeychainBase as CFDictionary)
         var add = lockoutKeychainBase
@@ -275,14 +286,17 @@ enum BolusPasscodeStore {
         q[kSecMatchLimit as String] = kSecMatchLimitOne
         var out: CFTypeRef?
         guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess,
-              let data = out as? Data, let s = String(data: data, encoding: .utf8), !s.isEmpty
+            let data = out as? Data, let s = String(data: data, encoding: .utf8), !s.isEmpty
         else { return nil }
         return s
     }
 
     private static func clearLockout() {
         #if DEBUG
-        if useInMemoryBackingForTests { memLockout = nil; return }
+        if useInMemoryBackingForTests {
+            memLockout = nil
+            return
+        }
         #endif
         SecItemDelete(lockoutKeychainBase as CFDictionary)
     }
@@ -338,11 +352,13 @@ enum BolusPasscodeStore {
     private static func hex(_ b: [UInt8]) -> String { b.map { String(format: "%02x", $0) }.joined() }
     private static func bytes(_ s: String) -> [UInt8]? {
         guard s.count % 2 == 0 else { return nil }
-        var out: [UInt8] = []; var i = s.startIndex
+        var out: [UInt8] = []
+        var i = s.startIndex
         while i < s.endIndex {
             let j = s.index(i, offsetBy: 2)
             guard let b = UInt8(s[i..<j], radix: 16) else { return nil }
-            out.append(b); i = j
+            out.append(b)
+            i = j
         }
         return out
     }

@@ -40,7 +40,8 @@ struct DeliverySurfaceOutcomeGuardTests {
         let ledgerURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("a5-ledger-\(UUID().uuidString).json")
         let model = AppModel(source: backend, ledgerStoreURL: ledgerURL)
-        let rec = EchoRecorder(); rec.attach(to: model)
+        let rec = EchoRecorder()
+        rec.attach(to: model)
         if connected { await backend.connect() }
         return (model, backend, rec)
     }
@@ -48,10 +49,12 @@ struct DeliverySurfaceOutcomeGuardTests {
     /// A model whose global delivery block is forced ON from construction (`forceNoDurableStore`), so a
     /// `.blocked` outcome is reached deterministically without a live in-flight collision.
     private func makeGloballyBlockedModel() async -> (AppModel, MockBackend, EchoRecorder) {
-        let backend = MockBackend(); await backend.connect()
+        let backend = MockBackend()
+        await backend.connect()
         let store = R3CLedgerFaultTests.FakeLedgerStore()
         let model = AppModel(source: backend, ledgerStore: store, forceNoDurableStore: true)
-        let rec = EchoRecorder(); rec.attach(to: model)
+        let rec = EchoRecorder()
+        rec.attach(to: model)
         return (model, backend, rec)
     }
 
@@ -62,8 +65,14 @@ struct DeliverySurfaceOutcomeGuardTests {
     private func withCleanSettings(_ body: () async throws -> Void) async rethrows {
         let s = AppSettings.shared
         let ro = s.phoneReadOnly, child = s.childModeEnabled, mode = s.appMode
-        s.phoneReadOnly = false; s.childModeEnabled = false; s.appMode = .advanced
-        defer { s.phoneReadOnly = ro; s.childModeEnabled = child; s.appMode = mode }
+        s.phoneReadOnly = false
+        s.childModeEnabled = false
+        s.appMode = .advanced
+        defer {
+            s.phoneReadOnly = ro
+            s.childModeEnabled = child
+            s.appMode = mode
+        }
         try await body()
     }
 
@@ -90,7 +99,7 @@ struct DeliverySurfaceOutcomeGuardTests {
 
     @Test func localStandardFailedSetsLastErrorAndNotifiesDeliveryFailed() async {
         await withCleanSettings {
-            let (model, _, _) = await makeModel(connected: false)   // not connected → BolusError.notConnected
+            let (model, _, _) = await makeModel(connected: false)  // not connected → BolusError.notConnected
             var posted: [NotificationBroker.Message] = []
             model.notificationSink = { msg, _, _ in posted.append(msg) }
             await model.deliverBolus(units: 1.0)
@@ -180,8 +189,9 @@ struct DeliverySurfaceOutcomeGuardTests {
             #expect(r.error == Self.indeterminateLocalMessage)
             #expect(rec.last?.requestId == "w-indet")
             #expect(rec.last?.status == .unknown)
-            #expect(rec.last?.message == Self.indeterminateWidgetMessage,
-                    "the peer-wire echo message must remain byte-identical to its original shorter string")
+            #expect(
+                rec.last?.message == Self.indeterminateWidgetMessage,
+                "the peer-wire echo message must remain byte-identical to its original shorter string")
         }
     }
 
@@ -209,7 +219,7 @@ struct DeliverySurfaceOutcomeGuardTests {
 
     @Test func remoteResolvedFailedEchoesFailedAndSetsLastError() async {
         await withCleanSettings {
-            let (model, _, rec) = await makeModel(connected: false)   // not connected → determinate failure
+            let (model, _, rec) = await makeModel(connected: false)  // not connected → determinate failure
             await model.remoteDeliver(requestId: "r-failed", units: 1.0, peerId: "watch")
             #expect(rec.last?.requestId == "r-failed")
             #expect(rec.last?.status == .failed)
@@ -287,12 +297,14 @@ struct DeliverySurfaceOutcomeGuardTests {
         await withCleanSettings {
             let (model, backend, _) = await makeModel(connected: true)
             await model.deliverBolus(units: 2.0)
-            #expect(model.lastDeliveredUnits == 2.0)   // a real amount is now published
+            #expect(model.lastDeliveredUnits == 2.0)  // a real amount is now published
             backend.forceIndeterminateNextDelivery = true
             await model.deliverBolus(units: 1.0)
             #expect(model.lastError == Self.indeterminateLocalMessage)
-            #expect(model.lastDeliveredUnits == nil,
-                    "the reset at the top of deliverBolus must clear the prior 2.0 U — an indeterminate outcome never republishes lastDeliveredUnits")
+            #expect(
+                model.lastDeliveredUnits == nil,
+                "the reset at the top of deliverBolus must clear the prior 2.0 U — an indeterminate outcome never republishes lastDeliveredUnits"
+            )
         }
     }
 
@@ -310,7 +322,7 @@ struct DeliverySurfaceOutcomeGuardTests {
             let (model, backend, _) = await makeModel(connected: true)
             backend.forceNextDeliveryPartial = (delivered: 0.5, cancelled: true)
             await model.deliverBolus(units: 2.0)
-            #expect(model.lastDeliveredUnits == 0.5)          // ACTUAL committed, NOT the requested 2.0
+            #expect(model.lastDeliveredUnits == 0.5)  // ACTUAL committed, NOT the requested 2.0
             #expect(model.lastDeliveredWasCancelled == true)
         }
     }
@@ -321,7 +333,7 @@ struct DeliverySurfaceOutcomeGuardTests {
             let (model, backend, _) = await makeModel(connected: true)
             backend.forceNextDeliveryPartial = (delivered: 1.0, cancelled: true)
             await model.deliverExtendedBolus(totalUnits: 3.0, nowUnits: 1.0, durationMinutes: 30)
-            #expect(model.lastDeliveredUnits == 1.0)          // ACTUAL committed, NOT the requested 3.0
+            #expect(model.lastDeliveredUnits == 1.0)  // ACTUAL committed, NOT the requested 3.0
             #expect(model.lastDeliveredWasCancelled == true)
         }
     }

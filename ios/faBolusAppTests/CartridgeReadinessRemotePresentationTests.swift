@@ -25,34 +25,41 @@ struct CartridgeReadinessRemotePresentationTests {
 
     @Test func widgetPresentsReadyOnlyForAConfirmedReadyState() {
         // CONFIRMED non-loading (a real op-20 reply) → ready → true
-        let ready = WidgetPublisher.makeSnapshot(snapshot(loadState: 6, confirmed: true),
-                                                 history: [], alerts: [], staleAfterSec: 300, hideAfterSec: nil)
+        let ready = WidgetPublisher.makeSnapshot(
+            snapshot(loadState: 6, confirmed: true),
+            history: [], alerts: [], staleAfterSec: 300, hideAfterSec: nil)
         #expect(ready.cartridgeReady == true)
     }
 
     @Test func widgetDoesNotPresentFailOpenReadyForAnUnknownState() {
         // op-20 never read / auto-excluded (idle default, unconfirmed) → UNKNOWN → non-positive false
-        let unknown = WidgetPublisher.makeSnapshot(snapshot(loadState: 6, confirmed: false),
-                                                   history: [], alerts: [], staleAfterSec: 300, hideAfterSec: nil)
-        #expect(unknown.cartridgeReady == false,
-                "an unknown/auto-excluded cartridge must NOT present a fail-open 'ready' on the widget (WR-04)")
+        let unknown = WidgetPublisher.makeSnapshot(
+            snapshot(loadState: 6, confirmed: false),
+            history: [], alerts: [], staleAfterSec: 300, hideAfterSec: nil)
+        #expect(
+            unknown.cartridgeReady == false,
+            "an unknown/auto-excluded cartridge must NOT present a fail-open 'ready' on the widget (WR-04)")
     }
 
     @Test func widgetPresentsNotReadyForAConfirmedLoadingState() {
-        let notReady = WidgetPublisher.makeSnapshot(snapshot(loadState: 0, confirmed: true),
-                                                    history: [], alerts: [], staleAfterSec: 300, hideAfterSec: nil)
+        let notReady = WidgetPublisher.makeSnapshot(
+            snapshot(loadState: 0, confirmed: true),
+            history: [], alerts: [], staleAfterSec: 300, hideAfterSec: nil)
         #expect(notReady.cartridgeReady == false)
     }
 
     // MARK: - Remote wire (Bool? — nil = NO SIGNAL for unknown)
 
     @Test func remoteWireMapsReadinessToTriState() {
-        #expect(snapshot(loadState: 6, confirmed: true).cartridgeReadyRemoteWire == true,
-                "confirmed non-loading → true")
-        #expect(snapshot(loadState: 0, confirmed: true).cartridgeReadyRemoteWire == false,
-                "confirmed loading → false")
-        #expect(snapshot(loadState: 6, confirmed: false).cartridgeReadyRemoteWire == nil,
-                "unknown/auto-excluded → nil (NO SIGNAL, never a fail-open 'ready') (WR-04)")
+        #expect(
+            snapshot(loadState: 6, confirmed: true).cartridgeReadyRemoteWire == true,
+            "confirmed non-loading → true")
+        #expect(
+            snapshot(loadState: 0, confirmed: true).cartridgeReadyRemoteWire == false,
+            "confirmed loading → false")
+        #expect(
+            snapshot(loadState: 6, confirmed: false).cartridgeReadyRemoteWire == nil,
+            "unknown/auto-excluded → nil (NO SIGNAL, never a fail-open 'ready') (WR-04)")
     }
 
     // MARK: - End-to-end statusCommand wiring
@@ -70,15 +77,16 @@ struct CartridgeReadinessRemotePresentationTests {
         await backend.connect()
         #expect(backend.snapshot.cartridgeReadiness == .unknown, "MockBackend connects idle+unconfirmed → unknown")
         let cmd = model.statusCommand(includeHistory: false)
-        #expect(cmd.cartridgeReady == nil,
-                "an unknown cartridge state must relay NO signal to remotes, not a fail-open 'ready' (WR-04)")
+        #expect(
+            cmd.cartridgeReady == nil,
+            "an unknown cartridge state must relay NO signal to remotes, not a fail-open 'ready' (WR-04)")
     }
 
     /// A CONFIRMED loading state still relays an explicit `false` (the not-ready block still propagates).
     @Test func statusCommandRelaysFalseCartridgeWhenLoading() async {
         let (model, backend) = makeModel()
         await backend.connect()
-        try? await backend.enterChangeCartridgeMode()   // loadState 0 (CHANGE_CARTRIDGE) → .notReady
+        try? await backend.enterChangeCartridgeMode()  // loadState 0 (CHANGE_CARTRIDGE) → .notReady
         let cmd = model.statusCommand(includeHistory: false)
         #expect(cmd.cartridgeReady == false, "a confirmed loading state relays an explicit not-ready to remotes")
     }

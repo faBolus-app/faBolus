@@ -75,8 +75,9 @@ struct GarminSendOutboxTests {
     @Test func transientEchoFailureReenqueuesFrontNeverDrops() {
         let d = garminSendDisposition(result: .transientFailure, isEcho: true)
         #expect(d == .reenqueueFront)
-        #expect(d != .drop && d != .surfaceAndDrop,
-                "a TRANSIENT echo failure must survive — only a PERMANENT failure may surface+drop")
+        #expect(
+            d != .drop && d != .surfaceAndDrop,
+            "a TRANSIENT echo failure must survive — only a PERMANENT failure may surface+drop")
     }
 
     /// The other half of the LOAD-BEARING invariant: only PERMANENT surfaces+drops; TRANSIENT never does.

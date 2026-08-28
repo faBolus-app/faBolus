@@ -20,25 +20,34 @@ struct ClinicianTierAckTests {
         s.acknowledgeClinicianTier()
         #expect(s.hasAcknowledgedClinicianTier)
         let first = s.clinicianTierAckAt
-        s.acknowledgeClinicianTier()                 // idempotent — keeps the first timestamp
+        s.acknowledgeClinicianTier()  // idempotent — keeps the first timestamp
         #expect(s.clinicianTierAckAt == first)
     }
 
     @Test func clinicianTierWriteIsNotBlockedByAMissingAcknowledgment() async {
         let s = AppSettings.shared
-        let ro = s.phoneReadOnly, child = s.childModeEnabled, adv = s.advancedControlEnabled, ack = s.clinicianTierAckAt, mode = s.appMode
-        defer { s.phoneReadOnly = ro; s.childModeEnabled = child; s.advancedControlEnabled = adv; s.clinicianTierAckAt = ack; s.appMode = mode }
-        s.phoneReadOnly = false; s.childModeEnabled = false; s.advancedControlEnabled = true
-        s.appMode = .advanced                         // setMaxBolus is an Advanced-mode write (P14 S2 gate)
-        s.clinicianTierAckAt = nil                    // deliberately NOT acknowledged
+        let ro = s.phoneReadOnly, child = s.childModeEnabled, adv = s.advancedControlEnabled,
+            ack = s.clinicianTierAckAt, mode = s.appMode
+        defer {
+            s.phoneReadOnly = ro
+            s.childModeEnabled = child
+            s.advancedControlEnabled = adv
+            s.clinicianTierAckAt = ack
+            s.appMode = mode
+        }
+        s.phoneReadOnly = false
+        s.childModeEnabled = false
+        s.advancedControlEnabled = true
+        s.appMode = .advanced  // setMaxBolus is an Advanced-mode write (P14 S2 gate)
+        s.clinicianTierAckAt = nil  // deliberately NOT acknowledged
 
-        let backend = MockBackend()                   // Mobi, .mobiAdvanced
+        let backend = MockBackend()  // Mobi, .mobiAdvanced
         let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("s8-\(UUID().uuidString).json")
         let model = AppModel(source: backend, ledgerStoreURL: url)
         await backend.connect()
 
         #expect(!s.hasAcknowledgedClinicianTier)
-        #expect(GatedPumpWrite.setMaxBolus.requiredTier == .clinician)   // it IS a clinician-tier write
+        #expect(GatedPumpWrite.setMaxBolus.requiredTier == .clinician)  // it IS a clinician-tier write
         // S6 routes setMaxBolus through the untested-feature ack funnel (runGatedTherapy); ack THAT so we
         // isolate the CLINICIAN-tier axis (S8). The clinician ack stays absent below.
         model.acknowledgeUnverifiedTherapy()
@@ -53,14 +62,23 @@ struct ClinicianTierAckTests {
     @Test func clinicianTierEditRecordsSelfSetProvenanceOnlyOnSuccess() async {
         let s = AppSettings.shared
         let ro = s.phoneReadOnly, child = s.childModeEnabled, adv = s.advancedControlEnabled, mode = s.appMode
-        defer { s.phoneReadOnly = ro; s.childModeEnabled = child; s.advancedControlEnabled = adv; s.appMode = mode }
-        s.phoneReadOnly = false; s.childModeEnabled = false; s.advancedControlEnabled = true
-        s.appMode = .advanced                          // setMaxBolus is an Advanced-mode write (P14 S2 gate)
+        defer {
+            s.phoneReadOnly = ro
+            s.childModeEnabled = child
+            s.advancedControlEnabled = adv
+            s.appMode = mode
+        }
+        s.phoneReadOnly = false
+        s.childModeEnabled = false
+        s.advancedControlEnabled = true
+        s.appMode = .advanced  // setMaxBolus is an Advanced-mode write (P14 S2 gate)
 
-        let backend = MockBackend()                    // Mobi
-        let ledgerURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("s8l-\(UUID().uuidString).json")
+        let backend = MockBackend()  // Mobi
+        let ledgerURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(
+            "s8l-\(UUID().uuidString).json")
         let model = AppModel(source: backend, ledgerStoreURL: ledgerURL)
-        let storeURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("s8p-\(UUID().uuidString).json")
+        let storeURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(
+            "s8p-\(UUID().uuidString).json")
         model.settingChangeStore = StoredSettingChangeStore(url: storeURL)
         let store = model.settingChangeStore
         await backend.connect()

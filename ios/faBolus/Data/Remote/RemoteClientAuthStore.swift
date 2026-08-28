@@ -23,11 +23,12 @@ enum RemoteClientAuthStore {
             kSecAttrService as String: service,
             kSecAttrAccount as String: name,
             kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecMatchLimit as String: kSecMatchLimitOne
         ]
         var out: CFTypeRef?
         guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess,
-              let data = out as? Data, !data.isEmpty else { return nil }
+            let data = out as? Data, !data.isEmpty
+        else { return nil }
         return data
     }
 
@@ -35,7 +36,7 @@ enum RemoteClientAuthStore {
         let base: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: name,
+            kSecAttrAccount as String: name
         ]
         SecItemDelete(base as CFDictionary)
         var add = base
@@ -45,10 +46,11 @@ enum RemoteClientAuthStore {
     }
 
     static func forget(host name: String) {
-        SecItemDelete([
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: name,
-        ] as CFDictionary)
+        SecItemDelete(
+            [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: name
+            ] as CFDictionary)
     }
 }

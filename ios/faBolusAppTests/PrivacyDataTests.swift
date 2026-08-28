@@ -34,13 +34,14 @@ import faBolusCore
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let url = dir.appendingPathComponent("ledger.json")
         var seed = RemoteBolusLedger()
-        _ = seed.begin(peerId: "watch", requestId: "r9",
-                       doseKey: RemoteBolusLedger.doseKey(units: 2.0, carbsGrams: nil, bgMgdl: nil))
-        seed.markDelivering(peerId: "watch", requestId: "r9", bolusId: 7)   // delivering + sent ⇒ unresolved
+        _ = seed.begin(
+            peerId: "watch", requestId: "r9",
+            doseKey: RemoteBolusLedger.doseKey(units: 2.0, carbsGrams: nil, bgMgdl: nil))
+        seed.markDelivering(peerId: "watch", requestId: "r9", bolusId: 7)  // delivering + sent ⇒ unresolved
         try RemoteBolusLedgerStore(url: url).save(seed)
 
         let model = AppModel(source: MockBackend(), ledgerStoreURL: url)
-        #expect(model.deliveryGloballyBlocked)   // the seeded unresolved entry blocks delivery synchronously
+        #expect(model.deliveryGloballyBlocked)  // the seeded unresolved entry blocks delivery synchronously
 
         let outcome = model.eraseAllOnDeviceHealthData()
         guard case .refused = outcome else {
@@ -60,8 +61,9 @@ import faBolusCore
 
         // Health data that MUST be wiped: a setting-change record (injected temp store).
         model.settingChangeStore = StoredSettingChangeStore(url: dir.appendingPathComponent("scl.json"))
-        model.settingChangeStore.record(StoredSettingChange(
-            key: .global("maxBolus"), before: nil, after: .double(12), provenance: .selfSet, atSeconds: 1))
+        model.settingChangeStore.record(
+            StoredSettingChange(
+                key: .global("maxBolus"), before: nil, after: .double(12), provenance: .selfSet, atSeconds: 1))
         #expect(model.settingChangeStore.load().log.count == 1)
 
         // A Keychain pairing secret + the pump pairing state that MUST survive (scope = health data only).
@@ -98,22 +100,26 @@ import faBolusCore
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let url = dir.appendingPathComponent("ledger.json")
         var seed = RemoteBolusLedger()
-        _ = seed.begin(peerId: "watch", requestId: "r9",
-                       doseKey: RemoteBolusLedger.doseKey(units: 2.0, carbsGrams: nil, bgMgdl: nil))
-        seed.markDelivering(peerId: "watch", requestId: "r9", bolusId: 7)   // unresolved
+        _ = seed.begin(
+            peerId: "watch", requestId: "r9",
+            doseKey: RemoteBolusLedger.doseKey(units: 2.0, carbsGrams: nil, bgMgdl: nil))
+        seed.markDelivering(peerId: "watch", requestId: "r9", bolusId: 7)  // unresolved
         try RemoteBolusLedgerStore(url: url).save(seed)
 
         let model = AppModel(source: MockBackend(), ledgerStoreURL: url)
         #expect(model.deliveryGloballyBlocked)
 
         model.settingChangeStore = StoredSettingChangeStore(url: dir.appendingPathComponent("scl.json"))
-        model.settingChangeStore.record(StoredSettingChange(
-            key: .global("maxBolus"), before: nil, after: .double(12), provenance: .selfSet, atSeconds: 1))
+        model.settingChangeStore.record(
+            StoredSettingChange(
+                key: .global("maxBolus"), before: nil, after: .double(12), provenance: .selfSet, atSeconds: 1))
         let pid = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
-        PumpPeripheralStore.set(pid); defer { PumpPeripheralStore.clear() }
+        PumpPeripheralStore.set(pid)
+        defer { PumpPeripheralStore.clear() }
 
         guard case .refused = model.eraseEverythingFullReset() else {
-            Issue.record("expected .refused while a delivery is unresolved"); return
+            Issue.record("expected .refused while a delivery is unresolved")
+            return
         }
         // Nothing cleared on refusal: health data + persisted peripheral (pairing) both survive.
         #expect(model.settingChangeStore.load().log.count == 1)
@@ -130,14 +136,15 @@ import faBolusCore
         #expect(!model.deliveryGloballyBlocked)
 
         model.settingChangeStore = StoredSettingChangeStore(url: dir.appendingPathComponent("scl.json"))
-        model.settingChangeStore.record(StoredSettingChange(
-            key: .global("maxBolus"), before: nil, after: .double(12), provenance: .selfSet, atSeconds: 1))
+        model.settingChangeStore.record(
+            StoredSettingChange(
+                key: .global("maxBolus"), before: nil, after: .double(12), provenance: .selfSet, atSeconds: 1))
         #expect(model.settingChangeStore.load().log.count == 1)
         PumpPeripheralStore.set(UUID(uuidString: "22222222-2222-2222-2222-222222222222")!)
         defer { PumpPeripheralStore.clear() }
 
         #expect(model.eraseEverythingFullReset() == .erased)
-        #expect(model.settingChangeStore.load().log.isEmpty)     // health wiped
-        #expect(PumpPeripheralStore.id() == nil)                 // unpaired (peripheral cleared)
+        #expect(model.settingChangeStore.load().log.isEmpty)  // health wiped
+        #expect(PumpPeripheralStore.id() == nil)  // unpaired (peripheral cleared)
     }
 }

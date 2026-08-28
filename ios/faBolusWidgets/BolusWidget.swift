@@ -38,19 +38,23 @@ struct BolusWidgetView: View {
             }
             .containerBackground(.clear, for: .widget)
 
-        default: // .systemSmall
+        default:  // .systemSmall
             VStack(spacing: 6) {
                 Image(systemName: "drop.fill").font(.system(size: 30)).foregroundStyle(.white)
                 Text("Bolus").font(.title3.weight(.bold)).foregroundStyle(.white)
                 if let g = snap.glucose, !WidgetUI.isStale(snap, now: now) {
-                    Text("\(unit.format(mgdl: g)) \(snap.trendArrow)").font(.caption).foregroundStyle(.white.opacity(0.85))
+                    Text("\(unit.format(mgdl: g)) \(snap.trendArrow)").font(.caption).foregroundStyle(
+                        .white.opacity(0.85))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .containerBackground(for: .widget) {
-                LinearGradient(colors: [Color(red: 0.36, green: 0.42, blue: 0.9),
-                                        Color(red: 0.28, green: 0.32, blue: 0.8)],
-                               startPoint: .top, endPoint: .bottom)
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.36, green: 0.42, blue: 0.9),
+                        Color(red: 0.28, green: 0.32, blue: 0.8)
+                    ],
+                    startPoint: .top, endPoint: .bottom)
             }
         }
     }

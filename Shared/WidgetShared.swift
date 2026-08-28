@@ -8,8 +8,8 @@ import Foundation
 /// asserts these equal the canonical `GlucoseThresholds`, so the two can't drift silently. See
 /// `GlucoseThresholds` for the clinical source (Battelino 2019 international TIR consensus, §13).
 public enum WidgetGlucoseThresholds {
-    public static let low = 70        // == GlucoseThresholds.low
-    public static let high = 180      // == GlucoseThresholds.high
+    public static let low = 70  // == GlucoseThresholds.low
+    public static let high = 180  // == GlucoseThresholds.high
     public static let veryHigh = 250  // == GlucoseThresholds.veryHigh
 }
 
@@ -63,12 +63,15 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     public struct Point: Codable, Sendable, Equatable, Hashable {
         public var t: Date
         public var mgdl: Int
-        public init(t: Date, mgdl: Int) { self.t = t; self.mgdl = mgdl }
+        public init(t: Date, mgdl: Int) {
+            self.t = t
+            self.mgdl = mgdl
+        }
     }
 
     public var glucose: Int?
-    public var glucoseDate: Date?          // when the reading was taken (for 6-min staleness)
-    public var trendArrow: String          // Unicode trend arrow (→ ↑ ↓ ⇈ ⇊ ↗ ↘), same as the app HUD
+    public var glucoseDate: Date?  // when the reading was taken (for 6-min staleness)
+    public var trendArrow: String  // Unicode trend arrow (→ ↑ ↓ ⇈ ⇊ ↗ ↘), same as the app HUD
     public var iobUnits: Double
     public var reservoirUnits: Double
     public var batteryPercent: Int
@@ -88,14 +91,14 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     public var activeAlerts: [String]
     // Extra pump settings/status exposed to Siri + Apple Shortcuts.
     public var cgmActive: Bool
-    public var carbRatio: Double     // g/U (0 = unknown)
-    public var isf: Int              // mg/dL per U (0 = unknown)
-    public var targetBg: Int         // mg/dL (0 = unknown)
-    public var maxBolusUnits: Double // pump's configured max
+    public var carbRatio: Double  // g/U (0 = unknown)
+    public var isf: Int  // mg/dL per U (0 = unknown)
+    public var targetBg: Int  // mg/dL (0 = unknown)
+    public var maxBolusUnits: Double  // pump's configured max
     // The publisher's freshness policy (from the phone), so a widget in its own process greys/hides
     // exactly like the app instead of assuming the 6-min default. Optional for back-compat / iOS.
-    public var staleAfterSec: TimeInterval?   // grey after this age
-    public var hideAfterSec: TimeInterval?    // hide ("--") after this age; nil = never hide
+    public var staleAfterSec: TimeInterval?  // grey after this age
+    public var hideAfterSec: TimeInterval?  // hide ("--") after this age; nil = never hide
     /// The active glucose display unit, mirrored from `AppSettings.glucoseDisplayUnit` (Phase
     /// 04-03). A wire token ("mgdl"|"mmol"), never `WidgetGlucoseUnit` itself (Pitfall 6). `nil` ⇒
     /// mgdl — an older app version's snapshot (before this field existed) decodes fine via
@@ -148,28 +151,44 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     /// positive badge". Absent-key legacy decode still defaults to `true` (below), unchanged.
     public var cartridgeReady: Bool
 
-    public init(glucose: Int? = nil, glucoseDate: Date? = nil, trendArrow: String = "", iobUnits: Double = 0,
-                reservoirUnits: Double = 0, batteryPercent: Int = 0, batteryCharging: Bool = false,
-                lastBolusUnits: Double? = nil,
-                lastBolusDate: Date? = nil, connected: Bool = false, updatedAt: Date = Date(),
-                recentPoints: [Point] = [], activeAlerts: [String] = [], cgmActive: Bool = false,
-                carbRatio: Double = 0, isf: Int = 0, targetBg: Int = 0, maxBolusUnits: Double = 0,
-                staleAfterSec: TimeInterval? = nil, hideAfterSec: TimeInterval? = nil,
-                displayUnit: String? = nil, iobDate: Date? = nil, basalRateUnitsPerHour: Double = 0,
-                deliverySuspended: Bool = false, controlIQMode: Int = 0, controlIQEnabled: Bool = false,
-                hasSnoozeEligibleAlert: Bool = false, showUnitLabel: Bool = false,
-                cartridgeReady: Bool = true) {
-        self.glucose = glucose; self.glucoseDate = glucoseDate; self.trendArrow = trendArrow; self.iobUnits = iobUnits
-        self.reservoirUnits = reservoirUnits; self.batteryPercent = batteryPercent; self.batteryCharging = batteryCharging
-        self.lastBolusUnits = lastBolusUnits; self.lastBolusDate = lastBolusDate
-        self.connected = connected; self.updatedAt = updatedAt; self.recentPoints = recentPoints
+    public init(
+        glucose: Int? = nil, glucoseDate: Date? = nil, trendArrow: String = "", iobUnits: Double = 0,
+        reservoirUnits: Double = 0, batteryPercent: Int = 0, batteryCharging: Bool = false,
+        lastBolusUnits: Double? = nil,
+        lastBolusDate: Date? = nil, connected: Bool = false, updatedAt: Date = Date(),
+        recentPoints: [Point] = [], activeAlerts: [String] = [], cgmActive: Bool = false,
+        carbRatio: Double = 0, isf: Int = 0, targetBg: Int = 0, maxBolusUnits: Double = 0,
+        staleAfterSec: TimeInterval? = nil, hideAfterSec: TimeInterval? = nil,
+        displayUnit: String? = nil, iobDate: Date? = nil, basalRateUnitsPerHour: Double = 0,
+        deliverySuspended: Bool = false, controlIQMode: Int = 0, controlIQEnabled: Bool = false,
+        hasSnoozeEligibleAlert: Bool = false, showUnitLabel: Bool = false,
+        cartridgeReady: Bool = true
+    ) {
+        self.glucose = glucose
+        self.glucoseDate = glucoseDate
+        self.trendArrow = trendArrow
+        self.iobUnits = iobUnits
+        self.reservoirUnits = reservoirUnits
+        self.batteryPercent = batteryPercent
+        self.batteryCharging = batteryCharging
+        self.lastBolusUnits = lastBolusUnits
+        self.lastBolusDate = lastBolusDate
+        self.connected = connected
+        self.updatedAt = updatedAt
+        self.recentPoints = recentPoints
         self.activeAlerts = activeAlerts
-        self.cgmActive = cgmActive; self.carbRatio = carbRatio; self.isf = isf
-        self.targetBg = targetBg; self.maxBolusUnits = maxBolusUnits
-        self.staleAfterSec = staleAfterSec; self.hideAfterSec = hideAfterSec
+        self.cgmActive = cgmActive
+        self.carbRatio = carbRatio
+        self.isf = isf
+        self.targetBg = targetBg
+        self.maxBolusUnits = maxBolusUnits
+        self.staleAfterSec = staleAfterSec
+        self.hideAfterSec = hideAfterSec
         self.displayUnit = displayUnit
-        self.iobDate = iobDate; self.basalRateUnitsPerHour = basalRateUnitsPerHour
-        self.deliverySuspended = deliverySuspended; self.controlIQMode = controlIQMode
+        self.iobDate = iobDate
+        self.basalRateUnitsPerHour = basalRateUnitsPerHour
+        self.deliverySuspended = deliverySuspended
+        self.controlIQMode = controlIQMode
         self.controlIQEnabled = controlIQEnabled
         self.hasSnoozeEligibleAlert = hasSnoozeEligibleAlert
         self.showUnitLabel = showUnitLabel
@@ -177,11 +196,12 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case glucose, glucoseDate, trendArrow, iobUnits, reservoirUnits, batteryPercent, batteryCharging, lastBolusUnits,
-             lastBolusDate, connected, updatedAt, recentPoints, activeAlerts, cgmActive, carbRatio, isf,
-             targetBg, maxBolusUnits, staleAfterSec, hideAfterSec, displayUnit, iobDate,
-             basalRateUnitsPerHour, deliverySuspended, controlIQMode, controlIQEnabled, hasSnoozeEligibleAlert,
-             showUnitLabel, cartridgeReady
+        case glucose, glucoseDate, trendArrow, iobUnits, reservoirUnits, batteryPercent, batteryCharging,
+            lastBolusUnits,
+            lastBolusDate, connected, updatedAt, recentPoints, activeAlerts, cgmActive, carbRatio, isf,
+            targetBg, maxBolusUnits, staleAfterSec, hideAfterSec, displayUnit, iobDate,
+            basalRateUnitsPerHour, deliverySuspended, controlIQMode, controlIQEnabled, hasSnoozeEligibleAlert,
+            showUnitLabel, cartridgeReady
     }
 
     /// Custom decode so EVERY field (not just the `Optional`-typed ones synthesis already tolerates)
@@ -239,10 +259,10 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     public static func rangeCategory(_ mgdl: Int?) -> Int {
         guard let g = mgdl else { return -1 }
         switch g {
-        case ..<WidgetGlucoseThresholds.low: return 0                                      // < 70
-        case WidgetGlucoseThresholds.low...WidgetGlucoseThresholds.high: return 1          // 70…180
+        case ..<WidgetGlucoseThresholds.low: return 0  // < 70
+        case WidgetGlucoseThresholds.low...WidgetGlucoseThresholds.high: return 1  // 70…180
         case (WidgetGlucoseThresholds.high + 1)...WidgetGlucoseThresholds.veryHigh: return 2  // 181…250
-        default: return 3                                                                  // > 250
+        default: return 3  // > 250
         }
     }
     public var rangeCategory: Int { Self.rangeCategory(glucose) }
@@ -262,7 +282,7 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     public var isGlucoseStale: Bool {
         guard let d = glucoseDate else { return glucose != nil }
         let elapsed = Date().timeIntervalSince(d)
-        if elapsed < -Self.futureSkewTolerance { return true }   // future-dated beyond skew → stale
+        if elapsed < -Self.futureSkewTolerance { return true }  // future-dated beyond skew → stale
         return elapsed > 6 * 60
     }
 
@@ -274,7 +294,7 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     public func isStale(asOf now: Date) -> Bool {
         guard let d = glucoseDate else { return glucose != nil }
         let elapsed = now.timeIntervalSince(d)
-        if elapsed < -Self.futureSkewTolerance { return true }   // future-dated beyond skew → stale
+        if elapsed < -Self.futureSkewTolerance { return true }  // future-dated beyond skew → stale
         return elapsed > staleLimit
     }
     /// Hidden ("--") at `now`: past the published hide delay (nil delay = never hide). A future-dated
@@ -311,7 +331,9 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     public static let placeholder = WidgetSnapshot(
         glucose: 124, glucoseDate: Date(), trendArrow: "→", iobUnits: 1.2, reservoirUnits: 142, batteryPercent: 80,
         lastBolusUnits: 2.5, lastBolusDate: Date().addingTimeInterval(-1800), connected: true,
-        recentPoints: (0..<24).map { .init(t: Date().addingTimeInterval(Double($0 - 24) * 300), mgdl: 110 + ($0 % 6) * 8) })
+        recentPoints: (0..<24).map {
+            .init(t: Date().addingTimeInterval(Double($0 - 24) * 300), mgdl: 110 + ($0 % 6) * 8)
+        })
 }
 
 /// App Group–backed store for the widget snapshot. Both the app and the widget read/write here.
@@ -322,7 +344,7 @@ public enum WidgetStore {
     /// somehow absent. Every target that touches this container carries the key (see project.yml).
     public static let appGroup: String =
         (Bundle.main.object(forInfoDictionaryKey: "AppGroupIdentifier") as? String)
-            .flatMap { $0.isEmpty ? nil : $0 } ?? "group.com.fabolus.app"
+        .flatMap { $0.isEmpty ? nil : $0 } ?? "group.com.fabolus.app"
     private static let key = "widgetSnapshot"
     private static var defaults: UserDefaults? { UserDefaults(suiteName: appGroup) }
 
@@ -355,7 +377,10 @@ public struct WidgetBolusRequest: Codable, Sendable, Equatable {
     public var requestId: String
     public var createdAt: Date
     public init(amount: Double, mode: String, requestId: String, createdAt: Date) {
-        self.amount = amount; self.mode = mode; self.requestId = requestId; self.createdAt = createdAt
+        self.amount = amount
+        self.mode = mode
+        self.requestId = requestId
+        self.createdAt = createdAt
     }
 }
 
@@ -372,15 +397,21 @@ public struct WidgetBolusRequest: Codable, Sendable, Equatable {
 public enum WidgetBolusPhase: String, Codable, Sendable { case idle, delivering, delivered, cancelled, failed, expired }
 public struct WidgetBolusStatus: Codable, Sendable, Equatable {
     public var phase: WidgetBolusPhase
-    public var units: Double            // requested
+    public var units: Double  // requested
     public var deliveredUnits: Double
     public var requestId: String
     public var updatedAt: Date
     public var message: String
-    public init(phase: WidgetBolusPhase, units: Double = 0, deliveredUnits: Double = 0,
-                requestId: String = "", updatedAt: Date = Date(), message: String = "") {
-        self.phase = phase; self.units = units; self.deliveredUnits = deliveredUnits
-        self.requestId = requestId; self.updatedAt = updatedAt; self.message = message
+    public init(
+        phase: WidgetBolusPhase, units: Double = 0, deliveredUnits: Double = 0,
+        requestId: String = "", updatedAt: Date = Date(), message: String = ""
+    ) {
+        self.phase = phase
+        self.units = units
+        self.deliveredUnits = deliveredUnits
+        self.requestId = requestId
+        self.updatedAt = updatedAt
+        self.message = message
     }
     public static let idle = WidgetBolusStatus(phase: .idle)
 }
@@ -407,17 +438,26 @@ public enum WidgetBolusStore {
     // --- Config mirrored from the app so the widget can build the amount picker ---
     /// Units step for the +/- buttons (from Settings' bolus increment). Defaults to 0.05.
     public static var increment: Double {
-        get { let v = d?.double(forKey: "wbIncrement") ?? 0; return v > 0 ? v : 0.05 }
+        get {
+            let v = d?.double(forKey: "wbIncrement") ?? 0
+            return v > 0 ? v : 0.05
+        }
         set { d?.set(newValue, forKey: "wbIncrement") }
     }
     /// Grams step for the +/- buttons in carbs mode. Defaults to 5 g.
     public static var carbIncrement: Double {
-        get { let v = d?.double(forKey: "wbCarbIncrement") ?? 0; return v > 0 ? v : 5 }
+        get {
+            let v = d?.double(forKey: "wbCarbIncrement") ?? 0
+            return v > 0 ? v : 5
+        }
         set { d?.set(newValue, forKey: "wbCarbIncrement") }
     }
     /// The pump's max bolus (clamp for the amount picker). Defaults to 25 U.
     public static var maxBolus: Double {
-        get { let v = d?.double(forKey: "wbMaxBolus") ?? 0; return v > 0 ? v : 25.0 }
+        get {
+            let v = d?.double(forKey: "wbMaxBolus") ?? 0
+            return v > 0 ? v : 25.0
+        }
         set { d?.set(newValue, forKey: "wbMaxBolus") }
     }
     /// Max carbs entry (grams). Fixed cap mirroring the Garmin remote.
@@ -462,7 +502,12 @@ public enum WidgetBolusStore {
         set { d?.set(newValue, forKey: "wbDraft") }
     }
     /// Reset the whole entry back to the amount stage at zero, in the default mode.
-    public static func resetEntry() { stage = "amount"; mode = defaultMode; draft = 0; resetProgress() }
+    public static func resetEntry() {
+        stage = "amount"
+        mode = defaultMode
+        draft = 0
+        resetProgress()
+    }
 
     /// Current confirm progress (0/1/2), or 0 if it has timed out.
     public static func progress() -> Int {
@@ -475,7 +520,10 @@ public enum WidgetBolusStore {
         d?.set(n, forKey: "wbProg")
         d?.set(Date().timeIntervalSince1970, forKey: "wbProgAt")
     }
-    public static func resetProgress() { d?.set(0, forKey: "wbProg"); d?.set(0.0, forKey: "wbProgAt") }
+    public static func resetProgress() {
+        d?.set(0, forKey: "wbProg")
+        d?.set(0.0, forKey: "wbProgAt")
+    }
 
     public static func setPending(_ r: WidgetBolusRequest) {
         guard let data = try? JSONEncoder().encode(r) else { return }
@@ -484,7 +532,8 @@ public enum WidgetBolusStore {
     /// Read and clear the pending request (returns nil if none or older than `pendingTTL`).
     public static func takePending() -> WidgetBolusRequest? {
         guard let data = d?.data(forKey: "wbPending"),
-              let r = try? JSONDecoder().decode(WidgetBolusRequest.self, from: data) else { return nil }
+            let r = try? JSONDecoder().decode(WidgetBolusRequest.self, from: data)
+        else { return nil }
         d?.removeObject(forKey: "wbPending")
         return Date().timeIntervalSince(r.createdAt) > pendingTTL ? nil : r
     }
@@ -502,7 +551,8 @@ public enum WidgetBolusStore {
     public static func takeCancelIntent() -> Bool {
         guard let d else { return false }
         let at = d.double(forKey: "wbCancelAt")
-        d.removeObject(forKey: "wbCancelReq"); d.removeObject(forKey: "wbCancelAt")   // consume
+        d.removeObject(forKey: "wbCancelReq")
+        d.removeObject(forKey: "wbCancelAt")  // consume
         return at != 0 && Date().timeIntervalSince1970 - at <= confirmTTL
     }
 
@@ -519,7 +569,8 @@ public enum WidgetBolusStore {
     public static let deliveringExpiryTTL: TimeInterval = 90
     public static func status() -> WidgetBolusStatus {
         guard let data = d?.data(forKey: "wbStatus"),
-              let s = try? JSONDecoder().decode(WidgetBolusStatus.self, from: data) else { return .idle }
+            let s = try? JSONDecoder().decode(WidgetBolusStatus.self, from: data)
+        else { return .idle }
         let age = Date().timeIntervalSince(s.updatedAt)
         if s.phase == .delivering {
             // CX-F-09: past the expiry window, surface an EXPLICIT `.expired` status — same requestId/units
@@ -528,9 +579,10 @@ public enum WidgetBolusStore {
             // here; this is computed fresh on every read, so a later app-side finalize (a relaunch that
             // reconciles and calls `setStatus` with a terminal phase) still takes effect immediately.
             guard age > deliveringExpiryTTL else { return s }
-            return WidgetBolusStatus(phase: .expired, units: s.units, deliveredUnits: s.deliveredUnits,
-                                      requestId: s.requestId, updatedAt: s.updatedAt,
-                                      message: "Outcome unknown — check your pump/history before dosing again")
+            return WidgetBolusStatus(
+                phase: .expired, units: s.units, deliveredUnits: s.deliveredUnits,
+                requestId: s.requestId, updatedAt: s.updatedAt,
+                message: "Outcome unknown — check your pump/history before dosing again")
         }
         // A terminal status (delivered/cancelled/failed) older than 15 s reverts to idle so the widget
         // returns to the 1-2-3 state on its own. `.expired` is synthesized above on every read (never

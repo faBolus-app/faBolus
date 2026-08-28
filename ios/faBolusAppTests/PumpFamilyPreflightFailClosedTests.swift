@@ -37,15 +37,24 @@ struct PumpFamilyPreflightFailClosedTests {
         let fake = FakePumpTransport()
         let backend = TandemBackend(testTransport: fake)
         fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
-        fake.script(BolusPermissionResponse.props.opCode, .frame(FakePumpTransport.permissionGranted(bolusId: Self.bolusId)))
-        fake.script(InitiateBolusResponse.props.opCode, .frame(FakePumpTransport.initiateAccepted(bolusId: Self.bolusId)))
-        fake.script(CurrentBolusStatusResponse.props.opCode, .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: Self.bolusId)))
-        fake.script(LastBolusStatusV2Response.props.opCode, .frame(FakePumpTransport.lastBolus(bolusId: Self.bolusId, deliveredMilliunits: 2000)))
+        fake.script(
+            BolusPermissionResponse.props.opCode, .frame(FakePumpTransport.permissionGranted(bolusId: Self.bolusId)))
+        fake.script(
+            InitiateBolusResponse.props.opCode, .frame(FakePumpTransport.initiateAccepted(bolusId: Self.bolusId)))
+        fake.script(
+            CurrentBolusStatusResponse.props.opCode,
+            .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: Self.bolusId)))
+        fake.script(
+            LastBolusStatusV2Response.props.opCode,
+            .frame(FakePumpTransport.lastBolus(bolusId: Self.bolusId, deliveredMilliunits: 2000)))
         return (backend, fake)
     }
 
     private func capture(_ op: () async throws -> Double) async -> Error? {
-        do { _ = try await op(); return nil } catch { return error }
+        do {
+            _ = try await op()
+            return nil
+        } catch { return error }
     }
 
     /// Assert a delivery attempt was fail-closed by the family preflight: it threw `.pumpRejected` carrying
@@ -57,10 +66,12 @@ struct PumpFamilyPreflightFailClosedTests {
             Issue.record("expected BolusError.pumpRejected from the family preflight, got \(String(describing: e))")
             return
         }
-        #expect(message == MobiRejectCopy.mobiNotSupported,
-                "the family guard must reject with the Mobi-not-supported copy")
-        #expect(fake.sent.filter { $0.opCode == BolusPermissionRequest.props.opCode }.isEmpty,
-                "no permission request may be written for a family-rejected attempt")
+        #expect(
+            message == MobiRejectCopy.mobiNotSupported,
+            "the family guard must reject with the Mobi-not-supported copy")
+        #expect(
+            fake.sent.filter { $0.opCode == BolusPermissionRequest.props.opCode }.isEmpty,
+            "no permission request may be written for a family-rejected attempt")
         #expect(fake.initiateWriteCount == 0, "no initiate request may be written for a family-rejected attempt")
         #expect(fake.lastSent(initiateRequestOp) == nil, "no InitiateBolus frame may reach the wire")
         #expect(!b.deliveryOutcomeUnknown, "a clean pre-write refusal, never an indeterminate block")
@@ -73,7 +84,7 @@ struct PumpFamilyPreflightFailClosedTests {
     /// funnel — the two public deliver entry points that share `validateDeliver`.
     @Test func mobiIsBlockedOnStandardAndExtendedDeliverDespiteOtherwiseDeliverable() async {
         let (b, fake) = makeDeliverableBackend()
-        b.injectStatusFrameForTesting(FakePumpTransport.apiVersion(major: 4, minor: 0))   // → isMobi=true ⇒ .mobi
+        b.injectStatusFrameForTesting(FakePumpTransport.apiVersion(major: 4, minor: 0))  // → isMobi=true ⇒ .mobi
         #expect(b.snapshot.pumpModel == .mobi, "op33 (API 4.0) identifies the pump as a Mobi")
 
         // Standard bolus funnel.
@@ -82,8 +93,9 @@ struct PumpFamilyPreflightFailClosedTests {
 
         // Extended (combo) bolus funnel — same `validateDeliver` chokepoint, same fail-closed outcome.
         let e2 = await capture {
-            try await b.deliverExtendedBolus(totalUnits: 2.0, nowUnits: 1.0, durationMinutes: 120,
-                                             carbsGrams: nil, bgMgdl: nil, iobUnits: nil)
+            try await b.deliverExtendedBolus(
+                totalUnits: 2.0, nowUnits: 1.0, durationMinutes: 120,
+                carbsGrams: nil, bgMgdl: nil, iobUnits: nil)
         }
         expectFamilyRejectNoWrite(e2, fake, b)
     }
@@ -98,15 +110,17 @@ struct PumpFamilyPreflightFailClosedTests {
         // Force the never-identified state (the test-double now defaults to t:slim X2): clear the family so
         // pumpModelName == "" ⇒ .unknown, without injecting any op33 identity frame.
         b.setPumpModelIdentityForTesting(pumpModelName: "", isMobi: false)
-        #expect(b.snapshot.pumpModel == .unknown,
-                "a not-yet-identified pump (empty pumpModelName) resolves to .unknown")
+        #expect(
+            b.snapshot.pumpModel == .unknown,
+            "a not-yet-identified pump (empty pumpModelName) resolves to .unknown")
 
         let e1 = await capture { try await b.deliverBolus(units: 2.0, carbsGrams: nil, bgMgdl: nil, iobUnits: nil) }
         expectFamilyRejectNoWrite(e1, fake, b)
 
         let e2 = await capture {
-            try await b.deliverExtendedBolus(totalUnits: 2.0, nowUnits: 1.0, durationMinutes: 120,
-                                             carbsGrams: nil, bgMgdl: nil, iobUnits: nil)
+            try await b.deliverExtendedBolus(
+                totalUnits: 2.0, nowUnits: 1.0, durationMinutes: 120,
+                carbsGrams: nil, bgMgdl: nil, iobUnits: nil)
         }
         expectFamilyRejectNoWrite(e2, fake, b)
     }
@@ -118,7 +132,7 @@ struct PumpFamilyPreflightFailClosedTests {
     /// scripted dose, reaching (and completing) the initiate write.
     @Test func tslimX2WithIdenticalStateDeliversAndReachesTheWrite() async throws {
         let (b, fake) = makeDeliverableBackend()
-        b.injectStatusFrameForTesting(FakePumpTransport.apiVersion(major: 2, minor: 5))   // → isMobi=false ⇒ .tslimX2
+        b.injectStatusFrameForTesting(FakePumpTransport.apiVersion(major: 2, minor: 5))  // → isMobi=false ⇒ .tslimX2
         #expect(b.snapshot.pumpModel == .tslimX2, "op33 (API 2.5) identifies the pump as a t:slim X2")
 
         let delivered = try await b.deliverBolus(units: 2.0, carbsGrams: nil, bgMgdl: nil, iobUnits: nil)

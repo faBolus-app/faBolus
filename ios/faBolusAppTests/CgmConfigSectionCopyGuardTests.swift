@@ -57,8 +57,10 @@ struct CgmConfigSectionCopyGuardTests {
     /// section — turns this RED. No source with a hard precondition can be selectable with no explainer.
     @Test func everyRegistrySourceHasAConfigSection() {
         let registryIds = Set(GlucoseSourceRegistry.enabled.map(\.id))
-        #expect(CgmCredentialsView.configuredSectionSourceIds == registryIds,
-                "configuredSectionSourceIds must cover exactly the registry sources; diff: \(CgmCredentialsView.configuredSectionSourceIds.symmetricDifference(registryIds))")
+        #expect(
+            CgmCredentialsView.configuredSectionSourceIds == registryIds,
+            "configuredSectionSourceIds must cover exactly the registry sources; diff: \(CgmCredentialsView.configuredSectionSourceIds.symmetricDifference(registryIds))"
+        )
         // HealthKit ("healthkit") was removed from narrow `main` in Phase 5 (HEALTH-01); Nightscout
         // ("nightscout") was removed from narrow `main` in Phase 5 (HEALTH-02) — both sides of the
         // equality check above are now Share-only, with no D-11 required-id set left to assert.
@@ -69,10 +71,12 @@ struct CgmConfigSectionCopyGuardTests {
     // MARK: - Vacuous-pass file-resolution guard
 
     @Test func credentialsViewSourceResolvesAndIsNonTrivial() throws {
-        let source = try #require(Self.readSource(Self.credentialsViewPath),
-                                  "could not resolve \(Self.credentialsViewPath) from #filePath=\(#filePath)")
-        #expect(source.contains("struct CgmCredentialsView"),
-                "resolved file does not look like CgmCredentialsView.swift — path resolution likely broke")
+        let source = try #require(
+            Self.readSource(Self.credentialsViewPath),
+            "could not resolve \(Self.credentialsViewPath) from #filePath=\(#filePath)")
+        #expect(
+            source.contains("struct CgmCredentialsView"),
+            "resolved file does not look like CgmCredentialsView.swift — path resolution likely broke")
         #expect(source.count > 2000, "resolved source is implausibly short — path resolution likely broke")
     }
 

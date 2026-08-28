@@ -96,8 +96,12 @@ struct QuickBolusWidgetA11yTests {
         for line in lines[startIdx...] {
             collected.append(line)
             for ch in line {
-                if ch == "{" { depth += 1; opened = true }
-                else if ch == "}" { depth -= 1 }
+                if ch == "{" {
+                    depth += 1
+                    opened = true
+                } else if ch == "}" {
+                    depth -= 1
+                }
             }
             if opened && depth <= 0 { break }
         }
@@ -117,8 +121,9 @@ struct QuickBolusWidgetA11yTests {
         let slice = try Self.functionSlice(signaturePrefix: "func stepper(delta:", in: try Self.widgetSource())
         #expect(!slice.contains("width: 34"), "stepper still frames at the old 34pt size")
         #expect(!slice.contains("height: 34"), "stepper still frames at the old 34pt size")
-        #expect(slice.contains("WidgetA11y.minHitTarget"),
-                "stepper should size itself off the shared WidgetA11y.minHitTarget constant, not a re-literaled 44")
+        #expect(
+            slice.contains("WidgetA11y.minHitTarget"),
+            "stepper should size itself off the shared WidgetA11y.minHitTarget constant, not a re-literaled 44")
     }
 
     @Test func stepperFunctionCarriesVoiceOverLabelAndHint() throws {
@@ -132,27 +137,32 @@ struct QuickBolusWidgetA11yTests {
         let slice = try Self.functionSlice(signaturePrefix: "func stepButton(", in: try Self.widgetSource())
         #expect(slice.contains(".accessibilityLabel("), "1-2-3 confirm button is missing a VoiceOver label")
         #expect(slice.contains(".accessibilityHint("), "1-2-3 confirm button is missing a VoiceOver hint")
-        #expect(slice.contains("WidgetA11y.confirmStepLabel("),
-                "confirm button should build its label via WidgetA11y")
-        #expect(slice.contains("WidgetA11y.minHitTarget"),
-                "confirm circle should also be floored at the shared 44pt hit-target constant")
+        #expect(
+            slice.contains("WidgetA11y.confirmStepLabel("),
+            "confirm button should build its label via WidgetA11y")
+        #expect(
+            slice.contains("WidgetA11y.minHitTarget"),
+            "confirm circle should also be floored at the shared 44pt hit-target constant")
     }
 
     @Test func widgetAccentRoutesThroughAppThemeInsteadOfRawLiteral() throws {
         let source = try Self.widgetSource()
-        #expect(!source.contains("Color(red: 0.24, green: 0.28, blue: 0.75)"),
-                "the activated/insulin accent should no longer be a raw Color(red:) literal")
+        #expect(
+            !source.contains("Color(red: 0.24, green: 0.28, blue: 0.75)"),
+            "the activated/insulin accent should no longer be a raw Color(red:) literal")
         #expect(source.contains("AppTheme.insulin"), "widget accent should route through AppTheme.insulin (D2-07)")
     }
 
     @Test func deliveringAndDoneReadoutsApplyMinimumScaleFactor() throws {
         let source = try Self.widgetSource()
         let delivering = try Self.functionSlice(signaturePrefix: "var deliveringBody:", in: source)
-        #expect(delivering.contains(".minimumScaleFactor("),
-                "deliveringBody's numeric dose readout should scale instead of truncating (D2-10)")
+        #expect(
+            delivering.contains(".minimumScaleFactor("),
+            "deliveringBody's numeric dose readout should scale instead of truncating (D2-10)")
         let done = try Self.functionSlice(signaturePrefix: "func doneBody(", in: source)
-        #expect(done.contains(".minimumScaleFactor("),
-                "doneBody's numeric dose readout should scale instead of truncating (D2-10)")
+        #expect(
+            done.contains(".minimumScaleFactor("),
+            "doneBody's numeric dose readout should scale instead of truncating (D2-10)")
     }
 
     @Test func fileResolutionActuallyFoundTheWidgetSource() throws {

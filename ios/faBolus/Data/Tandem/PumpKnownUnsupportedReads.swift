@@ -62,9 +62,11 @@ enum PumpKnownUnsupportedReads {
         //     that PREDATES the CC-10 AAM additions and is only "re-verify"/MEDIUM-confidence, so it is
         //     deliberately NOT suppressed here — see the debug session; on-device bisection decides it.)
         if isMobi == false, softwareVersion == "2.5" {
-            return [LoadStatusRequest.props.opCode,
-                    HighestAamRequest.props.opCode,
-                    ActiveAamBitsRequest.props.opCode]
+            return [
+                LoadStatusRequest.props.opCode,
+                HighestAamRequest.props.opCode,
+                ActiveAamBitsRequest.props.opCode
+            ]
         }
         return []
     }

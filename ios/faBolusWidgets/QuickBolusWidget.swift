@@ -46,30 +46,45 @@ struct QuickBolusView: View {
         VStack(spacing: 6) {
             switch status.phase {
             case .delivering: deliveringBody
-            case .delivered:  doneBody(icon: "checkmark.circle.fill",
-                                       text: String(format: "Delivered %.2f U", status.deliveredUnits))
-            case .cancelled:  doneBody(icon: "xmark.circle.fill",
-                                       text: String(format: "Cancelled · %.2f U", status.deliveredUnits))
-            case .failed:     doneBody(icon: "exclamationmark.triangle.fill",
-                                       text: status.message.isEmpty ? "Bolus failed" : status.message)
-            case .expired:    expiredBody   // CX-F-09: host never finalized — NOT a safe-looking retry
+            case .delivered:
+                doneBody(
+                    icon: "checkmark.circle.fill",
+                    text: String(format: "Delivered %.2f U", status.deliveredUnits))
+            case .cancelled:
+                doneBody(
+                    icon: "xmark.circle.fill",
+                    text: String(format: "Cancelled · %.2f U", status.deliveredUnits))
+            case .failed:
+                doneBody(
+                    icon: "exclamationmark.triangle.fill",
+                    text: status.message.isEmpty ? "Bolus failed" : status.message)
+            case .expired: expiredBody  // CX-F-09: host never finalized — NOT a safe-looking retry
             case .idle:
                 // A-05: a locked gate replaces the interactive pad entirely (takes precedence over the
                 // not-connected notice — "locked" is the definitive reason bolusing is unavailable). The
                 // in-flight cases above are untouched: a bolus already delivering keeps its Cancel, which
                 // the evaluator never read-only-blocks.
-                if bolusLocked { lockedBody }
-                else if !isConnected { notConnectedBody }   // WR-02: not-connected OR stale-publish (host killed)
-                else if stage == "confirm" { confirmBody }
-                else { amountBody }
+                if bolusLocked {
+                    lockedBody
+                } else if !isConnected {
+                    notConnectedBody
+                }  // WR-02: not-connected OR stale-publish (host killed)
+                else if stage == "confirm" {
+                    confirmBody
+                } else {
+                    amountBody
+                }
             }
         }
         .padding(4)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .containerBackground(for: .widget) {
-            LinearGradient(colors: [Color(red: 0.30, green: 0.36, blue: 0.85),
-                                    Color(red: 0.22, green: 0.26, blue: 0.72)],
-                           startPoint: .top, endPoint: .bottom)
+            LinearGradient(
+                colors: [
+                    Color(red: 0.30, green: 0.36, blue: 0.85),
+                    Color(red: 0.22, green: 0.26, blue: 0.72)
+                ],
+                startPoint: .top, endPoint: .bottom)
         }
     }
 
@@ -110,7 +125,11 @@ struct QuickBolusView: View {
         Text(progress == 0 ? "Tap 1 · 2 · 3" : "Confirming… \(progress)/3")
             .font(.caption2).foregroundStyle(.white.opacity(0.85))
             .frame(maxWidth: .infinity, alignment: .leading)
-        HStack(spacing: 8) { stepButton(1); stepButton(2); stepButton(3) }
+        HStack(spacing: 8) {
+            stepButton(1)
+            stepButton(2)
+            stepButton(3)
+        }
     }
 
     @ViewBuilder private var deliveringBody: some View {

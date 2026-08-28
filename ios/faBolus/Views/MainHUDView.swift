@@ -12,7 +12,7 @@ struct DashboardView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
-        @Bindable var settings = settings   // local @Bindable for binding projection
+        @Bindable var settings = settings  // local @Bindable for binding projection
         return NavigationStack {
             ScrollView {
                 VStack(spacing: 14) {
@@ -31,7 +31,9 @@ struct DashboardView: View {
                                     .font(.footnote)
                                     .fixedSize(horizontal: false, vertical: true)
                                 Spacer(minLength: 0)
-                                Button { model.dismissLowPowerAdvisory() } label: {
+                                Button {
+                                    model.dismissLowPowerAdvisory()
+                                } label: {
                                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                                 }
                                 // The icon alone is ~24pt — pad the BUTTON's own hit area to Apple's
@@ -52,11 +54,19 @@ struct DashboardView: View {
 
                         if let pending = model.pendingApproval {
                             VStack(spacing: 6) {
-                                HStack { ProgressView(); Text("Waiting for remote approval of \(String(format: "%.2f U", pending.units))…").font(.callout) }
-                                    .accessibilityElement(children: .combine)
-                                Button(role: .destructive) { model.cancelPendingApproval() } label: { Text("Cancel") }
-                                    .hoverEffect(.automatic)
-                                    .accessibilityLabel("Cancel pending approval")
+                                HStack {
+                                    ProgressView()
+                                    Text("Waiting for remote approval of \(String(format: "%.2f U", pending.units))…")
+                                        .font(.callout)
+                                }
+                                .accessibilityElement(children: .combine)
+                                Button(role: .destructive) {
+                                    model.cancelPendingApproval()
+                                } label: {
+                                    Text("Cancel")
+                                }
+                                .hoverEffect(.automatic)
+                                .accessibilityLabel("Cancel pending approval")
                             }
                             .padding().frame(maxWidth: .infinity)
                             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12)).padding(.horizontal)
@@ -65,10 +75,13 @@ struct DashboardView: View {
                         // "Cancel bolus" is a dose-affecting action (calls model.cancelBolus()) —
                         // deliberately gets NO .hoverEffect/.keyboardShortcut.
                         if model.snapshot.connection == .bolusing && model.capabilities.supportsBolusCancel {
-                            Button(role: .destructive) { Task { await model.cancelBolus() } } label: {
-                                Label("Cancel bolus", systemImage: "stop.fill").font(.headline).frame(maxWidth: .infinity)
+                            Button(role: .destructive) {
+                                Task { await model.cancelBolus() }
+                            } label: {
+                                Label("Cancel bolus", systemImage: "stop.fill").font(.headline).frame(
+                                    maxWidth: .infinity)
                             }.buttonStyle(.borderedProminent).tint(.red).padding(.horizontal)
-                            .accessibilityLabel("Cancel bolus")
+                                .accessibilityLabel("Cancel bolus")
                         }
 
                         // Two-column region: primary (left) = ring, pills, conditional lockout,
@@ -85,10 +98,11 @@ struct DashboardView: View {
                                 // Chart block renders at the column's FULL width — never a fixed
                                 // sub-fraction, never clipped.
                                 VStack(spacing: 6) {
-                                    GlucoseChartView(readings: model.glucoseHistory, iob: model.iobHistory,
-                                                     boluses: model.bolusMarkers, windowHours: windowHours,
-                                                     showGlucose: settings.showGlucoseAxis, showIOB: settings.showIOBAxis,
-                                                     showBolusBars: settings.showBolusBars)
+                                    GlucoseChartView(
+                                        readings: model.glucoseHistory, iob: model.iobHistory,
+                                        boluses: model.bolusMarkers, windowHours: windowHours,
+                                        showGlucose: settings.showGlucoseAxis, showIOB: settings.showIOBAxis,
+                                        showBolusBars: settings.showBolusBars)
                                     Picker("Window", selection: $windowHours) {
                                         ForEach(windows, id: \.self) { Text("\($0)h").tag($0) }
                                     }.pickerStyle(.segmented)
@@ -137,7 +151,9 @@ struct DashboardView: View {
                                     .font(.footnote)
                                     .fixedSize(horizontal: false, vertical: true)
                                 Spacer(minLength: 0)
-                                Button { model.dismissLowPowerAdvisory() } label: {
+                                Button {
+                                    model.dismissLowPowerAdvisory()
+                                } label: {
                                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                                 }
                                 // The icon alone is ~24pt — pad the BUTTON's own hit area to Apple's
@@ -158,11 +174,19 @@ struct DashboardView: View {
 
                         if let pending = model.pendingApproval {
                             VStack(spacing: 6) {
-                                HStack { ProgressView(); Text("Waiting for remote approval of \(String(format: "%.2f U", pending.units))…").font(.callout) }
-                                    .accessibilityElement(children: .combine)
-                                Button(role: .destructive) { model.cancelPendingApproval() } label: { Text("Cancel") }
-                                    .hoverEffect(.automatic)
-                                    .accessibilityLabel("Cancel pending approval")
+                                HStack {
+                                    ProgressView()
+                                    Text("Waiting for remote approval of \(String(format: "%.2f U", pending.units))…")
+                                        .font(.callout)
+                                }
+                                .accessibilityElement(children: .combine)
+                                Button(role: .destructive) {
+                                    model.cancelPendingApproval()
+                                } label: {
+                                    Text("Cancel")
+                                }
+                                .hoverEffect(.automatic)
+                                .accessibilityLabel("Cancel pending approval")
                             }
                             .padding().frame(maxWidth: .infinity)
                             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12)).padding(.horizontal)
@@ -171,19 +195,23 @@ struct DashboardView: View {
                         // "Cancel bolus" is a dose-affecting action (calls model.cancelBolus()) —
                         // deliberately gets NO .hoverEffect/.keyboardShortcut.
                         if model.snapshot.connection == .bolusing && model.capabilities.supportsBolusCancel {
-                            Button(role: .destructive) { Task { await model.cancelBolus() } } label: {
-                                Label("Cancel bolus", systemImage: "stop.fill").font(.headline).frame(maxWidth: .infinity)
+                            Button(role: .destructive) {
+                                Task { await model.cancelBolus() }
+                            } label: {
+                                Label("Cancel bolus", systemImage: "stop.fill").font(.headline).frame(
+                                    maxWidth: .infinity)
                             }.buttonStyle(.borderedProminent).tint(.red).padding(.horizontal)
-                            .accessibilityLabel("Cancel bolus")
+                                .accessibilityLabel("Cancel bolus")
                         }
 
                         StatusPillsView(snapshot: model.snapshot).padding(.horizontal)
 
                         VStack(spacing: 6) {
-                            GlucoseChartView(readings: model.glucoseHistory, iob: model.iobHistory,
-                                             boluses: model.bolusMarkers, windowHours: windowHours,
-                                             showGlucose: settings.showGlucoseAxis, showIOB: settings.showIOBAxis,
-                                             showBolusBars: settings.showBolusBars)
+                            GlucoseChartView(
+                                readings: model.glucoseHistory, iob: model.iobHistory,
+                                boluses: model.bolusMarkers, windowHours: windowHours,
+                                showGlucose: settings.showGlucoseAxis, showIOB: settings.showIOBAxis,
+                                showBolusBars: settings.showBolusBars)
                             Picker("Window", selection: $windowHours) {
                                 ForEach(windows, id: \.self) { Text("\($0)h").tag($0) }
                             }.pickerStyle(.segmented)
@@ -234,7 +262,10 @@ struct DashboardView: View {
     /// boilerplate, or a bare NSError "domain#code" token) to one plain sentence. Any other string
     /// (including every curated one above) passes through byte-identical.
     private static func humanizedDashboardError(_ raw: String) -> String {
-        let looksRaw = raw.range(of: #"couldn.t be completed\. \([^)]*error -?\d+\.?\)"#, options: [.regularExpression, .caseInsensitive]) != nil
+        let looksRaw =
+            raw.range(
+                of: #"couldn.t be completed\. \([^)]*error -?\d+\.?\)"#, options: [.regularExpression, .caseInsensitive]
+            ) != nil
             || raw.range(of: #"^\S+#-?\d+\s"#, options: .regularExpression) != nil
             || raw.contains("Error Domain=")
         return looksRaw ? "Something went wrong completing that action — try again." : raw
@@ -289,7 +320,8 @@ struct PumpDetailsCard: View {
             // inline), same convention as StatusPillsView.pillFor("battery"); not-charging renders
             // identically. Consume the centralized `valueText` instead of re-interpolating the
             // "N% · Charging" string here.
-            let battery = BatteryChargingPresentation.make(percent: snapshot.batteryPercent, charging: snapshot.batteryCharging)
+            let battery = BatteryChargingPresentation.make(
+                percent: snapshot.batteryPercent, charging: snapshot.batteryCharging)
             return battery.valueText
         case "cgm": return snapshot.cgmActive ? "Active" : "Inactive"
         case "lastBolus":
@@ -368,7 +400,9 @@ struct PairingSheet: View {
                         .font(.title2.monospaced())
                     if hadSavedPin {
                         Button("Clear saved PIN", role: .destructive) {
-                            model.clearSavedPin(); code = ""; hadSavedPin = false
+                            model.clearSavedPin()
+                            code = ""
+                            hadSavedPin = false
                         }
                     }
                 }
@@ -376,7 +410,13 @@ struct PairingSheet: View {
                     Button {
                         Task { await model.connectWithCode(code) }
                         onDone()
-                    } label: { HStack { Spacer(); Text("Connect"); Spacer() } }
+                    } label: {
+                        HStack {
+                            Spacer()
+                            Text("Connect")
+                            Spacer()
+                        }
+                    }
                     .buttonStyle(.borderedProminent)
                     .disabled(!PumpPairingCode.isValid(code))
                 } footer: {
@@ -386,13 +426,18 @@ struct PairingSheet: View {
                     // pair one it will then reject was misleading. The generic t:slim pairing
                     // instruction and the (pump-agnostic) saved-PIN affordance stay, unchanged in
                     // behavior.
-                    Text("On the pump: Options → Device Settings → Bluetooth → Pair Device. Unpair the official t:connect app first — only one connection at a time.\n\nMost pumps show a 6-digit code. Older pumps (firmware before v7.7) show a longer 16-character code with letters and numbers — enter it exactly as shown (it is case-sensitive); faBolus pairs either way automatically.\n\nIf faBolus has a saved PIN for this pump, it's prefilled here to skip re-typing. To pair a different pump, edit the code above or Clear saved PIN.")
+                    Text(
+                        "On the pump: Options → Device Settings → Bluetooth → Pair Device. Unpair the official t:connect app first — only one connection at a time.\n\nMost pumps show a 6-digit code. Older pumps (firmware before v7.7) show a longer 16-character code with letters and numbers — enter it exactly as shown (it is case-sensitive); faBolus pairs either way automatically.\n\nIf faBolus has a saved PIN for this pump, it's prefilled here to skip re-typing. To pair a different pump, edit the code above or Clear saved PIN."
+                    )
                 }
             }
             .navigationTitle("Connect to pump")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel", action: onDone) } }
             .onAppear {
-                if let pin = model.savedPin { code = pin; hadSavedPin = true }
+                if let pin = model.savedPin {
+                    code = pin
+                    hadSavedPin = true
+                }
             }
         }
     }
