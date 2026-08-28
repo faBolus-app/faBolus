@@ -2,8 +2,9 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// Pins that no production file under `ios/` references `ActivityKit` (except `AppModel.swift`
-/// doc comments) and that `App.swift` does not reference `LiveActivityIntentBridge`.
+/// Pins that no production file under `ios/` or `Shared/` references `ActivityKit` (except
+/// `AppModel.swift` doc comments), that `App.swift` does not reference `LiveActivityIntentBridge`,
+/// and that the two `Shared/` Live-Activity sources stay deleted.
 struct LiveActivityAbsenceGuardTests {
 
     /// Resolve the repo root by walking up from `#filePath` until `project.yml` is found.
@@ -18,25 +19,28 @@ struct LiveActivityAbsenceGuardTests {
         return nil
     }
 
-    /// Recursively enumerate production `.swift` files under `ios/`, skipping build artifacts,
-    /// `*Tests` directories, and `AppModel.swift` (remaining Live Activity mentions there are
-    /// doc-comment prose).
+    /// Recursively enumerate production `.swift` files under `ios/` AND `Shared/`, skipping build
+    /// artifacts, `*Tests` directories, and `AppModel.swift` (remaining Live Activity mentions there
+    /// are doc-comment prose). `Shared/` is in scope because the app target includes it wholesale
+    /// (`project.yml`: `- path: Shared`), so a file dropped there compiles into the shipping app.
     private static func allSwiftFiles(under root: URL) -> [URL] {
-        let iosRoot = root.appendingPathComponent("ios")
         let fm = FileManager.default
         let skipDirNames: Set<String> = [".build", "DerivedData", "Pods", "node_modules"]
         let excludedFiles: Set<String> = ["AppModel.swift"]
-        guard let enumerator = fm.enumerator(at: iosRoot, includingPropertiesForKeys: [.isDirectoryKey],
-                                              options: [.skipsHiddenFiles]) else { return [] }
         var results: [URL] = []
-        for case let url as URL in enumerator {
-            let name = url.lastPathComponent
-            if skipDirNames.contains(name) || name.hasSuffix("Tests") {
-                enumerator.skipDescendants()
-                continue
-            }
-            if url.pathExtension == "swift" && !excludedFiles.contains(name) {
-                results.append(url)
+        for treeName in ["ios", "Shared"] {
+            let treeRoot = root.appendingPathComponent(treeName)
+            guard let enumerator = fm.enumerator(at: treeRoot, includingPropertiesForKeys: [.isDirectoryKey],
+                                                  options: [.skipsHiddenFiles]) else { continue }
+            for case let url as URL in enumerator {
+                let name = url.lastPathComponent
+                if skipDirNames.contains(name) || name.hasSuffix("Tests") {
+                    enumerator.skipDescendants()
+                    continue
+                }
+                if url.pathExtension == "swift" && !excludedFiles.contains(name) {
+                    results.append(url)
+                }
             }
         }
         return results
@@ -62,7 +66,24 @@ struct LiveActivityAbsenceGuardTests {
         #expect(violations.isEmpty,
                 "ActivityKit regression — the following production files still reference ActivityKit:\n\(violations.joined(separator: "\n"))")
         #expect(scanned > 0,
-                "scanned no files under ios/ — path resolution broke (#filePath=\(#filePath)); this guard would otherwise pass vacuously")
+                "scanned no files under ios/ or Shared/ — path resolution broke (#filePath=\(#filePath)); this guard would otherwise pass vacuously")
+    }
+
+    // MARK: - ABSENCE: the two Shared/ Live-Activity sources stay deleted
+
+    /// `Shared/LiveActivityIntents.swift` contains no `ActivityKit` reference, so the content scan
+    /// above cannot see it — and the app target compiles all of `Shared/` (`project.yml`:
+    /// `- path: Shared`, excluding only `WidgetBolusIntents.swift`). A filename pin is therefore the
+    /// only thing standing between `main` and a re-added Live-Activity dose surface. Both files are
+    /// preserved on `dev/live-activity`.
+    @Test func sharedLiveActivitySourceFilesAreAbsent() throws {
+        let repoRoot = try #require(Self.repoRootURL(),
+                                     "could not resolve repo root from #filePath=\(#filePath)")
+        for relative in ["Shared/LiveActivityShared.swift", "Shared/LiveActivityIntents.swift"] {
+            let url = repoRoot.appendingPathComponent(relative)
+            #expect(!FileManager.default.fileExists(atPath: url.path),
+                    "\(relative) must stay absent — all of Shared/ compiles into the app target")
+        }
     }
 
     // MARK: - ABSENCE: App.swift no longer installs the LiveActivityIntentBridge
