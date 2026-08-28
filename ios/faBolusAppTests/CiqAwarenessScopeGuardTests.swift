@@ -10,7 +10,7 @@ import faBolusCore
 ///
 /// (a) **No dose in the return type.** None of the Control-IQ-awareness advisory functions built so far
 ///     (`AutoCorrectionDisclosure`'s disclosure functions, `ControlIQZone`'s wire-token mapping,
-///     `ControlIQDisableWarning`'s confirmation copy) declares a return type outside the allowed shapes
+///     `MaxBasalFraction`/`CiqPlusTempRate`/`CiqCeilingFlags`'s bench-gated fns) declares a return type outside the allowed shapes
 ///     `Double?` (a fraction), `String?`/`String` (disclosure copy), `Bool` (a status flag), or
 ///     `ControlIQZone?` (a frozen wire token) — never a bare `Double`/`Int`/`UInt32` that could carry a
 ///     dose or milliunits value. Because production code cannot be safely mutated to prove this
@@ -135,11 +135,12 @@ struct CiqAwarenessScopeGuardTests {
     private static let knownCiqAwarenessSignatureSources: [(file: String, typeMarker: String)] = [
         ("Packages/faBolusCore/Sources/faBolusCore/AutoCorrectionDisclosure.swift", "public enum AutoCorrectionDisclosure"),
         ("Packages/faBolusCore/Sources/faBolusCore/Models.swift", "public enum ControlIQZone"),
-        // Phase 9 (09-02, MOBI-02): moved verbatim from the deleted `Views/PumpWizardViews.swift`
-        // to its own file — the type survives as orphaned-but-tested pure logic (see the file's own
-        // header comment); only the path here needs to follow it. Retargeted 17-10 (D4-02 folder
-        // reorg): file relocated Data/ -> Data/Settings/, no content change.
-        ("ios/faBolus/Data/Settings/ControlIQDisableWarning.swift", "enum ControlIQDisableWarning"),
+        // Phase 23 (23-01, D-06): `ControlIQDisableWarning` (formerly here, moved verbatim from the
+        // deleted `Views/PumpWizardViews.swift` in Phase 9) was deleted outright — the whole type + its
+        // dedicated `CiqDisableWarningTests.swift` are gone from `main` (D-03/D-05). Its
+        // `forbiddenCiqAwarenessSymbols` denylist token below is KEPT unchanged (D-06): a deleted symbol
+        // is trivially absent from the signed delivery path, so the scan stays a strict superset, never
+        // weakened.
         // T1-8 (09.15-08): the "% of your configured max basal rate" pure fraction + LOCKED label fn.
         ("Packages/faBolusCore/Sources/faBolusCore/Models.swift", "public enum MaxBasalFraction"),
         // T2-3 (09.15-09): the CIQ+ temp-rate bench+capability gate — `isOffered` returns a plain `Bool`
@@ -170,7 +171,12 @@ struct CiqAwarenessScopeGuardTests {
             }
         }
         // A path/region-resolution bug must fail loudly, not pass vacuously with zero signatures checked.
-        #expect(totalSignaturesChecked >= 6, "fewer CIQ-awareness signatures were found than the phase currently ships — path/region resolution likely broke")
+        // Phase 23 (23-01, D-06): floor re-derived live after `ControlIQDisableWarning`'s catalog entry
+        // (3 signatures: shouldWarn/title/body) was deleted AND after 23-01 Task 2's `AutoCorrectionDisclosure`
+        // slim (D-09) removes `ambientIndicator`/`lockoutMessage`, leaving only `lockoutRemainingFraction`.
+        // Live count across the 5 surviving sources post-slim: AutoCorrectionDisclosure=1,
+        // ControlIQZone=1, MaxBasalFraction=3, CiqPlusTempRate=1, CiqCeilingFlags=2 == 8.
+        #expect(totalSignaturesChecked >= 8, "fewer CIQ-awareness signatures were found than the phase currently ships — path/region resolution likely broke")
     }
 
     /// Fault-injection proof for the prong-(a) checker (guardrail #1): since production code cannot be
