@@ -66,3 +66,12 @@ pre-removal tip, identical to `main` before Phase 7 Plan 02 (07-02, P-B) ran. `m
    removed from `main`, only its consumers were; reintegration needs no change there.
 7. Run the full exit gate (`check-dose-byte-identity.sh`, `xcodebuild build`, full test suite) to confirm
    the re-added surface compiles and nothing else regressed.
+
+## Prerequisite (added by Phase 22, NARROW-HR-22, 2026-08-28)
+
+This branch's preserved `GraphDetailView`/`GlucoseChartView` call sites assume `heartRateContextEnabled`
+(the SETTING) and `latestGarminHeartRate` exist on the target tree (see item 6 above). Both were deleted
+outright from `main` by Phase 22's phone-side ambient-HR-relay removal (D-02/D-03). **Reintegrate the
+faBolus repo's `dev/garmin-hr-relay` branch FIRST** (it restores both symbols), **then this branch
+(`dev/graph-detail`) SECOND** — see `dev/garmin-hr-relay:REINTEGRATION.md`'s own "D-06a dependency note"
+section for the full detail.
