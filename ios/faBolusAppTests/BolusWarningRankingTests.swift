@@ -22,7 +22,7 @@ struct BolusWarningRankingTests {
             overMax: true, maxUnits: 5.0,
             sg2Message: nil, childBlocked: false,
             pumpNotLinked: true, bolusInFlight: false,
-            carbOverride: nil, autoAmbient: nil, autoLockout: nil,
+            carbOverride: nil,
             sg1Message: "SG1 override notice", sg3aMessage: nil
         )
         #expect(warnings.count == 3)
@@ -39,7 +39,7 @@ struct BolusWarningRankingTests {
             overMax: false, maxUnits: 5.0,
             sg2Message: "SG2 max-bolus proximity notice", childBlocked: false,
             pumpNotLinked: false, bolusInFlight: false,
-            carbOverride: nil, autoAmbient: nil, autoLockout: nil,
+            carbOverride: nil,
             sg1Message: "SG1 override notice", sg3aMessage: nil
         )
         #expect(warnings.count == 2)
@@ -55,7 +55,7 @@ struct BolusWarningRankingTests {
             overMax: false, maxUnits: 5.0,
             sg2Message: "an orange advisory", childBlocked: true,
             pumpNotLinked: true, bolusInFlight: true,
-            carbOverride: nil, autoAmbient: nil, autoLockout: nil,
+            carbOverride: nil,
             sg1Message: nil, sg3aMessage: nil
         )
         let byId = Dictionary(uniqueKeysWithValues: warnings.map { ($0.id, $0) })
@@ -79,13 +79,13 @@ struct BolusWarningRankingTests {
             overMax: false, maxUnits: 5.0,
             sg2Message: nil, childBlocked: false,
             pumpNotLinked: false, bolusInFlight: false,
-            carbOverride: nil, autoAmbient: nil, autoLockout: nil,
+            carbOverride: nil,
             sg1Message: nil, sg3aMessage: nil
         )
         #expect(warnings.isEmpty)
     }
 
-    /// All nine possible warning sources active at once: every one survives (no drop), and the caller's
+    /// All seven possible warning sources active at once: every one survives (no drop), and the caller's
     /// existing sg3a==sg1 dedup guard is exercised at the call site, not inside `rankedWarnings` itself —
     /// this test passes a genuinely distinct sg3a message to prove it is NOT special-cased away here.
     @Test func allActiveSourcesSurviveWithBlockingBeforeAdvisoryOrdering() {
@@ -93,10 +93,10 @@ struct BolusWarningRankingTests {
             overMax: true, maxUnits: 5.0,
             sg2Message: "sg2", childBlocked: true,
             pumpNotLinked: false, bolusInFlight: true,
-            carbOverride: "carb override", autoAmbient: "auto ambient", autoLockout: "auto lockout",
+            carbOverride: "carb override",
             sg1Message: "sg1", sg3aMessage: "sg3a distinct from sg1"
         )
-        #expect(warnings.count == 9)
+        #expect(warnings.count == 7)
         let blockingIds = Set(warnings.filter { $0.severity == .blocking }.map(\.id))
         #expect(blockingIds == ["overMax", "childBlocked", "bolusInFlight"])
         // Blocking items occupy the leading prefix of the array.
@@ -115,7 +115,7 @@ struct BolusWarningRankingTests {
             overMax: false, maxUnits: 5.0,
             sg2Message: nil, childBlocked: false,
             pumpNotLinked: false, bolusInFlight: false,
-            carbOverride: nil, autoAmbient: nil, autoLockout: nil,
+            carbOverride: nil,
             sg1Message: nil, sg3aMessage: nil,
             noCartridge: true
         )
@@ -134,7 +134,7 @@ struct BolusWarningRankingTests {
             overMax: false, maxUnits: 5.0,
             sg2Message: nil, childBlocked: false,
             pumpNotLinked: false, bolusInFlight: false,
-            carbOverride: nil, autoAmbient: nil, autoLockout: nil,
+            carbOverride: nil,
             sg1Message: nil, sg3aMessage: nil
         )
         #expect(!warnings.contains { $0.id == "noCartridge" })

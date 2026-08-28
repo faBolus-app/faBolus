@@ -45,7 +45,7 @@ struct StackingGuardDisclosureHiddenBoundaryTests {
         let items = BolusEntryView.rankedWarnings(
             overMax: false, maxUnits: 25, sg2Message: "sg2 disclosure text", childBlocked: false,
             pumpNotLinked: false, bolusInFlight: false, carbOverride: nil,
-            autoAmbient: nil, autoLockout: nil, sg1Message: "sg1 disclosure text",
+            sg1Message: "sg1 disclosure text",
             sg3aMessage: "sg3a disclosure text")
         let ids = Set(items.map(\.id))
         #expect(ids.contains("sg1"))
@@ -58,7 +58,7 @@ struct StackingGuardDisclosureHiddenBoundaryTests {
         let items = BolusEntryView.rankedWarnings(
             overMax: false, maxUnits: 25, sg2Message: nil, childBlocked: false,
             pumpNotLinked: false, bolusInFlight: false, carbOverride: nil,
-            autoAmbient: nil, autoLockout: nil, sg1Message: nil, sg3aMessage: nil)
+            sg1Message: nil, sg3aMessage: nil)
         let ids = Set(items.map(\.id))
         #expect(!ids.contains("sg1"))
         #expect(!ids.contains("sg2"))
@@ -72,7 +72,7 @@ struct StackingGuardDisclosureHiddenBoundaryTests {
         let items = BolusEntryView.rankedWarnings(
             overMax: true, maxUnits: 10, sg2Message: nil, childBlocked: false,
             pumpNotLinked: false, bolusInFlight: false, carbOverride: "carb override text",
-            autoAmbient: nil, autoLockout: nil, sg1Message: nil, sg3aMessage: nil)
+            sg1Message: nil, sg3aMessage: nil)
         let ids = Set(items.map(\.id))
         #expect(ids.contains("overMax"))
         #expect(ids.contains("carbOverride"))

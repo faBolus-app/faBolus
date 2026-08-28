@@ -202,29 +202,17 @@ final class RemoteCommandWireFixture {
         return "Current window: \(SleepExerciseAwareness.minuteOfDayString(s))–\(SleepExerciseAwareness.minuteOfDayString(e))"
     }
 
-    /// B2 (S1+O3) — the pump's controller descriptor, reconstructed locally from the mirrored variant. The
-    /// two disclosure strings below are derived from it exactly as the phone's `BolusEntryView` does, so
-    /// every surface shows the same facts from one faBolusCore source (no prose crosses the wire).
+    /// B2 — the pump's controller descriptor, reconstructed locally from the mirrored variant. Phase 23
+    /// (23-01, D-09): the two S1/O3 disclosure-string computed props that once lived here (`autoCorrectionAmbient`/
+    /// `autoCorrectionLockout`, mirroring the phone's now-removed `BolusEntryView` display fns) were removed;
+    /// `lockoutRemainingFraction` below survives (D-09) and documents the still-frozen `lockoutUntilEpochSec`
+    /// wire contract (D-01).
     var controllerDescriptor: ControllerDescriptor { .for(controllerVariant) }
-    /// O3 — the persistent "automatic correction is active" line, or nil when it shouldn't show.
-    var autoCorrectionAmbient: String? {
-        AutoCorrectionDisclosure.ambientIndicator(descriptor: controllerDescriptor,
-                                                  controllerEnabled: controlIQEnabled)
-    }
-    /// S1 — the high/rising auto-correction lockout disclosure, or nil. Uses the pump's OWN mirrored trend
-    /// arrow (C8: read, never synthesized) — `GlucoseTrend(rawValue:)` since the wire trend is the arrow.
-    var autoCorrectionLockout: String? {
-        AutoCorrectionDisclosure.lockoutMessage(descriptor: controllerDescriptor,
-                                                controllerEnabled: controlIQEnabled,
-                                                glucoseMgdl: glucose,
-                                                trend: GlucoseTrend(rawValue: trend))
-    }
     /// T1-5 (D-01, D-08): the 60-min lockout countdown FRACTION, or nil — computed LOCALLY from the
     /// mirrored `lockoutUntilDate` (an immutable END epoch) by reversing the arithmetic to the START
-    /// instant the pure fn expects (`lockoutStart = lockoutUntilDate - window`), matching
-    /// `autoCorrectionLockout`'s local-compute idiom exactly. **This is a fraction, NEVER a dose/units
-    /// value** (D-06 guardrail #1); NEVER gates delivery. `nil` when `lockoutUntilDate` is absent, the
-    /// window is unknown, or the lockout has already expired (fail-closed — SP-5).
+    /// instant the pure fn expects (`lockoutStart = lockoutUntilDate - window`). **This is a fraction,
+    /// NEVER a dose/units value** (D-06 guardrail #1); NEVER gates delivery. `nil` when `lockoutUntilDate`
+    /// is absent, the window is unknown, or the lockout has already expired (fail-closed — SP-5).
     var lockoutRemainingFraction: Double? {
         guard let untilDate = lockoutUntilDate,
               let windowMinutes = controllerDescriptor.automaticCorrection.blockedByRecentBolusMinutes

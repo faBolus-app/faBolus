@@ -220,23 +220,8 @@ struct BolusEntryView: View {
         return String(format: "Delivering %.2f U for %.0f g — the calculator suggested %.2f U. The carbs will still be recorded on the pump with this dose.",
                       units, carbs, rec.recommendedUnits)
     }
-    /// O3 (ambient): the controller's "automatic correction is active" line, or nil. Pure faBolusCore
-    /// disclosure derived from the pump's controller descriptor + runtime on/off — NEVER gates delivery.
-    private var autoCorrectionAmbient: String? {
-        AutoCorrectionDisclosure.ambientIndicator(descriptor: model.snapshot.controllerDescriptor,
-                                                  controllerEnabled: model.snapshot.controlIQEnabled)
-    }
-    /// S1: the high/rising auto-correction lockout disclosure, or nil. Uses the pump's OWN trend arrow
-    /// (mapped from the raw snapshot string) — never a computed rate (C8). NEVER gates delivery.
-    private var autoCorrectionLockout: String? {
-        AutoCorrectionDisclosure.lockoutMessage(descriptor: model.snapshot.controllerDescriptor,
-                                                controllerEnabled: model.snapshot.controlIQEnabled,
-                                                glucoseMgdl: model.snapshot.glucose,
-                                                trend: GlucoseTrend(rawValue: model.snapshot.trend))
-    }
     /// SG1: the calc-override disclosure, or nil. Pure `faBolusCore` disclosure — reads the pump's OWN
-    /// op-115 target (never a hardcoded clinical constant) and NEVER gates, changes, or delays delivery;
-    /// same "disclosure only" contract as `autoCorrectionAmbient`/`autoCorrectionLockout` above.
+    /// op-115 target (never a hardcoded clinical constant) and NEVER gates, changes, or delays delivery.
     private var sg1Disclosure: StackingGuard.Disclosure? {
         guard let rec = recommendation else { return nil }
         let disclosure = StackingGuard.calcOverride(enteredUnits: units, recommendedUnits: rec.recommendedUnits,
@@ -400,7 +385,7 @@ struct BolusEntryView: View {
     /// never demoted below an orange advisory just because it isn't red).
     static func rankedWarnings(overMax: Bool, maxUnits: Double, sg2Message: String?, childBlocked: Bool,
                                 pumpNotLinked: Bool, bolusInFlight: Bool, carbOverride: String?,
-                                autoAmbient: String?, autoLockout: String?, sg1Message: String?,
+                                sg1Message: String?,
                                 sg3aMessage: String?, insufficientReservoirMessage: String? = nil,
                                 noCartridge: Bool = false) -> [BolusWarning] {
         var items: [BolusWarning] = []
@@ -431,14 +416,6 @@ struct BolusEntryView: View {
         }
         if let w = carbOverride {
             items.append(BolusWarning(id: "carbOverride", text: w, systemImage: "pencil.and.outline",
-                                       severity: .advisory, tone: .caution))
-        }
-        if let ambient = autoAmbient {
-            items.append(BolusWarning(id: "autoAmbient", text: ambient, systemImage: "arrow.triangle.2.circlepath",
-                                       severity: .advisory, tone: .neutral))
-        }
-        if let lockout = autoLockout {
-            items.append(BolusWarning(id: "autoLockout", text: lockout, systemImage: "exclamationmark.triangle",
                                        severity: .advisory, tone: .caution))
         }
         if let sg1 = sg1Message {
@@ -600,8 +577,6 @@ struct BolusEntryView: View {
             pumpNotLinked: model.bolusGate(amount: units, minimum: 0.05).reason == .pumpNotLinked,
             bolusInFlight: model.bolusGate(amount: units, minimum: 0.05).reason == .bolusInFlight,
             carbOverride: carbOverrideWarning,
-            autoAmbient: autoCorrectionAmbient,
-            autoLockout: autoCorrectionLockout,
             sg1Message: nil,
             sg3aMessage: nil,
             insufficientReservoirMessage: insufficientReservoirDisclosure?.message,
