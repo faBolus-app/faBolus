@@ -21,9 +21,7 @@ import Foundation
 @Suite(.serialized) @MainActor
 struct StackingGuardDisclosureHiddenBoundaryTests {
 
-    /// Resolve the repo root by walking up from this file's own `#filePath`
-    /// (`<root>/ios/faBolusAppTests/StackingGuardDisclosureHiddenBoundaryTests.swift`) — same idiom as
-    /// `RetrospectiveAbsenceGuardTests`/`FeatureSurfaceAbsenceGuardTests`.
+    /// Resolve the repo root by walking up from this file's own `#filePath`.
     private static var repoRoot: URL {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()   // drop the filename → .../ios/faBolusAppTests
