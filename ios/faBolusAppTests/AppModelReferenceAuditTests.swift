@@ -109,7 +109,6 @@ struct AppModelReferenceAuditTests {
     /// COMMENT-ONLY: cites `"AppModel.swift"` in a doc comment / line-number pin; never opens the
     /// file at runtime, so a carve/renumber inside `AppModel.swift` cannot make these fail.
     static let commentOnlyFiles: Set<String> = [
-        "BackupRemovalBoundaryTests.swift",
         "DashboardSnapshotTests.swift",
         "DeliverySurfaceOutcomeGuardTests.swift",
         "LedgerBlockPrecedenceGuardTests.swift",

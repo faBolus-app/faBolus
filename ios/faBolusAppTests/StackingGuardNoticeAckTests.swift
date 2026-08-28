@@ -2,18 +2,10 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// FLAG-4 (§1.5, REQ-D16-flags): the one-time DosingSafetyKit→SG advisory-behavior-change notice's
-/// AppSettings-level ack state (`stackingGuardNoticeAckAt`/`hasAcknowledgedStackingGuardNotice`/
-/// `acknowledgeStackingGuardNotice`) persists once and is idempotent (keeps the first timestamp), matching
-/// the `TherapyEditAck` idiom (`TherapyEditAckAppTests`) — this half is independent of the notice UI itself
-/// and is kept exactly as before.
-///
-/// LOCK-06 (Phase 8, 08-02): the notice UI it used to gate is REMOVED from `BolusEntryView` — with friction
-/// permanently off (08-01), the notice's copy ("an extra confirmation or a re-type step") no longer
-/// describes anything that can happen, so it never presents now regardless of ack state. Proven at the
-/// source level (no `showStackingGuardNotice` state/trigger/render, no `stackingGuardNoticeCopy` constant
-/// left in `BolusEntryView.swift`) — same re-grep-the-checked-in-source idiom as
-/// `StackingGuardDisclosureHiddenBoundaryTests`/`RetrospectiveAbsenceGuardTests`.
+/// Pins ack-state persistence for the stacking-guard notice (`stackingGuardNoticeAckAt` is
+/// idempotent — keeps the first timestamp). The notice UI is gone from `BolusEntryView`; this
+/// suite also greps that source so `showStackingGuardNotice` / `stackingGuardNoticeCopy` cannot
+/// return without a test failure.
 @Suite(.serialized) @MainActor
 struct StackingGuardNoticeAckTests {
 
