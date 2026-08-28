@@ -228,13 +228,13 @@ func garminEchoesToSeed(terminalOutcomes: [(requestId: String, status: String, m
                     .map { GarminEchoSeed(requestId: $0.requestId, status: $0.status, deliveredUnits: $0.deliveredUnits, message: $0.message) }
 }
 
-// MARK: - CX-G-08 (14-09) — ConnectIQ-free dismiss-ack decision + handler
+// MARK: - ConnectIQ-free dismiss-ack decision + handler
 //
 // Lives OUTSIDE `#if GARMIN`, mirroring `garminEchoesToSeed`/`GarminMessageReadiness` above, precisely
 // so `GarminDismissAckBridgeTests` exercises the REAL branching logic in the default (non-GARMIN) test
 // target — no ConnectIQ import, no live `AppModel`/`GarminDismissReceiptStore` singleton required.
 
-/// T-14-30/H2/HIGH-A — whether an incoming dismiss command should be answered by REPLAYING a stored
+/// Whether an incoming dismiss command should be answered by REPLAYING a stored
 /// receipt rather than re-running the dismiss against the pump. A retry REUSES the same `requestId`, so
 /// once CC-08 clears the alert (it drops out of `activeNotifications`), a same-requestId retry would hit
 /// `AppModel.dismissAlert`'s missing-alert guard with no way to re-derive the outcome — this check runs
@@ -243,10 +243,10 @@ func garminDismissShouldReplay(receipt: GarminDismissReceipt?, requestId: String
     receipt?.requestId == requestId
 }
 
-/// Checkpoint #2 (absence-only) / checkpoint #4 (typed-outcome) — the ack decision for a FRESH
-/// (non-replayed) dismiss attempt. `.authenticatedCleared` is the ONLY outcome that yields an ack; every
-/// other outcome (rejected / noResponse / localSnoozeOnly / notAuthenticated) sends nothing — the
-/// watch's fail-closed default (stay visible, keep retrying) is exactly right (T-14-25/T-14-28).
+/// The ack decision for a FRESH (non-replayed) dismiss attempt. `.authenticatedCleared` is the ONLY
+/// outcome that yields an ack; every other outcome (rejected / noResponse / localSnoozeOnly /
+/// notAuthenticated) sends nothing — the watch's fail-closed default (stay visible, keep retrying)
+/// is exactly right.
 enum GarminDismissAckDecision: Equatable {
     case ack(requestId: String, alertId: Int, alertKind: Int)
     case noAck
@@ -267,7 +267,7 @@ func garminDismissAckDecision(outcome: DismissOutcome, requestId: String, alertI
 ///   `persistReceipt`, before `sendAck` is called — H2's ordering requirement) then sends the ack, then
 ///   the statusRead backstop.
 /// - On every other outcome: sends NO ack, only the statusRead backstop (unconditional, mirrors the
-///   pre-14-09 behavior so a capability-absent/false watch's 14-08 fallback still gets a fresh list).
+///   pre-ack behavior so a capability-absent/false watch's local-snooze fallback still gets a fresh list).
 @MainActor
 func garminHandleDismissAlert(
     requestId: String, alertId: Int, alertKind: Int,
@@ -363,7 +363,7 @@ final class GarminRemoteBridge: NSObject {
     // dropped) in UserDefaults to avoid unbounded growth.
     private static let alreadyEchoedKey = "garminEchoedRequestIds"
     private static let alreadyEchoedCap = 256
-    // CX-G-08 (14-09, T-14-32/MEDIUM-F): the durable dismiss-ack receipt outbox — a SEPARATE lane, its
+    // The durable dismiss-ack receipt outbox — a SEPARATE lane, its
     // own UserDefaults key ("garminDismissReceipts"), never touching `alreadyEchoedKey` above. A
     // dismissAck echo can therefore never evict (or be evicted by) a bolus outcome's 256-entry set.
     private static let dismissReceiptStore = GarminDismissReceiptStore.shared
@@ -593,7 +593,7 @@ final class GarminRemoteBridge: NSObject {
         pump()   // WR-07 readiness gate defers the actual transmit until the device is message-ready
     }
 
-    /// CX-G-08 (14-09, T-14-30) — the launch-time analogue of `seedTerminalEchoesFromLedger()` for the
+    /// The launch-time analogue of `seedTerminalEchoesFromLedger()` for the
     /// dismiss-ack lane: any receipt persisted (an authenticated pump clear proven) but never actually
     /// sent (the phone died in the gap between persist and transport-confirmed send) is resent proactively
     /// — the watch's own bounded retry would eventually re-request it, but this closes the gap without
@@ -683,7 +683,7 @@ final class GarminRemoteBridge: NSObject {
                 case .ack:
                     // R2-12: a terminal echo was confirmed sent — record its requestId durably so a
                     // launch-time re-seed from the ledger does not re-echo an outcome the watch already got.
-                    // CX-G-08 (14-09, T-14-32): a dismissAck echo routes to its OWN durable lane
+                    // A dismissAck echo routes to its OWN durable lane
                     // (GarminDismissReceiptStore, keyed peer+requestId) — NEVER `markAlreadyEchoed`, which
                     // is the bolus-only 256-entry set. Distinguished by the payload's `kind`, mirroring how
                     // `handle()` dispatches inbound commands by kind.
@@ -807,7 +807,7 @@ final class GarminRemoteBridge: NSObject {
             // the watch would flip cancelled → delivered.
             Task { await model.cancelBolus(from: .garmin, peerId: "garmin") }
         case .dismissAlert:
-            // CX-G-08 (14-09): route through the ConnectIQ-free core handler so the receipt-replay /
+            // Route through the ConnectIQ-free core handler so the receipt-replay /
             // authenticated-ack decision logic is identical to what GarminDismissAckBridgeTests exercises
             // in the default target — only the closures below (real AppModel call, real
             // GarminDismissReceiptStore, real send()) are GARMIN-specific.

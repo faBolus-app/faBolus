@@ -2,21 +2,8 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// **FEAT-01 boundary test (Phase 7, 07-01, P-A).** The glucose Live Activity (widget-extension
-/// views + the app-target lifecycle manager + the shared model/intents + the settings surface + the
-/// intent-bridge install) is a CLEAN delete-on-main removal (D-01/D-02) — no dose-set stub required
-/// (AppModel.swift's remaining LA references are prose inside doc comments, a documented D-03
-/// exception — see `AppModel.swift`'s own doc comments near `snoozeGateAllows`/
-/// `autoReconnectIfNeeded`). This UNGATED suite is the permanent regression guard replacing the 9
-/// deleted LA test files: it proves (a) no `.swift` file under `ios/` references the literal string
-/// `ActivityKit`, outside test files, build artifacts, and `AppModel.swift` (the one documented
-/// byte-identity-protected exception), and (b) `App.swift` no longer references
-/// `LiveActivityIntentBridge`.
-///
-/// Reuses the repo-wide `.swift` enumerator idiom from `BandDriftGuardTests.allSwiftFiles(under:)`
-/// (itself modeled on the now-deleted `LiveActivityBoundaryTests.allSwiftFiles(under:)`), scoped to
-/// `ios/` per the plan's own acceptance criterion, with a single-file exclusion for `AppModel.swift`
-/// instead of a whole-package skip (RESEARCH "Don't Hand-Roll").
+/// Pins that no production file under `ios/` references `ActivityKit` (except `AppModel.swift`
+/// doc comments) and that `App.swift` does not reference `LiveActivityIntentBridge`.
 struct LiveActivityAbsenceGuardTests {
 
     // MARK: - Repo enumeration (mirrors BandDriftGuardTests' idiom)

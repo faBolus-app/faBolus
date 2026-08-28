@@ -18,7 +18,7 @@ struct DashboardView: View {
                 VStack(spacing: 14) {
                     if horizontalSizeClass == .regular {
                         // Full-width alert/CTA bands stay full-width, above the two-column region,
-                        // on regular width too (D-04, UI-SPEC §3) — identical content/order to compact.
+                        // on regular width too — identical content/order to compact.
                         if !model.hasStoredPairing {
                             NoPumpConnectedCard(model: model)
                         }
@@ -34,7 +34,7 @@ struct DashboardView: View {
                                 Button { model.dismissLowPowerAdvisory() } label: {
                                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                                 }
-                                // D2-09: the icon alone is ~24pt — pad the BUTTON's own hit area to Apple's
+                                // The icon alone is ~24pt — pad the BUTTON's own hit area to Apple's
                                 // 44×44pt minimum (the visible glyph stays its original small size, only the
                                 // tappable region grows) so a low-vision/motor-impaired user can reliably hit it.
                                 .frame(width: 44, height: 44)
@@ -62,8 +62,8 @@ struct DashboardView: View {
                             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12)).padding(.horizontal)
                         }
 
-                        // D-08 (UI-SPEC §9): "Cancel bolus" is a dose-affecting action (calls
-                        // model.cancelBolus()) — deliberately gets NO .hoverEffect/.keyboardShortcut.
+                        // "Cancel bolus" is a dose-affecting action (calls model.cancelBolus()) —
+                        // deliberately gets NO .hoverEffect/.keyboardShortcut.
                         if model.snapshot.connection == .bolusing && model.capabilities.supportsBolusCancel {
                             Button(role: .destructive) { Task { await model.cancelBolus() } } label: {
                                 Label("Cancel bolus", systemImage: "stop.fill").font(.headline).frame(maxWidth: .infinity)
@@ -71,12 +71,11 @@ struct DashboardView: View {
                             .accessibilityLabel("Cancel bolus")
                         }
 
-                        // Two-column region (D-04, UI-SPEC §3): primary (left) = ring, pills,
-                        // conditional lockout, chart block; secondary (right) = sleep/exercise card,
-                        // conditional stats, pump details — in each column's today's vertical order.
-                        // Capped at AppTheme.iPadDashboardRegionMaxWidth and centered via the
-                        // double-frame idiom (RESEARCH Pattern 3 Pitfall — a single frame left-aligns
-                        // on a 13" iPad).
+                        // Two-column region: primary (left) = ring, pills, conditional lockout,
+                        // chart block; secondary (right) = sleep/exercise card, conditional stats,
+                        // pump details — in each column's compact-layout vertical order. Capped at
+                        // AppTheme.iPadDashboardRegionMaxWidth and centered via the double-frame
+                        // idiom (a single frame left-aligns on a 13" iPad).
                         HStack(alignment: .top, spacing: 24) {
                             VStack(spacing: 14) {
                                 StatusRingView(snapshot: model.snapshot, failover: model.failoverBadge)
@@ -84,7 +83,7 @@ struct DashboardView: View {
                                 StatusPillsView(snapshot: model.snapshot)
 
                                 // Chart block renders at the column's FULL width — never a fixed
-                                // sub-fraction, never clipped (D-04 non-negotiable chart protection).
+                                // sub-fraction, never clipped.
                                 VStack(spacing: 6) {
                                     GlucoseChartView(readings: model.glucoseHistory, iob: model.iobHistory,
                                                      boluses: model.bolusMarkers, windowHours: windowHours,
@@ -119,18 +118,17 @@ struct DashboardView: View {
                         // and Garmin setup live in the Settings tab now (not the toolbar).
                         StatusRingView(snapshot: model.snapshot, failover: model.failoverBadge)
 
-                        // Phase 09.4 (D-03): the persistent "no dead dashboard" re-entry — shown whenever
-                        // there's no stored pairing, right after the status ring (first actionable content,
-                        // no scroll). Unlike the low-power card below, this has NO dismiss control
-                        // (`xmark.circle.fill`) — it must persist until `hasStoredPairing` becomes true,
-                        // since it's the phase's literal "no dead dashboard" guarantee (ROADMAP SC1).
+                        // Persistent "no dead dashboard" re-entry — shown whenever there's no stored
+                        // pairing, right after the status ring (first actionable content, no scroll).
+                        // Unlike the low-power card below, this has NO dismiss control
+                        // (`xmark.circle.fill`) — it must persist until `hasStoredPairing` becomes true.
                         if !model.hasStoredPairing {
                             NoPumpConnectedCard(model: model)
                         }
 
-                        // P16 F3 (WARN-ONLY): iOS Low Power Mode may delay background pump/CGM updates.
-                        // Advisory pill only — dismissible per Low Power Mode episode; shown only while a
-                        // source is connected. It never changes any cadence and never gates/blocks a dose.
+                        // iOS Low Power Mode may delay background pump/CGM updates. Advisory pill
+                        // only — dismissible per Low Power Mode episode; shown only while a source is
+                        // connected. It never changes any cadence and never gates/blocks a dose.
                         if model.shouldShowLowPowerAdvisory {
                             HStack(alignment: .top, spacing: 8) {
                                 Image(systemName: "bolt.slash").foregroundStyle(.orange)
@@ -142,7 +140,7 @@ struct DashboardView: View {
                                 Button { model.dismissLowPowerAdvisory() } label: {
                                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                                 }
-                                // D2-09: the icon alone is ~24pt — pad the BUTTON's own hit area to Apple's
+                                // The icon alone is ~24pt — pad the BUTTON's own hit area to Apple's
                                 // 44×44pt minimum (the visible glyph stays its original small size, only the
                                 // tappable region grows) so a low-vision/motor-impaired user can reliably hit it.
                                 .frame(width: 44, height: 44)
@@ -170,8 +168,8 @@ struct DashboardView: View {
                             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12)).padding(.horizontal)
                         }
 
-                        // D-08 (UI-SPEC §9): "Cancel bolus" is a dose-affecting action (calls
-                        // model.cancelBolus()) — deliberately gets NO .hoverEffect/.keyboardShortcut.
+                        // "Cancel bolus" is a dose-affecting action (calls model.cancelBolus()) —
+                        // deliberately gets NO .hoverEffect/.keyboardShortcut.
                         if model.snapshot.connection == .bolusing && model.capabilities.supportsBolusCancel {
                             Button(role: .destructive) { Task { await model.cancelBolus() } } label: {
                                 Label("Cancel bolus", systemImage: "stop.fill").font(.headline).frame(maxWidth: .infinity)
@@ -216,20 +214,19 @@ struct DashboardView: View {
             .navigationTitle("faBolus")
             .navigationBarTitleDisplayMode(.inline)
         }
-        // N12 (Dynamic Type): let the dashboard scale up to the largest accessibility text size.
+        // Dynamic Type: let the dashboard scale up to the largest accessibility text size.
         .dynamicTypeSize(...DynamicTypeSize.accessibility5)
-        // Phase 9 Plan 01 (MOBI-01/MOBI-03, D-03): reject-at-pairing observer, anchored at
-        // DashboardView's root so it OUTLIVES the transient `PairingSheet` (RESEARCH Pitfall 3/
-        // Pattern 2 — the sheet dismisses immediately via `onDone()` without awaiting
+        // Reject-at-pairing observer, anchored at DashboardView's root so it OUTLIVES the
+        // transient `PairingSheet` (the sheet dismisses immediately via `onDone()` without awaiting
         // `connectWithCode`, so an observer inside its button action never fires). Reacts to the
         // typed pump-model identity the instant the protected discovery callback
         // (`TandemBackend.swift`, unedited) sets it; the shared helper
-        // (`ios/faBolus/Data/AppModel+MobiReject.swift`) decides + tears down via the existing
-        // public `disconnect()`/`forgetPairing()`.
+        // (`AppModel+MobiReject.swift`) decides + tears down via the existing public
+        // `disconnect()`/`forgetPairing()`.
         .onChange(of: model.snapshot.pumpModel) { _, _ in model.rejectMobiIfDetected() }
     }
 
-    /// D3-03: `AppModel.performControl`'s catch-all (byte-guarded — not editable here) sets `lastError =
+    /// `AppModel.performControl`'s catch-all (byte-guarded — not editable here) sets `lastError =
     /// error.localizedDescription` on any pump-control failure. Every OTHER `lastError` assignment in
     /// AppModel is already a curated, human sentence ("Bolus sent but outcome is unknown…", "Nothing to
     /// revert…", …) — this maps ONLY the one recognizable raw shape Foundation emits for an `Error` that
@@ -244,11 +241,11 @@ struct DashboardView: View {
     }
 }
 
-/// Phase 09.4 (D-03) — the dashboard's persistent empty-state re-entry, shown whenever
-/// `!model.hasStoredPairing`. This is the actual "no dead dashboard" guarantee (ROADMAP SC1): both skip
-/// routes on the first-run `ConnectPumpOnboardingView` (D-01) leave a skipper here, always able to open
-/// the SAME existing `PairingSheet`. Deliberately has NO dismiss control — it persists until a pump is
-/// paired, unlike the neighboring low-power card.
+/// The dashboard's persistent empty-state re-entry, shown whenever `!model.hasStoredPairing`.
+/// This is the "no dead dashboard" guarantee: both skip routes on the first-run
+/// `ConnectPumpOnboardingView` leave a skipper here, always able to open the SAME existing
+/// `PairingSheet`. Deliberately has NO dismiss control — it persists until a pump is paired,
+/// unlike the neighboring low-power card.
 private struct NoPumpConnectedCard: View {
     @Bindable var model: AppModel
     @State private var showPairing = false
@@ -288,10 +285,10 @@ struct PumpDetailsCard: View {
         case "iob": return String(format: "%.2f U", snapshot.iobUnits)
         case "reservoir": return "\(Int(snapshot.reservoirUnits)) U"
         case "battery":
-            // Phase 09.27-02 (D-04) — reuse BatteryChargingPresentation for the glyph/text decision
-            // (never re-derived inline), same convention as StatusPillsView.pillFor("battery");
-            // not-charging renders byte-identically to today. WR-02 review fix: consume the
-            // centralized `valueText` instead of re-interpolating the "N% · Charging" string here.
+            // Reuse BatteryChargingPresentation for the glyph/text decision (never re-derived
+            // inline), same convention as StatusPillsView.pillFor("battery"); not-charging renders
+            // identically. Consume the centralized `valueText` instead of re-interpolating the
+            // "N% · Charging" string here.
             let battery = BatteryChargingPresentation.make(percent: snapshot.batteryPercent, charging: snapshot.batteryCharging)
             return battery.valueText
         case "cgm": return snapshot.cgmActive ? "Active" : "Inactive"
@@ -299,22 +296,21 @@ struct PumpDetailsCard: View {
             guard let u = snapshot.lastBolusUnits, let d = snapshot.lastBolusDate else { return nil }
             return "\(String(format: "%.2f U", u)) · \(d.formatted(.relative(presentation: .named)))"
         case "carbRatio": return snapshot.carbRatio > 0 ? String(format: "%.0f g/U", snapshot.carbRatio) : "—"
-        // Phase 04-01 (D-10): ISF + target route through the GlucoseUnit funnel so mmol users see
-        // the correction factor and target in mmol/L too — mg/dL mode renders byte-identical to
-        // before. The pump / BolusMath keep receiving mg/dL Int regardless (D-09); only this label
-        // converts.
+        // ISF + target route through the GlucoseUnit funnel so mmol users see the correction
+        // factor and target in mmol/L too. The pump / BolusMath keep receiving mg/dL Int
+        // regardless; only this label converts.
         case "isf":
             guard snapshot.isf > 0 else { return "—" }
             let unit = AppSettings.shared.glucoseDisplayUnit
-            // WR-05 gap closure (04-07): standardize on "mmol/L/U" (the catalog/PumpWizard/Garmin
-            // convention) instead of "mmol/L·U⁻¹" — same unit, was two different renderings.
-            // Owner-requested toggle: bare value when labels are hidden (ambient dashboard row).
+            // Standardize on "mmol/L/U" (the catalog/PumpWizard/Garmin convention) instead of
+            // "mmol/L·U⁻¹" — same unit, two different renderings. Bare value when labels are
+            // hidden (ambient dashboard row).
             guard AppSettings.shared.showGlucoseUnitLabels else { return unit.format(mgdl: snapshot.isf) }
             return "\(unit.format(mgdl: snapshot.isf)) \(unit == .mmol ? "mmol/L/U" : "mg/dL/U")"
         case "target":
             guard snapshot.targetBg > 0 else { return "—" }
             let unit = AppSettings.shared.glucoseDisplayUnit
-            // Owner-requested toggle: bare value when labels are hidden (ambient dashboard row).
+            // Bare value when labels are hidden (ambient dashboard row).
             guard AppSettings.shared.showGlucoseUnitLabels else { return unit.format(mgdl: snapshot.targetBg) }
             return "\(unit.format(mgdl: snapshot.targetBg)) \(unit == .mmol ? "mmol/L" : "mg/dL")"
         case "maxBolus": return String(format: "%.1f U", snapshot.maxBolusUnits)
@@ -342,7 +338,7 @@ struct PumpDetailsCard: View {
             Text(value).fontWeight(.medium)
         }
         .font(.subheadline).padding(.horizontal, 14).padding(.vertical, 10)
-        // N12: each detail row reads as one element — "Active insulin, 1.23 U".
+        // Each detail row reads as one element — "Active insulin, 1.23 U".
         .accessibilityElement(children: .combine)
         if !last { Divider().padding(.leading, 14) }
     }
@@ -384,19 +380,19 @@ struct PairingSheet: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(!PumpPairingCode.isValid(code))
                 } footer: {
-                    // Phase 9 (09-04, Pitfall 5): the Mobi-specific pairing instruction ("on the charging
-                    // pad, press the pump button twice; its PIN is behind the cartridge") and the
-                    // Mobi-specific saved-PIN explanation are trimmed — narrow main rejects a Mobi at
-                    // pairing (MOBI-01/03), so instructing users how to pair one it will then reject was
-                    // misleading. The generic t:slim pairing instruction and the (pump-agnostic)
-                    // saved-PIN affordance stay, unchanged in behavior.
+                    // Mobi-specific pairing instruction ("on the charging pad, press the pump button
+                    // twice; its PIN is behind the cartridge") and Mobi-specific saved-PIN explanation
+                    // are trimmed — this build rejects a Mobi at pairing, so instructing users how to
+                    // pair one it will then reject was misleading. The generic t:slim pairing
+                    // instruction and the (pump-agnostic) saved-PIN affordance stay, unchanged in
+                    // behavior.
                     Text("On the pump: Options → Device Settings → Bluetooth → Pair Device. Unpair the official t:connect app first — only one connection at a time.\n\nMost pumps show a 6-digit code. Older pumps (firmware before v7.7) show a longer 16-character code with letters and numbers — enter it exactly as shown (it is case-sensitive); faBolus pairs either way automatically.\n\nIf faBolus has a saved PIN for this pump, it's prefilled here to skip re-typing. To pair a different pump, edit the code above or Clear saved PIN.")
                 }
             }
             .navigationTitle("Connect to pump")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel", action: onDone) } }
             .onAppear {
-                if let pin = model.savedPin { code = pin; hadSavedPin = true }   // prefill saved Mobi PIN
+                if let pin = model.savedPin { code = pin; hadSavedPin = true }
             }
         }
     }

@@ -61,7 +61,7 @@ public enum BolusGate {
     ///   - bolusInFlight: is a dose already running? (host: `PumpSnapshot.bolusInFlight`; remote: relayed)
     ///   - cartridgeReady: is the cartridge NOT mid change/load/prime-tubing? (host:
     ///     `PumpSnapshot.cartridgeReadyForBolus`; remote: relayed). Dosing is physically impossible while
-    ///     `false`, so this is checked before access/bounds (Phase 09.9 D-01, T-09.9-03).
+    ///     `false`, so this is checked before access/bounds.
     ///   - access: the `AccessPolicy` decision for `.deliverBolus` on this surface (host: the real evaluation;
     ///     a remote pre-wire passes `.allow`, or `.deny(.remotesReadOnly)` when it locally knows it's read-only)
     public static func evaluate(reachable: Bool, linked: Bool, bolusInFlight: Bool,

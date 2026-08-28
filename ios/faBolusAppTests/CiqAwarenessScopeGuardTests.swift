@@ -3,35 +3,10 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// **09.15-04 SAFETY CONTRACT — guardrail #1 + #2 (D-06).** A source-scan guard, modeled on
-/// `WatchDirectBleScopeGuardTests`' `#filePath`-rooted repo-walk + function-signature extraction and
-/// `RemoteDiagnosticsScopeGuardTests`' balanced-region scan, proving two static properties of the
-/// codebase that must hold for the WHOLE phase, not just today's slice:
-///
-/// (a) **No dose in the return type.** None of the Control-IQ-awareness advisory functions built so far
-///     (`AutoCorrectionDisclosure`'s disclosure functions, `ControlIQZone`'s wire-token mapping,
-///     `MaxBasalFraction`/`CiqPlusTempRate`/`CiqCeilingFlags`'s bench-gated fns) declares a return type outside the allowed shapes
-///     `Double?` (a fraction), `String?`/`String` (disclosure copy), `Bool` (a status flag), or
-///     `ControlIQZone?` (a frozen wire token) — never a bare `Double`/`Int`/`UInt32` that could carry a
-///     dose or milliunits value. Because production code cannot be safely mutated to prove this
-///     discriminates (this plan's `files_modified` is test-files-only), the checker itself is proven
-///     non-vacuous with synthetic dose-shaped signatures it must reject.
-///
-/// (b) **The signed delivery path imports nothing from Control-IQ-awareness.** `TandemBackend.deliverBolus`
-///     / `.deliverExtendedBolus` / `.validateDeliver` / `.perform` (the actual signed dose path),
-///     `BolusMath.swift` (the pure dose-calculator math), and `GatedPumpWrite.swift` (the dose write's
-///     access-gate declaration) reference NONE of the named Control-IQ-awareness symbols — a balanced-
-///     brace, signature-located region scan (not a whole-file grep, which could false-positive on
-///     pre-existing, unrelated Control-IQ symbols like `setControlIQ`/`controlIQEnabled`/
-///     `ControlIQPrecondition` that predate this phase and are NOT Control-IQ-awareness disclosure code).
-///
-/// **Maintenance note for later 09.15 plans (05-12):** `forbiddenCiqAwarenessSymbols` and
-/// `knownCiqAwarenessSignatureSources` are PINNED to the primitives that exist as of plan 04. Every later
-/// plan that adds a new Control-IQ-awareness primitive (T1-2's `ciqSuspendedForLow`, T1-8's max-basal-
-/// fraction fn, T2-1's ceiling flags, …) MUST append the new symbol name to `forbiddenCiqAwarenessSymbols`
-/// and, if it lives in a new file/type, add an entry to `knownCiqAwarenessSignatureSources` — mirroring how
-/// `RemoteDiagnosticsScopeGuardTests.pinnedMutatingBaseline` is maintained plan-by-plan. Forgetting to
-/// extend these sets does not make this suite fail; it makes it silently stop covering the new primitive.
+/// Control-IQ-awareness helpers must not return a dose-shaped type, and the signed delivery path
+/// must not reference those symbols. New CIQ-awareness primitives must be added to
+/// `forbiddenCiqAwarenessSymbols` (and `knownCiqAwarenessSignatureSources` if they live in a new
+/// file); omitting them silently drops coverage.
 struct CiqAwarenessScopeGuardTests {
 
     // MARK: - Source resolution (mirrors WatchDirectBleScopeGuardTests.repoRootURL)

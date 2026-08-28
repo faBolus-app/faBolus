@@ -1,19 +1,11 @@
 import SwiftUI
 import faBolusCore
 
-/// Phase 8.1 (D-06) — the dedicated notification-controls screen, reached from Settings as a normal
-/// `.notifications` category. Splits [[NotificationBroker]].`Category` into a pump-sourced section
-/// (the single relayed `pumpAlert` bucket, D-03) and an app-generated section (the other 7 categories,
-/// D-02); each governed (non-trio) category is enable / quiet-hours / critical-break-through tunable
-/// (D-04), while the never-suppressible trio (`pumpDisconnect` / `cgmDataLoss` / `bolusReconciliation`)
-/// renders as always-on / non-interactive (D-05) — its governance guarantee lives structurally in
-/// `NotificationBroker.decide()`, unchanged by this view. The two previously-standalone
-/// `AlertRulesView` toggles (`criticalAlertsEnabled`, `suppressMirroredPumpAlarms`) are relocated here
-/// verbatim (D-07), not duplicated. Every per-category edit writes through
-/// [[NotificationRuntime]].`updateSettings(_:for:)` (Plan 01's persistence seam) so it survives a
-/// relaunch and is honored by every out-of-process poster.
+/// Notification controls. Pump-sourced (`pumpAlert`) vs app-generated categories; the never-suppressible
+/// trio (`pumpDisconnect` / `cgmDataLoss` / `bolusReconciliation`) is always-on. Governance lives in
+/// `NotificationBroker.decide()`, unchanged by this view.
 struct NotificationSettingsView: View {
-    /// 09.25 WR-01: read-only handle used ONLY to reach `model.notificationWithdrawCategorySink` when the
+    /// Read-only handle used ONLY to reach `model.notificationWithdrawCategorySink` when the
     /// user disables a safety-trio category (`setSafetyEnabled`) — nothing else in this view reads
     /// `model`, so `let` (not `@Bindable`) mirrors `DisplaySettingsView`/`CgmSettingsView`'s convention for
     /// a model handle that's never bound into a control.
@@ -24,14 +16,14 @@ struct NotificationSettingsView: View {
     /// `@MainActor` class, not `@Observable`, so a `@State` copy drives the UI and is refreshed after
     /// every write-through mutation (see `updateCategorySettings`).
     @State private var categorySettings: [NotificationBroker.Category: NotificationBroker.CategorySettings]
-    /// §6/S8 B6 (relocated from `AlertRulesView`, D-07): enabling the pump-alarm opt-out is
+    /// Enabling the pump-alarm opt-out is
     /// safety-reducing, so it's gated behind this warning + confirm; turning it off is immediate.
     @State private var showSuppressWarning = false
-    /// D-04 / RESEARCH Open Question #2: turning a category's critical break-through OFF is the
+    /// Turning a category's critical break-through OFF is the
     /// safety-reducing direction, so it's confirm-gated too. Holds the category whose confirm dialog
     /// is currently showing (`nil` ⇒ no dialog).
     @State private var breakThroughOffCategory: NotificationBroker.Category?
-    /// 09.25-01 (D-03/D-06): the never-suppressible safety trio is now user-disableable behind a
+    /// The never-suppressible safety trio is user-disableable behind a
     /// confirm-on-disable warning — turning a trio row OFF is the safety-reducing direction, so it routes
     /// through this dialog; turning it back ON is immediate. Holds the trio category whose confirm dialog
     /// is currently showing (`nil` ⇒ no dialog).
@@ -45,10 +37,10 @@ struct NotificationSettingsView: View {
         _categorySettings = State(initialValue: rt.settings)
     }
 
-    // MARK: - Category groupings (D-02)
+    // MARK: - Category groupings
 
     private var trioCategories: [NotificationBroker.Category] {
-        // `isUserConfigurable` excludes `pumpConnectionUnstable` (tslim-reconnect-loop Phase B, item 5):
+        // `isUserConfigurable` excludes `pumpConnectionUnstable`:
         // it is never-suppressible AND has no user toggle / acknowledged-disable path → non-muteable.
         NotificationBroker.Category.allCases.filter { !$0.isPumpSourced && $0.neverSuppressible && $0.isUserConfigurable }
     }
@@ -56,11 +48,11 @@ struct NotificationSettingsView: View {
         NotificationBroker.Category.allCases.filter { !$0.isPumpSourced && !$0.neverSuppressible && $0.isUserConfigurable }
     }
 
-    // MARK: - Relocated bindings (D-07, verbatim from AlertRulesView)
+    // MARK: - Relocated bindings
 
-    /// §6/S8 B6: enabling the pump-alarm opt-out routes through a warning + explicit confirm; turning it
+    /// Enabling the pump-alarm opt-out routes through a warning + explicit confirm; turning it
     /// off is immediate. Cancel leaves the flag false, so the Toggle snaps back. Routed through the
-    /// shared `guardedToggle` factory (09.3-01, D-05/SC3) — the one idiom every confirm-gated settings
+    /// shared `guardedToggle` factory — the one idiom every confirm-gated settings
     /// toggle uses.
     private var suppressBinding: Binding<Bool> {
         guardedToggle(
@@ -70,13 +62,13 @@ struct NotificationSettingsView: View {
         )
     }
 
-    /// D-03/D-04: whether the honest "pending Apple approval" status should show — true only when the
+    /// Whether the honest "pending Apple approval" status should show — true only when the
     /// user opted into Critical Alerts AND the OS grant isn't active yet (nothing to disclose otherwise).
     /// Pure so it's directly testable without driving the view or a real notification center.
     static func shouldShowHonestStatus(enabled: Bool, grantActive: Bool) -> Bool { enabled && !grantActive }
 
-    /// 09.25-02 (D-01/D-02): the break-through row's computed effective-state caption — the direct fix
-    /// for the D-01 override ambiguity (break-through used to silently override a disabled category).
+    /// The break-through row's computed effective-state caption — the direct fix
+    /// for the override ambiguity (break-through used to silently override a disabled category).
     /// Pure so it's directly testable without driving the view.
     static func breakThroughCaption(enabled: Bool, allow: Bool) -> String {
         guard enabled else { return "Off — category is disabled, so break-through has no effect." }
@@ -85,7 +77,7 @@ struct NotificationSettingsView: View {
             : "Off — this category's urgent/critical alerts follow the normal quiet-hours/limit rules below."
     }
 
-    /// 09.25-02 (D-06): the silence-pump-alarms row's effective-state caption — non-nil ONLY when the
+    /// The silence-pump-alarms row's effective-state caption — non-nil ONLY when the
     /// pump section's master is off (the row has no effect while `pumpAlert` is disabled); `nil`
     /// otherwise, since the existing section footer already explains the row while it's live.
     static func silenceMirrorCaption(pumpEnabled: Bool) -> String? {
@@ -95,12 +87,12 @@ struct NotificationSettingsView: View {
     // MARK: - Per-category bindings
 
     private func enabledBinding(for category: NotificationBroker.Category) -> Binding<Bool> {
-        // 09.25 WR-02: this setter writes `cfg.enabled` WITHOUT touching `userAcknowledgedSafetyDisable`,
+        // This setter writes `cfg.enabled` WITHOUT touching `userAcknowledgedSafetyDisable`,
         // so a trio category routed through here would desync the pair `decide()`'s AND-gate depends on
         // (the caption/toggle would then show "Off" while `decide()` still correctly delivers). Every
         // trio category must go through `safetyEnabledBinding(for:)` instead, which writes both fields
         // together. Fail LOUDLY (not just in DEBUG — `precondition`, not `assert`) so a future call site
-        // can never silently reintroduce the desync this file's own WR-02 fix closed.
+        // can never silently reintroduce the desync this file's own paired-write fix closed.
         precondition(!category.neverSuppressible,
                      "enabledBinding(for:) must never be used for a never-suppressible trio category "
                      + "(\(category.rawValue)) — use safetyEnabledBinding(for:) instead, which keeps "
@@ -171,7 +163,7 @@ struct NotificationSettingsView: View {
         return (c.hour ?? 0) * 60 + (c.minute ?? 0)
     }
 
-    /// D-04 / RESEARCH Open Question #2: turning critical break-through OFF is the safety-reducing
+    /// Turning critical break-through OFF is the safety-reducing
     /// direction, so — unlike every other `guardedToggle` site in this app — the confirm is on the OFF
     /// transition, not the ON one. Built by wrapping `guardedToggle` around the INVERTED ("break-through
     /// is off") boolean: turning the real toggle off drives `guardedToggle`'s "on" (confirm) path, and
@@ -195,14 +187,14 @@ struct NotificationSettingsView: View {
         updateCategorySettings(cfg, for: category)
     }
 
-    /// 09.25-01 (D-03/D-06/D-08): the never-suppressible safety trio's confirm-on-disable toggle — mirrors
+    /// The never-suppressible safety trio's confirm-on-disable toggle — mirrors
     /// `breakThroughBinding`'s double-inversion exactly. Built by wrapping `guardedToggle` around the
     /// INVERTED ("disabled") boolean: turning the real toggle OFF drives `guardedToggle`'s "on" (confirm)
     /// path via `safetyDisableOffCategory`, and turning it back ON drives its "off" (immediate) path. The
     /// outer `Binding` always reads/writes the real `enabled` value — the inversion is purely internal
     /// plumbing. Deliberately the `guardedToggle` + `.confirmationDialog` idiom, NOT the dose-path-ack
-    /// gate elsewhere in this app (D-08) — that pattern writes a therapy acknowledgment and would
-    /// breach the no-dose-path boundary this phase must not cross.
+    /// gate elsewhere in this app — that pattern writes a therapy acknowledgment and would
+    /// breach the no-dose-path boundary this view must not cross.
     private func safetyEnabledBinding(for category: NotificationBroker.Category) -> Binding<Bool> {
         Self.safetyTrioToggleBinding(
             enabled: { categorySettings[category]?.enabled ?? true },
@@ -211,7 +203,7 @@ struct NotificationSettingsView: View {
         )
     }
 
-    /// 09.25 IN-01: the safety-trio toggle's double-inversion wiring, extracted verbatim out of
+    /// The safety-trio toggle's double-inversion wiring, extracted verbatim out of
     /// `safetyEnabledBinding` into a standalone (non-`private`) factory over plain closures — so its
     /// Cancel/snap-back contract (turning OFF requests confirm and does NOT write `enabled` until the
     /// confirm button fires) is directly unit-testable with spy closures, without a live view or
@@ -233,7 +225,7 @@ struct NotificationSettingsView: View {
     }
 
     /// Write BOTH `enabled` and the paired `userAcknowledgedSafetyDisable` flag together, so `decide()`'s
-    /// AND-gate (D-03/D-07) always sees a coherent pair: disabling sets both `enabled = false` and
+    /// AND-gate always sees a coherent pair: disabling sets both `enabled = false` and
     /// `userAcknowledgedSafetyDisable = true` (the explicit acknowledgment); re-enabling sets `enabled =
     /// true` and clears the ack back to `nil` (so a later disable requires a fresh acknowledgment).
     private func setSafetyEnabled(_ on: Bool, for category: NotificationBroker.Category) {
@@ -241,7 +233,7 @@ struct NotificationSettingsView: View {
         cfg.enabled = on
         cfg.userAcknowledgedSafetyDisable = on ? nil : true
         updateCategorySettings(cfg, for: category)
-        // 09.25 WR-01: disabling doesn't just change future governance — an escalation step scheduled
+        // Disabling doesn't just change future governance — an escalation step scheduled
         // BEFORE this write (or an already-delivered banner) is still sitting in `UNUserNotificationCenter`
         // and would otherwise fire/linger AFTER the user just confirmed "turn off protection", contradicting
         // the confirm dialog's own "faBolus will no longer alert you" promise. Withdraw everything
@@ -252,7 +244,7 @@ struct NotificationSettingsView: View {
         }
     }
 
-    /// The confirm dialog's per-category title (D-06 UI-SPEC "Interaction Contract — Confirm Dialogs")
+    /// The confirm dialog's per-category title
     /// — each trio category's "what you're giving up" warning is category-specific, unlike the
     /// break-through dialog's one generic templated sentence.
     private func safetyDisableDialogTitle(for category: NotificationBroker.Category?) -> Text {
@@ -265,9 +257,9 @@ struct NotificationSettingsView: View {
         }
     }
 
-    /// The trio's computed effective-state caption text (D-06 UI-SPEC "Copy → Caption Mapping"). Pulled
-    /// out as a plain `String` (rather than inlined in the `@ViewBuilder` below) so 09.25-02 Task 3 can
-    /// feed the SAME value into `.accessibilityValue` on the governing Toggle — VoiceOver announces
+    /// The trio's computed effective-state caption text. Pulled
+    /// out as a plain `String` (rather than inlined in the `@ViewBuilder` below) so the SAME value
+    /// feeds into `.accessibilityValue` on the governing Toggle — VoiceOver announces
     /// exactly what's on screen, never a separately-authored a11y string.
     private func safetyEffectiveStateCaptionText(for category: NotificationBroker.Category) -> String {
         Self.trioIsSuppressed(cfg: categorySettings[category])
@@ -275,7 +267,7 @@ struct NotificationSettingsView: View {
             : "On — always delivered, even during quiet hours or Do Not Disturb."
     }
 
-    /// 09.25 WR-02: mirrors `NotificationBroker.decide()`'s trio AND-gate EXACTLY (`!cfg.enabled &&
+    /// Mirrors `NotificationBroker.decide()`'s trio AND-gate EXACTLY (`!cfg.enabled &&
     /// cfg.userAcknowledgedSafetyDisable == true`) — the single source of truth this view's caption/toggle
     /// must read, never `cfg.enabled` alone. A nil `cfg` (category not yet in the local mirror) reads as
     /// "on"/not-suppressed, matching every other read site's `?? true`/`?? category.defaultEnabled`
@@ -286,7 +278,7 @@ struct NotificationSettingsView: View {
         return !cfg.enabled && cfg.userAcknowledgedSafetyDisable == true
     }
 
-    /// The trio's computed effective-state caption (D-06 UI-SPEC "Copy → Caption Mapping"), rendered
+    /// The trio's computed effective-state caption, rendered
     /// below each trio row.
     @ViewBuilder
     private func safetyEffectiveStateCaption(for category: NotificationBroker.Category) -> some View {
@@ -303,7 +295,7 @@ struct NotificationSettingsView: View {
     }
 
     /// The one write-through seam every per-category mutation in this view uses: updates the local
-    /// mirror for immediate UI feedback, then persists via the Plan 01 seam so a fresh
+    /// mirror for immediate UI feedback, then persists via `runtime.updateSettings` so a fresh
     /// `NotificationRuntime` (including an out-of-process poster) honors it.
     private func updateCategorySettings(_ cfg: NotificationBroker.CategorySettings,
                                         for category: NotificationBroker.Category) {
@@ -313,7 +305,7 @@ struct NotificationSettingsView: View {
 
     // MARK: - Body
 
-    /// D3-05: visual-density tightening only (grouping/spacing, no toggle/key change) — every
+    /// Visual-density tightening only (grouping/spacing, no toggle/key change) — every
     /// toggle-plus-caption pairing below uses a tighter `spacing: 2` (was 4) so the caption reads as
     /// visually attached to its control rather than as a separate row, without touching any binding,
     /// section boundary, or governance logic.
@@ -350,7 +342,7 @@ struct NotificationSettingsView: View {
                 Text("\(category.label)'s urgent/critical alerts will follow your normal enabled/quiet-hours/rate-limit settings instead of always breaking through. You can turn this back on anytime.")
             }
         }
-        // 09.25-01 (D-03/D-04/D-06): the trio's confirm-on-disable dialog. Each trio category has a
+        // The trio's confirm-on-disable dialog. Each trio category has a
         // category-specific title AND message body — driven by `safetyDisableDialogTitle` rather than
         // the break-through dialog's fixed-title shape, since the "what you're giving up" warning
         // genuinely differs per category.
@@ -383,11 +375,11 @@ struct NotificationSettingsView: View {
 
     // MARK: - Sections
 
-    /// (a) Pump-sourced section (D-03): the single `pumpAlert` category's enable/quiet-hours/
+    /// (a) Pump-sourced section: the single `pumpAlert` category's enable/quiet-hours/
     /// break-through controls PLUS the relocated pump-alarm mirror opt-out. Exactly one bucket — no
     /// per-alarm-type enumeration.
     private var pumpSection: some View {
-        // 09.25-02 (D-02): the section's `Enabled` master governs every member control below — greyed
+        // The section's `Enabled` master governs every member control below — greyed
         // via native `.disabled(true)` (never manual `.opacity()`) when off.
         let masterOn = enabledBinding(for: .pumpAlert).wrappedValue
         let breakThroughCaption = Self.breakThroughCaption(
@@ -405,8 +397,7 @@ struct NotificationSettingsView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Toggle("Allow critical break-through", isOn: breakThroughBinding(for: .pumpAlert))
                     .disabled(!masterOn)
-                    // 09.25-02 Task 3 (D-06 backstop): reuse the SAME on-screen caption for VoiceOver
-                    // (mirrors GlucoseChartView.swift:239's `.accessibilityValue` idiom).
+                    // Reuse the SAME on-screen caption for VoiceOver.
                     .accessibilityValue(Text(breakThroughCaption))
                 Text(breakThroughCaption).font(.caption).foregroundStyle(.secondary)
             }
@@ -422,12 +413,12 @@ struct NotificationSettingsView: View {
         }
     }
 
-    /// 09.25-02 (D-02c): the relocated `criticalAlertsEnabled` control (D-07), honestly reframed as an
+    /// The relocated `criticalAlertsEnabled` control, honestly reframed as an
     /// interruption-STRENGTH descriptor — NOT a disable master. Apple's own control name (`Use Critical
     /// Alerts`) and the `criticalAlertsEnabled` binding stay verbatim (kept reachable for
     /// `SettingsReachabilityGuardTests`); only the section's FRAMING changes. This section must gate NO
     /// other row on screen — no `.disabled(...)` anywhere in this view may read `criticalAlertsEnabled`
-    /// (pinned by `interruptionStrengthSectionGatesNoOtherRow`). Phase 8's conditional honest-status
+    /// (pinned by `interruptionStrengthSectionGatesNoOtherRow`). The conditional honest-status
     /// caption is preserved verbatim, unchanged, below the NEW always-visible caption.
     private var criticalAlertsSection: some View {
         Section {
@@ -448,18 +439,17 @@ struct NotificationSettingsView: View {
         }
     }
 
-    /// (b) App-generated, non-trio: 09.25-01 (D-03/D-06) — the never-suppressible trio is now
+    /// (b) App-generated, non-trio: the never-suppressible trio is now
     /// user-disableable behind a confirm-on-disable dialog (`safetyEnabledBinding`); the caption below
-    /// each row discloses the current effective state either way (mirrors Phase 8's honest-status
+    /// each row discloses the current effective state either way (mirrors the honest-status
     /// rationale — never hide the guarantee, or its absence).
     private var safetyAlertsSection: some View {
         Section {
             ForEach(trioCategories, id: \.self) { category in
                 VStack(alignment: .leading, spacing: 2) {
                     Toggle(category.label, isOn: safetyEnabledBinding(for: category))
-                        // 09.25-02 Task 3 (D-06 backstop): VoiceOver announces switch-state + the SAME
-                        // on-screen effective-state caption as one utterance (mirrors
-                        // GlucoseChartView.swift:239's `.accessibilityValue` idiom).
+                        // VoiceOver announces switch-state + the SAME
+                        // on-screen effective-state caption as one utterance.
                         .accessibilityValue(Text(safetyEffectiveStateCaptionText(for: category)))
                     safetyEffectiveStateCaption(for: category)
                 }
@@ -473,7 +463,7 @@ struct NotificationSettingsView: View {
     /// critical break-through (confirm-gated OFF).
     @ViewBuilder
     private func categorySection(for category: NotificationBroker.Category) -> some View {
-        // 09.25-02 (D-02): the section's `Enabled` master governs every member control below — greyed
+        // The section's `Enabled` master governs every member control below — greyed
         // via native `.disabled(true)` (never manual `.opacity()`) when off.
         let masterOn = enabledBinding(for: category).wrappedValue
         let breakThroughCaption = Self.breakThroughCaption(
@@ -491,8 +481,7 @@ struct NotificationSettingsView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Toggle("Allow critical break-through", isOn: breakThroughBinding(for: category))
                     .disabled(!masterOn)
-                    // 09.25-02 Task 3 (D-06 backstop): reuse the SAME on-screen caption for VoiceOver
-                    // (mirrors GlucoseChartView.swift:239's `.accessibilityValue` idiom).
+                    // Reuse the SAME on-screen caption for VoiceOver.
                     .accessibilityValue(Text(breakThroughCaption))
                 Text(breakThroughCaption).font(.caption).foregroundStyle(.secondary)
             }

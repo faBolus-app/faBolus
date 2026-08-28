@@ -5,22 +5,9 @@ import TandemMessages
 import TandemBLE
 @testable import faBolus
 
-/// **09.15-04 SAFETY CONTRACT — guardrail #2 (D-06).** Phase 09.15 is ADVISORY/DISCLOSURE-ONLY: it may
-/// surface facts about what Control-IQ is doing, but it must NEVER touch the signed dose path. This suite
-/// is the mechanical proof, mirroring `StackingGuardDeliverInvariantTests`' coupled-pair idiom: (a)
-/// establish that a Control-IQ-awareness fact is genuinely "firing" — `PumpSnapshot.ciqZone` set to a real
-/// Tandem-sourced token (T1-1), and/or `AutoCorrectionDisclosure.lockoutRemainingFraction` returning a live
-/// countdown fraction (T1-5) — and (b) drive the REAL deliver path (`TandemBackend.deliverBolus` through
-/// the fake-transport test double, exactly like `StackingGuardDeliverInvariantTests.makeDeliveringBackend`)
-/// for the SAME scenario, asserting BOTH that the RETURNED delivered amount equals the consented amount
-/// AND — the stronger, load-bearing check, mirroring `TandemDeliveryOutcomeTests.sentInitiateCargoFreezesTheApprovedInputs`
-/// — that the ACTUAL `InitiateBolusRequest` bytes written to the wire (`FakePumpTransport.sent`) encode
-/// exactly the consented milliunits, byte-for-byte, regardless of the CIQ-awareness state established
-/// alongside it. The two facts are established on INDEPENDENT values (a standalone `PumpSnapshot` / pure
-/// disclosure call), never threaded into the backend's own private-set `snapshot` — because (per
-/// `CiqAwarenessScopeGuardTests`) there is no production seam that lets a CIQ-awareness fact reach the
-/// deliver call at all. Parameterized across {ciqZone present/nil} × {lockout active/inactive} (4 cases
-/// below) to prove the wire bytes and the delivered amount are identical across all four.
+/// Control-IQ awareness is advisory only and must never change the signed dose path. Asserts
+/// `deliverBolus` returns the consented amount and writes the same `InitiateBolusRequest`
+/// milliunits regardless of CIQ-awareness state.
 @Suite(.serialized) @MainActor
 struct CiqAwarenessDeliverInvariantTests {
 

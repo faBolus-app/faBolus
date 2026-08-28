@@ -1,34 +1,14 @@
-// WR-03 folder note: this is a Tandem-only importer that intentionally stays in `Data/App/`, NOT in
-// `Data/Tandem/` — it is gate-adjacent (extracted verbatim from the byte-guarded `TandemBackend`),
-// which is exactly the exclusion in ARCHITECTURE.md's `Data/Tandem/` rule.
+// This is a Tandem-only importer that intentionally stays in `Data/App/`, NOT in
+// `Data/Tandem/` — it is gate-adjacent (history-log gap sync, no delivery opcode).
 import Foundation
 import faBolusCore
 import TandemMessages
 
-/// GO-2 Step 0 fused with Step 1 (16-08, REMED-16, CX-A-03) — the read-only history-log gap-sync state
-/// machine, extracted VERBATIM out of `TandemBackend` (R6 coverage/paging fields, R18 sync functions)
-/// behind injected closures, mirroring `PumpReadScheduler`/`PumpResponseApplier`'s D-04 hook pattern:
-/// `var`s with safe no-op defaults, wired by `TandemBackend` as separate statements right after
-/// `super.init()` (Swift's two-phase init forbids a `[weak self]`-capturing closure inside the very
-/// expression that constructs the property holding it).
-///
-/// **STATE-OWNERSHIP CONTRACT (16-08-SUMMARY.md — no dual state, no setter loop):**
-///   - OWNED-BY-`TandemBackend`, PUBLISHED, mutated ONLY via the sinks below (never mirrored into a
-///     stored property here): `historySyncState`, `historyEvents`, `snapshot`, `glucoseHistory`,
-///     `iobHistory`, `bolusMarkers`. `historyStatusRequestedThisConnection` is also owned/published by
-///     `TandemBackend` but this type never reads or writes it (no sink needed).
-///   - OWNED-BY-this-coordinator (the SOLE store — moved off `TandemBackend`): the R6 coverage/paging
-///     fields (`pendingGapWindows`/`currentGapWindow`/`backfillFirstSeq`/`backfillNextEnd`), `backfillActive`,
-///     `backfillTimer`, the backfill buffers (`backfillBuffer`/`backfillBoluses`/`backfillEventLogs`),
-///     `receivedSeqsThisWindow`, `backfillPages`.
-///   - STAYS-IN-`TandemBackend` (never touched here): `applyTimeResponse` + the first
-///     `HistoryLogStatusRequest`, `AppSettings.shared.historyCoverage` (read/written directly — a global
-///     persisted singleton, not backend-instance state, exactly as it was accessed before the move).
-///
-/// **Zero delivery opcode reachable from this type** (HistoryLogSyncDeliveryBoundaryTests, retargeted
-/// onto this file in a separate commit) — every send here is an unsigned `.currentStatus`/`.historyLog`
-/// read (`HistoryLogRequest`/`HistoryLogStatusRequest`), never `BolusPermissionRequest`/
-/// `InitiateBolusRequest`, and `allowInsulinDelivery` is never `true` on the injected `send` closure.
+/// Read-only history-log gap-sync state machine, behind injected closures. Published fields
+/// (`historySyncState`, `historyEvents`, `snapshot`, histories, `bolusMarkers`) stay owned by
+/// `TandemBackend` and are mutated only via sinks. Coverage/paging state is the sole store here.
+/// Zero delivery opcode is reachable from this type — every send is an unsigned history-log read,
+/// and `allowInsulinDelivery` is never `true` on the injected `send` closure.
 @MainActor
 final class PumpHistorySyncCoordinator {
 
@@ -58,7 +38,7 @@ final class PumpHistorySyncCoordinator {
     /// Bound to `{ [weak self] in self?.onChange?() }`.
     var onChange: () -> Void = {}
 
-    // MARK: - R6: coverage/paging state (moved verbatim off TandemBackend — this is now the sole store)
+    // MARK: - Coverage/paging state (sole store here)
 
     /// `#if DEBUG` VA-18 test seam: the zone `finishBackfill` re-anchors history records into (production
     /// reads `TimeZone.current`). Forwarded by `TandemBackend.historyBackfillTimeZoneForTesting` so the

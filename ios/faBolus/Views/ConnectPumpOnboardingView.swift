@@ -1,19 +1,9 @@
 import SwiftUI
 import faBolusCore
 
-/// Phase 09.4 (D-01/D-02/D-03) — the skippable first-run "Connect your pump" step. Extends the existing
-/// one-time first-run flow (mirrors `ModeOnboardingView`'s mechanism exactly, gated on
-/// `ModeStore.hasCompletedPumpOnboarding`) so a new user isn't dropped on a dead dashboard, per ROADMAP
-/// 09.4 success criterion 1.
-///
-/// Reuse-first, display/navigation only (D-11): the primary action opens the EXISTING `PairingSheet`
-/// unchanged, the CGM link pushes to the EXISTING `CgmSettingsView`, and the demo option flips the
-/// EXISTING `BackendRegistry` selection. No new pump/pairing/dose logic is introduced here.
-///
-/// All three exits — Connect / Use a demo pump / Skip for now — are equally low-friction one-tap actions
-/// (no confirmation dialog) and each calls `modeStore.completePumpOnboarding()` so the step never
-/// reappears once dismissed any way (the dashboard CTA in `MainHUDView.swift` is the re-entry point for
-/// the two skip routes).
+/// Skippable first-run "Connect your pump" step so a new user isn't dropped on a dead dashboard.
+/// Opens the existing `PairingSheet` / `CgmSettingsView`; no new pump/pairing/dose logic.
+/// All three exits call `modeStore.completePumpOnboarding()` so the step never reappears.
 struct ConnectPumpOnboardingView: View {
     @Bindable var model: AppModel
     let modeStore: ModeStore

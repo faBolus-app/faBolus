@@ -2,27 +2,10 @@ import Foundation
 import TandemMessages
 import os
 
-/// Phase 09 Wave 3, Target B part 1 (D-06): the BLE read cascade's **send side**, extracted verbatim out
-/// of `TandemBackend` behind the unchanged `PumpBackend` seam. Owns the reference-required post-pair
-/// bootstrap trio, the three tiered read message lists (fast/alert/static), the recurring `pollTimer`
-/// cadence gating, the `pollCycleGeneration`/`scheduleAlertRead` generation guard, the predictive-burst
-/// lifecycle, the single-flight glucose/calc-input coalescers, and the `badOpcodes` never-resend backstop.
-///
-/// Depends ONLY on injected closures/providers (`send`, `isConnected`, `pumpTimeAnchor`,
-/// `onStartPollingCycleBegin`) — never a whole-`TandemBackend` back-pointer — mirroring
-/// `DeliveryLedgerCoordinator`'s D-04 hook pattern: `var`s with safe no-op defaults, assigned by
-/// `TandemBackend` as separate statements right after construction (Swift's two-phase init forbids a
-/// `[weak self]`-capturing closure inside the very expression that initializes the property holding it).
-///
-/// D-07 (landed in Wave 4): the response-applier — the `didReceiveFrame` status cases, including
-/// `applyEgvReading` — moved into `PumpResponseApplier`, which calls into this scheduler's exposed
-/// completion/scheduling methods (`completeGlucoseRead()`, `noteCalcInputArrived(iob:)`,
-/// `schedulePredictiveBurst(afterReadingAt:)`, `cgmReadingDate(pumpSec:now:)`, `insertBadOpcode(_:)`) via
-/// its own injected closures — the same calls TandemBackend made directly before this extraction,
-/// still routed through this scheduler.
-///
-/// NO wire bytes, send order, or cadence change (D-06) — every member below is a verbatim move (including
-/// its fix-cycle doc-comment history) from `TandemBackend.swift`.
+/// BLE read cascade **send side**. Owns the post-pair bootstrap trio, tiered read lists,
+/// poll cadence, predictive burst, coalescers, and the `badOpcodes` never-resend backstop.
+/// Depends only on injected closures — never a whole-`TandemBackend` back-pointer.
+/// No wire bytes, send order, or cadence change.
 @MainActor
 final class PumpReadScheduler {
     /// Same subsystem/category as `TandemBackend.pairingLog` — declared separately (that constant is

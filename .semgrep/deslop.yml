@@ -1,0 +1,150 @@
+# Local Semgrep rules that flag AI-agent process residue and vacuous tests.
+#
+# These are NOT security rules and NOT a quality score. Each hit is a candidate for human triage
+# against one question: does the flagged text encode behavior or a safety reason, or is it only a
+# record of which ticket touched the line? Safety rationale, fail-closed notes, hardware
+# observations, and clamp/confirm rules are KEEP even when a rule below matches them.
+#
+# The path lists cover all three sibling repos (faBolus `ios/` + `Packages/faBolusCore`,
+# TandemKit `Sources/`, faBolusGarmin `source/app`) so one config can be pointed at any of them.
+#
+# Run:  semgrep --config .semgrep/deslop.yml --metrics=off <repo>
+rules:
+  - id: phase-ticket-comment
+    languages: [generic]
+    severity: INFO
+    message: >-
+      Comment carries a phase/ticket breadcrumb (Phase N, NN-NN, D-NN, FEAT-NN, WR-NN, CX-x-NN,
+      REMED-NN, LOCK-NN, T-NN-NN, GO-N). Delete the identifier; keep any surrounding "why".
+    paths:
+      include:
+        - "ios/**/*.swift"
+        - "Packages/faBolusCore/**/*.swift"
+        - "Shared/**/*.swift"
+        - "Sources/**/*.swift"
+        - "source/app/*.mc"
+      exclude:
+        - "**/Vendor/**"
+        - "vendor/**"
+        - "**/ShareClient/**"
+        - "**/G7SensorKit/**"
+        - "**/DexcomG6Kit/**"
+        - "**/HistoryStore/**"
+        - "cliparser/**"
+    pattern-regex: >-
+      (?://|/\*|^\s*\*)[^\n]*\b(?:Phase\s+\d+(?:\.\d+)?|\d\d-\d\d(?:-\d\d)?|D\d?-\d\d|FEAT-\d\d|WR-\d\d|CX-[A-Z]-\d\d|REMED-\d+|LOCK-\d\d|T-\d\d-\d\d|GO-\d)\b
+
+  - id: migration-breadcrumb-comment
+    languages: [generic]
+    severity: INFO
+    message: >-
+      Comment records a past code move or deletion ("moved verbatim", "was X, now deleted",
+      "git rm'd", "carved out of"). That history lives in git, not in the source.
+    paths:
+      include:
+        - "ios/**/*.swift"
+        - "Packages/faBolusCore/**/*.swift"
+        - "Shared/**/*.swift"
+        - "Sources/**/*.swift"
+        - "source/app/*.mc"
+      exclude:
+        - "**/Vendor/**"
+        - "vendor/**"
+        - "**/ShareClient/**"
+        - "**/G7SensorKit/**"
+        - "**/DexcomG6Kit/**"
+        - "**/HistoryStore/**"
+        - "cliparser/**"
+    pattern-regex: >-
+      (?://|/\*|^\s*\*)[^\n]*(?:moved verbatim|moved (?:from|out of)|was\s+\S+\.swift, now deleted|git rm'?d|carved (?:out )?of|extracted verbatim|lifted verbatim)
+
+  - id: drifted-line-number-reference
+    languages: [generic]
+    severity: INFO
+    message: >-
+      Comment pins a file:line number. Line numbers drift silently and are never re-verified;
+      name the symbol instead.
+    paths:
+      include:
+        - "ios/**/*.swift"
+        - "Packages/faBolusCore/**/*.swift"
+        - "Shared/**/*.swift"
+        - "Sources/**/*.swift"
+        - "source/app/*.mc"
+      exclude:
+        - "**/Vendor/**"
+        - "vendor/**"
+        - "**/ShareClient/**"
+        - "**/G7SensorKit/**"
+        - "**/DexcomG6Kit/**"
+        - "**/HistoryStore/**"
+        - "cliparser/**"
+    pattern-regex: '(?://|/\*|^\s*\*)[^\n]*\b[A-Za-z][A-Za-z0-9+]*\.(?:swift|mc):\d+'
+
+  - id: vacuous-expect-literal
+    languages: [generic]
+    severity: WARNING
+    message: >-
+      Assertion on a literal always passes (or always fails) regardless of product behavior.
+      Pin real behavior or delete the test.
+    paths:
+      include:
+        - "**/*Tests.swift"
+    pattern-regex: '(?:#expect|#require|XCTAssert(?:True)?)\(\s*(?:true|false)\s*[,)]'
+
+  - id: vacuous-empty-collection-loop
+    languages: [generic]
+    severity: WARNING
+    message: >-
+      Test declares an empty collection literal. If a later `for`/`forEach` iterates it, every
+      assertion in the body is dead and the test passes vacuously. Verify the loop body still runs.
+    paths:
+      include:
+        - "**/*Tests.swift"
+    pattern-regex: 'let\s+\w+\s*:\s*(?:Set|Array)<[^>]+>\s*=\s*\[\s*\]'
+
+  - id: working-tree-absence-scanner
+    languages: [generic]
+    severity: INFO
+    message: >-
+      Test asserts a path is absent from the working tree via #filePath. This pins a completed
+      `git rm`, not product behavior — it cannot catch the feature returning through a different
+      file. Keep only if it is the last line of defense for a dose-affecting surface; otherwise
+      replace with a behavior assertion.
+    paths:
+      include:
+        - "**/*Tests.swift"
+    pattern-regex: 'fileExists\(atPath:[^)]*\)[\s\S]{0,200}?must (?:be absent|not exist)'
+
+  - id: source-text-scanning-test
+    languages: [generic]
+    severity: INFO
+    message: >-
+      Test greps its own source tree (`source.contains(...)`) instead of exercising an API. Fragile
+      to renames and defeatable by an equivalent spelling. Prefer a behavior assertion.
+    paths:
+      include:
+        - "**/*Tests.swift"
+    pattern-regex: '\bsource(?:Text)?\.contains\('
+
+  - id: skipped-test
+    languages: [generic]
+    severity: WARNING
+    message: A skipped test is not a passing test. Fix it, delete it, or record why it is gated.
+    paths:
+      include:
+        - "**/*Tests.swift"
+    pattern-regex: '\b(?:XCTSkip(?:If|Unless)?|withKnownIssue)\b'
+
+  - id: agent-doc-header-mandate
+    languages: [generic]
+    severity: WARNING
+    message: >-
+      Agent-facing doc instructs future agents to maintain per-file header doc-comments or to add a
+      Co-Authored-By trailer. Both rules generate process residue; remove them from the doc.
+    paths:
+      include:
+        - "AGENTS.md"
+        - "llms.txt"
+        - "CONTRIBUTING.md"
+    pattern-regex: '(?i)(?:every file (?:opens|begins|starts) with|file[- ]header doc[- ]comment|keep (?:this|the header) current|Co-Authored-By)'

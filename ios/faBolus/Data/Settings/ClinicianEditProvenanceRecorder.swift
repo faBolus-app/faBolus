@@ -1,26 +1,9 @@
 import Foundation
 import faBolusCore
 
-/// Phase 16 GO-1 Step 6 (16-06, REMED-16): the clinician-edit disclosure sidecar, extracted verbatim
-/// out of `AppModel`. Owns `settingChangeStore` (S7) and the last-manual-mode-change stamp (P16 S3),
-/// and every read/write method that touches them (`recordClinicianEditIfChanged`,
-/// `recordSegmentEditIfChanged`, `segmentFieldProvenance`, `recordConsensusBaselineIfAbsent`,
-/// `noteManualModeChange`).
-///
-/// D-04 (closure-bound-coordinator idiom, `DeliveryLedgerCoordinator.swift:1-19`), simplified for this
-/// coordinator exactly like `HistoryPersistenceCoordinator`: it needs no injected closures at all.
-/// Every method takes its inputs as plain VALUES and returns plain values. Critically, the success bit
-/// a therapy write produced is passed IN as `succeeded: Bool` by the caller (`AppModel`, which already
-/// knows `lastError == nil` at the call site) — this type NEVER reads `lastError` and holds no
-/// back-pointer to `AppModel` in either direction. "Provenance, never a gate on the write it
-/// annotates": the therapy WRITES themselves (`setMaxBolus`/`modifyProfileSegment`/…) and
-/// `revertSetting`/`revertSegmentField` stay in `AppModel`'s gated funnel; only this disclosure
-/// bookkeeping moved.
-///
-/// `AppModel` exposes a forwarding `settingChangeStore` computed property (get/set) so every existing
-/// call site — including test fixtures that swap in a unique/failing store
-/// (`model.settingChangeStore = StoredSettingChangeStore(url: ...)`) — keeps compiling and behaving
-/// unchanged post-extraction.
+/// Clinician-edit disclosure sidecar. Owns `settingChangeStore` and the last-manual-mode-change
+/// stamp. Provenance only — never a gate on the therapy write it annotates; this type never reads
+/// `lastError` and holds no back-pointer to `AppModel`.
 @MainActor
 final class ClinicianEditProvenanceRecorder {
 

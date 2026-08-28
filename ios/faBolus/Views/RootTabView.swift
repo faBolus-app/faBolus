@@ -10,25 +10,23 @@ struct RootTabView: View {
     @State private var selection = 0
 
     private func autoReconnectIfNeeded() async {
-        // Guard lives on AppModel (D-18, 05-05) — see `AppModel.autoReconnectIfNeeded()`'s doc
-        // comment. Originally shared with the Live Activity's Refresh intent (removed Phase 7,
-        // 07-01, FEAT-01); the guard itself is unaffected.
+        // Guard lives on AppModel — see `AppModel.autoReconnectIfNeeded()`'s doc comment.
         await model.autoReconnectIfNeeded()
     }
 
-    /// SC3 tab-strand guard (D-03, T-09.2-07/T-09.2-08). Only tag `1` (Bolus) is conditionally removed
-    /// from the TabView when `phoneReadOnly` is on (`:23-26` below) — tags 0/2/3/4 are always present.
-    /// Pure function so it's unit-testable without instantiating the TabView (mirrors the
-    /// `reenterMatches` static-for-test idiom in `BolusEntryView`). `internal` (not `private`) so
-    /// `RootTabSelectionGuardTests` (`@testable import faBolus`) can call it directly.
+    /// Tab-strand guard. Only tag `1` (Bolus) is conditionally removed from the TabView when
+    /// `phoneReadOnly` is on — tags 0/2/3/4 are always present. Pure function so it's unit-testable
+    /// without instantiating the TabView (mirrors the `reenterMatches` static-for-test idiom in
+    /// `BolusEntryView`). `internal` (not `private`) so `RootTabSelectionGuardTests`
+    /// (`@testable import faBolus`) can call it directly.
     static func resolveSelection(current: Int, phoneReadOnly: Bool) -> Int {
         (phoneReadOnly && current == 1) ? 0 : current
     }
 
-    /// WR-03 (VA-23): SwiftUI presents at most one `.alert` per view, so three sibling alerts on the
-    /// TabView can drop the loser when two conditions hold at one render. Resolve a single active alert by
-    /// priority — the high-stakes remote-bolus confirm always wins and is never the one dropped. Pure /
-    /// static so it's unit-testable without the TabView (mirrors the `resolveSelection` idiom).
+    /// SwiftUI presents at most one `.alert` per view, so three sibling alerts on the TabView can
+    /// drop the loser when two conditions hold at one render. Resolve a single active alert by
+    /// priority — the high-stakes remote-bolus confirm always wins and is never the one dropped.
+    /// Pure / static so it's unit-testable without the TabView (mirrors the `resolveSelection` idiom).
     enum RootAlert { case remoteBolus, remoteControl, pumpSwitch }
     static func activeAlert(hasRemoteBolus: Bool, hasRemoteControl: Bool, pumpSwitch: Bool) -> RootAlert? {
         if hasRemoteBolus   { return .remoteBolus }
@@ -68,14 +66,14 @@ struct RootTabView: View {
             if requested { if !settings.phoneReadOnly { selection = 1 }; model.openBolusRequested = false }
         }
         .onChange(of: settings.phoneReadOnly) { _, isReadOnly in
-            // SC3 (D-03): never strand the user on a tab the toggle just hid.
+            // Never strand the user on a tab the toggle just hid.
             selection = Self.resolveSelection(current: selection, phoneReadOnly: isReadOnly)
         }
-        // D2-04/D3-06: `presenting: model.pendingRemoteBolus` captures ONE snapshot of the pending
-        // request when the alert opens and hands that SAME value (`p`) to both closures below — the
-        // button label and every `confirmMessage` part now read from one frozen value instead of two
-        // independent live reads of `model.pendingRemoteBolus`, so the confirmed amount can never drift
-        // between the two even if the model updates while the alert is on screen.
+        // `presenting: model.pendingRemoteBolus` captures ONE snapshot of the pending request when
+        // the alert opens and hands that SAME value (`p`) to both closures below — the button label
+        // and every `confirmMessage` part now read from one frozen value instead of two independent
+        // live reads of `model.pendingRemoteBolus`, so the confirmed amount can never drift between
+        // the two even if the model updates while the alert is on screen.
         .alert(String(localized: "Remote bolus request"), isPresented: .constant(active == .remoteBolus),
                presenting: model.pendingRemoteBolus) { p in
             Button(String(format: String(localized: "Deliver %@"), String(format: "%.2f U", p.units)),
@@ -90,10 +88,10 @@ struct RootTabView: View {
                 parts.append(String(format: String(localized: "Carbs: %@."), String(format: "%.0f g", c)))
             }
             if let bg = p.bgMgdl {
-                // CR-01 gap closure (04-07): route through the display-unit funnel — this
-                // dialog is the highest-stakes confirm flow in the app (approving a
-                // remote-triggered insulin delivery); the audit BG figure must match every
-                // other glucose number the user sees, not stay a bare mg/dL literal.
+                // Route through the display-unit funnel — this dialog is the highest-stakes confirm
+                // flow in the app (approving a remote-triggered insulin delivery); the audit BG
+                // figure must match every other glucose number the user sees, not stay a bare
+                // mg/dL literal.
                 let unit = settings.glucoseDisplayUnit
                 let bgStr = "\(unit.format(mgdl: bg)) \(unit == .mmol ? "mmol/L" : "mg/dL")"
                 if let bgDate = p.bgDate {
@@ -120,8 +118,8 @@ struct RootTabView: View {
         } message: {
             Text("A remote requested to \(model.pendingRemoteControl?.action == .suspend ? "suspend" : "resume") insulin delivery. Confirm on the phone to proceed.")
         }
-        // B4 (owner 2026-08-09): a DIFFERENT pump connected. Its therapy values were already refreshed
-        // automatically; offer to also reset pump-specific app settings so two pumps' configs don't mix.
+        // A DIFFERENT pump connected. Its therapy values were already refreshed automatically;
+        // offer to also reset pump-specific app settings so two pumps' configs don't mix.
         .alert("A different pump is connected", isPresented: Binding(
             get: { active == .pumpSwitch },
             set: { if !$0 { model.pendingPumpSwitch = false } })) {

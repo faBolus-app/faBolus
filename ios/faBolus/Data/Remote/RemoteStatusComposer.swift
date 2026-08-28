@@ -1,37 +1,21 @@
 import Foundation
 import faBolusCore
 
-/// Phase 16 GO-1 Step 1 (the phase's tracer, REMED-16/CX-A-01/CX-A-05) — the pure mapper extracted
-/// from `AppModel.statusCommand(includeHistory:replyingTo:)`. Builds the exact same `RemoteCommand`
-/// every remote (Apple Watch / Garmin / Mac) receives on a `statusRead`, from an immutable
-/// `RemoteStatusInputs` value — no live singleton, no wall-clock, no `AppModel`/`source` handle.
-///
-/// **INV-A (the gate funnel did not move).** `canBolus`/`bolusBlockReason` are computed in `AppModel`
-/// via `BolusGate.evaluate` (and `remoteMax` via `remoteBolusMaximum`) and passed IN as plain values —
-/// this type never calls `BolusGate`, never re-derives a gate decision, and never sees the pieces
-/// (`AccessPolicy`, `snapshot.isLinked`, `snapshot.bolusInFlight`, `snapshot.cartridgeReadyForBolus`)
-/// that would let it.
-///
-/// **INV-C (no second source of pump truth).** Every read the original body performed — the ~27
-/// `AppSettings.shared` reads, the wall-clock `Date()` used for `glucoseAgeSec`, `BolusPasscodeStore
-/// .isRequired`, `capabilities.supportsRemoteAlertDismiss` — is snapshotted into
-/// `RemoteStatusInputs`/`RemoteStatusSettings` by the thin `AppModel.statusCommand` adapter BEFORE this
-/// type ever runs. `RemoteStatusComposer` holds no state and touches nothing but its parameter.
-///
-/// See `RemoteStatusComposerEquivalenceTests` (deterministic decoded-equivalence under an injected
-/// clock) and its composer-purity scan (this file must never contain a live-singleton/clock read).
+/// Pure mapper for `AppModel.statusCommand`. Builds the `RemoteCommand` every remote receives on a
+/// `statusRead`, from an immutable `RemoteStatusInputs` value — no live singleton, no wall-clock, no
+/// `AppModel`/`source` handle. `canBolus`/`bolusBlockReason` are computed in `AppModel` via
+/// `BolusGate.evaluate` and passed IN as plain values — this type never re-derives a gate decision.
 enum RemoteStatusComposer {
-    /// CX-G-08 (14-09) — this build KNOWS how to send an authenticated `dismissAck` (Task 2's typed
-    /// CC-08 outcome + `GarminDismissReceiptStore` land in this same phase). A constant `true` today —
+    /// This build KNOWS how to send an authenticated `dismissAck`. A constant `true` today —
     /// there is no runtime feature-flag for it — kept as a NAMED symbol (not inlined) so the dynamic
     /// AND with `inputs.supportsRemoteAlertDismiss` below reads exactly like its own doc comment: "build
     /// supports it AND the pump honors it", never a bare pump-capability passthrough.
     static let buildSupportsDismissAck = true
-    /// CX-G-08 (14-10, D1) — this build KNOWS how to consume the raw-snapshot backstop's `rawAlerts`
-    /// payload + `supportsRawAlertSnapshot` capability (the watch-side raw-snapshot tier in AppState.mc
-    /// Task 2 of this same phase). A constant `true` today, mirroring `buildSupportsDismissAck` exactly —
-    /// kept as a named symbol so the dynamic AND with `!inputs.supportsRemoteAlertDismiss` below reads
-    /// like its own doc comment: "build supports it AND the pump does NOT honor a remote dismiss."
+    /// This build KNOWS how to consume the raw-snapshot backstop's `rawAlerts` payload +
+    /// `supportsRawAlertSnapshot` capability. A constant `true` today, mirroring
+    /// `buildSupportsDismissAck` — kept as a named symbol so the dynamic AND with
+    /// `!inputs.supportsRemoteAlertDismiss` below reads: "build supports it AND the pump does NOT
+    /// honor a remote dismiss."
     static let buildSupportsRawSnapshot = true
 
     /// Build the full `statusRead` `RemoteCommand` from a fully-snapshotted set of inputs. Pure:
@@ -42,7 +26,7 @@ enum RemoteStatusComposer {
         // The ONLY "clock read" in this type: the already-captured `inputs.now`, never `Date()`.
         let age = s.glucoseDate.map { max(0, inputs.now.timeIntervalSince($0)) }
         let alertList = inputs.activeNotifications.map {
-            // Phase 20 (D-01): carry the phone-classified salience tier so the watch's F3/R4 gate has a
+            // Carry the phone-classified salience tier so the watch's F3/R4 gate has a
             // reliable per-alert signal (the watch fails an absent one closed to "critical").
             RemoteCommand.RemoteAlert(id: $0.id, kind: $0.kind.rawValue, title: $0.title,
                                       severity: $0.kind.wireSeverityTier)
@@ -110,7 +94,7 @@ enum RemoteStatusComposer {
         // OWN output, computed in `AppModel` and passed in — never recomputed here.
         cmd.canBolus = inputs.canBolus
         cmd.bolusBlockReason = inputs.bolusBlockReason
-        // Phase 09.9-04 (D-05): the pump's cartridge-ready DISPLAY status, distinct from canBolus (which
+        // The pump's cartridge-ready DISPLAY status, distinct from canBolus (which
         // only reflects the block at bolus-attempt time) — lets a remote show cartridge state even when
         // not attempting a bolus.
         // WR-04 (debug pump-pairing-loop-api25, deep review): use the tri-state `cartridgeReadyRemoteWire`
@@ -118,7 +102,7 @@ enum RemoteStatusComposer {
         // op-20-excluded pump never relays a fail-open "ready" to Garmin/Watch/Mac. The dose gate above
         // (`cmd.canBolus`, INV-A) is unchanged.
         cmd.cartridgeReady = s.cartridgeReadyRemoteWire
-        // Phase 09.27-03 (D-04/D-05): mirror the pump's charging state to remotes on the same
+        // Mirror the pump's charging state to remotes on the same
         // additive-optional wire shape as cartridgeReady. Absent on a legacy remote ⇒ NOT charging
         // (fail-closed, never a fabricated charging state) — the on-wire chargingStatus==1 semantics
         // remain an UNVERIFIED-GUESS (docs/UNVERIFIED-GUESSES.md), display-only, no dose-path input.
@@ -129,20 +113,20 @@ enum RemoteStatusComposer {
         // legacy host, never "capabilities changed but not sent" (no stranding on a pump swap). The host
         // stays the enforcement point on the actual dismiss.
         cmd.supportsRemoteAlertDismiss = inputs.supportsRemoteAlertDismiss
-        // CX-G-08 (14-09, checkpoint #5) — DYNAMIC, pump-tied: this build supports the authenticated
+        // DYNAMIC, pump-tied: this build supports the authenticated
         // dismissAck path AND the connected pump actually honors a remote dismiss. NEVER a constant —
         // a t:slim pump (supportsRemoteAlertDismiss == false, local-snooze only, no op-184) must resolve
         // to false so the watch stays on the 14-08 fallback instead of stranding a phantom overlay
         // forever once it cuts over to ack-only. Mirrors supportsRemoteAlertDismiss's own unconditional
         // emission (every statusRead), so "absent" can only mean a legacy host.
         cmd.supportsDismissAck = RemoteStatusComposer.buildSupportsDismissAck && inputs.supportsRemoteAlertDismiss
-        // CX-G-08 (14-10, D1) — DYNAMIC, pump-tied, the exact NEGATION of supportsDismissAck: this build
+        // DYNAMIC, pump-tied, the exact NEGATION of supportsDismissAck: this build
         // supports the raw-snapshot backstop AND the connected pump does NOT honor a remote dismiss
         // (t:slim X2). Emitted UNCONDITIONALLY (mirrors supportsDismissAck's own unconditional emission
         // above) so a Mobi reply carries `false`, never omitted — the two capabilities can never both be
         // true for the same connected pump.
         cmd.supportsRawAlertSnapshot = RemoteStatusComposer.buildSupportsRawSnapshot && !inputs.supportsRemoteAlertDismiss
-        // T-14-41 (fail-closed empty/absent/staleness rule): emit `rawAlerts` ONLY when the capability is
+        // Fail-closed empty/absent/staleness rule: emit `rawAlerts` ONLY when the capability is
         // true AND the host's raw set is KNOWN (non-nil) — the connected-but-first-poll-not-yet-done
         // window (raw still nil) OMITS rawAlerts, never fabricating an authoritative empty `[]`. A
         // non-nil-but-empty raw input DOES emit `rawAlerts == []` (present, authoritative). Deliberately
@@ -276,7 +260,7 @@ struct RemoteStatusInputs {
     let bolusPasscodeRequired: Bool
     /// `AppModel.capabilities.supportsRemoteAlertDismiss` at compose time.
     let supportsRemoteAlertDismiss: Bool
-    /// CX-G-08 (14-10, D1) — `AppModel.rawActiveNotifications` (the SAME-POLL mirror of
+    /// `AppModel.rawActiveNotifications` (the SAME-POLL mirror of
     /// `source.rawActiveNotifications`) at compose time. `nil` ⇒ not yet polled this connection (or the
     /// backend has no raw exposure); a non-nil (possibly empty) value is the pump's known raw set.
     /// IN-03: `let` (not `var`) — a true immutable snapshot field like every other field of this struct,

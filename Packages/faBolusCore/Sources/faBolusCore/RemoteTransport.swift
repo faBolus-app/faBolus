@@ -1,13 +1,10 @@
 import Foundation
 
-/// The transport-agnostic surface a remote client (Mac or another iPhone) drives to talk to the
-/// host. `BLELink` (Bluetooth LE) conforms; the former `RemoteLink` (WatchConnectivity) transport
-/// was retired in Phase 17.5. A single `RemoteClientModel` works over any conforming link without
-/// knowing which one it holds.
+/// Transport a remote client (Mac or another iPhone) uses to talk to the host. `BLELink` conforms.
+/// One `RemoteClientModel` works over any conforming link.
 ///
-/// **To add a transport:** conform a new type to this protocol (send/receive encoded `RemoteCommand`s);
-/// wrap it in `SealedTransport` if the medium isn't already encrypted, and it drops into
-/// `RemoteClientModel` / the `*RemoteHost` bridges unchanged.
+/// To add a transport: conform (send/receive encoded `RemoteCommand`s); wrap in `SealedTransport`
+/// if the medium is not already encrypted.
 public protocol RemoteTransport: AnyObject {
     /// Invoked (on the main actor) with each decoded command received from the peer.
     var onReceive: (@MainActor (RemoteCommand) -> Void)? { get set }
@@ -27,17 +24,13 @@ public protocol RemoteTransport: AnyObject {
     func send(_ command: RemoteCommand)
 }
 
-/// What a transport should do with one outbound command.
-///
-/// Originally extracted from the (now-retired, Phase 17.5) `RemoteLink` so the rule is unit-testable
-/// on any platform: `RemoteLink` was compiled only where `WatchConnectivity` existed and owned a
-/// non-injectable `WCSession.default`, so the *decision* is tested here and lives on independently of
-/// any single transport.
+/// What a transport should do with one outbound command. Isolated so the live-vs-queue rule is
+/// testable without a concrete transport.
 public enum RemoteSendDisposition: Equatable, Sendable {
-    /// Hand to the peer now (WatchConnectivity `sendMessageData`, or a live BLE write).
+    /// Hand to the peer now (a live BLE write).
     case sendLive
-    /// Park it for opportunistic delivery on reconnect (`transferUserInfo`). Only ever correct for
-    /// commands that do not touch the pump.
+    /// Park it for opportunistic delivery on reconnect. Only ever correct for commands that do not
+    /// touch the pump.
     case queue
     /// Do not send, and tell the caller. The only safe outcome for a pump-mutating command with no
     /// live link — nothing was sent, so there is nothing to reconcile.

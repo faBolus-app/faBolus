@@ -3,37 +3,11 @@ import faBolusCore
 import TandemMessages
 import os
 
-/// Phase 09 Wave 4, Target B part 2 (D-07): the BLE read cascade's **response-application** side,
-/// extracted verbatim out of `TandemBackend`'s `didReceiveFrame` delegate `switch`, behind the unchanged
-/// `PumpBackend` seam. Owns every status-response APPLICATION case — the IDP cascade
-/// (`ProfileStatusResponse`→`IDPSettingsRequest`→`IDPSegmentRequest`), the history cascade
-/// (`TimeSinceResetResponse`→`HistoryLogStatusRequest`→`beginGapSync`→stream), the op-115/op-109
-/// completion stamps (`ControlIQIOBResponse`/`BolusCalcDataSnapshotResponse`), `applyEgvReading`, and
-/// every other snapshot-populating case — plus the notification/alert merge, dismiss-ack,
-/// sleep-schedule write-error, and CGM-hardware-info continuation cases.
-///
-/// CRITICAL (D-07): this type contains NO `.authorization` branch and NEVER calls `coordinator?.handle`
-/// or `ResponseParser.parse` — the pairing auth-CRC gate and the parse boundary stay in `TandemBackend`,
-/// which hands this type only the ALREADY-PARSED `Message` for a non-pairing characteristic. The
-/// coordinator-consumed-when-unsolicited cases (`LastBolusStatusV2Response`/`TimeSinceResetResponse`)
-/// keep applying only the unsolicited-refresh path, exactly as they did inline (PX-08).
-///
-/// Depends ONLY on injected closures/providers (D-04 hook pattern, mirroring `PumpReadScheduler`/
-/// `DeliveryLedgerCoordinator`) — never a whole-`TandemBackend` back-pointer: a `PumpSnapshot` mutation
-/// sink, glucose/IOB history sinks, the outgoing `send(Message)` sink (same `tx`/`client.send` routing,
-/// swallow-on-failure, as before), the `PumpReadScheduler` completion/scheduling hooks, the gap-sync
-/// entry point + backfill-active accessor, the history-sync-state get/set, the alert-list
-/// setters/`noteAlert`/`mergeNotifications`, the dismiss-ack setter/`renderDebug`, the calc-snapshot
-/// setter, the sleep-schedule-write-error setter, the profile/time-anchor/model-detection accessors, and
-/// the CGM-hardware-info continuation resolver. `var`s with safe no-op defaults, assigned by
-/// `TandemBackend` as separate statements right after construction (Swift's two-phase init forbids a
-/// `[weak self]`-capturing closure inside the very expression that initializes the property holding it —
-/// the same pattern `PumpReadScheduler`/`DeliveryLedgerCoordinator`'s hooks use).
-///
-/// NO wire bytes, cascade order, or application logic changes (D-07) — every case below is a verbatim
-/// move (including its fix-cycle doc-comment history) from `TandemBackend.swift`'s `didReceiveFrame`,
-/// mechanically rewrapped only where a value-type (`PumpSnapshot`, the history arrays) required an
-/// inject sink instead of direct field access.
+/// BLE read cascade **response-application** side. Owns every status-response APPLICATION case.
+/// Contains NO `.authorization` branch and NEVER calls `coordinator?.handle` or `ResponseParser.parse`
+/// — the pairing auth-CRC gate and the parse boundary stay in `TandemBackend`. Depends only on
+/// injected closures — never a whole-`TandemBackend` back-pointer. No wire bytes, cascade order, or
+/// application logic changes.
 @MainActor
 final class PumpResponseApplier {
     /// Same subsystem/category as `TandemBackend.pairingLog` — declared separately (that constant is

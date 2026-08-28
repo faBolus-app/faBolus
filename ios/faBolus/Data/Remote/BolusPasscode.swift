@@ -3,7 +3,7 @@ import CryptoKit
 import CommonCrypto
 import Security
 
-/// P15 G2 (§2.3) — an optional 4-digit passcode that gates delivering a bolus from a **remote** (Garmin
+/// Optional 4-digit passcode that gates delivering a bolus from a **remote** (Garmin
 /// watch / Apple Watch). When set, it **replaces** the surface's tap-a-sequence / two-button-hold confirm
 /// (it does not stack on top of it): the user confirms the dose by entering the passcode instead.
 ///
@@ -11,10 +11,9 @@ import Security
 /// (**PBKDF2-HMAC-SHA256**, versioned `v2:` blob) rather than a single fast SHA-256, and the exponential
 /// soft-lock counters now live in the **Keychain** (not `UserDefaults`) so a plist edit or an unencrypted
 /// backup can no longer reset the backoff. An old `"saltHex:hashHex"` SHA-256 blob is transparently migrated
-/// to `v2:` on the next correct entry (verify-old-then-rehash — no forced re-set). Same shape as the
-/// now-removed `ChildModeStore` (Phase 7, 07-04, FEAT-04, D-05; preserved on `dev/child-mode`), with its
-/// own **distinct Keychain service and distinct lockout account** so this store was always fully independent
-/// of it. Per §2.3 a wrong entry backs off with **exponential delay** — a soft rate-limit, never a hard
+/// to `v2:` on the next correct entry (verify-old-then-rehash — no forced re-set). Distinct Keychain
+/// service and lockout account. A wrong entry backs off with **exponential delay** — a soft rate-limit,
+/// never a hard
 /// permanent lock — and it is resettable from the phone (set to `nil`). Validation is phone-side (the host
 /// holds the hash); a remote never sees or checks it.
 enum BolusPasscodeStore {

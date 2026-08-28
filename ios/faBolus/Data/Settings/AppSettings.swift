@@ -70,17 +70,14 @@ public final class AppSettings {
         get { _showGlucoseAxis.wrappedValue }
         set { _showGlucoseAxis.wrappedValue = newValue }
     }
-    /// Phase 04-01 (mmol/L display-unit support, D-03) — the glucose display-unit preference. mg/dL
-    /// `Int` stays canonical everywhere internally; this ONLY selects which unit surfaces render/parse
-    /// through (`GlucoseUnit.format`/`.parse`, faBolusCore). Default **mg/dL** (behavior-preserving for
-    /// existing users, D-03). `.display` category, `backsUp: true`, iCloud sync ON — see `SettingsCatalog`.
+    /// Glucose display-unit preference. mg/dL `Int` stays canonical internally; this only selects
+    /// which unit surfaces render/parse (`GlucoseUnit.format`/`.parse`). Default **mg/dL**.
     public var glucoseDisplayUnit: GlucoseUnit {
         didSet {
             d.set(glucoseDisplayUnit.rawValue, forKey: "glucoseDisplayUnit")
-            // Phase 04-03: re-publish the App-Group WidgetSnapshot's displayUnit immediately so the
-            // Home/Lock-Screen widgets (and, transitively, the watch complication) reflect a unit
-            // toggle without waiting for the next pump reading. Not syncWidgetConfig() (Pattern 3 —
-            // that channel is for bolus increments, unrelated to glucose display).
+            // Re-publish the App-Group WidgetSnapshot displayUnit immediately so widgets reflect a
+            // unit toggle without waiting for the next pump reading. Not syncWidgetConfig() (that
+            // channel is for bolus increments).
             WidgetPublisher.republishDisplayUnit()
         }
     }
@@ -119,10 +116,8 @@ public final class AppSettings {
         set { _showBolusBars.wrappedValue = newValue }
     }
 
-    /// Glucose plot Y-axis **ceiling**, canonical mg/dL (Phase 09.13, D-01/D-04). Discrete preset,
-    /// `.display`/`backsUp: true` (same class as `glucoseDisplayUnit`) — see `SettingsCatalog`. The
-    /// resolved-at-init pair always satisfies `floor < ceiling` via `GlucosePlotScale.resolve`
-    /// (never assigned directly with an unresolved raw value from a Picker binding elsewhere).
+    /// Glucose plot Y-axis **ceiling**, canonical mg/dL. Discrete preset. The resolved-at-init pair
+    /// always satisfies `floor < ceiling` via `GlucosePlotScale.resolve`.
     // D4-05: `@Stored`-backed. `init`/`applyBackup` still route every assignment through
     // `GlucosePlotScale.resolve` (unchanged, below) before calling this setter — Stored only replaces
     // the raw `d.set(...)` plumbing, never the validation.
@@ -131,9 +126,8 @@ public final class AppSettings {
         get { _glucosePlotCeiling.wrappedValue }
         set { _glucosePlotCeiling.wrappedValue = newValue }
     }
-    /// Glucose plot Y-axis **floor**, canonical mg/dL (Phase 09.13, D-01/D-04). Discrete preset,
-    /// `.display`/`backsUp: true`. Capped at 50 by `GlucosePlotScale.floorOptions` so the §13
-    /// `veryLow` (54) reference line always stays on-chart (D-02/D-10).
+    /// Glucose plot Y-axis **floor**, canonical mg/dL. Discrete preset. Capped at 50 by
+    /// `GlucosePlotScale.floorOptions` so the `veryLow` (54) reference line always stays on-chart.
     // D4-05: `@Stored`-backed (see `glucosePlotCeiling` note above — validation is unchanged).
     private var _glucosePlotFloor = Stored<Int>(wrappedValue: 40, "glucosePlotFloor")
     public var glucosePlotFloor: Int {
@@ -145,8 +139,8 @@ public final class AppSettings {
     public static let glucosePlotFloorOptions: [Int] = GlucosePlotScale.floorOptions
     public static let glucosePlotCeilingOptions: [Int] = GlucosePlotScale.ceilingOptions
 
-    /// Optional Watch/Garmin plot Y-axis **override** (Phase 09.13-02, D-05). Treated as ONE unit — the
-    /// UI clears/sets both together; `nil` means "Same as phone" for BOTH bounds, not per-bound. When
+    /// Optional Watch/Garmin plot Y-axis **override**. Treated as one unit — the UI clears/sets both
+    /// together; `nil` means "Same as phone" for both bounds, not per-bound.
     /// set, always snapped in-set via `GlucosePlotScale.resolve` (never assigned raw). `.remotes`,
     /// `backsUp: true` (same category as `watchChartRanges`), canonical mg/dL. Never iCloud-relevant
     /// beyond the normal `.remotes` default (this is a display preference, not command-adjacent).
@@ -328,17 +322,11 @@ public final class AppSettings {
 
     /// Master opt-in for advanced pump control (suspend/resume, temp basal, modes, profiles,
     /// Control-IQ settings, limits, cartridge/fill, time sync). **Default OFF.** Even when on, each
-    /// action is additionally gated on the pump advertising the capability (pump-derived, Mobi-only in
-    /// practice) via `advancedControlAllowed(capabilities:)`. Insulin-affecting actions still go through
+    /// action is additionally gated on the pump advertising the capability via
+    /// `advancedControlAllowed(capabilities:)`. Insulin-affecting actions still go through
     /// the confirm/hold + max-bolus-clamp + WritePolicy interlocks.
-    ///
-    /// Phase 9 (09-02, MOBI-02): its ONLY UI writer (the Settings "Advanced control" Toggle) is
-    /// deleted — the persisted value can never be flipped back to `true` from this build again
-    /// (LOCK-01 "pin at the sole writer" pattern). No force-reset migration is added: `AppModel.swift`
-    /// (DOSE_PATHS, unedited) still reads this via `advancedControlOptIn`/`advancedControlAllowed`, and
-    /// `advancedControlAllowed` is ALREADY always-false via its other operand
-    /// (`capabilities.supportsAnyAdvancedControl`, always false on the t:slim-only model) — same
-    /// ordinary-hidden-flag posture as `showGlucoseUnitLabels`, not `autoSyncPumpTime`'s force-set pin.
+    /// No Settings UI writer remains; `advancedControlAllowed` is already always-false via
+    /// `capabilities.supportsAnyAdvancedControl` on the t:slim-only model.
     // D4-05: `@Stored`-backed.
     private var _advancedControlEnabled = Stored<Bool>(wrappedValue: false, "advancedControlEnabled")
     public var advancedControlEnabled: Bool {
@@ -346,14 +334,9 @@ public final class AppSettings {
         set { _advancedControlEnabled.wrappedValue = newValue }
     }
 
-    /// P14 — the active experience **mode** (Simple / Standard / Advanced), the axis the access evaluator
-    /// gates on (`AccessPolicy.ModeGateContext`). This is the mode *selector*, not a mode-gated setting, so
-    /// it is deliberately NOT a `SettingsCatalog` row and is **never** backed up or iCloud-synced (a synced
-    /// mode could silently unlock features on another device — the S3 coherence hazard). Default `.advanced`
-    /// in Slice 2 is behavior-preserving (Advanced sees everything, so the mode gate is a no-op); S3
-    /// introduces the guided Objectives unlock and flips the effective default to Simple with the unlock
-    /// path in the same change, so no build ever ships Simple-with-no-way-out. Phone↔watch mode coherence
-    /// (S4) rides the App Group + status payload, independent of iCloud.
+    /// The active experience **mode**, the axis `AccessPolicy` gates on. Deliberately not a
+    /// `SettingsCatalog` row and **never** backed up or iCloud-synced (a synced mode could silently
+    /// unlock features on another device). `init` force-sets `.advanced`.
     // D4-05: `@Stored`-backed. Phase 8 (08-01, LOCK-01)'s force-set-`.advanced` pin is unchanged — it
     // lives in `init` below as an explicit assignment through this setter, same as before conversion.
     private var _appMode = Stored<AppMode>(wrappedValue: .advanced, "appMode")
@@ -432,10 +415,8 @@ public final class AppSettings {
 
     /// **Auto Exercise mode** — switches the pump into Control-IQ Exercise mode when a workout starts,
     /// and back to normal when it ends. **Default OFF.** Auto-switching applies only to a **Mobi**
-    /// (t:slim X2 can't; it gets a reminder if `modeReminders` is on). See [[jwoglom-parity-roadmap]].
-    /// Phase 7 (07-03, FEAT-05, D-08): FROZEN — hidden (no Settings UI) and unregistered (no
-    /// `SettingsCatalog` descriptor, no backup/restore participation, `historyCoverage` idiom); the kept
-    /// `ModeAutomation.swift` still reads it (`AppModel.swift:1821,2115`, `DOSE_PATHS`).
+    /// (t:slim X2 can't; it gets a reminder if `modeReminders` is on). Hidden and unregistered;
+    /// `ModeAutomation.swift` still reads it.
     // D4-05: `@Stored`-backed.
     private var _autoExerciseMode = Stored<Bool>(wrappedValue: false, "autoExerciseMode")
     public var autoExerciseMode: Bool {
@@ -443,8 +424,7 @@ public final class AppSettings {
         set { _autoExerciseMode.wrappedValue = newValue }
     }
     /// **Auto Sleep mode** — switches the pump into Sleep mode when the iPhone enters Sleep Focus, and
-    /// back when it ends. **Default OFF.** Mobi-only auto-switch. Phase 7 (07-03, FEAT-05, D-08):
-    /// FROZEN — same hidden/unregistered posture as `autoExerciseMode` above.
+    /// back when it ends. **Default OFF.** Mobi-only auto-switch. Hidden and unregistered.
     // D4-05: `@Stored`-backed.
     private var _autoSleepMode = Stored<Bool>(wrappedValue: false, "autoSleepMode")
     public var autoSleepMode: Bool {
@@ -453,17 +433,13 @@ public final class AppSettings {
     }
     /// **Mode reminders** — when an auto mode-switch can't be applied automatically (a t:slim, or the
     /// pump isn't connected), post a notification reminding the user to switch modes on the pump
-    /// themselves. **Default OFF.** Phase 7 (07-03, FEAT-05, D-08): FROZEN — same hidden/unregistered
-    /// posture as `autoExerciseMode` above.
+    /// themselves. **Default OFF.** Hidden and unregistered.
     // D4-05: `@Stored`-backed.
     private var _modeReminders = Stored<Bool>(wrappedValue: false, "modeReminders")
     public var modeReminders: Bool {
         get { _modeReminders.wrappedValue }
         set { _modeReminders.wrappedValue = newValue }
     }
-    // Phase 7 (07-03, FEAT-05, D-08): autoTempRate/autoProfileActivation are DELETED — their only
-    // readers were the removed TempRateAutomation/ProfileAutomation engines (Task 2), so no reader
-    // remains anywhere in the app; a genuine delete, not a freeze. Preserved on dev/siri-shortcuts.
 
     /// §6/S8 B6: opt-out — suppress the APP's re-notification of pump ALARMS (`PumpAlert.kind == .alarm`),
     /// which the pump itself already annunciates audibly (esp. relevant on a t:slim, where the alarm sounds
@@ -505,46 +481,16 @@ public final class AppSettings {
     /// (D-05 — the cache can never suppress the never-suppressible trio).
     public var criticalAlertGrantActive: Bool = false
 
-    /// Phase 3 (03-02, REMOTE-02, Pitfall B): the Bluetooth remote peripheral (Mac + remote iPhone)
-    /// gate is fully removed — no accessor, no UI, no backup key — since it was never read by
-    /// `AppModel.swift` (verified). Preserved on `dev/phone-remote`.
-
     /// Reverse approval (opt-in): a bolus started on **this** phone must be approved by a paired remote
     /// (e.g. a parent) before it delivers. **Default OFF.** Only takes effect when a remote is paired;
     /// if no paired remote responds within the timeout the bolus is aborted (safe default).
-    ///
-    /// Phase 3 (03-02, F-1, owner-ratified 2026-08-21): the ONLY devices that could ever pair as an
-    /// approver (Mac remote, iPhone-peer remote) are removed from narrow `main`, so this already could
-    /// never take effect again (`hasPairedRemote` in the frozen `AppModel.swift` is now permanently
-    /// false). Its `SettingsCatalog` row + backup/restore participation + `ChildModeView` UI were
-    /// already removed then (hidden, unregistered flag; same pattern as other retired remote-bolus
-    /// flags). See 03-OWNER-FLAGS.md F-1.
-    ///
-    /// Phase 7 (07-04, FEAT-04, D-05, SAFETY): FROZEN to `false` — belt-and-suspenders, layer 2. Phase 3
-    /// already closed the local-backup round trip (no `backupSnapshot`/`applyBackup` participation
-    /// remained even before this change); this getter-level freeze closes the one remaining route (a
-    /// direct setter call) so this can never become `true` again by ANY means, not just via restore.
-    /// The frozen `AppModel.swift`'s one read of this value (alongside `childModeEnabled` and
-    /// `hasPairedRemote`) stays BYTE-IDENTICAL — only this settable INPUT is forced (D-03). See
-    /// `ChildModeFreezeGuardTests`.
+    /// FROZEN to `false` — belt-and-suspenders so this can never become `true` by any means.
+    /// See `ChildModeFreezeGuardTests`.
     public var requireRemoteBolusApproval: Bool { get { false } set { } }
 
-    /// User-defined auto-rules for pump alerts (time-of-day / kind / glucose → auto-snooze or
-    /// auto-dismiss). **Alarms are never auto-acted** regardless of rules — the engine hard-excludes
-    /// them. See [[AlertRuleEngine]].
-    ///
-    /// Phase 7 (07-05, FEAT-08, D-06/D-07, SAFETY): the custom alert-rules ENGINE
-    /// (`AlertRule`/`AlertRuleEngine`/`AlertAction` in the byte-identity-protected `faBolusCore`)
-    /// cannot be literally deleted — `TandemBackend.swift`'s `applyAutoRules` reads this property and
-    /// is itself DOSE_PATHS-protected. FROZEN to always-`[]` instead — belt-and-suspenders, same
-    /// posture as `childModeEnabled`/`requireRemoteBolusApproval` (FEAT-04, 07-04): a getter-level
-    /// freeze (`get { [] } set { } }`) AND removal of the `UserDefaults` init-restore /
-    /// `backupSnapshot` / `applyBackup` lines below, so neither a direct setter call nor a restored
-    /// settings backup carrying a non-empty rule-set can ever re-arm the engine. This makes
-    /// `TandemBackend.swift`'s `guard !rules.isEmpty else { return }` fire unconditionally — a
-    /// behavior-neutral early-return; `TandemBackend.swift` and `AlertRuleEngine.swift` themselves
-    /// stay BYTE-IDENTICAL (never edited). `Views/AlertRulesView.swift` (the only UI that could ever
-    /// set this to non-empty) is deleted in the next task. See `AlertRulesFreezeGuardTests`.
+    /// User-defined auto-rules for pump alerts. **Alarms are never auto-acted** regardless of rules.
+    /// FROZEN to always-`[]` so neither a setter nor a restored backup can re-arm the engine;
+    /// `TandemBackend.applyAutoRules` then early-returns. See `AlertRulesFreezeGuardTests`.
     public var alertRules: [AlertRule] { get { [] } set { } }
 
     /// Upload glucose + boluses + pump status to a Nightscout site. Nightscout was removed from
@@ -687,16 +633,9 @@ public final class AppSettings {
     /// default. The PIN hash lived in the Keychain (`ChildModeStore`, now removed along with
     /// `ChildModeView.swift`, its only caller).
     ///
-    /// Phase 7 (07-04, FEAT-04, D-05, SAFETY): FROZEN to `false` — belt-and-suspenders runtime gate.
-    /// No setter effect can ever make this `true` again, including a restored-from-backup `true` (the
-    /// `applyBackup` restore line that used to accept this key is removed below, so both halves of the
-    /// round trip are closed). Forcing this INPUT false = full adult access = the safe/intended state
-    /// for a single-adult device. The dose-adjacent evaluator (`AccessPolicy`/`ChildFeature`/
-    /// `BolusGate`/`GatedPumpWrite` in faBolusCore) and `AppModel.swift`'s one read of this value stay
-    /// BYTE-IDENTICAL — only this settable INPUT is forced (D-03). `childModeEnabled` already had
-    /// `syncsToICloud: false`, so the iCloud-KV half of the restore concern was already closed before
-    /// this change; this closes the remaining local-backup half. `ChildModeView.swift` (the only UI
-    /// that could ever set this to `true`) is deleted in the next task. See `ChildModeFreezeGuardTests`.
+    /// FROZEN to `false` — belt-and-suspenders runtime gate. No setter can make this `true` again
+    /// (including restore-from-backup). Forcing this input false = full adult access. See
+    /// `ChildModeFreezeGuardTests`.
     public var childModeEnabled: Bool { get { false } set { } }
     public var childAllowed: Set<ChildFeature> {
         didSet { d.set(Self.canonicalChildAllowedData(childAllowed), forKey: "childAllowed") }
@@ -988,20 +927,15 @@ public final class AppSettings {
         // `max(0.05, …)` clamps + the watch→phone-default fallbacks are unchanged, only relocated).
         let bi = d.object(forKey: "bolusIncrement") as? Double
         let ci = d.object(forKey: "carbIncrement") as? Double
-        // Phase 8 (08-01, LOCK-02): force-set `.mgdl` unconditionally — the unit Picker is removed this
-        // phase, so no UI can select mmol/L; a restored/legacy UserDefaults value carrying "mmol" must
-        // not silently change the display unit (Pitfall 1). The dose path is mg/dL-canonical regardless
-        // (`BolusMath`) — this pin only removes the display-conversion surface, never touches it.
+        // Force-set `.mgdl` — a restored/legacy "mmol" must not change the display unit. The dose
+        // path is mg/dL-canonical regardless (`BolusMath`).
         glucoseDisplayUnit = .mgdl
-        // D-01/D-02/D-10: an absent/out-of-set stored bound (or a legacy/corrupt value) snaps to a
-        // safe in-set pair via the single shared faBolusCore math — never assigned raw.
+        // An absent/out-of-set stored bound snaps to a safe in-set pair via the shared math — never assigned raw.
         let plotBounds = GlucosePlotScale.resolve(
             storedFloor: d.object(forKey: "glucosePlotFloor") as? Int,
             storedCeiling: d.object(forKey: "glucosePlotCeiling") as? Int)
-        // D-05: the pair is ONE unit — only treat it as "on" when BOTH halves are present on disk; a
-        // partial/corrupt state (only one half persisted) falls back to nil ("Same as phone") rather
-        // than a half-applied override. A present pair still snaps through the same shared math so a
-        // legacy/out-of-set override value can never surface as an invalid Picker selection.
+        // The pair is one unit — only treat as "on" when both halves are on disk; a partial state
+        // falls back to nil ("Same as phone"). A present pair still snaps through the shared math.
         if let sf = d.object(forKey: "glucosePlotFloorSmall") as? Int,
            let sc = d.object(forKey: "glucosePlotCeilingSmall") as? Int {
             let smallBounds = GlucosePlotScale.resolve(storedFloor: sf, storedCeiling: sc)
@@ -1039,17 +973,6 @@ public final class AppSettings {
         // §2.3: nil (absent, or a stored non-positive) ⇒ the ceiling is OFF; only a positive value arms it.
         let rbc = d.object(forKey: "remoteBolusCeiling") as? Double
         remoteBolusCeiling = (rbc.map { $0.isFinite && $0 > 0 } ?? false) ? rbc : nil
-        // Phase 7 (07-04, FEAT-04, D-05, SAFETY): requireRemoteBolusApproval is now a frozen-false
-        // computed constant (get { false } set { } ) — no init-restore line needed; the old
-        // UserDefaults value, if any, is simply never read again.
-        // Phase 7 (07-05, FEAT-08, D-07, SAFETY): alertRules is now a frozen-empty computed constant
-        // (get { [] } set { } ) — no init-restore line needed either; the old UserDefaults value, if
-        // any, is simply never read again.
-        // Phase 7 (07-04, FEAT-04, D-05, SAFETY): childModeEnabled is now a frozen-false computed
-        // constant (get { false } set { } ) — no init-restore line needed; the old UserDefaults value,
-        // if any, is simply never read again. `childAllowed` itself stays a real, settable property
-        // (still read by AppModel's AccessContext builder + BolusEntryView's UI hint) — only the gate
-        // that made its value matter is frozen.
         childAllowed = d.data(forKey: "childAllowed").flatMap { try? JSONDecoder().decode(Set<ChildFeature>.self, from: $0) } ?? ChildFeature.defaultAllowed
         // Restore the Garmin screen selection + order (the enabled subset, in swipe order),
         // dropping unknown/duplicate ids. Hidden screens stay hidden. Fall back to all screens
@@ -1064,8 +987,6 @@ public final class AppSettings {
         let gt = d.string(forKey: "garminTargetApp") ?? "beta"   // default to beta (official listing is dormant)
         detailsOrder = Self.restoreOrder(d.array(forKey: "detailsOrder") as? [String], all: Self.detailFields)
         watchDetailsOrder = Self.restoreOrder(d.array(forKey: "watchDetailsOrder") as? [String], all: Self.detailFields)
-        // Phase 20 (F1, D-02): restore the Garmin complication-slot selection (valid tokens, de-duped,
-        // capped at 3; default iob/reservoir/battery). didSet does not fire on this init assignment.
         garminComplicationSlots = Self.sanitizeComplicationSlots(d.array(forKey: "garminComplicationSlots") as? [String])
         // Default to the original 6 pills (the full option set is larger); honor a saved selection.
         pillsOrder = Self.restoreOrder(d.array(forKey: "pillsOrder") as? [String] ?? Self.defaultPills, all: Self.pillItems)
@@ -1155,10 +1076,8 @@ public final class AppSettings {
         showStats = (d.object(forKey: "showStats") as? Bool) ?? false
         glucoseStaleMinutes = (d.object(forKey: "glucoseStaleMinutes") as? Int) ?? 6
         advancedControlEnabled = (d.object(forKey: "advancedControlEnabled") as? Bool) ?? false
-        // Phase 8 (08-01, LOCK-01): force-set `.advanced` unconditionally — defense-in-depth belt-and-
-        // suspenders alongside `ModeStore.init` (the primary/sole sanctioned writer). A restored/legacy
-        // UserDefaults value carrying `.simple`/`.standard` must not silently downgrade the mode before
-        // `ModeStore` runs (Pitfall 1).
+        // Force-set `.advanced` — a restored/legacy `.simple`/`.standard` must not silently downgrade
+        // the mode before `ModeStore` runs.
         appMode = .advanced
         phoneReadOnly = (d.object(forKey: "phoneReadOnly") as? Bool) ?? false
         readOnlyAllowAlertClear = (d.object(forKey: "readOnlyAllowAlertClear") as? Bool) ?? false
@@ -1166,14 +1085,10 @@ public final class AppSettings {
         // §2.3: defaults OFF so a fresh install (and any device with no stored value) cannot bolus from a
         // remote until the user explicitly opts in.
         garminBolusEnabled = (d.object(forKey: "garminBolusEnabled") as? Bool) ?? false
-        // Phase 8 (08-01, LOCK-05): force-set OFF unconditionally — the pump-clock Settings/
-        // PumpControlView UI is removed this phase, so no path exists to turn this back on; a
-        // restored/legacy UserDefaults value carrying `true` must not silently re-arm it (Pitfall 1).
+        // Force-set OFF — a restored/legacy `true` must not silently re-arm pump-clock sync.
         autoSyncPumpTime = false
         suppressMirroredPumpAlarms = (d.object(forKey: "suppressMirroredPumpAlarms") as? Bool) ?? false
-        // Phase 8 (08-01, LOCK-04): force-set OFF unconditionally — the "Extended (combo) bolus" toggle
-        // is removed this phase; a restored/legacy UserDefaults value carrying `true` must not silently
-        // re-arm the (now-unreachable) `extendedBolusSection` UI (Pitfall 1).
+        // Force-set OFF — a restored/legacy `true` must not silently re-arm extended bolus.
         extendedBolusEnabled = false
         showBolusReasoning = (d.object(forKey: "showBolusReasoning") as? Bool) ?? true
         garminComplicationDisplay = Self.complicationDisplayOptions.contains(cd) ? cd : "numericColor"
@@ -1197,23 +1112,18 @@ public final class AppSettings {
         // Owner request: default OFF (labels hidden on ambient surfaces). Hidden-flag pattern, not a
         // LOCK-02 force-set pin (a cosmetic caption preference, not a safety-adjacent lock).
         showGlucoseUnitLabels = (d.object(forKey: "showGlucoseUnitLabels") as? Bool) ?? false
-        // Phase 8 (08-01, LOCK-03): force-set 1 (24h; unit = days, 0 = keep everything) unconditionally
-        // — a restored/legacy value carrying `0`/a longer window must not silently keep more than 24h of
-        // glucose (Pitfall 1). Actually ENFORCED at launch via App.swift's `model.applyRetention(days:)`.
+        // Force-set 1 (24h). Enforced at launch via `model.applyRetention(days:)`.
         historyRetentionDays = 1
         // D-01: default ON — a fresh install (and any device with no stored value) auto-syncs.
         historySyncEnabled = (d.object(forKey: "historySyncEnabled") as? Bool) ?? true
         eatingNudgesEnabled = (d.object(forKey: "eatingNudgesEnabled") as? Bool) ?? false
         eatingLearnFromFeedback = (d.object(forKey: "eatingLearnFromFeedback") as? Bool) ?? true
-        // Phase 09.15 (D-07) — locked defaults: state readouts + lockout countdown ON, the rest OFF.
         ciqStateReadoutsEnabled = (d.object(forKey: "ciqStateReadoutsEnabled") as? Bool) ?? true
         ciqLockoutCountdownEnabled = (d.object(forKey: "ciqLockoutCountdownEnabled") as? Bool) ?? true
         ciqMaxBasalReadoutEnabled = (d.object(forKey: "ciqMaxBasalReadoutEnabled") as? Bool) ?? false
         ciqSleepExerciseAwarenessEnabled = (d.object(forKey: "ciqSleepExerciseAwarenessEnabled") as? Bool) ?? false
         ciqPlusTempRateEnabled = (d.object(forKey: "ciqPlusTempRateEnabled") as? Bool) ?? false
         ciqCeilingFlagsEnabled = (d.object(forKey: "ciqCeilingFlagsEnabled") as? Bool) ?? false
-        // Phase 9 (09-04, MOBI-04, D-06): default explicit OFF for t:slim, DECOUPLED from isMobi() (the
-        // old "ON for a Mobi" default now couples to a permanently-stale flag — Mobi backends removed).
         criticalAlertsEnabled = (d.object(forKey: "criticalAlertsEnabled") as? Bool) ?? false
         // MOBI-04/D-06: one-time force-reset — a persisted `criticalAlertsEnabled == true` from a
         // pre-Phase-9 install is force-reset to the uniform OFF default EXACTLY ONCE via the dedicated
@@ -1238,9 +1148,8 @@ public final class AppSettings {
         healthKitExportInsulinEnabled = (d.object(forKey: "healthKitExportInsulinEnabled") as? Bool) ?? false
         healthKitExportGlucoseEnabled = (d.object(forKey: "healthKitExportGlucoseEnabled") as? Bool) ?? false
         healthKitAutoExportEnabled = (d.object(forKey: "healthKitAutoExportEnabled") as? Bool) ?? false
-        // Phase 8 (08-01, LOCK-06 friction half): force-set OFF unconditionally — a restored/legacy
-        // `true` must not silently re-arm the removed extra-confirmation step (Pitfall 1). Never disables
-        // `StackingGuard.escalation`'s own disclosure computation (byte-identical faBolusCore).
+        // Force-set OFF — a restored/legacy `true` must not re-arm the extra-confirmation step.
+        // Never disables `StackingGuard.escalation`'s own disclosure computation.
         stackingGuardFrictionEnabled = false
         autoExerciseMode = (d.object(forKey: "autoExerciseMode") as? Bool) ?? false
         autoSleepMode = (d.object(forKey: "autoSleepMode") as? Bool) ?? false
@@ -1270,21 +1179,11 @@ public final class AppSettings {
             "defaultBolusMode": .string(defaultBolusMode.rawValue),
             "bolusIncrement": .double(bolusIncrement),
             "carbIncrement": .double(carbIncrement),
-            // Phase 8 (08-01, LOCK-04/LOCK-06): `extendedBolusEnabled`/`stackingGuardFrictionEnabled` no
-            // longer emitted into the backup snapshot either — their `SettingsCatalog` descriptors are
-            // gone (the toggles' UI deleted, both are now force-set-false init pins), so
-            // `SettingsCatalogTests.backedUpSetMatchesBackupSnapshot` requires this key drop too — same
-            // hidden-flag posture as `autoSyncPumpTime` above.
             "showBolusReasoning": .bool(showBolusReasoning),
             "watchDefaultBolusMode": .string(watchDefaultBolusMode.rawValue),
             "watchBolusIncrement": .double(watchBolusIncrement),
             "watchCarbIncrement": .double(watchCarbIncrement),
             "showGlucoseAxis": .bool(showGlucoseAxis),
-            // Phase 8 (08-01, LOCK-02): `glucoseDisplayUnit`/`showGlucoseUnitLabels` no longer emitted
-            // into the backup snapshot either — their `SettingsCatalog` descriptors are gone (the unit
-            // Picker + "Show unit labels" toggle UI deleted); `glucoseDisplayUnit` is now a force-set
-            // `.mgdl` init pin, `showGlucoseUnitLabels` survives as an ordinary hidden/unregistered flag
-            // (same hidden-flag posture as `autoSyncPumpTime`/`extendedBolusEnabled` above).
             "showIOBAxis": .bool(showIOBAxis),
             "showBolusBars": .bool(showBolusBars),
             "glucosePlotFloor": .int(glucosePlotFloor),
@@ -1295,48 +1194,19 @@ public final class AppSettings {
             "pillsOrder": .stringArray(pillsOrder),
             "watchChartRanges": .intArray(watchChartRanges),
             "glucoseStaleMinutes": .int(glucoseStaleMinutes),
-            // Phase 9 (09-02, MOBI-02): `advancedControlEnabled` no longer emitted into the backup
-            // snapshot either — its `SettingsCatalog` descriptor is gone (the "Advanced control"
-            // Settings toggle it fed is deleted); the accessor survives as an ordinary hidden/
-            // unregistered flag (same posture as `showGlucoseUnitLabels` above, not a force-set pin).
-            // Phase 8 (08-01, LOCK-05): `autoSyncPumpTime` no longer emitted into the backup snapshot
-            // either — its `SettingsCatalog` descriptor is gone (pump-clock UI deleted, the property is
-            // now a force-set-false init pin), so `SettingsCatalogTests.backedUpSetMatchesBackupSnapshot`
-            // requires this key drop too — same hidden-flag posture as other retired flags above.
-            // Phase 7 (07-03, FEAT-05, D-08): autoExerciseMode/autoSleepMode/modeReminders no longer
-            // emitted here (frozen, hidden/unregistered); autoTempRate/autoProfileActivation deleted
-            // outright (see applyBackup below for the matching restore-side removal).
             "phoneReadOnly": .bool(phoneReadOnly),
             "readOnlyAllowAlertClear": .bool(readOnlyAllowAlertClear),
             "remotesReadOnly": .bool(remotesReadOnly),
             "garminBolusEnabled": .bool(garminBolusEnabled),
-            // Phase 17.5 (D1-01): the watch bolus-enable accessor is retired entirely (not merely
-            // hidden-flag demoted) — same posture as requireRemoteBolusApproval (see applyBackup below).
             "garminScreenOrder": .stringArray(garminScreenOrder),
             "garminDefaultScreen": .string(garminDefaultScreen),
             "garminComplicationDisplay": .string(garminComplicationDisplay),
             "garminClockAnalog": .bool(garminClockAnalog),
             "garminTargetApp": .string(garminTargetApp),
-            // Phase 20 (D-01 alert intensity + D-02 complication slots) — phone-owned, backed up.
             "garminAlertIntensityMode": .string(garminAlertIntensityMode),
             "garminAlertAudibleMinSeverity": .string(garminAlertAudibleMinSeverity),
             "garminAlertCriticalOverridesDnd": .bool(garminAlertCriticalOverridesDnd),
             "garminComplicationSlots": .stringArray(garminComplicationSlots),
-            // Phase 5 (05-02, HEALTH-02): nightscoutUploadEnabled is no longer emitted into the
-            // backup snapshot (catalog row + backup participation removed, hidden-flag pattern) —
-            // same posture as requireRemoteBolusApproval (see applyBackup below).
-            // Phase 7 (07-04, FEAT-04, D-05, SAFETY): `childModeEnabled` is no longer emitted here
-            // either — its `SettingsCatalog` descriptor was removed (Child Mode UI deleted, the
-            // property itself is now a getter-level frozen constant), so
-            // `SettingsCatalogTests.backedUpSetMatchesBackupSnapshot` requires this key drop too.
-            // Phase 7 (07-02, FEAT-03): `glucoseBadgeEnabled` no longer emitted here — its
-            // `SettingsCatalog` descriptor was removed (the badge is a main-only no-op stub now), so
-            // `SettingsCatalogTests.backedUpSetMatchesBackupSnapshot` requires this key drop too.
-            // Phase 4 (04-02, D-05/NUDGE-01): `siteAtlasEnabled` no longer emitted here — its
-            // `SettingsCatalog` descriptor was removed (SC2, see the NOTE in SettingsCatalog.swift), so
-            // `SettingsCatalogTests.backedUpSetMatchesBackupSnapshot` requires this key drop too. The
-            // property itself still exists and still persists via `didSet`; it just no longer rides a
-            // portable backup/restore.
         ]
         if let hide = glucoseHideDelayMinutes { m["glucoseHideDelayMinutes"] = .int(hide) }
         // §2.3: emitted only when the optional ceiling is armed (nil ⇒ off ⇒ omitted), like the hide delay.
@@ -1344,17 +1214,6 @@ public final class AppSettings {
         // D-05: the small-screen override pair — emitted only when set (nil ⇒ Same as phone ⇒ omitted).
         if let f = glucosePlotFloorSmall { m["glucosePlotFloorSmall"] = .int(f) }
         if let c = glucosePlotCeilingSmall { m["glucosePlotCeilingSmall"] = .int(c) }
-        // Phase 7 (07-05, FEAT-08, D-07, SAFETY): `alertRules` is no longer emitted into the backup
-        // snapshot either — its `SettingsCatalog` descriptor was removed (the editor UI is deleted;
-        // the property itself is now a getter-level frozen constant), so
-        // `SettingsCatalogTests.backedUpSetMatchesBackupSnapshot` requires this key drop too.
-        // Phase 7 (07-04, FEAT-04, D-05, SAFETY): `childAllowed` is no longer emitted here either —
-        // its `SettingsCatalog` descriptor was removed (Child Mode UI deleted; the value is already
-        // access-irrelevant now that `childModeEnabled` is force-false), so
-        // `SettingsCatalogTests.backedUpSetMatchesBackupSnapshot` requires this key drop too. The
-        // property itself stays (still read by the frozen `AppModel.swift` AccessContext builder +
-        // `BolusEntryView`'s UI hint, still persisted via `UserDefaults` `didSet`) — only its portable
-        // backup participation is removed, same hidden-flag posture as `childModeEnabled` above.
         return m
     }
 
@@ -1375,19 +1234,12 @@ public final class AppSettings {
         // (empty Picker + sub-0.05 step) until the next relaunch.
         if let v = dbl("bolusIncrement") { bolusIncrement = max(0.05, v) }
         if let v = dbl("carbIncrement") { carbIncrement = v }
-        // Phase 8 (08-01, LOCK-04/LOCK-06): `extendedBolusEnabled`/`stackingGuardFrictionEnabled` no
-        // longer restore from a backup either — same hidden-flag pattern. A legacy backup carrying
-        // `true` for either is silently ignored (same tolerance as `autoSyncPumpTime` above); the
-        // force-set-false init pins would reject them on next launch regardless.
         if let v = b("showBolusReasoning") { showBolusReasoning = v }
         if let v = s("watchDefaultBolusMode"), let mode = BolusMode(rawValue: v) { watchDefaultBolusMode = mode }
         // VA-03: same `max(0.05, …)` clamp init applies (~:672).
         if let v = dbl("watchBolusIncrement") { watchBolusIncrement = max(0.05, v) }
         if let v = dbl("watchCarbIncrement") { watchCarbIncrement = v }
         if let v = b("showGlucoseAxis") { showGlucoseAxis = v }
-        // Phase 8 (08-01, LOCK-02): `glucoseDisplayUnit`/`showGlucoseUnitLabels` no longer restore from
-        // a backup either — same hidden-flag pattern. A legacy backup carrying "mmol"/`true` for either
-        // is silently ignored; the force-set `.mgdl` init pin would reject the unit regardless.
         if let v = b("showIOBAxis") { showIOBAxis = v }
         if let v = b("showBolusBars") { showBolusBars = v }
         // VA-03: route restored plot bounds through the SAME `GlucosePlotScale.resolve` init uses
@@ -1427,63 +1279,22 @@ public final class AppSettings {
             glucoseStaleMinutes = min(max(v, Self.glucoseStaleOptions.min()!), Self.glucoseStaleOptions.max()!)
         }
         if let v = i("glucoseHideDelayMinutes") { glucoseHideDelayMinutes = v }
-        // Phase 9 (09-02, MOBI-02): `advancedControlEnabled` no longer restores from a backup either —
-        // same hidden-flag pattern. A legacy backup carrying `true` is silently ignored (the property's
-        // only UI writer, the Settings toggle, is deleted, and `advancedControlAllowed` is already
-        // always-false via its other operand regardless).
-        // Phase 7 (07-03, FEAT-05, D-08): autoExerciseMode/autoSleepMode/modeReminders no longer
-        // restore from a backup either (frozen, hidden/unregistered); autoTempRate/autoProfileActivation
-        // deleted outright — same posture as requireRemoteBolusApproval above.
-        // Phase 8 (08-01, LOCK-05): `autoSyncPumpTime` no longer restores from a backup either — same
-        // hidden-flag pattern. A legacy backup carrying `true` is silently ignored (same tolerance as
-        // the precedents above); the force-set-false init pin would reject it on next launch regardless,
-        // but the restore line itself is removed too, closing both halves of the round trip.
         if let v = b("phoneReadOnly") { phoneReadOnly = v }
         if let v = b("readOnlyAllowAlertClear") { readOnlyAllowAlertClear = v }
         if let v = b("remotesReadOnly") { remotesReadOnly = v }
         if let v = b("garminBolusEnabled") { garminBolusEnabled = v }
         if let v = dbl("remoteBolusCeiling"), v > 0 { remoteBolusCeiling = v }   // §2.3: only a positive cap arms it
-        // Phase 3 (03-02, F-1/Pitfall B): remoteBluetoothEnabled removed entirely (never read by
-        // AppModel); requireRemoteBolusApproval no longer restores from a backup (its catalog row +
-        // backup participation are removed, hidden-flag pattern) — a legacy backup carrying either key
-        // is silently ignored here, same tolerance as the basalScheduleByHour/basalScheduleSource
-        // precedent (restoreToleratesLegacyBasalScheduleKeys).
-        // Phase 17.5 (D1-01): the watch bolus-enable accessor is retired entirely, so it has no
-        // restore-side line here at all (not merely a hidden-flag skip).
-        // Phase 5 (05-02, HEALTH-02): nightscoutUploadEnabled no longer restores from a backup
-        // either — same hidden-flag pattern, same legacy-key tolerance.
         if let v = sa("garminScreenOrder") { garminScreenOrder = v }
         if let v = s("garminDefaultScreen") { garminDefaultScreen = v }
         if let v = s("garminComplicationDisplay") { garminComplicationDisplay = v }
         if let v = b("garminClockAnalog") { garminClockAnalog = v }
         if let v = s("garminTargetApp") { garminTargetApp = v }
-        // Phase 20 (D-01 alert intensity + D-02 complication slots): restore with the same fail-closed
-        // validation as init (unrecognized token ⇒ safe default; slots sanitized + capped at 3).
+        // Restore with the same fail-closed validation as init (unrecognized token ⇒ safe default;
+        // slots sanitized + capped at 3).
         if let v = s("garminAlertIntensityMode"), Self.alertIntensityModeOptions.contains(v) { garminAlertIntensityMode = v }
         if let v = s("garminAlertAudibleMinSeverity"), Self.alertSeverityTierOptions.contains(v) { garminAlertAudibleMinSeverity = v }
         if let v = b("garminAlertCriticalOverridesDnd") { garminAlertCriticalOverridesDnd = v }
         if let v = sa("garminComplicationSlots") { garminComplicationSlots = Self.sanitizeComplicationSlots(v) }
-        // Phase 7 (07-04, FEAT-04, D-05, SAFETY): `childModeEnabled` no longer restores from a backup
-        // either — belt-and-suspenders option (a). A legacy backup carrying this key (or `true`) is
-        // now silently ignored, same tolerance as the `remoteBluetoothEnabled` precedent below; the
-        // getter-level freeze (option b, above) would reject the value anyway
-        // even if this line still called the setter.
-        // Phase 7 (07-02, FEAT-03): `glucoseBadgeEnabled` no longer restores from a backup either —
-        // same hidden-flag pattern, same legacy-key tolerance (a restored `true` would have no effect
-        // regardless, since `GlucoseBadge` is now a main-only no-op stub).
-        // Phase 4 (04-02, D-05/NUDGE-01): `siteAtlasEnabled` no longer restores from a backup — same
-        // removal as `backupSnapshot()` above. A legacy backup carrying this key is silently ignored
-        // (same tolerance as the `remoteBluetoothEnabled` precedent above).
-        // Phase 7 (07-05, FEAT-08, D-07, SAFETY): `alertRules` no longer restores from a backup
-        // either — same hidden-flag pattern, same posture as `childModeEnabled` above. A legacy
-        // backup carrying a non-empty rule-set is silently ignored (the getter-level freeze would
-        // reject it regardless, but the restore line itself is removed too, closing both halves of
-        // the round trip per D-07's belt-and-suspenders shape).
-        // Phase 7 (07-04, FEAT-04, D-05, SAFETY): `childAllowed` no longer restores from a backup
-        // either — same hidden-flag pattern, same posture as `childModeEnabled` above. A legacy backup
-        // carrying this key is silently ignored (same tolerance as the `remoteBluetoothEnabled`
-        // precedent above); the value is already access-irrelevant regardless
-        // since `childModeEnabled` is force-false.
         applyFreshness(); syncWidgetConfig()
     }
 

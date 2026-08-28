@@ -115,7 +115,6 @@ struct AppModelReferenceAuditTests {
         "LedgerBlockPrecedenceGuardTests.swift",
         "LedgerFaultReleaseGuardTests.swift",
         "MobiRejectAtPairingBoundaryTests.swift",
-        "SettingsCatalogTests.swift",
         // Verified COMMENT-ONLY on the AppModel-reference axis — see the type doc comment's
         // deviation note; its own active scan targets TandemBackend.swift, a GO-2 concern.
         "SleepScheduleWriteBoundaryTests.swift",

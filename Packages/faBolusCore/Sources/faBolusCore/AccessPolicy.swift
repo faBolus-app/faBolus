@@ -1,19 +1,13 @@
 import Foundation
 
-/// **P8 — the single access-policy evaluator.** One pure decision point that resolves whether a given
-/// `GatedPumpWrite` action is permitted from a given `Surface`, folding in the five gates that used to
-/// live at five layers (unverified-feature ack, child mode, phone/remote read-only, per-peer permissions,
-/// pump capabilities). Every funnel — `runControl`, `runGatedTherapy`, `runLedgeredDelivery`, and the
-/// remote hosts — routes through this, so a surface can't be gated on one layer and open on another
-/// (the shipped A-05 widget-bypass class of bug). It is a **pure function over `AccessContext`** because
-/// faBolusCore must not read app globals; the app builds the context and reports the result.
+/// Single access-policy evaluator: whether a `GatedPumpWrite` is permitted from a `Surface`.
+/// Folds unverified-feature ack, child mode, phone/remote read-only, per-peer permissions, pump
+/// capabilities, and modes into one ordered check. Every funnel (`runControl`, `runGatedTherapy`,
+/// `runLedgeredDelivery`, remote hosts) must go through this so a surface cannot be gated on one
+/// layer and open on another. Pure over `AccessContext` — faBolusCore must not read app globals.
 ///
-/// Modes (P14) fold in as one more `AccessContext` field + one more ordered check here — NOT a sixth
-/// mechanism at a sixth layer. That is the whole point of consolidating.
-///
-/// Owner decisions baked in (2026-08-05): `remotesReadOnly` governs **all** remotes including the
-/// Mac/caregiver peer path (closing the hole where it was ignored there); the pump-capability +
-/// advanced-control opt-in is enforced **at the funnel** (defense-in-depth), not only in the UI.
+/// `remotesReadOnly` governs all remotes including Mac/caregiver. Pump-capability + advanced-control
+/// opt-in is enforced at this funnel, not only in the UI.
 public enum AccessPolicy {
 
     /// Where an action originates. Determines which read-only flag applies and whether the child-lock
@@ -36,7 +30,7 @@ public enum AccessPolicy {
         }
     }
 
-    /// P14 Slice 2 — the mode axis, folded in as one more input to the one evaluator (NOT a sixth
+    /// The mode axis, folded in as one more input to the one evaluator (NOT a sixth
     /// mechanism). Carries the active experience mode and the per-feature toggles the user set within it
     /// (owner decision #4). `evaluate` gains exactly one ordered `.modeDisallowed` / `.featureDisabledInMode`
     /// check at the reserved slot; no surface or funnel signature changes.
@@ -67,7 +61,7 @@ public enum AccessPolicy {
         // Gate 3 — read-only
         public var phoneReadOnly: Bool
         public var remotesReadOnly: Bool
-        // Gate 5 — pump capability + advanced-control opt-in. P13: `isMobi` retired — capabilities are
+        // Gate 5 — pump capability + advanced-control opt-in. `isMobi` retired — capabilities are
         // now pump-derived (from the pump's own feature bitmask) and are the sole capability signal.
         public var advancedControlOptIn: Bool
         public var capabilities: PumpCapabilities
@@ -75,13 +69,13 @@ public enum AccessPolicy {
         public var hasRecentUnverifiedAck: Bool
         // Gate 4 — per-peer policy (nil for a non-authenticated-peer surface)
         public var peerPolicy: RemotePeerPolicy?
-        // P14 seam
+        // Mode seam
         public var modeContext: ModeGateContext
-        // P15 §2.3 — per-surface remote bolus authorization (default true so no OTHER surface/action is
+        // Per-surface remote bolus authorization (default true so no OTHER surface/action is
         // affected; the host passes the real default-OFF settings). Only consulted for `.deliverBolus`
         // from `.garmin`.
         public var garminBolusEnabled: Bool
-        // C2 §2.3 — the OPTIONAL Garmin bolus passcode. When a passcode is set on the phone
+        // The OPTIONAL Garmin bolus passcode. When a passcode is set on the phone
         // (`BolusPasscodeStore.isRequired`), a Garmin `.deliverBolus` must carry the correct entered code.
         // The host does the single stateful `verify()` (which arms the exp-backoff) and hands the evaluator
         // a pure `required`/`satisfied` pair — faBolusCore never touches the Keychain. `satisfied` defaults
@@ -100,7 +94,7 @@ public enum AccessPolicy {
                     // (AppModel) always passes the real persisted value; this default only guards a future
                     // second call site.
                     garminBolusEnabled: Bool = false,
-                    // C2 §2.3 fail-closed defaults: `required=false` (no passcode ⇒ no extra gate, today's
+                    // Fail-closed defaults: `required=false` (no passcode ⇒ no extra gate, today's
                     // behavior) but `satisfied=false`, so a required-but-unsatisfied pair always denies.
                     bolusPasscodeRequired: Bool = false, bolusPasscodeSatisfied: Bool = false) {
             self.childModeEnabled = childModeEnabled
@@ -129,7 +123,7 @@ public enum AccessPolicy {
         case modeDisallowed(required: AppMode)   // P14: feature not in the active mode
         case featureDisabledInMode               // P14: user turned this feature off within the mode
         case remoteBolusDisabled                 // P15 §2.3: bolusing from this remote is turned off
-        case remoteBolusPasscodeRequired         // C2 §2.3: Garmin bolus needs the correct passcode
+        case remoteBolusPasscodeRequired         // Garmin bolus needs the correct passcode
 
         public var userMessage: String {
             switch self {
@@ -199,7 +193,7 @@ public enum AccessPolicy {
             if surface == .garmin && !context.garminBolusEnabled { return .deny(.remoteBolusDisabled) }
         }
 
-        // C2 §2.3 — the OPTIONAL Garmin bolus passcode. When a passcode is set on the phone, a Garmin
+        // The OPTIONAL Garmin bolus passcode. When a passcode is set on the phone, a Garmin
         // `.deliverBolus` must carry the correct entered code (the host verifies it against the salted hash
         // and passes the result as `bolusPasscodeSatisfied`; the evaluator stays pure). Fail-closed:
         // required-but-unsatisfied (absent OR wrong OR backing off) denies. Every other surface/action is

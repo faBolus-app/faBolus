@@ -2,15 +2,15 @@ import SwiftUI
 import UIKit
 import faBolusCore
 
-/// Hidden Debug menu (Workstream B4 / P16 F7) — read-only diagnostics for power users, revealed by tapping
-/// the Settings disclaimer 7×. Intentionally contains NO destructive/arbitrary-send actions:
-/// factory reset, shelf mode, and the arbitrary-message console are ported at the protocol layer
-/// but deliberately not wired to a button here (too dangerous without deliberate key handling).
+/// Hidden Debug menu — read-only diagnostics for power users, revealed by tapping the Settings
+/// disclaimer 7×. Intentionally contains NO destructive/arbitrary-send actions: factory reset,
+/// shelf mode, and the arbitrary-message console are ported at the protocol layer but deliberately
+/// not wired to a button here (too dangerous without deliberate key handling).
 ///
-/// P16 F7 ("Mobi debug alternative") folds an **in-app debug console** into this same hidden surface:
-/// a single opt-in toggle, plus read-only views of the already-recorded connection telemetry (P12
-/// §5.2.8), the notification telemetry (P9), and an in-memory BLE-session log (F7). Everything is
-/// LOCAL-ONLY — diagnostics stay on the device and are never uploaded; export is clipboard-only.
+/// An in-app debug console on this same hidden surface: a single opt-in toggle, plus read-only
+/// views of the already-recorded connection telemetry, the notification telemetry, and an
+/// in-memory BLE-session log. Everything is LOCAL-ONLY — diagnostics stay on the device and are
+/// never uploaded; export is clipboard-only.
 struct DebugMenuView: View {
     @Bindable var model: AppModel
     @Bindable private var settings = AppSettings.shared
@@ -23,7 +23,7 @@ struct DebugMenuView: View {
 
     var body: some View {
         Form {
-            // MARK: F7 — opt-in (TOP of the console)
+            // MARK: - Diagnostics opt-in
             Section {
                 Toggle("Share local diagnostics", isOn: $shareDiagnostics)
             } header: {
@@ -52,11 +52,9 @@ struct DebugMenuView: View {
                 row("Connection", model.snapshot.connection.rawValue)
             }
             Section("Live snapshot") {
-                // 04-08 gap closure (SC1, WR-07): this screen is reachable via an undocumented 7-tap
-                // gesture on the Settings disclaimer footer (not #if DEBUG-gated) — 04-REVIEW.md flagged
-                // it as "technically user-reachable, not purely a developer tool." Route through the
-                // same funnel as every other mainline glucose surface rather than documenting an
-                // exception, since converting is no riskier than the mirror-the-pattern fix elsewhere.
+                // This screen is reachable via an undocumented 7-tap gesture on the Settings
+                // disclaimer footer (not #if DEBUG-gated) — technically user-reachable, not purely a
+                // developer tool. Route through the same funnel as every other mainline glucose surface.
                 row("Glucose", model.snapshot.glucose.map { "\(settings.glucoseDisplayUnit.format(mgdl: $0)) \(settings.glucoseDisplayUnit == .mmol ? "mmol/L" : "mg/dL")" } ?? "—")
                 row("IOB", String(format: "%.2f U", model.snapshot.iobUnits))
                 row("Basal", String(format: "%.2f U/hr", model.snapshot.basalRateUnitsPerHour))
@@ -67,16 +65,16 @@ struct DebugMenuView: View {
                 row("Max bolus", String(format: "%.2f U", model.snapshot.maxBolusUnits))
             }
 
-            // MARK: F7 — connection telemetry (P12 §5.2.8), read-only
+            // MARK: - Connection telemetry (read-only)
             connectionTelemetrySection
 
-            // MARK: F7 — notification telemetry (P9), read-only
+            // MARK: - Notification telemetry (read-only)
             notificationTelemetrySection
 
-            // MARK: F7 — BLE-session log (in-memory ring buffer), read-only
+            // MARK: - BLE-session log (in-memory ring buffer, read-only)
             bleSessionLogSection
 
-            // MARK: Pump read exclusions + safety-degraded disclosure (debug pump-pairing-loop-api25 4a/4b)
+            // MARK: - Pump read exclusions + safety-degraded disclosure
             pumpReadExclusionsSection
 
             Section("Alerts (raw)") {
@@ -93,7 +91,7 @@ struct DebugMenuView: View {
                 Section("Last error") { Text(err).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
             }
 
-            // MARK: F7 — clipboard-only export (no share-sheet, no network)
+            // MARK: - Clipboard-only export (no share-sheet, no network)
             Section {
                 Button {
                     UIPasteboard.general.string = diagnosticsText
@@ -102,9 +100,9 @@ struct DebugMenuView: View {
                 } label: {
                     Label(didCopy ? "Copied to clipboard" : "Copy diagnostics", systemImage: "doc.on.doc")
                 }
-                // D-01b — a second, zero-tooling export path: the OS share sheet (AirDrop/Files/Messages),
-                // sharing the same plaintext diagnosticsText directly. No .fileExporter/BackupDocument save
-                // dialog (D-02) and no network — mirrors SettingChangeLogView's ShareLink idiom.
+                // A second, zero-tooling export path: the OS share sheet (AirDrop/Files/Messages),
+                // sharing the same plaintext diagnosticsText directly. No .fileExporter/BackupDocument
+                // save dialog and no network — mirrors SettingChangeLogView's ShareLink idiom.
                 ShareLink(item: diagnosticsText) {
                     Label("Share diagnostics", systemImage: "square.and.arrow.up")
                 }
@@ -122,8 +120,8 @@ struct DebugMenuView: View {
         .navigationTitle("Debug")
         .onAppear {
             shareDiagnostics = settings.notificationTelemetryEnabled
-            // D-01a/Pitfall 4: write the export file as soon as the console is opened, so the fixed-name
-            // Documents file exists before anyone runs `devicectl device copy from` — not gated behind a
+            // Write the export file as soon as the console is opened, so the fixed-name Documents
+            // file exists before anyone runs `devicectl device copy from` — not gated behind a
             // button tap that may never happen on this install.
             writeDiagnosticsExportFile(diagnosticsText)
         }
@@ -186,7 +184,6 @@ struct DebugMenuView: View {
                      : "Turn on “Share local diagnostics” above to record connection events.")
                     .font(.caption).foregroundStyle(.secondary)
             } else {
-                // Newest first for readability.
                 ForEach(entries.reversed()) { e in
                     LabeledContent {
                         Text(e.detail.isEmpty ? e.kind.rawValue : "\(e.kind.rawValue) · \(e.detail)")
@@ -204,12 +201,12 @@ struct DebugMenuView: View {
         }
     }
 
-    /// Debug pump-pairing-loop-api25 transparency (4a/4b): surface the reads this pump has auto-excluded —
-    /// with human-readable names via the shared `PumpReadCatalog` (accurate now that mechanism B records the
-    /// TRUE failing opcode) — plus the confirmed/unknown cartridge pre-check state (Guardrail B) and a
-    /// user-facing safety-degraded note whenever a SAFETY-relevant read (the op-20 cartridge pre-check) is
-    /// unavailable. Ungated on-screen like the "Live snapshot" rows above (local device state, no PHI); the
-    /// same content flows into the opt-in-gated diagnostics export via `CapabilityDiagnostics.section`.
+    /// Surface the reads this pump has auto-excluded — with human-readable names via the shared
+    /// `PumpReadCatalog` — plus the confirmed/unknown cartridge pre-check state and a user-facing
+    /// safety-degraded note whenever a SAFETY-relevant read (the op-20 cartridge pre-check) is
+    /// unavailable. Ungated on-screen like the "Live snapshot" rows above (local device state, no
+    /// PHI); the same content flows into the opt-in-gated diagnostics export via
+    /// `CapabilityDiagnostics.section`.
     @ViewBuilder private var pumpReadExclusionsSection: some View {
         let excluded = model.badOpcodesForDiagnostics
         let notes = PumpReadCatalog.safetyDegradedNotes(excludedOpcodes: excluded)
@@ -235,7 +232,7 @@ struct DebugMenuView: View {
         }
     }
 
-    /// Human-readable label for the Guardrail B tri-state cartridge readiness (4b).
+    /// Human-readable label for the tri-state cartridge readiness.
     private func cartridgeReadinessLabel(_ readiness: PumpSnapshot.CartridgeReadiness) -> String {
         switch readiness {
         case .ready:    return "ready (confirmed)"
@@ -260,20 +257,19 @@ struct DebugMenuView: View {
         return "\(sec)s"
     }
 
-    /// D-02b (09.6-02): pure `[BLE session log]` diagnostics-text line-builder — extracted verbatim
-    /// from `diagnosticsText`'s prior inline block (mirrors `CapabilityDiagnostics.section`'s pure-
-    /// builder shape) so the ring buffer's presence in the export — up to `capacity`, oldest dropped
-    /// first — is unit-testable (`BLESessionLogTests`) without instantiating this View. Reads nothing
-    /// beyond its parameters: `entries` already reflects whatever `BLESessionLog` recorded (empty
-    /// whenever the shared opt-in was off, since `BLESessionLog.record` no-ops then).
+    /// Pure `[BLE session log]` diagnostics-text line-builder — extracted so the ring buffer's
+    /// presence in the export — up to `capacity`, oldest dropped first — is unit-testable
+    /// (`BLESessionLogTests`) without instantiating this View. Reads nothing beyond its parameters:
+    /// `entries` already reflects whatever `BLESessionLog` recorded (empty whenever the shared
+    /// opt-in was off, since `BLESessionLog.record` no-ops then).
     static func bleSessionLogExportLines(entries: [BLESessionLog.Entry], capacity: Int) -> String {
         var lines: [String] = ["", "[BLE session log] (in-memory, last \(capacity))"]
         guard !entries.isEmpty else {
             lines.append("—")
             return lines.joined(separator: "\n")
         }
-        // D-04: per-connect durations from the pure helper — matched back onto the disconnect line
-        // that closed each span (spans and entries are both chronological, so a positional walk
+        // Per-connect durations from the pure helper — matched back onto the disconnect line that
+        // closed each span (spans and entries are both chronological, so a positional walk
         // suffices; no pairing logic is re-derived here).
         let spans = BLESessionLog.connectDurations(from: entries)
         var spanIndex = 0
@@ -289,13 +285,14 @@ struct DebugMenuView: View {
         return lines.joined(separator: "\n")
     }
 
-    /// D-01a/D-09/D-10 — best-effort write of `diagnosticsText` verbatim to a FIXED filename in the app's
-    /// OWN Documents directory (no date/timestamp in the name, so `xcrun devicectl device copy from` has a
-    /// stable, predictable path to pull with zero on-device UI). `.completeFileProtectionUntilFirstUserAuthentication`
-    /// is passed EXPLICITLY (not the ambient default) so the file stays pullable after the first unlock
-    /// since boot — do NOT change this to `.completeFileProtection` (would make a locked-device pull fail).
-    /// A write failure is swallowed: this is a debug-only affordance and must never surface as a
-    /// user-facing error. No network/upload code — the file never leaves the app's own sandbox (F7, D-02).
+    /// Best-effort write of `diagnosticsText` verbatim to a FIXED filename in the app's OWN
+    /// Documents directory (no date/timestamp in the name, so `xcrun devicectl device copy from`
+    /// has a stable, predictable path to pull with zero on-device UI).
+    /// `.completeFileProtectionUntilFirstUserAuthentication` is passed EXPLICITLY (not the ambient
+    /// default) so the file stays pullable after the first unlock since boot — do NOT change this
+    /// to `.completeFileProtection` (would make a locked-device pull fail). A write failure is
+    /// swallowed: this is a debug-only affordance and must never surface as a user-facing error.
+    /// No network/upload code — the file never leaves the app's own sandbox.
     private func writeDiagnosticsExportFile(_ text: String) {
         guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
         let url = docs.appendingPathComponent("faBolus-diagnostics.txt")
@@ -307,21 +304,18 @@ struct DebugMenuView: View {
     }
 
     /// Plain-text snapshot of everything the console surfaces, for the clipboard-only export.
-    ///
-    /// Phase 09.6-06 (Task 1, Part C-1, D-03.1): the preamble ("faBolus diagnostics…" + "Generated:")
-    /// stays a plain document header; every surface below it is now assembled as an ordered array of
-    /// already-formatted `[Bracket]` section strings and joined by the pure `DiagnosticsBundle.build`
-    /// aggregator — this method itself no longer builds any section's line content directly (that
-    /// responsibility moved to `DiagnosticsBundle`'s helpers or each Part C wrapper type). ShareLink
-    /// and `writeDiagnosticsExportFile` below still consume this SAME string — no second export path.
+    /// The preamble stays a plain document header; every surface below it is assembled as an
+    /// ordered array of already-formatted `[Bracket]` section strings and joined by the pure
+    /// `DiagnosticsBundle.build` aggregator. ShareLink and `writeDiagnosticsExportFile` consume
+    /// this SAME string — no second export path.
     private var diagnosticsText: String {
         let t = model.connectionTelemetry.snapshot
         let notif = NotificationRuntime().telemetry
 
-        // Task 1 (Part C-4a, D-03.4): [Garmin CIQ] — reads GarminRemoteBridge's already-tracked send
-        // queue/watchdog/device-connection state via its `.shared` app-wide reference; never issues a
-        // new ConnectIQ send. `state` is nil (renders the explicit unreachable empty state) when no
-        // Garmin device has ever been selected/paired.
+        // [Garmin CIQ] — reads GarminRemoteBridge's already-tracked send queue/watchdog/device-
+        // connection state via its `.shared` app-wide reference; never issues a new ConnectIQ send.
+        // `state` is nil (renders the explicit unreachable empty state) when no Garmin device has
+        // ever been selected/paired.
         let garminState: GarminDiagnostics.BridgeState? = {
             guard let bridge = GarminRemoteBridge.shared, bridge.hasDevice else { return nil }
             return GarminDiagnostics.BridgeState(
@@ -332,13 +326,8 @@ struct DebugMenuView: View {
                 deviceName: bridge.deviceNameForDiagnostics)
         }()
 
-        // Phase 17.5 Plan 03 (D1-01): the two watch-transport diagnostics sections (and the pure
-        // builder types they called into) are retired outright — the WatchConnectivity transport
-        // host they described is gone (Plan 02), and there is no watch surface left to diagnose.
-
         let sections: [String] = [
-            // Extracted verbatim from the prior inline blocks (D-01/P12 §5.2.8/P9) — always present,
-            // no opt-in gate.
+            // Always present, no opt-in gate.
             DiagnosticsBundle.pumpIdentitySection(
                 modelName: model.snapshot.pumpModelName,
                 softwareVersion: model.snapshot.softwareVersion,
@@ -353,17 +342,17 @@ struct DebugMenuView: View {
                 counts: notif.sorted(by: { $0.key < $1.key }).map {
                     (category: $0.key, delivered: $0.value.delivered, dismissed: $0.value.dismissed, actedUpon: $0.value.actedUpon)
                 }),
-            // D-02b (09.6-02): pure extracted line-builder — proves (via BLESessionLogTests) that the
-            // ring buffer's entries reach this export up to capacity, not silently dropped.
+            // Pure extracted line-builder — proves (via BLESessionLogTests) that the ring buffer's
+            // entries reach this export up to capacity, not silently dropped.
             Self.bleSessionLogExportLines(entries: model.bleSessionLog.entries, capacity: model.bleSessionLog.capacity),
-            // Task 1 (TRACER, Part B-a, D-02a): [Capability/opcode] — reads already-cached backend
-            // state only, gated on the SAME shareDiagnostics opt-in as every section here.
+            // [Capability/opcode] — reads already-cached backend state only, gated on the SAME
+            // shareDiagnostics opt-in as every section here.
             CapabilityDiagnostics.section(
                 capabilities: model.capabilities,
                 badOpcodes: model.badOpcodesForDiagnostics,
                 enabled: shareDiagnostics),
-            // Task 1 (Part C-2, D-03.2): [CGM arbiter] — reads the SAME already-arbitrated provenance
-            // the live "via <source>" badge uses; never re-runs GlucoseArbiter.merge.
+            // [CGM arbiter] — reads the SAME already-arbitrated provenance the live "via <source>"
+            // badge uses; never re-runs GlucoseArbiter.merge.
             CgmArbiterDiagnostics.section(
                 provenance: model.glucoseProvenance,
                 sourceStatuses: model.glucoseSourceDiagnosticsInfo,

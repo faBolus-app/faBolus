@@ -1,8 +1,8 @@
 import SwiftUI
 import faBolusCore
 
-/// Logbook (Workstream B2): the pump's on-device history-log events, decoded by TandemKit's
-/// HistoryLogParser and mapped to neutral `HistoryEvent`s. Read-only. Grouped by day, newest first.
+/// Logbook: the pump's on-device history-log events, decoded by TandemKit's HistoryLogParser and
+/// mapped to neutral `HistoryEvent`s. Read-only. Grouped by day, newest first.
 struct LogbookView: View {
     @Bindable var model: AppModel
     @State private var filter: HistoryEvent.Category? = nil
@@ -50,7 +50,7 @@ struct LogbookView: View {
                     } label: {
                         Image(systemName: filter == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
                     }
-                    // D2-06: the filled-vs-unfilled glyph is a color/shape-only cue for "a filter is
+                    // The filled-vs-unfilled glyph is a color/shape-only cue for "a filter is
                     // active" — VoiceOver otherwise announces only the raw symbol name. Speak the
                     // control's purpose plus the current filter (or "All events") as its value.
                     .accessibilityLabel("Filter events")
@@ -63,9 +63,9 @@ struct LogbookView: View {
 
 private struct LogbookRow: View {
     let event: HistoryEvent
-    // Phase 09.15 T1-4 (D-01, D-06 guardrail #3 "no fabricated urgency") — amber, matching the
-    // established informational-not-alarm convention elsewhere in the app (e.g. BolusEntryView's
-    // advisory `exclamationmark.triangle` warnings), never red like `.alarm`'s filled triangle.
+    // Amber, matching the established informational-not-alarm convention elsewhere in the app
+    // (e.g. BolusEntryView's advisory `exclamationmark.triangle` warnings), never red like
+    // `.alarm`'s filled triangle — no fabricated urgency.
     private var iconTint: Color { event.category == .couldNotDeliver ? .orange : .secondary }
     var body: some View {
         HStack(spacing: 12) {

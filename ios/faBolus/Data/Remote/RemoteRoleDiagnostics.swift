@@ -2,7 +2,7 @@ import Foundation
 import CryptoKit
 import faBolusCore
 
-/// Phase 09.6-03 (Task 2, Part C-4b, D-03.4): pure `[Remote role]` diagnostics-text section builder.
+/// Pure `[Remote role]` diagnostics-text section builder.
 /// Surfaces this phone's host role + each paired remote peer's already-tracked connection + grant
 /// state — read directly from `MacPairingCoordinator` (paired peers, live connection, per-peer
 /// `RemotePeerPolicy`) at the `DebugMenuView` call site, never re-derived here. `@MainActor` because
