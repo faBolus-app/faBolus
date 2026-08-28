@@ -5,7 +5,7 @@ import faBolusCore
 /// mapped to neutral `HistoryEvent`s. Read-only. Grouped by day, newest first.
 struct LogbookView: View {
     @Bindable var model: AppModel
-    @State private var filter: HistoryEvent.Category? = nil
+    @State private var filter: HistoryEvent.Category?
 
     private var filtered: [HistoryEvent] {
         guard let f = filter else { return model.historyEvents }

@@ -542,19 +542,19 @@ public final class AppModel {
         /// delivers, with no recompute at confirm time (audit C-02). For a units request it equals the
         /// requested units; for a carb request it is the host-computed dose.
         public let units: Double
-        public var carbsGrams: Double? = nil
+        public var carbsGrams: Double?
         /// The glucose the frozen dose was computed from (fresh host reading, or nil for carbs-only).
-        public var bgMgdl: Int? = nil
-        public var bgDate: Date? = nil  // provenance/age of that glucose (shown to approver)
-        public var iobUnits: Double? = nil  // IOB the calc used (shown to approver)
-        public var remoteEstimate: Double? = nil
-        public var requestedUnits: Double? = nil  // original request units, for the idempotency doseKey
+        public var bgMgdl: Int?
+        public var bgDate: Date?  // provenance/age of that glucose (shown to approver)
+        public var iobUnits: Double?  // IOB the calc used (shown to approver)
+        public var remoteEstimate: Double?
+        public var requestedUnits: Double?  // original request units, for the idempotency doseKey
         /// WR-01: the ORIGINAL wire request carbs/bg, for the idempotency doseKey. These are the raw values
         /// the remote sent — NOT the resolved/frozen `carbsGrams`/`bgMgdl` above (which drive the delivered
         /// dose) — so present→confirm derives the SAME doseKey `remoteDeliver` computes for the same wire
         /// request. Defaults keep the memberwise init back-compatible.
-        public var requestedCarbsGrams: Double? = nil
-        public var requestedBgMgdl: Int? = nil
+        public var requestedCarbsGrams: Double?
+        public var requestedBgMgdl: Int?
         public var createdAt: Date = Date()  // freeze time → approval expiry (audit C-02)
         /// Authenticated originator, for idempotency (audit A-02).
         public var peerId: String = "local"
@@ -1425,7 +1425,6 @@ public final class AppModel {
         urgentLowActive = urgentLowNow
     }
 
-
     public func connect() async {
         await source.connect()
         refresh()
@@ -1571,8 +1570,8 @@ public final class AppModel {
     public struct PendingApproval: Equatable, Sendable {
         public let requestId: String
         public let units: Double
-        public var carbsGrams: Double? = nil
-        public var bgMgdl: Int? = nil
+        public var carbsGrams: Double?
+        public var bgMgdl: Int?
     }
     public private(set) var pendingApproval: PendingApproval?
     private var hasPairedRemote: Bool { !MacPairingCoordinator.shared.pairedMacs.isEmpty }

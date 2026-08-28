@@ -389,8 +389,8 @@ final class DeliveryLedgerCoordinator {
                 recordReconciliation(cancelled ? .cancelled : .delivered)  // §5.2.8
                 changed = true
             case .unavailable:
+                // Stay blocked; retry on next reconnect / manual verification.
                 recordReconciliation(.unavailable)  // §5.2.8: stayed unresolved
-                break  // stay blocked; retry on next reconnect / manual verification
             }
         }
         // Round-3 §5.6: release the block only once the settled ledger is durably saved.

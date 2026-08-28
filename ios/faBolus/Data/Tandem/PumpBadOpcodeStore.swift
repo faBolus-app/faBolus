@@ -141,7 +141,7 @@ struct PumpBadOpcodeStore: @unchecked Sendable {
     private struct Persisted: Codable {
         var fw: String?
         var ops: [Int]
-        var seq: Int? = nil
+        var seq: Int?
     }
 
     private func loadMap() -> [String: Persisted] {

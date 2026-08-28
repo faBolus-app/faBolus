@@ -67,8 +67,8 @@ struct BolusEntryView: View {
         // Addendum B: when the reading is stale (not merely missing), the stale value + the dose it WOULD
         // produce, so the "CGM unavailable" prompt can offer a third choice — include the stale reading.
         // nil ⇒ no reading at all (nothing to include; carbs-only / cancel only), per StaleBolusPrompt.
-        var staleBG: Int? = nil
-        var staleUnits: Double? = nil
+        var staleBG: Int?
+        var staleUnits: Double?
     }
     /// Supersedes out-of-order async recommendation results (audit C-04).
     @State private var calcSeq = 0

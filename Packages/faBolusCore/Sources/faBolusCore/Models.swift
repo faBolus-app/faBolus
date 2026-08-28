@@ -130,7 +130,7 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// Never gates delivery and never implies a connected/ready link (P12 group D / app-boundary state);
     /// `isLinked` stays false for every down state. Not on any wire type — surfacing it changes no
     /// schema and no remote/Garmin behavior.
-    public var connectionDetail: String? = nil
+    public var connectionDetail: String?
     /// The pump LINK is healthy — connected, or actively delivering. The single definition of "link is
     /// up", replacing hand-rolled `== .connected || == .bolusing` checks (group D). `connection` conflates
     /// link-health with in-flight because `.bolusing` is a peer of the link states; these two computed
@@ -139,15 +139,15 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// A bolus is being delivered right now. Kept distinct from `isLinked` so a NEW bolus can be gated on
     /// "a dose is already running" without treating in-flight as a dropped link.
     public var bolusInFlight: Bool { connection == .bolusing }
-    public var glucose: Int? = nil
+    public var glucose: Int?
     /// When the current glucose reading was taken. Used to hide readings older than 6 minutes.
-    public var glucoseDate: Date? = nil
+    public var glucoseDate: Date?
     public var trend: String = GlucoseTrend.flat.rawValue
     public var iobUnits: Double = 0  // Active Insulin
     /// When `iobUnits` (op-109 ControlIQIOBResponse) was last received from the pump. Used by the dose path
     /// to prove the active-insulin term is fresh before subtracting it, and to grey/age the IOB row —
     /// exactly like `glucoseDate` for the glucose feed. nil ⇒ unknown age ⇒ treated as stale.
-    public var iobDate: Date? = nil
+    public var iobDate: Date?
     public var reservoirUnits: Double = 0
     public var batteryPercent: Int = 0
     /// Phase 09.27 D-01/D-02/D-03 — the pump POSITIVELY reported it is charging (op-145
@@ -157,8 +157,8 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// pump status telemetry; never a dose-path input (D-06).
     public var batteryCharging: Bool = false
     public var cgmActive: Bool = false
-    public var lastBolusUnits: Double? = nil
-    public var lastBolusDate: Date? = nil
+    public var lastBolusUnits: Double?
+    public var lastBolusDate: Date?
     /// Pump's configured max bolus (units), read from the calculator snapshot. Governs the UI
     /// cap instead of a hardcoded number. Falls back to the pump's absolute max.
     public var maxBolusUnits: Double = 25
@@ -171,7 +171,7 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// / max) were last received from the pump. One op-115 frame resolves the ACTIVE profile+segment to a
     /// self-consistent set, so a single stamp governs all three. Used by the dose path to prove they are
     /// fresh before building the calculator profile, and to grey/age the therapy row. nil ⇒ stale.
-    public var therapyParamsDate: Date? = nil
+    public var therapyParamsDate: Date?
 
     // Workstream B (controlX2 parity) status fields.
     /// Pump model detection (from ApiVersionResponse). Mobi gates advanced control.
@@ -198,7 +198,7 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// `PumpResponseApplier` from op-179 `ControlIQInfoV2Response.controlStateType` (c) Tandem — the zone
     /// words themselves are Tandem's own labels. `nil` until read OR when the raw value is unmapped —
     /// never a synthesized 6th word (D-06 guardrail #6). Display-only, never a dose input (C3).
-    public var ciqZone: String? = nil
+    public var ciqZone: String?
     /// Phase 09.15 T1-2 (D-09.1, D-08) — whether the pump's own control-state currently attributes an
     /// ACTIVE basal suspend to Control-IQ (vs a manual/other-cause suspend the generic `deliverySuspended`
     /// bool alone can't distinguish). Derived at `PumpResponseApplier` via
@@ -209,13 +209,13 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// fully-known "not CIQ-attributed" fact, not "unknown" — the D-09.1 BINDING fail-closed default for
     /// every consumer of this field is to treat both `nil` and `false` identically (never render
     /// "Control-IQ paused" for either).
-    public var ciqSuspendedForLow: Bool? = nil
+    public var ciqSuspendedForLow: Bool?
     /// The immutable instant `ciqSuspendedForLow` FIRST became true (never re-stamped on every
     /// subsequent op-179 read while it stays true) — mirrors `glucoseDate`'s epoch-not-age convention so
     /// a remote/UI computes elapsed time on draw, never transmits a pre-computed age. Cleared back to
     /// `nil` the moment `ciqSuspendedForLow` clears, so a later re-suspend starts a fresh instant rather
     /// than resuming a stale one.
-    public var ciqSuspendStartDate: Date? = nil
+    public var ciqSuspendStartDate: Date?
     /// Phase 09.15 T1-3 (D-01, D-06 guardrail #4, D-08) — the immutable instant of the most-recent
     /// Control-IQ auto-correction, derived at `TandemBackend.neutralEvent` from a decoded
     /// `BolusDeliveryHistoryLog` whose `bolusSource == 7` (a fact the pump's own history log already
@@ -223,7 +223,7 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// never un-happens); `nil` until the first such event is seen. Display-only, never a dose input
     /// (C3). Mirrors `glucoseEpochSec`'s epoch-not-age convention on the wire (`RemoteCommand
     /// .lastAutoCorrectionEpochSec`) — a receiver computes age at draw time, never transmits one.
-    public var lastAutoCorrectionDate: Date? = nil
+    public var lastAutoCorrectionDate: Date?
     /// Phase 09.15 T1-4 (D-01, D-08) — the immutable instant of the most-recent "Control-IQ tried and
     /// couldn't deliver an automatic correction" event, derived from a decoded
     /// `AaAutoBolusRejectedHistoryLog` or `CorrectionDeclinedHistoryLog` (both already decoded +
@@ -232,7 +232,7 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// is seen. Display-only, never a dose input (C3). Wire mirror: `RemoteCommand
     /// .ciqLastCouldNotDeliverEpochSec` (remote MARKER only — the full timeline stays phone-only,
     /// D-08).
-    public var ciqLastCouldNotDeliverDate: Date? = nil
+    public var ciqLastCouldNotDeliverDate: Date?
     /// Phase 09.15 T1-5 (D-01, D-08) — the immutable instant Control-IQ's automatic correction becomes
     /// available again after the most-recent bolus, derived from `lastAutoCorrectionDate` + the
     /// descriptor's OWN documented lockout window (`ControllerDescriptor.automaticCorrection
@@ -346,7 +346,7 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// .exerciseTimerToStore`) — a leftover value from a PRIOR exercise session can never leak into
     /// another mode (D-06 guardrail #6, mutual-exclusivity). `nil` otherwise. Display-only, never a
     /// dose input (C3).
-    public var exerciseTimeRemainingSec: Int? = nil
+    public var exerciseTimeRemainingSec: Int?
     /// Phase 09.15 T1-9 (D-01, D-08, iPhone/Mac-only per the UI-SPEC Assumption) — whether the
     /// pump's OWN configured Sleep-schedule (`sleepSchedules` above) has a window active RIGHT NOW,
     /// plus that window's start/end minute-of-day — pure window math over pump-communicated data
@@ -356,9 +356,9 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// before rendering the window text (mutual-exclusivity enforced at render time via
     /// `ciqActivityPreset`'s single-branch selection, not duplicated here). Display-only, never a
     /// dose input (C3).
-    public var inSleepWindow: Bool? = nil
-    public var sleepWindowStartMinute: Int? = nil
-    public var sleepWindowEndMinute: Int? = nil
+    public var inSleepWindow: Bool?
+    public var sleepWindowStartMinute: Int?
+    public var sleepWindowEndMinute: Int?
     /// Phase 09.15 T2-1 (D-05, "Candidate #4") — the two independent Control-IQ ceiling flags from
     /// op-115's `BolusCalcDataSnapshotResponse` (`maxBolusEventsExceeded@24` / `maxIobEventsExceeded@25`),
     /// dose-path-adjacent and gated as a BENCH-GATED PLACEHOLDER exactly like `CiqCeilingFlags` below
@@ -375,8 +375,8 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// been observed in a first-party capture — the Phase-11 bench blocker). Wiring the applier read is
     /// deferred to the post-bench follow-up; this stub keeps the wire-level (`RemoteCommand`) and UI
     /// (`StatusPillsView`) shapes in place and reviewed ahead of that trivial change.
-    public var ciqMaxBolusEventsExceeded: Bool? = nil
-    public var ciqMaxIobEventsExceeded: Bool? = nil
+    public var ciqMaxBolusEventsExceeded: Bool?
+    public var ciqMaxIobEventsExceeded: Bool?
     public init() {}
 
     /// Typed model identity, derived from the driver's raw detection. Mirrors the historical
@@ -1121,7 +1121,7 @@ public struct PumpProfileSegment: Sendable, Equatable, Identifiable {
 /// A bolus the user is about to confirm (modern: carbs + BG → recommended units).
 public struct BolusRecommendation: Sendable, Equatable {
     public var carbsGrams: Double = 0
-    public var bgMgdl: Int? = nil
+    public var bgMgdl: Int?
     public var recommendedUnits: Double = 0
     public var iobUnits: Double = 0
     /// False when the pump's verified bolus-calculator profile (carb ratio / ISF / target) was not
@@ -1129,7 +1129,7 @@ public struct BolusRecommendation: Sendable, Equatable {
     /// confirmation of the assumed values before delivering, and never auto-deliver (audit C-01).
     public var inputsVerified: Bool = true
     /// The assumed profile used when `inputsVerified == false`, so the UI can show and confirm it.
-    public var assumedProfile: BolusMath.Profile? = nil
+    public var assumedProfile: BolusMath.Profile?
     /// DIF-ux: TRUE when the pump has NEVER reported its bolus settings this session (op-115 never arrived),
     /// so `assumedProfile` is a HARDCODED fallback guess (CR 10 / ISF 40 / target 110), NOT the pump's real
     /// last-known values. A dose sized off that guess must NOT be deliverable via the warned "use last-known
@@ -1146,8 +1146,8 @@ public struct BolusRecommendation: Sendable, Equatable {
     /// True when the therapy params (CR/ISF/target) the dose was built from were stale at compose time.
     public var therapyStale: Bool = false
     /// Age provenance of the two calc inputs (from the snapshot at compose time), for the UI/remote wire.
-    public var iobDate: Date? = nil
-    public var therapyParamsDate: Date? = nil
+    public var iobDate: Date?
+    public var therapyParamsDate: Date?
     /// §13 Rule-1 DISPLAY gate. A recommendation is sized off a hardcoded CR/ISF/target guess whenever the
     /// pump's bolus settings were never read this session (`therapyUnavailable`); any number derived from
     /// that guess — the "Recommended dose", the carb+correction/IOB reasoning breakdown, an override-divergence
