@@ -27,8 +27,9 @@ import AlertIntelligenceKit
 /// (no modifier) before this carve.
 extension AppModel {
 
-    /// De-duped setter: only fire the accel-sensing control signal on an actual change (mirrors
-    /// `setWantHeartRate`, which stays in `AppModel.swift` — HR is a separate, unmoved feature).
+    /// De-duped setter: only fire the accel-sensing control signal on an actual change (the same
+    /// de-dupe idiom the now-removed ambient-HR relay used to use — HR was a separate feature, removed
+    /// entirely in Phase 22/NARROW-HR-22, see `dev/garmin-hr-relay`).
     private func setWantAccelSensing(_ on: Bool) {
         guard on != lastWantAccel else { return }
         lastWantAccel = on

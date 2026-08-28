@@ -223,18 +223,6 @@ public final class AppSettings {
         set { _eatingNudgesEnabled.wrappedValue = newValue }
     }
 
-    /// Phase 09.18b (D-07/D-09/D-17): background heart-rate-as-chart-context gate. **Default ON**,
-    /// independently off-able. When OFF (D-09): the phone stops the on-demand HealthKit HR query, the
-    /// phone signals the watch to stop appending HR (`hr_ctl` off), and the HR readout row is HIDDEN
-    /// ENTIRELY (not "—"). HR is chart context ONLY — never a dose/meal input. Device-local display
-    /// toggle (same device-local persisted-Bool idiom as `eatingNudgesEnabled`): deliberately NOT a
-    /// `SettingsCatalog` row and NOT in `backupSnapshot`, so the catalog drift guards stay untouched.
-    // D4-05: `@Stored`-backed.
-    private var _heartRateContextEnabled = Stored<Bool>(wrappedValue: true, "heartRateContextEnabled")
-    public var heartRateContextEnabled: Bool {
-        get { _heartRateContextEnabled.wrappedValue }
-        set { _heartRateContextEnabled.wrappedValue = newValue }
-    }
     /// User-tunable trigger config (signals/mode/thresholds/delay). Persisted as JSON.
     public var eatingTriggerConfig: EatingTriggerConfig {
         didSet { if let data = try? JSONEncoder().encode(eatingTriggerConfig) { d.set(data, forKey: "eatingTriggerConfig") } }
@@ -579,7 +567,7 @@ public final class AppSettings {
     /// `#if FABOLUS_HEALTHKIT` (unlike the AppModel import hook) — the settings MODEL stays
     /// unconditional so it compiles/tests under the default OFF build; only the FEATURE REACH (the
     /// actual HealthKit calls) is gated. Same device-local persisted-Bool idiom as
-    /// `heartRateContextEnabled`/`eatingNudgesEnabled`: deliberately NOT a `SettingsCatalog` row
+    /// `eatingNudgesEnabled`: deliberately NOT a `SettingsCatalog` row
     /// and NOT in `backupSnapshot` THIS WAVE — the UI surface these toggles gate (per-type rows in
     /// `CgmCredentialsView`, D-14) ships in a later wave, and `SettingsReachabilityGuardTests`' SC2
     /// requires every catalog row to have a literal UI reference; adding the catalog row before the
@@ -1133,7 +1121,6 @@ public final class AppSettings {
         _historyRetentionDays.store = defaults
         _historySyncEnabled.store = defaults
         _eatingNudgesEnabled.store = defaults
-        _heartRateContextEnabled.store = defaults
         _eatingLearnFromFeedback.store = defaults
         _ciqStateReadoutsEnabled.store = defaults
         _ciqLockoutCountdownEnabled.store = defaults
@@ -1217,8 +1204,6 @@ public final class AppSettings {
         // D-01: default ON — a fresh install (and any device with no stored value) auto-syncs.
         historySyncEnabled = (d.object(forKey: "historySyncEnabled") as? Bool) ?? true
         eatingNudgesEnabled = (d.object(forKey: "eatingNudgesEnabled") as? Bool) ?? false
-        // Phase 09.18b (D-09/D-17): HR chart context defaults ON, off-able.
-        heartRateContextEnabled = (d.object(forKey: "heartRateContextEnabled") as? Bool) ?? true
         eatingLearnFromFeedback = (d.object(forKey: "eatingLearnFromFeedback") as? Bool) ?? true
         // Phase 09.15 (D-07) — locked defaults: state readouts + lockout countdown ON, the rest OFF.
         ciqStateReadoutsEnabled = (d.object(forKey: "ciqStateReadoutsEnabled") as? Bool) ?? true

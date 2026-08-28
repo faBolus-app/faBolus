@@ -428,12 +428,6 @@ final class GarminRemoteBridge: NSObject {
         model.onWantAccelSensing = { [weak self] on in
             self?.sendRaw(["v": 1, "type": "eating_sense", "on": on])
         }
-        // Phase 09.18b (D-07/D-09): phone tells the watch when to read+append ambient HR to its
-        // out-of-band envelope (battery: only while the in-app HR-context toggle is on). An out-of-band
-        // control dict, NOT a RemoteCommand — carries no dose logic and never enters the signed schema.
-        model.onWantHeartRate = { [weak self] on in
-            self?.sendRaw(["v": 1, "type": "hr_ctl", "on": on])
-        }
         restoreDevice()
     }
 
@@ -863,17 +857,6 @@ extension GarminRemoteBridge: IQAppMessageDelegate, IQDeviceEventDelegate {
             Task { @MainActor in self.model?.ingestGarminIMUWindow(rawWindow: raw) }
             return
         }
-        // Phase 09.18b (D-07): ambient heart-rate rides its OWN out-of-band envelope (chart context
-        // only), routed to the display-only HR store BEFORE RemoteCommand parsing — HR NEVER enters the
-        // signed command schema (keeps HeartRateSchemaAbsenceGuardTests + check-schema-drift.sh green).
-        // Fail-safe: a malformed/oversized envelope parses to nil → the HR row simply hides (never a
-        // dose input, T-09.18b-05).
-        if dict["type"] as? String == "hr_window" {
-            if let sample = Self.newestHeartRate(in: dict) {
-                Task { @MainActor in self.model?.ingestGarminHeartRate(bpm: sample.bpm, at: sample.date) }
-            }
-            return
-        }
         guard let cmd = try? RemoteCommand.fromValidated(dict) else { return }   // audit A-07
         Task { @MainActor in self.handle(cmd) }
     }
@@ -891,30 +874,6 @@ extension GarminRemoteBridge: IQAppMessageDelegate, IQDeviceEventDelegate {
             self.readiness.characteristicsDiscovered()
             self.pump()
         }
-    }
-
-    /// Strict, fail-safe parse of the out-of-band `hr_window` envelope (T-09.18b-05). Pulls the newest
-    /// `[bpm, epoch]` pair from `samples` (mirroring the `imu_window` `data`-array idiom), or a single
-    /// `bpm`(+`ts`) fallback. Rejects non-finite / non-physiologic bpm (≤0 or ≥300) → nil, so a garbled
-    /// or spoofed envelope hides the HR row rather than surfacing a bad number. Pure/`nonisolated` so it
-    /// runs inside the nonisolated ConnectIQ callback without hopping actors; it never touches the
-    /// signed `RemoteCommand` path.
-    nonisolated static func newestHeartRate(in dict: [String: Any]) -> (bpm: Double, date: Date)? {
-        func valid(_ bpm: Double) -> Bool { bpm.isFinite && bpm > 0 && bpm < 300 }
-        if let pairs = dict["samples"] as? [[Any]] {
-            var best: (bpm: Double, epoch: Double)?
-            for pair in pairs where pair.count >= 2 {
-                guard let bpm = (pair[0] as? NSNumber)?.doubleValue,
-                      let epoch = (pair[1] as? NSNumber)?.doubleValue, valid(bpm) else { continue }
-                if best == nil || epoch > best!.epoch { best = (bpm, epoch) }
-            }
-            if let b = best { return (b.bpm, Date(timeIntervalSince1970: b.epoch)) }
-        }
-        if let bpm = (dict["bpm"] as? NSNumber)?.doubleValue, valid(bpm) {
-            let epoch = (dict["ts"] as? NSNumber)?.doubleValue
-            return (bpm, epoch.map { Date(timeIntervalSince1970: $0) } ?? Date())
-        }
-        return nil
     }
 }
 

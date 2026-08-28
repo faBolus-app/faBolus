@@ -323,9 +323,6 @@ struct AppSettingsStoredMigrationTests {
     @Test func eatingNudgesEnabledStoredRoundTrip() {
         assertBoolStoredRoundTrip(key: "eatingNudgesEnabled", backingLabel: "__eatingNudgesEnabled", defaultValue: false, \.eatingNudgesEnabled)
     }
-    @Test func heartRateContextEnabledStoredRoundTrip() {
-        assertBoolStoredRoundTrip(key: "heartRateContextEnabled", backingLabel: "__heartRateContextEnabled", defaultValue: true, \.heartRateContextEnabled)
-    }
     @Test func eatingLearnFromFeedbackStoredRoundTrip() {
         assertBoolStoredRoundTrip(key: "eatingLearnFromFeedback", backingLabel: "__eatingLearnFromFeedback", defaultValue: true, \.eatingLearnFromFeedback)
     }
