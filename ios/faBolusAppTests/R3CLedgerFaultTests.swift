@@ -3,20 +3,8 @@ import Foundation
 @testable import faBolus
 import faBolusCore
 
-/// Round-3 §5 — the DELIBERATE-FAILURE half of the durable-idempotency matrix.
-///
-/// The happy-path restart / reconcile / corrupt-file cases already live in `AppModelBehaviorTests`
-/// (durableLedgerBlocksDuplicateAcrossRelaunch, exactlyOneInitiateAcrossRestart,
-/// corruptLedgerFailsClosedThenManualClearRecovers, …). What was missing — and what commit 8c34223
-/// explicitly left open — is fault injection: a durable store that FAILS at a chosen transition. That
-/// needs a store test double, which is why `AppModel` now takes an injectable
-/// `RemoteBolusLedgerPersisting`. These pin the invariant that a persistence failure NEVER lets a dose
-/// slip past the durable point and NEVER releases the global block on an unsaved outcome.
-///
-/// Save-call ordering for one successful unit delivery (so `failSaveOnCall` targets the right point):
-///   #1 markDelivering (the durable point, before any pump write)
-///   #2 markSent        (commitInFlightBolusId — pump granted permission + assigned id, before initiate)
-///   #3 terminal        (settle delivered/failed)
+/// Pins that a durable-ledger save failure never lets a dose reach the pump and never releases the
+/// global block on an unsaved outcome. `failSaveOnCall` targets markDelivering (before any pump write), markSent (id commit), then terminal settle.
 @Suite(.serialized)
 @MainActor
 struct R3CLedgerFaultTests {
@@ -95,8 +83,8 @@ struct R3CLedgerFaultTests {
         }
     }
 
-    // #3 — the dose completed at the pump but the TERMINAL save fails: §5.6 says the global block must
-    // STAY until a clean save lands. Releasing it on an unsaved terminal is exactly the FB-02 hazard.
+    // #3 — the dose completed at the pump but the TERMINAL save fails: the global block must stay
+    // until a clean save lands. Releasing it on an unsaved terminal would allow a duplicate dose.
     @Test func terminalSaveFailureRetainsGlobalBlock() async {
         await withCleanSettings {
             let store = FakeLedgerStore(); store.failSaveOnCall = 3   // the settle-delivered save throws
@@ -108,8 +96,7 @@ struct R3CLedgerFaultTests {
         }
     }
 
-    // #4 — §5.8: no durable storage location at all ⇒ delivery is blocked from the start, never tracked
-    // in a store that can vanish.
+    // #4 — no durable storage location at all: delivery is blocked from the start, never tracked in a store that can vanish.
     @Test func noDurableStoreBlocksDelivery() async {
         await withCleanSettings {
             let store = FakeLedgerStore()

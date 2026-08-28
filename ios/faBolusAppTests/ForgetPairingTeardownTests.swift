@@ -4,25 +4,17 @@ import faBolusCore
 import TandemBLE
 @testable import faBolus
 
-/// CR-03 (R2-06), commit e49441f — `TandemBackend.forgetPairing()` now does an ATOMIC teardown BEFORE it
-/// clears durable creds. The old body cleared the stores only, leaving the live transport + poll timers +
-/// pairing coordinator running, so the recovery action's own re-pair scan (`SettingsView` "Forget pairing"
-/// → `PairingSheet` → `connect()` → `startScan()`) began against a STILL-connected peripheral — a
-/// connected pump is not a dependable discovery target, so the fix-it action could wedge the very link it
-/// means to repair (Codex RA-01). The new body: `disconnect()` → `coordinator = nil` →
-/// `linkDroppedCleanup()` → `snapshot.connection = .disconnected` + `onChange?()`, THEN the existing cred
-/// clears. These two tests pin the two guarantees that buys: (1) the link is fully, atomically down before
-/// any cred is touched, and (2) a late AUTHORIZATION frame can no longer advance the torn-down handshake.
+/// forgetPairing() must tear the live link down before clearing creds, so a re-pair scan never starts
+/// against a still-connected peripheral, and a late AUTHORIZATION frame cannot advance the dead handshake.
 @Suite(.serialized) @MainActor
 struct ForgetPairingTeardownTests {
     // `init(testTransport:)` seeds a non-empty `authenticationKey` ([0x01]) → `isPaired == true` at start,
     // so the post-teardown `isPairedForTesting == false` assertion below is non-vacuous.
     private func backend() -> TandemBackend { TandemBackend(testTransport: FakePumpTransport()) }
 
-    /// The core CR-03 guarantee: on the exact state a "Forget pairing" tap can land on — a fully
-    /// connected, actively polling, mid-handshake session — `forgetPairing()` tears the whole link down
-    /// (poll timer invalidated, connection `.disconnected`, link down, auth key cleared, pairing
-    /// coordinator gone) so the subsequent re-pair scan never runs against a still-connected peripheral.
+    /// The core guarantee: on a fully connected, actively polling, mid-handshake session,
+    /// `forgetPairing()` tears the whole link down so the subsequent re-pair scan never runs against a
+    /// still-connected peripheral.
     @Test func forgetPairingTearsTheLinkDownAtomicallyBeforeClearingCreds() {
         let b = backend()
         // A live, connected + polling + mid-handshake session.
@@ -47,9 +39,8 @@ struct ForgetPairingTeardownTests {
                 "the pairing coordinator must be torn down, not left live against the cleared creds")
     }
 
-    /// The second CR-03 guarantee: once `forgetPairing()` has set `coordinator = nil`, a late/queued
-    /// AUTHORIZATION frame — the pump's would-be-next reply in the V1 handshake — cannot advance the dead
-    /// handshake into a further pairing send.
+    /// Once `forgetPairing()` has set `coordinator = nil`, a late/queued AUTHORIZATION frame cannot
+    /// advance the dead handshake into a further pairing send.
     @Test func aLateAuthorizationFrameCannotAdvanceTheTornDownCoordinator() {
         let b = backend()
         b.setConnectionForTesting(.connected)
@@ -79,9 +70,8 @@ struct ForgetPairingTeardownTests {
                 "a dead coordinator must not emit a further pairing send — the stale handshake cannot advance")
     }
 
-    /// WR-02 (REMED-15.5): `forgetPairing()` must clear `TrustedPumpIdentityStore` alongside the sibling
-    /// durable stores — a forgotten pump must leave NO stale trusted record. Composes with CR-01: the empty
-    /// trust store forces a fresh authoritative scan on the next re-pair.
+    /// `forgetPairing()` must clear `TrustedPumpIdentityStore` alongside the sibling durable stores —
+    /// a forgotten pump must leave no stale trusted record.
     @Test func forgetPairingClearsTheTrustedIdentityStore() {
         // Hermetic isolation: these stores are process-global UserDefaults.
         TrustedPumpIdentityStore.clear(); PumpPeripheralStore.clear()

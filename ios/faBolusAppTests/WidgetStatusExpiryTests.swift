@@ -2,17 +2,8 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// CX-F-09 (Phase 14, 14-05): `WidgetBolusStore.status()` used to collapse a stuck `.delivering` status
-/// older than 90 s to `.idle` — erasing the request identity/units and re-presenting the 1-2-3 pad as if
-/// nothing had happened, inviting a fresh (possibly duplicate) re-bolus while the ORIGINAL dose's outcome
-/// was still genuinely unknown (the host process was killed before `WidgetBolusReceiver` could finalize it
-/// with `.delivered`/`.cancelled`/`.failed`). This suite pins the fix: an unconsumed, stale `.delivering`
-/// now surfaces an explicit `.expired` phase that preserves `requestId`/`units` and is never presented as an
-/// automatically-safe retry, while a fresh `.delivering` and the existing terminal-phase revert-to-idle
-/// behavior (delivered/cancelled/failed) are unaffected.
-///
-/// `.serialized` + own-keys-only cleanup, mirroring `WidgetBolusStoreGuardTests` (shared App-Group
-/// `UserDefaults(suiteName:)`, never `removePersistentDomain`).
+/// Pins that a stuck `.delivering` widget status older than the TTL surfaces `.expired` with request
+/// identity preserved, not `.idle`. Collapsing to idle would re-present the 1-2-3 pad as a safe retry while the original dose outcome is still unknown.
 @Suite(.serialized)
 struct WidgetStatusExpiryTests {
 

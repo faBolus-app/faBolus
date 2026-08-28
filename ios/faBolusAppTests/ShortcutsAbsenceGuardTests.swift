@@ -2,8 +2,9 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// Pins that `ios/faBolus/Intents/` is absent and that no file under `ios/faBolus` conforms to
-/// `AppShortcutsProvider`. Does not scan `Shared/WidgetBolusIntents.swift`.
+/// Pins that `ios/faBolus/Intents/` stays gone and no file under `ios/faBolus` conforms to
+/// `AppShortcutsProvider`, so Siri/App Intents cannot return as a dose path. Does not scan
+/// `Shared/WidgetBolusIntents.swift`.
 struct ShortcutsAbsenceGuardTests {
 
     /// Resolve the repo root by walking up from this file's own `#filePath`

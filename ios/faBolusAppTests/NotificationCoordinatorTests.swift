@@ -4,16 +4,8 @@ import faBolusCore
 import UserNotifications
 @testable import faBolus
 
-/// P9 step 3 — the app-side broker owner. Pins that the coordinator's runtime + the single poster:
-///  (1) never drop a safety category no matter how hostile the config,
-///  (2) suppress a disabled governed category,
-///  (3) persist the daily counters across a runtime restart (App-Group-backed, so a sibling process sees them),
-///  (4) honor one-per-episode and re-enable it once an alert clears (`forgetEpisode`), and
-///  (5) build each request with the message's OWN `dedupeKey` as the identifier — so two distinct
-///     remote-bolus rejections get two distinct notifications (the old fixed id collapsed them onto one).
-///
-/// An isolated `UserDefaults` suite + an injected `add` closure keep this off the real notification
-/// center and out of shared state.
+/// Pins that safety notification categories still post under a hostile config, that governed
+/// categories honor disable/quiet/snooze, and that each message uses its own dedupeKey. A shared id would collapse distinct remote-bolus rejections onto one banner.
 @MainActor
 @Suite(.serialized) struct NotificationCoordinatorTests {
     typealias B = NotificationBroker
@@ -48,10 +40,7 @@ import UserNotifications
             }
             #expect(d.deliver, "\(c.rawValue) must always post")
         }
-        // tslim-reconnect-loop Phase B (item 5): `pumpConnectionUnstable` is a fourth never-suppressible
-        // category (the non-muteable flap alert) — it posts under the hostile config too.
-        // MD-01 (Phase 13 review fix): `urgentLowGlucose` is a fifth never-suppressible category — the
-        // app-owned urgent-low backstop, decoupled from `.cgmDataLoss` — so it posts under the hostile config too.
+        // `pumpConnectionUnstable` and `urgentLowGlucose` are never-suppressible too — they post under the hostile config.
         #expect(Set(posted) == ["pumpDisconnect", "bolusReconciliation", "cgmDataLoss", "pumpConnectionUnstable", "urgentLowGlucose"])
         // A governed category under the SAME hostile config does not post (proves the config is hostile).
         let g = NotificationPoster.post(msg(.pumpAlert), runtime: rt, now: at(3, 0)) { posted.append($0.identifier) }
@@ -82,7 +71,7 @@ import UserNotifications
     }
 
     @Test func breakThroughOffPersistsAndIsHonoredByThePosterAcrossARuntimeRestart() {
-        // End-to-end tracer: model -> persistence -> decide, proven through the real poster (D-04).
+        // End-to-end: model -> persistence -> decide, proven through the real poster.
         let store = isolatedStore(#function)
         let rt1 = NotificationRuntime(store: store)
         var cfg = rt1.settings[.pumpAlert] ?? .defaults(for: .pumpAlert)
@@ -146,9 +135,7 @@ import UserNotifications
         #expect(rt2.telemetry["pumpAlert"]?.delivered == 1)
     }
 
-    /// S7: an escalation step posts with a `UNTimeIntervalNotificationTrigger` at its elapsed time (so the
-    /// OS delivers it while the app is suspended), while a default (nil-trigger) post is still immediate —
-    /// proving the new optional trigger threads through the sole poster without changing existing callers.
+    /// An escalation step posts with a delayed trigger so the OS can deliver it while the app is suspended.
     @Test func posterThreadsAScheduledTriggerButDefaultsToImmediate() {
         let rt = NotificationRuntime(store: isolatedStore(#function))
         let step = DisconnectEscalation.steps.first!
@@ -169,17 +156,8 @@ import UserNotifications
         #expect(immediate.first?.trigger == nil)
     }
 
-    /// B6: the OS Critical Alert level is applied ONLY to the never-suppressible safety categories, and
-    /// ONLY when the caller allows it (entitlement granted + user opted in). A governed category never gets
-    /// it, and a safety category degrades gracefully to the normal level when not allowed. D-06: also
-    /// asserts `.sound` alongside `.interruptionLevel` — the `.defaultCritical`/`.default` half of SC1/SC2
-    /// that no test previously covered.
-    ///
-    /// CR-01: while the Critical-Alerts entitlement is pending, the "not allowed" degrade path for the
-    /// safety trio must still break through Focus/DND, or the shipped "time-sensitive delivery" copy in
-    /// AlertRulesView is a lie. So the degrade target is `.timeSensitive` (breaks through Focus), NOT
-    /// `.active` (silenced by Focus) — scoped to `neverSuppressible` categories only; a governed category
-    /// under the same "not allowed" conditions must stay at the untouched default.
+    /// The OS Critical Alert level applies only to never-suppressible safety categories, and only when
+    /// allowed. When not allowed, safety degrades to `.timeSensitive` (breaks through Focus), not `.active`.
     @Test func criticalLevelOnlyForSafetyAndOnlyWhenAllowed() {
         let rt = NotificationRuntime(store: isolatedStore(#function))
         var reqs: [UNNotificationRequest] = []
@@ -187,9 +165,7 @@ import UserNotifications
         NotificationPoster.post(msg(.pumpDisconnect, key: "s1"), runtime: rt, allowCritical: true, now: at(9, 0)) { reqs.append($0) }
         #expect(reqs.first?.content.interruptionLevel == .critical)
         #expect(reqs.first?.content.sound == .defaultCritical)
-        // Safety category but NOT allowed (entitlement absent / opt-out off) → degrades to .timeSensitive,
-        // which still breaks through Focus/DND (unlike .active) — CR-01. Sound stays .default: the special
-        // critical sound is reserved for the fully-granted .critical path above.
+        // Safety category but NOT allowed → degrades to .timeSensitive, which still breaks through Focus/DND.
         reqs.removeAll()
         NotificationPoster.post(msg(.cgmDataLoss, key: "s2"), runtime: rt, allowCritical: false, now: at(9, 0)) { reqs.append($0) }
         #expect(reqs.first?.content.interruptionLevel == .timeSensitive)
@@ -199,20 +175,15 @@ import UserNotifications
         NotificationPoster.post(msg(.pumpAlert, key: "g1"), runtime: rt, allowCritical: true, now: at(9, 0)) { reqs.append($0) }
         #expect(reqs.first?.content.interruptionLevel == .active)
         #expect(reqs.first?.content.sound == .default)
-        // CR-01 scope check: a governed category with allowCritical:false (today's default caller shape)
-        // stays at the plain default — it must NOT pick up .timeSensitive just because it shares the
-        // "not allowed" branch with the safety trio above.
+        // A governed category with allowCritical:false stays at the plain default — it must not pick up .timeSensitive.
         reqs.removeAll()
         NotificationPoster.post(msg(.pumpAlert, key: "g2"), runtime: rt, allowCritical: false, now: at(9, 0)) { reqs.append($0) }
         #expect(reqs.first?.content.interruptionLevel == .active)
         #expect(reqs.first?.content.sound == .default)
     }
 
-    /// CC-12/CX-F-08 (T-13-15): a pump ALARM (`.critical` severity) surfaced as the GOVERNED `.pumpAlert`
-    /// category must break through Focus/DND exactly like the never-suppressible trio — decoupled from
-    /// `category.neverSuppressible`, via `NotificationBroker.requiresBreakthrough`. A protected-safetyClass
-    /// message (CX-F-08's "urgent fixed-low") gets the same treatment via the TYPED `safetyClass` field,
-    /// even at plain `.warning` severity — never via `userInfo`.
+    /// A pump ALARM (`.critical` on governed `.pumpAlert`) and a protected `safetyClass` must break through
+    /// Focus/DND like the never-suppressible trio — via `requiresBreakthrough`, never via `userInfo`.
     @Test func pumpAlarmAndProtectedSafetyClassBreakThroughLikeTheSafetyTrio() {
         let rt = NotificationRuntime(store: isolatedStore(#function))
         var reqs: [UNNotificationRequest] = []
@@ -232,8 +203,7 @@ import UserNotifications
         #expect(reqs.first?.content.interruptionLevel == .active)
     }
 
-    /// B6: the pump-alarm opt-out suppresses ONLY a pump ALARM the user opted out of — never a lower-
-    /// priority pump ALERT, and never when the opt-out is off.
+    /// The pump-alarm opt-out suppresses only a pump ALARM the user opted out of — never a lower-priority ALERT.
     @Test func mirroredAlarmOptOutSuppressesOnlyAlarmsAndOnlyWhenOptedOut() {
         #expect(NotificationCoordinator.suppressesMirroredAlarm(kind: .alarm, optedOut: true))
         #expect(!NotificationCoordinator.suppressesMirroredAlarm(kind: .alarm, optedOut: false))
@@ -241,10 +211,7 @@ import UserNotifications
         #expect(!NotificationCoordinator.suppressesMirroredAlarm(kind: .cgmAlert, optedOut: true))
     }
 
-    /// D-03/D-04: the honest "pending Apple approval" status shows ONLY when the user opted in
-    /// (`criticalAlertsEnabled == true`) AND the OS grant is not active — the four-case truth table.
-    /// 08.1-02 (D-07): `shouldShowHonestStatus` relocated from `AlertRulesView` to
-    /// `NotificationSettingsView` along with the toggle it gates — this pin follows the move.
+    /// The honest "pending Apple approval" status shows only when the user opted in and the OS grant is not active.
     @Test func honestStatusShownOnlyWhenEnabledAndNotGranted() {
         #expect(NotificationSettingsView.shouldShowHonestStatus(enabled: true, grantActive: false) == true)
         #expect(NotificationSettingsView.shouldShowHonestStatus(enabled: true, grantActive: true) == false)
@@ -252,10 +219,7 @@ import UserNotifications
         #expect(NotificationSettingsView.shouldShowHonestStatus(enabled: false, grantActive: true) == false)
     }
 
-    /// 09.25-01 Task 1 (tracer, D-03/D-06/D-08/D-09): the safety trio becomes user-disableable behind an
-    /// acknowledged-disable flag. This is the end-to-end slice: write the disable through
-    /// `NotificationRuntime.updateSettings` on an isolated store, then prove a FRESH runtime + the real
-    /// `NotificationPoster` honors it — while an untouched trio category still delivers.
+    /// The safety trio is user-disableable only behind an acknowledged-disable flag, honored by a fresh runtime + the real poster.
     @Test func acknowledgedSafetyDisablePersistsAndIsHonoredByAFreshRuntimeAndTheRealPoster() {
         let store = isolatedStore(#function)
         let rt1 = NotificationRuntime(store: store)
@@ -289,9 +253,7 @@ import UserNotifications
         #expect(!acked.deliver && acked.reason == .categoryDisabled)
     }
 
-    /// 09.25-02 Task 1 (D-01/D-02): pure caption helper pins the exact UI-SPEC copy for the
-    /// break-through row's three effective-state branches — the direct fix for the D-01 override
-    /// ambiguity (a disabled category's break-through row must read as moot, not silently ignored).
+    /// A disabled category's break-through row must read as moot, not silently ignored.
     @Test func breakThroughCaptionCoversAllThreeEffectiveStateBranches() {
         #expect(NotificationSettingsView.breakThroughCaption(enabled: true, allow: true)
                 == "On — this category's urgent/critical alerts always break through quiet hours and limits.")
@@ -304,17 +266,14 @@ import UserNotifications
                 == "Off — category is disabled, so break-through has no effect.")
     }
 
-    /// 09.25-02 Task 1 (D-06): the silence-pump-alarms row's effective-state caption is non-nil ONLY
-    /// when the pump section's master is off (the row has no effect while `pumpAlert` is disabled).
+    /// The silence-pump-alarms caption is non-nil only when the pump section's master is off.
     @Test func silenceMirrorCaptionOnlyWhenPumpDisabled() {
         #expect(NotificationSettingsView.silenceMirrorCaption(pumpEnabled: false)
                 == "No effect — pump alerts are disabled.")
         #expect(NotificationSettingsView.silenceMirrorCaption(pumpEnabled: true) == nil)
     }
 
-    /// 09.25-02 Task 2 (D-02c): resolves `NotificationSettingsView.swift` by walking up from
-    /// `#filePath`, mirroring `SettingsReachabilityGuardTests.viewsDirURL()` — same technique, scoped to
-    /// one file rather than a whole directory.
+    /// Resolves `NotificationSettingsView.swift` by walking up from `#filePath`.
     private static func notificationSettingsViewFileURL() -> URL? {
         let fm = FileManager.default
         var probe = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
@@ -326,13 +285,8 @@ import UserNotifications
         return nil
     }
 
-    /// 09.25-02 Task 2 (D-02c/T-09.25-06): the Interruption Strength section (relabel of "Critical
-    /// Alerts") must gate NOTHING else on screen — no `.disabled(...)` call anywhere in the view may
-    /// read `criticalAlertsEnabled`. Scans every `.disabled(` occurrence's balanced-parenthesis argument
-    /// for the flag token; the plain toggle binding (`$settings.criticalAlertsEnabled`) and
-    /// `shouldShowHonestStatus(...)` references are allowed since neither is a `.disabled(...)` call.
-    /// Fails loudly (non-vacuously) if the file can't be resolved/read or if greying has regressed to
-    /// zero `.disabled(` sites.
+    /// The Interruption Strength section must gate nothing else on screen — no `.disabled(...)` may
+    /// read `criticalAlertsEnabled`. The toggle binding and `shouldShowHonestStatus` are not `.disabled` calls.
     @Test func interruptionStrengthSectionGatesNoOtherRow() throws {
         guard let url = Self.notificationSettingsViewFileURL(),
               let source = try? String(contentsOf: url, encoding: .utf8) else {
@@ -380,13 +334,9 @@ import UserNotifications
         #expect(ids == ["remoteBolusRejected-1", "remoteBolusRejected-2"])   // old fixed id collapsed both
     }
 
-    // MARK: - 09.25 REVIEW-FIX (WR-01 / WR-02 / IN-01)
+    // MARK: - Safety-trio toggle cancel/snap-back and trioIsSuppressed AND-gate
 
-    /// IN-01: pins the safety-trio toggle's Cancel/snap-back contract at its ACTUAL call-site wiring
-    /// (`safetyEnabledBinding`, via the extracted `safetyTrioToggleBinding` factory) rather than only the
-    /// generic `guardedToggle` contract `GuardedToggleTests` already covers — turning the toggle OFF must
-    /// request confirm and must NOT write `enabled` until the confirm button fires; if Cancel is chosen
-    /// (never calls `setEnabled`), a re-read must show the toggle back ON with nothing written.
+    /// Turning a safety-trio toggle OFF must request confirm and must not write `enabled` until confirm fires.
     @Test func safetyTrioToggleCancelSnapsBackWithoutWritingEnabled() {
         var backing = true   // currently ON (protection active)
         var setCalls: [Bool] = []
@@ -405,8 +355,7 @@ import UserNotifications
         #expect(backing == true, "Cancel must never have written the backing value")
     }
 
-    /// IN-01 / WR-01 companion: confirming (not cancelling) DOES write through `setEnabled`, so the
-    /// snap-back test above isn't vacuously passing because writes are broken entirely.
+    /// Confirming (not cancelling) does write through `setEnabled`, so the snap-back test isn't vacuously passing.
     @Test func safetyTrioToggleConfirmWritesThroughSetEnabled() {
         var backing = true
         var setCalls: [Bool] = []
@@ -420,15 +369,12 @@ import UserNotifications
         #expect(setCalls == [false])
     }
 
-    /// WR-02: `trioIsSuppressed` must mirror `NotificationBroker.decide()`'s exact AND-gate — `enabled ==
-    /// false` alone (no acknowledgment) must NEVER read as suppressed, matching
-    /// `decideRequiresBothEnabledFalseAndAcknowledgedTrueToSuppressATrioCategory` above one-for-one so the
-    /// UI caption/toggle can never diverge from what `decide()` actually delivers.
+    /// `trioIsSuppressed` must match `decide()`'s AND-gate so the UI can never diverge from what actually delivers.
     @Test func trioIsSuppressedMirrorsDecidesExactAndGate() {
         typealias B = NotificationBroker
         #expect(!NotificationSettingsView.trioIsSuppressed(cfg: nil))
         #expect(!NotificationSettingsView.trioIsSuppressed(cfg: B.CategorySettings(enabled: true)))
-        // enabled == false, ack unset (nil) → NOT suppressed (the exact WR-02 failure shape).
+        // enabled == false, ack unset (nil) → NOT suppressed.
         #expect(!NotificationSettingsView.trioIsSuppressed(cfg: B.CategorySettings(enabled: false)))
         // enabled == false, ack explicitly false → still NOT suppressed.
         var ackedFalse = B.CategorySettings(enabled: false)
@@ -444,12 +390,7 @@ import UserNotifications
         #expect(!NotificationSettingsView.trioIsSuppressed(cfg: enabledButAcked))
     }
 
-    /// WR-01 regression: `NotificationCoordinator.identifiers(for:in:)` is the matching contract
-    /// `withdrawAll(for:)` uses to find every OS-outstanding request for a category — pins that it
-    /// filters by the `brokerCategory` userInfo stamp (`NotificationPoster.post`) rather than a static
-    /// dedupe-key list, so it also matches `.bolusReconciliation`'s per-attempt DYNAMIC keys
-    /// (`reconcile-<peerId>-<requestId>`, which have no fixed list to enumerate ahead of time) and never
-    /// cross-matches an unrelated category.
+    /// `withdrawAll` matches by the `brokerCategory` stamp, so it also finds `.bolusReconciliation`'s per-attempt dynamic keys.
     @Test func withdrawAllMatchesOnlyRequestsStampedWithTheGivenCategory() {
         func request(_ id: String, category: NotificationBroker.Category) -> UNNotificationRequest {
             let content = UNMutableNotificationContent()
@@ -473,19 +414,16 @@ import UserNotifications
         #expect(NotificationCoordinator.identifiers(for: .pumpAlert, in: requests) == ["some-pump-alert"])
     }
 
-    /// WR-01: a request with no `brokerCategory` userInfo at all (shouldn't happen — every poster stamps
-    /// it — but the filter must degrade safely rather than crash or over-match) never matches any category.
+    /// A request with no `brokerCategory` stamp never matches any category.
     @Test func withdrawAllNeverMatchesARequestMissingTheBrokerCategoryStamp() {
         let content = UNMutableNotificationContent()   // no userInfo set
         let bare = UNNotificationRequest(identifier: "bare", content: content, trigger: nil)
         #expect(NotificationCoordinator.identifiers(for: .pumpDisconnect, in: [bare]) == [])
     }
 
-    // MARK: - Phase 13-01 Task 2 (CX-F-03 depth, T3-01/02): SafetyAlertStore persist-then-replay
+    // MARK: - SafetyAlertStore persist-then-replay
 
-    /// Test 1 (full-content round-trip): a `SafetyAlertStore.Entry` persists the COMPLETE replay
-    /// contract — not just `{dedupeKey, issuedDate, escalationStep}` (codex HIGH) — and decodes back
-    /// identically from a FRESH store instance on the same App-Group-style `UserDefaults` suite.
+    /// A `SafetyAlertStore.Entry` persists the complete replay contract and decodes identically from a fresh store.
     @Test func safetyAlertStoreFullContentRoundTrips() {
         let defaults = isolatedStore(#function)
         let store1 = SafetyAlertStore(store: defaults)
@@ -501,11 +439,7 @@ import UserNotifications
                 "the full replay contract must round-trip byte-for-byte, not a reduced {dedupeKey,issuedDate,escalationStep} shape")
     }
 
-    /// Test 2 (immediate vs delayed replay): the pure trigger-selection rule `replayTrigger` — an
-    /// inherently-immediate entry (`deadline == nil`, e.g. `.cgmDataLoss`/`.bolusReconciliation`, which
-    /// have no escalation step) or an OVERDUE delayed entry (`deadline <= now`) replays with `nil`
-    /// (immediate post) — NEVER a computed `UNTimeIntervalNotificationTrigger(timeInterval: 0)` (invalid).
-    /// A not-yet-due delayed entry replays with a strictly-positive interval re-derived from `deadline - now`.
+    /// Overdue or nil-deadline entries replay immediately; a not-yet-due delayed entry uses a strictly-positive interval.
     @Test func replayTriggerIsImmediateForNilOrOverdueDeadlineAndPositiveIntervalForPending() {
         let now = at(9, 0)
         #expect(NotificationCoordinator.replayTrigger(deadline: nil, now: now) == nil)
@@ -519,9 +453,7 @@ import UserNotifications
         #expect(trig?.repeats == false)
     }
 
-    /// Test 3 (atomic persist-before-post): `SafetyAlertPoster.post` must write the durable entry to
-    /// `store` BEFORE invoking the injectable `add` closure — asserted by checking, FROM INSIDE `add`,
-    /// that the entry is already present in the store (addresses codex MEDIUM).
+    /// `SafetyAlertPoster.post` must write the durable entry before invoking the OS `add` closure.
     @Test func safetyAlertPosterPersistsBeforeSubmittingTheOSRequest() {
         let defaults = isolatedStore(#function)
         let store = SafetyAlertStore(store: defaults)
@@ -540,10 +472,7 @@ import UserNotifications
         #expect(sawPersistedBeforeAdd, "the entry must already be durable by the time the OS add(_:) runs")
     }
 
-    /// Test 4 (prune on resolve, BOTH paths): `NotificationCoordinator.withdraw(_:)` AND
-    /// `withdrawAll(for:)` must EACH prune their matching durable `SafetyAlertStore` entries — a
-    /// category-wide withdrawal that leaves a durable entry behind would replay it after the condition
-    /// resolved (addresses codex MEDIUM).
+    /// `withdraw` and `withdrawAll` must each prune matching durable entries — a leftover would replay after the condition resolved.
     @Test func withdrawAndWithdrawAllBothPruneTheDurableSafetyStore() {
         let defaults = isolatedStore(#function)
         let store = SafetyAlertStore(store: defaults)
@@ -568,12 +497,7 @@ import UserNotifications
         #expect(store.entries["reconcile-watch-r1"] == nil, "withdrawAll(for:) must prune the durable entry")
     }
 
-    /// MD-02 (Phase 13 review fix): `SafetyAlertPoster.post` persists BEFORE the broker decides (the
-    /// T3-01 persist-before-post guarantee). If the user has disabled + acknowledged a trio category, the
-    /// entry is durably stored yet never delivered — and, absent a condition-resolve/toggle, would
-    /// re-load/re-evaluate/re-suppress on every launch forever. Replay must opportunistically prune any
-    /// entry whose replay decision comes back `.categoryDisabled`, while leaving entries that still deliver
-    /// untouched. (Option (b): touches only the replay path, never the persist-before-post ordering.)
+    /// Replay must prune an entry whose decision is `.categoryDisabled`, or a disabled trio would re-suppress forever.
     @Test func replayPrunesEntriesTheBrokerSuppressesAsCategoryDisabled() {
         let defaults = isolatedStore(#function)
         // The user has explicitly disabled + acknowledged the `.cgmDataLoss` safety category.
@@ -602,7 +526,7 @@ import UserNotifications
         _ = coordinator
     }
 
-    // MARK: - C2-01: the generic boolean-condition edge-detector
+    // MARK: - Generic boolean-condition edge-detector
 
     @Test func safetyEdgeGenericEdgeRaisesOnceOnFalseToTrueAndClearsOnceOnTrueToFalse() {
         #expect(SafetyEdge.edge(wasActive: false, isActive: true) == .raise)
@@ -611,7 +535,7 @@ import UserNotifications
         #expect(SafetyEdge.edge(wasActive: true, isActive: true) == .none, "a steady active condition must not re-fire")
     }
 
-    // MARK: - CX-F-02: the pre-armed staleness-watchdog arm/cancel decision
+    // MARK: - Pre-armed staleness-watchdog arm/cancel decision
 
     @Test func stalenessWatchdogEdgeArmsOnAnAdvancedFreshReadingAndDoesNotReArmOnTheSameOne() {
         let d1 = at(9, 0)

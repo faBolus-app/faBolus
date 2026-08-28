@@ -1,15 +1,8 @@
 import Testing
 @testable import faBolusCore
 
-/// D-02 (Phase 09.15-03, T1-7 dropped): verifies the EXISTING pump-alert mirror surfaces Control-IQ
-/// High Alert (#50) and Control-IQ Low Alert (#51) cleanly — no new faBolus advisory is added.
-///
-/// **Architecture note:** `PumpAlertKind` (`Models.swift`) is a coarse SEVERITY bucket
-/// (reminder/alert/alarm/cgmAlert), not a per-alert identity enum — both Control-IQ High and Low decode
-/// as `.alert`. The distinguishing identity is the pump's own bitmap `id` (50 vs 51) plus `title`/
-/// `detail`, which is what this suite actually asserts. See `09.15-03-SUMMARY.md`'s "D-02 outcome"
-/// section for the full note on why the plan's original "two distinct `PumpAlertKind` cases" framing
-/// doesn't hold given the real type, and what was verified instead.
+/// Pins that pump-alert ids 50/51 present clean Control-IQ High/Low copy without adding a new faBolus
+/// advisory or an imperative dosing verb. Identity is the pump bitmap id, not PumpAlertKind.
 @Suite struct CiqAlertCopyTests {
 
     /// Control-IQ Low (#51)'s Tandem-sourced copy is already clean in the decode layer

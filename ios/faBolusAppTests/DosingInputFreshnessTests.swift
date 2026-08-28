@@ -5,16 +5,8 @@ import TandemMessages
 import TandemBLE
 @testable import faBolus
 
-/// DIF-core (dosing-input freshness): the fail-closed core that forces a fresh op-115 (CR/ISF/target) +
-/// op-109 (IOB) read at compose time and reconstructs the dose from those authoritative pump inputs,
-/// deletes the invented `snapshot.iobUnits += delivered`, and BLOCKS when a fresh read can't be obtained.
-/// (The warned include-last-known override is DIF-ux, a separate later PR — not exercised here.)
-///
-/// Two layers:
-///   • the REAL `TandemBackend.perform` / `recommendBolus`, behind the deterministic `FakePumpTransport`
-///     (no CoreBluetooth), for the delete + the fresh-read-fails fail-closed path, and
-///   • the REAL `AppModel` against the `MockBackend`, for the compose-vs-deliver divergence guard now
-///     catching an INPUT change (because `recommendBolus` re-reads fresh).
+/// Pins that compose-time bolus recommendation re-reads op-115 and op-109 and fails closed if those
+/// reads cannot be obtained. Invented IOB (`snapshot.iobUnits += delivered`) must not return.
 @Suite(.serialized) @MainActor
 struct DosingInputFreshnessTests {
 
@@ -35,9 +27,7 @@ struct DosingInputFreshnessTests {
         return (backend, fake)
     }
 
-    /// R3 invented-IOB delete: a full delivery reports the AUTHORITATIVE delivered amount (unchanged by the
-    /// delete), and `snapshot.iobUnits` is NOT bumped by it — IOB is only ever the pump's own value
-    /// (op-109). The old `snapshot.iobUnits += delivered` would have turned the 0 here into 2.0.
+    /// A full delivery reports the authoritative delivered amount, and `snapshot.iobUnits` is not bumped by it.
     @Test func fullDeliveryReportsAuthoritativeAndDoesNotFabricateIob() async throws {
         let (b, fake) = makeBackend()
         let initiateOp = InitiateBolusResponse.props.opCode
@@ -67,16 +57,10 @@ struct DosingInputFreshnessTests {
         #expect(b.snapshot.iobUnits == 0)      // still no fabrication
     }
 
-    /// DIF-core fail-closed: with NO fresh op-115/op-109 obtainable (the fake never answers those reads),
-    /// `recommendBolus` returns `inputsVerified == false` — so every surface (phone confirm + remotes)
-    /// BLOCKS — and reports both inputs stale. The dose it exposes for the assumed-settings confirmation is
-    /// carbs-only off the assumed CR (10 g/U) since op-115 never landed.
+    /// With no fresh op-115/op-109 obtainable, `recommendBolus` returns `inputsVerified == false` so every surface blocks.
     @Test func recommendBolusFailsClosedWhenFreshCalcInputsUnavailable() async {
         let (b, _) = makeBackend()
-        // Phase 2 (D-07/Pitfall 1): `TandemBackend(testTransport:)` now defaults `therapyParamsDate` to
-        // "just read" (so the new fail-closed delivery guard doesn't block every pre-existing delivery
-        // test). This test specifically characterizes the never-read-op-115 window, so it must explicitly
-        // recreate that window rather than relying on the init's default.
+        // `TandemBackend(testTransport:)` defaults `therapyParamsDate` to "just read" so other delivery tests aren't blocked. Recreate the never-read window here.
         b.setTherapyParamsDateForTesting(nil)
         let rec = await b.recommendBolus(carbsGrams: 30, bgMgdl: 120)
         #expect(rec.inputsVerified == false)          // BLOCKED (DIF-core interim, pre DIF-ux)
@@ -87,14 +71,8 @@ struct DosingInputFreshnessTests {
         #expect(abs(rec.recommendedUnits - 3.0) < 0.0001)   // 30 g / 10 (assumed CR), carbs-only
     }
 
-    /// DIF-core PER-ATTEMPT freshness gate (the fix for the window-vs-per-attempt gap). Seed an IN-WINDOW
-    /// cached op-115 + op-109 (routine-poll values only ~0 s old, so `isIobStale`/`isTherapyStale` are BOTH
-    /// false, and the op-115↔op-109 IOB cross-check agrees), then let the compose-time refresh TIME OUT (the
-    /// fake never answers the fire-and-forget reads, so the stamps are never re-set this attempt). A
-    /// WINDOW-based gate would build a VERIFIED dose off those in-window cached values — the exact hazard-(b)
-    /// case (a scheduled profile time-segment boundary changes CR/ISF/target with IOB unchanged, which the
-    /// cross-check cannot catch). The per-attempt gate must instead FAIL CLOSED, because neither input was
-    /// confirmed by a read DURING this compose. Pre-fix this test would see `inputsVerified == true`.
+    /// A window-based gate would verify a dose off in-window cached op-115/op-109 even when this compose's
+    /// refresh timed out — a profile time-segment change would be missed. The per-attempt gate must fail closed unless a read confirmed both inputs during this compose.
     @Test func recommendBolusFailsClosedWhenInWindowCacheIsNotConfirmedThisAttempt() async {
         let (b, _) = makeBackend()
         // Seed an in-window cache via the REAL didReceiveFrame path: matching IOB (1.4 U) so the cross-check
@@ -118,14 +96,8 @@ struct DosingInputFreshnessTests {
         #expect(abs(rec.recommendedUnits - 3.0) < 0.0001)   // 30 g / 10 g/U, carbs-only (correction dropped)
     }
 
-    /// DIF-core per-attempt proof is COALESCING-AWARE (no spurious fail-closed on overlapping composes). The
-    /// bolus screen fires `recommendBolus` on every keystroke, so a second compose routinely JOINS an
-    /// already-in-flight `refreshCalcInputsConfirmed()` read — and can start AFTER the first of the two
-    /// frames has already been received. Here op-109 lands while only the initiator exists, THEN the joiner
-    /// starts, THEN op-115 completes the read: both callers must verify, because the read they both
-    /// participated in got both frames. A wall-clock "the stamp must post-date MY composeStart" proof would
-    /// wrongly fail the joiner closed (op-109's stamp predates the joiner's start); the confirmation-return
-    /// proof does not. This is the exact false-block the adversarial review flagged.
+    /// A second compose routinely joins an in-flight refresh. A wall-clock "stamp must post-date MY composeStart"
+    /// proof would wrongly fail the joiner closed; confirmation-return does not.
     @Test func coalescedJoinerVerifiesEvenWhenItStartsAfterTheFirstFrame() async {
         let (b, _) = makeBackend()               // testTransport init leaves it `.connected`
         b.calcInputRefreshTimeout = 5            // ensure the timeout never wins the race in-test
@@ -153,7 +125,7 @@ struct DosingInputFreshnessTests {
         #expect(backend.refreshCalcInputsNowCount == 1)   // exactly one forced read per recommend
     }
 
-    // MARK: - DIF-ux override dose-math on the REAL TandemBackend (not the mock)
+    // MARK: - Override dose-math on the real TandemBackend (not the mock)
 
     /// Seed an in-window op-115 (CR 10 g/U, ISF 40, target 110) + op-109 (IOB 1.0 U) via the REAL
     /// didReceiveFrame path, so the compose-time fresh read still times out (`inputsVerified == false`) but
@@ -268,7 +240,7 @@ struct DosingInputFreshnessTests {
         }
     }
 
-    // MARK: - DIF-ux: the warned host-owner overrides relax the DIF-core block (mock profile 10/40/110)
+    // MARK: - Host-owner overrides that relax the fail-closed block (mock profile 10/40/110)
 
     /// (a) include-last-known-IOB: the override recomputes the FULL dose off the last-known values WITH the
     /// BG correction, and keeps SUBTRACTING the last-known IOB — it is NOT carbs-only, and it never zeroes

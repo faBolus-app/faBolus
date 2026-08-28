@@ -5,14 +5,8 @@ import TandemMessages
 import TandemBLE
 @testable import faBolus
 
-/// **MUST-NOT-REACH boundary (Phase 09.7-01, D-06).** Proves the gap-aware history-log sync — the
-/// coverage-map diff + paged `HistoryLogRequest` fetch that replaces the old `didBackfill` backfill — has
-/// no route to the signed dose path. Mirrors `NudgeDeliveryBoundaryTests`'s two-proof shape (runtime +
-/// static source scan): `HistoryLogStatusRequest`/`HistoryLogRequest` are `.currentStatus`-characteristic,
-/// unsigned, no `allowInsulinDelivery` override — they fail-safe-derive to `.read` risk under the
-/// connection's default `.readOnly` `WritePolicy` (RESEARCH Security Domain). This suite is the
-/// belt-and-suspenders test-level complement to that structural proof. UNGATED (not behind any build
-/// flag) so it runs on every CI build.
+/// Gap-aware history-log sync has no route to the signed dose path: it must never send bolus-permission
+/// or initiate-bolus opcodes, or elevate delivery.
 @Suite(.serialized) @MainActor
 struct HistoryLogSyncDeliveryBoundaryTests {
 
@@ -66,18 +60,8 @@ struct HistoryLogSyncDeliveryBoundaryTests {
 
     // MARK: - Static source scan (belt-and-suspenders)
 
-    /// Signature-scoped scan (never whole-file — `deliverBolus`/`InitiateBolusRequest` are legitimately
-    /// declared elsewhere in `TandemBackend.swift`) of every gap-sync function, asserting none of their
-    /// bodies reference a delivery-seam identifier. Fault-injection-verified during development:
-    /// temporarily referencing `InitiateBolusRequest` inside `requestBackfillPage` made this test fail
-    /// as expected; reverted before commit (recorded in the plan SUMMARY).
-    ///
-    /// **Retargeted (Phase 16 16-08, GO-2 Step 1, REMED-16):** the gap-sync functions moved verbatim
-    /// from `TandemBackend.swift` into `PumpHistorySyncCoordinator.swift` — this scan now reads THAT
-    /// file. `beginGapSync`/`backfillPageDone` dropped their `private` modifier (they're now called
-    /// from `TandemBackend.swift`'s wiring closures, a different file — Swift's `private` is file-
-    /// scoped) so their two signature strings below match `func` not `private func`; the other 5 are
-    /// byte-identical to the pre-move list. The 6 forbidden SYMBOLS are untouched.
+    /// Signature-scoped scan of every gap-sync function in PumpHistorySyncCoordinator.swift, asserting
+    /// none of their bodies reference a delivery-seam identifier. The forbidden symbols are untouched.
     @Test func historySyncSourceHasNoDeliverySeamSymbols() throws {
         let forbidden = ["deliverBolus(", "deliverExtendedBolus(", "InitiateBolusRequest(",
                          "BolusPermissionRequest(", ".allowDelivery", "allowInsulinDelivery: true"]
@@ -108,8 +92,8 @@ struct HistoryLogSyncDeliveryBoundaryTests {
     }
 
     /// Locate a function by its declaration-line signature prefix and return the source slice from that
-    /// line through its balanced closing brace — copied from `NudgeDeliveryBoundaryTests`'s helper so a
-    /// future line-shift in `TandemBackend.swift` cannot silently widen or narrow the scanned region.
+    /// line through its balanced closing brace — so a future line-shift cannot silently widen or narrow
+    /// the scanned region.
     private static func balancedFunctionBody(signaturePrefix: String, in source: String) throws -> String {
         let lines = source.components(separatedBy: "\n")
         guard let startIdx = lines.firstIndex(where: { $0.contains(signaturePrefix) }) else {
@@ -120,10 +104,8 @@ struct HistoryLogSyncDeliveryBoundaryTests {
         var collected: [String] = []
         for line in lines[startIdx...] {
             collected.append(line)
-            // WR-02 hardening: the char-by-char counter below trusts (unenforced) that no `{`/`}` sits
-            // inside a string literal or a `//` comment in a scanned body. Make that trust loud — a
-            // violation fails HERE (mis-scoped slice) instead of silently truncating/over-extending the
-            // forbidden-symbol scan.
+            // The char-by-char brace counter trusts that no `{`/`}` sits inside a string literal or
+            // `//` comment in a scanned body. Make that trust loud — a violation fails here.
             try Self.assertBracesAreRealCode(in: line, signaturePrefix: signaturePrefix)
             for ch in line {
                 if ch == "{" { depth += 1; opened = true }

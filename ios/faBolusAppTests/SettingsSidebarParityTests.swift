@@ -2,47 +2,8 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// **CR-01 gap closure (Phase 09.17-06).** Structural regression guard for the iPad regular-width
-/// Settings sidebar's non-`SettingsCategory` rows — the six setting-groups the code review (CR-01)
-/// found reachable on iPhone (`SettingsView.settingsList`'s Mode / Safety / Child-mode / Backup /
-/// Data / Privacy sections) but UNREACHABLE from the iPad `NavigationSplitView` sidebar, with no
-/// path even via search: the Mode selector, Read-only ("safe viewer") mode, Child mode's PIN lock,
-/// Backup & restore, Data & history, and Privacy & data.
-///
-/// This can't be a full-render visual test (WR-02 — no regular-width snapshot infrastructure exists
-/// in this repo), so it pins the two structural facts that would actually regress if a future edit
-/// dropped one of these rows or let search drift out of sync with the sidebar:
-/// 1. `SettingsSidebarItem.allExtras` (the canonical list `sidebarList`'s second section renders)
-///    contains exactly the six CR-01 groups (6 total) — not fewer.
-/// 2. `SettingsExtraIndex.entries` (the sidebar's search coverage for those rows) has NO drift from
-///    `allExtras` — every extra sidebar item is searchable, and nothing is searchable that isn't
-///    also a real sidebar row.
-///
-/// Phase 4 (04-02, D-05/NUDGE-01): the count dropped 7 → 6 and `.smartAssist` was removed from both
-/// `SettingsSidebarItem` and this assertion — the whole Smart Assist settings submenu (and its
-/// sidebar entry point) was git rm'd from narrow `main` (delete-on-main, preserved on `dev/nudge`).
-///
-/// Phase 6 (06-02, D-06/D-08, Rule 3 — minimal interim fix): the count drops 6 → 5 —
-/// `.backupRestore` is removed (the backup/restore sidebar row is gone); `.privacyData` is KEPT
-/// (D-08, routes to the trimmed erase-only view).
-///
-/// Phase 6 (06-03, BACKUP-01 — FINALIZED, Open Question 1): re-derived LIVE against the post-06-02
-/// tree per this phase's own `SettingsSidebarItem.allExtras`/`SettingsExtraIndex.entries` — 5 → 5, NO
-/// FURTHER CHANGE. This supersedes 06-02's "minimal interim fix" framing above: the count was already
-/// correct, and `CompileGateAudit.gatedOffSearchTokens` (SettingsCatalogTests.swift) now separately
-/// carries the §6c token-audit extension for this phase's removed backup/restore surface.
-///
-/// Phase 7 (07-04, FEAT-04, D-05, SAFETY): the count drops 5 → 4 — `.childMode` is removed (Child
-/// mode's PIN-lock sidebar row + `ChildModeView.swift` are deleted; `childModeEnabled` is now a
-/// permanently-frozen `false`, so there is no longer any UI for it to route to).
-///
-/// Phase 8 (08-01, LOCK-01, Rule 3 — compile-break fix outside this task's own `files_modified`): the
-/// count drops 4 → 3 — `.mode` is removed (`ModeSettingsView`/`ModeOnboardingView` are deleted;
-/// `appMode` is force-set `.advanced` in both `ModeStore.init` and `AppSettings.init`).
-///
-/// Phase 8 (08-01, LOCK-03, Rule 3 — compile-break fix outside this task's own `files_modified`): the
-/// count drops 3 → 2 — `.dataHistory` is removed (`DataHistoryView.swift` is deleted;
-/// `historyRetentionDays` is force-set to the 24h pin and actually applied via `App.swift`).
+/// Pins that iPad sidebar extras stay in lockstep with search, and that Safety (AccessPolicy /
+/// read-only) and Privacy (erase-stays-reachable) remain the only extra groups.
 @Suite struct SettingsSidebarParityTests {
 
     @Test func allExtrasCoversBothRemainingGroups() {
@@ -59,9 +20,7 @@ import Foundation
     }
 
     @Test func searchFindsReadOnlyModeBySafetyCriticalKeywords() {
-        // The remaining safety/access-control group CR-01 called out by name must be searchable —
-        // Read-only ("safe viewer") mode. (Child mode's own PIN-lock keywords were removed here in
-        // Phase 7, 07-04, FEAT-04 — see `dev/child-mode`'s REINTEGRATION.md.)
+        // AccessPolicy / read-only must stay searchable on the remaining Safety extra.
         #expect(SettingsExtraIndex.entries.contains { $0.matches("read-only") && $0.item == .safety })
         #expect(SettingsExtraIndex.entries.contains { $0.matches("safe viewer") && $0.item == .safety })
     }

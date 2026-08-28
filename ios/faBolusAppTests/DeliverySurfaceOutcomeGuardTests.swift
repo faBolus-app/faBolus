@@ -4,24 +4,8 @@ import faBolusCore
 import HistoryStore
 @testable import faBolus
 
-/// Phase 09-01, gap A5 (guards-FIRST, D-01) — characterizes each delivery surface's
-/// `DeliveryOutcome` → echo/`lastError`/return mapping (local standard `deliverBolus`/`performLocalBolus`
-/// `:1474-1513`, local extended `deliverExtendedBolus` `:1564-1594`, the widget `deliverWidgetBolus`
-/// `:2588-2631`, and the remote-resolved `executeResolved` `:2512-2550`) BEFORE Wave 2 introduces thin
-/// per-surface adapters over the extracted `DeliveryLedgerCoordinator` (D-04). Every adapter Wave 2 writes
-/// must reproduce this exact mapping — a later change that alters which string/status a surface reports
-/// for delivered/failed/blocked/indeterminate turns one of these guards RED.
-///
-/// Reuses `MockBackend` + a minimal `EchoRecorder` (mirroring `AppModelBehaviorTests`' own), and
-/// `R3CLedgerFaultTests.FakeLedgerStore` (via `forceNoDurableStore`) to drive a deterministic global
-/// BLOCKED outcome without racing a live in-flight delivery. Adds no production seam.
-///
-/// NOT covered: `deliverExtendedBolus`'s pre-flight `capabilities.supportsExtendedBolus == false` refusal
-/// — `MockBackend.capabilities` has no knob to report that (`.mobiAdvanced`/`.full` both default it true),
-/// and hand-writing a second `PumpBackend` conformer (~40 methods) just to flip one capability bit is out
-/// of proportion to a characterization-only task; the refusal message itself
-/// ("This pump doesn't support an extended bolus.", `AppModel.swift:1570`) is a one-line, easily-reviewed
-/// guard clause, unlike the outcome-mapping switches this suite exists to pin.
+/// Pins each delivery surface's `DeliveryOutcome` → echo / `lastError` / return mapping so a later
+/// extract cannot change which string a surface reports for delivered, failed, blocked, or indeterminate.
 @Suite(.serialized)
 @MainActor
 struct DeliverySurfaceOutcomeGuardTests {
@@ -55,10 +39,8 @@ struct DeliverySurfaceOutcomeGuardTests {
         return (model, backend, rec)
     }
 
-    /// Mirrors `AppModelBehaviorTests.withCleanSettings` (not `R3CLedgerFaultTests`' narrower version):
-    /// `deliverExtendedBolus` also runs through the P14 S2 app-mode gate, so `appMode` must be baselined
-    /// to `.advanced` or every extended-bolus case here fails closed on "needs Advanced mode" before ever
-    /// reaching the outcome mapping this suite exists to pin.
+    /// `deliverExtendedBolus` also runs through the app-mode gate, so `appMode` must be baselined to
+    /// `.advanced` or every extended-bolus case fails closed before reaching the outcome mapping.
     private func withCleanSettings(_ body: () async throws -> Void) async rethrows {
         let s = AppSettings.shared
         let ro = s.phoneReadOnly, child = s.childModeEnabled, mode = s.appMode
@@ -73,7 +55,7 @@ struct DeliverySurfaceOutcomeGuardTests {
         "Bolus sent but outcome is unknown — verify on the pump."
     private static let notConnectedMessage = "Not connected to a pump."
 
-    // MARK: - Local standard: deliverBolus / performLocalBolus (:1474-1513)
+    // MARK: - Local standard: deliverBolus / performLocalBolus
 
     @Test func localStandardDeliveredClearsLastErrorAndRecordsCarbs() async {
         await withCleanSettings {
@@ -172,11 +154,8 @@ struct DeliverySurfaceOutcomeGuardTests {
             let r = await model.deliverWidgetBolus(requestId: "w-indet", units: 1.0)
             #expect(r.delivered == 0)
             #expect(r.cancelled == false)
-            // REMED-17 (Plan 17-13, D3-01 owner-authorized convergence): the widget's USER-FACING returned
-            // `error` now converges onto the shared locked copy (same wording every surface uses) — the
-            // PEER-WIRE `.unknown` echo `message` (`rec.last?.message`, checked in
-            // BolusIndeterminateNotificationTests' echo-payload-unchanged assertions) stays the ORIGINAL
-            // shorter `Self.indeterminateWidgetMessage` string, byte-identical.
+            // Widget user-facing `error` uses the shared locked copy; the peer-wire `.unknown` echo
+            // `message` stays the original shorter string, byte-identical.
             #expect(r.error == Self.indeterminateLocalMessage)
             #expect(rec.last?.requestId == "w-indet")
             #expect(rec.last?.status == .unknown)
@@ -185,7 +164,7 @@ struct DeliverySurfaceOutcomeGuardTests {
         }
     }
 
-    // MARK: - Remote-resolved: executeResolved via remoteDeliver (:2512-2550)
+    // MARK: - Remote-resolved: executeResolved via remoteDeliver
 
     @Test func remoteResolvedDeliveredEchoesTheOutcomeAndClearsLastError() async {
         await withCleanSettings {
@@ -228,8 +207,8 @@ struct DeliverySurfaceOutcomeGuardTests {
         }
     }
 
-    /// `r.units <= 0` (:2513) short-circuits BEFORE the ledgered delivery even starts — echoes a
-    /// dedicated "No insulin needed" failure and never touches the pump.
+    /// `r.units <= 0` short-circuits before the ledgered delivery even starts — echoes a dedicated
+    /// "No insulin needed" failure and never touches the pump.
     @Test func remoteResolvedZeroUnitsEchoesNoInsulinNeededWithoutDelivering() async {
         await withCleanSettings {
             let (model, backend, rec) = await makeModel(connected: true)
@@ -243,12 +222,11 @@ struct DeliverySurfaceOutcomeGuardTests {
         }
     }
 
-    // MARK: - WR-02 / VA-22: lastDeliveredUnits reports the ACTUAL committed amount (AppModel.swift :1891-1926, :2000-2010)
+    // MARK: - lastDeliveredUnits reports the actual committed amount
     //
-    // The success banner must report the units the pump ACTUALLY committed (the ledger outcome's
-    // `.delivered(units:cancelled:)` payload), not the frozen requested amount. `deliverBolus`/
-    // `deliverExtendedBolus` reset `lastDeliveredUnits` to nil at the top of each delivery and set
-    // `lastDeliveredUnits`/`lastDeliveredWasCancelled` only in the `.delivered` case.
+    // The success banner must report the units the pump actually committed, not the frozen requested
+    // amount. `deliverBolus` / `deliverExtendedBolus` reset `lastDeliveredUnits` to nil at the top of
+    // each delivery and set it only in the `.delivered` case.
 
     /// A full standard delivery (delivered == requested, not cancelled) publishes the actual committed
     /// units and a not-cancelled flag.
@@ -279,10 +257,8 @@ struct DeliverySurfaceOutcomeGuardTests {
         #expect(model.lastDeliveredWasCancelled == false)
     }
 
-    /// Reset semantics — `lastDeliveredUnits` is cleared at the TOP of each delivery (:1918/:2000), so a
-    /// prior delivery's amount can never survive into a delivery that doesn't reach `.delivered`. A full
-    /// delivery publishes 2.0 U; a following indeterminate delivery (which never republishes) must clear it
-    /// back to nil rather than leave the stale 2.0.
+    /// Reset semantics — `lastDeliveredUnits` is cleared at the top of each delivery, so a prior
+    /// delivery's amount can never survive into a delivery that doesn't reach `.delivered`.
     @Test func lastDeliveredUnitsIsClearedAtTheStartOfEachDelivery() async {
         await withCleanSettings {
             let (model, backend, _) = await makeModel(connected: true)
@@ -296,12 +272,9 @@ struct DeliverySurfaceOutcomeGuardTests {
         }
     }
 
-    // The CORE case WR-02/VA-22 fixes — a mid-flight cancel/partial where the pump commits LESS than
-    // requested. `DeliveryLedgerCoordinator.runLedgeredDelivery` builds `.delivered(units:cancelled:)` from
-    // `delivered = try await deliver()` and `cancelled = source.lastBolusCancelled`. Driven via MockBackend's
-    // one-shot `forceNextDeliveryPartial` seam (added with this test). The load-bearing assertion:
-    // `lastDeliveredUnits` is the ACTUAL committed amount, NOT the frozen requested amount the pre-fix banner
-    // reported — the full-delivery tests above can't prove this because there delivered == requested.
+    // Mid-flight cancel/partial: the pump commits less than requested. `lastDeliveredUnits` must be
+    // the actual committed amount, not the frozen requested amount — the full-delivery tests above
+    // cannot prove this because there delivered == requested.
 
     /// Standard delivery cut short: requested 2.0 U, pump commits only 0.5 U and reports cancelled. The
     /// banner state must publish 0.5 U (actual) and cancelled == true, never the requested 2.0 U.

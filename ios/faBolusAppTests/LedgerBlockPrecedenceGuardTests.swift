@@ -3,25 +3,13 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// Phase 09-01, gaps A1/A2 (guards-FIRST, D-01) — characterization pins for
-/// `AppModel.computeDeliveryBlockReason`'s 4-tier precedence
-/// (`noDurableStore > ledgerFailedClosed > terminalSaveFailed > unresolved`, `:600-632`) and the
-/// live-in-flight vs genuinely-unresolved message split (`:625-629`), BEFORE Wave 2 extracts this
-/// state machine into `DeliveryLedgerCoordinator`. These assert full string equality against the
-/// CURRENT `AppModel` copy — a later extraction that drops/reorders a tier or edits a string turns a
-/// guard RED, exactly as intended.
-///
-/// D-09: these two independent fail-closed layers (this global ledger block, and `TandemBackend`'s own
-/// `validateDeliver` block) must both stay expressible; this suite only exercises the ledger/global one.
-///
-/// Reuses `R3CLedgerFaultTests.FakeLedgerStore` (do not fork a second fake) and `MockBackend`, observed
-/// only through the PUBLIC surface (`deliveryBlockedReason`, `lastError`, `reconcileUnresolvedDeliveries()`)
-/// — never a private getter on `computeDeliveryBlockReason` itself.
+/// Pins `computeDeliveryBlockReason` precedence: noDurableStore outranks ledger-failed-closed, which
+/// outranks terminal-save-failed, which outranks unresolved — including the live-in-flight vs genuinely-unresolved copy split. Dropping a tier would show the wrong lock message or reopen delivery.
 @Suite(.serialized)
 @MainActor
 struct LedgerBlockPrecedenceGuardTests {
 
-    // MARK: - Exact string pins (AppModel.swift:600-632) — characterization, not a new source of truth.
+    // MARK: - Exact string pins — characterization, not a new source of truth.
 
     private static let noDurableStoreMessage =
         "Delivery is locked: no durable safety store is available on this device. Delivery stays "
@@ -47,7 +35,7 @@ struct LedgerBlockPrecedenceGuardTests {
         try await body()
     }
 
-    // MARK: - Gap A1: precedence with MULTIPLE flags set at once
+    // MARK: - Precedence with multiple flags set at once
 
     /// Highest tier wins even when a lower tier (`ledgerFailedClosed`) is ALSO set: `noDurableStore` is
     /// forced via the init flag, and the injected store additionally reports a corrupt load (which sets
@@ -101,7 +89,7 @@ struct LedgerBlockPrecedenceGuardTests {
         }
     }
 
-    // MARK: - Gap A2: the live-in-flight vs genuinely-unresolved MESSAGE split
+    // MARK: - Live-in-flight vs genuinely-unresolved message split
 
     /// While a delivery is in flight, a SECOND (local) delivery attempt collides with the single
     /// unresolved entry being exactly the live one — it must see the transient "wait" message, not the

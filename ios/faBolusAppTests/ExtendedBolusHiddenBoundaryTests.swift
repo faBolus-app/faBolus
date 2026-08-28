@@ -5,14 +5,8 @@ import TandemMessages
 import TandemBLE
 @testable import faBolus
 
-/// LOCK-04 boundary test (Phase 8, 08-01). Proves `TandemBackend.deliverExtendedBolus(...)` — the
-/// extended (combo) bolus delivery path — still delivers exactly the consented units through a fake
-/// transport with ZERO UI surface present. Mirrors `StackingGuardDeliverInvariantTests`'
-/// `makeDeliveringBackend` harness. `extendedBolusEnabled` is now a force-set-false init pin, which
-/// makes `BolusEntryView.extendedBolusSection` auto-hide (it already gated on
-/// `settings.extendedBolusEnabled`) — this phase removes no `BolusEntryView` code, only the shared
-/// "Bolus screen" Settings toggle. `AppModel.deliverExtendedBolus` / `GatedPumpWrite.deliverExtendedBolus`
-/// / `TandemBackend.deliverExtendedBolus` stay byte-identical (D-01/D-03).
+/// The extended-bolus delivery path still delivers the consented units with no UI, while the Settings
+/// toggle stays force-off so the entry surface stays hidden.
 @Suite(.serialized) @MainActor
 struct ExtendedBolusHiddenBoundaryTests {
 
@@ -53,7 +47,7 @@ struct ExtendedBolusHiddenBoundaryTests {
         let suiteName = "ExtendedBolusHiddenBoundaryTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        defaults.set(true, forKey: "extendedBolusEnabled")   // simulate a pre-Phase-8 stored value
+        defaults.set(true, forKey: "extendedBolusEnabled")   // simulate a previously stored value
 
         let fresh = AppSettings(defaults: defaults)
         #expect(fresh.extendedBolusEnabled == false)

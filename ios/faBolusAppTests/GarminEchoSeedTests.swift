@@ -2,18 +2,8 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// **R2-12.** Pins `garminEchoesToSeed` — the pure, ConnectIQ-free launch-time re-seed selector that backs
-/// the bridge's durable terminal-echo outbox across a restart. Like its sibling `garminSendDisposition`
-/// (see `GarminSendOutboxTests`), it lives OUTSIDE `#if GARMIN` (next to `GarminEchoSeed` /
-/// `GarminMessageReadiness`) precisely so it compiles and is unit-testable in the default (non-GARMIN)
-/// test target, where the ConnectIQ-typed bridge is not.
-///
-/// LOAD-BEARING INVARIANT: on launch the bridge re-seeds one `bolusStatus` echo per durable terminal
-/// outcome that was NOT already confirmed-sent to the watch (`alreadyEchoed`). An outcome already acked
-/// must NEVER be re-echoed (the watch already received it); an outcome never acked MUST be re-seeded — the
-/// app was killed/relaunched before its echo was transport-acked, and dropping it strands the watch at
-/// "delivering…" forever (it makes the watch-side R2-02 stuck-terminal permanent). Fields map through 1:1
-/// and the ledger's ordering is preserved.
+/// Pins that launch re-seeds one bolusStatus echo per durable terminal outcome that was never watch-acked,
+/// and never re-echoes an already-acked one. Dropping an unacked outcome on relaunch strands the watch at "delivering…".
 struct GarminEchoSeedTests {
 
     private typealias Outcome = (requestId: String, status: String, message: String?, deliveredUnits: Double?)

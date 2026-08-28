@@ -3,14 +3,8 @@ import Foundation
 @testable import faBolus
 import faBolusCore
 
-/// Phase 13 Plan 09 — AppModel-level wiring pins for:
-///  - CX-F-02: `refresh()` arms/re-arms/cancels the pre-armed background staleness watchdog through
-///    `notificationStalenessSink`/`notificationStalenessCancelSink`, off the SAME `cgmFresh` signal
-///    `SafetyEdge.freshness` already uses — driven by each `refresh()` call (a BLE event/heartbeat),
-///    not the suspended 20s `arbiterTimer` alone.
-///  - C2-01: `refresh()` raises/clears the app-owned urgent-low alarm exactly once per episode, on
-///    EITHER the arbitrated failover value crossing the threshold OR the sub-40 `UrgentLowSentinel`
-///    being fresh while the pump's own feed is unavailable — and never touches the dose path.
+/// refresh() arms the background staleness watchdog off cgmFresh, and raises the urgent-low alarm once
+/// per episode without touching the dose path.
 @MainActor
 @Suite(.serialized) struct BackgroundWorkModelAndUrgentLowAlarmTests {
 
@@ -37,7 +31,7 @@ import faBolusCore
         func stop() {}
     }
 
-    // MARK: - CX-F-02: staleness-watchdog arm/re-arm/cancel wiring
+    // MARK: - Staleness-watchdog arm/re-arm/cancel wiring
 
     @Test func refreshArmsTheStalenessWatchdogOnAFreshReadingAndCancelsItOnceNoLongerFresh() {
         let savedStale = GlucoseFreshness.staleAfter
@@ -83,10 +77,10 @@ import faBolusCore
         _ = coordinator
     }
 
-    // MARK: - C2-01: the app-owned urgent-low alarm
+    // MARK: - The app-owned urgent-low alarm
 
-    /// The arbitrated-value half: a failover source's own FRESH, in-range (>= D-05's 40 floor) reading
-    /// that crosses `UrgentLowAlarm.thresholdMgdl` raises once; recovery (the pump feed returns) clears.
+    /// A failover source's own fresh, in-range reading that crosses `UrgentLowAlarm.thresholdMgdl`
+    /// raises once; recovery (the pump feed returns) clears.
     @Test func urgentLowAlarmRaisesOnTheArbitratedFailoverValueAndClearsOnRecovery() {
         let backend = MockBackend()   // seeds a STALE pump reading (10 min old) — pumpFresh == false
         let model = AppModel(source: backend, ledgerStoreURL: tempLedgerURL())
@@ -103,9 +97,8 @@ import faBolusCore
         model.publicRefresh()
         #expect(model.glucoseProvenance.isFailover, "the pump's own reading is stale — the fresh fake source must take over")
         #expect(posted.map(\.dedupeKey).contains(UrgentLowAlarm.dedupeKey))
-        // MD-01 (Phase 13 review fix): the urgent-low alarm now posts under its OWN never-suppressible
-        // category, `.urgentLowGlucose`, decoupled from `.cgmDataLoss` (disabling the "CGM data lost"
-        // banner must not silence this backstop).
+        // The urgent-low alarm posts under its own never-suppressible category, `.urgentLowGlucose`,
+        // decoupled from `.cgmDataLoss` (disabling the "CGM data lost" banner must not silence this backstop).
         #expect(posted.last(where: { $0.dedupeKey == UrgentLowAlarm.dedupeKey })?.category == .urgentLowGlucose)
 
         // A second refresh with the SAME still-active condition must not re-raise.
@@ -120,11 +113,9 @@ import faBolusCore
         _ = coordinator
     }
 
-    /// The sentinel half (C2-01 depth): a sub-40 raw reading NEVER becomes the failover source's own
-    /// `latest` (D-05), so `GlucoseArbiter.merge` reports plain `.pump` provenance even though the pump
-    /// itself has nothing fresh — the alarm must still fire off `!pumpFresh` + the fresh
-    /// `UrgentLowSentinel` directly, or this exact "pump has no reading AND the only backup signal is a
-    /// below-range LOW" case would be silently invisible.
+    /// A sub-40 raw reading never becomes the failover source's own `latest`, so merge reports `.pump`
+    /// provenance even with no fresh pump reading — the alarm must still fire off `!pumpFresh` plus the
+    /// fresh `UrgentLowSentinel`, or a below-range low with no pump reading would be invisible.
     @Test func urgentLowAlarmRaisesOnTheFreshBelowRangeSentinelEvenWithoutAFailoverProvenance() {
         let backend = MockBackend()   // seeds a STALE pump reading — pumpFresh == false
         let model = AppModel(source: backend, ledgerStoreURL: tempLedgerURL())

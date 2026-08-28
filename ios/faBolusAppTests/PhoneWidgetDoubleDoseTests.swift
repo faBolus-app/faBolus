@@ -3,15 +3,8 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// Phase 14 Plan 01 — the VA-07 family "double-dose window" tracer: closes the settled-echo-loss retry
-/// hazard (CX-G-01 phone half) plus its two symmetric supersession re-checks (CX-F-01, C3-01).
-///
-/// Two-actor regressions here simulate a settled-echo-loss retry: "actor 1" is the delivery that actually
-/// reached the pump; "actor 2" is a re-composed retry (or a second remote/widget) that sends the SAME
-/// dose content under a FRESH requestId/approval a moment later. Before this plan, `RemoteBolusLedger`
-/// only dedups by `(peer,requestId)`, so actor 2 would sail through as "new" and double-dose. These tests
-/// drive the REAL `AppModel` against the in-memory `MockBackend` (no BLE), mirroring the harness in
-/// `AppModelBehaviorTests`/`StaleRemoteDoseHostTests`.
+/// A settled-echo-loss retry that recomposes the same dose under a fresh requestId must be refused
+/// before a second pump write.
 @Suite(.serialized)
 @MainActor
 struct PhoneWidgetDoubleDoseTests {
@@ -29,7 +22,7 @@ struct PhoneWidgetDoubleDoseTests {
 
     private func makeModel(connected: Bool = false) async -> (AppModel, MockBackend, EchoRecorder) {
         let backend = MockBackend()
-        // FB-03: give each model its own durable-ledger file so the persisted ledger can't leak between
+        // Give each model its own durable-ledger file so the persisted ledger can't leak between
         // serialized tests (production shares one App Group file; tests must not).
         let ledgerURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("doubledose-ledger-\(UUID().uuidString).json")
@@ -57,10 +50,9 @@ struct PhoneWidgetDoubleDoseTests {
 
     private let tol = 0.0001
 
-    // MARK: - Task 1 (TRACER): T-14-01 / CX-G-01 (phone) — content+time dedup guard end-to-end
+    // MARK: - Content+time dedup guard end-to-end
     //
-    // `.garmin` surface (so `surface.isRemote` is true and the passcode-optional/garminBolusEnabled gate
-    // is satisfied), mirroring `AppModelBehaviorTests`'s VA-07-host block.
+    // `.garmin` surface so `surface.isRemote` is true and the garminBolusEnabled gate is satisfied.
 
     /// The defining hazard this plan closes: a settled-echo-loss retry recomposes the SAME dose under a
     /// FRESH requestId. `remoteDeliver` must refuse it BEFORE the backend — no second pump write.
@@ -82,8 +74,8 @@ struct PhoneWidgetDoubleDoseTests {
             #expect(rec.count(.delivering) == 1)
 
             // Actor 2: the SAME dose content (same units), a FRESH requestId, a `sentAt` comfortably AFTER
-            // the host-delivery stamp (isolates the content+time guard — the VA-07 compose-supersession
-            // check must NOT be what fires here).
+            // the host-delivery stamp (isolates the content+time guard — compose-supersession must NOT
+            // be what fires here).
             await model.remoteDeliver(requestId: "actor2-req", units: 1.0,
                                       sentAt: Int(Date().timeIntervalSince1970) + 5,
                                       from: .garmin, peerId: "garmin")
@@ -118,11 +110,10 @@ struct PhoneWidgetDoubleDoseTests {
         }
     }
 
-    // MARK: - Task 2: CX-F-01 — confirmRemoteBolus supersession + accessDecision re-check
+    // MARK: - confirmRemoteBolus supersession + accessDecision re-check
     //
-    // `presentRemoteBolus` freezes a pending approval at `createdAt`; `confirmRemoteBolus` is the SECOND
-    // confirm (the phone user tapping "Yes"). Before this task, it re-checked only the approval's AGE —
-    // never a completed host delivery in the interim, nor whether access has since been revoked.
+    // `presentRemoteBolus` freezes a pending approval at `createdAt`; `confirmRemoteBolus` is the
+    // second confirm. It must re-check an intervening host delivery and whether access has since been revoked.
 
     /// A pending approval composed BEFORE a host delivery that has since completed must be refused at
     /// confirm time — even though it is well within `remoteApprovalMaxAge` (the existing age check alone
@@ -200,16 +191,13 @@ struct PhoneWidgetDoubleDoseTests {
         }
     }
 
-    // MARK: - Task 3: C3-01 — deliverWidgetBolus stamps lastHostDeliveryAt
+    // MARK: - deliverWidgetBolus stamps lastHostDeliveryAt
     //
-    // Every OTHER completed host delivery stamps `lastHostDeliveryAt` (local, extended, remote) so a
-    // remote request composed BEFORE it is caught by VA-07's `composeSupersededByHostDelivery`. The
-    // widget path is the one delivery site that historically does NOT stamp it — a blind spot: a remote
-    // request composed before a widget delivery sails through unrefused.
+    // Every other completed host delivery stamps `lastHostDeliveryAt` so a remote request composed
+    // BEFORE it is caught as superseded. The widget path historically did not stamp it.
 
     /// After a widget `.delivered` outcome, `lastHostDeliveryAt` advances — proven indirectly through the
-    /// VA-07 supersession check it feeds (the property itself is `private(set)`, not directly assertable
-    /// from a test target).
+    /// supersession check it feeds (the property itself is `private(set)`, not directly assertable).
     @Test func widgetDeliveryStampsLastHostDeliveryAt() async {
         try? await withCleanSettings {
             let (model, backend, rec) = await makeModel(connected: true)
@@ -255,18 +243,14 @@ struct PhoneWidgetDoubleDoseTests {
         }
     }
 
-    // MARK: - WR-01: present→confirm derives the idempotency doseKey from the RAW WIRE params
+    // MARK: - present→confirm derives the idempotency doseKey from the RAW WIRE params
     //
-    // Owner ruling: BOTH remote-delivery entry points must key the ledger doseKey off the ORIGINAL wire
-    // request (matching `remoteDeliver`'s own `doseKey(units:carbsGrams:bgMgdl:)`), never the resolved/frozen
-    // correction basis. Before the fix, `confirmRemoteBolus` used `pending.carbsGrams`/`pending.bgMgdl` —
-    // the RESOLVED values — so when the host substituted a fresh reading that differed from the wire bg, the
-    // two flows produced DIFFERENT doseKeys for one logical dose, narrowing the recency/conflict guard.
+    // Both remote-delivery entry points must key the ledger doseKey off the original wire request,
+    // never the resolved/frozen correction basis. Otherwise the two flows produce different doseKeys
+    // for one logical dose and the recency/conflict guard narrows.
 
-    /// After a present→confirm carb delivery where the host's fresh correction basis (120) differs from the
-    /// wire `bgMgdl` (185), the ledger's recency index must be keyed on the WIRE bg — proven by querying
-    /// `hasRecentlyDeliveredDuplicate` with the wire-derived doseKey (present) and the resolved-basis
-    /// doseKey (absent). Before WR-01 these assertions were reversed.
+    /// After a present→confirm carb delivery where the host's fresh correction basis differs from the
+    /// wire `bgMgdl`, the ledger's recency index must be keyed on the WIRE bg.
     @Test func presentConfirmDoseKeyIsDerivedFromRawWireParamsNotResolvedBasis() async {
         try? await withCleanSettings {
             let (model, backend, rec) = await makeModel(connected: true)
@@ -302,15 +286,10 @@ struct PhoneWidgetDoubleDoseTests {
         }
     }
 
-    // MARK: - IN-02: an INDETERMINATE outcome stamps `lastHostDeliveryAt` too (defense-in-depth)
+    // MARK: - An INDETERMINATE outcome stamps `lastHostDeliveryAt` too
     //
-    // Before IN-02, all three phone-side delivery sites stamped `lastHostDeliveryAt` only on `.delivered`,
-    // never on `.indeterminate` — even though an indeterminate outcome MAY in fact have delivered. The
-    // durable ledger's global unresolved-delivery block masks this today (it refuses any new delivery while
-    // an entry is unresolved, which is strictly stronger than VA-07 supersession), so these tests assert
-    // the stamp DIRECTLY (the getter is internal via `@testable`) rather than through the supersession
-    // check — the point is to keep VA-07 correct even if that global block is ever narrowed. Each site gets
-    // a FRESH model, since one indeterminate outcome engages the global block for the rest of that ledger.
+    // An indeterminate outcome MAY have delivered. The durable ledger's unresolved-delivery block masks
+    // this today, so these tests assert the stamp directly rather than through supersession.
 
     /// performLocalBolus `.indeterminate` stamps `lastHostDeliveryAt`.
     @Test func localBolusIndeterminateStampsLastHostDeliveryAt() async {
@@ -357,8 +336,7 @@ struct PhoneWidgetDoubleDoseTests {
         }
     }
 
-    /// deliverExtendedBolus `.indeterminate` stamps `lastHostDeliveryAt` too (the 4th delivery site — added
-    /// for VA-07 consistency after the extended path was found to also have an `.indeterminate` branch).
+    /// deliverExtendedBolus `.indeterminate` stamps `lastHostDeliveryAt` too (the 4th delivery site).
     @Test func extendedBolusIndeterminateStampsLastHostDeliveryAt() async {
         try? await withCleanSettings {
             let (model, backend, _) = await makeModel(connected: true)

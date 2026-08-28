@@ -4,28 +4,8 @@ import TandemBLE
 import faBolusCore
 @testable import faBolus
 
-/// CR-01 (R2-01) connection-lifecycle spine + pairing-handshake watchdog (fix commit 401293b).
-///
-/// Before the fix, the kit's transport-level `.ready` was mapped straight to the application-usable
-/// `.connected` — a GHOST-connected window: a lost pairing-handshake frame or a thrown pairing write
-/// left a green "Connected" HUD that never actually polled and never escalated staleness, while the
-/// bolus gate (`snapshot.isLinked`) read the link as usable. The fix, pinned here:
-///   • `applyClientState(.ready)` now publishes the not-usable intermediate `.connecting`
-///     (`isLinked == false`), NOT `.connected`;
-///   • the usable `.connected` is published ONLY via the private `markUsableAndStartPolling()`, at the
-///     five terminal sites in `pumpClientDidBecomeReady` (a real `onPaired` + the four reads-only
-///     fallbacks) — i.e. exactly when polling begins, never at bare BLE `.ready`;
-///   • a per-connection pairing-handshake watchdog (armed at `coord.start()`, default 30 s) FAILS
-///     CLOSED — mirroring `onError`: `client.disconnect()` + `.error` — if the handshake never
-///     resolves, and is cancelled in `onPaired` / `onError` / `linkDroppedCleanup()`.
-///
-/// A genuine cryptographic `onPaired` cannot be reproduced from a unit test: the JPAKE/V1
-/// `PairingCoordinator`s live in the external TandemBLE kit and require valid challenge-response
-/// AUTHORIZATION frames the test target cannot synthesize (`FakePumpTransport` has no pairing-frame
-/// builder). So the "usable moment" is reached through a REAL one of the five `markUsableAndStartPolling()`
-/// sites — the reads-only terminal fallback (no code + no saved pairing) — and a COMPLETED pair is
-/// represented by the `TandemBackend(testTransport:)` double's pre-established auth key (`isPaired`),
-/// which is exactly the post-`onPaired` state the watchdog's `guard !isPaired` protects.
+/// BLE `.ready` is not a usable link: the bolus gate stays fail-closed until polling actually starts,
+/// and an unresolved handshake fails closed rather than leaving a ghost-connected HUD.
 @Suite(.serialized) @MainActor
 struct PairingWatchdogTests {
     private func backend() -> TandemBackend { TandemBackend(testTransport: FakePumpTransport()) }

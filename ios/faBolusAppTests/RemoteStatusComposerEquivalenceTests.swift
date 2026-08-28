@@ -3,32 +3,8 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// Phase 16 GO-1 Step 1 (the phase tracer, REMED-16/CX-A-01/CX-A-05) — the deterministic-equivalence
-/// gate for the `RemoteStatusComposer` extraction from `AppModel.statusCommand`.
-///
-/// **Why not a raw-byte fixture (review concern #3).** `RemoteCommand.encoded()` uses a default
-/// `JSONEncoder` (unstable key order) and the pre-move body read the wall clock (`Date()`) for
-/// `glucoseAgeSec`, so a checked-in byte blob would be non-reproducible on its own terms, never mind
-/// across a refactor. `AppModel.statusCommand` now takes an injectable `now` (default `Date()`, so
-/// every production call site is unchanged) — with `now` fixed, every test below asserts:
-///  1. **Determinism**: two composes of the identical inputs at the identical fixed instant produce
-///     `Equatable`-equal `RemoteCommand`s AND byte-identical canonical (`.sortedKeys`) JSON — proving no
-///     live singleton/clock read survived the move (a stray live read would make the SECOND call answer
-///     differently the moment real state/time moved on, which `@Suite(.serialized)` plus these paired
-///     calls would catch).
-///  2. **Correctness**: each scenario's key fields are asserted against literal expected values traced
-///     by hand from the pre-move body (transcribed verbatim into `RemoteStatusComposer.compose`), so
-///     this is a genuine characterization/golden proof, not just an internal-consistency check.
-///  3. **Wire validity**: `RemoteCommand.decodeValidated(try cmd.encoded())` round-trips without
-///     throwing and decodes back to the identical command.
-///
-/// Three fixed scenarios per the plan: (a) linked + fresh glucose, (b) disconnected, (c) stale with
-/// active alerts. `RemoteCommand` is already `Equatable` (declared on the type — no change needed).
-///
-/// Existing suites that already exercise `statusCommand` through real scenarios — `BolusGateHostFeedTests`
-/// (`canBolus`/`bolusBlockReason`/`maxBolusUnits`), `CartridgeReadinessRemotePresentationTests`
-/// (`cartridgeReady`) — continue to pass UNCHANGED after the move; they are the other half of the
-/// equivalence proof (production call sites, not synthesized here).
+/// Remote status compose is deterministic under a fixed clock so remotes cannot present stale-CGM
+/// as fresh; the composer must not read live singletons or `Date()`.
 @Suite(.serialized) @MainActor
 struct RemoteStatusComposerEquivalenceTests {
 

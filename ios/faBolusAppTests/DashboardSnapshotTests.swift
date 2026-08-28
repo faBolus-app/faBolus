@@ -3,32 +3,8 @@ import Foundation
 import SnapshotTesting
 @testable import faBolus
 
-/// **D-06b (Phase 09.17-01).** Compact-width iPhone visual-regression net for the iPad-adaptive
-/// retrofit — the first surface this phase's snapshot infrastructure protects. A committed
-/// reference image of a POPULATED `DashboardView` (real glucose/IOB/pump-detail content, not an
-/// empty state) at compact width; any future compact-width drift on this screen fails this test.
-///
-/// `.image(layout: .sizeThatFits)` is device-agnostic (Pitfall 5) — it tracks whatever Simulator
-/// `scripts/test-ios.sh` auto-detects, never a hardcoded `.device(config:)` preset, so this test
-/// does not require re-recording on a fresh Xcode/Simulator install the way a pinned device preset
-/// would.
-///
-/// `MockBackend` seeds a fully-populated `PumpSnapshot` + 3h glucose/IOB history at `init` (mirrors
-/// `AppModelBehaviorTests.makeModel`'s fixture shape); `AppModel(source:)` copies that history in
-/// synchronously (`AppModel.swift:803`), so the chart/pills/pump-details render real content with
-/// no `await` needed. `model.connect()` (mirrors `makeModel(connected: true)`) additionally flips
-/// `snapshot.connection` to `.connected` for a representative status ring — captured immediately
-/// after `connect()` returns, well before `MockBackend`'s 5-second `tick()` timer could fire and
-/// mutate the seeded values out from under the snapshot.
-///
-/// Deviation (Rule 1 — found during this task): `GlucoseChartView.chartXScale`'s domain end is a
-/// live `Date()`, so the exact sub-pixel position of every chart line/point/dashed gridline shifts
-/// by however many seconds elapse between the recording run and any later verify run — confirmed by
-/// diffing two consecutive runs (~2,300 of 3.16M pixels, confined to the chart region, well under a
-/// 1% budget). `precision`/`perceptualPrecision` (the library's own documented tool "useful for
-/// animations/timing") absorb that sub-pixel jitter while still catching a REAL structural
-/// regression (a moved/missing element, wrong color, or layout break differs by orders of magnitude
-/// more than this).
+/// Compact dashboard visual pin so glucose/IOB/pump-detail layout cannot silently drift;
+/// perceptual tolerance absorbs live-`Date()` chart jitter only.
 @MainActor
 @Suite struct DashboardSnapshotTests {
     @Test func dashboardCompactWidthDefaultPopulated() async {

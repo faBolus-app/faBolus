@@ -3,19 +3,10 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// Phase 09.15-01 TRACER (T1-1, D-01/D-08): the `ciqZone` primitive-propagation spine —
-/// op-179 raw zone → `ControlIQZone` token mapping → `RemoteCommand.ciqZone` wire field →
-/// `validate()` bound. This file grows across the plan's 3 tasks (see 09.15-01-PLAN.md);
-/// Task 1 covers the token-mapping + validate-bound assertions below. Task 3 adds the
-/// end-to-end Codable round-trip, legacy back-compat, and fail-closed-absent cases.
-///
-/// ⚠️ The raw op-179 `controlStateType` → zone-word mapping is an UNVERIFIED GUESS (see
-/// `docs/UNVERIFIED-GUESSES.md` and the doc comment on `ControlIQZone`) — these tests pin the
-/// mapping's OWN self-consistency and the fail-closed contract, not a bench/capture-confirmed
-/// real-pump correspondence.
+/// Pins the `ciqZone` wire path: op-179 raw zone → token → RemoteCommand field → validate(). The op-179 mapping is an unverified guess (see `docs/UNVERIFIED-GUESSES.md`) — these tests pin self-consistency and fail-closed-absent, not a confirmed pump correspondence.
 @Suite struct CiqZoneWireTests {
 
-    // MARK: - Task 1: raw zone → token mapping
+    // MARK: - Raw zone → token mapping
 
     @Test func mappedRawZonesReturnExactlyTheCorrectToken() {
         #expect(ControlIQZone.fromControlStateType(0) == .stops)
@@ -32,7 +23,7 @@ import faBolusCore
         #expect(ControlIQZone.fromControlStateType(255) == nil)
     }
 
-    // MARK: - Task 1: validate() bound
+    // MARK: - validate() bound
 
     @Test func validateRejectsUnknownOrEmptyOrNonMemberCiqZoneToken() {
         for bogus in ["unknown", "", "Increases", "INCREASES", "increasing", "none"] {
@@ -55,7 +46,7 @@ import faBolusCore
         try cmdAbsent.validate()
     }
 
-    // MARK: - Task 3: end-to-end Codable round-trip
+    // MARK: - End-to-end Codable round-trip
 
     /// (1) A RemoteCommand with each of the five tokens JSON-encodes and decodes back to the same
     /// token (Codable round-trip) — proves `ciqZone` rides the wire byte-for-byte like `controllerVariant`.
@@ -71,7 +62,7 @@ import faBolusCore
         }
     }
 
-    // MARK: - Task 3: legacy back-compat
+    // MARK: - Legacy back-compat
 
     /// (2) An OLD JSON blob with the `ciqZone` key ABSENT decodes fine — a legacy host's statusRead
     /// reply (predating this field) must never fail to decode.
@@ -84,7 +75,7 @@ import faBolusCore
         #expect(validated.ciqZone == nil)
     }
 
-    // MARK: - Task 3: fail-closed — absent/cleared ciqZone yields no rendered word
+    // MARK: - Fail-closed — absent/cleared ciqZone yields no rendered word
 
     private final class FakeLink: RemoteTransport {
         var onReceive: (@MainActor (RemoteCommand) -> Void)?
@@ -94,9 +85,7 @@ import faBolusCore
         func send(_ command: RemoteCommand) {}
     }
 
-    /// Loading backstop: a freshly-constructed client BEFORE any `apply`/`handle(cmd)` has `ciqZone`
-    /// absent — a fresh app launch before the first statusRead reply must show every 09.15 surface
-    /// ABSENT, never a stale/zero placeholder.
+    /// A freshly-constructed client before any command has `ciqZone` absent — never a stale/zero placeholder.
     @MainActor
     @Test func freshClientBeforeAnyCommandHasCiqZoneAbsent() {
         let m = RemoteCommandWireFixture(link: FakeLink())
@@ -113,11 +102,7 @@ import faBolusCore
         #expect(m.ciqZone == nil)
     }
 
-    /// SP-5 fail-closed (D-06 guardrail #5): once a zone HAS been shown, a later statusRead that
-    /// explicitly clears it (CIQ turns off, or the raw zone becomes unmapped) MUST clear the client's
-    /// stored value too — never a stale last-known word surviving past the moment it actually cleared.
-    /// This is the deviation from the standard SP-3 "if let" guard (see AppSettings/RemoteCommandWireFixture
-    /// doc comments) — proven here by first setting a real zone, then sending an absent one.
+    /// Once a zone has been shown, a later statusRead that clears it must clear the client too — never a stale last-known word.
     @MainActor
     @Test func aClearedCiqZoneOverwritesAPreviouslyKnownZoneRatherThanStaying() {
         let m = RemoteCommandWireFixture(link: FakeLink())

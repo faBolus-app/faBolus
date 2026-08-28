@@ -3,34 +3,8 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// App-target behavioral e2e for the safety-critical remote-delivery decision logic (audit C-08).
-///
-/// These exercise the REAL `AppModel` against the in-memory `MockBackend`, so no pump/BLE hardware
-/// is needed and they run on the Simulator. They cover the finding areas that live in `AppModel`:
-///   • **Divergence guard** (C-06): host recomputes the authoritative carb dose and rejects when the
-///     remote's own estimate diverges beyond `remoteDivergenceLimitUnits` (0.10 U), and fails closed
-///     when the estimate is missing.
-///   • **Freeze-before-approve** (C-02): a carb request with no units freezes the *real* dose before
-///     prompting (never "0.00 U"), and confirm delivers that frozen number with no recompute.
-///   • **Action gates** (A-05): phone read-only blocks the local Quick-Bolus widget but (by design)
-///     not an authenticated remote peer. (Child mode's own "blocks every bolus surface" coverage was
-///     retired in Phase 7, 07-04, FEAT-04 — `childModeEnabled` is now permanently frozen `false`, so
-///     that app-layer behavior can never fire again; the pure-evaluator proof that `AccessPolicy`
-///     WOULD still enforce it if ever given `true` again lives on, untouched, in faBolusCore's own
-///     `AccessPolicyTests`. See `dev/child-mode`'s REINTEGRATION.md.)
-///   • **Idempotency wiring** (A-02): a duplicate (peer, requestId) hits the backend once; a same-id
-///     request with a different dose fails closed.
-///
-/// The `MockBackend` seeds a glucose value timestamped **10 minutes ago** — older than the 6-minute
-/// stale threshold — so `isGlucoseStale` is true and a carb dose resolves off carbs-only
-/// (`bgMgdl: nil`), deterministic given the seeded IOB. That is why these assertions can compare
-/// against a probed `recommendBolus` value without flakiness. (It used to be stale because the mock
-/// published no timestamp at all; that unknown-age state was the defect A1 reproducer, since a remote
-/// could then stamp the reading with its own receive time and render it as fresh.)
-///
-/// Not covered here (they need a fake CoreBluetooth transport for `TandemBackend`, not `AppModel`):
-/// pump-transaction drop/timeout (A-03) and the glucose single-flight race (C-05) — still bench/mock
-/// scoped per `docs/UNVERIFIED-GUESSES.md` and the remediation tracker.
+/// Host recomputes and clamps remote doses, fails closed on a missing or divergent estimate, and
+/// treats stale-CGM as carbs-only; AccessPolicy gates every delivery surface.
 @Suite(.serialized)
 @MainActor
 struct AppModelBehaviorTests {
@@ -52,7 +26,7 @@ struct AppModelBehaviorTests {
     /// (rejections/gate blocks short-circuit before touching the backend).
     private func makeModel(connected: Bool = false) async -> (AppModel, MockBackend, EchoRecorder) {
         let backend = MockBackend()
-        // FB-03: give each model its own durable-ledger file so the persisted ledger can't leak between
+        // Each model gets its own durable-ledger file so the persisted ledger can't leak between
         // serialized tests (production shares one App Group file; tests must not).
         let ledgerURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("appmodel-ledger-\(UUID().uuidString).json")
@@ -65,12 +39,11 @@ struct AppModelBehaviorTests {
     /// Run `body` with the global `AppSettings` gates in a known-clean state, restoring them after so
     /// the serialized suite never leaks child/read-only state between tests.
     ///
-    /// P8: `advancedControlEnabled` is set ON here as the baseline. Every advanced / IDP-CRUD write is
-    /// reachable in the app ONLY behind `advancedControlAllowed` (opt-in + Mobi), and the funnel now
-    /// enforces that pump-capability + opt-in gate too (owner decision 2026-08-05, defense-in-depth). The
-    /// `MockBackend` is already a Mobi with `.mobiAdvanced` capabilities, so ON here reflects exactly the
-    /// context the UI guarantees for these writes; without it the funnel would (correctly) refuse them
-    /// with `.capabilityUnavailable`. A test that wants to prove the capability gate itself sets it false.
+    /// `advancedControlEnabled` is ON as the baseline: every advanced / IDP-CRUD write is reachable
+    /// only behind `advancedControlAllowed` (opt-in + Mobi). The `MockBackend` is already a Mobi with
+    /// `.mobiAdvanced`, so ON here matches the UI; without it the funnel would (correctly) refuse
+    /// them with `.capabilityUnavailable`. A test that wants to prove the capability gate itself
+    /// sets it false.
     private func withCleanSettings(_ body: () async throws -> Void) async rethrows {
         let s = AppSettings.shared
         let ro = s.phoneReadOnly, child = s.childModeEnabled, allowed = s.childAllowed, adv = s.advancedControlEnabled
@@ -78,11 +51,11 @@ struct AppModelBehaviorTests {
         let mode = s.appMode
         s.phoneReadOnly = false; s.childModeEnabled = false; s.advancedControlEnabled = true
         s.remotesReadOnly = false; s.readOnlyAllowAlertClear = false
-        // P14 S2: baseline Advanced so the mode gate is a no-op for every existing test; a mode test sets
+        // Baseline Advanced so the mode gate is a no-op for every existing test; a mode test sets
         // it explicitly. Restored below.
         s.appMode = .advanced
-        // P8: the evaluator's peer gate (Gate 4) reads `RemotePeerPolicyStore` (UserDefaults). Snapshot +
-        // clear it so a peer grant set by one test can't leak into the next (the suite is serialized).
+        // AccessPolicy's peer gate reads `RemotePeerPolicyStore` (UserDefaults). Snapshot + clear
+        // it so a peer grant set by one test can't leak into the next (the suite is serialized).
         let d = UserDefaults.standard
         let peerPolicies = d.data(forKey: "remotePeerPolicies"), peerQR = d.data(forKey: "remotePeerHighEntropy")
         d.removeObject(forKey: "remotePeerPolicies"); d.removeObject(forKey: "remotePeerHighEntropy")
@@ -95,16 +68,8 @@ struct AppModelBehaviorTests {
         try await body()
     }
 
-    // Phase 3 (03-02, REMOTE-02, F-3/Pitfall F): `grantFullControlPeer` used to call
-    // `RemotePeerPolicyStore.setPairedViaQR`/`.setPolicy` to simulate "a real Mac/caregiver once paired
-    // via QR and granted control" — both APIs are gone from the minimal, deny-by-default stub (D-09
-    // explicitly rejects widening it back). Removed along with every `@Test` whose entire scenario was
-    // "an authenticated peer WITH a full-control grant" (now unconstructable through any public API —
-    // accepted coverage loss, F-3 disposition (a)): `readOnlyBlocksWidgetButNotRemotePeer`,
-    // `parentRemoteBypassesChildLock`, `remotesReadOnlyBlocksPeerBolusEndToEnd`. The underlying
-    // `AccessPolicy.evaluate` `.macPeer`/`.caregiverPhonePeer` wiring stays frozen either way; only this
-    // now-unreachable-in-production scenario's direct test coverage is dropped, documented here per F-3
-    // (not a silent drop) — see 03-02-SUMMARY.md.
+    // AccessPolicy still gates `.macPeer`/`.caregiverPhonePeer`; this suite no longer constructs a
+    // full-control peer grant (those APIs are gone from the deny-by-default stub).
 
     private let tol = 0.0001
 
@@ -248,24 +213,14 @@ struct AppModelBehaviorTests {
         }
     }
 
-    // MARK: - Action gates (A-05)
+    // MARK: - Action gates
     //
-    // Phase 7 (07-04, FEAT-04, D-05, SAFETY): `childModeBlocksRemoteBolus` and `childModeBlocksWidgetBolus`
-    // (both set `AppSettings.shared.childModeEnabled = true` through the real app-layer setter) were
-    // retired here — that setter is now a permanent no-op (getter-level freeze), so both tests would
-    // fail against the intentionally-frozen behavior, not pass. Preserved on `dev/child-mode`; see its
-    // REINTEGRATION.md. The pure-evaluator proof (`AccessPolicy` DOES block when `childModeEnabled` is
-    // `true`) is untouched in faBolusCore's `AccessPolicyTests`, which builds `AccessContext` literals
-    // directly and never goes through `AppSettings`.
+    // AccessPolicy still blocks when `childModeEnabled` is true (faBolusCore `AccessPolicyTests`);
+    // the app-layer setter is frozen false, so this suite does not flip it.
 
-    /// §6 `lastError` Tier-2 — a FAILED / BLOCKED delivery posts exactly one `.bolusDeliveryFailed`, so a
-    /// user who isn't watching the screen learns the dose did NOT happen. REMED-17 (Plan 17-13, the D3-01
-    /// "frozen half" of 17-04 Task 4, owner Gentle disposition): an INDETERMINATE outcome ("sent, outcome
-    /// unknown") now posts an immediate GOVERNED `.bolusIndeterminate` (.warning) heads-up instead — it
-    /// still NEVER posts `.bolusDeliveryFailed` (a "failed" banner would be a lie; the outcome may in fact
-    /// have delivered), and its authoritative resolution still belongs to the never-suppressible
-    /// `.bolusReconciliation` poster. Driven through the widget path (a public delivery entry with no
-    /// reverse-approval branch) that shares the one ledgered-delivery outcome mapping with every surface.
+    /// A FAILED / BLOCKED delivery posts exactly one `.bolusDeliveryFailed` so a user who isn't
+    /// watching learns the dose did not happen. An indeterminate outcome posts `.bolusIndeterminate`
+    /// instead — never `.bolusDeliveryFailed`, because the dose may have landed.
     @Test func indeterminatePostsGovernedNotificationNotFailed() async {
         try? await withCleanSettings {
             // FAILED: not connected → a determinate `.notConnected` throw → outcome `.failed`.
@@ -293,10 +248,7 @@ struct AppModelBehaviorTests {
         }
     }
 
-    /// A-05, the non-peer half of the deleted `readOnlyBlocksWidgetButNotRemotePeer` (F-3/Pitfall F —
-    /// its peer half required a full-control grant, now unconstructable through the minimal stub, and
-    /// was dropped): the local Quick-Bolus widget must still honor phone read-only. This specific fact
-    /// does not depend on any peer surface, so it is preserved rather than lost along with the deletion.
+    /// The local Quick-Bolus widget must honor phone read-only (AccessPolicy).
     @Test func readOnlyBlocksWidgetBolus() async {
         try? await withCleanSettings {
             let (model, _, _) = await makeModel(connected: true)
@@ -307,24 +259,18 @@ struct AppModelBehaviorTests {
         }
     }
 
-    // MARK: - P8: the (surface × action) gate matrix routes through the single evaluator
+    // MARK: - AccessPolicy surface × action matrix
 
-    /// The whole point of P8: `AppModel.accessDecision` builds the context from live app/pump/peer state
-    /// and every gated entry point defers to the one `AccessPolicy` evaluator. This drives that real
-    /// context-builder over the full surface × action grid and pins the two owner decisions + the
-    /// fail-closed invariant. (The pure evaluator's own truth table is exhausted in faBolusCore's
-    /// `AccessPolicyTests`; this proves the AppModel wiring feeds it correctly.)
+    /// `AppModel.accessDecision` builds context from live app/pump/peer state and every gated
+    /// entry point defers to the one AccessPolicy evaluator. This pins that wiring, including
+    /// fail-closed.
     @Test func surfaceActionMatrixRoutesThroughTheEvaluator() async {
         try? await withCleanSettings {
             let (model, _, _) = await makeModel(connected: true)
             typealias A = GatedPumpWrite
             typealias S = AccessPolicy.Surface
-            // Phase 3 (03-02, REMOTE-02, F-3/Pitfall F): `.macPeer`/`.caregiverPhonePeer` dropped from
-            // this specific matrix — with the minimal deny-by-default `RemotePeerPolicyStore` stub, an
-            // authenticated peer is ALWAYS denied via Gate 4 (`.notPermittedForPeer`) regardless of
-            // `remotesReadOnly`, so the "remotesReadOnly-blocked" / "cancel survives remotesReadOnly"
-            // assertions below no longer hold true FOR THAT REASON on a peer surface (they're denied
-            // for a more fundamental one). Proven directly right after this loop instead.
+            // Authenticated peers are always denied via AccessPolicy Gate 4 (deny-by-default stub);
+            // remotesReadOnly is proven on Garmin, which can still be granted.
             let remotes: [S] = [.garmin]
 
             // Owner decision 2026-08-05 — `remotesReadOnly` governs ALL remotes INCLUDING the Mac/
@@ -355,17 +301,8 @@ struct AppModelBehaviorTests {
                         "cancel on \(s.rawValue) must ALSO be denied — an authenticated peer has zero permissions")
             }
 
-            // Phase 7 (07-04, FEAT-04, D-05, SAFETY): the "Fail-closed: fully locked (child on with
-            // nothing allowed, ...) denies EVERY action on EVERY surface" block that used to live here
-            // is retired — it set `AppSettings.shared.childModeEnabled = true`, a setter that is now a
-            // permanent no-op (getter-level freeze), and without child mode actually active,
-            // cancelBolus/dismissNotification legitimately survive phoneReadOnly/remotesReadOnly on
-            // every non-peer surface (proven immediately above), so the original blanket "every action
-            // denied" assertion no longer holds — it tested behavior that has been intentionally
-            // removed, not a live regression. Preserved on `dev/child-mode` (REINTEGRATION.md). The
-            // pure-evaluator fail-closed proof (`AccessPolicy` DOES deny everything when
-            // `childModeEnabled` is `true` AND `childAllowed` is empty) is untouched in faBolusCore's
-            // `AccessPolicyTests`.
+            // AccessPolicy still fail-closes child mode in faBolusCore; the app-layer setter is frozen
+            // false, so this suite does not flip it.
         }
     }
 
@@ -388,11 +325,8 @@ struct AppModelBehaviorTests {
             }
             // On a local surface (everything else open) the reason is specifically the mode gate.
             #expect(model.accessDecision(.setTempBasal, from: .phoneUI).reason == .modeDisallowed(required: .advanced))
-            // Core bolus stays available on the phone; safety STOPs survive on every surface EXCEPT an
-            // authenticated peer (Phase 3, 03-02, F-3/Pitfall F): the minimal deny-by-default stub means
-            // `.macPeer`/`.caregiverPhonePeer` have zero permissions, so even cancel — normally a safety
-            // STOP that survives every other gate — is denied for them specifically via Gate 4, not the
-            // mode gate this test exercises. Excluded from this loop; pinned separately right below.
+            // Core bolus stays available on the phone; safety STOPs survive on every surface except
+            // an authenticated peer (AccessPolicy deny-by-default: Gate 4, not the mode gate).
             #expect(model.accessDecision(.deliverBolus, from: .phoneUI).allowed)
             for s in S.allCases where !s.isAuthenticatedPeer {
                 #expect(model.accessDecision(.cancelBolus, from: s, peerId: "mac").allowed,
@@ -489,12 +423,9 @@ struct AppModelBehaviorTests {
     }
 
     #if FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL
-    /// D-02 (Phase 09.5, experimental-only): the CIQ-off precondition in `AppModel.setTempBasal` is
-    /// compiled OUT under `FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL`, so a temp rate while Control-IQ is ON
-    /// reaches the backend instead of being refused pre-flight. This is the counterpart to
-    /// `inverseControlIQPreconditionsRefusedAtFunnel` above (which pins the DEFAULT-build refusal and
-    /// MUST stay unmodified) — this test pins the OVERTURNED behavior, compiled only in the experimental
-    /// build (never in the default build or CI, which always builds with the flag off).
+    /// Experimental-only: under `FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL` a temp rate while Control-IQ is
+    /// ON reaches the backend instead of being refused pre-flight. The default-build refusal stays
+    /// pinned by `inverseControlIQPreconditionsRefusedAtFunnel`.
     @Test func inverseControlIQPreconditionOverturnedUnderExperimentalFlag() async {
         try? await withCleanSettings {
             let (m, backend, _) = await makeModel(connected: true)   // MockBackend defaults Control-IQ ON

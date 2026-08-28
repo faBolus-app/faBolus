@@ -2,17 +2,7 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// **I-L1.** Pins `GarminHistoryCap` — the pure, ConnectIQ-free cap of the outbound Garmin status
-/// history array to the watch-plot point budget, applied bridge-side (`GarminRemoteBridge`) BEFORE
-/// send. Lives OUTSIDE `#if GARMIN` (mirrors `garminSendDisposition`/`GarminMessageReadiness`) so it
-/// compiles and is unit-testable in the default (non-GARMIN) target.
-///
-/// LOAD-BEARING CONTEXT: every status push previously sent the FULL history array with no size bound
-/// (`GarminRemoteBridge.swift`'s `includeHistory:true` send sites). An oversize payload risks the SAME
-/// `InsufficientMemory`/`UnsupportedType` failure I-M3 now classifies as PERMANENT (dropped, no retry)
-/// — so a status push that never needed the extra points could silently stall the watch chart forever
-/// (T-19-20). The cap is newest-tail, order-preserving: the watch plot only ever shows the MOST RECENT
-/// points, so trimming the OLDEST ones first is the only trim that doesn't visibly break the chart.
+/// Pins that outbound Garmin history is newest-tail capped to the watch-plot budget before send. An oversize payload can fail permanently and stall the watch chart.
 struct GarminHistoryCapTests {
 
     @Test func shortArrayIsReturnedUnchanged() {

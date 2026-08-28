@@ -3,20 +3,9 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// P12 (defect group D) — the remote-client seams that feed the shared `BolusGate`, and the Mac bolus
-/// surface's use of them.
-///
-/// The Mac's `canDeliver` used to check only reachability + amount bounds; it ignored the relayed pump
-/// state entirely, so under phone-pushed read-only or a dropped pump link it showed a live, tappable
-/// Bolus button that the host then rejected (the A-05 show-then-fail class). It now routes through
-/// `BolusGate.evaluate`, fed by `RemoteCommandWireFixture.pumpConnected` (link health) and the new
-/// `.bolusInFlight` (a dose already running), plus the read-only flag as the access decision.
-///
-/// The gate's own precedence/logic is pinned in faBolusCore `BolusGateTests`. The Mac's entry view has no
-/// unit-test seam, so `macGate` below mirrors `MacBolusEntryView.gate` exactly (the model-fed axes) and
-/// this suite pins (a) the two `RemoteCommandWireFixture` seams across every connection string and (b) that the
-/// Mac feed yields the right reason for each blocking condition. These seams are shared by the Apple
-/// Watch and the remote-iPhone client too, so pinning them here guards those surfaces' later migrations.
+/// Remote/Mac bolus UI must hide when the relayed pump is disconnected, read-only, or already in
+/// flight — not show a tappable button the host then rejects. The shared `RemoteCommandWireFixture`
+/// seams feed `BolusGate`.
 @MainActor
 @Suite(.serialized) struct RemoteClientBolusGateTests {
 
@@ -52,10 +41,9 @@ import faBolusCore
 
     // MARK: seams
 
-    /// P14 S4: the remote adopts the phone's active mode from a statusRead, so it can HIDE a mode-gated
-    /// affordance (the extended/combo bolus needs Advanced) rather than showing-then-failing. An ABSENT
-    /// mode ⇒ a legacy host that never mode-gates ⇒ the remote stays permissive (`.advanced`), never
-    /// over-hiding. A garbage value falls back to the same permissive default, never a crash.
+    /// The remote adopts the phone's active mode from a statusRead so it can hide a mode-gated
+    /// affordance (extended bolus needs Advanced) rather than showing-then-failing. An absent or
+    /// garbage mode falls back to `.advanced` — never over-hiding, never a crash.
     @Test func remoteAdoptsPhoneActiveModeWithPermissiveLegacyDefault() {
         func modelWithMode(_ raw: String?) -> RemoteCommandWireFixture {
             let m = RemoteCommandWireFixture(link: FakeLink())
@@ -162,7 +150,7 @@ import faBolusCore
 
     // MARK: asSnapshot maps the RELAYED pump link, not client reachability (clobber fix)
 
-    // MARK: P13 capability channel — supportsRemoteAlertDismiss mirror ("Clear" vs "Snooze")
+    // MARK: - Capability channel — supportsRemoteAlertDismiss mirror ("Clear" vs "Snooze")
 
     @Test func alertDismissCapabilityMirrorsAndDefaultsSafe() {
         // Safe default before any push: false ⇒ the remote shows "Snooze" (honest — a t:slim dismiss

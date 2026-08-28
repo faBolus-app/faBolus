@@ -3,16 +3,7 @@ import faBolusCore
 import TandemMessages
 @testable import faBolus
 
-/// Phase 09.6-01 (Task 1, TRACER — Part B-a, D-02a): behavior pins for the tracer that proves the
-/// phase's architectural spine end-to-end — a NEW pure section-builder (`CapabilityDiagnostics.section`)
-/// reading already-cached pump state, gated by the single shared opt-in, ready to flow into the
-/// existing `DebugMenuView.diagnosticsText` → `ShareLink`/Documents-file export.
-///
-/// Debug pump-pairing-loop-api25 hardening (transparency 4a/4b): the "Rejected opcodes" line now renders
-/// each auto-excluded read with its HUMAN-READABLE name via `PumpReadCatalog`, and a SAFETY-relevant
-/// exclusion (the op-20 cartridge pre-check) appends a user-facing "relying on the pump's own protection"
-/// note. `CapabilityDiagnosticsTransparencyTests` covers those paths in depth; the pins here track the
-/// format change.
+/// Pins the diagnostics section format: rejected opcodes render as human-readable names, and the dump is empty when the opt-in is off.
 struct CapabilityDiagnosticsTests {
     @Test func enabledRendersCapabilitiesAndSortedRejectedOpcodes() {
         let caps = PumpCapabilities.mobiAdvanced

@@ -3,21 +3,8 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// Phase 2 (garmin-venu-3s-only) D-08 — a still-GREEN regression pin, not a RED→GREEN cycle: Phase 2
-/// narrows the Garmin *device* surface (`../faBolusGarmin` manifests/jungles) and removes the standalone
-/// watch-face app; it touches ZERO iOS delivery code. This test proves the kept `.garmin` remote-bolus
-/// seam — `GarminRemoteBridge.handle` → `AppModel.remoteDeliver(from: .garmin, peerId: "garmin")` — is
-/// undisturbed by that narrowing.
-///
-/// Wording reconciliation: ROADMAP's Phase-2 success criteria describe the Garmin remote path as
-/// routing through the WatchConnectivity transport host — that type was the receiver used by the
-/// Apple-Watch surface (retired entirely in Phase 17.5, D1-01). The Garmin path never went through
-/// it; it routes from `GarminRemoteBridge` straight to `AppModel.remoteDeliver(from: .garmin, ...)`
-/// (see R4). This test pins the ACTUAL seam.
-///
-/// R4 (ConnectIQ-free): calls `AppModel.remoteDeliver` directly against a `MockBackend` — no
-/// `import ConnectIQ`, no `GarminRemoteBridge` instantiation. The Connect IQ SDK dependency lives only
-/// inside the bridge; the deliver logic itself is SDK-agnostic.
+/// The kept `.garmin` remote path (`AppModel.remoteDeliver(from: .garmin)`) and the widget
+/// `deliverWidgetBolus` path still deliver; neither routes through the retired WatchConnectivity host.
 @Suite(.serialized) @MainActor
 struct GarminVenu3sOnlyBoundaryTests {
     private final class Box { var echoes: [RemoteCommand] = [] }
@@ -61,12 +48,11 @@ struct GarminVenu3sOnlyBoundaryTests {
         }
     }
 
-    // MARK: - Phase 3 (03-02, REMOTE-02, D-03/Pitfall C) — the kept `.quickBolusWidget` delivery seam
+    // MARK: - Kept `.quickBolusWidget` delivery seam
 
-    /// Pins the REAL widget call chain after the peer remote's removal: `WidgetBolusReceiver.swift:81`
-    /// calls `AppModel.deliverWidgetBolus(...)` for a units-mode request — NOT `remoteDeliver`, and NOT
-    /// through the (now-retired) WatchConnectivity host (Pitfall C). `deliverWidgetBolus` builds its own
-    /// `accessDecision(..., from: .quickBolusWidget)` internally.
+    /// Units-mode widget requests go through `AppModel.deliverWidgetBolus`, not `remoteDeliver` and not
+    /// the retired WatchConnectivity host. `deliverWidgetBolus` builds its own `accessDecision(..., from:
+    /// .quickBolusWidget)` internally.
     @Test func quickBolusWidgetUnitsPathStillDeliversABolusRequest() async {
         await withClean {
             let (model, backend, box) = makeModel()
@@ -85,10 +71,8 @@ struct GarminVenu3sOnlyBoundaryTests {
         }
     }
 
-    /// The carbs-mode widget path (`WidgetBolusReceiver.swift:66-67`) does NOT deliver in place — it
-    /// calls `AppModel.presentRemoteBolus(..., from: .quickBolusWidget, peerId: "widget")` to freeze the
-    /// real dose for an in-app confirm (audit C-03). Pins that this seam still reaches the evaluator and
-    /// stages a pending approval — the real chain, not `remoteDeliver`/the retired WatchConnectivity host.
+    /// The carbs-mode widget path does not deliver in place — it stages `presentRemoteBolus(..., from:
+    /// .quickBolusWidget)` for an in-app confirm. Pins that this seam still reaches the evaluator.
     @Test func quickBolusWidgetCarbsPathStillPresentsForInAppApproval() async {
         await withClean {
             let (model, backend, _) = makeModel()
@@ -103,8 +87,4 @@ struct GarminVenu3sOnlyBoundaryTests {
             #expect(model.pendingRemoteBolus?.carbsGrams == 20)
         }
     }
-
-    // D-04 (superseded, Phase 17.5/D1-01): this file previously carried a compile-only proof that
-    // the WatchConnectivity transport host still resolved as a type — that host is now deleted
-    // entirely, so there is nothing left to reference here.
 }

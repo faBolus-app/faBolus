@@ -4,35 +4,9 @@ import TandemBLE
 import faBolusCore
 @testable import faBolus
 
-/// R2-07 (fix commit fb11208) — quick-pair RESUME failures RETRY on a bounded budget and NEVER auto-wipe
-/// the stored pairing secret; only an explicit `forgetPairing()` (R2-06) wipes it.
-///
-/// Before the fix, a quick-pair RESUME failure — a handshake `onError`, or a resume-path watchdog timeout
-/// (`pumpClientDidBecomeReady`'s `onFirstPair == nil` branch, built from `PairingStore.load()`) — called
-/// `PairingStore.clear()` straight away, forcing a full manual re-pair after a single transient link glitch.
-/// The fix routes BOTH the shared `coord.onError` resume branch AND `firePairingWatchdog`'s resume branch
-/// (`pairingWatchdogClearStore == true`) through one policy, `handleResumeFailure()`:
-///   • it NEVER calls `PairingStore.clear()`;
-///   • while `resumeRetryCount < maxResumeRetries` (2) it increments the budget, runs `linkDroppedCleanup()`
-///     + `client.disconnect()` (a bounded retry that re-enters the reconnect ladder) — no `.error`;
-///   • once the budget is EXHAUSTED it resets `resumeRetryCount = 0`, runs `linkDroppedCleanup()`, and
-///     publishes a RETRYABLE `.error` ("…Tap to retry — or Forget Pairing…") while KEEPING the stored secret.
-/// A FRESH full pair failure (`onFirstPair != nil`) is UNCHANGED — straight to `.error`, no resume-retry
-/// budget (it never had a stored secret to protect). `onPaired` resets the budget on success.
-///
-/// HARNESS (mirrors `PairingWatchdogTests` / `ForgetPairingTeardownTests` exactly): the resume failure is
-/// injected via the existing `firePairingWatchdogForTesting()` seam. `beginPairingForTesting(code: "")` with
-/// a seeded `PairingStore` secret drives the REAL `pumpClientDidBecomeReady` quick-pair RESUME branch
-/// (`onFirstPair == nil`), which arms the watchdog with `clearStoreOnTimeout: true` (→ the resume branch of
-/// `firePairingWatchdog`). Starting UNPAIRED (`authKey: []`) keeps `firePairingWatchdog`'s `guard !isPaired`
-/// from short-circuiting — exactly as `PairingWatchdogTests.watchdogTimeoutFailsClosedWhenTheHandshakeNeverResolves`
-/// does. The `PairingCoordinator(resumeDerivedSecret:)` `start()` is non-throwing (it emits round-3 and the
-/// send throws `.notReady`, caught) so it does NOT synchronously consume a retry before the watchdog fires.
-///
-/// A genuine cryptographic `onPaired` cannot be synthesized in a unit test (see `PairingWatchdogTests`'
-/// header — the JPAKE/V1 coordinators need valid AUTHORIZATION frames the test target can't build), so the
-/// "successful pair resets the budget" property is not directly drivable; the equivalent budget reset that IS
-/// reachable — the exhaustion branch's `resumeRetryCount = 0` — is pinned in `exhaustedResumeRetry…` below.
+/// Quick-pair resume failures retry on a bounded budget and never auto-wipe the stored secret;
+/// only explicit `forgetPairing()` wipes it, and the delivery gate stays fail-closed until the
+/// handshake succeeds.
 @Suite(.serialized) @MainActor
 struct ResumeRetryTests {
     /// Arbitrary quick-pair derived-secret bytes — `PairingCoordinator(resumeDerivedSecret:)` accepts any
@@ -52,9 +26,8 @@ struct ResumeRetryTests {
     /// of the retry budget, keeps the stored secret, and does NOT surface a terminal error. This is the core
     /// R2-07 guarantee that a single transient link glitch no longer forces a full manual re-pair.
     @Test func resumeFailureWithStoredSecretRetriesAndNeverWipesTheStore() {
-        // R2-07: the xctest host has no functional Keychain, so the quick-pair RESUME path (gated on
-        // `PairingStore.load()`) is only drivable with the in-memory seam. Scoped per-test + reset in a
-        // defer so it never leaks to other suites (e.g. PrivacyDataTests relies on the no-op Keychain).
+        // The xctest host has no functional Keychain, so the resume path is only drivable with the
+        // in-memory seam. Scoped per-test + reset in a defer so it never leaks to other suites.
         PairingStore.useInMemoryBackingForTests = true
         defer { PairingStore.useInMemoryBackingForTests = false }
         PairingStore.clear()
@@ -84,9 +57,8 @@ struct ResumeRetryTests {
     /// auto-wiped. The budget resets to 0 on exhaustion so the next reconnect gets a fresh full retry budget
     /// (the reachable analogue of `onPaired`'s success-reset, which a unit test can't synthesize).
     @Test func exhaustedResumeRetryBudgetSurfacesRetryableErrorAndRetainsTheSecret() {
-        // R2-07: the xctest host has no functional Keychain, so the quick-pair RESUME path (gated on
-        // `PairingStore.load()`) is only drivable with the in-memory seam. Scoped per-test + reset in a
-        // defer so it never leaks to other suites (e.g. PrivacyDataTests relies on the no-op Keychain).
+        // The xctest host has no functional Keychain, so the resume path is only drivable with the
+        // in-memory seam. Scoped per-test + reset in a defer so it never leaks to other suites.
         PairingStore.useInMemoryBackingForTests = true
         defer { PairingStore.useInMemoryBackingForTests = false }
         PairingStore.clear()
@@ -124,9 +96,8 @@ struct ResumeRetryTests {
     /// `clearStoreOnTimeout: false`. Its timeout takes the pre-R2-07 straight-to-`.error` path — it NEVER
     /// enters the resume-retry budget (there is no stored secret to protect), so the retry count stays 0.
     @Test func freshFullPairFailureIsUnchangedAndNeverEntersTheResumeRetryPath() {
-        // R2-07: the xctest host has no functional Keychain, so the quick-pair RESUME path (gated on
-        // `PairingStore.load()`) is only drivable with the in-memory seam. Scoped per-test + reset in a
-        // defer so it never leaks to other suites (e.g. PrivacyDataTests relies on the no-op Keychain).
+        // The xctest host has no functional Keychain, so the resume path is only drivable with the
+        // in-memory seam. Scoped per-test + reset in a defer so it never leaks to other suites.
         PairingStore.useInMemoryBackingForTests = true
         defer { PairingStore.useInMemoryBackingForTests = false }
         PairingStore.clear()
@@ -249,9 +220,8 @@ struct ResumeRetryTests {
     /// and 2 (resume failures NEVER wipe), this pins the R2-07 boundary: the stored secret is durable across
     /// every automatic resume-failure path and is removed ONLY by an explicit user "Forget pairing".
     @Test func forgetPairingRemainsTheOnlyThingThatWipesTheStoredSecret() {
-        // R2-07: the xctest host has no functional Keychain, so the quick-pair RESUME path (gated on
-        // `PairingStore.load()`) is only drivable with the in-memory seam. Scoped per-test + reset in a
-        // defer so it never leaks to other suites (e.g. PrivacyDataTests relies on the no-op Keychain).
+        // The xctest host has no functional Keychain, so the resume path is only drivable with the
+        // in-memory seam. Scoped per-test + reset in a defer so it never leaks to other suites.
         PairingStore.useInMemoryBackingForTests = true
         defer { PairingStore.useInMemoryBackingForTests = false }
         PairingStore.clear()

@@ -3,24 +3,8 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// F1 (§13) — the on-device gated complete-erase (erase / full reset).
-///
-/// Phase 6 (06-02, D-08 owner carve-out, Rule 3 deviation): this file used to ALSO cover the JSON
-/// export (`AppModel.buildPrivacyExport`/`exportPrivacyDataJSON`, `PrivacyDataExport` round-trips,
-/// the caffeine/alcohol tracker export). That surface is part of the removed backup/restore engine —
-/// `PrivacyDataExport.swift` is git rm'd from `main` and `buildPrivacyExport`/`exportPrivacyDataJSON`
-/// compile out at `main`'s new `FABOLUS_BACKUP=0` default — so those two tests are removed here (a
-/// direct compile-break consequence of 06-02 Task 1's deletions, not a files_modified item of either
-/// task). The full (export + erase) coverage still exists on `dev/backup`/`experimental`, unchanged.
-/// The erase/full-reset tests below are UNCHANGED — `AppModel.eraseAllOnDeviceHealthData`/
-/// `eraseEverythingFullReset` stay permanently ungated (D-08) regardless of `FABOLUS_BACKUP`.
-///
-/// Phase 6 (06-03, BACKUP-01 — FINALIZED): the split above is complete and permanent on `main` — the
-/// export half is not deferred or partially removed, it already lives in full on `dev/backup` (same
-/// filename, unmodified since before this phase started) as the reintegration target; nothing further
-/// moves out of this file. `BackupRemovalBoundaryTests.swift` (new, ungated) is the complementary
-/// capability-level proof that the erase/full-reset half these 4 tests exercise in detail also stays
-/// reachable end-to-end after the `FABOLUS_BACKUP=0` compile-gate flip.
+/// On-device erase and full reset stay ungated regardless of `FABOLUS_BACKUP`. Both must refuse
+/// while a delivery is unresolved; erase wipes health data only, full reset also unpairs.
 @MainActor
 @Suite(.serialized) struct PrivacyDataTests {
 
@@ -81,7 +65,7 @@ import faBolusCore
         #expect(model.hasStoredPairing == pairingBefore)
     }
 
-    // MARK: F1 option (b) — full reset (Q8.2): wipes health + Keychain secrets + unpairs, same gate
+    // MARK: Full reset: wipes health + pairing, same unresolved-delivery gate
     //
     // NOTE: the xctest host has no functional Keychain, so PairingStore / CredentialStore (Keychain) don't
     // persist here — the existing health-erase test sidesteps this by comparing before==after. We therefore

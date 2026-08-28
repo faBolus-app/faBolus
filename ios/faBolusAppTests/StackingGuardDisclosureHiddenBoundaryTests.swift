@@ -2,22 +2,8 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// **LOCK-06 disclosure-hidden boundary test (Phase 8, 08-02).** Proves the SG1/SG2/SG3a advisory
-/// disclosure TEXT never reaches either `BolusEntryView` presentation seam, while the underlying
-/// `StackingGuard` computation and the escalation/friction routing (`StackingGuardDeliverInvariantTests`)
-/// stay completely unchanged — this suite makes ZERO assertions about delivery or friction tiers, only
-/// about what disclosure TEXT is presented.
-///
-/// Two coupled proofs, mirroring `StackingGuardDeliverInvariantTests`' "prove it fires, then prove the
-/// invariant holds anyway" idiom:
-///  1. Value-level: `rankedWarnings` DOES still render sg1/sg2/sg3a items when given non-nil messages (the
-///     function itself is untouched, not silently broken/dead) — but returns NO sg1/sg2/sg3a items for the
-///     exact nil-message call shape `BolusEntryView`'s real call site now uses.
-///  2. Source-level: the two known SG disclosure render sites in `BolusEntryView.swift` — the
-///     `rankedWarnings(...)` call and the separate `confirmMessage` `parts.append` site — no longer read
-///     `sg1Disclosure?.message` / `sg2Disclosure?.message` / `sg3aDisclosure?.message` as a live value fed
-///     into either presentation site (re-grepped live against the checked-in source, so a regression that
-///     re-wires the message back in fails this test even without exercising the SwiftUI view itself).
+/// SG1/SG2/SG3a advisory disclosure text must not reach either `BolusEntryView` presentation seam;
+/// stacking computation and friction routing stay unchanged.
 @Suite(.serialized) @MainActor
 struct StackingGuardDisclosureHiddenBoundaryTests {
 
@@ -34,12 +20,12 @@ struct StackingGuardDisclosureHiddenBoundaryTests {
         return (try? String(contentsOf: url, encoding: .utf8)) ?? ""
     }
 
-    // MARK: - (1) value-level: rankedWarnings itself is unchanged (still renders SG items when asked to),
+    // MARK: - (1) value-level: rankedWarnings still renders SG items when asked to,
     // but BolusEntryView's actual nil-message call shape yields none
 
     @Test func rankedWarningsStillRendersSGItemsWhenGivenNonNilMessages() {
-        // The function's own SG-rendering logic is untouched — this is NOT the regression this task
-        // suppresses; it proves the nil-message result below is a caller choice, not a broken function.
+        // The function's own SG-rendering logic is untouched — the nil-message result below is a
+        // caller choice, not a broken function.
         let items = BolusEntryView.rankedWarnings(
             overMax: false, maxUnits: 25, sg2Message: "sg2 disclosure text", childBlocked: false,
             pumpNotLinked: false, bolusInFlight: false, carbOverride: nil,
@@ -79,8 +65,7 @@ struct StackingGuardDisclosureHiddenBoundaryTests {
         #expect(!ids.contains("sg3a"))
     }
 
-    // MARK: - (2) source-level: both known render sites pass no SG disclosure message live, re-grepped
-    // against the checked-in source (RED against pre-Plan-2 main, GREEN once this task's edits land)
+    // MARK: - (2) source-level: both known render sites pass no SG disclosure message live
 
     @Test func sourceCompiles() {
         #expect(!Self.bolusEntryViewSource.isEmpty,
@@ -104,9 +89,9 @@ struct StackingGuardDisclosureHiddenBoundaryTests {
     }
 
     @Test func sg3aDisclosureComputationAndFrictionRoutingAreUntouched() {
-        // Read-only guard: the plan forbids changing HOW sg1Disclosure/sg2Disclosure/sg3aDisclosure or
-        // sg3aAppliedFriction compute — only nilling what's PASSED at the presentation seam. Pins that the
-        // computed-property declarations (and the friction-capping line) still exist verbatim in source.
+        // Hiding the SG disclosures must not drop HOW sg1/sg2/sg3a disclosure or sg3a friction compute —
+        // only nilling what's passed at the presentation seam. Pins that the computed-property
+        // declarations (and the friction-capping line) still exist verbatim in source.
         let source = Self.bolusEntryViewSource
         #expect(source.contains("private var sg1Disclosure: StackingGuard.Disclosure?"))
         #expect(source.contains("private var sg2Disclosure: StackingGuard.Disclosure?"))

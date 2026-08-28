@@ -3,16 +3,7 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// Phase 9 code-review CR-01 gap closure: proves the ALWAYS-ON `MobiRejectBackstop`
-/// (`AppModel+MobiRejectBackstop.swift`) fires WITHOUT any SwiftUI view on screen — unlike the three
-/// `.onChange(of: model.snapshot.pumpModel)` triggers `MobiRejectAtPairingBoundaryTests` pins, which
-/// are each anchored to a specific view being mounted.
-///
-/// Drives a REAL post-construction pump-identity transition (`MockBackend.simulatePumpIdentityChange`)
-/// through `AppModel`'s existing `source.onChange → refresh()` pipeline — the same path a real
-/// backgrounded Mobi (re)discovery takes. No `View`/`.onChange(of:)` modifier is anywhere in this call
-/// chain: the ONLY thing observing `model` is the `MobiRejectBackstop` instance constructed directly
-/// below, exactly as `FaBolusApp` constructs and starts it in `App.swift`'s `onAppear`.
+/// Pins that `MobiRejectBackstop` tears down a Mobi identity with no SwiftUI view mounted. View-anchored `.onChange` observers never fire while backgrounded.
 @Suite(.serialized) @MainActor
 struct MobiRejectBackstopBoundaryTests {
     private func makeModel(isMobi: Bool) -> (AppModel, MockBackend) {
@@ -54,12 +45,8 @@ struct MobiRejectBackstopBoundaryTests {
         #expect(model.savedPin == nil)
     }
 
-    /// CR-01 (VA-05) Step A: a Mobi that is ALREADY the current identity BEFORE `start()` runs — a
-    /// CoreBluetooth state-restoration reconnect, or a stored/identified Mobi applied before the backstop
-    /// wires up — must still be rejected. `withObservationTracking`'s `onChange` fires only on the NEXT
-    /// mutation, never against the value already present, so the transition test above would miss this;
-    /// `start()` now calls `rejectMobiIfDetected()` synchronously BEFORE arming observation to close the
-    /// gap. No transition (`simulatePumpIdentityChange`) is used here — the Mobi is current from birth.
+    /// A Mobi that is already the current identity before `start()` must still be rejected — observation
+    /// fires only on the next mutation, so `start()` calls `rejectMobiIfDetected()` synchronously first.
     @Test func backstopRejectsAlreadyCurrentMobiAtStartup() {
         let (model, _) = makeModel(isMobi: true)
 

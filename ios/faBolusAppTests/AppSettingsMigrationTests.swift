@@ -2,21 +2,8 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// Phase 9 (09-04, MOBI-04, D-06): `criticalAlertsEnabled`'s default is flipped from Mobi-derived
-/// (`PumpModelStore.isMobi() == true`) to an explicit t:slim OFF, decoupled from the Mobi check, and a
-/// pre-Phase-9 persisted `true` is force-reset to `false` EXACTLY ONCE on upgrade via a new dedicated
-/// idempotent-once guard key (`criticalAlertsForceResetV050`) — owner-chosen uniform state over leaving
-/// persisted values. The capability path (`NotificationCoordinator` read, `NotificationSettingsView`
-/// toggle) is untouched and proven reachable elsewhere; this suite covers only the default + migration.
-///
-/// Mirrors `FirstLaunchDefaultsTests`'s idiom: a fresh, throwaway `UserDefaults` suite stands in for a
-/// device install so these assertions read `AppSettings.init`'s fallback/migration logic without
-/// depending on — or clobbering — the real `.standard` domain or `AppSettings.shared`.
-///
-/// `PumpModelStore` itself is hardcoded to `UserDefaults.standard` (not injectable), so
-/// `defaultIsOffForTslimDecoupledFromMobi` drives it against `.standard` to prove decoupling — save +
-/// restore its real persisted value so no sibling suite (or a real device's detected-pump state, if this
-/// ever ran outside CI) is disturbed. `.serialized` because of that shared mutable global.
+/// `criticalAlertsEnabled` defaults OFF for every pump family, and a one-time upgrade reset of a
+/// leftover `true` must not clobber a later user opt-in.
 @MainActor
 @Suite(.serialized)
 struct AppSettingsMigrationTests {
@@ -32,8 +19,7 @@ struct AppSettingsMigrationTests {
     }
 
     /// With no persisted value, `criticalAlertsEnabled` defaults to `false` regardless of
-    /// `PumpModelStore.isMobi()` — proving the default is decoupled from the Mobi check, not merely
-    /// that it happens to read false today.
+    /// `PumpModelStore.isMobi()` — proving the default is decoupled from the Mobi check.
     @Test func defaultIsOffForTslimDecoupledFromMobi() {
         // Save + restore the real `.standard`-backed detected-pump flag: PumpModelStore hardcodes
         // UserDefaults.standard and has no injectable seam.
@@ -51,13 +37,12 @@ struct AppSettingsMigrationTests {
         }
     }
 
-    /// A persisted pre-Phase-9 `criticalAlertsEnabled == true` (from the old Mobi-derived default), with
-    /// the guard key unset (never migrated), is force-reset to `false` exactly once on upgrade, and the
-    /// guard key is set so the reset does not re-fire.
+    /// A leftover persisted `criticalAlertsEnabled == true`, with the guard key unset, is force-reset
+    /// to `false` exactly once on upgrade, and the guard key is set so the reset does not re-fire.
     @Test func persistedTrueIsForceResetOnceOnUpgrade() {
         let defaults = freshSuite()
         defaults.set(true, forKey: Self.enabledKey)
-        // Guard key deliberately absent — simulates a pre-Phase-9 install that has never run this migration.
+        // Guard key deliberately absent — never migrated.
         #expect(defaults.object(forKey: Self.forceResetKey) == nil)
 
         let settings = AppSettings(defaults: defaults)
@@ -90,7 +75,7 @@ struct AppSettingsMigrationTests {
     /// stays idempotent — a second and third `init` neither re-reset nor otherwise perturb the value.
     @Test func migrationIsIdempotentAcrossRepeatedInit() {
         let defaults = freshSuite()
-        defaults.set(true, forKey: Self.enabledKey)   // pre-Phase-9 persisted true, guard unset
+        defaults.set(true, forKey: Self.enabledKey)   // leftover persisted true, guard unset
 
         _ = AppSettings(defaults: defaults)   // first post-upgrade launch: force-resets to false
         #expect(defaults.object(forKey: Self.enabledKey) as? Bool == false)

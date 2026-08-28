@@ -2,14 +2,8 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// **WR-03 / VA-23 (commit cecd4ad).** Pins `RootTabView.activeAlert(hasRemoteBolus:hasRemoteControl:pumpSwitch:)`
-/// — the pure static resolver that arbitrates three stacked SwiftUI `.alert`s (`RootTabView.swift:32-38`)
-/// so the high-stakes remote-bolus confirm can never be the one dropped. Priority is a strict cascade:
-/// remoteBolus > remoteControl > pumpSwitch.
-///
-/// LOAD-BEARING INVARIANT: whenever `hasRemoteBolus` is true, the result is `.remoteBolus` regardless of
-/// the other two flags. A pending remote-bolus confirmation must NEVER be suppressed by a lower-priority
-/// remote-control or pump-switch alert.
+/// A pending remote-bolus confirm must never be suppressed by a lower-priority remote-control or
+/// pump-switch alert.
 @MainActor
 @Suite struct RootAlertPriorityTests {
 

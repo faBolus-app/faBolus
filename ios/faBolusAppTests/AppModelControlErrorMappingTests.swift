@@ -4,16 +4,8 @@ import faBolusCore
 import TandemBLE
 @testable import faBolus
 
-/// **CC-06/C4 (REMED-15.5).** Proves `AppModel.performControl`'s surgical catch for
-/// `PumpBLEClient.ClientError.identityNotEstablished`: a user-initiated control refused by the kit's
-/// trusted-identity send gate surfaces a distinct, ACTIONABLE message (not the generic
-/// `error.localizedDescription` fallback `MainHUDView.humanizedDashboardError` would otherwise wrap), and
-/// never triggers an automatic retry.
-///
-/// `IdentityGateThrowingBackend` is a minimal `PumpBackend` conformance — everything EXCEPT
-/// `suspendDelivery()` forwards to an internal `MockBackend` (whose `PumpBackend` extension defaults cover
-/// every other member), so this drives the REAL `AppModel.suspendDelivery() → runControl → performControl`
-/// funnel with a REAL thrown `PumpBLEClient.ClientError`, not a stubbed `AppModel`.
+/// Pins that an identity-not-established control refusal surfaces a distinct actionable message and never
+/// auto-retries. A generic fallback would hide that the kit blocked the write because trusted identity is missing.
 @Suite(.serialized) @MainActor
 struct AppModelControlErrorMappingTests {
 

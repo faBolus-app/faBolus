@@ -2,18 +2,8 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// Debug session `pump-background-disconnect` (owner-authorized 2026-08-20, re-scoped pass). Pins the
-/// app-side belt-and-suspenders for the kit's background reconnect: a background reconnect attempt ARMS a
-/// single background-execution window (so the kit's main-RunLoop `reconnectTick()` gets the runtime to
-/// establish/observe the INLINE `central.connect()` the kit now issues on a genuine drop), the window is
-/// RELEASED on recovery / terminal states / OS expiry, and it is NEVER armed in the foreground.
-///
-/// A live BLE background-suspension drop cannot be reproduced in a unit test (no hardware, no OS
-/// suspension), so this pins the load-bearing SEAM deterministically via `PumpBackgroundSession`'s injected
-/// `beginTask`/`endTask`/`isForeground` seams — no `UIApplication`, no CoreBluetooth. H2 ("keep the link
-/// warm across a suspend") has NO app-side mechanism under the re-scope (the kit keeps its notification
-/// subscriptions across background; the prior pass's polling keep-alive read was removed per the owner's
-/// no-battery-drain constraint), so there is nothing keep-alive to test here.
+/// Pins that a background reconnect arms one background-execution window and releases it on recovery,
+/// terminal state, or OS expiry — never in the foreground. Without that window the kit's reconnect tick never runs while suspended.
 @Suite(.serialized) @MainActor
 struct PumpBackgroundSessionTests {
 
@@ -38,7 +28,7 @@ struct PumpBackgroundSessionTests {
         }
     }
 
-    // MARK: - H1: background reconnect window
+    // MARK: - Background reconnect window
 
     @Test func armsBackgroundWindowOnReconnectAttemptWhileBackgrounded() {
         let h = Harness(); let s = PumpBackgroundSession(); h.wire(s)
@@ -92,7 +82,7 @@ struct PumpBackgroundSessionTests {
         #expect(!s.isTaskActiveForTesting)
     }
 
-    // MARK: - CX-F-06: fg→bg must re-evaluate a reconnect scheduled while still foreground
+    // MARK: - Foreground→background must re-evaluate a reconnect scheduled while still foreground
 
     @Test func enteredBackgroundArmsAWindowForAReconnectScheduledWhileStillForeground() {
         let h = Harness(); let s = PumpBackgroundSession(); h.wire(s)

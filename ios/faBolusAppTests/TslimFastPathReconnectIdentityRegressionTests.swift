@@ -5,30 +5,16 @@ import TandemMessages
 import TandemBLE
 @testable import faBolus
 
-/// **Regression: `tslim-misidentified-as-mobi`** (debug session
-/// `.planning/debug/tslim-misidentified-as-mobi.md`).
-///
-/// A real, paired t:slim X2 was refused with "Tandem Mobi isn't supported…" on every bolus after an
-/// ordinary cold launch. Root cause (Phase 15.5): on the fast `connectKnownPeripheral` reconnect (taken
-/// once a `TrustedPumpIdentityStore` record exists) `didDiscover` never fires, so `applyDidDiscover` —
-/// the only writer of `snapshot.pumpModelName` from the BLE name — is skipped.
-/// `reapplyTrustedIdentityIfKnown()` restored ONLY the PRIVATE `detectedIsMobi` (and the kit device
-/// context), not the PUBLISHED `snapshot.isMobi`/`snapshot.pumpModelName`. op33 then skipped its own
-/// name assignment (it is guarded by `if detectedIsMobi() == nil`), so `snapshot.pumpModelName` stayed
-/// empty → `snapshot.pumpModel == .unknown` → `validateDeliver`'s family gate
-/// (`guard snapshot.pumpModel == .tslimX2`) threw `MobiRejectCopy.mobiNotSupported` for a genuine t:slim.
-///
-/// These drive the REAL fast-path reconnect (`armReconnectTargetForTesting` +
-/// `applyClientState(.discovering)` → reapply) followed by a REAL op33 frame, from the realistic
-/// cold-launch state (empty published model, nil name-authority signal). No live CoreBluetooth central.
+/// Fast-path reconnect skips `didDiscover`, so reapply must restore the published pump model;
+/// otherwise a genuine t:slim stays `.unknown` and `validateDeliver` refuses it as unsupported Mobi.
 @Suite(.serialized) @MainActor
 struct TslimFastPathReconnectIdentityRegressionTests {
 
     private static let bolusId = 4242
     private let initiateRequestOp = InitiateBolusRequest.props.opCode
 
-    /// Hermetic isolation (RESEARCH §A4 / codex C9): the identity stores are UserDefaults-backed and
-    /// process-global, so seed state from one case must never leak into the next.
+    /// Hermetic isolation: the identity stores are UserDefaults-backed and process-global, so seed
+    /// state from one case must never leak into the next.
     private func resetIdentityStores() {
         TrustedPumpIdentityStore.clear()
         PumpPeripheralStore.clear()
@@ -61,9 +47,8 @@ struct TslimFastPathReconnectIdentityRegressionTests {
 
     // MARK: - the regression: a paired t:slim reconnecting via the fast path must resolve to .tslimX2
 
-    /// THE failing case. Persisted trusted t:slim record → fast path → reapply → op33 (2.5). Before the
-    /// fix `snapshot.pumpModel` is `.unknown` (reapply left `pumpModelName` empty and op33 skipped it);
-    /// after the fix reapply restores the published model so it is `.tslimX2`.
+    /// Persisted trusted t:slim record → fast path → reapply → op33. Reapply must restore the published
+    /// model so it is `.tslimX2`, not `.unknown`.
     @Test func tslimReconnectViaFastPathResolvesToTslimX2NotUnknown() {
         resetIdentityStores()
         let uuid = UUID()

@@ -2,32 +2,11 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// D-14 (09.18a): LoopInsights is NEVER vendored as a whole dir — only eight benign, DOSE-SAFE
-/// files are cherry-picked (the endo-report PDF pair, caffeine tracker pair, alcohol tracker
-/// pair, and caregiver-digest pair). Every other file in the upstream LoopInsights dirs is
-/// EXCLUDED: the Coordinator, all AI/Chat/advisor/suggestion surfaces, the analyzers, the
-/// importers, the background monitors, and the excluded models. A leak of ANY excluded file
-/// re-arms the binding no-novel-medical-advice violation and inflates the §13 gate (D-14 /
-/// RESEARCH Pitfall 2).
-///
-/// This guard source-scans the compiled app tree (`ios/faBolus`) and asserts no file whose
-/// basename is on the excluded denylist is present. It is green TODAY (only SiteAtlas is
-/// vendored this slice — no LoopInsights file exists under `ios/faBolus` yet) and stays green
-/// through 09.18d as long as ONLY the eight benign INCLUDE files are added: those eight
-/// basenames are deliberately absent from `deniedBasenames`, so 09.18d can add them without
-/// tripping this guard.
-///
-/// The denylist is the exhaustive upstream LoopInsights inventory
-/// (`/Users/zgranowitz/Code/zgranowitz/LoopPowerPack-Loop/Loop/{Services,Views,Models,Managers}/LoopInsights/`,
-/// RESEARCH §4) MINUS the eight benign INCLUDE files (D-14).
-///
-/// Mirrors `SettingsReachabilityGuardTests`' recursive `allSwiftFiles(under:)` enumerator (skips
-/// `.build`/`DerivedData`/`*Tests` dirs) + the `#filePath`-rooted walk-up resolve idiom.
+/// LoopInsights AI/advisor/suggestion files must never enter the app tree — display-only never
+/// dose; a leak re-arms novel medical advice onto a dose-adjacent surface.
 struct LoopInsightsExclusionGuardTests {
-    /// EXCLUDED LoopInsights source-file basenames (D-14 / RESEARCH §4). The eight benign INCLUDE
-    /// files (ReportGenerator, EndoReportView, CaffeineTracker, CaffeineLogView, AlcoholTracker,
-    /// AlcoholLogView, CaregiverDigestService, CaregiverDigestView) are intentionally NOT here —
-    /// 09.18d adds those.
+    /// LoopInsights files that must not be compiled under `ios/faBolus`. The eight display-only
+    /// INCLUDE files (report/caffeine/alcohol/caregiver-digest pairs) are intentionally not here.
     static let deniedBasenames: Set<String> = [
         // Managers/LoopInsights
         "LoopInsights_BackgroundMonitor.swift",
@@ -75,9 +54,7 @@ struct LoopInsightsExclusionGuardTests {
         "LoopInsights_SuggestionRecord.swift",
     ]
 
-    /// The eight benign INCLUDE files (D-14) that 09.18d may add — must NOT be on the denylist.
-    /// Asserted below so a future edit can't silently move a benign file onto the denylist and
-    /// block 09.18d.
+    /// Display-only INCLUDE files that must not be on the denylist.
     static let benignIncludeBasenames: Set<String> = [
         "LoopInsights_ReportGenerator.swift",
         "LoopInsights_EndoReportView.swift",
@@ -123,7 +100,7 @@ struct LoopInsightsExclusionGuardTests {
         return results
     }
 
-    // MARK: - D-14: no excluded LoopInsights file is compiled under ios/faBolus
+    // MARK: - no excluded LoopInsights file is compiled under ios/faBolus
 
     @Test func noExcludedLoopInsightsFileIsCompiled() throws {
         guard let appDir = Self.appDirURL() else {

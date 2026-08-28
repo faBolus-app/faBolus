@@ -3,24 +3,9 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// D4-05/CX-A-09 (Phase 17, Plan 08) — behavior-preservation proof for the `@Stored` property-wrapper
-/// conversion. Every property this plan converts must keep its EXACT pre-conversion UserDefaults key
-/// string and default value (a changed key string would silently orphan a persisted setting), and a
-/// property whose old `didSet` had a side effect (`syncWidgetConfig()`/`applyFreshness()`/
-/// `GlucoseBadge.clear()`) must keep firing that side effect on a LATER change while NOT firing it
-/// during `AppSettings.init()` (Swift's own "observers don't fire on a property's first init-time
-/// assignment" guarantee for the pre-conversion hand-rolled code — see `Stored.swift`'s doc comment
-/// for why a fully computed property needs its own explicit mechanism to preserve this).
-///
-/// **RED-until-conversion signal:** each `assert*StoredRoundTrip` helper below first inspects, via
-/// `Mirror`, whether `AppSettings` actually holds a private `Stored<T>`-typed backing field for the
-/// property under test (e.g. `_showIOBAxis` of type `Stored<Bool>`) — this fails (RED) against the
-/// pre-conversion source, where the property is a plain stored var with a hand-rolled `didSet` and no
-/// such field exists, and only turns GREEN once the conversion (this plan's Task 2) is in place. (RED
-/// was confirmed by inspection against the pre-conversion `AppSettings.swift` — reconstructible from
-/// git history at this plan's parent commit — since the target already carries the post-conversion
-/// source once this test file is authored in the same tree; see the plan's SUMMARY for the exact
-/// methodology note.)
+/// `@Stored` conversion must keep each property's exact UserDefaults key and default, and must not
+/// fire `onChange` during `init`. Force-pinned values (retention, stacking-guard friction, critical-
+/// alerts default) still win over any stored leftover.
 @MainActor
 struct AppSettingsStoredMigrationTests {
 
@@ -75,8 +60,7 @@ struct AppSettingsStoredMigrationTests {
 
     // MARK: - Structural + round-trip helpers
 
-    /// `Mirror`-reach into `settings`'s private `_<label>` field and confirm it is `Stored<T>` — the
-    /// RED-until-conversion structural proof.
+    /// Confirm the private `_<label>` field is `Stored<T>`.
     private func expectStoredBacking<T>(_ settings: AppSettings, label: String, valueType: T.Type) {
         let mirror = Mirror(reflecting: settings)
         let backing = mirror.children.first { $0.label == label }
@@ -307,13 +291,10 @@ struct AppSettingsStoredMigrationTests {
         }
     }
 
-    // MARK: - 17-09 follow-up: remaining simple scalar properties converted to `@Stored`
+    // MARK: - Remaining simple scalar properties converted to `@Stored`
     //
-    // Same behavior-preservation contract as the 17-08 batch above (exact key string + default value
-    // preserved; structural `Stored<T>`-backing proof via `Mirror`). These are the properties 17-08's
-    // SUMMARY explicitly deferred as a "low-risk, mechanical continuation" — every JSON-encoded,
-    // Date-optional, array-typed, and getter-frozen property is deliberately still NOT converted (they
-    // are out of the "simple scalar" scope).
+    // Same key-string + default contract as the batch above. JSON-encoded, Date-optional, array-typed,
+    // and getter-frozen properties are still not converted.
 
     // MARK: Bool properties (no side effect)
 
@@ -436,15 +417,14 @@ struct AppSettingsStoredMigrationTests {
         #expect(settings.watchDefaultBolusMode == .units, "watch default must fall back to the phone default")
     }
 
-    // MARK: Force-pinned properties (the init pin overrides ANY stored value at every init, but the
-    // setter itself still writes the exact key — same shape as the 17-08 `autoSyncPumpTime` test).
+    // MARK: Force-pinned properties (init overrides any stored value, but the setter still writes the key)
 
     @Test func historyRetentionDaysIsForceSet1RegardlessOfAnyStoredValue() {
         let d = freshSuite("historyRetentionDays")
         d.set(30, forKey: "historyRetentionDays")   // simulate a legacy longer-retention window
         let settings = AppSettings(defaults: d)
         expectStoredBacking(settings, label: "__historyRetentionDays", valueType: Int.self)
-        #expect(settings.historyRetentionDays == 1)   // LOCK-03 force-set 1 (24h) wins over the stored value
+        #expect(settings.historyRetentionDays == 1)   // force-set 1 (24h) wins over the stored value
         settings.historyRetentionDays = 30            // the setter itself is unchanged (still writable)…
         #expect(d.object(forKey: "historyRetentionDays") as? Int == 30)
         let settings2 = AppSettings(defaults: d)
@@ -456,24 +436,24 @@ struct AppSettingsStoredMigrationTests {
         d.set(true, forKey: "stackingGuardFrictionEnabled")
         let settings = AppSettings(defaults: d)
         expectStoredBacking(settings, label: "__stackingGuardFrictionEnabled", valueType: Bool.self)
-        #expect(settings.stackingGuardFrictionEnabled == false)   // LOCK-06 force-set false wins
+        #expect(settings.stackingGuardFrictionEnabled == false)   // force-set false wins
         settings.stackingGuardFrictionEnabled = true
         #expect(d.object(forKey: "stackingGuardFrictionEnabled") as? Bool == true)
         let settings2 = AppSettings(defaults: d)
         #expect(settings2.stackingGuardFrictionEnabled == false)
     }
 
-    // MARK: One-time force-reset migration guard (`criticalAlertsEnabled`, MOBI-04/D-06)
+    // MARK: One-time force-reset migration guard (`criticalAlertsEnabled`)
 
     @Test func criticalAlertsEnabledStoredRoundTripAndOneTimeForceReset() {
-        // 1. Fresh install (no keys): default OFF (D-06 safety default), and the one-time guard is recorded.
+        // 1. Fresh install (no keys): default OFF, and the one-time guard is recorded.
         let d1 = freshSuite("criticalAlertsEnabled.fresh")
         let s1 = AppSettings(defaults: d1)
         expectStoredBacking(s1, label: "__criticalAlertsEnabled", valueType: Bool.self)
         #expect(s1.criticalAlertsEnabled == false)
         #expect(d1.object(forKey: "criticalAlertsForceResetV050") as? Bool == true)
 
-        // 2. Migration: a pre-Phase-9 stored `true` with NO guard is force-reset to false exactly once.
+        // 2. Migration: a leftover stored `true` with no guard is force-reset to false exactly once.
         let d2 = freshSuite("criticalAlertsEnabled.migrate")
         d2.set(true, forKey: "criticalAlertsEnabled")   // legacy Mobi-derived ON
         let s2 = AppSettings(defaults: d2)
@@ -488,13 +468,10 @@ struct AppSettingsStoredMigrationTests {
         #expect(s3.criticalAlertsEnabled == true)
     }
 
-    // MARK: - SettingsCatalog counts unchanged (D4-05 must-have)
+    // MARK: - SettingsCatalog counts unchanged by Stored conversion
 
     @Test func settingsCatalogCountsUnchangedByStoredConversion() {
-        // 31 → 35: Phase 20 added four phone-owned Garmin settings (garminAlertIntensityMode,
-        // garminAlertAudibleMinSeverity, garminAlertCriticalOverridesDnd, garminComplicationSlots), all
-        // `.remotes`/`backsUp: true`. The D4-05 Stored-conversion invariant this test guards is unchanged;
-        // only the intended new-setting count moved.
+        // Four phone-owned Garmin settings were added; both counts must stay in lockstep.
         #expect(SettingsCatalog.descriptors.count == 35)
         #expect(SettingsCatalog.backedUpKeys.count == 35)
     }

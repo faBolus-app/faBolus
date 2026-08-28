@@ -2,29 +2,13 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// **IN-02 (Phase 17 review) anti-drift pin.** `MainHUDView.humanizedDashboardError` and
-/// `StatusRingView.humanized` each map ONLY a recognizable RAW error shape (Foundation's
-/// "couldn't be completed. (<Domain> error <code>.)" boilerplate, a bare "domain#code " NSError
-/// token, or an "Error Domain=" string) to one plain fallback sentence, and pass EVERY other string
-/// through byte-identical. That's correct today because every CURATED `lastError`/`connectionDetail`
-/// literal in the app was verified not to match those raw shapes. Nothing, however, stops a FUTURE
-/// curated message from accidentally starting with `word#digits ` (e.g. a version-prefixed
-/// "iOS17#3 …") and getting silently rewritten into the generic fallback — losing a real message.
-///
-/// This guard scans the production source for every literal `lastError = "…"` / `connectionDetail =
-/// "…"` assignment and asserts none of them look "raw" (i.e. each passes through the humanizer
-/// UNCHANGED). Modeled on `BandDriftGuardTests`/`BolusSuccessBannerDriftGuardTests`'s repo-root-walk +
-/// comment-stripped source-scan idiom.
-///
-/// NOTE: the raw-shape regexes below are a DELIBERATE copy of the production humanizers'
-/// (`MainHUDView.swift:238-244`, `StatusRingView.swift:140-146`) — those helpers are `private`, so a
-/// direct call isn't reachable even under `@testable import`. If a humanizer's detection pattern is
-/// ever changed, update the mirror here too (same intentional-duplication tradeoff as
-/// `BandDriftGuardTests.forbiddenRawBandColors`). The `looksRaw*` self-checks below fail loudly if the
-/// mirror stops matching a known raw shape, so a silently-broken copy is caught.
+/// Curated `lastError` / `connectionDetail` literals must not match the dashboard/connection
+/// humanizers' raw-shape patterns, or a real message is silently rewritten into a generic fallback.
+/// The matchers here copy the private production helpers; the self-checks fail if that copy stops
+/// catching a known raw shape.
 struct HumanizedErrorDriftGuardTests {
 
-    // MARK: - Repo enumeration (mirrors BandDriftGuardTests' idiom)
+    // MARK: - Repo enumeration
 
     private static func repoRootURL() -> URL? {
         let fm = FileManager.default
@@ -72,7 +56,7 @@ struct HumanizedErrorDriftGuardTests {
         return out
     }
 
-    // MARK: - Mirrored raw-shape detection (see NOTE in the type doc comment)
+    // MARK: - Mirrored raw-shape detection (see type doc comment)
 
     /// Mirrors `MainHUDView.humanizedDashboardError`'s three raw-shape checks.
     private static func looksRawDashboard(_ raw: String) -> Bool {

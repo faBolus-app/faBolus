@@ -9,7 +9,7 @@ final class RemoteCommandTests: XCTestCase {
         XCTAssertEqual(RemoteCommand(kind: .statusRead).version, RemoteCommand.schemaVersion)
     }
 
-    /// S8: the pure new-alert diff a remote uses to actively surface a newly-arrived alert.
+    /// The new-alert diff a remote uses to actively surface a newly-arrived alert.
     func testNewAlertIdentitiesDetectsFreshAndReplacement() {
         let a = RemoteCommand.RemoteAlert(id: 27, kind: 3, title: "Failed connection")
         let b = RemoteCommand.RemoteAlert(id: 2, kind: 2, title: "Occlusion")
@@ -33,7 +33,7 @@ final class RemoteCommandTests: XCTestCase {
                                 bolusMode: "carbs", bolusIncrement: 0.05, carbIncrement: 5,
                                 screenOrder: ["glance", "alerts"], defaultScreen: "glance")
         var withMode = cmd
-        withMode.activeMode = "simple"   // P14 S4: pin the active-mode field on the wire
+        withMode.activeMode = "simple"   // remotes need the phone's active mode on the wire
         let decoded = try RemoteCommand.decode(try withMode.encoded())
         XCTAssertEqual(decoded, withMode)
         XCTAssertEqual(decoded.activeMode, "simple")
@@ -42,7 +42,7 @@ final class RemoteCommandTests: XCTestCase {
         XCTAssertEqual(decoded.trend, "up45")
     }
 
-    /// B2 (S1+O3): the controller-identity fields round-trip on the wire (JSON + dictionary), and the
+    /// The controller-identity fields round-trip on the wire (JSON + dictionary), and the
     /// variant token is the FROZEN rawValue.
     func testControllerVariantRoundTrips() throws {
         var cmd = RemoteCommand(kind: .statusRead)
@@ -85,9 +85,8 @@ final class RemoteCommandTests: XCTestCase {
         XCTAssertEqual(decoded.alertKind, 3)
     }
 
-    /// Phase 4 (mmol/L display-unit support, D-04/Pattern 2): the additive-optional
-    /// `glucoseDisplayUnit` wire token round-trips (JSON + dictionary), and its absence on a legacy
-    /// payload decodes to `nil` (⇒ consumers default to mgdl) WITHOUT touching `schemaVersion`.
+    /// `glucoseDisplayUnit` round-trips, and its absence on a legacy payload decodes to nil (consumers
+    /// default to mgdl) without bumping schemaVersion.
     func testGlucoseDisplayUnitRoundTrips() throws {
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.glucoseDisplayUnit = GlucoseUnit.mmol.wireToken
@@ -103,11 +102,10 @@ final class RemoteCommandTests: XCTestCase {
         XCTAssertEqual(bare.version, RemoteCommand.schemaVersion)
     }
 
-    // MARK: - Phase 09.13-02 (glucose plot height customization, D-06/D-07) — plot bound wire fields
+    // MARK: - Plot bound wire fields
 
-    /// D-06: all four additive-optional plot-bound Int fields round-trip (JSON + dictionary); an
-    /// encode without setting them omits all four keys, and decoding that bare payload yields nil for
-    /// all four (legacy-safe), WITHOUT touching `schemaVersion`.
+    /// All four plot-bound Int fields round-trip; an unset encode omits the keys and a bare payload
+    /// decodes to nil without bumping schemaVersion.
     func testGlucosePlotBoundsRoundTripAndOmitWhenAbsent() throws {
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.glucosePlotFloor = 40
@@ -125,7 +123,7 @@ final class RemoteCommandTests: XCTestCase {
         XCTAssertEqual(back.glucosePlotFloor, 40)
         XCTAssertEqual(back.glucosePlotCeilingSmall, 400)
 
-        // Not set ⇒ omitted from the wire entirely (byte-compatible with a pre-09.13 peer).
+        // Not set ⇒ omitted from the wire entirely (byte-compatible with a peer that never had these keys).
         let bareEncoded = try RemoteCommand(kind: .statusRead).encoded()
         let bareJSON = String(data: bareEncoded, encoding: .utf8) ?? ""
         for key in ["glucosePlotFloor", "glucosePlotCeiling", "glucosePlotFloorSmall", "glucosePlotCeilingSmall"] {
@@ -139,7 +137,7 @@ final class RemoteCommandTests: XCTestCase {
         XCTAssertEqual(bare.version, RemoteCommand.schemaVersion)
     }
 
-    // MARK: - Phase 09.9-04 (D-05): cartridge-ready DISPLAY signal
+    // MARK: - Cartridge-ready display signal
 
     /// The additive-optional `cartridgeReady` field round-trips (JSON + dictionary) both when true and
     /// when explicitly false, and never touches `schemaVersion` — mirrors `canBolus` exactly.
@@ -168,7 +166,7 @@ final class RemoteCommandTests: XCTestCase {
         XCTAssertEqual(bare.version, RemoteCommand.schemaVersion)
     }
 
-    // MARK: - Phase 09.27-03 (D-04/D-05): batteryCharging remote-wire propagation
+    // MARK: - batteryCharging remote-wire propagation
 
     /// The additive-optional `batteryCharging` field round-trips (JSON + dictionary) when true, and
     /// never touches `schemaVersion` — mirrors `cartridgeReady` exactly.
@@ -183,18 +181,18 @@ final class RemoteCommandTests: XCTestCase {
     }
 
     /// A legacy/bare payload without the `batteryCharging` key decodes to `nil` — a remote must map
-    /// this to NOT charging (fail-closed), never a fabricated charging state (D-05).
+    /// this to NOT charging (fail-closed), never a fabricated charging state.
     func testBatteryChargingAbsentOnLegacyPayloadDecodesToNil() throws {
         let bare = try RemoteCommand.decode(try RemoteCommand(kind: .statusRead).encoded())
         XCTAssertNil(bare.batteryCharging)
         XCTAssertEqual(bare.version, RemoteCommand.schemaVersion)
     }
 
-    // MARK: - CX-G-08 (14-09): dismissAck kind + supportsDismissAck capability
+    // MARK: - dismissAck kind + supportsDismissAck capability
 
     /// The new `dismissAck` kind round-trips (JSON + dictionary) carrying the reused
     /// requestId/alertId/alertKind fields, and is neither pump-mutating nor freshness-sensitive
-    /// (checkpoint #1: it is an observational phone→watch ack, never a pump write).
+    /// (it is an observational phone→watch ack, never a pump write).
     func testDismissAckRoundTripsAndIsNeitherMutatingNorFreshnessSensitive() throws {
         var cmd = RemoteCommand(kind: .dismissAck, requestId: "req-1")
         cmd.alertId = 3
@@ -223,7 +221,7 @@ final class RemoteCommandTests: XCTestCase {
     }
 
     /// `supportsDismissAck` round-trips (JSON + dictionary) and, absent on a legacy payload, decodes to
-    /// nil — the watch's safe default is the 14-08 fallback, never a fabricated "ack-mode" claim.
+    /// nil — never a fabricated "ack-mode" claim.
     func testSupportsDismissAckRoundTripsAndAbsentDecodesToNil() throws {
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.supportsDismissAck = true
@@ -235,7 +233,7 @@ final class RemoteCommandTests: XCTestCase {
         XCTAssertNil(bare.supportsDismissAck)
     }
 
-    // MARK: - 14-10: `rawAlerts` snapshot + `supportsRawAlertSnapshot` capability (t:slim proof-of-absence backstop)
+    // MARK: - rawAlerts snapshot + supportsRawAlertSnapshot capability
 
     /// A statusRead carrying `rawAlerts` + `supportsRawAlertSnapshot: true` round-trips 1:1 (JSON +
     /// dictionary) — mirrors `alerts`/`supportsDismissAck` exactly. `validate()` passes (bounds-checked,

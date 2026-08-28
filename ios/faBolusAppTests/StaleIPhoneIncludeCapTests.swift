@@ -3,23 +3,9 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// Addendum B (iPhone fast-follow) — the DIRECT-compose include-stale path (`BolusEntryView`) must respect
-/// the SAME includable-age cap the host path enforces in `AppModel.resolveRemoteDose`. The compose block
-/// offers the "include the stale reading" option only when `StaleBolusPrompt.mayOfferInclude(...)` is true
-/// (a reading is present AND its age is within `(staleAfter, maxIncludableStaleness]`); a reading present but
-/// OLDER than the cap composes carbs-only exactly as a missing reading does, and is never used as the
-/// correction basis. This closes the unbounded-staleness gap the adversarial panel found on the remote path,
-/// now on the iPhone's own primary bolus surface.
-///
-/// `BolusEntryView.attemptDeliver` is SwiftUI-@State-bound and not directly unit-testable, so the
-/// include-eligibility DECISION lives in the pure `StaleBolusPrompt.mayOfferInclude` helper the view calls
-/// (at both the compose gate and the Include-button re-check). These tests drive the REAL `AppModel` +
-/// `MockBackend` (the same oracle-backed calculator the view uses), feed the decision from the model's own
-/// snapshot exactly as the view does, and prove the dose consequence: within-cap the include dose reflects
-/// the stale BG (a strictly larger correction), beyond-cap there is no include option (carbs-only).
-///
-/// `.serialized` + pin/restore of the global `GlucoseFreshness` thresholds so the 15-min boundary is
-/// unambiguous regardless of the global default — mirroring the host cap test (`StaleRemoteDoseHostTests`).
+/// `BolusEntryView` may offer include-stale only inside the same age cap the host uses; a reading
+/// older than the cap composes carbs-only so an arbitrarily old BG cannot drive an insulin-increasing
+/// correction.
 @Suite(.serialized)
 @MainActor
 struct StaleIPhoneIncludeCapTests {
@@ -37,7 +23,7 @@ struct StaleIPhoneIncludeCapTests {
     }
 
     /// Within the cap (10 min): the view offers Include, and the include dose reflects the stale BG — a
-    /// strictly larger correction than the carbs-only fallback. Behavior is unchanged from before the cap.
+    /// strictly larger correction than the carbs-only fallback.
     @Test func withinCapOffersIncludeAndDoseReflectsStaleBG() async {
         let savedStale = GlucoseFreshness.staleAfter, savedMax = GlucoseFreshness.maxIncludableStaleness
         GlucoseFreshness.staleAfter = 6 * 60
@@ -60,10 +46,9 @@ struct StaleIPhoneIncludeCapTests {
         #expect(withStale > carbsOnly + tol)
     }
 
-    /// Beyond the cap (20 min): NO Include option is offered — the compose flow is carbs-only / cancel only,
-    /// identical to a missing reading. The too-old reading is never used as the correction basis. This is the
-    /// gap closed: the old predicate offered Include off `isGlucoseStale` alone (a >6-min LOWER bound, no
-    /// upper bound), so a 20-min (or 2-hour) reading could have driven an insulin-INCREASING correction.
+    /// Beyond the cap (20 min): no Include option — carbs-only, identical to a missing reading. The old
+    /// predicate offered Include off `isGlucoseStale` alone (a lower bound, no upper bound), so a 20-min
+    /// reading could have driven an insulin-increasing correction.
     @Test func beyondCapDoesNotOfferIncludeAndComposesCarbsOnly() async {
         let savedStale = GlucoseFreshness.staleAfter, savedMax = GlucoseFreshness.maxIncludableStaleness
         GlucoseFreshness.staleAfter = 6 * 60

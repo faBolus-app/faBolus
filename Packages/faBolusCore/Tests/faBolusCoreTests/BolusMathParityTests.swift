@@ -2,18 +2,8 @@ import XCTest
 import CryptoKit
 @testable import faBolusCore
 
-/// Byte-for-byte parity of `BolusMath` against the vendored Tandem oracle `BolusCalculator.parse()`.
-///
-/// The fixtures in `Fixtures/bolus_oracle_fixtures.jsonl` were captured by running the **actual**
-/// `BolusCalculator.java` (TandemKit `vendor/pumpx2-oracle`, compiled bytecode) over a grid of inputs
-/// that spans every branch of `parse()`: carbs / no carbs × BG below / at / above target × IOB below /
-/// equal / above the correction × zero and floor boundaries, plus profile variations (carb ratio, ISF,
-/// target) and sanity-failure edges (invalid carb ratio, ISF ≤ 0, target out of [40,400]). Each row is
-/// `{carbs, bg, cr(g/U), isf, tgt, iob(U), u(oracle total)}`.
-///
-/// If this test fails, `BolusMath` has diverged from the pump calculator — do not ship a dosing change
-/// until it is green. To regenerate the fixtures, see the generator noted in
-/// faBolus-internal/REMEDIATION.md (C-01).
+/// Byte-for-byte parity of `BolusMath` against the vendored Tandem oracle. If this fails, do not ship a
+/// dosing change until it is green.
 final class BolusMathParityTests: XCTestCase {
 
     private struct Fixture: Decodable {
@@ -41,7 +31,7 @@ final class BolusMathParityTests: XCTestCase {
 
     /// The fixture grid is byte-locked: exact row count + SHA-256 of the captured JSONL. If either
     /// changes, the parity guarantee no longer covers the same grid — regenerate deliberately and update
-    /// both constants. (DOC-04: the doc-comment count and this assertion must agree.)
+    /// both constants.
     private static let expectedFixtureCount = 563
     private static let expectedFixtureSHA256 =
         "1b0a65f34239d6a572e01a0379f6803e1509f1b560a8001932d823d5e8ac04bd"
@@ -74,7 +64,7 @@ final class BolusMathParityTests: XCTestCase {
                       + mismatches.prefix(20).joined(separator: "\n"))
     }
 
-    /// The audit C-01 headline case, asserted explicitly so a regression names itself.
+    /// The headline below-target case, asserted explicitly so a regression names itself.
     func testHeadlineBelowTargetCase() {
         // 30 g, carb ratio 10 g/U, BG 70, target 110, ISF 40, IOB 1 U.
         // Oracle = max over branches → 3 + (-1) + (-1) = 1.0 U. The old faBolus code gave 3.0 U.
@@ -90,12 +80,8 @@ final class BolusMathParityTests: XCTestCase {
         XCTAssertEqual(r.totalUnits, 0)
     }
 
-    /// D-04 dose-path backstop: an implausible `bgMgdl` (900) with an IN-RANGE target/ISF is REJECTED —
-    /// it contributes NOTHING to the dose (carbs-only total preserved), and it is NOT a sanity failure
-    /// (valid carbs still compute). This is the "reject → treat as no reading, never a silent transform"
-    /// behavior D-04 mandates, and a genuinely NEW scenario the oracle fixture grid never isolates
-    /// (every out-of-range bg row in the grid also has an out-of-range target, so the existing target
-    /// check zeros those — the new bg guard is a THIRD branch ordered AFTER it, preserving 563/563).
+    /// An implausible `bgMgdl` (900) with an in-range target/ISF is rejected — it contributes nothing
+    /// to the dose (carbs-only total preserved), and it is not a sanity failure.
     func testImplausibleBgIsRejectedNotCorrected() {
         let p = BolusMath.Profile(carbRatioGramsPerUnit: 10, isfMgdlPerUnit: 40, targetBgMgdl: 110, iobUnits: 0)
         let r = BolusMath.estimate(carbsGrams: 30, bgMgdl: 900, profile: p)

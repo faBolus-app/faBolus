@@ -1,9 +1,8 @@
 import Testing
 @testable import faBolusCore
 
-/// P8: the pure single-evaluator matrix. Iterates `GatedPumpWrite.allCases × Surface.allCases` to prove
-/// fail-closed behavior, the cancel/dismiss read-only carve-out, that the child-lock bypass is available
-/// ONLY to authenticated peers (the old `enforceChildLock` hole), and the capability + ack gates.
+/// Pins AccessPolicy fail-closed behavior across every GatedPumpWrite × Surface: child-lock bypass is
+/// authenticated-peer only, plus capability and ack gates.
 @Suite struct AccessPolicyTests {
     typealias P = AccessPolicy
     typealias A = GatedPumpWrite
@@ -28,10 +27,8 @@ import Testing
                         garminBolusEnabled: true)
     }
 
-    /// P15 §2.3: an otherwise-permissive host still refuses a Garmin `deliverBolus` when that surface's
-    /// bolus enable is OFF (the app default) — and ONLY that surface + that action. The phone and
-    /// authenticated peers bolus regardless of the per-surface remote flag, and a non-deliver action from
-    /// the same remote is never denied by this gate.
+    /// An otherwise-permissive host still refuses a Garmin `deliverBolus` when that surface's bolus
+    /// enable is OFF — and ONLY that surface + that action.
     @Test func perSurfaceBolusEnableGatesGarminDeliverOnly() {
         let off = P.AccessContext(childModeEnabled: false, childAllowed: Set(ChildFeature.allCases),
                                   phoneReadOnly: false, remotesReadOnly: false,
@@ -48,10 +45,9 @@ import Testing
         #expect(P.evaluate(.deliverBolus, surface: .garmin, context: openCtx()).allowed)
     }
 
-    /// VA-30: the per-surface remote-bolus enable gate AND the Garmin passcode gate must cover
+    /// The per-surface remote-bolus enable gate AND the Garmin passcode gate must cover
     /// `.deliverExtendedBolus`, not only `.deliverBolus` — otherwise an extended bolus from a paired remote
-    /// would bypass both. Latent today (extended bolus isn't Garmin-reachable), but the single evaluator
-    /// must not drift.
+    /// would bypass both.
     @Test func extendedBolusIsGatedLikeNormalBolusOnRemotes() {
         let off = P.AccessContext(childModeEnabled: false, childAllowed: Set(ChildFeature.allCases),
                                   phoneReadOnly: false, remotesReadOnly: false,
@@ -67,7 +63,7 @@ import Testing
         #expect(P.evaluate(.deliverExtendedBolus, surface: .garmin, context: openCtx()).allowed)
     }
 
-    /// Q1.2: a context built WITHOUT the per-surface remote-bolus flag must default it fail-CLOSED, so a
+    /// A context built WITHOUT the per-surface remote-bolus flag must default it fail-closed, so a
     /// future call site that forgets to thread it cannot silently arm Garmin bolusing.
     @Test func accessContextDefaultsFailClosedForRemoteBolus() {
         let c = P.AccessContext(childModeEnabled: false, childAllowed: Set(ChildFeature.allCases),
@@ -78,10 +74,8 @@ import Testing
         #expect(P.evaluate(.deliverBolus, surface: .phoneUI, context: c).allowed)   // phone unaffected
     }
 
-    /// C2 §2.3 — the OPTIONAL Garmin bolus passcode gate. When a passcode is required, a Garmin deliver is
-    /// allowed ONLY with a host-verified (satisfied) code; absent/wrong (satisfied=false) denies with the
-    /// passcode reason. The phone/peers are unaffected, a non-deliver action is never gated, and "bolusing
-    /// off" still outranks "needs a passcode".
+    /// When a passcode is required, a Garmin deliver is allowed only with a host-verified code.
+    /// The phone/peers are unaffected, a non-deliver action is never gated, and "bolusing off" still outranks "needs a passcode".
     @Test func garminBolusPasscodeGateRequiresASatisfiedCode() {
         // Required + verified ⇒ the Garmin deliver is allowed.
         var ok = openCtx(); ok.bolusPasscodeRequired = true; ok.bolusPasscodeSatisfied = true
@@ -159,7 +153,7 @@ import Testing
         var noOptIn = openCtx(); noOptIn.advancedControlOptIn = false
         #expect(P.evaluate(.setTempBasal, surface: .phoneUI, context: noOptIn).reason == .capabilityUnavailable)
         // Capability axis: a pump with no advanced capability (e.g. a t:slim, `.full`) denies advanced
-        // writes regardless of opt-in — P13 keys this on capabilities, not the retired `isMobi`.
+        // writes regardless of opt-in — this keys on capabilities, not a pump-family flag.
         var noCap = openCtx(); noCap.capabilities = .full
         #expect(P.evaluate(.suspendDelivery, surface: .phoneUI, context: noCap).reason == .capabilityUnavailable)
         // Delivery + the childOnly pair never require advanced control (Gate 5 is a no-op for them).
@@ -168,18 +162,15 @@ import Testing
     }
 
     @Test func syncTimeToNowNeedsCapabilityNotOptIn() {
-        // P13 split, the motivating case: syncTimeToNow requires `supportsTimeSync` but NOT the opt-in.
+        // syncTimeToNow requires `supportsTimeSync` but NOT the advanced-control opt-in.
         var noOptIn = openCtx(); noOptIn.advancedControlOptIn = false   // caps = .mobiAdvanced (has timeSync)
         #expect(P.evaluate(.syncTimeToNow, surface: .phoneUI, context: noOptIn).allowed)
         var noTimeSync = openCtx(); noTimeSync.capabilities = .full     // t:slim: no supportsTimeSync
         #expect(P.evaluate(.syncTimeToNow, surface: .phoneUI, context: noTimeSync).reason == .capabilityUnavailable)
     }
 
-    /// Phase 09.10: `setSleepSchedule` declares its own dedicated capability (`supportsSleepScheduleWrite`)
-    /// rather than the coarse advanced-control set — a t:slim-shaped capability context (no sleep-schedule
-    /// write) denies it on phoneUI even with the advanced opt-in + a fresh ack, while a Mobi-shaped
-    /// context (`.mobiAdvanced`) allows it. This is the funnel-level enforcement of the write's Mobi-only
-    /// device scope (mirrors the pump protocol's own MOBI_ONLY/minApi annotation).
+    /// `setSleepSchedule` declares its own dedicated capability (`supportsSleepScheduleWrite`) rather
+    /// than the coarse advanced-control set — a t:slim-shaped context denies it even with opt-in + ack.
     @Test func setSleepScheduleNeedsItsOwnDedicatedCapability() {
         var noWriteCap = openCtx(); noWriteCap.capabilities = .full   // t:slim: no supportsSleepScheduleWrite
         #expect(P.evaluate(.setSleepSchedule, surface: .phoneUI, context: noWriteCap).reason == .capabilityUnavailable)
@@ -196,7 +187,7 @@ import Testing
         }
     }
 
-    // MARK: - P14 Slice 2 — the mode axis
+    // MARK: - Mode axis
 
     @Test func defaultModeContextIsANoOp() {
         // The default (.advanced, no toggles) must add zero denials: every action passes on phoneUI when

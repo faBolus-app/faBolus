@@ -4,14 +4,8 @@ import faBolusCore
 import TandemBLE
 @testable import faBolus
 
-/// tslim-reconnect-loop (Phase B, item 5): flap-rate escalation. The reconnect loop's drops fold to
-/// `.connecting` (never `.disconnected`/`.error`), so `SafetyEdge.connection` stays silent through them —
-/// a bounded ~11.5-min silent flap on the evidence pump. `ConnectionFlapDetector` counts those
-/// live→`.connecting` re-pair/re-drop cycles in a rolling 2-min window and escalates ONCE (latched) past a
-/// 5-cycle threshold; `PumpConnectionLifecycle.applyClientState` feeds it every kit transition and emits
-/// the typed `.connectionUnstable` reliability edge, which `AppModel` turns into the non-muteable
-/// `pumpConnectionUnstable` alert. This suite pins the threshold, the window, the latch/reset, and the
-/// wiring (the storm actually emits the edge through the real backend).
+/// Rapid live→connecting flaps must escalate once past five cycles in two minutes so a silent reconnect
+/// storm is not invisible.
 @Suite(.serialized) @MainActor
 struct ConnectionFlapEscalationTests {
 

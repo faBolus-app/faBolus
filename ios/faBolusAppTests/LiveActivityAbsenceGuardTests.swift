@@ -71,11 +71,8 @@ struct LiveActivityAbsenceGuardTests {
 
     // MARK: - ABSENCE: the two Shared/ Live-Activity sources stay deleted
 
-    /// `Shared/LiveActivityIntents.swift` contains no `ActivityKit` reference, so the content scan
-    /// above cannot see it — and the app target compiles all of `Shared/` (`project.yml`:
-    /// `- path: Shared`, excluding only `WidgetBolusIntents.swift`). A filename pin is therefore the
-    /// only thing standing between `main` and a re-added Live-Activity dose surface. Both files are
-    /// preserved on `dev/live-activity`.
+    /// Shared Live-Activity sources contain no ActivityKit token the content scan would catch, and Shared
+    /// compiles into the app. A filename pin is the only bar to a re-added dose surface.
     @Test func sharedLiveActivitySourceFilesAreAbsent() throws {
         let repoRoot = try #require(Self.repoRootURL(),
                                      "could not resolve repo root from #filePath=\(#filePath)")

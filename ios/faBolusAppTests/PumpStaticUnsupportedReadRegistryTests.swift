@@ -4,30 +4,8 @@ import TandemMessages
 import TandemBLE
 @testable import faBolus
 
-/// Tests for the STATIC known-unsupported-reads registry — the ADDITIVE hardening pass of debug session
-/// `pump-pairing-loop-api25` (2026-08-19, on top of the on-device-verified dynamic self-heal at HEAD
-/// a48bb44, which STAYS). Full diagnosis + prior fixes: `.planning/debug/pump-pairing-loop-api25.md`.
-///
-/// PROBLEM this pass closes: on a FRESH install / never-before-seen pump the app cannot know it is the
-/// evidenced bad combo at `startPolling()` time — `softwareVersion` is unknown until the async op33
-/// `ApiVersionResponse` returns; only `isMobi` (BLE name) is known. So op20 `LoadStatusRequest` (the last
-/// read of `fastRead()`) is sent BLINDLY in the pre-version burst and the API-2.5, non-Control-IQ t:slim X2
-/// (sw 2.5) drops the link ~2-3× (~25 s) before the dynamic op77 self-heal learns + persists the skip.
-///
-/// FIX (this suite pins it): a STATIC registry keyed PRECISELY on the evidenced combo
-/// `(isMobi == false && softwareVersion == "2.5") → { op20 }`, consulted RIGHT AFTER the bootstrap version
-/// responses (op33 `ApiVersionResponse` carries both key fields; op85 `PumpVersionResponse` rides the same
-/// trio) identify the pump. The identity-gated read(s) (op20) are DEFERRED out of the pre-version burst and
-/// sent only once the version responses are processed — so on the known-bad combo op20 is seeded into the
-/// never-resend `badOpcodes` set BEFORE it is ever sent (zero drops, even on the first-ever connect with no
-/// persisted history), while any OTHER pump keeps polling op20 (the 09.9 `cartridgeReadyForBolus` pre-guard
-/// stays live). Keyed PRECISELY on sw 2.5 — a newer firmware may support op20, and the dynamic path already
-/// covers unknown-bad combos.
-///
-/// ADDITIVE (composition asserted below): the dynamic op77 self-heal + per-pump persistence remain the net
-/// for any UNKNOWN incompatibility; Guardrail A (no delivery/control-write opcode ever enters `badOpcodes`)
-/// and Guardrail B (op20 excluded ⇒ `cartridgeReadiness == .unknown`, never a fail-open confirmed-ready)
-/// stay intact. `PumpTransactionCoordinator` is OUT of scope (09.11); the TandemKit pin stays HELD (1a09dba).
+/// Known-bad pumps skip rejected reads before the first send (fail-closed, never drop the link)
+/// while supported pumps still poll op20 so cartridge-ready stays live on the dose path.
 @Suite(.serialized) @MainActor
 struct PumpStaticUnsupportedReadRegistryTests {
 
@@ -162,22 +140,14 @@ struct PumpStaticUnsupportedReadRegistryTests {
                 "the STATIC exclusion must NOT be persisted into the per-pump LEARNED store — it is additive, re-derived each connect")
     }
 
-    // MARK: - (d) tslim-reconnect-loop: the two Control-IQ-era AAM reads join the static exclusion on API-2.5
+    // MARK: - Control-IQ-era AAM reads are statically excluded on the known-bad combo
     //
-    // Debug session `tslim-reconnect-loop` (2026-08-27, pumpX2-oracle differential): `PumpReadScheduler
-    // .alertRead()` (Phase 15 / CC-10) auto-polls two Control-IQ-era AAM reads — `HighestAamRequest` (op120)
-    // and `ActiveAamBitsRequest` (op146/0x92) — every burst. On the Control-IQ-off / no-CGM API-2.5 t:slim X2
-    // the pump rejects them (op-77) and DELIBERATELY tears the BLE link down ~90 ms later (HCI 0x13) — a
-    // connect/disconnect flap that only LOOKED like a fixed ~2 s watchdog because the deterministic read
-    // schedule reached the offending tail at a fixed offset. The fix extends the SAME static-registry
-    // mechanism that already zeroes op20's first-connect drop: name op120/op146 as KNOWN-unsupported for this
-    // exact (model, firmware) so `runIdentityGatedReadsOnce()` seeds them into `badOpcodes` the instant op33
-    // identifies the pump, BEFORE the deferred `alertRead()` burst sends them. Bench (`bench-t1-coverage-
-    // resilience.md`) proved the SAME TandemKit stack holds THIS pump zero-disconnect once every unsupported
-    // opcode is pre-filtered — so suppressing these reproduces that zero-disconnect.
+    // API-2.5 t:slim X2 rejects op120/op146 and tears the link down; seed them into `badOpcodes`
+    // before alertRead sends them. Keyed precisely — newer firmware / Mobi / unknown identity
+    // suppress nothing (dynamic op77 self-heal is the net).
 
-    /// The evidenced bad combo's static set is now {op20, op120, op146}. Keyed PRECISELY — a newer firmware,
-    /// a Mobi, or an unidentified pump suppresses nothing (fail-open; the dynamic op77 self-heal is the net).
+    /// The known-bad combo's static set is {op20, op120, op146}. Keyed precisely — a newer
+    /// firmware, a Mobi, or an unidentified pump suppresses nothing.
     @Test func api25TslimStaticSetIncludesTheTwoAamReads() {
         let bad = PumpKnownUnsupportedReads.unsupportedReadOpcodes(isMobi: false, softwareVersion: "2.5")
         #expect(bad.contains(loadStatusOpcode))
@@ -194,10 +164,8 @@ struct PumpStaticUnsupportedReadRegistryTests {
                 "an unidentified pump (isMobi nil) suppresses nothing — never suppress on unknown identity")
     }
 
-    /// End-to-end (tslim-reconnect-loop Phase B): the AAM fan-in was REMOVED from `alertRead()`, so op120/
-    /// op146 are never SENT on ANY pump — the primary loop fix. The static registry STILL seeds them into
-    /// the never-resend set the instant op33 identifies the bad combo (a harmless belt-and-suspenders
-    /// backstop if AAM is ever re-added), and the deferred `alertRead()` burst never dispatches them.
+    /// AAM reads were removed from `alertRead()`, so op120/op146 are never sent. The static
+    /// registry still seeds them as a fail-closed backstop if they are ever re-added.
     @Test func aamReadsAreNeverDispatched_andStaticBackstopStillSeedsThem() async {
         let b = TandemBackend(testTransport: FakePumpTransport())
         b.alertReadDelaySecForTesting = 0.05

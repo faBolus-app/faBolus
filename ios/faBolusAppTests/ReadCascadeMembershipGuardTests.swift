@@ -3,48 +3,23 @@ import Foundation
 import TandemBLE
 @testable import faBolus
 
-/// Phase 09 (D-01, gap B1/B2 — `.planning/phases/09-god-object-refactor-appmodel-tandembackend-extraction/`).
-/// Wave 1 guard tests for Target B (the BLE read cascade), closing the two send-side gaps the analyzer
-/// found MISSING before any extraction lands:
-///
-/// - B1: `PumpPairingPostPairBootstrapOrderTests`/`PumpEgvPollTests` already pin the bootstrap-trio-FIRST
-///   invariant and total dispatch COUNTS (17 / 14), but never assert the exact ordered MEMBERSHIP of
-///   `fastRead()` (7)/`alertRead()` (5)/`staticRead()` (7) — a reorder or silent drop inside a tier could
-///   still slip through a count-only check. This suite pins the exact ordered list per tier, split into
-///   trio/fast/static/alert segments, straight from `TandemBackend.swift:314-318,1708-1736`.
-///   (fastRead restored op20 `LoadStatusRequest` to 7 — debug pump-pairing-loop-api25 refinement.)
-/// - B2: the recurring `pollTimer` tick's cadence gating (alerts every tick, fast on `tick%4`, static on
-///   `tick%40`, `:1874-1878`) had NO guard at all — the existing
-///   `simulateRecurringFastAndStaticReadTickForTesting()` seam calls `fastRead()`/`staticRead()` directly,
-///   bypassing the `%`-gating entirely, so it cannot prove the cadence. This suite's cadence section drives
-///   the REAL tick body via the new `firePollTimerTickForTesting()` seam (Task 2's `recurringPollTick()`
-///   micro-extraction — a behavior-preserving move of the pollTimer closure's four lines into a named,
-///   directly-callable function; see that function's own doc comment).
-///
-/// Both gaps close BEFORE Wave 3 (`PumpReadScheduler`, D-06) and Wave 4 (the response-applier, D-07)
-/// extractions land — this net is what proves those moves send byte-identical reads in the same order at
-/// the same cadence. No wire bytes change in this suite.
+/// Exact ordered membership of bootstrap/fast/static/alert reads so a silent drop of a dose-path
+/// read (e.g. LoadStatus for cartridge-ready) cannot slip through a count-only check.
 @Suite(.serialized) @MainActor
 struct ReadCascadeMembershipGuardTests {
     private func backend() -> TandemBackend { TandemBackend(testTransport: FakePumpTransport()) }
 
-    // MARK: - Exact ordered tier membership (B1)
+    // MARK: - Exact ordered tier membership
 
     private static let bootstrapTrio = ["ApiVersionRequest", "PumpVersionRequest", "TimeSinceResetRequest"]
-    // Debug pump-pairing-loop-api25 (refinement): op20 `LoadStatusRequest` is RESTORED to `fastRead()`
-    // (tier back to 7) so the 09.9 `cartridgeReadyForBolus` pre-guard stays live on pumps that support it;
-    // the API-2.5 t:slim X2 that rejects op20 learns-and-skips it via the per-pump persisted `badOpcodes`
-    // set (one-drop-ever). See `PumpUnsupportedReadSelfHealTests` / `PumpLearnedOpcodePersistenceTests`.
+    // op20 stays in fastRead so cartridge-ready stays live on supported pumps; a pump that
+    // rejects it learns-and-skips via persisted `badOpcodes`.
     private static let fastReadTier = [
         "ControlIQIOBRequest", "CurrentEGVGuiDataRequest", "InsulinStatusRequest", "LastBolusStatusV2Request",
         "CurrentBatteryV2Request", "HomeScreenMirrorRequest", "LoadStatusRequest",
     ]
-    // Debug pump-pairing-loop-api25 (STATIC-registry hardening): op20 `LoadStatusRequest` is now
-    // IDENTITY-GATED — held OUT of the pre-version `startPolling()` burst and dispatched only after the
-    // bootstrap op33/op85 version responses identify the pump (so a KNOWN-bad t:slim X2 sw-2.5 suppresses it
-    // before the first send). So the SYNCHRONOUS `startPolling()` fast tier is these 6 (op20 deferred); the
-    // recurring `pollTimer` tick still sends the full 7 (`fastReadTier` above), where the `badOpcodes` guard
-    // skips op20 only when statically/dynamically proven unsupported.
+    // op20 is identity-gated: held out of the pre-version burst, then sent after op33/op85
+    // identify the pump (known-bad t:slim X2 sw-2.5 suppresses it before the first send).
     private static let fastReadTierPreVersion = [
         "ControlIQIOBRequest", "CurrentEGVGuiDataRequest", "InsulinStatusRequest", "LastBolusStatusV2Request",
         "CurrentBatteryV2Request", "HomeScreenMirrorRequest",
@@ -53,10 +28,7 @@ struct ReadCascadeMembershipGuardTests {
         "CurrentBasalStatusRequest", "BolusCalcDataSnapshotRequest", "TimeSinceResetRequest",
         "ApiVersionRequest", "PumpFeaturesV1Request", "ControlIQInfoV2Request", "BasalLimitSettingsRequest",
     ]
-    // tslim-reconnect-loop (Phase B, 2026-08-27): alertRead() is back to the original 5 — the CC-10
-    // HighestAamRequest/ActiveAamBitsRequest (op120/op146) fan-in was REMOVED (dead plumbing that also
-    // provoked the API-2.5 reconnect loop). Every ordering assertion below is retained; the count/slice
-    // bounds move 23->21.
+    // Control-IQ-era AAM reads (op120/op146) are not in alertRead — they provoked the API-2.5 reconnect loop.
     private static let alertReadTier = [
         "AlertStatusRequest", "AlarmStatusRequest", "CGMAlertStatusRequest", "ReminderStatusRequest",
         "MalfunctionStatusRequest",

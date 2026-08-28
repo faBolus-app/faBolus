@@ -4,18 +4,8 @@ import faBolusCore
 import TandemMessages
 @testable import faBolus
 
-/// Debug session `pump-pairing-loop-api25` — HARDENING PASS task 4 (TRANSPARENCY UX).
-///
-/// (4a) Auto-excluded reads must be surfaced with HUMAN-READABLE names — not bare decimal opcodes — in the
-///      Debug-menu "Rejected opcodes" line. Mechanism B's fixed op77 correlation now records the TRUE
-///      failing opcode (op-20, not 0), so the name is accurate. Wired through `CapabilityDiagnostics.section`
-///      via the shared `PumpReadCatalog`.
-/// (4b) When a SAFETY-relevant read is unavailable on the pump (e.g. the op-20 cartridge pre-check), the
-///      app must surface a user-facing note that it is relying on the pump's OWN protection for that
-///      capability — a degraded guard must never be silent.
-///
-/// These pin the pure builders (`PumpReadCatalog` + `CapabilityDiagnostics.section`) the on-screen
-/// `DebugMenuView.pumpReadExclusionsSection` and the diagnostics export both render.
+/// Pins that auto-excluded reads show human-readable names, and that a missing safety-relevant read
+/// (cartridge pre-check) surfaces a user-facing degraded-guard note. A silent exclusion would hide that the app is relying on the pump's own protection.
 @Suite struct CapabilityDiagnosticsTransparencyTests {
 
     private var cartridgeOpcode: UInt8 { LoadStatusRequest.props.opCode }          // op-20 (safety-relevant)
@@ -23,7 +13,7 @@ import TandemMessages
     private var iobOpcode: UInt8 { ControlIQIOBRequest.props.opCode }              // op-108 (dose input)
     private var calcSnapshotOpcode: UInt8 { BolusCalcDataSnapshotRequest.props.opCode } // op-115 (dose input)
 
-    // MARK: - 4a — human-readable read names
+    // MARK: - Human-readable read names
 
     @Test func readNameMapsKnownReadsAndFallsBackForUnknown() {
         #expect(PumpReadCatalog.readName(for: cartridgeOpcode) == "Cartridge/load status")
@@ -45,7 +35,7 @@ import TandemMessages
         #expect(!block.contains("Rejected opcodes: 20"))
     }
 
-    // MARK: - 4b — safety-degraded disclosure
+    // MARK: - Safety-degraded disclosure
 
     @Test func excludedCartridgeReadEmitsASafetyDegradedNote() {
         let notes = PumpReadCatalog.safetyDegradedNotes(excludedOpcodes: [cartridgeOpcode])
@@ -68,14 +58,14 @@ import TandemMessages
     }
 
     @Test func disabledOptInStillRendersNoOpcodeOrSafetyDetail() {
-        // The safety note rides the SAME opt-in gate as every other capability/opcode value (Pitfall 3).
+        // The safety note rides the same opt-in gate as every other capability/opcode value.
         let block = CapabilityDiagnostics.section(capabilities: .mobiAdvanced,
                                                   badOpcodes: [cartridgeOpcode], enabled: false)
         #expect(!block.contains("Cartridge/load status"))
         #expect(!block.contains("Safety note:"))
     }
 
-    // MARK: - R2-10 (CR-02) — dose-input reads emit a DOSE-SPECIFIC note (not the op20 "pump's own protection")
+    // MARK: - Dose-input reads emit a dose-specific note (not the op-20 "pump's own protection")
 
     /// An excluded op108 (IOB) dose-input read must disclose that the bolus calculator fail-closes and will
     /// NOT recommend a dose — distinct from the op20 "relying on the pump's own protection" pre-guard note

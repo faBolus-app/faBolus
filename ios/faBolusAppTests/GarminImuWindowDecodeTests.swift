@@ -2,25 +2,9 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// **G-M3 (phone half).** Pins `GarminImuWindowDecode` — the pure, ConnectIQ-free decode of the
-/// out-of-band `imu_window` envelope, accepting BOTH the legacy v1 flat-`Float` envelope and the new
-/// v2 compact int16 envelope 19-04's watch encoder will emit. Lives OUTSIDE `#if GARMIN` (Foundation
-/// only — `Data`/`NSNumber`, no ConnectIQ import) so both wire versions get unit coverage in the
-/// default (non-GARMIN) target.
-///
-/// WIRE CONTRACT (19-05 defines it; 19-04 `depends_on: [19-05]` and mirrors it EXACTLY):
-///   - `ch` (Int) channel count, `n` (Int) samples per channel, sample-major layout (each sample's
-///     `ch` channel values contiguous), oldest→newest — same layout in v1 and v2.
-///   - v2 adds `scale` ([Number], length == `ch`) — one dequantization scale PER CHANNEL INDEX,
-///     chosen/owned by the encoder and carried IN the envelope (never a hardcoded duplicate constant
-///     on either side, so the two sides can never silently drift apart): `float = int16 * scale[ch]`.
-///   - v2's `data` is the packed int16 "ByteArray": `n * ch * 2` raw bytes (0...255), little-endian
-///     pairs, sample-major — OR (a defensive fallback, since the vendored ConnectIQ SDK's documented
-///     message types are String/Number/Null/Array/Dictionary only, with no ByteArray/Data entry, so
-///     the real bridged Swift type is genuinely unverified pre-device — DEFERRED OWNER) a `Data` value.
-///
-/// FAIL-SAFE (T-19-21): imu_window is advisory-only, never a dose input — ANY malformed, mismatched-
-/// length, or oversized envelope decodes to an EMPTY array rather than a garbled/partial window.
+/// `imu_window` is advisory-only, never a dose input: a malformed, mismatched, or oversized
+/// envelope must decode to empty rather than a garbled/partial window. Covers the legacy v1 float
+/// envelope and the v2 int16 envelope outside `#if GARMIN`.
 struct GarminImuWindowDecodeTests {
 
     // MARK: v1 — unchanged legacy behavior
@@ -42,11 +26,10 @@ struct GarminImuWindowDecodeTests {
         #expect(GarminImuWindowDecode.decode(dict).isEmpty)
     }
 
-    // MARK: v2 — round-trips a synthetic quantizer (mirrors what 19-04's watch encoder will do)
+    // MARK: v2 — round-trips a synthetic quantizer
 
-    /// Test-only quantizer mirroring 19-04's Monkey C encoder: packs each channel's Float samples to
-    /// int16 (round + clamp to the int16 range) using a fixed per-channel scale, little-endian byte
-    /// pairs, sample-major — building the SAME envelope shape the production decoder must accept.
+    /// Test-only quantizer: packs each channel's Float samples to int16 (round + clamp) using a fixed
+    /// per-channel scale, little-endian byte pairs, sample-major — the envelope shape the decoder must accept.
     private static func quantizeV2(samples: [Float], ch: Int, scale: [Double]) -> (bytes: [Int], scale: [Double]) {
         var bytes: [Int] = []
         bytes.reserveCapacity(samples.count * 2)
@@ -87,9 +70,8 @@ struct GarminImuWindowDecodeTests {
     }
 
     @Test func v2SmallerThanV1PayloadForTheSameWindow() {
-        // Not a wire-size assertion here (that's 19-04's job on the Monkey C side, per CONTEXT.md) —
-        // just confirms the v2 element type (bytes, 0...255) is smaller-VALUED than v1's raw floats,
-        // consistent with "compact" — a sanity check on this decoder's own contract, not a byte-count.
+        // Confirms v2 element type (bytes, 0...255) is smaller-valued than v1's raw floats — a sanity
+        // check on this decoder's compact contract, not a wire-size assertion.
         let ch = 6, n = 150
         let scale = [Double](repeating: 8.0 / 32767.0, count: ch)
         let samples = [Float](repeating: 1.0, count: n * ch)

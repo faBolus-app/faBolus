@@ -5,20 +5,7 @@ import TandemMessages
 import TandemBLE
 @testable import faBolus
 
-/// Debug session `pump-pairing-loop-api25` — HARDENING PASS Guardrail B (NO FAIL-OPEN GUARD-FEEDER).
-///
-/// A snapshot field that GATES dosing must distinguish "confirmed-read" from "never-read / rejected" and
-/// fail CLOSED or "unknown" — never fail-open-as-ready. The op-20 cartridge pre-check is the one dose-path
-/// feeder that failed OPEN: `cartridgeLoadState` defaults to 6 ⇒ the old `cartridgeReadyForBolus` returned
-/// `true`, so a pump that auto-excludes op-20 (the API-2.5 t:slim X2) PRESENTED confirmed-ready from a value
-/// it had never actually read.
-///
-/// The fix (mirroring `basalRateKnown`, WR-03): `cartridgeLoadStateConfirmed` + a `CartridgeReadiness`
-/// tri-state. The dose-path BLOCK decision still ALLOWS `.unknown` (an op-20-excluded pump is never
-/// permanently blocked — the pump's own rejection + the reservoir/`possiblyOutOfInsulin` guard are the
-/// backstop), but the app never PRESENTS confirmed-ready from the fail-open default.
-///
-/// `PumpTransactionCoordinator` is OUT of scope (09.11); the TandemKit pin stays HELD (1a09dba).
+/// Pins that an unread cartridge-load state presents as unknown, never confirmed-ready. The dose path still allows `.unknown` (pump rejection is the backstop) so an op-20-excluded t:slim is not permanently blocked.
 @Suite(.serialized) @MainActor
 struct CartridgeReadinessFailClosedTests {
 
@@ -46,7 +33,7 @@ struct CartridgeReadinessFailClosedTests {
         #expect(s.cartridgeReadyForBolus)
     }
 
-    /// A CONFIRMED loading state (0/1/2) reads `.notReady` and BLOCKS — fail-closed, unchanged from 09.9.
+    /// A CONFIRMED loading state (0/1/2) reads `.notReady` and BLOCKS — fail-closed.
     @Test func confirmedLoadingStateReadsNotReadyAndBlocks() {
         for state in [0, 1, 2] {
             var s = PumpSnapshot()
@@ -74,9 +61,8 @@ struct CartridgeReadinessFailClosedTests {
         #expect(!b.snapshot.cartridgeReadyForBolus)
     }
 
-    /// THE Guardrail-B scenario: when op-20 is auto-excluded (learned bad via mechanism B) and never
-    /// confirmed, the cartridge pre-check stays UNKNOWN — never a fail-open confirmed-ready — yet the dose
-    /// path is NOT permanently blocked (it relies on the pump's own rejection + the reservoir guard).
+    /// When op-20 is auto-excluded and never confirmed, the cartridge pre-check stays unknown — never
+    /// fail-open confirmed-ready — yet the dose path is not permanently blocked.
     @Test func anExcludedLoadStatusLeavesReadinessUnknownNotFailOpenReady() async {
         let b = TandemBackend(testTransport: FakePumpTransport())   // testTransport init → connected
         await b.refreshLoadStatus()                                 // op-20 out (txId 0), now outstanding

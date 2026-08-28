@@ -4,28 +4,8 @@ import TandemMessages
 import TandemBLE
 @testable import faBolus
 
-/// Debug session `pump-pairing-loop-api25` — DEEP-REVIEW remediation of the op77 correlation backstop.
-///
-/// The mechanism-B self-heal (recover the TRUE failing read opcode from an op77 `ErrorResponse` and add it
-/// to the never-resend `badOpcodes` set) had a deterministic misattribution path and a robustness gap that
-/// the new PER-PUMP PERSISTENCE would make permanent:
-///
-///  - CR-01 / WR-01: the correlation is characteristic-BLIND. The pinned kit registers `ErrorResponse` on
-///    BOTH `.currentStatus` AND `.control`, so a NACKed control/delivery WRITE's op77 reaches
-///    `PumpResponseApplier.apply` on `.opcodeFIFO` pumps (Mobi/default). Via the cargo `named` path (op164
-///    SetTempRate == LastBolusStatusV2 READ; op144 EnterChangeCartridge == CurrentBatteryV2 READ — both
-///    EXCLUDED from the delivery guard so the READ stays learnable) OR the opcode-less txId/FIFO path, that
-///    control-write rejection would durably blacklist a supported READ.
-///  - WR-02: the opcode-less fallback blindly guessed the FIFO-OLDEST outstanding read. op20 is
-///    `fastRead()`'s LAST send, so the oldest is always a bootstrap/early read — doubly wrong (blacklists an
-///    innocent read AND never blacklists op20).
-///  - WR-03: the prior tests were vacuous — a SOLE outstanding read (op20 via `refreshLoadStatus`) with the
-///    hardcoded txId 0, so txId-echo and FIFO trivially agreed and deleting the byTxId branch still passed.
-///
-/// The root fix (reviewer option a): thread the frame's `Characteristic` through `apply` and RESOLVE +
-/// RECORD an op77 ONLY on `.currentStatus`; drop the blind FIFO-oldest (txId-echo PRIMARY, else the
-/// exactly-one-outstanding shortcut, else FAIL CLOSED to 0). `PumpTransactionCoordinator` is OUT of scope
-/// (09.11); the TandemKit pin stays HELD (1a09dba).
+/// An op77 ErrorResponse fail-closes unless it is a currentStatus read with a matching txId — a
+/// control-write NACK must never blacklist a colliding dose-path READ.
 @Suite(.serialized) @MainActor
 struct PumpErrorCorrelationScopeTests {
 

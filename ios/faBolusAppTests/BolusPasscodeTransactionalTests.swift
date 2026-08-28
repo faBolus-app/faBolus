@@ -3,20 +3,8 @@ import Foundation
 import Security
 @testable import faBolus
 
-/// CX-F-10 (Phase 14, 14-05): `BolusPasscodeStore.setPasscode` used to `deleteBlob()` UNCONDITIONALLY
-/// before validating input or storing the new value, and discarded the `SecRandomCopyBytes` result — so a
-/// malformed PIN, an RNG failure, or a KDF/store failure could all leave the gate OPEN mid-replace (the old
-/// passcode gone, nothing valid in its place). This suite pins the fix: `setPasscode` now validates format
-/// and checks the RNG status BEFORE touching the store, and replaces the blob via an atomic upsert
-/// (`SecItemUpdate` when a passcode already exists, `SecItemAdd` only when absent — never delete-then-add,
-/// and never store-new-before-delete-old, which would `errSecDuplicateItem` against the fixed key). On ANY
-/// failure the OLD blob and lockout state are left completely untouched — the gate stays CLOSED, never
-/// OPEN. The legacy→v2 migration path in `verify()` gets the SAME guarantee.
-///
-/// Like `BolusPasscodeStoreTests`, this runs through the DEBUG in-memory backing (`useInMemoryBackingForTests`)
-/// since the app-hosted test target lacks the keychain-sharing entitlement. The in-memory backing is
-/// instrumented (`lastUpsertOp`, `injectedUpsertStatus`, `injectedRNGStatus`) so these tests can exercise
-/// the update/add/failure branches of the atomic replace and the RNG-checked path without a live Keychain.
+/// Pins that `setPasscode` never deletes the old blob before the new one is valid: a malformed PIN,
+/// RNG failure, or store failure must leave the existing gate closed. Replace is an atomic upsert, not delete-then-add.
 @Suite(.serialized)
 struct BolusPasscodeTransactionalTests {
 
@@ -39,9 +27,7 @@ struct BolusPasscodeTransactionalTests {
         reset(); defer { reset() }
         #expect(BolusPasscodeStore.setPasscode("1234"))
         #expect(BolusPasscodeStore.verify("1234"))
-        // A malformed replacement attempt must be rejected WITHOUT touching the existing gate — the old
-        // buggy code called `deleteBlob()` unconditionally before this check, wiping "1234" even though the
-        // new value was never going to be accepted.
+        // A malformed replacement must be rejected without touching the existing gate.
         #expect(!BolusPasscodeStore.setPasscode("12a4"))   // non-digit
         #expect(!BolusPasscodeStore.setPasscode("123"))    // too short
         #expect(BolusPasscodeStore.isRequired)
@@ -145,14 +131,9 @@ struct BolusPasscodeTransactionalTests {
         #expect(!BolusPasscodeStore.verify("1230"))
     }
 
-    // MARK: - WR-03: constant-time hash comparison still verifies/rejects correctly (v2 + legacy)
+    // MARK: - Constant-time hash comparison still verifies/rejects correctly (v2 + legacy)
 
-    /// WR-03 replaced the `hex(derived) == String(...)` string comparison in `verify()` with a
-    /// constant-time compare over the raw hash BYTES on both the PBKDF2 (`v2:`) and the legacy
-    /// SHA-256 paths. This pins that the swap preserved behavior: the correct PIN still verifies and
-    /// a wrong PIN still rejects on each path. (The timing property itself — that a near-miss hash
-    /// takes the same time as an early mismatch — isn't asserted here; a unit test can't measure it
-    /// reliably. This is the correctness half: constant-time must not mean always-true.)
+    /// `verify()` compares raw hash bytes, not hex strings. The correct PIN still verifies and a wrong PIN still rejects — constant-time must not mean always-true.
     @Test func constantTimeCompareVerifiesAndRejectsOnV2Path() {
         reset(); defer { reset() }
         #expect(BolusPasscodeStore.setPasscode("2718"))   // writes a v2: PBKDF2 blob

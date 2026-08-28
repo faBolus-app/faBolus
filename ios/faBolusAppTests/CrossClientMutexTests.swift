@@ -3,14 +3,8 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// P11 / S6 — the cross-client in-flight mutex: two DIFFERENT remotes requesting the SAME physical dose
-/// (same `doseKey`, different `peerId`/`requestId`) must never cause a second delivery. The ledger keys on
-/// `(peerId, requestId)`, so `begin` alone would let both through; only a mutex above the backend, keyed by
-/// the idempotency token and owned at the single delivery funnel (`runLedgeredDelivery`), stops the second.
-///
-/// Deterministic via `MockBackend.onDeliverInFlight`: client A's delivery is held IN FLIGHT on the pump
-/// (id recorded, `.bolusing`) while client B fires the same dose, so the collision is exercised without any
-/// wall-clock timing.
+/// Two different remotes requesting the same physical dose must never cause a second delivery while the
+/// first is in flight.
 @Suite(.serialized)
 @MainActor
 struct CrossClientMutexTests {
@@ -62,17 +56,8 @@ struct CrossClientMutexTests {
         }
     }
 
-    /// The IN-FLIGHT mutex itself is not a permanent dedup — `begin()`'s `(peer,requestId)` key alone
-    /// would let a settled entry's id be reused only as a `.replay`, never a fresh second delivery, so
-    /// this test used a DIFFERENT id ("garmin-2") to prove the mutex releases once "garmin-1" settles.
-    ///
-    /// Phase 14 Plan 01 (T-14-01 / CX-G-01 phone half) INTENTIONALLY changed what happens next: the new
-    /// content+time recency guard now ALSO catches a same-peer, same-content recompose under a fresh id
-    /// within the recency window — closing exactly the "genuinely dose 2 U twice in a row" gap this test
-    /// used to exercise. That is the plan's documented accepted behavior change (a legitimate identical
-    /// re-dose within the window now needs to wait past it, or vary the content, to proceed) — see
-    /// `PhoneWidgetDoubleDoseTests.twoActorPhoneDoubleDoseRejectsRecomposedContentWithFreshRequestId` for
-    /// the cross-peer analog. This test now pins the NEW invariant instead of the retired one.
+    /// The in-flight mutex is not a permanent dedup. After settle, the content+time recency guard still
+    /// refuses a same-peer, same-content recompose under a fresh id within the recency window.
     @Test func sameDoseFromSameClientShortlyAfterSettlingIsRefusedByRecencyGuard() async {
         await AppSettingsGate.withCleanRemoteBolusAllowed {
             let (model, backend, rec) = await makeModel()
@@ -104,8 +89,8 @@ struct CrossClientMutexTests {
 
 /// Minimal helper to run a body with the `AppSettings` gates in a state that allows an authenticated
 /// remote bolus (child off, read-only off, advanced control on so the funnel's capability gate passes on
-/// the Mobi `MockBackend`, and — P15 §2.3 — the per-surface Garmin bolus enable ON so the evaluator
-/// doesn't fail-closed on the now-default-OFF flag), restoring them after so the serialized suite can't
+/// the Mobi `MockBackend`, and the per-surface Garmin bolus enable ON so the evaluator
+/// doesn't fail-closed on the default-OFF flag), restoring them after so the serialized suite can't
 /// leak gate state.
 @MainActor
 private enum AppSettingsGate {

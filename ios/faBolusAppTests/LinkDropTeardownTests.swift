@@ -5,38 +5,8 @@ import TandemMessages
 import TandemBLE
 @testable import faBolus
 
-/// Link-drop teardown invariants for two fixes that harden the reconnect / mid-delivery-drop paths so a
-/// stale timer, coordinator, or auth key can never survive a dropped link and fire reads / a signed read
-/// / a re-armed poll into a dead or pre-auth link.
-///
-/// CR-02 (R2-05, commit fe95760) — `TandemBackend.applyClientState`'s `.connecting` case: an unintended
-/// BLE drop frequently surfaces as `.connecting` (the kit skips the `.disconnected` flicker and climbs
-/// straight into reconnecting), so `linkDroppedCleanup()` — which otherwise runs only from the plain
-/// `.disconnected…`/`.reconnectExhausted` cases — never fired across that gap. The fix captures the
-/// PRE-transition state (`wasLive = .connected || .bolusing`), still publishes `.connecting`, and runs the
-/// shared teardown ONLY when `wasLive`. `linkDroppedCleanup()` (enhanced in CR-01) tears down the recurring
-/// poll timer (`stopAllTimers()`), advances the poll-cycle generation (`notePollCycleEnded()`), drops the
-/// pairing coordinator, and clears the auth key. A normal first-connect `.scanning → .connecting` climb is
-/// NOT `wasLive`, so it is untouched.
-///
-/// WR-04 (R2-20, commit 960c0cd) — the bolus `perform` `defer` re-arms routine polling ONLY when the link
-/// is still live (`.connected || .bolusing`). The "connection lost during delivery" indeterminate throw
-/// leaves a non-live connection, so the defer must NOT start a fresh `pollTimer` on a dead link (whose
-/// first tick would fire bootstrap/fast/static reads that throw against a disconnected central). The
-/// predictive-timer half of WR-04 is CR-01's `stopAllTimers()` inside `linkDroppedCleanup()`, which stops
-/// BOTH the recurring `pollTimer` AND the predictive one on every link-down path.
-///
-/// SEAM NOTES (verified against source, not guessed):
-///   • `predictiveBurstDeadlineForTesting` is armed by an ADVANCING EGV reading (which runs
-///     `schedulePredictiveBurst`), NOT by `simulatePredictiveBurstForTesting()` (which runs
-///     `runPredictiveBurst()` — it arms/dispatches the burst but never sets the deadline). The predictive
-///     test below therefore arms the deadline the real way, via `injectStatusFrameForTesting` with an
-///     advancing-timestamp EGV frame (mirrors `ReadCascadeChainingGuardTests`).
-///   • `stopAllTimers()` invalidates the predictive `Timer` but deliberately does NOT null the
-///     `predictiveBurstDeadline` MARKER (only the timer that reads it), so the predictive teardown is
-///     pinned behaviorally — a post-drop predictive kick dispatches NOTHING into the dead link (its own
-///     `isConnected()` stop-condition) — plus `pollTimerIsActiveForTesting == false` proving the shared
-///     `stopAllTimers()` ran — rather than by asserting the marker itself cleared.
+/// A dropped BLE link must tear down timers, coordinators, and the auth key so a stale poll or
+/// signed read cannot fire into a dead or pre-auth link (fail-closed on reconnect).
 @Suite(.serialized) @MainActor
 struct LinkDropTeardownTests {
     private func backend() -> TandemBackend { TandemBackend(testTransport: FakePumpTransport()) }
@@ -60,7 +30,7 @@ struct LinkDropTeardownTests {
     }
     private func isIndeterminate(_ e: Error?) -> Bool { (e as? BolusError)?.isIndeterminate ?? false }
 
-    // MARK: - CR-02 (R2-05): `.connecting` from a live link runs the shared teardown
+    // MARK: - `.connecting` from a live link runs the shared teardown
 
     /// The unintended-drop-as-`.connecting` path: a link that WAS live (`.connected`) with a running poll
     /// timer and a live auth key must, on `applyClientState(.connecting)`, publish `.connecting` AND run
@@ -79,8 +49,8 @@ struct LinkDropTeardownTests {
         #expect(b.isPairedForTesting, "precondition: the link is paired (auth key present)")
         let generationBefore = b.pollCycleGenerationForTesting
 
-        // CR-02: an unintended BLE drop that surfaces as `.connecting` (the kit skips the `.disconnected`
-        // flicker) must run the shared teardown BECAUSE the link was live.
+        // An unintended BLE drop that surfaces as `.connecting` must run the shared teardown
+        // because the link was live.
         b.applyClientState(.connecting)
 
         // Publishes the reconnect-window state as `.connecting`, never `.disconnected` (preserves the
@@ -120,7 +90,7 @@ struct LinkDropTeardownTests {
         }
     }
 
-    // MARK: - WR-04 (R2-20): a dead link is never re-armed for polling
+    // MARK: - a dead link is never re-armed for polling
 
     /// Drive the REAL `perform` delivery flow (behind `FakePumpTransport`, no CoreBluetooth) to its
     /// "connection lost during delivery" INDETERMINATE throw by flipping the link off `.bolusing` mid-poll

@@ -2,32 +2,14 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// Phase 09.3 (D-01/D-03, SC2): makes the "no orphaned modeled settings key" rule self-enforcing.
-///
-/// The pre-GSD UI audit flagged 5 `SettingsCatalog` keys as possibly orphaned (no reachable UI
-/// reference). `09.3-RESEARCH.md` verified the flag was stale — all keys are already reachable today
-/// (`criticalAlertsEnabled`/`suppressMirroredPumpAlarms` in `AlertRulesView`, `historyRetentionDays` in
-/// `DataHistoryView`), except `garminTargetApp`, which is intentionally debug-only (D-03, reachable only
-/// via `DebugMenuView`'s hidden 7-tap gesture). So SC2 is satisfied NOW — this suite is the guard that
-/// keeps it satisfied as future edits touch the catalog or the Views.
-///
-/// This is a POSITIVE reachability scan (inverse of `LiveActivityBoundaryTests`' negative delivery-seam
-/// scan): it enumerates every `SettingsCatalog.descriptors` key and asserts the combined source text of
-/// `ios/faBolus/Views/*.swift` contains a literal reference to it. A plain substring scan is sufficient
-/// here — a computed `Binding` (e.g. `AlertRulesView`'s `suppressBinding`) still spells the backing key
-/// literally (`settings.suppressMirroredPumpAlarms`) inside its `get`/`set` closures, so this correctly
-/// finds guarded bindings too, not just direct `$settings.<key>` bindings. The failure mode to guard
-/// against is a false negative (key IS bound but via some indirection that never spells the literal
-/// name) — not a false positive — which is why no comment-stripping/precision scanning (as the
-/// delivery-seam boundary tests need) is required here.
+/// Every non-exempt `SettingsCatalog` key must appear as a literal in `ios/faBolus/Views`, so a
+/// modeled setting cannot become unreachable. `garminTargetApp` is the only debug-menu exemption.
 struct SettingsReachabilityGuardTests {
-    /// D-03: keys intentionally reachable ONLY from the hidden debug menu, exempt from the reachability
-    /// rule. Keep this allowlist tiny and explicit — anything added here bypasses SC2.
+    /// Keys reachable only from the hidden debug menu, exempt from the reachability rule. Keep this
+    /// allowlist tiny — anything added here bypasses the scan.
     static let debugExemptKeys: Set<String> = ["garminTargetApp"]
 
-    /// Resolve `ios/faBolus/Views` by walking up from `#filePath`
-    /// (`<root>/ios/faBolusAppTests/SettingsReachabilityGuardTests.swift`) — same technique as
-    /// `LiveActivityBoundaryTests.intentsFileURL()`.
+    /// Resolve `ios/faBolus/Views` by walking up from `#filePath`.
     private static func viewsDirURL() -> URL? {
         let fm = FileManager.default
         var probe = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
@@ -39,10 +21,8 @@ struct SettingsReachabilityGuardTests {
         return nil
     }
 
-    /// Recursively enumerate every `.swift` file under `root`, skipping build artifacts/test-target
-    /// directories. Verbatim copy of `LiveActivityBoundaryTests.allSwiftFiles(under:)` for parity — kept
-    /// as a private duplicate (rather than a shared helper) so this suite has no cross-file test-target
-    /// dependency.
+    /// Recursively enumerate every `.swift` file under `root`, skipping build artifacts. Kept as a
+    /// private duplicate so this suite has no cross-file test-target dependency.
     private static func allSwiftFiles(under root: URL) -> [URL] {
         let fm = FileManager.default
         let skipDirNames: Set<String> = [".build", "DerivedData", "Pods", ".git", "node_modules"]
@@ -68,7 +48,7 @@ struct SettingsReachabilityGuardTests {
         return (files, source)
     }
 
-    // MARK: - SC2: every non-exempt catalog key is reachable
+    // MARK: - Every non-exempt catalog key is reachable
 
     @Test func everyNonExemptCatalogKeyIsReachableInViews() throws {
         guard let (files, combinedSource) = Self.combinedViewsSource() else {
@@ -86,7 +66,7 @@ struct SettingsReachabilityGuardTests {
         }
     }
 
-    // MARK: - D-03: the debug-exempt allowlist never hides a truly-orphaned key
+    // MARK: - Debug-exempt allowlist never hides a truly-orphaned key
 
     @Test func debugExemptKeysAreStillReachableSomewhere() throws {
         guard let (files, combinedSource) = Self.combinedViewsSource() else {

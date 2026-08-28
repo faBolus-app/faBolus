@@ -4,25 +4,9 @@ import faBolusCore
 import UserNotifications
 @testable import faBolus
 
-/// REMED-17 (Plan 17-13) — the D3-01 "frozen half" 17-04 Task 4, dispatched to a dedicated reviewed
-/// safety plan (AUTHORIZE-FROZEN, OWNER-DECISIONS.md 2026-08-25). Fork A = the owner's Gentle
-/// disposition: an immediate GOVERNED (suppressible) `.bolusIndeterminate` notification at `.warning`,
-/// alongside — never replacing — the authoritative never-suppressible `.bolusReconciliation` post.
-///
-/// Proves, across all FOUR `.indeterminate` switch sites (local/reverse-approval, extended, remote/
-/// approval-confirmed, widget):
-///   1. exactly ONE `.bolusIndeterminate` post with the LOCKED copy (title AND body), never the word
-///      that means a dose did not happen, and ZERO `.bolusDeliveryFailed` (the preserved invariant);
-///   2. every peer-wire `.unknown` echo payload stays BYTE-IDENTICAL (widget's own shorter string;
-///      executeResolved's unchanged locked-copy string) — proven by echo-payload-unchanged assertions;
-///   3. through the REAL broker (`NotificationCoordinatorTests`' harness — a fake `NotificationRuntime`
-///      + the real `NotificationPoster`), the immediate `.bolusIndeterminate` and the later authoritative
-///      `.bolusReconciliation` deliver with DISTINCT OS identifiers (coalesce-independence), and the
-///      governed category is genuinely suppressible under a hostile config while the trio category
-///      still delivers (governed-suppressibility).
-///
-/// Mirrors `DeliverySurfaceOutcomeGuardTests`' harness (`makeModel`, `withCleanSettings`,
-/// `backend.forceIndeterminateNextDelivery`) rather than inventing a new one.
+/// An indeterminate bolus posts a suppressible `.bolusIndeterminate` warning alongside — never
+/// replacing — the never-suppressible `.bolusReconciliation` post, and never uses the word that
+/// means the dose failed.
 @Suite(.serialized)
 @MainActor
 struct BolusIndeterminateNotificationTests {
@@ -46,8 +30,7 @@ struct BolusIndeterminateNotificationTests {
         return (model, backend, rec)
     }
 
-    /// Mirrors `DeliverySurfaceOutcomeGuardTests.withCleanSettings` — `deliverExtendedBolus` also runs
-    /// through the P14 S2 app-mode gate, so `appMode` must be baselined to `.advanced`.
+    /// `deliverExtendedBolus` runs through the app-mode gate, so `appMode` must be baselined to `.advanced`.
     private func withCleanSettings(_ body: () async throws -> Void) async rethrows {
         let s = AppSettings.shared
         let ro = s.phoneReadOnly, child = s.childModeEnabled, mode = s.appMode
@@ -61,7 +44,7 @@ struct BolusIndeterminateNotificationTests {
     /// Never the word that means a dose did not happen — checked against every captured locked-copy post.
     private static let doseDidNotHappenWord = "fail"
 
-    // MARK: - Task 1 tracer: performLocalBolus (local / reverse-approval)
+    // MARK: - performLocalBolus (local / reverse-approval)
 
     @Test func localIndeterminatePostsExactlyOneGovernedNotificationWithLockedCopyAndNoDeliveryFailed() async {
         await withCleanSettings {
@@ -86,7 +69,7 @@ struct BolusIndeterminateNotificationTests {
         }
     }
 
-    // MARK: - Task 2 RED: extended bolus (local combo)
+    // MARK: - Extended bolus (local combo)
 
     @Test func extendedIndeterminatePostsExactlyOneGovernedNotificationWithLockedCopyAndNoDeliveryFailed() async {
         await withCleanSettings {
@@ -106,7 +89,7 @@ struct BolusIndeterminateNotificationTests {
         }
     }
 
-    // MARK: - Task 2 RED: remote / remote-approval-confirmed (executeResolved via remoteDeliver)
+    // MARK: - Remote / remote-approval-confirmed (executeResolved via remoteDeliver)
 
     @Test func remoteIndeterminatePostsExactlyOneGovernedNotificationAndEchoesTheUnchangedUnknownStatus() async {
         await withCleanSettings {
@@ -129,7 +112,7 @@ struct BolusIndeterminateNotificationTests {
         }
     }
 
-    // MARK: - Task 2 RED: widget (deliverWidgetBolus)
+    // MARK: - Widget (deliverWidgetBolus)
 
     @Test func widgetIndeterminatePostsExactlyOneGovernedNotificationConvergesUserCopyButEchoesTheUnchangedShorterMessage() async {
         await withCleanSettings {
@@ -155,7 +138,7 @@ struct BolusIndeterminateNotificationTests {
         }
     }
 
-    // MARK: - Task 2 RED: echo-payload-unchanged (peer wire byte-identity, standalone assertions)
+    // MARK: - Echo-payload-unchanged (peer wire byte-identity)
 
     @Test func widgetUnknownEchoMessageIsByteIdenticalToItsOriginalShorterStringRegardlessOfUserCopyConvergence() async {
         await withCleanSettings {
@@ -176,7 +159,7 @@ struct BolusIndeterminateNotificationTests {
         }
     }
 
-    // MARK: - Task 2 RED: locked-copy guard across every captured `.bolusIndeterminate` post
+    // MARK: - Locked-copy guard across every captured `.bolusIndeterminate` post
 
     @Test func everyBolusIndeterminatePostTitleAndBodyEqualTheLockedCopyExactlyAndNeverMentionFailure() async {
         await withCleanSettings {
@@ -203,7 +186,7 @@ struct BolusIndeterminateNotificationTests {
         }
     }
 
-    // MARK: - Task 2 RED: through-the-broker coalesce-independence + governed-suppressibility
+    // MARK: - Through-the-broker coalesce-independence + governed-suppressibility
     // (NotificationCoordinatorTests' harness — a fake NotificationRuntime + the REAL NotificationPoster,
     // NOT a raw pre-governance notificationSink capture.)
 

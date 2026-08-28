@@ -5,23 +5,8 @@ import TandemMessages
 import TandemBLE
 @testable import faBolus
 
-/// Phase 10 code-review CR-01 (VA-05): the delivery-boundary pump-FAMILY preflight. `validateDeliver` —
-/// the ONE synchronous chokepoint every delivery surface (phone owner, Watch, Garmin, widget) funnels
-/// through — now fails CLOSED unless the identified family is exactly t:slim X2
-/// (`guard snapshot.pumpModel == .tslimX2`), blocking a Mobi (`.mobi`) AND a not-yet-identified pump
-/// (`.unknown`, empty `pumpModelName`) BEFORE any signed frame is written. This is the structural
-/// interlock that backs the async `MobiRejectBackstop`; it holds even when a Mobi is somehow connected +
-/// paired with a fully-ready cartridge and an in-limit dose.
-///
-/// The pump family is set through the REAL identity path a headless test drives: an injected op33
-/// `ApiVersionResponse` frame (`FakePumpTransport.apiVersion`) runs `PumpResponseApplier`'s handler,
-/// which — since no BLE-name model was `detectedIsMobi` in a headless test — writes `snapshot.isMobi` /
-/// `snapshot.pumpModelName` from the API version (`major > 3 || (major == 3 && minor >= 5) ⇒ Mobi`).
-/// (Same mechanism `PumpStaticUnsupportedReadRegistryTests` uses.) `init(testTransport:)` now defaults the
-/// double to an identified t:slim X2 (so the new family guard doesn't break the wider delivery suite), so
-/// the `.unknown` (never-identified) case is forced back via `setPumpModelIdentityForTesting(pumpModelName:
-/// "", isMobi: false)`. Only that ONE dimension is varied; every other precondition is held
-/// fully-deliverable, so a reject can only be the family guard.
+/// `validateDeliver` fails closed unless the identified family is t:slim X2, before any signed frame
+/// is written — even a connected, paired, cartridge-ready Mobi or an unidentified pump.
 @Suite(.serialized) @MainActor
 struct PumpFamilyPreflightFailClosedTests {
 

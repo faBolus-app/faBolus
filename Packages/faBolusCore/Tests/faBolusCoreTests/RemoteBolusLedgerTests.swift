@@ -61,7 +61,7 @@ final class RemoteBolusLedgerTests: XCTestCase {
         XCTAssertEqual(l.begin(peerId: "p", requestId: "c", doseKey: key(1)), .duplicateInFlight)
     }
 
-    // MARK: - FB-03: durability + explicit lifecycle state
+    // MARK: - Durability + explicit lifecycle state
 
     func testInFlightEntriesAreNeverEvicted() {
         var l = RemoteBolusLedger(cap: 1)
@@ -156,11 +156,10 @@ final class RemoteBolusLedgerTests: XCTestCase {
                        .replay(status: "delivered", message: nil, deliveredUnits: 2.0))
     }
 
-    // MARK: - Phase 09-03 (D-05): `RemoteBolusLedger.blockReason` pure precedence — zero AppModel.
+    // MARK: - RemoteBolusLedger.blockReason pure precedence — zero AppModel.
     //
-    // Byte-identical string pins mirroring `LedgerBlockPrecedenceGuardTests` (app target, Wave 1), now
-    // proven here with NO `AppModel`/`MockBackend`/ledger-store fault-injection scaffolding at all — this
-    // function's only inputs are the 3 flags + the unresolved-entry list + the in-flight key.
+    // String pins matching LedgerBlockPrecedenceGuardTests, proven here with only the 3 flags + the
+    // unresolved-entry list + the in-flight key.
 
     private static let noDurableStoreMessage =
         "Delivery is locked: no durable safety store is available on this device. Delivery stays "
@@ -289,13 +288,11 @@ final class RemoteBolusLedgerTests: XCTestCase {
         XCTAssertTrue(l.terminalOutcomes(peerId: "garmin").isEmpty)
     }
 
-    // MARK: - T-14-01 (CX-G-01 phone half): additive content+time duplicate-recency guard
+    // MARK: - Additive content+time duplicate-recency guard
     //
-    // LoopKit's `syncIdentifier` content-identity philosophy layered ON TOP of the existing
-    // (peer,requestId) exactly-once key: a doseKey recently recorded as authoritatively
-    // delivered-or-maybe-delivered is flagged as a recent duplicate REGARDLESS of a fresh requestId.
-    // This is a SEPARATE query (`hasRecentlyDeliveredDuplicate`) — begin()'s own key/conflict/replay
-    // logic is untouched (asserted below and by every pre-existing test in this file).
+    // A doseKey recently recorded as delivered-or-maybe-delivered is flagged as a recent duplicate
+    // regardless of a fresh requestId. This is a separate query — begin()'s own key/conflict/replay
+    // logic is untouched.
 
     func testRecentlyDeliveredDuplicateDetectedAcrossDifferentRequestIds() {
         var l = RemoteBolusLedger()

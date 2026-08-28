@@ -3,17 +3,7 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// P15 E2 — the **exit criterion**: the first-launch safety posture. On a brand-new install (no stored
-/// values), nothing that could deliver insulin or silently write to the pump is armed:
-///   • remote bolusing is OFF on both surfaces (Garmin + Apple Watch),
-///   • the remote-bolus passcode is not required (nothing stored), and
-///   • auto pump-clock sync is OFF — so a first connect never silently writes the pump clock without an
-///     explicit opt-in (the E2 flip; NOT re-coupled to `advancedControlEnabled`).
-///
-/// A fresh throwaway `UserDefaults` suite stands in for "first launch", so the assertions read the init
-/// FALLBACK defaults without depending on — or clobbering — the real `.standard` domain. Serialized
-/// because it toggles the process-wide `BolusPasscodeStore` DEBUG seam and (transiently) the shared
-/// `GlucoseFreshness` thresholds, which are saved and restored so no sibling suite is disturbed.
+/// Pins that a fresh install leaves remote bolusing, auto pump-clock sync, and the glucose badge off. A first connect must not silently write the pump clock or arm a dose path.
 @MainActor
 @Suite(.serialized)
 struct FirstLaunchDefaultsTests {
@@ -33,7 +23,7 @@ struct FirstLaunchDefaultsTests {
 
         #expect(settings.garminBolusEnabled == false)
         #expect(settings.autoSyncPumpTime == false)     // E2: no silent pump-clock write without opt-in
-        // Phase 5 (05-03, D-13/D-14, SC-4): the app-icon glucose badge is opt-in — OFF on a fresh install.
+        // App-icon glucose badge is opt-in — OFF on a fresh install.
         #expect(settings.glucoseBadgeEnabled == false)
 
         // Remote-bolus passcode: route through the DEBUG in-memory backing (the app-hosted test target

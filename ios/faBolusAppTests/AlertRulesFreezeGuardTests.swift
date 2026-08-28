@@ -3,29 +3,8 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// **FEAT-08 SAFETY freeze-guard (Phase 7, 07-05, P-E, D-06/D-07).** The custom alert-rules ENGINE
-/// (`AlertRule`/`AlertRuleEngine`/`AlertAction` in the byte-identity-protected `faBolusCore`) cannot
-/// be literally deleted — `TandemBackend.swift:172`'s `applyAutoRules` reads
-/// `AppSettings.shared.alertRules` and is itself DOSE_PATHS-protected. Instead `alertRules` is frozen
-/// to an always-empty computed property (`get { [] } set { } }`), which makes `applyAutoRules`'s
-/// `guard !rules.isEmpty else { return }` fire unconditionally — a behavior-neutral early-return,
-/// never touching `TandemBackend.swift` or `AlertRuleEngine.swift` themselves (both stay
-/// BYTE-IDENTICAL; proven separately by `git diff --quiet pre-narrow/2026-08-20` in this plan's
-/// `<verify>`).
-///
-/// This suite proves the settable INPUT can never carry a non-empty rule-set again by any route:
-/// neither a restored settings backup (`applyBackup`) nor a direct setter call. §6d (owner-accepted
-/// PASS, 07-OWNER-FLAGS.md) established that no SAFETY alert (glucose LOW/HIGH/urgent-low, or the
-/// pump-disconnect/CGM-data-loss/bolus-reconciliation trio) ever routed through
-/// `AlertRuleEngine` in the first place — this freeze only removes the CUSTOM, user-authored
-/// auto-snooze/auto-dismiss convenience rules, never the safety-notification path. The 3 safety
-/// suites (`SafetyNotificationTests`, `NotificationCoordinatorTests`,
-/// `PumpBackgroundDisconnectNotificationTests`) staying green UNCHANGED is the direct evidence of
-/// that claim, verified alongside this suite, not inside it.
-///
-/// RED-first: every assertion below FAILS against pre-freeze `main` (the property is a real,
-/// persisted stored value that accepts and returns whatever was last written) — proving this guard
-/// has teeth. GREEN once the freeze in `AppSettings.swift` lands.
+/// Custom auto-snooze rules stay frozen empty so a restored backup or setter cannot re-arm them;
+/// they never touch the dose path or the safety-notification path.
 @MainActor
 struct AlertRulesFreezeGuardTests {
 

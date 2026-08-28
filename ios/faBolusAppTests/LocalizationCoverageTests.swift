@@ -2,16 +2,7 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// **Phase 17 D2-04.** A regression net for the safety-critical dose copy this plan routes through
-/// `Localizable.xcstrings`: `RootTabView`'s remote-bolus confirm alert (title, button, and every
-/// `confirmMessage` part) and `BolusSuccessBanner`'s delivered-amount/combo templates. Every string a
-/// user could see while confirming or being told the outcome of an insulin delivery must be catalog-
-/// routed via `String(localized:)` so it CAN be localized later (adding translations is out of scope
-/// here — this test only guards that the English keys exist).
-///
-/// Parses `Localizable.xcstrings` directly (it's a plain JSON string catalog) rather than going through
-/// `Bundle`/`NSLocalizedString`, mirroring `BolusSuccessBannerDriftGuardTests`'s repo-root-walk idiom —
-/// no simulator/bundle-loading dependency, so this suite is fast and host-runnable.
+/// Pins that remote-bolus confirm and bolus-success copy is routed through Localizable.xcstrings. Dose-path strings that bypass the catalog cannot be localized and can drift from the English keys.
 struct LocalizationCoverageTests {
 
     /// Resolve the repo root by walking up from `#filePath` until `project.yml` is found (same
@@ -51,11 +42,7 @@ struct LocalizationCoverageTests {
         return key
     }
 
-    /// D2-04's exact catalog-routing targets: `RootTabView`'s remote-bolus confirm alert (title, the
-    /// two buttons, and every `confirmMessage` part) plus `BolusSuccessBanner`'s delivered-amount and
-    /// combo (extended-bolus) templates. Numbered placeholders (`%1$@`, `%2$@`, ...) mirror this
-    /// catalog's existing convention for any template with 2+ identical-type substitutions (see the
-    /// existing `"%@ · %@ U/hr"`-style entries).
+    /// Catalog-routing targets: remote-bolus confirm copy plus BolusSuccessBanner delivered-amount and combo templates.
     private static let expectedKeys: [String: String] = [
         "Remote bolus request": "Remote bolus request",
         "Deliver %@": "Deliver %@",

@@ -4,27 +4,8 @@ import TandemMessages
 import TandemBLE
 @testable import faBolus
 
-/// Tests for debug session `pump-pairing-loop-api25` mechanism B (the op77 correlation backstop) — the
-/// app-side, pin-HELD self-heal that recovers the TRUE failing opcode from an opcode-less op77. Confirmed
-/// two-goal diagnosis + owner refinement: `.planning/debug/pump-pairing-loop-api25.md`.
-///
-/// On the API-2.5, non-Control-IQ t:slim X2 (sw 2.5) the app sends op20 `LoadStatusRequest` in the post-pair
-/// burst; this pump answers it with an op77 `ErrorResponse` whose REAL 2-byte currentStatus cargo is `[0,0]`
-/// — it does NOT embed the failing opcode — then tears the BLE link down ~90ms later (CBErrorDomain#7).
-/// Because the op192-era `badOpcodes` never-resend backstop read the failing opcode from that (empty) cargo,
-/// it recorded opcode 0 (useless) and re-sent op20 on every reconnect → endless connect/pair/drop loop.
-///
-/// Mechanism B (this suite) — an app-side correlation backstop that recovers the TRUE failing opcode from an
-/// opcode-less op77 by correlating the error to the outstanding request (the pump echoes the request txId in
-/// frame[1] — kit's hardware-confirmed t:slim behavior — or, failing that, in-order FIFO of outstanding
-/// reads) and feeds it to `insertBadOpcode(...)` so the existing never-resend guard actually suppresses it.
-/// Self-heals for op20 AND any other read this firmware rejects with an opcode-less error.
-///
-/// NOTE (owner refinement 2026-08-19): op20 RIDES the recurring `fastRead()` poll again (an initial fix,
-/// commit 9f978a5, had gated it out for ALL models, which starved the 09.9 `cartridgeReadyForBolus`
-/// pre-guard on pumps that DO support op20). op20 stays reachable on-demand too (A/on-demand below). The
-/// DURABLE, per-pump persistence of the learned skip — so the API-2.5 pump drops op20 exactly once, ever —
-/// is covered in `PumpLearnedOpcodePersistenceTests`.
+/// Opcode-less op77 correlates to the true failing read (fail-closed never-resend) so a rejected
+/// LoadStatus cannot loop reconnects, while dose-input reads are re-probed each connection.
 @Suite(.serialized) @MainActor
 struct PumpUnsupportedReadSelfHealTests {
 
@@ -111,7 +92,7 @@ struct PumpUnsupportedReadSelfHealTests {
                 "op20 must never be dispatched again this connection-lifetime")
     }
 
-    // MARK: - R2-10 (CR-02) — a dose-input read (op108/op115) is RE-PROBED each connection, never durably skipped
+    // MARK: - a dose-input read (op108/op115) is re-probed each connection, never durably skipped
 
     /// op108 `ControlIQIOBRequest` (IOB) and op115 `BolusCalcDataSnapshotRequest` (therapy settings) feed the
     /// bolus calculator; op109 is the ONLY IOB source, so a DURABLE skip would fail-close `recommendBolus`
@@ -156,16 +137,8 @@ struct PumpUnsupportedReadSelfHealTests {
     }
 }
 
-/// GO-1 Step 7 (16-07, REMED-16) — proves the narrowed `source as? TandemOnlyOps` casts introduced in
-/// `AppModel` behave IDENTICALLY to the `source as? TandemBackend` / `source is TandemBackend` casts
-/// they replaced, for every non-Tandem backend. Colocated with `PumpUnsupportedReadSelfHealTests`
-/// per the 16-07 plan's file list (both suites concern the concrete-Tandem-only diagnostics/history
-/// surface `AppModel` reaches through a cast).
-///
-/// `MockBackend` is the reference non-Tandem backend — it intentionally does NOT conform to
-/// `TandemOnlyOps` (see `ios/faBolus/Data/MockBackend.swift`, no `TandemOnlyOps` conformance anywhere
-/// in the file), so `source as? TandemOnlyOps` is `nil` for it, and every cast-guarded branch must take
-/// the identical fallback it took under the old concrete `TandemBackend` cast.
+/// A non-Tandem backend must take the same fail-closed fallbacks `source as? TandemBackend`
+/// used to: no diagnostics opcodes, history sync stays idle, Sync now is a no-op.
 @MainActor
 @Suite(.serialized) struct TandemOnlyOpsMockFallbackParityTests {
 

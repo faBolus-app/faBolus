@@ -3,22 +3,9 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// P10 (defect group A) — the cross-surface exit criterion (§A regression).
-///
-/// One stale sample is injected once; every model/policy-layer surface must report its age from the
-/// reading's OWN source timestamp, never from when the message was received or published. The widget
-/// families and the complication have no unit-test seam, so the shared substrate they render from is
-/// pinned here instead:
-///   • `GlucoseFreshness` — the phone's HUD and the single policy every surface shares,
-///   • `RemoteCommandWireFixture` — the shared base for the Apple Watch, the Mac, and the remote-iPhone client,
-///   • `WidgetSnapshot`   — the value every widget family and the complication read.
-/// The Garmin surface is pinned in its own repo (the Monkey C epochs parse + the `historyEpochs`
-/// schema key), since it consumes the same wire contract.
-///
-/// The keystone assertion is that a fresh *receive/publish* time cannot make an old *sample* read as
-/// fresh: the sample is 60 min old but arrives "now", and every surface must still say 60 min / stale.
-/// §A also requires that a reading reaching a display layer with NO source timestamp render as stale /
-/// no-data, never fresh — asserted below. (The telemetry counter for that no-timestamp case is P12.)
+/// Every surface ages glucose from the sample's own source timestamp, never receive or publish time,
+/// so a fresh publish of an old reading stays stale. A value with no timestamp renders stale / no-data,
+/// never fresh.
 @MainActor
 @Suite(.serialized) struct CrossSurfaceStalenessTests {
 
@@ -74,8 +61,8 @@ import faBolusCore
         #expect(Int(GlucoseFreshness.age(of: sourceDate, now: now)) == 3600)
     }
 
-    /// §A: a reading with a value but NO source timestamp (no epoch, no age) must render stale /
-    /// no-data — never fresh — on every surface. The counter that records this case ships in P12.
+    /// A reading with a value but no source timestamp must render stale / no-data — never fresh — on
+    /// every surface.
     @Test func sampleWithNoSourceTimestampRendersStaleNeverFresh() {
         let model = RemoteCommandWireFixture(link: FakeLink())
         var cmd = RemoteCommand(kind: .statusRead, bgMgdl: 120)

@@ -1,14 +1,8 @@
 import Testing
 import Foundation
 
-/// P9 / §6 exit criterion (owner-Q #5): the notification broker must be the **single builder** of
-/// `UNNotificationRequest`. `NotificationPoster.post` (in `NotificationCoordinator.swift`) is the only
-/// place allowed to construct one, so every notification necessarily passes through the broker's
-/// suppression / dedupe / episode governance. This source-scan guard fails the always-run `swift test`
-/// suite the moment a second builder appears anywhere in the shipping app targets (e.g. a pre-P9 poster
-/// resurfacing on a merge) — the kind of regression manual inspection alone would miss. Mirrors
-/// `RescueCarbGuardTests`' `#filePath`-rooted walk. Scans production source only (skips *Tests* paths;
-/// a test legitimately building a request for its own assertions is not a violation).
+/// NotificationPoster must remain the only production builder of UNNotificationRequest so every
+/// notification passes broker suppression, dedupe, and episode governance.
 struct NotificationSingleBuilderGuardTests {
 
     /// The ONE production file permitted to construct a `UNNotificationRequest` (it hosts `NotificationPoster`).

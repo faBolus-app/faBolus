@@ -1,13 +1,8 @@
 import Testing
 import Foundation
 
-/// Phase 09.23-01 (D-05): MUST-NOT-REACH boundary — proves `HealthKitHistoryImporter` /
-/// `HealthKitExporter` are never referenced from the signed dose path (`BolusMath`,
-/// `GlucoseArbiter`, `TandemBackend`, `PumpTransport`). Imported HealthKit history is
-/// retrospective/display-only; it lands in `GlucoseHistoryStore.ingest*`, never the live dosing
-/// path. Mirrors `LoopInsightsExclusionGuardTests`'/`NudgeDeliveryBoundaryTests`' `#filePath`-rooted
-/// whole-file source scan + non-vacuous `!files.isEmpty`/resolution guard, so a path-resolution
-/// break fails loudly instead of passing vacuously.
+/// Imported HealthKit history is display-only and must never enter the signed dose path
+/// (`BolusMath`, `GlucoseArbiter`, `TandemBackend`, `PumpTransport`).
 struct HealthKitImportDosePathGuardTests {
 
     /// Resolve the repo root by walking up from `#filePath`

@@ -1,15 +1,8 @@
 import Testing
 @testable import faBolusCore
 
-/// Phase 09.15 T2-1 (D-05, "Candidate #4") — the direct Control-IQ-ceiling-flags bench+emission gate.
-/// Pins three independent properties so a future regression on any one goes RED, mirroring
-/// `CiqPlusTempRateGateTests`' shape:
-/// (1) `benchVerifiedDefault` ships `false` — both flags are inert regardless of `snapshotValue`.
-/// (2) not-emitted pre-bench: the wire helpers return `nil` unconditionally while unverified, even if a
-///     future pin advance somehow populated the snapshot value (belt-and-suspenders fail-closed).
-/// (3) the two flags are ALWAYS independent booleans (never merged) — proven by a hypothetical
-///     bench-verified case where one is `true` and the other `false` simultaneously, plus two distinct
-///     Copywriting-Contract strings.
+/// Control-IQ ceiling flags stay off the wire until bench-verified, and the two flags stay independent
+/// booleans with distinct copy.
 struct CiqCeilingFlagsGateTests {
 
     @Test func shipsBenchUnverifiedByDefault() {
@@ -51,8 +44,7 @@ struct CiqCeilingFlagsGateTests {
     }
 
     @Test func theTwoCopywritingContractStringsAreDistinctAndVerbatim() {
-        // D-05 zero-one-many coverage: never a merged generic "limit" string — pins the exact
-        // Copywriting-Contract wording (09.15-UI-SPEC.md "T2-1") so a future edit can't silently drift.
+        // Never a merged generic "limit" string — the two labels must stay distinct.
         #expect(CiqCeilingFlags.maxBolusEventsExceededLabel == "Control-IQ hit its hourly auto-bolus limit")
         #expect(CiqCeilingFlags.maxIobEventsExceededLabel == "Control-IQ hit its insulin-on-board limit")
         #expect(CiqCeilingFlags.maxBolusEventsExceededLabel != CiqCeilingFlags.maxIobEventsExceededLabel)
@@ -68,7 +60,7 @@ struct CiqCeilingFlagsGateTests {
         var cmd = RemoteCommand(kind: .statusRead)
         #expect(cmd.ciqMaxBolusEventsExceeded == nil)
         #expect(cmd.ciqMaxIobEventsExceeded == nil)
-        // Additive-optional (SP-1): setting post-init works exactly like `ciqZone`, proving the field
+        // Additive-optional: setting post-init works exactly like `ciqZone`, proving the field
         // is genuinely wired into the type (not merely declared dead) — the compose SITE (AppModel)
         // simply hasn't been connected to it yet, by design (documented stub, pin held).
         cmd.ciqMaxBolusEventsExceeded = true

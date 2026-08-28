@@ -2,17 +2,7 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// **I-M2.** Pins `garminClassifyAppInstallState` — the ConnectIQ-free classifier for a `getAppStatus`
-/// result. It lives OUTSIDE `#if GARMIN` (next to `garminSendDisposition`/`GarminMessageReadiness`)
-/// precisely so it compiles and is unit-testable in the default (non-GARMIN) test target, where the
-/// ConnectIQ-typed `IQAppStatus` is not.
-///
-/// LOAD-BEARING CONTEXT: `registerApp()` used to arm readiness ONLY when `getAppStatus` returned
-/// `installed==true`, with no distinct signal for "not installed" vs "the completion itself never
-/// resolved a status" — both silently left `garminStatus` showing the synchronous "✓" set earlier in
-/// `restoreDevice()`/`handleOpenURL()`, so a beta-vs-official app-id mismatch (or a genuinely
-/// uninstalled watch app) was a silent dead state (readiness never arms, no visible explanation). This
-/// classifier makes all three states (installed / notInstalled / unknown) explicit and testable.
+/// Pins that `getAppStatus` distinguishes installed, not-installed, and unknown. Treating unknown as installed would arm readiness with no watch app; treating it as not-installed would offer a store link for an app that may already be there.
 struct GarminAppInstallStateTests {
 
     @Test func installedTrueClassifiesAsInstalled() {
@@ -39,7 +29,7 @@ struct GarminAppInstallStateTests {
         #expect(GarminDiagnostics.AppInstallState.installed.offerStoreLink == false)
     }
 
-    /// The visible, actionable state I-M2 requires: an explicit store-link offer.
+    /// The visible, actionable state: an explicit store-link offer.
     @Test func notInstalledOffersStoreLinkWithExplicitStatusText() {
         let state = GarminDiagnostics.AppInstallState.notInstalled
         #expect(state.offerStoreLink == true)
