@@ -5,31 +5,11 @@ import GlucoseIntelligenceKit
 import AlertIntelligenceKit
 #endif
 
-/// Phase 16 GO-1 Step 4 (16-04, REMED-16, R2) — the eating-nudge (multi-signal fusion) METHODS moved
-/// verbatim out of `AppModel.swift` into this separate-file extension. Behavior-preserving: every
-/// function body below is an unchanged copy of the original `AppModel` member, with the same `#if
-/// FABOLUS_NUDGE` gates preserved exactly.
-///
-/// **Review concern #1 (NOT verbatim/zero-interface-change):** a Swift extension in a SEPARATE file
-/// cannot declare stored properties and cannot see a `private` member of the type it extends, so
-/// every stored property these methods touch (`eatingEngine`, `lastEatingConfig`, `lastAccelWindowAt`,
-/// `lastAccelWindowRaw`, `eatingLocation`, `lastWantAccel`, `lastEatingPositiveAt`, `eatingNudge`,
-/// `alertIntel`, `history`, and the `#if FABOLUS_NUDGE`-gated `mealDetector`/`accelPipeline`/
-/// `eatingPersonalization`) stays declared in `AppModel.swift`'s main body, widened `private`->
-/// `internal` there (never beyond `internal`). See `AppModel.swift`'s own comments at each widened
-/// declaration and `AppModelAccessWideningGuardTests` (16-04 Task 3), which pins the widened set as
-/// EXACTLY this enumerated list — no dose/gate member included.
-///
-/// `updateEatingNudge()` and `maybeAutoImportAppleHealth`-style throttled wrappers elsewhere still
-/// need to be called from `AppModel.refresh()`/`init` in the main file — those two call sites (plus
-/// `setupEatingPersonalization()`'s init-time call) are why `updateEatingNudge()` below is `internal`
-/// (was `private`) rather than staying private; `setupEatingPersonalization()` was already `internal`
-/// (no modifier) before this carve.
+/// Eating-nudge (multi-signal fusion) methods. Stored properties stay on `AppModel` (a separate-file
+/// extension cannot declare them); they are `internal` so this file can see them. No dose/gate members.
 extension AppModel {
 
-    /// De-duped setter: only fire the accel-sensing control signal on an actual change (the same
-    /// de-dupe idiom the now-removed ambient-HR relay used to use — HR was a separate feature, removed
-    /// entirely in Phase 22/NARROW-HR-22, see `dev/garmin-hr-relay`).
+    /// De-duped setter: only fire the accel-sensing control signal on an actual change.
     private func setWantAccelSensing(_ on: Bool) {
         guard on != lastWantAccel else { return }
         lastWantAccel = on

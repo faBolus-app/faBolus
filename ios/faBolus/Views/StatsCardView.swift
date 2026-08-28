@@ -11,13 +11,13 @@ struct StatsCardView: View {
 
     private var stats: GlucoseStatistics { GlucoseStatistics(readings: history) }
 
-    /// Phase 04-02 (D-10): the display-unit funnel the "Avg" metric routes through. `s.mean` stays
-    /// computed in mg/dL (unchanged); only its displayed string converts.
+    /// The display-unit funnel the "Avg" metric routes through. `s.mean` stays computed in mg/dL
+    /// (unchanged); only its displayed string converts.
     private var unit: GlucoseUnit { AppSettings.shared.glucoseDisplayUnit }
 
     /// "<value> mg/dL"/"<value> mmol/L" — a whole-phrase catalog VARIANT selected by the active
-    /// display unit (D-10; not a glued suffix). `Localizable.xcstrings` carries both as siblings.
-    /// Owner-requested toggle: bare value (no unit phrase) when labels are hidden.
+    /// display unit (not a glued suffix). `Localizable.xcstrings` carries both as siblings.
+    /// Bare value (no unit phrase) when labels are hidden.
     private func glucoseLabel(_ mgdl: Int) -> String {
         let value = unit.format(mgdl: mgdl)
         guard AppSettings.shared.showGlucoseUnitLabels else { return value }
@@ -59,11 +59,10 @@ struct StatsCardView: View {
 
     /// Stacked AGP band bar: very-low / low / in-range / high / very-high.
     ///
-    /// Phase 17 (D2-03): routed through `faBolusDesign.AppTheme`'s band tokens instead of raw `Color`
-    /// literals — `AppTheme.veryLow`/`.veryHigh` are the two NET-NEW severe-band tokens this phase added
-    /// specifically for this bar (WCAG-audited by `AppThemeContrastAuditTests`); `.low`/`.inRange`/`.high`
-    /// are the pre-existing §13-locked tokens. Pinned raw-literal-free by
-    /// `BandDriftGuardTests.noRawBandColorInStatsCardViewTirBar`.
+    /// Routed through `faBolusDesign.AppTheme`'s band tokens instead of raw `Color` literals —
+    /// `AppTheme.veryLow`/`.veryHigh` are the severe-band tokens (WCAG-audited by
+    /// `AppThemeContrastAuditTests`); `.low`/`.inRange`/`.high` are the pre-existing §13-locked
+    /// tokens. Pinned raw-literal-free by `BandDriftGuardTests.noRawBandColorInStatsCardViewTirBar`.
     @ViewBuilder private func tirBar(_ s: GlucoseStatistics) -> some View {
         GeometryReader { geo in
             HStack(spacing: 0) {
@@ -76,10 +75,9 @@ struct StatsCardView: View {
             .clipShape(RoundedRectangle(cornerRadius: 5))
         }
         .frame(height: 16)
-        // WR-01 (Phase 17 review): report all FIVE bands as their own NON-OVERLAPPING percentages, so a
-        // VoiceOver user hears the same five distinct segments a sighted user sees. The prior label spoke
-        // "low" as a cumulative (veryLow+low) figure and folded "very high" silently into "high", so the
-        // spoken breakdown didn't match the 5-segment bar (`tirBar`). Now each band speaks its own `pct`.
+        // Report all FIVE bands as their own NON-OVERLAPPING percentages, so a VoiceOver user hears
+        // the same five distinct segments a sighted user sees. A cumulative "low" (veryLow+low) that
+        // folded "very high" into "high" would not match the 5-segment bar.
         .accessibilityLabel("Time in range \(pct(s.timeInRangePct)), very low \(pct(s.veryLowPct)), low \(pct(s.lowPct)), high \(pct(s.highPct)), very high \(pct(s.veryHighPct))")
     }
 

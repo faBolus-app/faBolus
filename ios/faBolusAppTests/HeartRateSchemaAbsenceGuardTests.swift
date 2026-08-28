@@ -2,24 +2,9 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// D-07 / D-18.2 (09.18a): heart-rate is CHART CONTEXT only, never a dose input. HR is routed
-/// out-of-band — via HealthKit at scrub time and a NEW ConnectIQ envelope key that
-/// `GarminRemoteBridge.swift` reads BEFORE `RemoteCommand.fromValidated` — so it MUST NEVER
-/// enter the signed phone↔remote command contract. Adding an HR field to that contract would
-/// trip `scripts/check-schema-drift.sh` on a signed-path-adjacent schema (RESEARCH Pitfall 3 /
-/// Anti-Patterns), so this guard locks HR out of the contract's two source-of-truth files
-/// before 09.18b's HR feature lands, and stays green when it does.
-///
-/// Scope is DELIBERATELY the exact two files `check-schema-drift.sh:9-10` treats as the signed
-/// command contract — `schema/command.schema.json` and
-/// `Packages/faBolusCore/Sources/faBolusCore/RemoteCommand.swift` — and NOTHING else. 09.18b's
-/// Garmin HR envelope key lives in `GarminRemoteBridge.swift`, which is out of this guard's
-/// two-file scope by design; a legitimate HR usage in the out-of-band bridge must NOT trip this
-/// guard, only HR creeping into the signed schema/mirror does.
-///
-/// Mirrors `KeyboardShortcutDoseGuardTests`' `#filePath`-rooted `resolve()` walk-up + raw-text
-/// `String(contentsOf:)` scan idiom verbatim (RESEARCH Pitfall 6 — scanning raw text is robust
-/// to whitespace variance and doesn't require parsing Swift/JSON syntax).
+/// Heart-rate is chart context only, never a dose input. Pins that HR never enters the signed
+/// command contract (`schema/command.schema.json` and `RemoteCommand.swift`); out-of-band
+/// HealthKit / Garmin-bridge usage is out of this guard's scope by design.
 struct HeartRateSchemaAbsenceGuardTests {
     /// The two source-of-truth files of the signed command contract (per check-schema-drift.sh).
     static let signedContractFiles = [

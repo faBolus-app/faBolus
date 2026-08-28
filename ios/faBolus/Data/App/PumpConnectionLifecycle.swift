@@ -1,6 +1,5 @@
-// WR-03 folder note: this is a Tandem-only importer that intentionally stays in `Data/App/`, NOT in
-// `Data/Tandem/` — it is dose/gate-adjacent (it unblocks the P0 delivery lock after reconnect), which
-// is exactly the exclusion in ARCHITECTURE.md's `Data/Tandem/` rule.
+// This is a Tandem-only importer that intentionally stays in `Data/App/`, NOT in
+// `Data/Tandem/` — it is dose/gate-adjacent (it unblocks the P0 delivery lock after reconnect).
 import Foundation
 import CoreBluetooth
 import TandemMessages
@@ -9,46 +8,14 @@ import TandemBLE
 import faBolusCore
 import os
 
-/// GO-2 Step 2 (16-09, REMED-16, CX-A-03) — the connection/pairing-lifecycle subset (R19) extracted
-/// behind injected closures, mirroring `PumpHistorySyncCoordinator`'s (16-08) D-04 hook pattern. Moves,
-/// close to verbatim (see the per-member notes below), `applyClientState`, `linkDetail`,
-/// `markUsableAndStartPolling`, the pairing-handshake watchdog quartet (`armPairingWatchdog`/
-/// `cancelPairingWatchdog`/`handleResumeFailure`/`firePairingWatchdog`), `pumpClientDidBecomeReady`'s
-/// pairing-scheme SELECTION, and `didDiscover`'s model-detection body.
-///
-/// **Two generations of logic now live here (IN-04).** The paragraphs below describe the ORIGINAL
-/// Phase-16 extraction (verbatim moves, ordering preserved, verified by
-/// `PumpConnectionLifecycleCharacterizationTests`). A LATER commit (`8f9768b`, Phase 15.5 /
-/// REMED-15.5's trusted-identity work — CC-06/C1, self-audit C8, cross-check C10) added a SECOND,
-/// independent side effect into `applyClientState`'s `.connecting`/`.discovering` branch:
-/// `reapplyTrustedIdentityIfKnown()` (see its own doc comment) reapplies a peripheral's persisted
-/// TRUSTED identity — restoring `detectedIsMobi` and calling `client.setDeviceContext(...)` — on the
-/// three `didDiscover`-bypass reconnect shapes, before the earliest possible send. This addition is
-/// NOT covered by the Phase-16 characterization tests (their test doubles short-circuit the guard chain
-/// on a nil `client.reconnectTargetId`), so the "verbatim, ordering preserved" claim below is verified
-/// for the Phase-16-era body but NOT re-verified against this later trusted-identity reapply path.
-///
-/// **GATE-ADJACENT — never owns the auth key or the delivery lock.** `TandemBackend` keeps the actual
-/// storage for `authenticationKey`, `coordinator`, `pairingCode`, and `detectedIsMobi`; this type reaches
-/// them ONLY through get/set closure pairs exposed as computed proxy properties below (`authenticationKey`,
-/// `coordinator`, `pairingCode`, `detectedIsMobi`, `snapshot`) — so every line inside the moved function
-/// bodies that reads/writes one of those names compiles unchanged (Swift's get-modify-set computed-property
-/// rule), while the actual value never lives inside this type. `linkDroppedCleanup()` itself — the shared
-/// teardown that clears the auth key and fails the delivery waiters — STAYS a single ordered method on
-/// `TandemBackend` (review concern #5): this type only calls OUT to it (the `linkDroppedCleanup` closure
-/// below) from `applyClientState`/`handleResumeFailure`/`firePairingWatchdog`, at the exact points the
-/// pre-move code did.
-///
-/// **`didReceiveFrame`'s CRC gate + `ResponseParser.parse` + HMAC handoff stay physically in
-/// `TandemBackend`** — nothing here touches that seam.
-///
-/// **Timer replaced by an injected watchdog seam** (no wall-clock inside this type): `scheduleWatchdog`/
-/// `cancelWatchdog` carry an opaque `Any?` token (production: a real `Timer`, wired by `TandemBackend`);
-/// `pairingWatchdogToken` stores only that opaque token, never a `Timer` directly.
+/// Connection/pairing-lifecycle subset, behind injected closures. Gate-adjacent: never owns the
+/// auth key or the delivery lock — `TandemBackend` keeps those; this type reaches them only through
+/// get/set closures. `linkDroppedCleanup()` stays on `TandemBackend`; this type only calls out to it.
+/// `didReceiveFrame`'s CRC gate + `ResponseParser.parse` + HMAC handoff stay in `TandemBackend`.
 @MainActor
 final class PumpConnectionLifecycle {
 
-    // MARK: - Injected seams (D-04 hook pattern, settable post-construction)
+    // MARK: - Injected seams (settable post-construction)
 
     /// Bound to a closure that mutates `TandemBackend.snapshot` in place (its setter is `private(set)`) —
     /// same shape as `PumpHistorySyncCoordinator.withSnapshot`.
@@ -70,7 +37,7 @@ final class PumpConnectionLifecycle {
     /// Bound to `{ [weak self] in self?.onChange?() }`.
     var onChange: (() -> Void)?
 
-    /// Shared refs (GO-2 interface): `TandemBackend`'s own `readScheduler`/`bgSession` instances, passed
+    /// Shared refs: `TandemBackend`'s own `readScheduler`/`bgSession` instances, passed
     /// through directly rather than wrapped in per-method closures — both are already independent,
     /// injected-seam collaborators, so holding a direct reference here is no different from
     /// `TandemBackend` holding one. Defaults are inert placeholders, overwritten by the real instances in
@@ -146,8 +113,7 @@ final class PumpConnectionLifecycle {
     /// reason.
     private static let pairingLog = Logger(subsystem: "com.fabolus.app", category: "ble")
 
-    // MARK: - R2-07 resume-retry budget (moved verbatim — sole store here, mirrors
-    // `PumpHistorySyncCoordinator`'s R6 fields being the sole store for backfill state)
+    // MARK: - Resume-retry budget (sole store here)
 
     private var resumeRetryCount = 0
     private static let maxResumeRetries = 2
@@ -159,7 +125,7 @@ final class PumpConnectionLifecycle {
     /// Forwarded by `TandemBackend.resumeRetryCountForTesting`.
     var resumeRetryCountForTesting: Int { resumeRetryCount }
 
-    // MARK: - CR-01 (R2-01) pairing-handshake watchdog (Timer replaced by scheduleWatchdog/cancelWatchdog)
+    // MARK: - Pairing-handshake watchdog (Timer replaced by scheduleWatchdog/cancelWatchdog)
 
     private var pairingWatchdogToken: Any?
     private var pairingWatchdogClearStore = false
@@ -174,10 +140,9 @@ final class PumpConnectionLifecycle {
         return Self.defaultPairingTimeoutSec
     }
 
-    // MARK: - applyClientState / linkDetail (moved verbatim off TandemBackend)
+    // MARK: - applyClientState / linkDetail
 
-    /// Fold a kit BLE state into the snapshot. See `TandemBackend`'s pre-move doc comment (preserved
-    /// verbatim in git history) for the full CR-01/CR-02/P12 fix-cycle rationale this body pins.
+    /// Fold a kit BLE state into the snapshot.
     func applyClientState(_ state: PumpBLEClient.State) {
         switch state {
         case .scanning: snapshot.connection = .scanning; snapshot.connectionDetail = nil
@@ -203,7 +168,7 @@ final class PumpConnectionLifecycle {
             if wasLive, flapDetector.recordFlap(at: Date()) {
                 onReliabilityEvent?(.connectionUnstable)
             }
-            // CC-06/C1 (REMED-15.5): this is the SINGLE hook that covers all THREE `didDiscover`-bypass
+            // This is the SINGLE hook that covers all THREE `didDiscover`-bypass
             // reconnect shapes (silent retrieve, CoreBluetooth state restoration, watchdog-rescan-direct-
             // connect — 15.5-RESEARCH.md §A2) — `state` transitions to `.connecting`/`.discovering`
             // synchronously on every one of them (`PumpBLEClient.connect(_:)`/`willRestoreState`), so a
@@ -249,9 +214,8 @@ final class PumpConnectionLifecycle {
         }
     }
 
-    /// CC-06/C1 (REMED-15.5), extended by the self-audit BLOCKER (C8) + the peripheral cross-check
-    /// (C10): reapply a peripheral's persisted TRUSTED identity into the kit on every reconnect shape
-    /// that bypasses `didDiscover`.
+    /// Reapply a peripheral's persisted TRUSTED identity into the kit on every reconnect shape
+    /// that bypasses `didDiscover`, before the earliest possible send.
     ///
     /// Reads `TrustedPumpIdentityStore` (NOT `PumpModelStore`, NOT the op33 heuristic) — the only writer
     /// of that store is a genuine BLE-name detection (`applyDidDiscover` below).
@@ -285,7 +249,7 @@ final class PumpConnectionLifecycle {
         // nothing to clear — this is e.g. the very first connection this launch, where a value already
         // set at a live `didDiscover` this same session must be left intact).
         guard let target = client?.reconnectTargetId else { return }
-        // WR-01 (REMED-15.5): a GENUINE peripheral mismatch (`target != storeId`, not merely
+        // A GENUINE peripheral mismatch (`target != storeId`, not merely
         // "unknown") — the kit is driving a DIFFERENT peripheral than the stored one. Defensively
         // clear `detectedIsMobi` before returning so a future `applyDeviceContext` can never inherit a
         // stale name-authority value for the WRONG peripheral, even if some other invariant across the
@@ -448,7 +412,7 @@ final class PumpConnectionLifecycle {
             snapshot.isMobi = isMobi
             snapshot.pumpModelName = isMobi ? "Mobi" : "t:slim X2"
             PumpModelStore.set(isMobi: isMobi)
-            // CC-06/C1 (REMED-15.5): persist this as the peripheral's TRUSTED identity — the ONLY writer
+            // Persist this as the peripheral's TRUSTED identity — the ONLY writer
             // of TrustedPumpIdentityStore — so `reapplyTrustedIdentityIfKnown()` can re-establish it on a
             // future silent reconnect/restoration that bypasses this delegate callback.
             TrustedPumpIdentityStore.set(isMobi: isMobi, for: peripheral.identifier)

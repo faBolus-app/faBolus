@@ -2,20 +2,8 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// **FEAT-07 boundary test (Phase 7, 07-01, P-A).** FoodFinder / food-scanner (barcode + OpenFoodFacts
-/// lookup, the opt-in BYO-key AI carb-estimate path) is a CLEAN delete-on-main removal (D-01/D-03) — the
-/// three feature roots are physically `git rm`'d, preserved on `dev/food-finder`, no dose-set stub
-/// required. This UNGATED suite is the replacement for the deleted `FoodFinderCarbSeamGuardTests` (its
-/// own `foodFinderVendorDirectoryIsLiveAndNonEmpty` liveness check REQUIRES the vendor dir to be
-/// non-empty, so it fails rather than stays green once FoodFinder is gone — RESEARCH cross-cutting
-/// finding). It proves the opposite direction: the three directories are ABSENT from the working tree,
-/// and the `BolusEntryView` carb-seam (`showFoodFinder`/`FoodFinderView`) no longer exists.
-///
-/// RED-first: this suite FAILS against pre-removal `main` (the dirs + the seam still exist) — proving it
-/// has teeth. GREEN once Task 1's deletions land.
-///
-/// Reuses the raw-text `String(contentsOf:)` scan + `#filePath`-rooted repo-root resolution idiom from
-/// `KeyboardShortcutDoseGuardTests`/`BackupRemovalBoundaryTests` (RESEARCH "Don't Hand-Roll").
+/// Pins that the FoodFinder directories are absent from the working tree and that
+/// `BolusEntryView` has no `showFoodFinder` / `FoodFinderView` carb-seam.
 struct FoodFinderAbsenceGuardTests {
 
     /// Resolve the repo root by walking up from this file's own `#filePath`

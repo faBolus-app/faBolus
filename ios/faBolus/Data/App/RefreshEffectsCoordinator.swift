@@ -1,26 +1,9 @@
 import Foundation
 import faBolusCore
 
-/// Phase 18 (GO-1 Step 8, REMED-18): the effects tail of `AppModel.refresh()`, extracted into a small,
-/// stateless, closure-bound coordinator — the single HIGH-likelihood/HIGH-impact ("L/L") god-object
-/// follow-up deferred from the Phase-16 gate.
-///
-/// **Behavior-preserving. OFF the signed dose wire.** `performEffects` operates only on already-typed
-/// status DTOs (`PumpSnapshot`/`GlucoseReading`/…) and dispatches side effects; it touches no dose /
-/// bolus / cancel / dismiss code and never reaches `TandemBackend`'s signed/CRC/HMAC region.
-///
-/// Follows the `DeliveryLedgerCoordinator` (D-04) idiom EXACTLY: an `@MainActor final class` (NOT an
-/// `AppModel` extension), constructed with no init args, wired via `var` closures ("sinks") assigned as
-/// separate statements in `AppModel.init` after construction. It holds NO stored `AppModel` reference and
-/// NEVER reads `source` — every fact it needs is passed as an EXPLICIT parameter to `performEffects`, and
-/// every action it triggers is dispatched through a per-action sink bound to the relevant `AppModel`
-/// effect method / global publisher. It computes the four safety edges ITSELF (via the pure
-/// `SafetyEdge`/`StalenessWatchdogEdge` enums, D-02) and dispatches only the resulting actions.
-///
-/// The single `performEffects(...)` call (RESEARCH Open Question 1) makes the coordinator-internal order
-/// structurally un-reorderable from the call site — the whole point of extracting the most
-/// ordering-sensitive item last. `AppModel.refresh()` enforces the top-level
-/// `maybeHandlePumpSwitch → merge → façade-assign → effects` order by construction (D-03).
+/// Effects tail of `AppModel.refresh()`. Operates only on already-typed status DTOs and dispatches
+/// side effects; it touches no dose / bolus / cancel / dismiss code and never reaches
+/// `TandemBackend`'s signed/CRC/HMAC region. Holds no `AppModel` back-pointer and never reads `source`.
 @MainActor
 final class RefreshEffectsCoordinator {
 

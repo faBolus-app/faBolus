@@ -241,7 +241,7 @@ public enum StackingGuard {
     /// Control-IQ OFF (`TempRateRequests.swift:3-5`), while SG3b's entire premise — offering the 150%
     /// temp-rate as an alternative to a correction bolus — only makes sense while Control-IQ is ON. That
     /// contradiction means this function can never legitimately fire; it exists ONLY to complete the
-    /// `Friction`/`Disclosure` type surface for Phase 5 (task #93 criterion 5), documented BLOCKED and not
+    /// `Friction`/`Disclosure` type surface, documented BLOCKED and not
     /// schedulable until a saline-bench check of temp-rate-while-Control-IQ-on unblocks it (`PROJECT.md`
     /// Out-of-Scope). Returns `.none` unconditionally — no default branch, no recommended-dose comparison,
     /// no units field, under every input.

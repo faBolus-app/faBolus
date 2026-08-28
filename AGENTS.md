@@ -1,72 +1,60 @@
 # AGENTS.md — faBolus
 
-Working notes for AI coding agents (and humans). Companion to [`llms.txt`](llms.txt) (the map) — this
-is the **workflow + rules**. faBolus is an experimental, not-FDA-cleared remote-bolus + status app for
-Tandem t:slim X2 / Mobi. Read the file-header doc-comment of anything you touch first.
+Working notes for agents and humans. Experimental, not-FDA-cleared remote-bolus + status app for
+Tandem t:slim X2 (this build declines to pair a Mobi). Companion map: [`llms.txt`](llms.txt).
+Branch model, experimental gate, and versioning: [`BRANCHES.md`](BRANCHES.md) — read it; do not
+restate it here.
 
-## Safety invariants — do not violate
-- Insulin path is layered: **UI confirm/hold → backend clamp** (`Interlocks.absoluteMaxUnits` = 25 U,
-  min 0.05 U) **→ `WritePolicy` interlock** (`.readOnly` default) **→ signed message** flagged
-  `modifiesInsulinDelivery`, byte-verified against the TandemKit oracle. Never add a delivery path that
-  bypasses any layer.
-- All action gating happens in **`AppModel`** (`childBlocked` for child mode; `PeerRemoteHost`/
-  `RemotePermission` for remote peers). Add gates there, not scattered in views.
+## Safety — do not violate
+- Insulin path: **UI confirm/hold → backend clamp** (`Interlocks.absoluteMaxUnits` = 25 U, min 0.05 U)
+  **→ TandemKit `WritePolicy`** (default `.readOnly`; risk-tiered, not a boolean) **→ signed message**
+  flagged `modifiesInsulinDelivery`, byte-verified against the TandemKit oracle. Never add a delivery
+  path that bypasses a layer.
+- Action gating is **`AccessPolicy`** in `faBolusCore`, reached from `AppModel.allow(_:from:peerId:)` /
+  `accessDecision`. Add gates there, not in views.
 - Stale glucose (> ~6 min, `GlucoseFreshness`) is shown marked, never as current, never auto-fills a
   correction.
-- Don't invent pump behavior. If a field/bit is unverified on-device, note it in
-  `docs/UNVERIFIED-GUESSES.md` rather than guessing.
+- Don't invent pump behavior. Unverified fields go in `docs/UNVERIFIED-GUESSES.md`.
 
 ## Commands
 - **Core unit tests:** `swift test --package-path Packages/faBolusCore`
-- **Simulator build (iOS app + watch + widgets):** `./scripts/build-sim.sh`
-- **Device build + install:** set `DEVELOPMENT_TEAM` in `LocalConfig.xcconfig`, then
-  `xcodegen generate` → `xcodebuild -scheme faBolus -destination 'id=<UDID>' -allowProvisioningUpdates -derivedDataPath build/DDdevice build` → `xcrun devicectl device install app --device <UDID> build/DDdevice/Build/Products/Debug-iphoneos/faBolus.app`
-- **Schema drift (after touching `RemoteCommand`):** `./scripts/check-schema-drift.sh`
-- **Always run `xcodegen generate` after editing `project.yml`.** New files under globbed dirs
-  (`ios/faBolus`, `Shared`) are picked up automatically.
+- **Simulator (iOS app + widgets):** `./scripts/build-sim.sh`
+- **Device build:** set `DEVELOPMENT_TEAM` in `LocalConfig.xcconfig`, then `xcodegen generate` →
+  `xcodebuild -scheme faBolus -destination 'id=<UDID>' -allowProvisioningUpdates -derivedDataPath build/DDdevice build` →
+  `xcrun devicectl device install app --device <UDID> build/DDdevice/Build/Products/Debug-iphoneos/faBolus.app`
+- **Schema drift** (after touching `RemoteCommand`): `./scripts/check-schema-drift.sh`
+- Run `xcodegen generate` after editing `project.yml`. New files under globbed dirs (`ios/faBolus`,
+  `Shared`) are picked up automatically.
+
+There is **no Watch app on `main`**. Do not build `faBolusWatch` or assume a `watch/` tree.
 
 ## How to add X
 - **A user setting:** `AppSettings.swift` (UserDefaults `var` + `didSet`, defaulted/sanitized in
-  `init`) → a `*SettingsView` in `SettingsView.swift` → a `SettingsIndex` entry for search.
+  `init`) → a settings screen in `SettingsView.swift` → a `SettingsIndex` entry for search.
 - **A pump action:** add to `PumpBackend` (default-throwing extension) → implement in `TandemBackend`
-  **and** `MockBackend` → expose through `AppModel` → gate it if it changes insulin.
+  **and** `MockBackend` → expose through `AppModel` → gate it via `AccessPolicy` if it changes insulin.
 - **A remote command:** extend `RemoteCommand` + `schema/command.schema.json` (drift check) → handle in
-  the `*RemoteHost` receivers and `RemoteClientModel`. Phone/Mac-only kinds (auth/sealed/approval) are
-  intentionally kept OUT of the shared schema/Garmin mirror.
+  the remote-host receivers. Phone/Mac-only kinds (auth/sealed/approval) stay out of the shared
+  schema/Garmin mirror.
 - **A CGM source:** implement `GlucoseSource`, add a `GlucoseSourceDescriptor` to
   `GlucoseSourceRegistry.enabled`.
-- **A permission:** `ChildFeature` (local) or `RemotePermission` (peers); enforce via `AppModel`.
+- **A permission:** `ChildFeature` (local) or `RemotePermission` (peers); enforce via `AccessPolicy`.
 
 ## Conventions
-- Swift 6 / strict concurrency: most UI + model types are `@MainActor`; delegate callbacks that aren't
-  (e.g. CoreBluetooth/AVFoundation) must be `nonisolated` and hop back with `Task { @MainActor in … }`.
-- Every file opens with a doc-comment stating its role; use `[[Type]]` to cross-link. Keep this current.
-- Match surrounding style; prefer reusing value-driven views over new ones (remotes reuse host views).
-
-## Git / workflow
-- Follow the user's branching (feature branches; merge to `main` when asked). Don't push or commit
-  unless asked. End commit messages with the required `Co-Authored-By` trailer.
+- Swift 6 / strict concurrency: most UI + model types are `@MainActor`; CoreBluetooth/AVFoundation
+  callbacks that aren't must be `nonisolated` and hop back with `Task { @MainActor in … }`.
+- Match surrounding style. Comments explain **why** (safety, hardware, fail-closed). Do not add
+  phase/ticket IDs, “moved from X” notes, or file-header novels.
 - Sibling repos: `../TandemKit` (pump protocol — change message bytes there, with an oracle test) and
-  `../faBolusGarmin` (Garmin remote). Keep the `RemoteCommand` schema in sync across them.
+  `../faBolusGarmin`. Keep the `RemoteCommand` schema in sync.
 
-## Versioning & governance (§1.3 / §1.4)
-- **`BRANCHES.md` is canonical governance** for the branch model, the §1.2 experimental gate, the §1.4
-  promotion criteria, and the §1.3 versioning + cross-repo contract. Read it before a release-shaped
-  change; don't restate its rules here — link to them.
-- **App version is single-sourced in `Config.xcconfig`** (`MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`),
-  inherited by every target the same way as `APP_BUNDLE_ID`. Never add a per-target version literal in
-  `project.yml`. Bump `MARKETING_VERSION` on a release and add a `CHANGELOG.md` entry.
-- **Backend (TandemKit) version-pinning contract** — the target is: annotated release tags, an explicit
-  version pin **or a pinned commit `revision:`** in `project.yml` (with a documented local-path override
-  for dev), and a committed `Package.resolved`. This is now **MET** (2026-08-13): faBolus consumes
-  TandemKit by `url:`+`revision:` (a pinned commit SHA on TandemKit `main`), with `FABOLUS_TANDEM_LOCAL=1`
-  as the documented local-path override. See BRANCHES.md §1.3 for the reason, the pinned revision, and
-  the current tag state — including the recorded D2-on-main governance fact.
-- **Garmin ships in lockstep** with the app (same release, same quality bar), enforced by the existing
-  branch-aware cross-repo CI. See BRANCHES.md §1.3.
+## Git
+Follow the user's branching. Don't push or commit unless asked.
 
 ## Gotchas
-- One CoreBluetooth restore-id per central per process (a 2nd restorable central SIGABRTs — see
-  `DexcomG6BLESource`). The pump owns `com.fabolus.app.pump`; the BLE peer peripheral is separate.
-- `AppModel.addRemoteEcho`/`addStatusListener` are append-only (not removable) — don't re-register.
-- Chained remotes (parent's own watch/Mac via relay) are deferred; see `ROADMAP.md` for blockers.
+- One CoreBluetooth restore-id per central per process (a second restorable central SIGABRTs). The
+  pump owns `com.fabolus.app.pump`; any other BLE central must use a different id.
+- `AppModel.addRemoteEcho` / `addStatusListener` are append-only — don't re-register.
+- Chained remotes are deferred; see `ROADMAP.md`.
+- TandemKit is consumed by `url:` + `revision:` in `project.yml` (`FABOLUS_TANDEM_LOCAL=1` for a
+  sibling checkout). Read the pin from `project.yml`, not from this file.

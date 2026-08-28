@@ -1,27 +1,22 @@
 import Foundation
 import faBolusCore
 
-/// Phase 09 Wave 2, Target A (D-03): the ledger / global-block **host state machine**, extracted
-/// verbatim out of `AppModel` behind the unchanged `PumpBackend` seam. Owns the durable idempotency
-/// ledger + store, the 4 fail-closed flags, the in-flight delivery key, the persist/retry paths, the
-/// global-block computation, and the two funnels every delivery surface goes through
-/// (`runLedgeredDelivery` / `reconcileUnresolvedDeliveries`).
+/// Ledger / global-block **host state machine**. Owns the durable idempotency ledger + store, the 4
+/// fail-closed flags, the in-flight delivery key, the persist/retry paths, the global-block
+/// computation, and the two funnels every delivery surface goes through (`runLedgeredDelivery` /
+/// `reconcileUnresolvedDeliveries`).
 ///
-/// Depends ONLY on the existing seam (via closures `AppModel` binds to `source.reconcile` /
-/// `source.lastBolusCancelled`, plus the per-call `deliver` closure `AppModel` passes to
-/// `runLedgeredDelivery`) and a small set of injected side-effect hooks (`recordReconciliation`,
-/// `postSafety`, `refresh`, `onDeliveryBlockChanged`) — never a whole `AppModel` back-pointer (D-04).
-/// `AppModel` stays the single `@Observable` publisher of `deliveryBlockedReason`/
-/// `deliveryGloballyBlocked`: this coordinator computes the reason and pushes it through
-/// `onDeliveryBlockChanged`, which `AppModel` uses to mirror the value into its own stored property so
-/// every existing SwiftUI observer keeps working unchanged.
+/// Depends ONLY on the existing seam (via closures bound to `source.reconcile` /
+/// `source.lastBolusCancelled`, plus the per-call `deliver` closure) and injected side-effect hooks —
+/// never a whole `AppModel` back-pointer. `AppModel` stays the single `@Observable` publisher of
+/// `deliveryBlockedReason`/`deliveryGloballyBlocked`.
 ///
-/// D-09: this is ONE of the two independent fail-closed layers in the dosing path. It must never be
+/// This is ONE of the two independent fail-closed layers in the dosing path. It must never be
 /// unified with `TandemBackend.validateDeliver`'s own local `deliveryOutcomeUnknown` block.
 @MainActor
 final class DeliveryLedgerCoordinator {
 
-    // MARK: - Injected seam bindings + side-effect hooks (D-04)
+    // MARK: - Injected seam bindings + side-effect hooks
     //
     // `var`s with safe no-op defaults, set by `AppModel` right after construction (mirroring how
     // `AppModel.init` already wires `source.onChange`/`source.commitBolusId` as separate statements
@@ -42,10 +37,10 @@ final class DeliveryLedgerCoordinator {
     var refresh: () -> Void = {}
     /// Mirrors the freshly computed block reason into `AppModel`'s own `@Observable` stored property
     /// (source of the published `deliveryBlockedReason`/`deliveryGloballyBlocked`), so SwiftUI
-    /// observation is unbroken (D-04).
+    /// observation is unbroken.
     var onDeliveryBlockChanged: (String?) -> Void = { _ in }
 
-    // MARK: - Ledger + store (moved verbatim from AppModel.swift :523-545)
+    // MARK: - Ledger + store
 
     /// Idempotency ledger: a duplicated/retried remote bolus (same peer + requestId) cannot deliver
     /// twice (audit A-02). Keyed by authenticated peer identity + requestId; MainActor-isolated.
@@ -153,7 +148,7 @@ final class DeliveryLedgerCoordinator {
     private func computeDeliveryBlockReason() -> String? {
         // Evaluate `unreconciled()` first so the lazy ledger load runs (which sets `ledgerFailedClosed`).
         let unresolved = remoteBolusLedger.unreconciled()
-        // D-05: the precedence itself is a pure faBolusCore function (`RemoteBolusLedger.blockReason`) —
+        // The precedence itself is a pure faBolusCore function (`RemoteBolusLedger.blockReason`) —
         // this is the ONLY caller in the app target, so the strings have one source of truth with
         // zero-`AppModel` unit coverage in `RemoteBolusLedgerTests`. Byte-identical to the inline copy
         // Wave 1's `LedgerBlockPrecedenceGuardTests` pinned.
@@ -161,7 +156,7 @@ final class DeliveryLedgerCoordinator {
                                              terminalSaveFailed: terminalSaveFailed, unresolved: unresolved,
                                              inFlightDeliveryKey: inFlightDeliveryKey)
     }
-    /// Recompute the current block reason and push it through `onDeliveryBlockChanged` (D-04). Exposed
+    /// Recompute the current block reason and push it through `onDeliveryBlockChanged`. Exposed
     /// (not `private`) so `AppModel.init` can force one SYNCHRONOUS publish of any ledger state restored
     /// from a previous run before its own `init` returns — mirroring the original `AppModel` ordering
     /// where a caller could read `deliveryBlockedReason`/`deliveryGloballyBlocked` immediately after
@@ -210,7 +205,7 @@ final class DeliveryLedgerCoordinator {
         remoteBolusLedger.isSettled(peerId: peerId, requestId: requestId)
     }
 
-    /// T-14-01 (CX-G-01 phone half): thin read-only passthrough to the durable ledger's additive
+    /// Thin read-only passthrough to the durable ledger's additive
     /// content+time duplicate-recency query (scoped per peer — see `RemoteBolusLedger`'s doc comment).
     /// `AppModel.remoteDeliver` consults this BEFORE `runLedgeredDelivery`/`begin()` so a re-composed dose
     /// under a FRESH requestId is refused independent of the (peer,requestId) exactly-once key. Never
@@ -219,7 +214,7 @@ final class DeliveryLedgerCoordinator {
         remoteBolusLedger.hasRecentlyDeliveredDuplicate(peerId: peerId, doseKey: doseKey)
     }
 
-    /// T-14-01: thin read-only passthrough — whether the EXACT `(peerId, requestId)` already has a
+    /// Thin read-only passthrough — whether the EXACT `(peerId, requestId)` already has a
     /// tracked ledger entry, in any lifecycle state. `AppModel.remoteDeliver` uses this to skip the
     /// recency guard for a genuine protocol retry of the SAME id (`begin()` already replays/blocks it
     /// correctly); the recency guard exists ONLY to catch a FRESH requestId reusing recent content.

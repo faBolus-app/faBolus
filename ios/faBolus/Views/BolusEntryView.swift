@@ -10,8 +10,8 @@ struct BolusEntryView: View {
     let model: AppModel
     var embedded: Bool = false
     @Environment(\.dismiss) private var dismiss
-    // Phase 09.17-04 (D-04, UI-SPEC §4): read live via @Environment (never cached in @State — UI-SPEC
-    // §6 — so rotation/Split-View resize re-triggers the cap correctly).
+    // Read live via @Environment (never cached in @State, so rotation/Split-View resize
+    // re-triggers the cap correctly).
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var settings = AppSettings.shared
 
@@ -25,10 +25,10 @@ struct BolusEntryView: View {
     @State private var recommendation: BolusRecommendation?
     @State private var confirming = false
     @State private var delivering = false
-    // Phase 09.4 D-04/D-05/D-06: the transient, truthful bolus-success confirmation. Set ONLY from the
-    // model's ALREADY-resolved outcome (`deliverFrozen` for the sync path, the `.onChange(of:
+    // The transient, truthful bolus-success confirmation. Set ONLY from the model's
+    // ALREADY-resolved outcome (`deliverFrozen` for the sync path, the `.onChange(of:
     // model.pendingApproval)` handler below for the async remote-approval path) — this view never
-    // computes a delivery outcome itself (D-08).
+    // computes a delivery outcome itself.
     @State private var successBanner: BolusSuccessBanner?
     @State private var showReasoning = false
     // Extended (combo) bolus
@@ -36,7 +36,7 @@ struct BolusEntryView: View {
     @State private var extendedDurationMin = 120
     @State private var extendedNowPercent = 50
     @State private var confirmingExtended = false
-    // SG3a (Insulin Stacking Guard, task #93): escalating friction state at the standard confirm seam.
+    // SG3a (Insulin Stacking Guard): escalating friction state at the standard confirm seam.
     // Neither extra step ever changes `units` — both gate the SAME dose through to the unchanged
     // `attemptDeliver` path (see `handleStandardConfirm`).
     @State private var sgConfirmExtra = false
@@ -44,10 +44,6 @@ struct BolusEntryView: View {
     @State private var sgReenterText = ""
     @State private var sgReenterMismatch = false
     @State private var sgOriginalUnits: Double = 0
-    // LOCK-06 (Phase 8, 08-02): the FLAG-4 one-time DosingSafetyKit→SG advisory-behavior notice's state
-    // variable, trigger, and render are all REMOVED — its copy referenced friction behavior which, with
-    // friction permanently off (08-01), can no longer happen. AppSettings.shared's ack-state accessors
-    // (AppSettings.swift, out of this plan's scope) stay untouched but now have no caller here.
     /// Where the correction BG came from: auto-filled from the CGM, or typed by the user. Only a
     /// CGM-sourced BG is auto-refreshed / re-checked for freshness (a typed BG is the user's own).
     private enum BGSource { case none, cgm, manual }
@@ -72,11 +68,11 @@ struct BolusEntryView: View {
     }
     /// Supersedes out-of-order async recommendation results (audit C-04).
     @State private var calcSeq = 0
-    /// DIF-ux: the calc-input freshness prompt shown at deliver time when the recommendation's inputs
+    /// The calc-input freshness prompt shown at deliver time when the recommendation's inputs
     /// weren't confirmed fresh this compose (`inputsVerified == false`). Carries the override dose
     /// (precomputed off last-known values, so the button label == the delivered amount) and which
     /// override(s) the "use / include" button applies. Per-attempt — reset on every recompute
-    /// (`calculate()`), never sticky, never default-selected. Replaces the FB-01 single assumed-ack gate.
+    /// (`calculate()`), never sticky, never default-selected.
     private struct CalcInputPrompt: Identifiable {
         let id = UUID()
         let kind: CalcInputGate.Kind   // pure, unit-tested gate decision (faBolusCore)
@@ -90,7 +86,7 @@ struct BolusEntryView: View {
         let therapyDate: Date?
     }
     @State private var calcInputPrompt: CalcInputPrompt?
-    /// DIF-ux: the override the owner accepted for THIS attempt, captured when they tap the warned dialog's
+    /// The override the owner accepted for THIS attempt, captured when they tap the warned dialog's
     /// "use last-known" button. Re-entering `attemptDeliver` with this set SKIPS the warning gate but runs
     /// the SAME deliver-time machinery every verified dose does — the fresh-CGM refresh, the 0.10 U
     /// divergence guard, and (critically) the Addendum-B stale-CGM three-way — with these flags threaded
@@ -101,16 +97,16 @@ struct BolusEntryView: View {
     /// never sticky. Remotes never reach any of this (they fail closed in `resolveRemoteDose`).
     private struct AcceptedOverride { let allowStaleIob: Bool; let allowStaleTherapy: Bool; let baseline: Double }
     @State private var acceptedOverride: AcceptedOverride?
-    /// DIF-ux: the pump never reported its bolus settings this attempt (`BolusRecommendation.therapyUnavailable`),
+    /// The pump never reported its bolus settings this attempt (`BolusRecommendation.therapyUnavailable`),
     /// so no dose can be safely sized — drives a cancel-only "settings not read yet" notice (fail-closed),
     /// never a deliverable dose off a guessed carb ratio. Per-attempt; reset on recompute / mode switch.
     @State private var calcInputBlocked = false
-    /// VA-09: drives a cancel-only "re-check your glucose" notice when a MANUALLY-typed correction BG is
+    /// Drives a cancel-only "re-check your glucose" notice when a MANUALLY-typed correction BG is
     /// outside the plausible range (see `manualBGImplausible`). Fail-closed — the dose is NOT delivered.
     @State private var manualBGBlocked = false
     private enum Field { case carbs, bg, units }
     @FocusState private var focus: Field?
-    /// N12: drives the size-gated `.fixedSize()` on the compact carbs/units fields — kept at normal text
+    /// Drives the size-gated `.fixedSize()` on the compact carbs/units fields — kept at normal text
     /// sizes (so the one-glyph field + big tap target stays), dropped at accessibility sizes where a
     /// fixed width would clip the digits.
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -123,10 +119,10 @@ struct BolusEntryView: View {
     /// reading is fresh; keeps it live as new readings arrive. No-op once the user edits the field.
     private func syncBGFromCGM() {
         guard bgSource != .manual, let g = model.snapshot.glucose, !model.snapshot.isGlucoseStale else { return }
-        // 04-08 gap closure (SC1): this auto-fill wrote the bare mg/dL Int into the editable `bg` text
-        // field, which is later re-parsed via `settings.glucoseDisplayUnit.parse(bg)` — in mmol mode this
-        // silently fed a mg/dL-scaled number into the mmol parser (e.g. 124 → 2234 mg/dL after ×18.0182),
-        // corrupting the correction-dose input. Route through the SAME funnel the field's own parse uses.
+        // This auto-fill wrote the bare mg/dL Int into the editable `bg` text field, which is later
+        // re-parsed via `settings.glucoseDisplayUnit.parse(bg)` — in mmol mode this silently fed a
+        // mg/dL-scaled number into the mmol parser (e.g. 124 → 2234 mg/dL after ×18.0182), corrupting
+        // the correction-dose input. Route through the SAME funnel the field's own parse uses.
         let s = settings.glucoseDisplayUnit.format(mgdl: g)
         if bg != s { bg = s; bgSource = .cgm; if mode == .carbs { Task { await calculate() } } }
     }
@@ -134,7 +130,7 @@ struct BolusEntryView: View {
     private var staleCGMCorrection: Bool {
         mode == .carbs && bgSource == .cgm && model.snapshot.isGlucoseStale && (settings.glucoseDisplayUnit.parse(bg) ?? 0) > 0
     }
-    /// VA-09: a MANUALLY-typed correction BG outside the plausible physiological range
+    /// A MANUALLY-typed correction BG outside the plausible physiological range
     /// `[GlucosePlausibility.minimum, .maximum]` (40–400 mg/dL). A typed value below 40 would hit
     /// `BolusMath`'s D-04 "implausible BG → no correction" rule, which SILENTLY drops the negative
     /// (dose-reducing) correction — so faBolus would recommend MORE than the pump's own calculator would,
@@ -147,12 +143,11 @@ struct BolusEntryView: View {
         bgSource == .manual && settings.glucoseDisplayUnit.parse(bg).map { !GlucosePlausibility.isPlausible(mgdl: $0) } ?? false
     }
 
-    /// Phase 04-01 (D-07/D-09) — the entry-parse boundary. `bg` is typed in whichever unit
-    /// `settings.glucoseDisplayUnit` selects; every former bare integer-parse call site below now
-    /// calls `settings.glucoseDisplayUnit.parse(bg)` directly, the ONLY conversion of that text to
-    /// the canonical mg/dL `Int` that reaches `recommendBolus`/`BolusMath`/`RemoteCommand`. `nil`
-    /// means "no BG entered" — callers MUST NOT coerce it to `0` (a fabricated glucose reading
-    /// silently entering correction math is the exact hazard this phase exists to prevent).
+    /// The entry-parse boundary. `bg` is typed in whichever unit `settings.glucoseDisplayUnit`
+    /// selects; every parse call site below calls `settings.glucoseDisplayUnit.parse(bg)` directly,
+    /// the ONLY conversion of that text to the canonical mg/dL `Int` that reaches
+    /// `recommendBolus`/`BolusMath`/`RemoteCommand`. `nil` means "no BG entered" — callers MUST NOT
+    /// coerce it to `0` (a fabricated glucose reading silently entering correction math).
 
     /// The bg field's keyboard type: `.decimalPad` in mmol mode (a decimal point is required),
     /// `.numberPad` in mgdl mode (unchanged behavior). `static`/pure so it's directly unit-testable
@@ -169,9 +164,9 @@ struct BolusEntryView: View {
         unit == .mmol ? "Blood glucose, mmol/L" : "Blood glucose, mg/dL"
     }
 
-    /// Phase 04-02 (D-10): the two stale/CGM-changed reading messages — whole-phrase catalog
-    /// VARIANTS selected by the active display unit, not a glued suffix. `mgdl` stays the canonical
-    /// reading; only its formatted display value and the chosen catalog phrase change.
+    /// The two stale/CGM-changed reading messages — whole-phrase catalog VARIANTS selected by the
+    /// active display unit, not a glued suffix. `mgdl` stays the canonical reading; only its
+    /// formatted display value and the chosen catalog phrase change.
     private func staleReadingMessage(mgdl: Int, carbsOnlyLabel: String) -> String {
         let value = settings.glucoseDisplayUnit.format(mgdl: mgdl)
         if settings.glucoseDisplayUnit == .mmol {
@@ -189,7 +184,7 @@ struct BolusEntryView: View {
         }
     }
 
-    /// D-13/F-15: the stale-CGM dialog TITLE — a THREE-way selection so "CGM unavailable" never sits
+    /// The stale-CGM dialog TITLE — a THREE-way selection so "CGM unavailable" never sits
     /// above a button offering to USE a stale-but-present reading. The `newBG == -1` sentinel alone
     /// (the old two-way `newBG == -1 ? "CGM unavailable" : "CGM updated"`) conflates two very different
     /// states: NO reading at all (carbs-only / cancel — genuinely "unavailable") vs a stale-but-real
@@ -233,13 +228,13 @@ struct BolusEntryView: View {
     }
     /// SG2: the max-bolus proximity disclosure, or nil. Pure `faBolusCore` disclosure anchored solely on the
     /// pump's own op-115 `maxBolusUnits` — never gates, changes, or delays delivery; same "disclosure only"
-    /// contract as `sg1Disclosure` above. Renders beside the existing "Exceeds pump max" label (:320-323
-    /// pattern), an additional pump-anchored disclosure, not a replacement for it.
+    /// contract as `sg1Disclosure` above. Renders beside the existing "Exceeds pump max" label, an
+    /// additional pump-anchored disclosure, not a replacement for it.
     private var sg2Disclosure: StackingGuard.Disclosure? {
         let disclosure = StackingGuard.maxBolusProximity(enteredUnits: units, maxBolusUnits: model.snapshot.maxBolusUnits)
         return disclosure.friction == .none ? nil : disclosure
     }
-    /// Out-of-insulin over-request disclosure (09.9-02, D-01): fires when the entered dose exceeds the
+    /// Out-of-insulin over-request disclosure: fires when the entered dose exceeds the
     /// pump's OWN reported reservoir remaining (`snapshot.reservoirUnits`) — never a hardcoded threshold.
     /// Pure `faBolusCore` disclosure; NEVER gates, clamps, resizes, or delays delivery — same "disclosure
     /// only" contract as `sg1Disclosure`/`sg2Disclosure` above. The pump is the physical enforcer of what it
@@ -278,8 +273,8 @@ struct BolusEntryView: View {
         model.snapshot.glucoseDate.map { max(0, Int(Date().timeIntervalSince($0) / 60)) }
     }
     /// "6.9 mmol/L · 2 min ago" (or "124 mg/dL · …") for the live CGM readout on the bolus screen
-    /// (nil when no reading). CR-03 gap closure (04-07): routed through the display-unit funnel —
-    /// was the one live-status line on this screen left as a bare mg/dL integer.
+    /// (nil when no reading). Routed through the display-unit funnel — was the one live-status
+    /// line on this screen left as a bare mg/dL integer.
     private var cgmReadout: String? {
         guard let g = model.snapshot.glucose else { return nil }
         let unit = settings.glucoseDisplayUnit
@@ -293,10 +288,8 @@ struct BolusEntryView: View {
             parts.append("⚠️ Your CGM reading is \(m) min old — this correction may be based on outdated glucose.")
         }
         if let w = carbOverrideWarning { parts.append(w) }
-        // LOCK-06 (Phase 8, 08-02): the SG3a escalating-friction message is no longer composed into the
-        // STANDARD confirm dialog — this presentation site's use of `sg3aDisclosure.message` is removed.
-        // `sg3aDisclosure` itself (and the friction tier it drives via `sg3aAppliedFriction`, which the
-        // confirm seam below still routes on) is UNCHANGED — only the disclosure TEXT is hidden here.
+        // SG3a escalating-friction TEXT is not composed into the standard confirm dialog.
+        // `sg3aDisclosure` / `sg3aAppliedFriction` (which the confirm seam still routes on) stay.
         parts.append("faBolus is experimental and not FDA-cleared. Confirm the amount before you deliver.")
         return parts.joined(separator: "\n\n")
     }
@@ -310,19 +303,14 @@ struct BolusEntryView: View {
     private var unitsStep: Binding<Double> {
         Binding(get: { units }, set: { unitsText = $0 <= 0 ? "" : Self.trimUnits($0) })
     }
-    /// §13 Rule-1 (A1) copy — §13-cleared 2026-08-23 (owner-accepted AI-panel clinical review; approved
-    /// as-is). Shown in the "Recommended" card when the pump's bolus settings haven't been read yet, in
+    /// Shown in the "Recommended" card when the pump's bolus settings haven't been read yet, in
     /// place of a numeric dose sized off a hardcoded guess. Kept as a single constant so the wording has
     /// one home; no control flow or dose logic depends on the string.
     static let awaitingPumpSettingsCopy = "Waiting to read this pump's bolus settings (carb ratio, correction factor, target). No dose can be recommended until they're read — check your pump connection."
 
-    // LOCK-06 (Phase 8, 08-02): the FLAG-4 one-shot notice's DRAFT copy constant is REMOVED — orphaned
-    // copy describing a friction path that can no longer fire now that friction is permanently off
-    // (08-01). See `StackingGuardNoticeAckTests` for the absence proof.
-
     /// SG3a `.reenter` exact-match rule: a re-typed value must equal `original` (within floating-point
     /// tolerance) to proceed — ANY other value is rejected/re-prompted, never delivered as a new (resized)
-    /// amount (T-01-08). `internal` (not `private`) so `StackingGuardDeliverInvariantTests` (`@testable
+    /// amount. `internal` (not `private`) so `StackingGuardDeliverInvariantTests` (`@testable
     /// import faBolus`) can prove the MUST-NOT-BLOCK invariant's re-type counterpart directly: a mismatched
     /// re-type never satisfies this check.
     static func reenterMatches(retyped: Double, original: Double) -> Bool {
@@ -337,15 +325,15 @@ struct BolusEntryView: View {
         return s
     }
 
-    /// A single bolus-screen warning/disclosure line (09.2-04, Fix 4/D-04), classified by whether its
+    /// A single bolus-screen warning/disclosure line, classified by whether its
     /// underlying condition currently BLOCKS Deliver or is advisory-only — presentation only, never a
     /// re-derivation of the block decision itself (see `rankedWarnings` below). `internal` (not `private`),
     /// same rationale as `reenterMatches`/`standardConfirmRoute`: `BolusWarningRankingTests` (`@testable
     /// import faBolus`) asserts the classification/ordering directly.
     struct BolusWarning: Identifiable, Equatable {
         enum Severity: Equatable { case blocking, advisory }
-        /// Presentation-only color band; NEVER what `rankedWarnings` sorts by (see `Severity`) — this is
-        /// exactly the RESEARCH Pitfall 4 trap: a grey (`.neutral`) blocker must still classify `.blocking`.
+        /// Presentation-only color band; NEVER what `rankedWarnings` sorts by (see `Severity`) — a
+        /// grey (`.neutral`) blocker must still classify `.blocking`.
         enum Tone: Equatable {
             case danger, caution, neutral
             /// `nil` for `.danger` preserves the overMax label's original un-set (ambient/body) font —
@@ -372,8 +360,8 @@ struct BolusEntryView: View {
         let tone: Tone
     }
 
-    /// PURE classification + ordering seam (09.2-04, D-04) extracted from the inline warning `if`-chain
-    /// that used to live at `:439-497` — mirrors the `reenterMatches`/`standardConfirmRoute` internal-for-
+    /// PURE classification + ordering seam extracted from the inline warning `if`-chain
+    /// that used to live inline — mirrors the `reenterMatches`/`standardConfirmRoute` internal-for-
     /// test idiom. Builds each warning from the SAME already-computed conditions that drive `canBolus`
     /// (`overMax`, `model.bolusGate(...).reason`, `settings.childAllows`) — `BolusGate.evaluate` is never
     /// called differently here, only its results are re-ordered on screen. Items are built in the EXACT
@@ -381,8 +369,8 @@ struct BolusEntryView: View {
     /// bolusInFlight, childBlocked) or ADVISORY (everything else), then a STABLE sort puts all `.blocking`
     /// items first (source order preserved) followed by all `.advisory` items (source order preserved) —
     /// this is presentation ORDER only; the SET of items and their content is unchanged, and NOTHING active
-    /// is ever dropped (RESEARCH Pitfall 4: a grey `.neutral`-tone blocker still classifies `.blocking`,
-    /// never demoted below an orange advisory just because it isn't red).
+    /// is ever dropped: a grey `.neutral`-tone blocker still classifies `.blocking`,
+    /// never demoted below an orange advisory just because it isn't red.
     static func rankedWarnings(overMax: Bool, maxUnits: Double, sg2Message: String?, childBlocked: Bool,
                                 pumpNotLinked: Bool, bolusInFlight: Bool, carbOverride: String?,
                                 sg1Message: String?,
@@ -431,7 +419,7 @@ struct BolusEntryView: View {
                                        systemImage: "exclamationmark.triangle", severity: .advisory, tone: .caution))
         }
         // Stable partition (Swift's `filter` preserves relative order): all `.blocking` first, then all
-        // `.advisory` — never re-sorted by tone/color, only by severity, per D-04.
+        // `.advisory` — never re-sorted by tone/color, only by severity.
         return items.filter { $0.severity == .blocking } + items.filter { $0.severity == .advisory }
     }
 
@@ -443,11 +431,10 @@ struct BolusEntryView: View {
         )
     }
 
-    // Phase 09.17-04 (D-04, UI-SPEC §4): at regular width, cap `formContent` (the UNCHANGED Form +
-    // its full modifier chain below) at the shared readable-content width and center it (the
-    // double-frame idiom, RESEARCH Pattern 4); at compact width apply no frame — identical to today
-    // (D-06a). This is a pure presentation wrapper: `formContent` itself and every delivery/gating/
-    // confirm/friction path are untouched.
+    // At regular width, cap `formContent` (the UNCHANGED Form + its full modifier chain below)
+    // at the shared readable-content width and center it (the double-frame idiom); at compact
+    // width apply no frame — identical to compact. This is a pure presentation wrapper:
+    // `formContent` itself and every delivery/gating/confirm/friction path are untouched.
     private var content: some View {
         Group {
             if horizontalSizeClass == .regular {
@@ -464,8 +451,8 @@ struct BolusEntryView: View {
         withBolusConfirmationDialogs(formSections)
     }
 
-    // Phase (CI type-check): `formContent`'s single `Form { … }` + modifier-chain expression exceeded the
-    // CI runner's Swift type-checker budget. Each Form Section is extracted into its own `@ViewBuilder`
+    // `formContent`'s single `Form { … }` + modifier-chain expression exceeded the CI runner's
+    // Swift type-checker budget. Each Form Section is extracted into its own `@ViewBuilder`
     // sub-view below so the result-builder combinatorial search stays small — pure view-extraction, no
     // behavior/layout/logic change (each sub-view's body is byte-identical to its former inline form).
     @ViewBuilder private var bolusModePicker: some View {
@@ -523,7 +510,7 @@ struct BolusEntryView: View {
                     if settings.showBolusReasoning {
                         DisclosureGroup("Show reasoning", isExpanded: $showReasoning) {
                             LabeledContent("Carb + correction", value: String(format: "%.2f U", rec.recommendedUnits + rec.iobUnits))
-                            // DIF-ux: grey + age the IOB row when the active-insulin read is stale (or its
+                            // Grey + age the IOB row when the active-insulin read is stale (or its
                             // age is unknown), via the shared `CalcInputFreshness` presentation — so the
                             // term the dose subtracts reads the same as a stale glucose row.
                             let iobStalePresent = CalcInputFreshness.iobPresentation(of: rec.iobDate) == .stale
@@ -546,7 +533,6 @@ struct BolusEntryView: View {
                     // a hardcoded CR 10 / ISF 40 / target 110 guess — an uncited literal. Suppress the
                     // numeric dose entirely (`rec.displaysNumericDose == false`) and prompt to wait for
                     // the read. Delivery is already blocked (CalcInputGate → .blockNoTherapy).
-                    // §13-cleared 2026-08-23 (AI-panel review, approved as-is).
                     Label(BolusEntryView.awaitingPumpSettingsCopy, systemImage: "hourglass")
                         .font(.callout).foregroundStyle(.secondary)
                 }
@@ -558,20 +544,18 @@ struct BolusEntryView: View {
     /// `Self.rankedWarnings(…)` call (11 labeled args + trailing ForEach closure) is the single most
     /// expensive sub-expression to type-check. Identical to its former inline form.
     @ViewBuilder private var deliverWarnings: some View {
-        // 09.2-04 (Fix 4/D-04): the DOSE-BLOCKING conditions (overMax, pumpNotLinked/
-        // bolusInFlight, child-mode) must always be visually dominant — ranked ABOVE the
-        // advisory-only disclosures below, never lost among them. `Self.rankedWarnings(...)`
-        // classifies + reorders from the SAME already-computed conditions that drive
-        // `canBolus`/the Deliver button's `.disabled(...)` below — presentation ORDER only,
-        // the block SET and the dose are untouched (D-05). Each rendered Label is visually
-        // byte-identical to its prior inline form (icon/color/font) — only on-screen ORDER
-        // changes. See `BolusWarningRankingTests` for the ordering/classification/no-drop proof.
+        // The DOSE-BLOCKING conditions (overMax, pumpNotLinked/bolusInFlight, child-mode) must
+        // always be visually dominant — ranked ABOVE the advisory-only disclosures below, never
+        // lost among them. `Self.rankedWarnings(...)` classifies + reorders from the SAME
+        // already-computed conditions that drive `canBolus`/the Deliver button's `.disabled(...)`
+        // below — presentation ORDER only, the block SET and the dose are untouched. Each rendered
+        // Label is visually identical to its prior inline form (icon/color/font) — only on-screen
+        // ORDER changes. See `BolusWarningRankingTests` for the ordering/classification/no-drop proof.
         ForEach(Self.rankedWarnings(
             overMax: overMax, maxUnits: maxUnits,
-            // LOCK-06 (Phase 8, 08-02): sg1/sg2/sg3a disclosure TEXT is nil'd at this presentation seam,
-            // so `rankedWarnings` has no SG advisory text left to rank/render. `sg1Disclosure`/
-            // `sg2Disclosure`/`sg3aDisclosure` (and `sg3aAppliedFriction`, which the confirm seam still
-            // routes on) stay UNCHANGED — only these three message arguments are suppressed.
+            // SG1/SG2/SG3a disclosure TEXT is nil'd here so `rankedWarnings` has no SG advisory
+            // text to rank. `sg1Disclosure`/`sg2Disclosure`/`sg3aDisclosure` (and
+            // `sg3aAppliedFriction`) stay — only these three message arguments are suppressed.
             sg2Message: nil,
             childBlocked: !settings.childAllows(.bolus),
             pumpNotLinked: model.bolusGate(amount: units, minimum: 0.05).reason == .pumpNotLinked,
@@ -634,7 +618,7 @@ struct BolusEntryView: View {
                 }
                 .buttonStyle(.borderedProminent).tint(AppTheme.insulin)
                 .disabled(!model.bolusGate(amount: units, minimum: 0.05).canBolus || preparingDeliver)
-                // N12: the button reads its full dose ("Deliver 2.50 units"), not just "Bolus".
+                // The button reads its full dose ("Deliver 2.50 units"), not just "Bolus".
                 .accessibilityLabel(preparingDeliver ? "Checking CGM" : "Deliver \(String(format: "%.2f", units)) units")
             }
         }
@@ -642,7 +626,7 @@ struct BolusEntryView: View {
 
     @ViewBuilder private var extendedBolusSection: some View {
         // Extended (combo) bolus — hidden unless enabled in Settings (keeps the screen simple) AND the
-        // pump supports it (P13c-5 capability gate: don't offer a combo bolus a pump can't deliver).
+        // pump supports it (capability gate: don't offer a combo bolus a pump can't deliver).
         if settings.extendedBolusEnabled && model.capabilities.supportsExtendedBolus && !delivering {
             Section("Extended (combo) bolus") {
                 Stepper("Deliver now: \(extendedNowPercent)%", value: $extendedNowPercent, in: 0...100, step: 10)
@@ -674,7 +658,7 @@ struct BolusEntryView: View {
 
             extendedBolusSection
         }
-        // Phase 09.4 D-06: a floating top toast, NOT a Form Section — it never permanently consumes
+        // A floating top toast, NOT a Form Section — it never permanently consumes
         // Form space. `.overlay` (not a sibling in a ZStack) so it draws above the Form without
         // affecting its layout.
         .overlay(alignment: .top) {
@@ -687,7 +671,7 @@ struct BolusEntryView: View {
         }
         .navigationTitle("Bolus")
         .navigationBarTitleDisplayMode(.inline)
-        // N12 (Dynamic Type): scale up to the largest accessibility text size.
+        // Dynamic Type: scale up to the largest accessibility text size.
         .dynamicTypeSize(...DynamicTypeSize.accessibility5)
         .onAppear {
             if !modeInitialized {
@@ -696,16 +680,14 @@ struct BolusEntryView: View {
             }
             // Pull the freshest CGM the moment the screen opens, then auto-fill the correction BG from
             // it (never from a stale value). The user can still type their own.
-            // 04-08 gap closure (SC1): same funnel fix as `syncBGFromCGM` — never write a bare mg/dL
+            // Same funnel fix as `syncBGFromCGM` — never write a bare mg/dL
             // Int into the display-unit-typed `bg` field.
             if bg.isEmpty, let g = model.snapshot.glucose, !model.snapshot.isGlucoseStale { bg = settings.glucoseDisplayUnit.format(mgdl: g); bgSource = .cgm }
             if mode == .carbs { Task { await calculate() } }
-            // DIF-core: pull the freshest CGM AND the freshest calc inputs (op-115 CR/ISF/target + op-109
+            // Pull the freshest CGM AND the freshest calc inputs (op-115 CR/ISF/target + op-109
             // IOB) the moment the screen opens, so the IOB/therapy the recommendation is built from are
             // fresh from the start (never the ~10-min-stale cache).
             Task { await model.refreshGlucoseNow(); await model.refreshCalcInputsNow(); syncBGFromCGM() }
-            // LOCK-06 (Phase 8, 08-02): the FLAG-4 first-use stacking-guard notice's onAppear trigger is
-            // REMOVED here — the notice never presents now that friction is permanently off (08-01).
         }
         // Recompute the recommendation live as carbs / BG change — no "Calculate" button needed.
         .onChange(of: carbsText) { _, _ in if mode == .carbs { Task { await calculate() } } }
@@ -728,7 +710,7 @@ struct BolusEntryView: View {
         // Keep the CGM-sourced BG live as new readings arrive while the screen is open, and note when
         // the value changed so a just-landed reading (≤2 s before deliver) still triggers the re-check.
         .onChange(of: model.snapshot.glucoseDate) { _, _ in lastCGMChangeAt = Date(); syncBGFromCGM() }
-        // Phase 09.4 D-05: the async remote-approval resolution. A staged bolus (`pendingApproval !=
+        // The async remote-approval resolution. A staged bolus (`pendingApproval !=
         // nil`) resolves LATER via `resolveRemoteApproval` — approved (→ actually delivers, `lastError
         // == nil`) or rejected/timed-out (→ `lastError` set). Only a non-nil→nil transition is a
         // resolution; `oldValue` still carries the resolved request's units (the request that JUST
@@ -737,8 +719,8 @@ struct BolusEntryView: View {
         .onChange(of: model.pendingApproval) { oldValue, newValue in
             guard let resolved = oldValue, newValue == nil else { return }
             let signal: BolusConfirmation.Signal = model.lastError == nil ? .delivered : .failed
-            // WR-02 (VA-22): prefer the ledger's ACTUAL committed units over the staged requested amount.
-            // D3-01 (non-frozen half): pass model.lastError as the truthful non-success message — same
+            // Prefer the ledger's ACTUAL committed units over the staged requested amount.
+            // Pass model.lastError as the truthful non-success message — same
             // treatment as the confirmationSignal() seam below, so a rejected/timed-out child-mode
             // approval is no longer silent either.
             present(BolusConfirmation.banner(for: signal, units: model.lastDeliveredUnits ?? resolved.units,
@@ -797,7 +779,7 @@ struct BolusEntryView: View {
                     // WITH it — shown only when a stale reading exists; (2) carbs-only (drop the correction,
                     // today's behavior); (3) cancel (sends nothing — a pure UI back-out).
                     if let sbg = u.staleBG, let su = u.staleUnits {
-                        // CR-02 gap closure (04-07): route through the SAME funnel as the adjacent
+                        // Route through the SAME funnel as the adjacent
                         // `message:` closure below so the button and the message never show two
                         // different-looking numbers for the identical glucose value.
                         Button("Include \(settings.glucoseDisplayUnit.format(mgdl: sbg)) \(settings.glucoseDisplayUnit == .mmol ? "mmol/L" : "mg/dL") → \(String(format: "%.2f U", su))") {
@@ -821,9 +803,9 @@ struct BolusEntryView: View {
                     }
                     Button("Cancel", role: .cancel) { cgmUpdate = nil }
                 } else {
-                    // CR-02 gap closure (04-07): same funnel as the `message:` closure below.
+                    // Same funnel as the `message:` closure below.
                     Button("Use \(settings.glucoseDisplayUnit.format(mgdl: u.newBG)) \(settings.glucoseDisplayUnit == .mmol ? "mmol/L" : "mg/dL") → \(String(format: "%.2f U", u.newUnits))") {
-                        // 04-08 gap closure (SC1): same funnel fix as `syncBGFromCGM` — this button's own
+                        // Same funnel fix as `syncBGFromCGM` — this button's own
                         // label above already shows the converted figure; the field it writes into must match.
                         bg = settings.glucoseDisplayUnit.format(mgdl: u.newBG); bgSource = .cgm; unitsText = Self.trimUnits(u.newUnits)
                         let ext = u.extended; let bgv = u.newBG; let uu = u.newUnits; cgmUpdate = nil
@@ -857,7 +839,7 @@ struct BolusEntryView: View {
             let now = units * Double(extendedNowPercent) / 100
             Text("\(String(format: "%.2f U", now)) now, then \(String(format: "%.2f U", units - now)) over \(durationLabel(extendedDurationMin)). faBolus is experimental and not FDA-cleared.")
         }
-        // DIF-ux: the pump never reported its bolus settings this attempt, so no dose can be safely sized.
+        // The pump never reported its bolus settings this attempt, so no dose can be safely sized.
         // Cancel-only (fail-closed) — NEVER a deliverable dose off a guessed carb ratio, and no false
         // "last-known" label. The user retries once the pump reports its settings.
         .alert("Pump settings not read yet", isPresented: $calcInputBlocked) {
@@ -865,14 +847,14 @@ struct BolusEntryView: View {
         } message: {
             Text("faBolus hasn't read this pump's bolus settings (carb ratio / correction factor / target) yet, so it can't size a dose. Wait a moment for the pump to connect, then try again.")
         }
-        // VA-09: a manually-typed BG outside the plausible range is blocked cancel-only (fail-closed) —
+        // A manually-typed BG outside the plausible range is blocked cancel-only (fail-closed) —
         // never passed to `recommendBolus`, where D-04 would silently drop a low's dose-reducing effect.
         .alert("Check your glucose", isPresented: $manualBGBlocked) {
             Button("OK", role: .cancel) { manualBGBlocked = false }   // sends NOTHING
         } message: {
             Text("That glucose reading looks out of range — re-check your glucose before dosing.")
         }
-        // DIF-ux: the calc inputs weren't confirmed fresh this compose (`inputsVerified == false`). Present
+        // The calc inputs weren't confirmed fresh this compose (`inputsVerified == false`). Present
         // the WARNED two-way override — never a silent deliver. `cancel` sends nothing. The "use / include"
         // button carries the exact dose it will deliver (recomputed off last-known values). No drop/zero-IOB
         // option exists (that is the maximum-dose direction — prohibited by the frozen owner decision).
@@ -906,8 +888,7 @@ struct BolusEntryView: View {
     /// appending these `.confirmationDialog`/`.alert` modifiers directly onto it pushed a single SwiftUI
     /// modifier-chain expression past what the compiler can type-check in reasonable time (no behavior
     /// difference: `.alert`/`.confirmationDialog` attach presentation state via the view hierarchy
-    /// regardless of which ancestor they're applied to). LOCK-06 (Phase 8, 08-02): the FLAG-4 one-time
-    /// stacking-guard notice `.alert` that used to be the third modifier here is REMOVED.
+    /// regardless of which ancestor they're applied to).
     @ViewBuilder
     private func withSG3aFriction<V: View>(_ view: V) -> some View {
         view
@@ -950,10 +931,10 @@ struct BolusEntryView: View {
     }
 
     /// The action the STANDARD confirm dialog's Deliver tap routes to for a given SG3a friction tier — a
-    /// PURE mapping extraction (09.2-01, D-02) mirroring the `reenterMatches` internal-for-test idiom below,
+    /// PURE mapping extraction mirroring the `reenterMatches` internal-for-test idiom below,
     /// so the tier-to-action decision is unit-testable without instantiating the view. This is observability
     /// only: it reproduces the exact mapping the `switch` in `handleStandardConfirm` already implemented,
-    /// never a coordinator/state-machine rewrite (D-02 forbids that).
+    /// never a coordinator/state-machine rewrite.
     enum StandardConfirmRoute { case reenter, confirmExtra, deliver }
 
     /// `internal` (not `private`), same rationale as `reenterMatches`: `StackingGuardDeliverInvariantTests`
@@ -973,9 +954,9 @@ struct BolusEntryView: View {
     /// `.confirmExtra` nor `.reenter` ever changes `units` itself — both gate the SAME dose through to the
     /// unchanged `attemptDeliver` path.
     ///
-    /// 09.2-01 (D-02, SC2): the `.reenter`/`.confirmExtra` presentation flags flip inside
+    /// The `.reenter`/`.confirmExtra` presentation flags flip inside
     /// `DispatchQueue.main.async` — the SAME one-run-loop-yield deferral idiom already proven at the
-    /// `sgReenter` re-prompt above (`:748`) — so the next modal is requested AFTER the standard confirm
+    /// `sgReenter` re-prompt above — so the next modal is requested AFTER the standard confirm
     /// dialog's own dismissal transaction completes. This closes the SwiftUI "present a second modal from
     /// inside another's dismissal" dead-tap (Deliver now responds on the FIRST tap at every tier). Presentation
     /// TIMING only — `standardConfirmRoute(for:)` proves WHICH gate each tier reaches is unchanged.
@@ -1001,7 +982,7 @@ struct BolusEntryView: View {
             : "This dose is far above what the pump's calculator suggested. Re-enter \(String(format: "%.2f", sgOriginalUnits)) U exactly to confirm — the amount will not change."
     }
 
-    // DIF-ux calc-input prompt copy (title / button / message), keyed on which input(s) were unconfirmed.
+    // Calc-input prompt copy (title / button / message), keyed on which input(s) were unconfirmed.
     private var calcInputDialogTitle: String {
         switch calcInputPrompt?.kind {
         case .iob:            return "Active insulin not confirmed"
@@ -1040,7 +1021,7 @@ struct BolusEntryView: View {
         // result can't overwrite the field with a stale dose.
         calcSeq &+= 1
         let seq = calcSeq
-        calcInputPrompt = nil       // DIF-ux: a changed dose re-requires the per-attempt freshness override
+        calcInputPrompt = nil       // a changed dose re-requires the per-attempt freshness override
         acceptedOverride = nil      // …and drops any override accepted for a prior compose
         calcInputBlocked = false    // …and clears any prior "settings not read" block
         let rec = await model.recommendBolus(carbsGrams: carbs, bgMgdl: settings.glucoseDisplayUnit.parse(bg))
@@ -1062,7 +1043,7 @@ struct BolusEntryView: View {
     /// → fails closed** (drops the correction, delivers the carbs-only dose) rather than dosing off the
     /// stale on-screen value.
     private func attemptDeliver(extended: Bool) async {
-        // VA-09: a MANUALLY-typed correction BG outside the plausible range (40–400 mg/dL) is blocked at
+        // A MANUALLY-typed correction BG outside the plausible range (40–400 mg/dL) is blocked at
         // the deliver boundary with a cancel-only notice, BEFORE any `recommendBolus`/deliver. Passing a
         // sub-40 typed value onward would let `BolusMath`'s D-04 rule silently drop the dose-REDUCING
         // correction — over-delivering during an apparent hypo. D-04 stays intact for the auto-CGM path
@@ -1071,7 +1052,7 @@ struct BolusEntryView: View {
             manualBGBlocked = true
             return   // sends NOTHING
         }
-        // DIF-ux: the deliver-time gate is the PURE, unit-tested `CalcInputGate.decide` (faBolusCore) — no
+        // The deliver-time gate is the PURE, unit-tested `CalcInputGate.decide` (faBolusCore) — no
         // gating logic lives inline here anymore. It fires ONLY in carbs mode, keys on `!inputsVerified`
         // BEFORE any staleness flag (so the unconfirmed-but-in-window case is caught → `.both`), and skips
         // once an override was accepted this attempt (re-entry). A Units-mode dose is the number the user
@@ -1125,12 +1106,12 @@ struct BolusEntryView: View {
             // move between compose and deliver, not on the override's expected correction.
             let priorUnits = ov?.baseline ?? units
             await model.refreshGlucoseNow()
-            // DIF-core: also force the calc inputs fresh right before the authoritative deliver-time
+            // Also force the calc inputs fresh right before the authoritative deliver-time
             // recompute, so the delivered dose is built from fresh CR/ISF/target + IOB. Because
             // `recommendBolus` re-reads fresh, the 0.10 U divergence guard below now also catches an INPUT
             // change (clinician edit / profile-segment boundary / IOB drift) between compose and deliver —
             // the recompute differs from the on-screen `priorUnits` and the CGM-updated prompt fires.
-            // DIF-ux: any accepted override (`ov`) is threaded into EVERY recompute here, so last-known
+            // Any accepted override (`ov`) is threaded into EVERY recompute here, so last-known
             // IOB/therapy apply while this fresh-CGM / stale-CGM machinery still governs the glucose term.
             await model.refreshCalcInputsNow()
             if let g = model.snapshot.glucose, !model.snapshot.isGlucoseStale {
@@ -1142,7 +1123,7 @@ struct BolusEntryView: View {
                     cgmUpdate = CGMUpdatePrompt(newBG: g, newUnits: rec.recommendedUnits, oldUnits: priorUnits, extended: extended)
                     return   // wait for the user's choice in the CGM-updated dialog
                 }
-                // FB-10: within tolerance we deliver exactly the on-screen dose (`priorUnits`, what the
+                // Within tolerance we deliver exactly the on-screen dose (`priorUnits`, what the
                 // Deliver button showed), so bind it to the BG it was actually computed from — NOT the
                 // just-pulled `g`. Recording the fresh `g` against the old units would attach a glucose
                 // value the dose wasn't derived from (a false pump/t:connect metadata pairing).
@@ -1201,7 +1182,7 @@ struct BolusEntryView: View {
 
     /// Build the immutable proposal from confirmed values.
     private func freeze(units u: Double, bg bgVal: Int?, extended: Bool) -> FrozenBolus {
-        // FB-04: freeze the calculator IOB the recommendation used, so it's the value recorded on the
+        // Freeze the calculator IOB the recommendation used, so it's the value recorded on the
         // pump as bolusIOB metadata — not a live snapshot read at delivery time.
         FrozenBolus(units: u, carbsGrams: carbs > 0 ? carbs : nil, bgMgdl: bgVal,
                     iobUnits: recommendation?.iobUnits,
@@ -1221,11 +1202,11 @@ struct BolusEntryView: View {
             await model.deliverBolus(units: f.units, carbsGrams: f.carbsGrams, bgMgdl: f.bgMgdl, iobUnits: f.iobUnits)
         }
         delivering = false
-        // Phase 09.4 D-04/D-06: the sync-path confirmation, computed from the model's ALREADY-updated
+        // The sync-path confirmation, computed from the model's ALREADY-updated
         // state right after the delivery call returns. `deliverBolus`/`deliverExtendedBolus` return
         // having staged a `pendingApproval` for the child-mode reverse-approval path — that resolves
-        // LATER, via the `.onChange(of: model.pendingApproval)` handler above, not here (D-05).
-        // WR-02 (VA-22): report the ledger's ACTUAL committed units, not the frozen requested amount,
+        // LATER, via the `.onChange(of: model.pendingApproval)` handler above, not here.
+        // Report the ledger's ACTUAL committed units, not the frozen requested amount,
         // so a mid-flight cancel/partial delivery isn't overstated. On a cancelled extended delivery the
         // now/total split can't be decomposed from the single returned total → fall back to the plain
         // "%.2f U delivered" line (fail-safe: never assert the full requested now/total when cancelled).
@@ -1236,8 +1217,8 @@ struct BolusEntryView: View {
         } else {
             extended = nil
         }
-        // D3-01 (non-frozen half): pass model.lastError as the truthful non-success message. It is
-        // accurate for BOTH a failed AND an indeterminate outcome (AppModel.swift:1927-1936) — the
+        // Pass model.lastError as the truthful non-success message. It is
+        // accurate for BOTH a failed AND an indeterminate outcome — the
         // banner surfaces whichever string AppModel already resolved without needing to tell them
         // apart itself; when confirmationSignal() is .delivered, model.lastError is nil (by that same
         // read's own definition) and the message is simply unused.
@@ -1247,7 +1228,7 @@ struct BolusEntryView: View {
     }
 
     /// The outcome `Signal` for a JUST-COMPLETED delivery attempt, read from the model's own
-    /// already-updated state — a pure read, never a delivery decision (D-08).
+    /// already-updated state — a pure read, never a delivery decision.
     private func confirmationSignal() -> BolusConfirmation.Signal {
         if model.pendingApproval != nil { return .staged }
         return model.lastError == nil ? .delivered : .failed
@@ -1256,10 +1237,10 @@ struct BolusEntryView: View {
     /// Present `banner` (if non-nil — `.staged`/`.failed` never call this with a value) as the floating
     /// top toast, post the accessibility backstop announcement, and auto-dismiss after ~4s (extended to
     /// ~6s while VoiceOver is running, so a user whose focus is elsewhere doesn't miss a short-lived
-    /// toast — 09.4-UI-SPEC "accessibility (transient content)").
+    /// toast — accessibility for transient content).
     private func present(_ banner: BolusSuccessBanner?) {
         guard let banner else { return }
-        // WR-04: capture THIS presentation's identity token. `BolusSuccessBanner ==` compares content
+        // Capture THIS presentation's identity token. `BolusSuccessBanner ==` compares content
         // only (kind/primary/secondary), so a content-equality dismissal guard would let this timer
         // dismiss a LATER, byte-identical banner from a back-to-back re-delivery. Comparing the token
         // guarantees we only clear the banner still on screen from THIS presentation.
@@ -1285,7 +1266,7 @@ struct BolusEntryView: View {
 }
 
 private extension View {
-    /// N12: apply `.fixedSize()` (compact one-glyph field) at normal text sizes, but NOT at accessibility
+    /// Apply `.fixedSize()` (compact one-glyph field) at normal text sizes, but NOT at accessibility
     /// sizes — where a fixed width clips the digits. Presentation-only: the default-size layout is
     /// unchanged; only accessibility sizes let the field grow.
     @ViewBuilder func compactFixedSize(_ isAccessibility: Bool) -> some View {

@@ -1,33 +1,26 @@
 import SwiftUI
 import Foundation
 
-// Phase 09.4 D-04/D-05/D-06/D-07 — a truthful, transient advisory confirmation for the embedded
-// BolusEntryView.
-//
-// §13 NOTICE: the amount-stating copy templates in `BolusConfirmation.banner(for:units:extended:)`
-// below are DRAFT and are experimental-distribution surface — they must pass owner/clinical review
-// before an `experimental` build is distributed (BRANCHES.md §13), mirroring the DRAFT-copy pattern in
-// `ModeViews.swift`. This copy is DELIBERATELY NOT added to `RegulatoryCopy.swift` — that file's strings
-// are already SIGNED-OFF (2026-08-09); folding new DRAFT wording in there would re-open that sign-off
-// for unrelated text. Keep the two gates separate.
-//
-// D-08/D-11: this file is a pure decision seam + a display-only view. It references no `AppModel`, no
-// delivery API, and contains zero dose-path logic — it only maps an ALREADY-RESOLVED outcome (`Signal`)
-// to display text, exactly like the repo's other static-for-test seams (`RootTabView.resolveSelection`,
-// `BolusEntryView.reenterMatches`).
+/// Transient advisory confirmation for the embedded BolusEntryView. Pure display: no `AppModel`,
+/// no delivery API, no dose-path logic — maps an already-resolved `Signal` to display text.
+///
+/// §13 NOTICE: the amount-stating copy templates in `BolusConfirmation.banner(for:units:extended:)`
+/// are DRAFT experimental-distribution surface and must pass owner/clinical review before an
+/// `experimental` build is distributed. Deliberately not added to `RegulatoryCopy.swift` (already
+/// signed-off).
 
 /// A resolved bolus outcome banner: two lines of already-formatted display text plus a `kind` the
 /// view uses to pick its icon/tint. `nil` from `BolusConfirmation.banner` means "show nothing" — there
 /// is no "banner but hidden" state.
 struct BolusSuccessBanner: Equatable {
-    /// D3-01 (non-frozen half): `.warning` is the truthful non-success banner (failed/indeterminate);
+    /// `.warning` is the truthful non-success banner (failed/indeterminate);
     /// `.success` is the original delivered banner. Never inferred from the text — set explicitly by
     /// `banner(for:)` alongside the `Signal` it resolved.
     enum Kind: Equatable { case success, warning }
     let kind: Kind
     let primary: String
     let secondary: String
-    /// WR-04 (Phase 17 review): a per-presentation identity assigned at construction. The
+    /// A per-presentation identity assigned at construction. The
     /// auto-dismiss guard in `BolusEntryView.present(_:)` must compare THIS token, not full-value
     /// equality — two back-to-back deliveries of the same amount produce byte-identical
     /// `kind`/`primary`/`secondary`, so a content-`==` check would let the FIRST banner's timer
@@ -45,19 +38,18 @@ struct BolusSuccessBanner: Equatable {
 
 /// Pure, dependency-free mapping from an ALREADY-RESOLVED bolus outcome to display text. NEVER
 /// synthesizes a "delivered" banner for a pending outcome, and NEVER synthesizes a banner at all
-/// unless the caller supplies real information to show — the core safety property of D-04/D-05: a
-/// truthful confirmation, never a false one, and (D3-01) never a SILENT one either once the caller
-/// knows what happened.
+/// unless the caller supplies real information to show — a truthful confirmation, never a false
+/// one, and never a SILENT one either once the caller knows what happened.
 enum BolusConfirmation {
     /// The three outcomes a bolus attempt can resolve to, from the caller's ALREADY-KNOWN
     /// `model.lastError` / `model.pendingApproval` state (see `BolusEntryView.deliverFrozen` and its
     /// `.onChange(of: model.pendingApproval)` handler) — this type never inspects `AppModel` itself.
     enum Signal {
-        /// Awaiting remote (child-mode) approval — `pendingApproval != nil`. NEVER a banner (D-05).
+        /// Awaiting remote (child-mode) approval — `pendingApproval != nil`. NEVER a banner.
         case staged
-        /// Blocked / indeterminate / failed / rejected / timed out. D3-01 (non-frozen half): when the
+        /// Blocked / indeterminate / failed / rejected / timed out. When the
         /// caller supplies a `message` (AppModel's already-accurate `lastError`, which covers BOTH the
-        /// failed and the indeterminate case — see `AppModel.swift:1927-1936`), this now produces a
+        /// failed and the indeterminate case), this now produces a
         /// truthful WARNING banner carrying that message, closing the visible silent-outcome asymmetry
         /// without a new `.indeterminate` case (that distinction lives in frozen `AppModel` only).
         case failed
@@ -76,7 +68,7 @@ enum BolusConfirmation {
 
     /// `units` is the frozen total units the pump was actually sent (standard bolus amount, or the
     /// extended bolus's total). Formatting uses the repo's existing `String(format: "%.2f U", ...)`
-    /// convention (`MainHUDView.swift:70/136/142`). `message` (D3-01) is the caller's already-resolved
+    /// convention. `message` is the caller's already-resolved
     /// non-success copy (`model.lastError`) — only consulted for `.failed`; omitting it (the default)
     /// preserves the original silent behavior for callers that haven't been updated yet.
     static func banner(for signal: Signal, units: Double, extended: ExtendedDetail? = nil,
@@ -92,7 +84,7 @@ enum BolusConfirmation {
             return BolusSuccessBanner(kind: .warning, primary: String(localized: "Bolus not delivered"),
                                        secondary: message)
         case .delivered:
-            // D2-04: route the delivered-amount/combo templates through Localizable.xcstrings. Numeric
+            // Route the delivered-amount/combo templates through Localizable.xcstrings. Numeric
             // formatting (`"%.2f U"`/`"%d min"`) is pre-rendered into plain strings and interpolated as
             // `%@` — the same "%@ mg/dL"-style idiom `StatsCardView.glucoseLabel` already uses — so the
             // catalog carries the surrounding phrase, not a raw numeric-format specifier.
@@ -112,12 +104,12 @@ enum BolusConfirmation {
 }
 
 /// The transient toast itself — `.success` shows a `checkmark.circle.fill` in plain `Color.green` (NOT
-/// `AppTheme.inRange`, see the file-level note above); `.warning` (D3-01) shows an
+/// `AppTheme.inRange`, see the file-level note above); `.warning` shows an
 /// `exclamationmark.triangle.fill` in plain `Color.orange` — same reasoning: a plain system color, not
 /// a semantic design-system token, so this bolus-outcome affordance never collides with a clinical
 /// glucose-band color. Both share the same `.headline`/`.subheadline` text and `thinMaterial`
-/// rounded-card chrome, copied verbatim from `MainHUDView.swift:40-63`. This view owns no delivery
-/// state — it only renders the strings (and kind) it's given (D-08).
+/// rounded-card chrome. This view owns no delivery
+/// state — it only renders the strings (and kind) it's given.
 struct BolusSuccessBannerView: View {
     let banner: BolusSuccessBanner
 

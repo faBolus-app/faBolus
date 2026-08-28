@@ -13,18 +13,18 @@ struct CgmCredentialsView: View {
     @State private var sharePass = ""
     @State private var shareRegion = "us"
 
-    /// E7: the currently-selected fallback source's display name (nil if none chosen yet), for the
+    /// The currently-selected fallback source's display name (nil if none chosen yet), for the
     /// "Test <name>" button label and the empty-state guidance.
     private var selectedSourceName: String? {
         guard let id = GlucoseSourceRegistry.selectedId() else { return nil }
         return GlucoseSourceRegistry.descriptor(id: id)?.name ?? id
     }
 
-    /// E7: which sources the "Test" button exercises — ONLY the currently-selected fallback source (the
+    /// Which sources the "Test" button exercises — ONLY the currently-selected fallback source (the
     /// one the app will actually use), never the whole set. Empty when no fallback is chosen yet. Pure so
     /// the selected-only contract is unit-testable without the SwiftUI view.
     ///
-    /// W-04 (D-14) — KEEP-WITH-COMMENT: this helper has ZERO production call sites (the live Test flow
+    /// KEEP-WITH-COMMENT: this helper has ZERO production call sites (the live Test flow
     /// observes `AppModel.glucoseSourceProbe` directly), but it is still exercised by
     /// `CgmSourceValidationTests.testExercisesOnlyTheSelectedSource`, which pins the selected-only
     /// contract. Deleting it (and `GlucoseSourceRegistry.make(id:)`) is the lower-value / higher-risk
@@ -35,7 +35,7 @@ struct CgmCredentialsView: View {
         return [id]
     }
 
-    /// D-11: the set of source ids that have a dedicated config section in this view. Pinned by
+    /// The set of source ids that have a dedicated config section in this view. Pinned by
     /// `CgmConfigSectionCopyGuardTests.everyRegistrySourceHasAConfigSection` to equal the full
     /// `GlucoseSourceRegistry` id set — adding a registry source without a section (or dropping one)
     /// turns that guard RED, so a source with a hard, non-obvious precondition can never become
@@ -44,31 +44,24 @@ struct CgmCredentialsView: View {
         let ids: Set<String> = [
             "dexcom-share",
         ]
-        // HealthKit ("healthkit") was removed from narrow `main` in Phase 5 (HEALTH-01) — see
-        // dev/healthkit's REINTEGRATION.md. Nightscout ("nightscout") was removed from narrow
-        // `main` in Phase 5 (HEALTH-02) — see dev/nightscout's REINTEGRATION.md. This set stays
-        // equal to GlucoseSourceRegistry.enabled's id set (pinned by
-        // CgmConfigSectionCopyGuardTests.everyRegistrySourceHasAConfigSection).
+        // Pinned equal to GlucoseSourceRegistry.enabled's id set
+        // (`CgmConfigSectionCopyGuardTests.everyRegistrySourceHasAConfigSection`).
         return ids
     }()
 
-    // MARK: - Test flow (change 3, D-13 UX): determinate, observes the live production source
-    //
-    // Phase 16 GO-1 Step 3 (CX-A-04): `CgmTestOutcome` (the type) and `testOutcome(...)` (the pure
-    // mapper) were relocated out of this view into `Data/CGM/CgmTestOutcome.swift` so `AppModel` no
-    // longer depends on a View-layer type — see that file for the doc comment + logic (unchanged).
+    // MARK: - Test flow: determinate, observes the live production source
 
-    /// The live production source's typed `connectionKind` (D-06), sourced from the running instance's
-    /// probe — the Test-flow copy/window branch on THIS, never on `id`-string literals (D-09).
+    /// The live production source's typed `connectionKind`, sourced from the running instance's
+    /// probe — the Test-flow copy/window branch on THIS, never on `id`-string literals.
     private var probeKind: GlucoseConnectionKind? { model.glucoseSourceProbe?.connectionKind }
 
-    // MARK: - Source-appropriate Test-flow copy (D-09), keyed on the typed connectionKind
+    // MARK: - Source-appropriate Test-flow copy, keyed on the typed connectionKind
     //
     // Pure/static so the per-category copy is unit-testable (`CgmTestFlowStateTests`) without the
     // SwiftUI view — the same discipline as `testOutcome`/`sourcesToTest`. `.localBLE` keeps the
     // already-correct confident BLE copy verbatim; `.cloudPoll`/`.localOnDevice` get their own
-    // auth-network / on-device-sync framing and NEVER reuse the BLE "sensor wake cycle" language
-    // (F-12). `nonisolated` so the guards are callable from a non-@MainActor test.
+    // auth-network / on-device-sync framing and NEVER reuse the BLE "sensor wake cycle" language.
+    // `nonisolated` so the guards are callable from a non-@MainActor test.
 
     nonisolated static func waitingHeadline(kind: GlucoseConnectionKind, sourceName: String) -> String {
         switch kind {
@@ -109,7 +102,7 @@ struct CgmCredentialsView: View {
         let age = Int(max(0, Date().timeIntervalSince(sample.date)))
         let ageStr = age < 60 ? "\(age)s ago" : "\(age / 60) min ago"
         let stale = GlucoseFreshness.isStale(sample.date) ? " · STALE" : ""
-        // WR-03 gap closure (04-07): route through the display-unit funnel — reachable from mainline
+        // Route through the display-unit funnel — reachable from mainline
         // Settings ("CGM credentials & testing"), not debug-gated.
         let bgUnit = AppSettings.shared.glucoseDisplayUnit
         let bgStr = "\(bgUnit.format(mgdl: sample.mgdl)) \(bgUnit == .mmol ? "mmol/L" : "mg/dL")"
@@ -129,7 +122,7 @@ struct CgmCredentialsView: View {
         seconds < 60 ? "\(seconds)s elapsed" : "\(seconds / 60)m \(seconds % 60)s elapsed"
     }
 
-    /// D-13/F-13: map a source's RAW error text (e.g. `SourceError.errorDescription`'s "HTTP 401",
+    /// Map a source's RAW error text (e.g. `SourceError.errorDescription`'s "HTTP 401",
     /// "Unexpected response") to source-aware, ACTIONABLE guidance — never surfacing a bare technical
     /// status/status-code to the operator. Keyed on the typed `connectionKind` for the fallback framing
     /// (a cloud source's "check your credentials/connection" vs an on-device source's "is the upstream
@@ -169,8 +162,7 @@ struct CgmCredentialsView: View {
                 Picker("Region", selection: $shareRegion) {
                     Text("US").tag("us")
                     Text("Outside US").tag("ous")
-                    // D-13: APAC region (writes "apac" → KnownShareServers.APAC / share.dexcom.jp,
-                    // whose source-side mapping landed in Plan 03).
+                    // APAC region (writes "apac" → KnownShareServers.APAC / share.dexcom.jp).
                     Text("Asia-Pacific (Japan)").tag("apac")
                 }
             } header: {
@@ -178,15 +170,6 @@ struct CgmCredentialsView: View {
             } footer: {
                 Text("Your Dexcom account with Share enabled and uploading. Cloud-only and can lag — a backup feed for G6.")
             }
-
-            // D-11: HealthKit's config section (the one remaining source that previously had no
-            // section) was removed with the source in Phase 5 (HEALTH-01) — see dev/healthkit's
-            // REINTEGRATION.md. Nightscout's config section was removed with the source in
-            // Phase 5 (HEALTH-02) — see dev/nightscout's REINTEGRATION.md. The G7 section was
-            // removed with the source (Phase 1, Plan 03 — CGM-01/CGM-02); xDrip App Group's
-            // section was removed with the source (Phase 1, Plan 01 — CGM-05); the LibreLinkUp
-            // and Dexcom G6 sections/descriptors were removed with their sources (Phase 1,
-            // Plan 02 — CGM-03/CGM-04, D-10).
 
             Section {
                 Button {
@@ -201,7 +184,7 @@ struct CgmCredentialsView: View {
                 }
                 .disabled(model.cgmTestInProgress || selectedSourceName == nil)
 
-                // Change 3 (D-13 UX): a DETERMINATE waiting state — a linear ProgressView with a
+                // A DETERMINATE waiting state — a linear ProgressView with a
                 // `value` (not the indeterminate spinner variant), an elapsed indicator, and explicit
                 // SUCCESS/TIMEOUT terminal states. `model.cgmTestOutcome`/`cgmTestElapsedSeconds` are
                 // AppModel-owned (not view @State), so this state SURVIVES navigating away and back.
@@ -228,7 +211,7 @@ struct CgmCredentialsView: View {
                             Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(timeoutHeadline(elapsedSeconds: model.cgmTestElapsedSeconds)).font(.subheadline)
-                                // D-13/F-13: humanize the raw source error (never a bare "HTTP 401").
+                                // Humanize the raw source error (never a bare "HTTP 401").
                                 if let detail {
                                     Text(Self.actionableErrorCopy(detail, kind: probeKind ?? .cloudPoll))
                                         .font(.caption).foregroundStyle(.secondary)
@@ -248,7 +231,7 @@ struct CgmCredentialsView: View {
         .navigationTitle("CGM credentials & testing")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: load)
-        // E7: no Save button — leaving this sub-view persists whatever was entered (and Test / "read
+        // No Save button — leaving this sub-view persists whatever was entered (and Test / "read
         // transmitter ID" also save immediately), so credentials are never lost to a missed tap.
         .onDisappear(perform: save)
     }

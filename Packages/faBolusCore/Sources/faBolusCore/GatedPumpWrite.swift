@@ -1,11 +1,10 @@
 import Foundation
 
 /// The authoritative, enumerated set of every consequential pump-**write** entry point reachable through
-/// `AppModel`, each tagged with the access gate it currently routes through. This is the declared set that
-/// round-3 **R3-F** introduces as the **seed for phase P8** — the single policy evaluator. P8 enumerates
-/// every (surface × action) pair against this list, so no consequential action can exist without a decided
-/// gate, and `everyTherapyWriteEntryPointIsCentrallyGated` derives its ack-gated coverage from it (so the
-/// test and the declared set cannot silently drift).
+/// `AppModel`, each tagged with the access gate it currently routes through. This is the declared set for
+/// the single policy evaluator: every (surface × action) pair against this list, so no consequential
+/// action can exist without a decided gate, and `everyTherapyWriteEntryPointIsCentrallyGated` derives
+/// its ack-gated coverage from it (so the test and the declared set cannot silently drift).
 ///
 /// `rawValue` is the `AppModel` method name. This records the **current** routing, not an aspiration —
 /// where the present gate is weaker than one might expect it is called out below, not hidden.
@@ -19,7 +18,7 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
 
     // Child-mode ONLY — signed writes gated by child mode but deliberately NOT read-only-blocked:
     // cancelling is a safety STOP that must stay available to a read-only viewer, and clearing an alert is
-    // low-risk. Phase P12's `BolusGate` formally reviews `cancelBolus`; recorded here so the gap isn't lost.
+    // low-risk. `BolusGate` formally reviews `cancelBolus`; recorded here so the gap isn't lost.
     case cancelBolus, dismissNotification
 
     // Unverified-therapy acknowledgment (`runGatedTherapy`) — IDP-CRUD + CGM-high/low, plus (P14 S6) the
@@ -27,7 +26,7 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
     case createProfile, setActiveProfile, renameProfile, deleteProfile
     case addProfileSegment, modifyProfileSegment, deleteProfileSegment, setCgmHighLowAlert
     case setControlIQ, setMaxBolus, setMaxBasal
-    // Phase 09.10: the Mobi native Sleep-schedule WRITE. `flag`'s semantic meaning is undocumented and
+    // The Mobi native Sleep-schedule WRITE. `flag`'s semantic meaning is undocumented and
     // only slot-0 writes were ever captured (slots 1-3 unobserved), so this stays ack-gated like the
     // other unverified-hardware writes above, even though it is NOT itself insulin-affecting (L7).
     case setSleepSchedule
@@ -59,12 +58,12 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
             return .childOnly
         case .createProfile, .setActiveProfile, .renameProfile, .deleteProfile,
              .addProfileSegment, .modifyProfileSegment, .deleteProfileSegment, .setCgmHighLowAlert,
-             // P14 S6 (§2.1(1)): the therapy-DEFINING writes that used to bypass the acknowledgment gate.
+             // The therapy-DEFINING writes that used to bypass the acknowledgment gate.
              // Control-IQ config, max bolus, and max basal change how the pump doses, so they must be
              // ack-covered like IDP CRUD. (The ack LIFETIME by tier — one-time clinician for these — is
              // S8's refinement; here they gain the same coverage the IDP writes have.)
              .setControlIQ, .setMaxBolus, .setMaxBasal,
-             // Phase 09.10: setSleepSchedule — flag semantics + slots 1-3 are unverified on hardware, so
+             // setSleepSchedule — flag semantics + slots 1-3 are unverified on hardware, so
              // it needs the same one-shot untested-feature ack as the other unverified writes above.
              .setSleepSchedule:
             return .unverifiedAck
@@ -81,7 +80,7 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
         }
     }
 
-    // MARK: - P8 evaluator maps (single AccessPolicy). Defaults are the most-restrictive/fail-safe choice,
+    // MARK: - Evaluator maps (single AccessPolicy). Defaults are the most-restrictive/fail-safe choice,
     // so a newly-added case is never accidentally *less* gated than intended.
 
     /// The child-mode feature this action requires (matches the `childBlocked(...)` argument each
@@ -140,13 +139,13 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
     /// child-only pair require no capability (Gate 5 stays a no-op for them).
     public func hasRequiredCapability(in caps: PumpCapabilities) -> Bool {
         if self == .syncTimeToNow { return caps.supportsTimeSync }
-        // Phase 09.10: the write's Mobi-only gate MIRRORS the pump protocol's own device scope — upstream
+        // The write's Mobi-only gate MIRRORS the pump protocol's own device scope — upstream
         // `SetSleepScheduleRequest.java`/`SetSleepScheduleResponse.java` are annotated
         // `supportedDevices=MOBI_ONLY, minApi=MOBI_API_V3_5`, identical to `SetTempRateRequest.java`. The
         // Swift port merely dropped those `MessageProps` annotation fields; this per-action arm is the
         // app-side equivalent, keyed on its own dedicated capability (not the coarse advanced-control set).
         if self == .setSleepSchedule { return caps.supportsSleepScheduleWrite }
-        // Phase 2 (Pitfall 3 / Open Question 1): the per-action refinement is now APPLIED for the two
+        // The per-action refinement is now APPLIED for the two
         // limit-set writes — `.setMaxBolus`/`.setMaxBasal` key on the dedicated `supportsLimits` bit rather
         // than the coarse advanced-control set, since a pump could plausibly advertise some other advanced
         // capability (e.g. Control-IQ settings) without also exposing the basal/bolus-limit feature. Not

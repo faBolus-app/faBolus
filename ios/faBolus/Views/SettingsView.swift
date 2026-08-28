@@ -4,10 +4,7 @@ import faBolusDesign
 
 // MARK: - Shared helpers
 
-/// 09.3-04 (SC1, D-04): the stats-card footer copy shared by the host's "Show statistics card" toggle.
-/// Phase 3 (03-02, REMOTE-02): moved here (was `RemoteSettingsView.swift`, now deleted) — it originally
-/// backed a footer shared by two mutually-exclusive screens (host `DisplaySettingsView` and the deleted
-/// remote-mode `RemoteSettingsView`); now only the host screen remains.
+/// Footer copy for the host "Show statistics card" toggle.
 enum StatsCardCopy {
     static let footer = "Adds a dashboard card with Time-in-Range, GMI, average, and variability (CV) over the last ~24 hours of readings held in memory."
 }
@@ -33,38 +30,15 @@ struct SettingsView: View {
     @Bindable var model: AppModel
     @State private var settings = AppSettings.shared
     @State private var query = ""
-    // Phase 8 (08-01, LOCK-01): the `ModeStore` environment read is removed — this file's only two
-    // uses (the "Mode: …" sidebar/list rows + the `ModeSettingsView` destinations) are both deleted;
-    // `RootContainerView` still injects `ModeStore` into the environment for other consumers.
-    // 09.17-02 (D-04/D-06a): live read, never @State — this is what makes rotation and iPad Split
-    // View/Slide Over resize re-trigger the correct layout automatically (UI-SPEC §1/§6).
+    // Live read, never @State — rotation and iPad Split View/Slide Over re-trigger layout.
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    // 09.17-02 (D-04, UI-SPEC §2, Rule 3 — deviation): the type is `SettingsCategory?` — NOT the
-    // literally non-optional `SettingsCategory` RESEARCH.md sketched — because SwiftUI's
-    // `List.init(selection: Binding<SelectionValue>, content:)` (the truly non-optional overload) is
-    // "available on macOS 13.0 and later" ONLY [VERIFIED via Context7 `/websites/developer_apple_swiftui`
-    // this session: `xcodebuild` failed with "'init(selection:content:)' is unavailable in iOS" against
-    // the non-optional signature]; iOS's `List(selection:)` binds to `Binding<SelectionValue?>`. The
-    // NON-OPTIONAL CONTRACT (default `.bolus`, detail pane never blank) is preserved behaviorally, not
-    // via the type system: it defaults to `.bolus` here and every read in `body` falls back to `.bolus`
-    // via `selectedItem ?? .category(.bolus)` (nothing in this file ever sets it to `nil`).
-    //
-    // 09.17-06 (CR-01 gap closure): widened from `SettingsCategory?` to `SettingsSidebarItem?` so the
-    // SAME `List(selection:)` binding can also drive the five non-`SettingsCategory` groups (Mode,
-    // Safety, Child mode, Data & history, Privacy & data) that were reachable on
-    // iPhone (`settingsList`) but had no path at all — not even via search — from the iPad sidebar.
-    // See `SettingsSidebarItem` below.
+    // Optional because iOS `List(selection:)` binds `Binding<SelectionValue?>` (the non-optional
+    // overload is macOS-only). Behaviorally non-optional: defaults to `.bolus` and every read
+    // falls back via `selectedItem ?? .category(.bolus)`.
     @State private var selectedItem: SettingsSidebarItem? = .category(.bolus)
 
     var body: some View {
         if horizontalSizeClass == .regular {
-            // Phase 7 (07-04, FEAT-04, D-05, SAFETY): the `SettingsLockGate` wrapper that used to sit
-            // here is removed — Child mode's `childModeEnabled` is now a permanently-frozen `false`
-            // (belt-and-suspenders, `AppSettings.swift`), so `SettingsLockGate.locked` could never
-            // evaluate `true` again; unlocked, it rendered `content()` with zero wrapping chrome, so
-            // this is a pixel-identical no-op removal (confirmed via `SettingsSnapshotTests`), not a
-            // behavior change. `SettingsLockGate`/`ChildModeView.swift` (its only definition site) are
-            // deleted; preserved on `dev/child-mode`.
             NavigationSplitView {
                 sidebarList
                     .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Search settings")
@@ -73,12 +47,6 @@ struct SettingsView: View {
                 sidebarDestination(selectedItem ?? .category(.bolus))
             }
         } else {
-            // Phase 7 (07-04, FEAT-04, D-05, SAFETY): same `SettingsLockGate` removal as the
-            // regular-width branch above — pixel-identical no-op (see that comment). This branch was
-            // previously marked "byte-identical (D-06a), do not modify" for a DIFFERENT reason (keeping
-            // it pinned while the regular-width sidebar+detail branch was being added, 09.17-02) — that
-            // constraint was about the compact/regular split staying visually decoupled, not about this
-            // specific dead wrapper surviving forever.
             NavigationStack {
                 settingsList
                     .navigationTitle("Settings")
@@ -86,19 +54,8 @@ struct SettingsView: View {
         }
     }
 
-    // 09.17-02 (D-04, UI-SPEC §2): the regular-width sidebar — the SAME 8 routable categories, same
-    // order, same title/icon, same category loop as `settingsList`'s below, rendered as
-    // `List(selection:)` rows instead of `NavigationLink`s. A search hit sets
-    // `selectedItem` (routes to the detail pane) instead of pushing a new stack (RESEARCH Open
-    // Questions #1). `destination(_:)` is the SAME @ViewBuilder switch used by both size classes.
-    //
-    // 09.17-06 (CR-01 gap closure): a second Section mirrors `settingsList`'s non-category rows —
-    // Mode selector, Safety (Read-only mode), Child mode, Data & history, and Privacy &
-    // data — so every iPhone-reachable setting is also reachable
-    // here. This is deliberate content DUPLICATION (not a shared subview extracted from
-    // `settingsList`), because extracting one would require editing `settingsList`'s own lines,
-    // breaking its byte-identical guarantee (D-06a) — same precedent 09.17-03's `MainHUDView`
-    // duplication established for the same reason.
+    // Regular-width sidebar: same categories as `settingsList`, as `List(selection:)` rows.
+    // Extra Safety / Help rows are duplicated here rather than extracted from `settingsList`.
     @ViewBuilder private var sidebarList: some View {
         List(selection: $selectedItem) {
             if query.isEmpty {
@@ -116,31 +73,17 @@ struct SettingsView: View {
                     }
                 }
                 Section {
-                    // Phase 8 (08-01, LOCK-01): the "Mode: …" sidebar row is removed —
-                    // `ModeSettingsView`/`ModeOnboardingView` are deleted; `appMode` is force-set
-                    // `.advanced` in both `ModeStore.init` and `AppSettings.init`.
                     Label("Safety (read-only mode)", systemImage: "shield.lefthalf.filled")
                         .tag(SettingsSidebarItem.safety)
                         .hoverEffect(.automatic)
-                    // Phase 7 (07-04, FEAT-04, D-05, SAFETY): the "Child mode" sidebar row is removed —
-                    // ChildModeView.swift is deleted; childModeEnabled is permanently frozen false.
-                    // Phase 8 (08-01, LOCK-03): the "Data & history" sidebar row is removed —
-                    // DataHistoryView.swift is deleted; historyRetentionDays is force-set to the 24h
-                    // pin and actually applied via the new App.swift launch call site.
-                    // Privacy & data moved UP into the category section above (between Remotes & devices
-                    // and About & help); it is no longer in this Safety group.
-                    // Not selection-based (no `.tag`) — same as `settingsList`'s Help row, this opens
-                    // Safari directly rather than routing to a detail-pane screen.
+                    // Privacy & data lives in the category section above, not this Safety group.
+                    // Not selection-based (no `.tag`) — opens Safari rather than a detail pane.
                     Link(destination: faBolusHelpURL) {
                         Label("Help & documentation", systemImage: "questionmark.circle")
                     }
                     .hoverEffect(.automatic)
                 }
             } else {
-                // 09.17-06 (CR-01): search now covers BOTH the existing category index
-                // (`SettingsIndex`, untouched — also used by `settingsList`'s own search) and the new
-                // extra-row index (`SettingsExtraIndex`, sidebar-only) so typing "child", "pin",
-                // "backup", "safe viewer", "read-only", or "mode" surfaces a hit here too.
                 let categoryHits = SettingsIndex.entries.filter { $0.matches(query) }
                 let extraHits = SettingsExtraIndex.entries.filter { $0.matches(query) }
                 if categoryHits.isEmpty && extraHits.isEmpty {
@@ -168,10 +111,7 @@ struct SettingsView: View {
         }
     }
 
-    /// 09.17-06 (CR-01 gap closure): detail-pane router for `sidebarList`'s selection — a superset of
-    /// `destination(_:)` (which stays completely untouched, per D-06a) that ALSO routes the six extra
-    /// groups to their existing, unmodified screens. Every case reuses an existing View type; none of
-    /// them are reimplemented here.
+    /// Detail-pane router for `sidebarList` — `destination(_:)` plus Safety / Privacy.
     @ViewBuilder private func sidebarDestination(_ item: SettingsSidebarItem) -> some View {
         switch item {
         case .category(let cat): destination(cat)
@@ -200,10 +140,6 @@ struct SettingsView: View {
                             }
                         }
                     }
-                    // Phase 8 (08-01, LOCK-01): the mode-selector Section (NavigationLink to
-                    // `ModeSettingsView`) is removed — `ModeSettingsView`/`ModeOnboardingView` are
-                    // deleted; `appMode` is force-set `.advanced` in both `ModeStore.init` and
-                    // `AppSettings.init`.
                     Section {
                         Toggle("Read-only mode", isOn: $settings.phoneReadOnly)
                         if settings.phoneReadOnly {
@@ -212,10 +148,6 @@ struct SettingsView: View {
                     } header: { Text("Safety") } footer: {
                         Text("Turns this phone into a **safe viewer**: bolusing and pump control are disabled and their screens hidden — good for a caregiver or backup phone that should only watch pump + CGM data. Clearing pump alerts is off too unless you allow it above. (Garmin has its own switch under Remotes & devices — the Apple Watch remote is removed, so it has no separate switch anymore.)")
                     }
-                    // Privacy & data moved UP into the category section above (between Remotes & devices
-                    // and About & help); its former standalone section here is gone. (History: that
-                    // section had also hosted the now-removed "Child mode" (Phase 7, 07-04) and
-                    // "Data & history" (Phase 8, 08-01, LOCK-03) rows before they were deleted.)
                     Section {
                         Link(destination: faBolusHelpURL) {
                             Label("Help & documentation", systemImage: "questionmark.circle")
@@ -276,10 +208,6 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
         case .bolus: return "syringe.fill"
         case .display: return "chart.xyaxis.line"
         case .cgm: return "sensor.tag.radiowaves.forward.fill"
-        // Phase 7 (07-05, FEAT-08): the custom alert-rules editor (`.alerts`, "bell.badge.fill") that
-        // this icon used to be distinguished FROM is removed — this screen is still the pump/app
-        // notification-delivery controls, not an auto-snooze/dismiss rule editor (no such editor
-        // remains on narrow main; see dev/alert-rules).
         case .notifications: return "bell.and.waves.left.and.right"
         case .pump: return "cross.case.fill"
         case .remotes: return "applewatch.radiowaves.left.and.right"
@@ -304,22 +232,13 @@ enum SettingsIndex {
         .init(title: "Default bolus mode", keywords: "carbs units entry", category: .bolus),
         .init(title: "iPhone increments", keywords: "unit bolus carb step 0.05", category: .bolus),
         .init(title: "Garmin increments", keywords: "unit bolus carb step remote watch", category: .bolus),
-        // Phase 8 (08-01, LOCK-04): trimmed from "Extended bolus & reasoning" — the extended-bolus
-        // keywords (combo/square wave/extended/duration) are dropped; "max safe"/"iob" stay (they
-        // describe the surviving Reasoning breakdown's own footer copy, not the removed toggle).
         .init(title: "Recommendation reasoning", keywords: "reasoning iob max safe estimate breakdown", category: .bolus),
-        // Phase 8 (08-01, LOCK-02): the "Glucose unit" row is removed — the unit Picker + "Show unit
-        // labels" toggle Section it advertised is deleted; `glucoseDisplayUnit` is a force-set `.mgdl`
-        // init pin with no UI to change it.
         .init(title: "Chart series (glucose / IOB / bolus)", keywords: "graph axis show hide", category: .display),
         .init(title: "Phone details rows", keywords: "reorder hide fields customize", category: .display),
         .init(title: "Dashboard pills", keywords: "reorder hide pills iob reservoir carb isf target", category: .display),
         .init(title: "Statistics card", keywords: "time in range tir gmi average cv stats a1c", category: .display),
         .init(title: "Garmin details rows", keywords: "reorder hide fields customize watch garmin", category: .remotes),
         .init(title: "Garmin chart ranges", keywords: "3 6 12 24 hours tap watch", category: .remotes),
-        // Phase 3 (03-03, REMOTE-03): title/keywords trimmed to Garmin-only — the Apple Watch
-        // bolus-enable toggle this row also advertised is removed (hidden-flag pattern); Garmin's
-        // own toggle + read-only override stay live in the same section.
         .init(title: "Allow bolusing from Garmin", keywords: "allow enable remote bolus garmin deliver read only view only", category: .remotes),
         .init(title: "Remote bolus size limit", keywords: "ceiling cap max units remote bolus limit dose garmin", category: .remotes),
         .init(title: "Failover CGM source", keywords: "dexcom share", category: .cgm),
@@ -327,8 +246,6 @@ enum SettingsIndex {
         .init(title: "Glucose staleness", keywords: "stale hide minutes old reading", category: .cgm),
         .init(title: "Notification controls", keywords: "pump app critical breakthrough quiet hours per category mute silence", category: .notifications),
         .init(title: "Pump connection", keywords: "connect disconnect pair pairing", category: .pump),
-        // Phase 9 (09-02, MOBI-02): the "Advanced control" row is removed — the Settings Section it
-        // advertised (below), and the PumpControlView.swift screen it linked to, are both deleted.
         .init(title: "Pump backend", keywords: "tandem mock", category: .pump),
         .init(title: "Garmin screen order", keywords: "swipe screens remote", category: .remotes),
         .init(title: "Garmin complication display", keywords: "watch face color trend arrow", category: .remotes),
@@ -341,18 +258,8 @@ enum SettingsIndex {
     ]
 }
 
-/// 09.17-06 (CR-01 gap closure): a sum type over the routable `SettingsCategory` rows PLUS the
-/// additional non-category setting groups that are reachable on iPhone (`settingsList`) but were
-/// missing from the regular-width sidebar (CR-01) — Safety (Read-only mode) and Privacy & data. Lets a
-/// single `List(selection:)` binding drive both kinds of rows into ONE detail pane, without touching
-/// `destination(_:)`, `SettingsCategory`, or `settingsList` (D-06a — those stay byte-identical).
-/// Phase 6 (06-02, D-06/D-08): `.backupRestore` is removed (the backup/restore surface is gone from
-/// narrow `main`); `.privacyData` STAYS — it routes to the trimmed, erase-only `PrivacyDataView`.
-/// Phase 7 (07-04, FEAT-04, D-05, SAFETY): `.childMode` is removed — `ChildModeView.swift` is deleted.
-/// Phase 8 (08-01, LOCK-01): `.mode` is removed — `ModeSettingsView`/`ModeOnboardingView` are deleted;
-/// `appMode` is force-set `.advanced`.
-/// Phase 8 (08-01, LOCK-03): `.dataHistory` is removed — `DataHistoryView.swift` is deleted;
-/// `historyRetentionDays` is force-set to the 24h pin and actually applied via `App.swift`.
+/// Routable `SettingsCategory` plus the extra sidebar rows (Safety, Privacy) that share one
+/// `List(selection:)` binding.
 enum SettingsSidebarItem: Hashable {
     case category(SettingsCategory)
     case safety
@@ -364,12 +271,8 @@ enum SettingsSidebarItem: Hashable {
     static let allExtras: [SettingsSidebarItem] = [.safety, .privacyData]
 }
 
-/// 09.17-06 (CR-01 gap closure): search entries for the additional (non-`SettingsCategory`) rows only
-/// reachable via the regular-width sidebar's second section. Kept SEPARATE from `SettingsIndex`
-/// (rather than widening `SettingsIndex.Entry.category`'s type to a union) because that flat index
-/// also drives `settingsList`'s (iPhone) OWN search-to-`destination(_:)` routing; widening it would
-/// require touching `settingsList`, breaking its byte-identical guarantee (D-06a). Only consulted by
-/// `sidebarList`'s search branch (regular width) — `settingsList`'s search is untouched.
+/// Search entries for the extra (non-`SettingsCategory`) sidebar rows. Kept separate from
+/// `SettingsIndex` because that index also drives iPhone `settingsList` search routing.
 enum SettingsExtraIndex {
     struct Entry: Identifiable {
         let id = UUID()
@@ -382,22 +285,12 @@ enum SettingsExtraIndex {
         }
     }
     static let entries: [Entry] = [
-        // Phase 8 (08-01, LOCK-01): the "Mode: Simple / Standard / Advanced" entry is removed —
-        // `ModeSettingsView`/`ModeOnboardingView` are deleted; `appMode` is force-set `.advanced`.
         .init(title: "Read-only mode", keywords: "safe viewer caregiver backup phone bolusing disabled pump control hidden clearing alerts", item: .safety),
-        // Phase 8 (08-01, LOCK-03): the "Data & history" entry is removed — `DataHistoryView.swift` is
-        // deleted; `historyRetentionDays` is force-set to the 24h pin and actually applied at launch.
         .init(title: "Privacy & data", keywords: "privacy data erase", item: .privacyData),
     ]
 }
 
-/// 09.17-06 (CR-01 gap closure): the iPad regular-width sidebar's detail destination for the "Safety"
-/// row. Wraps the SAME `settings.phoneReadOnly` / `settings.readOnlyAllowAlertClear` bindings and the
-/// SAME copy as `settingsList`'s inline "Safety" `Section` (compact/iPhone) — duplicated into its own
-/// small `View` rather than extracted into a shared subview, because extracting would require editing
-/// `settingsList`, breaking its byte-identical guarantee (D-06a). Every OTHER extra row
-/// (Mode/Child mode/Backup/Data/Privacy) already has its own existing View type and is
-/// reused as-is — this is the one group that was previously just an inline `Section`, not a screen.
+/// iPad sidebar detail for the Safety row — same bindings and copy as the compact Safety section.
 struct SafetySettingsView: View {
     @Bindable var settings: AppSettings
     var body: some View {
@@ -439,11 +332,6 @@ struct BolusSettingsView: View {
                     ForEach(AppSettings.carbIncrements, id: \.self) { Text("\(Int($0)) g").tag($0) }
                 }
             } header: { Text("iPhone increments") } footer: { Text("Steps for the iPhone bolus screen and the Home-Screen widget.") }
-            // Phase 8 (08-01, LOCK-04/LOCK-06 friction half): the "Extended (combo) bolus" toggle and
-            // the "Extra confirmation on unusually large overrides" toggle are both removed from this
-            // Section (they shared one footer) — `extendedBolusEnabled`/`stackingGuardFrictionEnabled`
-            // are now force-set-false init pins. The Section stays — it still hosts the reasoning
-            // toggle — and the footer is trimmed to describe only Reasoning.
             Section {
                 Toggle("Show recommendation reasoning", isOn: $settings.showBolusReasoning)
             } header: { Text("Bolus screen") } footer: {
@@ -462,18 +350,10 @@ struct DisplaySettingsView: View {
 
     var body: some View {
         Form {
-            // Phase 8 (08-01, LOCK-02): the whole "Glucose unit" Section (the mg/dL·mmol/L Picker + the
-            // "Show unit labels" toggle — its only two rows) is removed — `glucoseDisplayUnit` is now a
-            // force-set `.mgdl` init pin with no UI to change it; `showGlucoseUnitLabels` survives as an
-            // ordinary hidden/unregistered flag. The `Chart` Section below still READS
-            // `settings.glucoseDisplayUnit` (for `GlucosePlotScale.boundLabel`) — that read is
-            // unaffected, it always resolves to `.mgdl` now.
             Section("Chart") {
                 Toggle("Show glucose axis", isOn: $settings.showGlucoseAxis)
                 Toggle("Show insulin (IOB) line", isOn: $settings.showIOBAxis)
                 Toggle("Show bolus bars", isOn: $settings.showBolusBars)
-                // Phase 09.13-01 (D-01/D-02/D-03): discrete preset pickers for the plot Y-axis
-                // ceiling + floor, unit-aware via GlucosePlotScale.boundLabel — no free-numeric entry.
                 Picker("Plot ceiling", selection: $settings.glucosePlotCeiling) {
                     ForEach(AppSettings.glucosePlotCeilingOptions, id: \.self) { opt in
                         Text(GlucosePlotScale.boundLabel(opt, unit: settings.glucoseDisplayUnit)).tag(opt)
@@ -519,12 +399,7 @@ struct CgmSettingsView: View {
     var body: some View {
         Form {
             Section {
-                // 09.3-03 (D-05/SC3): intentional, documented exception to the unified Bool guardedToggle
-                // idiom — this picker is String/GlucoseSourceRegistry-backed, not an AppSettings Bool, so
-                // guardedToggle cannot type-check it (09.3-RESEARCH.md Open Question 1, Pitfall 3).
-                // Phase 1, Plan 02 (CGM-03/CGM-04): the experimental-warning confirm-and-rollback flow
-                // (pendingExperimentalId/lastCommittedSource/isReverting/showExperimentalCgmWarning) was
-                // removed with `dexcom-g6-ble` — it was the flow's ONLY trigger source.
+                // String/registry-backed picker, not an AppSettings Bool — cannot use `guardedToggle`.
                 Picker("Failover CGM", selection: $selectedGlucoseSource) {
                     Text("None (pump only)").tag("")
                     ForEach(GlucoseSourceRegistry.enabled) { Text($0.name).tag($0.id) }
@@ -548,8 +423,6 @@ struct CgmSettingsView: View {
                 Text("Enter credentials for the selected source (if it needs any) and confirm it can get a reading.")
             }
             Section {
-                // D-12: the real, non-debug CGM-status surface (replaces the 7-tap hidden debug menu as
-                // the place per-source live status/age/provenance exists — F-08/F-09).
                 NavigationLink { CgmStatusView(model: model) } label: {
                     VStack(alignment: .leading, spacing: 2) {
                         Label("CGM source status", systemImage: "chart.line.uptrend.xyaxis")
@@ -562,8 +435,6 @@ struct CgmSettingsView: View {
             } header: { Text("3. Status") } footer: {
                 Text("See live status, freshness, and the last test result for every configured source.")
             }
-            // Nightscout upload section removed from narrow `main` in Phase 5 (HEALTH-02) — see
-            // dev/nightscout's REINTEGRATION.md.
             Section {
                 Picker("Mark stale after", selection: $settings.glucoseStaleMinutes) {
                     ForEach(AppSettings.glucoseStaleOptions, id: \.self) { Text("\($0) min").tag($0) }
@@ -578,7 +449,7 @@ struct CgmSettingsView: View {
         .navigationTitle("CGM & failover")
     }
 
-    /// 09.24-01 (D-02): Section-2 subtitle — the current selection, or explicit guidance to step 1.
+    /// Section-2 subtitle — current selection, or guidance to step 1.
     private var configureAndTestSubtitle: String {
         guard let selected = GlucoseSourceRegistry.selected() else {
             return "Not selected — pick a source in step 1"
@@ -586,15 +457,8 @@ struct CgmSettingsView: View {
         return "Selected: \(selected.name)"
     }
 
-    /// 09.24-01 (D-02); WR-01/IN-02/IN-03 fix (09.24 review): Section-3 subtitle. Previously this
-    /// guarded only on the raw, unvalidated `GlucoseSourceRegistry.selectedId()`, unlike Section 2's
-    /// `configureAndTestSubtitle` above, which validates against `GlucoseSourceRegistry.selected()`.
-    /// A stale/invalid persisted id (e.g. a source id left over from a build-flag toggle) made this
-    /// section say "Selected — reopen the app to arm" while Section 2 correctly said "Not selected"
-    /// for the exact same underlying state. Both subtitles now read from the SAME validated basis
-    /// through one shared, pure, unit-tested helper (`CgmStatusView.selectionStatusSubtitle` — closes
-    /// IN-02's duplicate-classification note and IN-03's missing test coverage), computed once per
-    /// render here so `statusSubtitle`/`statusSubtitleColor` can never disagree with each other either.
+    /// Section-3 subtitle. Uses the same validated `GlucoseSourceRegistry.selected()` basis as
+    /// Section 2 so a stale persisted id cannot say "Selected" while step 2 says "Not selected".
     private var currentSelectionSubtitle: (text: String, isActive: Bool) {
         let selected = GlucoseSourceRegistry.selected().map { (id: $0.id, name: $0.name) }
         return CgmStatusView.selectionStatusSubtitle(selected: selected,
@@ -616,10 +480,7 @@ struct PumpSettingsView: View {
     @Bindable var settings: AppSettings
     @State private var showPairing = false
     @State private var selectedBackend = BackendRegistry.selected().id
-    // P14 S12 (§2.2.3): the unpair flow. `repairAfter` re-opens pairing after unpair (the "Re-pair with
-    // new code" path). One funnel for both unpair entry points. Phase 6 (06-02, D-06): the A4
-    // (owner 2026-08-09) two-step "back up before unpair" gate is removed along with the rest of the
-    // backup/restore surface — both entry points now go straight to the confirm step.
+    // Unpair funnel. `repairAfter` re-opens pairing after unpair ("Re-pair with new code").
     @State private var unpairStep: UnpairStep?
     private enum UnpairStep: Identifiable {
         case confirm(repairAfter: Bool)   // S12 charging-base confirm
@@ -632,41 +493,10 @@ struct PumpSettingsView: View {
                 LabeledContent("Status", value: model.snapshot.connection.rawValue)
                 connectionControls
                 if model.hasStoredPairing && model.capabilities.supportsPairing {
-                    // P14 S12 (§2.2.3): confirm before an unpair; a Mobi gets the unconditional
-                    // charging-base warning (re-pairing needs the base).
+                    // Confirm before unpair; a Mobi gets the charging-base warning (re-pairing needs the base).
                     Button("Forget pairing", role: .destructive) { unpairStep = .confirm(repairAfter: false) }
                 }
             }
-            // Phase 8 (08-01, LOCK-05): the pump-clock Section (toggle + "Sync pump time now" button) is
-            // removed — `autoSyncPumpTime` is force-set OFF in `AppSettings.init` and no UI can turn it
-            // back on. `TandemBackend.syncTimeToNow()` / `GatedPumpWrite.syncTimeToNow` stay
-            // byte-identical (D-07); see `ClockSyncHiddenBoundaryTests` for the headless proof.
-            // Phase 9 (09-02, MOBI-02): the "Advanced control" Section (the opt-in toggle + its
-            // `NavigationLink { PumpControlView(model: model) }` destination) is removed — narrow
-            // `main` is bolus + status + alerts only. Both operands of the old entry gate
-            // (`model.capabilities.supportsAnyAdvancedControl || settings.advancedControlEnabled`)
-            // are always false on the t:slim-only capability model (`.full` floors every advanced
-            // capability OFF, Models.swift:762-785), so this Section could never actually be reached
-            // with a live "Pump Control" destination on this build anyway — removing it deletes dead
-            // reachability, not a live feature. Removing the Toggle removes `advancedControlEnabled`'s
-            // ONLY UI writer (the LOCK-01 "pin at the sole writer" pattern, Phase 8 precedent): the
-            // persisted value can never be flipped back to true from this build again. The accessor
-            // itself stays in `AppSettings.swift` (unedited, D-08) — `AppModel.swift` (DOSE_PATHS,
-            // protected) still reads it at `advancedControlOptIn`/`advancedControlAllowed`, and
-            // `advancedControlAllowed` is ALREADY always-false via its OTHER operand
-            // (`capabilities.supportsAnyAdvancedControl`), so no force-reset migration is needed
-            // (RESEARCH Anti-Patterns) — this mirrors `showGlucoseUnitLabels`'s "ordinary hidden/
-            // unregistered flag" posture, not `autoSyncPumpTime`'s force-set-false pin.
-            // `PumpControlView.swift` (its sole destination) is deleted wholesale (Task 1) — every
-            // section inside it was ALSO gated by a `caps.supportsX` capability that is always false
-            // on this model, so nothing in that file was reachable regardless of this Section.
-            // Phase 7 (07-03, FEAT-05, D-08): the mode-automation Settings Section (5 toggles + a
-            // link to the now-deleted help View) is removed — its whole reason to exist was configuring
-            // the Siri/Shortcuts automations this phase deletes. autoTempRate/autoProfileActivation
-            // (only readers were the deleted TempRateAutomation/ProfileAutomation engines) are fully
-            // deleted from AppSettings.swift below. autoExerciseMode/autoSleepMode/modeReminders are
-            // FROZEN at their existing default `false` — the kept ModeAutomation.swift still reads
-            // them (AppModel.swift:1821,2115, DOSE_PATHS).
             if BackendRegistry.enabled.count > 1 {
                 Section {
                     Picker("Pump backend", selection: $selectedBackend) {
@@ -678,10 +508,7 @@ struct PumpSettingsView: View {
         }
         .navigationTitle("Pump & control")
         .sheet(isPresented: $showPairing) { PairingSheet(model: model) { showPairing = false } }
-        // P14 S12 (§2.2.3): the unpair confirm, carrying the model-appropriate warning
-        // (Mobi ⇒ charging-base caveat). One funnel for both entry points. Presented as a
-        // confirmationDialog (09.3-03, D-05/SC3). Phase 6 (06-02, D-06): this is now the ONLY step —
-        // the A4 "back up first" step-1 gate is removed along with the backup/restore surface.
+        // Unpair confirm, with the model-appropriate warning (Mobi ⇒ charging-base caveat).
         .confirmationDialog("Forget pairing?",
                isPresented: Binding(get: { if case .confirm = unpairStep { return true } else { return false } },
                                     set: { if !$0, case .confirm = unpairStep { unpairStep = nil } }),
@@ -696,9 +523,7 @@ struct PumpSettingsView: View {
         } message: {
             Text(model.unpairConfirmation)
         }
-        // Phase 9 Plan 01 (MOBI-01/MOBI-03, D-03): reject-at-pairing observer — same shared helper as
-        // MainHUDView's trigger (`ios/faBolus/Data/AppModel+MobiReject.swift`), anchored at
-        // PumpSettingsView's root so it OUTLIVES the transient `PairingSheet` presented above.
+        // Reject-at-pairing observer at this root so it outlives the transient `PairingSheet`.
         .onChange(of: model.snapshot.pumpModel) { _, _ in model.rejectMobiIfDetected() }
     }
 
@@ -726,32 +551,16 @@ struct PumpSettingsView: View {
 struct RemotesSettingsView: View {
     @Bindable var model: AppModel
     @Bindable var settings: AppSettings
-    // §2.3 (G5): the one-time warning shown the FIRST time Garmin bolusing is enabled. (The
-    // matching Apple-Watch warning state was removed in 03-03, REMOTE-03, and the Apple-Watch
-    // bolus-enable accessor itself is retired entirely in Phase 17.5, D1-01 — see the note below.)
+    // One-time warning the first time Garmin bolusing is enabled.
     @State private var showGarminBolusWarning = false
     // C2 §2.3: the OPTIONAL Garmin bolus passcode set-UI. `passcodeSet` mirrors the Keychain-backed
     // `BolusPasscodeStore.isRequired` (refreshed on appear + after every set/clear) so the section shows
     // the right state without making the store observable.
     @State private var showSetPasscode = false
     @State private var passcodeSet = false
-    // Phase 7 (07-03, FEAT-05, D-08): the `siriPhrases` list + the Section that rendered it below are
-    // removed — they described the read-only voice queries that the now-deleted Intents surface
-    // registered; with that registration gone, the phrases no longer do anything (a Rule 1/2 dangling
-    // reference to removed functionality, not in RESEARCH's file list — found via a systematic grep
-    // for "Siri"/"Shortcuts"/"automation" across ios/faBolus).
 
-    /// §2.3: turning an enable ON routes through the one-time warning on first use (Confirm arms it +
-    /// records the ack; Cancel leaves it off — the binding's `get` reads the real, still-false flag so the
-    /// switch snaps back). A subsequent turn-on (already acknowledged, or after turning it off) arms
-    /// directly. Turning OFF is always immediate. Routed through the shared `guardedToggle` factory
-    /// (09.3-01, D-05/SC3) — the one idiom every confirm-gated settings toggle uses.
-    ///
-    /// Phase 3 (03-03, REMOTE-03) removed the matching Apple-Watch equivalent binding and its
-    /// `SettingsCatalog` row + backup/restore participation + UI (hidden-flag pattern, same posture as
-    /// `requireRemoteBolusApproval`, 03-02/F-1). Phase 17.5 (D1-01) then retired the underlying
-    /// AppSettings accessor and the gate that read it entirely — there is no Apple-Watch equivalent
-    /// left to bind at all now.
+    /// Turning enable ON routes through the one-time warning on first use (Confirm arms it +
+    /// records the ack; Cancel leaves it off). Turning OFF is always immediate.
     private var garminBolusBinding: Binding<Bool> {
         guardedToggle(
             get: { settings.garminBolusEnabled },
@@ -770,10 +579,8 @@ struct RemotesSettingsView: View {
         Binding(get: { settings.remoteBolusCeiling ?? AppSettings.defaultRemoteBolusCeiling },
                 set: { settings.remoteBolusCeiling = $0 })
     }
-    /// Phase 09.13-02 (D-05): the optional Watch/Garmin plot Y-axis override, treated as ONE unit — the
-    /// on/off state IS the Picker's first-row selection ("Same as phone" vs "Custom"), not a separate
-    /// `Toggle`. Turning it on snaps the pair via `GlucosePlotScale.resolve` (seeded from the phone's
-    /// current bounds when no prior override exists); turning it off clears BOTH keys back to nil.
+    /// Optional Watch/Garmin plot Y-axis override, treated as one unit — on/off is the Picker's
+    /// first-row selection ("Same as phone" vs "Custom"). Off clears both keys to nil.
     private var smallPlotOverrideOn: Binding<Bool> {
         Binding(
             get: { settings.glucosePlotFloorSmall != nil },
@@ -799,11 +606,8 @@ struct RemotesSettingsView: View {
                 set: { settings.glucosePlotCeilingSmall = $0 })
     }
 
-    /// D1-10: one plain-language line summarizing the NET effect of the toggles below, purely computed
-    /// from their current values — no new persisted state, no change to what any toggle means or does.
-    /// Exists only to reduce the "which of these several switches decides whether Garmin can bolus?"
-    /// mental-model load the audit flagged; every toggle below is still shown, explicit, and independently
-    /// changeable exactly as before.
+    /// One plain-language line summarizing the net effect of the toggles below — computed from
+    /// current values, no new persisted state.
     private var garminBolusStatusSummary: String {
         if settings.remotesReadOnly { return "Garmin now: view only — it can't deliver a bolus." }
         if !settings.garminBolusEnabled { return "Garmin now: bolusing is off." }
@@ -815,14 +619,7 @@ struct RemotesSettingsView: View {
 
     var body: some View {
         Form {
-            // D1-10 consolidation: the three "is Garmin allowed to bolus?" controls (read-only override,
-            // the enable, the optional per-dose ceiling) plus the optional passcode were previously split
-            // across TWO sections with the override listed LAST — reading order didn't match the actual
-            // precedence. Folded into ONE section, override listed FIRST (it wins over everything below
-            // it), with a plain-language status line up top. Every persisted key below (`remotesReadOnly`,
-            // `garminBolusEnabled`, `remoteBolusCeiling`, the Keychain-backed passcode) keeps its exact
-            // existing meaning, default, and binding — this is presentation/grouping/labeling only; the
-            // evaluator (`AccessPolicy.swift`) is untouched. See 17-09-SUMMARY.md's control map.
+            // Read-only override listed first — it wins over the enable and ceiling below.
             Section {
                 Text(garminBolusStatusSummary)
                     .font(.subheadline).foregroundStyle(.secondary)
@@ -835,10 +632,6 @@ struct RemotesSettingsView: View {
                             ForEach(AppSettings.remoteBolusCeilingOptions, id: \.self) { Text(fmtU($0)).tag($0) }
                         }
                     }
-                    // C2 §2.3: the OPTIONAL Garmin bolus passcode, folded into this ONE section (D1-10)
-                    // instead of a second overlapping section — same visibility gate
-                    // (`garminBolusEnabled`), same bindings, same Keychain-backed store; only the section
-                    // grouping changed.
                     if passcodeSet {
                         Label("A passcode is required to bolus from Garmin", systemImage: "lock.fill")
                             .foregroundStyle(.indigo)
@@ -882,9 +675,6 @@ struct RemotesSettingsView: View {
             }
             #endif
             #if !WATCH_EMBEDDED
-            // Phase 3 (03-03, REMOTE-03): WATCH_EMBEDDED is permanently retired — this fallback is
-            // now the ONLY state (not a build-time toggle). The whole Apple Watch app + complication
-            // is removed from narrow main (delete-on-main), preserved on dev/watch-remote.
             Section {
                 Label("Apple Watch app not included", systemImage: "applewatch.slash")
                     .foregroundStyle(.secondary)
@@ -915,9 +705,6 @@ struct RemotesSettingsView: View {
                 NavigationLink { WatchChartRangesView(settings: settings) } label: {
                     LabeledContent("Garmin chart ranges", value: settings.watchChartRanges.map { "\($0)h" }.joined(separator: " "))
                 }
-                // Phase 09.13-02 (D-05): optional small-screen plot Y-axis override — one Picker whose
-                // first row IS "Same as phone" (no separate boolean toggle); the two dependent Pickers
-                // below only appear once "Custom" is selected, mirroring the remoteBolusCeiling reveal.
                 Picker("Garmin plot range", selection: smallPlotOverrideOn) {
                     Text("Same as phone").tag(false)
                     Text("Custom").tag(true)
@@ -967,18 +754,15 @@ struct RemotesSettingsView: View {
         // C2 §2.3: keep the passcode section's state in sync with the Keychain-backed store.
         .onAppear { passcodeSet = BolusPasscodeStore.isRequired }
         .sheet(isPresented: $showSetPasscode) {
-            // CX-F-10: honor setPasscode's Bool return — a Keychain upsert failure must surface as a
-            // failure (BolusPasscodeEntryView keeps the sheet open with an error), NOT be reported as a
-            // successful change. `passcodeSet` is only refreshed when the store confirms it actually wrote.
+            // Honor setPasscode's Bool return — a Keychain upsert failure must surface as a
+            // failure (keep the sheet open with an error), not a successful change.
             BolusPasscodeEntryView { code in
                 let ok = BolusPasscodeStore.setPasscode(code)
                 if ok { passcodeSet = BolusPasscodeStore.isRequired }
                 return ok
             }
         }
-        // §2.3: one-time warning. Confirm arms the enable + records the ack; Cancel leaves it off. The
-        // enable is explicit and off by default. (The matching Apple Watch confirmationDialog was
-        // removed in 03-03, REMOTE-03, along with the watch bolus-enable toggle it warned for.)
+        // One-time warning. Confirm arms the enable + records the ack; Cancel leaves it off.
         .confirmationDialog("Allow bolusing from Garmin?", isPresented: $showGarminBolusWarning,
                              titleVisibility: .visible) {
             Button("Allow bolusing") { settings.acknowledgeGarminBolusWarning(); settings.garminBolusEnabled = true }
@@ -989,15 +773,11 @@ struct RemotesSettingsView: View {
     }
 }
 
-/// C2 §2.3 — set (or change) the OPTIONAL 4-digit Garmin bolus passcode. Enters it twice to confirm and
-/// stores it via `BolusPasscodeStore` (salted SHA-256 in the Keychain; the raw code is never persisted).
-/// A double-entry-to-confirm flow like the now-removed `PinEntryView`'s `.set` mode (Phase 7, 07-04,
-/// FEAT-04, D-05; preserved on `dev/child-mode`) but fixed at exactly 4 digits
-/// (`BolusPasscodeStore.isValidFormat`), with its own independent store.
+/// Set (or change) the optional 4-digit Garmin bolus passcode. Entered twice to confirm; stored
+/// via `BolusPasscodeStore` (salted SHA-256 in the Keychain; the raw code is never persisted).
 struct BolusPasscodeEntryView: View {
-    /// The validated 4-digit code to store. Returns whether it was actually stored — CX-F-10: a Keychain
-    /// upsert failure must be surfaced here rather than assumed to have succeeded, so `submit()` can keep
-    /// the sheet open with an error instead of dismissing as if the passcode had changed.
+    /// The validated 4-digit code to store. Returns whether it was actually stored — a Keychain
+    /// upsert failure must be surfaced here rather than assumed to have succeeded.
     let onSet: (String) -> Bool
     @Environment(\.dismiss) private var dismiss
     @State private var pin = ""
@@ -1030,7 +810,7 @@ struct BolusPasscodeEntryView: View {
         let digits = pin.filter(\.isNumber)
         guard BolusPasscodeStore.isValidFormat(digits) else { error = "Use exactly 4 digits."; return }
         guard pin == confirm else { error = "Passcodes don't match."; return }
-        // CX-F-10: honor the store's Bool return — a failed save keeps the sheet open with an error
+        // Honor the store's Bool return — a failed save keeps the sheet open with an error
         // instead of dismissing as if the passcode had changed.
         guard onSet(digits) else { error = "Couldn't save the passcode. Try again."; return }
         dismiss()
@@ -1137,19 +917,15 @@ struct GarminScreensView: View {
     }
 }
 
-/// Generic reorder/hide editor for a list of field ids (Details rows, dashboard Pills). Mirrors
-/// `GarminScreensView`: drag to reorder, swipe to hide, tap to add back. At least one stays shown,
-/// UNLESS `allowEmpty` is set (Phase 09.14, D-01/WR-04) — originally opted into by the since-removed
-/// Live Activity fields list (Phase 7, 07-01, FEAT-01), whose 0-field state had a real, tested,
-/// non-blank fallback render. No current call site passes `allowEmpty: true`; the parameter stays as
-/// a general capability for a future reorder/hide list with the same "0 is a valid state" shape.
+/// Generic reorder/hide editor for a list of field ids (Details rows, dashboard Pills). At least
+/// one stays shown unless `allowEmpty` is set.
 struct CustomizeListView: View {
     let title: String
     let allIds: [String]
     let label: (String) -> String
     @Binding var order: [String]
     let shownFooter: String
-    var allowEmpty: Bool = false   // NEW (09.14 D-01) — default false, every existing call site unaffected
+    var allowEmpty: Bool = false
 
     private var hidden: [String] { allIds.filter { !order.contains($0) } }
 
@@ -1164,10 +940,6 @@ struct CustomizeListView: View {
         Form {
             Section {
                 if order.isEmpty {
-                    // 09.14 D-01: only reachable when allowEmpty == true (Live Activity fields list).
-                    // Non-interactive — no .onMove/.onDelete, no drag handle — matches the app's
-                    // existing static empty-list rows (PumpWizardViews; the custom alert-rules editor
-                    // this comment used to cite as a second precedent is removed, Phase 7, 07-05, FEAT-08).
                     Text("No fields shown — the Live Activity displays a minimal synced-status glyph. Add a field below to bring it back.")
                         .foregroundStyle(.secondary)
                 } else {
@@ -1228,10 +1000,8 @@ struct WatchChartRangesView: View {
     }
 }
 
-/// Phase 20 (F1, D-02): pick which pump-status fields fill the Garmin watch face's THREE user-assignable
-/// complication slots (alongside the fixed glucose complication — Connect IQ caps an app at four total).
-/// Three "Slot N" pickers (a field or None); the selection becomes the ordered `garminComplicationSlots`
-/// list, de-duped and capped at three by construction. Mirrored to the watch on its next status update.
+/// Pick which pump-status fields fill the Garmin watch face's three user-assignable complication
+/// slots (Connect IQ caps an app at four total, including the fixed glucose complication).
 struct GarminComplicationsView: View {
     @Bindable var settings: AppSettings
     private let fields = AppSettings.garminComplicationFields   // iob / reservoir / battery / basal

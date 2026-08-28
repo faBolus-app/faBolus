@@ -78,7 +78,7 @@ public struct RemoteBolusLedger: Codable, Sendable {
     private var order: [String] = []
     private let cap: Int
 
-    /// T-14-01 (CX-G-01 phone half): an ADDITIVE content+time duplicate-recency index —
+    /// An ADDITIVE content+time duplicate-recency index —
     /// `[peerId+doseKey: Date]` mapping a PEER's dose-content fingerprint to the most recent time an
     /// outcome for it became authoritatively delivered-or-maybe-delivered (see `settle`/
     /// `markIndeterminate`). LoopKit's `syncIdentifier` content-identity philosophy layered ON TOP of the
@@ -125,7 +125,7 @@ public struct RemoteBolusLedger: Codable, Sendable {
         return "u:\(f(units))|c:\(f(carbsGrams))|bg:\(bgMgdl.map(String.init) ?? "-")"
     }
 
-    /// T-14-01: the recency window for `hasRecentlyDeliveredDuplicate`. Mirrors
+    /// The recency window for `hasRecentlyDeliveredDuplicate`. Mirrors
     /// `RemoteCommandFreshness.maxAgeSec` — both bound "how long is a remote's stale view of host state
     /// still a double-dose hazard," so keeping the two windows equal avoids reasoning about two different
     /// double-dose time bounds in the same codebase.
@@ -187,7 +187,7 @@ public struct RemoteBolusLedger: Codable, Sendable {
     /// Mark the outcome UNKNOWN (FB-02): a timeout/disconnect after the initiate write. The request is
     /// neither retryable nor confirmed until reconciled against the pump's bolus history by `bolusId`.
     ///
-    /// - Parameter now: T-14-01 — the ambiguous (may-have-delivered) outcome fail-closes into the
+    /// - Parameter now: the ambiguous (may-have-delivered) outcome fail-closes into the
     ///   content+time recency index (see `hasRecentlyDeliveredDuplicate`), stamped at `now`. Only when
     ///   this call ACTUALLY transitions the entry to `.indeterminate` (not already `.terminal`).
     public mutating func markIndeterminate(peerId: String, requestId: String, now: Date = Date()) {
@@ -201,7 +201,7 @@ public struct RemoteBolusLedger: Codable, Sendable {
     /// Record the terminal outcome for a request that `begin` returned `.proceed` for (or that was
     /// reconciled from an indeterminate state).
     ///
-    /// - Parameter now: T-14-01 — when this outcome was authoritatively delivered or MAY have been
+    /// - Parameter now: when this outcome was authoritatively delivered or MAY have been
     ///   (`sentToPump == true` OR `(deliveredUnits ?? 0) > 0`), the doseKey is stamped into the
     ///   content+time recency index at `now` (see `hasRecentlyDeliveredDuplicate`). A clean pre-pump
     ///   failure (`sentToPump == false`, 0/nil units) or a genuine 0 U cancellation before the pump write
@@ -222,7 +222,7 @@ public struct RemoteBolusLedger: Codable, Sendable {
         }
     }
 
-    /// T-14-01 (CX-G-01 phone half): true when `peerId`'s `doseKey` was recorded (by `settle`/
+    /// True when `peerId`'s `doseKey` was recorded (by `settle`/
     /// `markIndeterminate`) as authoritatively delivered-or-maybe-delivered within `window` seconds of
     /// `now` — REGARDLESS of which requestId a FRESH `begin()` call for the same content would use. Scoped
     /// to `peerId` (a settled-echo-loss retry is the SAME actor recomposing its own request; see the
@@ -236,7 +236,7 @@ public struct RemoteBolusLedger: Codable, Sendable {
         return now.timeIntervalSince(at) <= window
     }
 
-    /// T-14-01: whether ANY ledger entry already exists for this EXACT `(peerId, requestId)`, in any
+    /// Whether ANY ledger entry already exists for this EXACT `(peerId, requestId)`, in any
     /// lifecycle state. Callers use this to skip the content+time recency guard for a genuine protocol
     /// retry of the SAME id — `begin()` already handles that case correctly via `.replay`/
     /// `.duplicateInFlight`/`.conflict`. The recency guard exists ONLY to catch a FRESH requestId reusing
@@ -310,7 +310,7 @@ public struct RemoteBolusLedger: Codable, Sendable {
 }
 
 public extension RemoteBolusLedger {
-    /// Phase 09-03 (D-05, discretion): the PURE global delivery-block precedence
+    /// The PURE global delivery-block precedence
     /// `noDurableStore > ledgerFailedClosed > terminalSaveFailed > unresolved`, plus the live-in-flight vs
     /// genuinely-unresolved message split. Lifted verbatim from the app-target
     /// `DeliveryLedgerCoordinator.computeDeliveryBlockReason()` so the strings have ONE source of truth

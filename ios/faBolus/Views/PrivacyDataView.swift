@@ -1,15 +1,10 @@
 import SwiftUI
 import faBolusCore
 
-/// F1 (§13) — Privacy & data. One place to **erase** everything faBolus holds on this device
-/// (glucose / insulin / carb history + the setting-change log + the remote-bolus ledger audit trail).
+/// Privacy & data. One place to **erase** everything faBolus holds on this device
+/// (glucose / insulin / carb history + the setting-change log + the remote-bolus ledger).
 /// faBolus has no servers. Erase is owner-only and refuses while a delivery is unresolved (see
 /// `AppModel.eraseAllOnDeviceHealthData`).
-///
-/// D-08 (06-02): this view used to also offer a JSON **export** of the same data (via
-/// `PrivacyDataExport`/`BackupDocument`, part of the removed backup engine). The owner carve-out
-/// keeps the erase/full-reset UI on narrow `main` while the export half is trimmed out along with the
-/// rest of the backup surface; the full (export + erase) view still exists on `dev/backup`/`experimental`.
 struct PrivacyDataView: View {
     @Bindable var model: AppModel
     @State private var settings = AppSettings.shared

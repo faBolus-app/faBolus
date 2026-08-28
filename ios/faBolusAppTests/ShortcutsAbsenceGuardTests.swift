@@ -2,21 +2,8 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// **FEAT-05 boundary test (Phase 7, 07-03, P-C).** Siri + read-only Shortcuts are removed: the whole
-/// `ios/faBolus/Intents/` directory (5 files: `ModeIntents`, `ProfileIntents`, `ShortcutsIntents`,
-/// `StatusIntents`, `TempRateIntents`) is `git rm`'d, which removes `struct FaBolusShortcuts:
-/// AppShortcutsProvider` (it lived entirely inside `StatusIntents.swift:146` — there was never a
-/// separate `App.swift` registration to delete, RESEARCH correction). This suite pins both the
-/// directory's absence and the negative — NO `.swift` file anywhere under `ios/faBolus` conforms to
-/// `AppShortcutsProvider` — while leaving `Shared/WidgetBolusIntents.swift` (the KEPT Quick-Bolus
-/// widget's App Intents, which does not conform to `AppShortcutsProvider` and lives outside
-/// `ios/faBolus` entirely) untouched and unreferenced by either check.
-///
-/// RED-first: this suite FAILS against pre-removal `main` (the 5 files + `FaBolusShortcuts` still
-/// exist) — proving it has teeth. GREEN once this task's deletion lands.
-///
-/// Reuses the raw-text `String(contentsOf:)` scan + `#filePath`-rooted repo-root resolution idiom from
-/// `FeatureSurfaceAbsenceGuardTests`/`RetrospectiveAbsenceGuardTests`.
+/// Pins that `ios/faBolus/Intents/` is absent and that no file under `ios/faBolus` conforms to
+/// `AppShortcutsProvider`. Does not scan `Shared/WidgetBolusIntents.swift`.
 struct ShortcutsAbsenceGuardTests {
 
     /// Resolve the repo root by walking up from this file's own `#filePath`

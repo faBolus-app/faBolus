@@ -1,11 +1,10 @@
 import Foundation
 import faBolusCore
 
-/// Phase 3 (03-02, REMOTE-02) — the iPhone-to-iPhone peer "act as a remote for another phone" mode is
-/// removed from narrow `main` (`PhoneRemoteClientModel` deleted, preserved on `dev/phone-remote`).
-/// `Target` now has exactly one case; kept (not deleted outright) per the plan's explicit scope — a
-/// future remote surface has one place to re-add a second case. Persisted so the app relaunches into
-/// whatever the user last chose (today, always `.thisPump`).
+/// iPhone-to-iPhone peer "act as a remote for another phone" mode is removed from narrow `main`.
+/// `Target` now has exactly one case; kept so a future remote surface has one place to re-add a
+/// second case. Persisted so the app relaunches into whatever the user last chose (today, always
+/// `.thisPump`).
 @MainActor
 @Observable
 final class AppRouter {

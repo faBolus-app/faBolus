@@ -1,9 +1,8 @@
 import Foundation
 
-/// Swift mirror of `schema/command.schema.json` — the phone↔remote command contract shared by
-/// the iOS host and its remotes (Apple Watch via WatchConnectivity; Garmin via Connect IQ).
-/// Safety-critical surface: keep minimal and in lockstep with the JSON schema and the Monkey C
-/// side. Encoded as JSON for transport.
+/// Swift mirror of `schema/command.schema.json` — the phone↔remote command contract (Garmin via
+/// Connect IQ; Mac/iPhone peer via BLE). Keep in lockstep with the JSON schema and the Monkey C
+/// mirror. Encoded as JSON for transport.
 public struct RemoteCommand: Codable, Equatable, Sendable {
     public static let schemaVersion = 1
 

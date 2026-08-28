@@ -2,30 +2,10 @@ import Foundation
 import Observation
 import faBolusCore
 
-/// Phase 9 code-review CR-01 gap closure — owner decision: a NON-dose-file backstop only (no edit to
-/// `AppModel.swift`/`TandemBackend.swift`, D-08 dose-byte-identity kept green; a small residual
-/// background race before ANY observer — foreground or this one — first runs is owner-accepted).
-///
-/// **The gap.** The reject-at-pairing gate (`AppModel.rejectMobiIfDetected()`,
-/// `AppModel+MobiReject.swift`) is fired today ONLY from three foreground SwiftUI
-/// `.onChange(of: model.snapshot.pumpModel)` observers (`MainHUDView`/`SettingsView`/
-/// `ConnectPumpOnboardingView`). Each is anchored to a specific SwiftUI VIEW being on screen — so a
-/// Mobi discovered while none of those three views is mounted (app backgrounded; a different screen
-/// showing; the app relaunching into a fourth screen) evades the gate until the user happens to
-/// navigate back to one of them. The app already declares BLE background modes, so a Mobi can be
-/// (re)discovered while backgrounded.
-///
-/// **The backstop.** `MobiRejectBackstop` is ALWAYS ON: owned OUTSIDE the SwiftUI view tree (started
-/// from `FaBolusApp`, alongside `GarminRemoteBridge`/`NotificationCoordinator` — the
-/// app's EXISTING pattern for AppModel-observers that must run regardless of which screen is visible),
-/// observing `AppModel.snapshot` via the Observation framework's `withObservationTracking` — NOT a
-/// SwiftUI `.onChange` on a view — so it keeps running whether or not any reject-observing view is
-/// mounted, and while backgrounded (the process — and this observer's re-arm loop — stays alive across
-/// a backgrounded pump reconnect, same as the kit's own background-safe reconnect path).
-///
-/// Reuses the EXISTING, already-idempotent `rejectMobiIfDetected()` — no duplicated abort logic, no new
-/// `AppModel` surface. The three foreground triggers stay (defense in depth): this is an ADDITIONAL
-/// always-on layer, not a replacement.
+/// Always-on Mobi reject backstop, owned outside the SwiftUI view tree. The view-scoped
+/// `.onChange(of: pumpModel)` observers miss a Mobi discovered while backgrounded or on a different
+/// screen; this observer keeps running regardless of which screen is visible. Reuses the existing
+/// `rejectMobiIfDetected()` — additional layer, not a replacement.
 @MainActor
 final class MobiRejectBackstop {
     private let model: AppModel

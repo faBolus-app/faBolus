@@ -1,67 +1,38 @@
 # faBolus — LLM guide
 
-> A pump-agnostic remote-bolus + status app for Tandem t:slim X2 / Mobi. The iPhone owns the pump's
-> Bluetooth link (via the sibling `TandemKit` package); the Apple Watch, Garmin, Mac, and a second
-> iPhone are thin remotes that relay confirmed commands to the host phone. Experimental, not
-> FDA-cleared. This file orients an LLM helping either a **user** set up/use the app or a **developer**
-> add features / debug. Paths are repo-relative; every file has a doc-comment header — read it first.
+> A pump-agnostic remote-bolus + status app for Tandem t:slim X2. The iPhone owns the pump's
+> Bluetooth link (via sibling `TandemKit`); Garmin, Mac, widgets, and a second iPhone are thin
+> remotes that relay confirmed commands to the host phone. Experimental, not FDA-cleared.
 
 ## Start with
-- [AGENTS.md](AGENTS.md) — workflow, commands, how-to-add-X, and gotchas (read this if you're editing).
-- [docs/glossary.md](docs/glossary.md) — terms (IOB, ISF, TIR, host/remote, JPAKE, sealed transport…).
+- [AGENTS.md](AGENTS.md) — commands, how-to-add-X, safety, gotchas.
+- [BRANCHES.md](BRANCHES.md) — branch model and experimental gate.
+- [docs/glossary.md](docs/glossary.md) — terms.
 
-## Safety invariants (never violate)
-- Every insulin-affecting command goes: UI confirm/hold → backend clamp (`Interlocks.absoluteMaxUnits`
-  = 25 U, ≥ 0.05 U) → transport `WritePolicy` (`.readOnly` default) → signed + `modifiesInsulinDelivery`
-  message, byte-verified against the `TandemKit` oracle. Don't add a delivery path that skips these.
-- Stale glucose (> ~6 min, `GlucoseFreshness`) is shown marked, never as current, and never auto-fills
-  a correction.
-- Remote/parental gates are enforced in `AppModel` (the single chokepoint) — see "Permissions".
+## Safety (never violate)
+- Insulin-affecting commands: UI confirm/hold → backend clamp (`Interlocks.absoluteMaxUnits` = 25 U,
+  ≥ 0.05 U) → `WritePolicy` (default `.readOnly`) → signed `modifiesInsulinDelivery` message,
+  byte-verified against the TandemKit oracle.
+- Stale glucose (> ~6 min, `GlucoseFreshness`) is marked, never current, never auto-fills a correction.
+- Gating is `AccessPolicy` via `AppModel.allow` / `accessDecision` — one chokepoint.
 
-## Architecture (start here)
-- [docs/architecture.md](docs/architecture.md) — how it fits together + the command contract.
-- `Packages/faBolusCore/` — backend-neutral core: `PumpBackend` (pump seam), `GlucoseSource`/
-  `GlucoseArbiter` (CGM failover), `RemoteCommand` (the remote wire contract), transports
-  (`RemoteLink` = WatchConnectivity, `BLELink` = Mac/iPhone BLE, `SealedTransport` = AES-GCM),
-  `MacPairing` (auth), `Models.swift` (`PumpSnapshot`, `PumpAlert`, …). Pure + unit-tested.
-- `ios/faBolus/Data/` — app state + drivers: `AppModel` (bridges a `PumpBackend` to SwiftUI; the
-  command + gating chokepoint), `TandemBackend` (real pump via TandemKit), `MockBackend` (Simulator),
-  `PeerRemoteHost`/`PhoneRemoteHost`/`GarminRemoteBridge` (remote hosts), `AppSettings`, `ChildMode`.
-- `ios/faBolus/Views/` — SwiftUI. Display views take plain values (reused by remotes).
-- `Shared/` — cross-target: `RemoteClientModel` (dumb-remote base), CGM BLE sources, widget store.
-- `watch/`, `mac/`, `ios/faBolusWidgets/` — the remotes + widgets. `garmin` app is a separate repo.
+## Layout
+- `Packages/faBolusCore/` — `PumpBackend`, `GlucoseSource` / `GlucoseArbiter`, `RemoteCommand`,
+  `AccessPolicy`, transports (`BLELink`, `SealedTransport`), models.
+- `ios/faBolus/Data/` — `AppModel`, `TandemBackend`, `MockBackend`, `GarminRemoteBridge`, `AppSettings`.
+- `ios/faBolus/Views/` — SwiftUI. Display views take plain values.
+- `Shared/` — widget store and shared snapshot types.
+- `ios/faBolusWidgets/` — Lock/Home Screen widgets.
+- `schema/command.schema.json` — phone↔remote contract (source of truth).
+- `hosts/loop/` — unbuilt sketch.
 
-## The pump protocol lives in a sibling repo
-- `../TandemKit` — Tandem BLE/JPAKE/messages, byte-exact against a vendored Java oracle. faBolus
-  depends on it. Change pump message bytes there (with an oracle-parity test), not here.
+No `watch/` tree on `main`. Garmin lives in `../faBolusGarmin`. Pump bytes live in `../TandemKit`.
 
-## Add a feature / debug — where things are
-- New user setting: add to `ios/faBolus/Data/AppSettings.swift` (UserDefaults + `didSet`, sanitized in
-  `init`) and a `*SettingsView` in `ios/faBolus/Views/SettingsView.swift` (+ a `SettingsIndex` entry).
-- New pump action: add to the `PumpBackend` protocol (`Packages/faBolusCore/.../PumpBackend.swift`,
-  default-throwing extension), implement in `TandemBackend` + `MockBackend`, expose via `AppModel`.
-- New remote command: extend `RemoteCommand` + `schema/command.schema.json` (run
-  `scripts/check-schema-drift.sh`); handle in the `*RemoteHost` receivers + `RemoteClientModel`.
-- Permissions (child mode / remote peers): `ChildFeature` / `RemotePermission`; enforced by
-  `AppModel.childBlocked` / `PeerRemoteHost` — the one place to gate actions.
-
-## Build / test / run (commands)
-- Core tests: `swift test --package-path Packages/faBolusCore`.
-- Simulator build: `./scripts/build-sim.sh` (iOS app + embedded watch + widgets).
-- Device build: set `DEVELOPMENT_TEAM` in `LocalConfig.xcconfig`; `xcodegen generate` then
-  `xcodebuild -scheme faBolus -destination 'id=<UDID>' -allowProvisioningUpdates build`; install with
-  `xcrun devicectl device install app`.
-- Schema drift: `scripts/check-schema-drift.sh`. Docs site: mkdocs (`mkdocs.yml`).
-
-## Docs (for users)
-- Site: https://fabolus.org/ · sources in [docs/](docs/). Start: [docs/safety.md](docs/safety.md),
-  [docs/build/index.md](docs/build/index.md), [docs/operate/status.md](docs/operate/status.md).
-- Remotes: [Apple Watch](docs/remotes/apple-watch.md), [Garmin](docs/remotes/garmin.md),
-  [Mac](docs/remotes/mac.md), [iPhone remote](docs/remotes/phone-remote.md).
-- Roadmap / deferred + known caveats: [ROADMAP.md](ROADMAP.md),
-  [docs/UNVERIFIED-GUESSES.md](docs/UNVERIFIED-GUESSES.md).
+## Commands
+- Core tests: `swift test --package-path Packages/faBolusCore`
+- Simulator: `./scripts/build-sim.sh`
+- Schema: `scripts/check-schema-drift.sh`
 
 ## Conventions
-- Match surrounding style; every file starts with a doc-comment explaining its role — keep that up.
-- `[[double-bracket]]` links in doc-comments point to sibling types/files.
-- Don't invent pump behavior; if unverified, note it in `docs/UNVERIFIED-GUESSES.md`.
+Match surrounding style. Don't invent pump behavior; unverified fields go in
+`docs/UNVERIFIED-GUESSES.md`.

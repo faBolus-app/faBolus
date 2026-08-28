@@ -11,9 +11,6 @@ import Observation
 import UIKit
 #endif
 
-// Phase 16 GO-1 Step 4 (16-04): `HealthKitExportDestination` (+ its `HealthKitExporter` conformance)
-// moved verbatim to `AppModel+HealthKit.swift`, alongside the AppModel methods that reference it.
-
 /// Observable app state bridging a `PumpBackend` to SwiftUI.
 @MainActor
 @Observable
@@ -23,31 +20,19 @@ public final class AppModel {
     public private(set) var iobHistory: [IOBSample] = []
     public private(set) var bolusMarkers: [BolusMarker] = []
     public private(set) var activeNotifications: [PumpAlert] = []
-    /// CX-G-08 (14-10, D1) — AppModel's own MIRROR of `source.rawActiveNotifications`, refreshed in the
-    /// SAME synchronous block as `activeNotifications` (below) so the two always describe the SAME poll
-    /// (the composer's same-poll invariant). Never read live from `source` at compose time.
+    /// AppModel's own MIRROR of `source.rawActiveNotifications`, refreshed in the SAME synchronous
+    /// block as `activeNotifications` (below) so the two always describe the SAME poll (the composer's
+    /// same-poll invariant). Never read live from `source` at compose time.
     public private(set) var rawActiveNotifications: [PumpAlert]?
 
-    // Phase 16 GO-1 Step 5 (16-05, REMED-16, R24/R29): the persistent-history write-through +
-    // identity-diff bookkeeping (`lastPersisted*Keys`, `persistNewHistory`) moved verbatim into
-    // `HistoryPersistenceCoordinator` — a closure-free coordinator (D-04): every method takes plain
-    // values in, returns plain values out, zero back-pointer either direction. `history` below is now
-    // a COMPUTED property forwarding to the coordinator's store, so the eating-nudge/HealthKit/backup
-    // methods that read `history` (moved to `AppModel+EatingNudge.swift`/`AppModel+HealthKit.swift`/
-    // `AppModel+Backup.swift` in 16-04 — none of them R24/R29 members, none touched by this plan) keep
-    // compiling unchanged. Still only `internal` (module-private), never `public`.
+    // History writes go through HistoryPersistenceCoordinator (plain values in/out, no back-pointer).
+    // `history` is a computed forward so other AppModel extensions can still read the store.
     @ObservationIgnored private let historyPersistence = HistoryPersistenceCoordinator()
     internal var history: GlucoseHistoryStore? { historyPersistence.store }
 
     // Eating nudge (multi-signal fusion) — advisory, gated by AppSettings.eatingNudgesEnabled.
-    // Phase 16 GO-1 Step 4 (16-04, REMED-16, review concern #1): the fusion METHODS moved to
-    // `AppModel+EatingNudge.swift` (a separate-file extension), but a Swift extension cannot declare
-    // stored properties and a separate-file extension cannot see a `private` member of this type — so
-    // every stored property the moved methods touch stays HERE, widened `private`->`internal` (never
-    // beyond `internal`; still invisible outside this module). `AppModelAccessWideningGuardTests`
-    // (16-04 Task 3) pins this enumerated set as EXACTLY the widened set, with no dose/gate member
-    // included. `eatingNudge`'s SETTER also widens (was `private(set)`) for the same reason — its
-    // getter was already `internal` by default.
+    // Stored properties live here because a separate-file extension cannot declare them or see
+    // `private` members. Widened to `internal` (never public); no dose/gate member is included.
     @ObservationIgnored internal var eatingEngine = EatingTriggerEngine(config: AppSettings.shared.eatingTriggerConfig)
     @ObservationIgnored internal var lastEatingConfig: Data?
     #if FABOLUS_NUDGE
@@ -71,19 +56,10 @@ public final class AppModel {
     @ObservationIgnored internal var lastEatingPositiveAt = Date.distantPast
     internal var eatingNudge: EatingAlert?
 
-    // Phase 16 GO-1 Step 4 (16-04): `ingestGarminIMUWindow`, `setupEatingPersonalization`, and
-    // `eatingNudgeActedOn` moved verbatim to `AppModel+EatingNudge.swift` (same `#if FABOLUS_NUDGE`
-    // gates preserved) — see that file. `setupEatingPersonalization()` is still called from `init`
-    // below (cross-file, `internal`). Phase 17.5 Plan 03 (D1-01): the Apple-Watch-on-device
-    // eating-event-ingest method that also lived in that file — a zero-caller orphan once the
-    // WatchConnectivity host was deleted (Plan 02) — was deleted outright.
-
     /// Decoded history-log events for the Logbook (B2), newest first.
     public private(set) var historyEvents: [HistoryEvent] = []
-    /// D-05 (Phase 09.7-02): mirrors `TandemBackend.historySyncState` for the "Pump history sync" UI
-    /// section in `DataHistoryView`. Concrete-Tandem-only (mirrored in `refresh()` via `source as?
-    /// TandemBackend`, the established `onCommandLatency` pattern) — stays `.idle(lastSynced: nil)` on
-    /// `MockBackend`, which has no gap-sync of its own.
+    /// Mirrors `TandemBackend.historySyncState` for the "Pump history sync" UI section. Concrete-Tandem-
+    /// only — stays `.idle(lastSynced: nil)` on `MockBackend`, which has no gap-sync of its own.
     public private(set) var historySyncState: HistorySyncState = .idle(lastSynced: nil)
     public private(set) var alertDebug: String = ""
     public var lastError: String?
@@ -94,14 +70,13 @@ public final class AppModel {
 
     /// A short source name + human reason when the live glucose is coming from a **failover** source
     /// instead of the pump; `nil` when the pump feed is live. The UI only shows a badge when non-nil.
-    /// Phase 16 GO-1 Step 2: delegates to `FailoverBadgePresenter`, a pure value-in/value-out mapper —
-    /// this stays the only place `glucoseProvenance` is read to build the badge.
+    /// Delegates to `FailoverBadgePresenter`; this stays the only place `glucoseProvenance` is read
+    /// to build the badge.
     public var failoverBadge: (name: String, reason: String)? {
         FailoverBadgePresenter.failoverBadge(provenance: glucoseProvenance)
     }
 
-    /// A compact source name for the small "via …" failover badge. Phase 16 GO-1 Step 2: delegates to
-    /// `FailoverBadgePresenter`.
+    /// A compact source name for the small "via …" failover badge. Delegates to `FailoverBadgePresenter`.
     static func shortSourceName(_ full: String) -> String {
         FailoverBadgePresenter.shortSourceName(full)
     }
@@ -109,11 +84,9 @@ public final class AppModel {
     /// The active backend's capabilities, so the UI can hide unsupported features.
     public var capabilities: PumpCapabilities { source.capabilities }
 
-    /// Part B-a (Phase 09.6-01, D-02a): opcodes the connected pump has rejected this connection-
-    /// lifetime, for the `[Capability/opcode]` diagnostics section. Concrete-Tandem-only via the
-    /// `PumpDiagnosticsProviding` capability protocol (GO-2 Step 3, 16-10, REMED-16 — re-narrowed off
-    /// `TandemOnlyOps` per its own capability-ownership contract) — a non-Tandem backend (mocks, tests)
-    /// simply reports no rejected opcodes rather than crashing the diagnostics read-out.
+    /// Opcodes the connected pump has rejected this connection-lifetime, for the `[Capability/opcode]`
+    /// diagnostics section. Concrete-Tandem-only via `PumpDiagnosticsProviding` — a non-Tandem backend
+    /// (mocks, tests) reports no rejected opcodes rather than crashing the diagnostics read-out.
     public var badOpcodesForDiagnostics: Set<UInt8> { (source as? PumpDiagnosticsProviding)?.badOpcodesForDiagnostics ?? [] }
 
     /// Subscribers fired whenever the active pump-alert set changes, so a notifier can post/clear iOS
@@ -165,16 +138,16 @@ public final class AppModel {
     /// tslim-reconnect-loop (Phase B, item 5): the non-muteable "can't hold a connection" flap alert's
     /// stable id — withdrawn on the SAME `.clear` connection edge that withdraws `pumpDisconnectKey`.
     private static let pumpConnectionUnstableKey = "safety.pumpConnectionUnstable"
-    /// REMED-17 LOCKED COPY: the title AND body of the immediate governed `.bolusIndeterminate`
-    /// notification, and the widget's USER-FACING `lastError` + returned tuple `error`. Reused at every
-    /// one of the four `.indeterminate` switch sites so the wording can never drift between them. NEVER
-    /// contains the word that means a dose did not happen — an indeterminate outcome may in fact have
-    /// delivered; its AUTHORITATIVE resolution belongs to `.bolusReconciliation`, not this heads-up.
+    /// LOCKED COPY: the title AND body of the immediate governed `.bolusIndeterminate` notification,
+    /// and the widget's USER-FACING `lastError` + returned tuple `error`. Reused at every one of the
+    /// four `.indeterminate` switch sites so the wording can never drift between them. NEVER contains
+    /// the word that means a dose did not happen — an indeterminate outcome may in fact have delivered;
+    /// its AUTHORITATIVE resolution belongs to `.bolusReconciliation`, not this heads-up.
     static let indeterminateOutcomeLockedCopy =
         "Bolus sent but outcome is unknown — verify on the pump before retrying."
-    /// REMED-17 (codex CRITICAL #2): the widget's `.unknown` RemoteCommand echo `message` — its ORIGINAL,
-    /// shorter, peer-wire string — kept byte-identical and split apart from the USER-FACING copy above
-    /// (which now converges to `indeterminateOutcomeLockedCopy`). Never change this literal.
+    /// The widget's `.unknown` RemoteCommand echo `message` — its ORIGINAL, shorter, peer-wire string —
+    /// kept byte-identical and split apart from the USER-FACING copy above (which now converges to
+    /// `indeterminateOutcomeLockedCopy`). Never change this literal.
     static let widgetIndeterminateEchoMessage =
         "Bolus sent but outcome is unknown — verify on the pump."
     /// Was the CGM feed fresh on the previous refresh — for edge-detecting data loss (see `SafetyEdge`).
@@ -199,7 +172,7 @@ public final class AppModel {
     /// Post a governed notification through the broker-owned poster. For the three §6
     /// `neverSuppressible` safety categories the broker always delivers them (and they are durably
     /// persisted to `SafetyAlertStore` for replay). For a suppressible/governed category — e.g.
-    /// `.bolusIndeterminate` (added by 17-13 / REMED-17) — normal governance applies
+    /// `.bolusIndeterminate` — normal governance applies
     /// (enable / quiet-hours / budget / rate-limit) and nothing is persisted for replay; the
     /// per-category routing lives downstream in `NotificationCoordinator.post`, which branches on
     /// `message.category.neverSuppressible`. Routing everything through the sink keeps it in the
@@ -269,8 +242,7 @@ public final class AppModel {
 
     // MARK: Child (locked) mode gate
     //
-    // P8: the old per-call `childBlocked(_:)` / `readOnlyBlocked(_:)` helpers were removed — child mode
-    // and phone/remote read-only are now decided (with the other three gates) in the single
+    // Child mode and phone/remote read-only are decided (with the other gates) in the single
     // `AccessPolicy` evaluator, reached via `allow(_:from:peerId:)` / `accessDecision(_:from:peerId:)`
     // below. The pure enforcement rules live in faBolusCore; this file only builds the context.
 
@@ -315,7 +287,7 @@ public final class AppModel {
     /// if Low Power Mode toggles off then on again. Advisory-only — changes nothing about polling/dosing.
     public func dismissLowPowerAdvisory() { lowPowerAdvisoryDismissed = true }
 
-    // MARK: - P8 — single access-policy evaluator (the one decision point for every gate)
+    // MARK: - Single access-policy evaluator (the one decision point for every gate)
 
     /// Build the pure `AccessContext` from live app / pump / peer state and defer to
     /// `AccessPolicy.evaluate`. This is the ONLY place the five gates (unverified-ack, child mode,
@@ -405,14 +377,14 @@ public final class AppModel {
         WidgetPublisher.publishBolusLock(locked: lock.locked, reason: lock.reason)
     }
 
-    /// Clear a pump alert/alarm from the app (signed dismiss on the pump). P8: gated through the single
+    /// Clear a pump alert/alarm from the app (signed dismiss on the pump). Gated through the single
     /// evaluator by `surface` (dismiss is `.childOnly` — child mode governs it on local/watch/Garmin, an
     /// authenticated peer needs the `.dismissAlerts` permission, and it is never read-only-blocked).
     ///
-    /// CX-G-08 (14-09, checkpoint #4) — RETURNS the backend's TYPED outcome so a caller (the Garmin
-    /// bridge) can gate a durable ack on `.authenticatedCleared` and ONLY that case (T-14-28: never
-    /// infer authentication from any other observable). An access-denied guard returns
-    /// `.notAuthenticated` — a non-success outcome, but distinct from a real pump interaction.
+    /// RETURNS the backend's TYPED outcome so a caller (the Garmin bridge) can gate a durable ack on
+    /// `.authenticatedCleared` and ONLY that case — never infer authentication from any other observable.
+    /// An access-denied guard returns `.notAuthenticated` — a non-success outcome, but distinct from a
+    /// real pump interaction.
     @discardableResult
     public func dismissNotification(_ n: PumpAlert, from surface: AccessPolicy.Surface = .phoneUI,
                                     peerId: String = "local") async -> DismissOutcome {
@@ -436,15 +408,13 @@ public final class AppModel {
     /// Build the full status a remote (Apple Watch / Garmin) shows. Shared so every remote gets
     /// the same fields (trend, staleness, reservoir, last bolus, alerts, and optionally history).
     ///
-    /// Phase 16 GO-1 Step 1 (the tracer, REMED-16): this is now a THIN ADAPTER. Every live
-    /// singleton/clock read that the body used to perform happens HERE — `AppSettings.shared`,
+    /// Thin adapter: every live singleton/clock read happens HERE (`AppSettings.shared`,
     /// `BolusPasscodeStore.isRequired`, `capabilities`, `Date()`, `remoteBolusMaximum`, and the
-    /// `BolusGate.evaluate` gate call (INV-A: the gate funnel stays computed in `AppModel` and is
-    /// passed IN as a value, never re-derived downstream) — and are snapshotted into
-    /// `RemoteStatusInputs`/`RemoteStatusSettings` before handing off to the pure
-    /// `RemoteStatusComposer.compose`, which does the actual field mapping. `now` is a parameter
-    /// (default `Date()`, evaluated fresh at each call site) so a test can inject a fixed clock
-    /// without changing any production call site.
+    /// `BolusGate.evaluate` gate call — the gate funnel stays computed in `AppModel` and is passed IN
+    /// as a value, never re-derived downstream) and is snapshotted into `RemoteStatusInputs`/
+    /// `RemoteStatusSettings` before handing off to the pure `RemoteStatusComposer.compose`. `now` is
+    /// a parameter (default `Date()`) so a test can inject a fixed clock without changing production
+    /// call sites.
     public func statusCommand(includeHistory: Bool, replyingTo requestId: String? = nil,
                               now: Date = Date()) -> RemoteCommand {
         let s = snapshot
@@ -501,7 +471,7 @@ public final class AppModel {
             bolusBlockReason: avail.reason?.wireToken,
             bolusPasscodeRequired: BolusPasscodeStore.isRequired,
             supportsRemoteAlertDismiss: capabilities.supportsRemoteAlertDismiss,
-            // CX-G-08 (14-10, D1) — the AppModel MIRROR (never a live `source.` read; same-poll invariant).
+            // The AppModel MIRROR (never a live `source.` read; same-poll invariant).
             rawActiveNotifications: rawActiveNotifications,
             settings: settings)
         return RemoteStatusComposer.compose(inputs)
@@ -509,7 +479,7 @@ public final class AppModel {
 
     /// Clear a pump alert by id + kind (used by the phone UI and remotes' dismiss commands).
     ///
-    /// CX-G-08 (14-09) — RETURNS the typed dismiss outcome (see `dismissNotification(_:from:peerId:)`).
+    /// RETURNS the typed dismiss outcome (see `dismissNotification(_:from:peerId:)`).
     /// Both guards below return `.notAuthenticated` (never a false `.authenticatedCleared`) — the
     /// read-only-block guard and the "no matching active alert" guard. The latter is exactly the case
     /// the Garmin bridge's durable RECEIPT REPLAY (see `GarminDismissReceiptStore`) is designed to avoid
@@ -520,11 +490,11 @@ public final class AppModel {
     @discardableResult
     public func dismissAlert(id: Int, kind: Int, from surface: AccessPolicy.Surface = .phoneUI,
                              peerId: String = "local") async -> DismissOutcome {
-        // P8 deliberate deviation: dismiss is a `.childOnly` action, so the evaluator never read-only-
-        // blocks it (clearing an alert is low-risk and a viewer may need to). But the phone keeps its
-        // shipped `readOnlyAllowAlertClear` sub-option — on a LOCAL read-only phone, clearing stays off
-        // unless the user opted in. The pure evaluator can't know that per-user setting, so it is applied
-        // here for local surfaces only (remote dismisses were never subject to it). See [[p8-routing]].
+        // Dismiss is a `.childOnly` action, so the evaluator never read-only-blocks it (clearing an
+        // alert is low-risk and a viewer may need to). But the phone keeps its shipped
+        // `readOnlyAllowAlertClear` sub-option — on a LOCAL read-only phone, clearing stays off unless
+        // the user opted in. The pure evaluator can't know that per-user setting, so it is applied
+        // here for local surfaces only (remote dismisses were never subject to it).
         if surface.isLocal, AppSettings.shared.phoneReadOnly, !AppSettings.shared.readOnlyAllowAlertClear {
             lastError = "Clearing alerts is disabled in read-only mode."
             return .notAuthenticated
@@ -535,10 +505,9 @@ public final class AppModel {
         return await dismissNotification(n, from: surface, peerId: peerId)
     }
 
-    /// CX-G-08 (14-09, checkpoint #1) — build the correlated `dismissAck` `RemoteCommand`, mirroring
-    /// `statusCommand`'s builder shape. Callers (the Garmin bridge) send this ONLY after
-    /// `dismissAlert`/`dismissNotification` returned `.authenticatedCleared` (or a stored receipt is
-    /// being replayed) — never speculatively.
+    /// Build the correlated `dismissAck` `RemoteCommand`, mirroring `statusCommand`'s builder shape.
+    /// Callers (the Garmin bridge) send this ONLY after `dismissAlert`/`dismissNotification` returned
+    /// `.authenticatedCleared` (or a stored receipt is being replayed) — never speculatively.
     public func dismissAckCommand(requestId: String, alertId: Int, alertKind: Int) -> RemoteCommand {
         var cmd = RemoteCommand(kind: .dismissAck, requestId: requestId)
         cmd.alertId = alertId
@@ -582,24 +551,16 @@ public final class AppModel {
     private static let remoteApprovalMaxAge: TimeInterval = 120
     public var pendingRemoteBolus: PendingRemoteBolus?
 
-    /// Wave 2 (D-03): the ledger/global-block host state machine — the durable idempotency ledger + store,
-    /// the 4 fail-closed flags, `inFlightDeliveryKey`, the persist/retry paths,
-    /// `computeDeliveryBlockReason`, `runLedgeredDelivery`, `reconcileUnresolvedDeliveries`,
-    /// `commitInFlightBolusId`, and `clearDeliveryBlockAfterVerification` — now lives on
-    /// `DeliveryLedgerCoordinator`, behind the unchanged `PumpBackend` seam. AppModel stays the thin facade
-    /// (D-04): it re-publishes `deliveryBlockedReason`/`deliveryGloballyBlocked` below (mirrored from the
-    /// coordinator via `onDeliveryBlockChanged`), and its delivery entry points are thin adapters over
-    /// `deliveryLedgerCoordinator.runLedgeredDelivery`.
+    /// Durable idempotency ledger + global delivery block live on `DeliveryLedgerCoordinator`, behind
+    /// the unchanged `PumpBackend` seam. AppModel re-publishes `deliveryBlockedReason`/
+    /// `deliveryGloballyBlocked` (mirrored via `onDeliveryBlockChanged`); delivery entry points are
+    /// thin adapters over `deliveryLedgerCoordinator.runLedgeredDelivery`.
     @ObservationIgnored private let deliveryLedgerCoordinator: DeliveryLedgerCoordinator
 
-    /// Phase 16 GO-1 Step 4 (16-04): a thin, read-only, `internal` seam so `AppModel+Backup.swift`'s
-    /// carved `buildPrivacyExport` can read the ledger snapshot for the unified privacy export WITHOUT
-    /// widening `deliveryLedgerCoordinator` itself. Deliberately narrower than the widen-the-stored-
-    /// property pattern used for the advisory eating-nudge/HealthKit state above: `deliveryLedgerCoordinator`
-    /// is dose-adjacent (it owns `runLedgeredDelivery`/the global delivery-block gate), so it stays
-    /// `private` — only this one read-only snapshot value crosses the file boundary, never the
-    /// coordinator instance. `AppModelAccessWideningGuardTests` (16-04 Task 3) asserts
-    /// `deliveryLedgerCoordinator` itself is never in the widened-access set.
+    /// Thin read-only `internal` seam so `AppModel+Backup.swift`'s `buildPrivacyExport` can read the
+    /// ledger snapshot WITHOUT widening `deliveryLedgerCoordinator` itself. The coordinator is
+    /// dose-adjacent (it owns `runLedgeredDelivery`/the global delivery-block gate), so it stays
+    /// `private` — only this one read-only snapshot value crosses the file boundary.
     internal var privacyExportLedgerSnapshot: RemoteBolusLedger { deliveryLedgerCoordinator.currentLedgerSnapshot }
 
     /// P0 — the single global delivery-block gate every delivery surface consults. Non-nil ⇒ NO new
@@ -607,7 +568,7 @@ public final class AppModel {
     /// from the DURABLE ledger, so it survives a process restart: any `delivering`/`indeterminate` record
     /// blocks everything until reconciled against the pump; a corrupt ledger also blocks (fail closed).
     /// Stored + observed so SwiftUI updates; mirrored from `DeliveryLedgerCoordinator` via the
-    /// `onDeliveryBlockChanged` hook every time the coordinator recomputes the reason (D-04).
+    /// `onDeliveryBlockChanged` hook every time the coordinator recomputes the reason.
     public private(set) var deliveryBlockedReason: String?
     /// True when delivery is globally blocked by an unresolved/unreadable transaction (P0). UI convenience.
     public var deliveryGloballyBlocked: Bool { deliveryBlockedReason != nil }
@@ -685,9 +646,8 @@ public final class AppModel {
         for h in statusListeners { h(snapshot) }
     }
 
-    /// Whether a status push is due (§5.4). Phase 16 GO-1 Step 2: relocated verbatim to
-    /// `FailoverBadgePresenter.shouldPushStatus` (was already `nonisolated static` — pure, so the
-    /// move is behavior-preserving); see that type for the full cadence-rule doc comment.
+    /// Whether a status push is due (§5.4). Delegates to `FailoverBadgePresenter.shouldPushStatus`
+    /// (pure cadence rules — see that type).
     private func pushStatusIfNeeded() {
         guard !statusListeners.isEmpty else { return }
         guard FailoverBadgePresenter.shouldPushStatus(
@@ -708,9 +668,9 @@ public final class AppModel {
     /// nil = pump-relayed glucose only. Selected via `GlucoseSourceRegistry`.
     private var glucoseSource: GlucoseSource?
 
-    /// Phase 09.6-03 (D-03.2): the currently-configured failover source's `(id, status)`, for
-    /// `CgmArbiterDiagnostics` — read-only, reads `glucoseSource`'s already-tracked `status` and
-    /// never re-probes/reconnects it. Empty when no failover source is selected.
+    /// The currently-configured failover source's `(id, status)`, for `CgmArbiterDiagnostics` —
+    /// read-only, reads `glucoseSource`'s already-tracked `status` and never re-probes/reconnects it.
+    /// Empty when no failover source is selected.
     public var glucoseSourceDiagnosticsInfo: [(id: String, status: GlucoseSourceStatus)] {
         guard let glucoseSource else { return [] }
         return [(id: glucoseSource.id, status: glucoseSource.status)]
@@ -724,9 +684,9 @@ public final class AppModel {
     public var hasStoredPairing: Bool { source.hasStoredPairing }
     public func forgetPairing() { source.forgetPairing() }
 
-    // P14 S12 (§2.2.3): the pump model behind the unpair warning. Prefer the live snapshot; fall back to
+    // The pump model behind the unpair warning. Prefer the live snapshot; fall back to
     // the persisted offline signal (`PumpModelStore`) so a Mobi still warns correctly after it has
-    // disconnected (the snapshot's model reads `.unknown` once the name clears). C19: `PumpModelStore` is
+    // disconnected (the snapshot's model reads `.unknown` once the name clears). `PumpModelStore` is
     // the only offline Mobi signal.
     public var lastKnownPumpModel: PumpModel {
         UnpairAdvisory.resolvedModel(snapshotModel: snapshot.pumpModel, storedIsMobi: PumpModelStore.isMobi())
@@ -804,16 +764,14 @@ public final class AppModel {
         self.source = source
         self.snapshot = source.snapshot
         self.glucoseHistory = source.glucoseHistory
-        // Wave 2 (D-03/D-04): construct the coordinator with the SAME store-construction inputs
-        // `AppModel.init` used directly, so the R3CLedgerFault + 09-01 fault-injection paths behave
-        // identically. The seam/side-effect hooks are wired as separate statements right below (Swift's
-        // two-phase init forbids a `[weak self]`-capturing closure inside the very expression that
-        // initializes the property holding it) — mirroring how `source.onChange`/`source.commitBolusId`
-        // are already assigned as separate post-construction statements in this initializer.
+        // Construct the coordinator with the SAME store-construction inputs this init used directly, so
+        // the fault-injection paths behave identically. Seam/side-effect hooks are wired as separate
+        // statements below (Swift's two-phase init forbids a `[weak self]`-capturing closure inside the
+        // expression that initializes the property holding it).
         self.deliveryLedgerCoordinator = DeliveryLedgerCoordinator(
             ledgerStoreURL: ledgerStoreURL, ledgerStore: ledgerStore, forceNoDurableStore: forceNoDurableStore)
         Self.shared = self
-        // D-04: the coordinator depends ONLY on closures bound to `source` (the existing seam) + injected
+        // The coordinator depends ONLY on closures bound to `source` (the existing seam) + injected
         // side-effect hooks bound to `self` — never a whole-`AppModel` back-pointer.
         deliveryLedgerCoordinator.reconcile = { bolusId in await source.reconcile(bolusId: bolusId) }
         deliveryLedgerCoordinator.lastBolusCancelled = { source.lastBolusCancelled }
@@ -823,10 +781,9 @@ public final class AppModel {
         }
         deliveryLedgerCoordinator.refresh = { [weak self] in self?.refresh() }
         deliveryLedgerCoordinator.onDeliveryBlockChanged = { [weak self] reason in self?.deliveryBlockedReason = reason }
-        // Phase 16 GO-1 Step 3 (REMED-16): the CGM Test-flow coordinator depends ONLY on closures
-        // bound to `self` — never a whole-AppModel back-pointer (D-04). `probe` reads
-        // `glucoseSourceProbe` (itself already the private-`glucoseSource`-guarded read), so the
-        // coordinator never touches `glucoseSource` directly (INV-A).
+        // The CGM Test-flow coordinator depends ONLY on closures bound to `self` — never a whole-
+        // AppModel back-pointer. `probe` reads `glucoseSourceProbe` (itself already the private-
+        // `glucoseSource`-guarded read), so the coordinator never touches `glucoseSource` directly.
         cgmTestCoordinator.probe = { [weak self] in self?.glucoseSourceProbe }
         cgmTestCoordinator.failoverAutoDisabled = { [weak self] in self?.failoverAutoDisabled != nil }
         cgmTestCoordinator.onStateChanged = { [weak self] state in
@@ -835,9 +792,9 @@ public final class AppModel {
             self?.cgmTestTimeoutSeconds = state.timeoutSeconds
             self?.cgmTestOutcome = state.outcome
         }
-        // Phase 18 (GO-1 Step 8): wire the effects-tail coordinator's per-action sinks — each bound with
-        // [weak self] to the matching AppModel effect method / global publisher (D-01). The coordinator
-        // holds no back-pointer; these closures are AppModel's, so they may read `self`/globals live.
+        // Wire the effects-tail coordinator's per-action sinks — each bound with [weak self] to the
+        // matching AppModel effect method / global publisher. The coordinator holds no back-pointer;
+        // these closures are AppModel's, so they may read `self`/globals live.
         refreshEffectsCoordinator.recordStep = { [weak self] tag in self?.refreshEffectOrderRecorderForTesting?(tag) }
         refreshEffectsCoordinator.postSafety = { [weak self] category, severity, title, body, dedupeKey in
             self?.postSafety(category, severity: severity, title: title, body: body, dedupeKey: dedupeKey)
@@ -854,8 +811,8 @@ public final class AppModel {
             self?.connectionTelemetry.recordConnected()   // §5.2.8: connect count + start the uptime clock
             self?.bleSessionLog.record(.reconnect)        // F7: link returned to connected (prev was not)
         }
-        refreshEffectsCoordinator.onGlucoseBadgeClear = { GlucoseBadge.clear() }   // Phase 5 (D-13, 05-03)
-        // D-04 fused write+dispatch: the ONE bookkeeping field whose new value exists only inside the
+        refreshEffectsCoordinator.onGlucoseBadgeClear = { GlucoseBadge.clear() }
+        // Fused write+dispatch: the ONE bookkeeping field whose new value exists only inside the
         // coordinator's StalenessWatchdogEdge.decide — AppModel stays its sole owner.
         refreshEffectsCoordinator.onStalenessWatchdogArm = { [weak self] date in
             self?.lastArmedGlucoseDate = date
@@ -866,16 +823,16 @@ public final class AppModel {
             self?.notificationStalenessCancelSink?()
         }
         refreshEffectsCoordinator.onWidgetPublish = { snap, hist, alerts, locked, reason in
-            // Phase 5 (D-18, 05-05): the Live Activity's Snooze gate is computed HERE (the only place
-            // `PumpAlertKind` is available alongside the wire snapshot) via `FailoverBadgePresenter.
-            // snoozeGateAllows` — the SAME predicate App.swift's action gate uses.
+            // The Live Activity's Snooze gate is computed HERE (the only place `PumpAlertKind` is
+            // available alongside the wire snapshot) via `FailoverBadgePresenter.snoozeGateAllows` —
+            // the SAME predicate App.swift's action gate uses.
             WidgetPublisher.publish(snap, history: hist, alerts: alerts.map { $0.title },
                                     bolusLocked: locked, bolusLockReason: reason,
                                     hasSnoozeEligibleAlert: FailoverBadgePresenter.snoozeGateAllows(alerts))
         }
         refreshEffectsCoordinator.onNightscoutSync = { snap, hist, boluses in
-            // D4-07 (16-04): the `main`-only D-04 stub (`NightscoutStub.swift`) — a proven-inert no-op
-            // (`NightscoutStubInertnessTests`), never a network call or a write to history/dose state.
+            // The `main`-only Nightscout stub — a proven-inert no-op, never a network call or a write
+            // to history/dose state.
             NightscoutUploader.shared.sync(snapshot: snap, glucose: hist, boluses: boluses)
         }
         refreshEffectsCoordinator.onHistoryPersist = { [weak self] glucose, boluses, provenance in
@@ -902,19 +859,18 @@ public final class AppModel {
         // Round-3 §5: acknowledged bolus-id handshake — durably record the pump id (+ its "sent" phase)
         // BEFORE the backend writes metadata/initiate. Returns false if the save failed, so the backend
         // aborts before initiate (nothing delivered, no id-less record to misread later). Forwarded
-        // straight to the coordinator (D-04) — AppModel no longer owns this state.
+        // straight to the coordinator — AppModel no longer owns this state.
         source.commitBolusId = { [weak self] bolusId in await self?.deliveryLedgerCoordinator.commitInFlightBolusId(bolusId) ?? false }
         // B3a (§5.2.8): route the concrete Tandem backend's command round-trip latency into the opt-in
         // telemetry store (the 4th dimension). Concrete-Tandem-only via `PumpDiagnosticsProviding`
-        // (GO-2 Step 3, 16-10, REMED-16 — re-narrowed off `TandemOnlyOps`; the `PumpBackend` protocol
-        // stays clean — see the Phase-B addendum default); the sink is @MainActor and a no-op unless the
-        // diagnostics opt-in is on, so it can never touch a decision path.
+        // (re-narrowed off `TandemOnlyOps`; the `PumpBackend` protocol stays clean); the sink is
+        // @MainActor and a no-op unless the diagnostics opt-in is on, so it can never touch a decision path.
         (source as? PumpDiagnosticsProviding)?.onCommandLatency = { [weak self] seconds in
             self?.connectionTelemetry.recordCommandLatency(seconds)
         }
-        // D-05: route the concrete Tandem backend's reconnect-ladder attempt#/backoff-delay into the
+        // Route the concrete Tandem backend's reconnect-ladder attempt#/backoff-delay into the
         // in-memory BLE session log — the same concrete-Tandem-only, opt-in-gated sink shape as
-        // `onCommandLatency` above, via `PumpDiagnosticsProviding` (GO-2 Step 3, 16-10). `bleSessionLog.record`
+        // `onCommandLatency` above, via `PumpDiagnosticsProviding`. `bleSessionLog.record`
         // is itself a no-op unless the shared diagnostics opt-in is on.
         (source as? PumpDiagnosticsProviding)?.onWillRetryReconnect = { [weak self] attempt, delay in
             self?.bleSessionLog.record(.reconnect, detail: "attempt \(attempt), retrying in \(Int(delay))s")
@@ -1031,7 +987,7 @@ public final class AppModel {
     /// elapses, or the user can re-select it in Settings sooner to try again immediately.
     public private(set) var failoverAutoDisabled: String?
 
-    // MARK: - CGM Test flow (Phase 09.20-04, change 3, D-13 UX)
+    // MARK: - CGM Test flow
     //
     // The CgmCredentialsView "Test" action OBSERVES this already-running production instance
     // (`glucoseSource`, armed at launch above) instead of building a second ephemeral central via
@@ -1051,8 +1007,7 @@ public final class AppModel {
     }
 
     /// True while a Test run is polling for an outcome; drives the "Testing…" button label / disabled
-    /// state. Mirrored from `cgmTestCoordinator.state.inProgress` (D-04 mirror pattern, like
-    /// `deliveryBlockedReason`).
+    /// state. Mirrored from `cgmTestCoordinator.state.inProgress` (like `deliveryBlockedReason`).
     public private(set) var cgmTestInProgress = false
     /// Seconds elapsed since the current/most-recent Test run started; holds at its last value once
     /// the run reaches a terminal outcome. Drives the elapsed indicator + the determinate progress bar.
@@ -1068,10 +1023,10 @@ public final class AppModel {
     // `CgmStatusView`, in the same module.
     private(set) var cgmTestOutcome: CgmTestOutcome?
 
-    /// Phase 16 GO-1 Step 3 (REMED-16): the CGM Test-flow poll-loop state machine, extracted into its
-    /// own closure-bound coordinator (D-04 idiom). Wired in `init` right below the coordinator's own
-    /// construction statement (mirrors `deliveryLedgerCoordinator`'s wiring). Never a whole-`AppModel`
-    /// back-pointer — only the `probe`/`failoverAutoDisabled`/`onStateChanged` closures below.
+    /// The CGM Test-flow poll-loop state machine, extracted into its own closure-bound coordinator.
+    /// Wired in `init` right below the coordinator's own construction statement (mirrors
+    /// `deliveryLedgerCoordinator`'s wiring). Never a whole-`AppModel` back-pointer — only the
+    /// `probe`/`failoverAutoDisabled`/`onStateChanged` closures below.
     @ObservationIgnored private let cgmTestCoordinator = CgmTestCoordinator()
 
     /// Start (or restart) the Test flow. Delegates to `cgmTestCoordinator`, which OBSERVES the
@@ -1100,7 +1055,7 @@ public final class AppModel {
     /// Test seam: substitute the persistent history store (e.g. an in-memory `GlucoseHistoryStore`) so a
     /// test can assert on the persist write-through without touching the real on-disk store or leaking
     /// state across tests/suites. Production never calls this — the store is set once at init.
-    /// Phase 16 GO-1 Step 5 (16-05): thin forward to `HistoryPersistenceCoordinator` (facade forwards).
+    /// Thin forward to `HistoryPersistenceCoordinator`.
     func setHistoryStoreForTesting(_ store: GlucoseHistoryStore?) {
         historyPersistence.setHistoryStoreForTesting(store)
     }
@@ -1126,23 +1081,9 @@ public final class AppModel {
     /// surfaces an error (and disables logging) rather than silently no-op'ing a placement into the void.
     var sharedHistoryStore: GlucoseHistoryStore? { historyPersistence.store }
 
-    // Phase 16 GO-1 Step 4 (16-04, D4-07): the R25 (SiteAtlas + caffeine/alcohol tracker backup/restore)
-    // and R26 (unified privacy export) `#if FABOLUS_BACKUP` methods — `siteAtlasBackup`,
-    // `restoreSiteAtlas`, `trackersBackup`/`restoreTrackers`, `buildPrivacyExport`/
-    // `exportPrivacyDataJSON` — moved verbatim to `AppModel+Backup.swift` (same `#if FABOLUS_BACKUP`
-    // gate preserved). None of these 6 methods has any caller elsewhere in AppModel.swift (their only
-    // callers — `BackupRestoreView.createBackup()`/`RestoreSheet` — were git-rm'd in 06-02;
-    // `BackupRemovalBoundaryTests` documents this), so no cross-file access change was needed for the
-    // methods themselves. `buildPrivacyExport` reads `deliveryLedgerCoordinator.currentLedgerSnapshot`
-    // via the new `privacyExportLedgerSnapshot` seam above, NOT by widening the coordinator itself.
-    // The erase/full-reset MARK section immediately below stays UNGATED (D-08) and untouched.
-
     // MARK: F1 (§13) — complete erase of on-device health data (GATED)
-    // D-08 (06-01): the whole erase MARK section below (EraseOutcome, eraseAllOnDeviceHealthData,
-    // eraseEverythingFullReset) stays LIVE/UNGATED on every branch regardless of FABOLUS_BACKUP — the
-    // owner requires the on-device "Delete all on-device data" / "Full reset" affordance to survive
-    // FABOLUS_BACKUP=0. Its one dependency on backup-adjacent code (the CGM Keychain-account list) is
-    // relocated to the always-present CredentialStore (see :1316 below), not gated here.
+    // The erase section below stays LIVE/UNGATED on every branch regardless of FABOLUS_BACKUP — the
+    // on-device "Delete all on-device data" / "Full reset" affordance must survive FABOLUS_BACKUP=0.
 
     /// Outcome of a complete on-device erase attempt.
     public enum EraseOutcome: Equatable {
@@ -1224,9 +1165,6 @@ public final class AppModel {
     /// (its CoreBluetooth peripheral UUID). Enough to tell "a different pump than last time" with no new
     /// pump-protocol read.
     private func currentPumpIdentity() -> String {
-        // GO-1 Step 7 (REMED-16): narrowed from `source is TandemBackend` to `source as? TandemOnlyOps`.
-        // No behavior change — a non-Tandem backend still takes the "sim" branch, now via a nil cast
-        // instead of a failed `is` check.
         if let ops = source as? TandemOnlyOps {
             return "real|\(ops.pumpIdentityDetail)"
         }
@@ -1277,17 +1215,15 @@ public final class AppModel {
     /// when the setting changes).
     public func applyRetention(days: Int) { historyPersistence.applyRetention(days: days) }
 
-    /// D-05 ("Sync now", Phase 09.7-02): manually run the gap-aware history sync, regardless of
-    /// `AppSettings.historySyncEnabled` (the toggle only gates the AUTOMATIC on-connect check — UI-SPEC
-    /// assumption 2). Concrete-Tandem-only via `PumpHistoryProviding` (GO-2 Step 3, 16-10, REMED-16 —
-    /// re-narrowed off `TandemOnlyOps`); a no-op on `MockBackend`.
+    /// Manually run the gap-aware history sync, regardless of `AppSettings.historySyncEnabled` (the
+    /// toggle only gates the AUTOMATIC on-connect check). Concrete-Tandem-only via `PumpHistoryProviding`;
+    /// a no-op on `MockBackend`.
     public func syncHistoryNow() {
         (source as? PumpHistoryProviding)?.triggerManualHistorySync()
     }
 
-    /// D-05 ("Stop syncing"): abort an in-progress manual/automatic gap sync. Non-destructive — only
-    /// what was actually fetched is credited to the persisted coverage map, so the rest stays a real,
-    /// resumable gap for the next connect or a later "Sync now".
+    /// Abort an in-progress manual/automatic gap sync. Non-destructive — only what was actually fetched
+    /// is credited to the persisted coverage map, so the rest stays a real, resumable gap.
     public func stopHistorySync() {
         (source as? PumpHistoryProviding)?.cancelHistorySync()
     }
@@ -1301,28 +1237,10 @@ public final class AppModel {
         historyPersistence.therapyInsights(cgmFallback: glucoseHistory, unit: AppSettings.shared.glucoseDisplayUnit)
     }
 
-    // D4-07 (16-04, DELETED — not carved): `maybeBackfillNightscout()` + its `lastNSBackfill` throttle
-    // field + its `refresh()` call site are DELETED, not moved to a new `AppModel+Nightscout.swift`.
-    // Zero-runtime-reference proof: its guard (`GlucoseSourceConfig.string("nightscout.url") != nil`)
-    // can NEVER be true on `main` — `GlucoseSourceRegistry.enabled` (Phase 5, HEALTH-02) no longer
-    // lists a "nightscout" descriptor, no UI on `main` ever writes the `nightscout.url` config key
-    // (verified: `grep -rn "nightscout.url"` finds only this now-deleted guard and a stale test-file
-    // comment), and even the guard's own `nsPrimary`/`NightscoutBackfill.fetch()` were already
-    // provably inert no-ops (see `NightscoutStub.swift`/`NightscoutStubInertnessTests.swift`, D-04).
-    // The whole method body was therefore unreachable dead code, not merely gated-and-toggleable like
-    // the FABOLUS_BACKUP/NUDGE/HEALTHKIT carves above. `NightscoutUploader.shared.sync(...)` below
-    // (a SEPARATE, unconditionally-called path — see its own note at the `refresh()` call site) is
-    // NOT deleted: it is reachable every `refresh()` tick (not gated behind an unreachable guard), so
-    // it does not meet the same zero-reference bar; left untouched with its rationale recorded there.
-
-    // MARK: - Apple Health (HealthKit) import/export (09.23-02/03, D-05/D-08/D-11/D-12/D-14) — gated
-    // per D-13: the whole hook compiles out of the free/CI build. Phase 16 GO-1 Step 4 (16-04): the
-    // METHODS (import/export routines, throttled auto-import/export wrappers, test seams) moved
-    // verbatim to `AppModel+HealthKit.swift` (same `#if FABOLUS_HEALTHKIT` gate preserved there,
-    // including the top-of-file `HealthKitExportDestination` protocol). These 4 stored properties
-    // stay HERE (a separate-file extension can't declare stored properties / can't see `private`),
-    // widened `private`->`internal` — see the `history` note above for why. `maybeAutoImportAppleHealth`/
-    // `maybeAutoExportAppleHealth` are still called from `refresh()` below (cross-file, `internal`).
+    // MARK: - Apple Health (HealthKit) import/export — gated: the whole hook compiles out of the
+    // free/CI build. Stored properties stay HERE (a separate-file extension can't declare them);
+    // methods live in `AppModel+HealthKit.swift`. `maybeAutoImportAppleHealth`/`maybeAutoExportAppleHealth`
+    // are still called from `refresh()` below.
     #if FABOLUS_HEALTHKIT
     @ObservationIgnored internal lazy var healthKitImportSource: HealthKitImportSource = HealthKitHistoryImporter()
     internal var lastHealthKitAutoImport = Date.distantPast
@@ -1331,11 +1249,8 @@ public final class AppModel {
     #endif
 
     /// The learned alarm-fatigue layer for ADVISORY alerts (complements the pump-alert AlertRuleEngine).
-    /// Phase 16 GO-1 Step 4 (16-04): `updateEatingNudge`/`dismissEatingNudge` (the only readers of
-    /// `alertIntel`) moved to `AppModel+EatingNudge.swift`, so this stored property widens
-    /// `private`->`internal` (same reasoning as the eating-nudge set above). `saveAlertIntel()` moved
-    /// with its only caller (`dismissEatingNudge`); `loadAlertIntel()` stays here — it is only ever
-    /// referenced from this property's own default-value expression, in this same file.
+    /// Widened `private`->`internal` so `AppModel+EatingNudge.swift` can read it. `loadAlertIntel()`
+    /// stays here — it is only ever referenced from this property's own default-value expression.
     #if FABOLUS_NUDGE
     @ObservationIgnored internal var alertIntel = AppModel.loadAlertIntel()
     private static func loadAlertIntel() -> AlertIntelligence {
@@ -1344,27 +1259,17 @@ public final class AppModel {
         return AlertIntelligence()
     }
     #endif
-    // Phase 16 GO-1 Step 4 (16-04): `saveAlertIntel`, `updateEatingNudge`, `dismissEatingNudge`,
-    // `eatingLearnedPlaceCount`, `eatingFeedbackStats`, and `resetEatingPersonalization` moved
-    // verbatim to `AppModel+EatingNudge.swift` (same `#if FABOLUS_NUDGE` gates preserved). See that
-    // file. `updateEatingNudge()` is still called from `refresh()` below (cross-file, `internal`).
 
     /// WR-02 gap closure (05-06) — the SINGLE "can Snooze actually do anything right now" predicate,
-    /// read by `hasSnoozeEligibleAlert` below. Phase 16 GO-1 Step 2: relocated verbatim to
-    /// `FailoverBadgePresenter.snoozeGateAllows` (was already `nonisolated static` — pure, so the
-    /// move is behavior-preserving); see that type for the full predicate doc comment.
+    /// read by `hasSnoozeEligibleAlert` below. Delegates to `FailoverBadgePresenter.snoozeGateAllows`.
 
-    /// Phase 18 (GO-1 Step 8) additive test seam — mirrors `TandemBackend.onLinkDroppedCleanupStepForTesting`
-    /// EXACTLY: a plain optional closure, nil in production (so zero cost), fired at each top-level phase
-    /// boundary and each dispatched effect so `RefreshOrderingCharacterizationTests` can pin the
-    /// `maybeHandlePumpSwitch → merge → façade-assign → effects` order. The top-level phase tags fire from
-    /// `refresh()` below; the effect tags fire from inside `RefreshEffectsCoordinator` (routed through its
-    /// `recordStep` sink) so the SAME suite stays green across the extraction. Never a back-pointer;
+    /// Additive test seam — a plain optional closure, nil in production (so zero cost), fired at each
+    /// top-level phase boundary and each dispatched effect so `RefreshOrderingCharacterizationTests`
+    /// can pin the `maybeHandlePumpSwitch → merge → façade-assign → effects` order. Never a back-pointer;
     /// carries only a flat string tag (safety-edge decisions encoded, e.g. `"connectionEdge:raise"`).
     var refreshEffectOrderRecorderForTesting: ((String) -> Void)?
 
-    /// Phase 18 (GO-1 Step 8): the stateless, closure-bound effects-tail coordinator. Mirrors the inline
-    /// `cgmTestCoordinator = CgmTestCoordinator()` shape (no init args); its sinks are wired in `init`.
+    /// The stateless, closure-bound effects-tail coordinator. Its sinks are wired in `init`.
     @ObservationIgnored private let refreshEffectsCoordinator = RefreshEffectsCoordinator()
 
     private func refresh() {
@@ -1392,12 +1297,12 @@ public final class AppModel {
         if previousConnection != .connected, snap.connection == .connected, deliveryBlockedReason != nil {
             Task { @MainActor [weak self] in await self?.reconcileUnresolvedDeliveries() }
         }
-        // Phase 18 (GO-1 Step 8): capture the four PRE-assignment bookkeeping values, compute the
-        // source-derived facts the coordinator needs, apply the plain façade mirrors (all STAY here —
-        // RESEARCH Pitfall 5), then delegate the effects tail. `RefreshEffectsCoordinator` computes the
-        // four safety edges itself and dispatches only actions through per-action sinks (D-01/D-02); it
-        // holds no AppModel reference and never reads `source`. The top-level ordering trap
-        // (maybeHandlePumpSwitch → merge → façade-assign → effects) is enforced HERE by construction (D-03).
+        // Capture the four PRE-assignment bookkeeping values, compute the source-derived facts the
+        // coordinator needs, apply the plain façade mirrors (all STAY here), then delegate the effects
+        // tail. `RefreshEffectsCoordinator` computes the four safety edges itself and dispatches only
+        // actions through per-action sinks; it holds no AppModel reference and never reads `source`.
+        // The top-level order (maybeHandlePumpSwitch → merge → façade-assign → effects) is enforced
+        // HERE by construction.
         let prevConnection = previousConnection
         let prevGlucoseFresh = previousGlucoseFresh
         let prevUrgentLowActive = urgentLowActive
@@ -1420,19 +1325,17 @@ public final class AppModel {
         iobHistory = source.iobHistory
         bolusMarkers = source.bolusMarkers
         historyEvents = source.historyEvents
-        // GO-2 Step 3 (16-10, REMED-16): re-narrowed from `source as? TandemOnlyOps` to
-        // `source as? PumpHistoryProviding` per TandemOnlyOps's capability-ownership contract.
         if let ops = source as? PumpHistoryProviding { historySyncState = ops.historySyncState }
         let alertsChanged = activeNotifications != source.activeNotifications
         activeNotifications = source.activeNotifications
-        // CX-G-08 (14-10, D1) — mirrored in the SAME synchronous block as activeNotifications above
-        // (same-poll invariant); never a live `source.` read at compose time.
+        // Mirrored in the SAME synchronous block as activeNotifications above (same-poll invariant);
+        // never a live `source.` read at compose time.
         rawActiveNotifications = source.rawActiveNotifications
         alertDebug = source.alertDebug
         let widgetLock = widgetBolusLock   // A-05: same evaluator delivery routes through
         // Delegate the effects tail. Single call ⇒ the coordinator-internal order is structurally
-        // un-reorderable from this call site. The four `prev*` values are the pre-assignment bookkeeping
-        // (D-03/D-04); the private dedupe keys are passed so their single source of truth stays here.
+        // un-reorderable from this call site. The four `prev*` values are the pre-assignment bookkeeping;
+        // the private dedupe keys are passed so their single source of truth stays here.
         refreshEffectsCoordinator.performEffects(
             snapshot: snap,
             glucoseHistory: glucoseHistory,
@@ -1456,7 +1359,7 @@ public final class AppModel {
         // read exactly once, before the call, within this synchronous @MainActor invocation, so batching is
         // behavior-identical). `urgentLowActive = urgentLowNow` matches the old per-edge writes
         // (raise→true / clear→false / none→unchanged). `lastArmedGlucoseDate` is NOT reassigned here — it is
-        // written only inside the fused `onStalenessWatchdogArm`/`onStalenessWatchdogCancel` sink (D-04).
+        // written only inside the fused `onStalenessWatchdogArm`/`onStalenessWatchdogCancel` sink.
         previousConnection = snap.connection
         previousGlucoseFresh = cgmFresh
         urgentLowActive = urgentLowNow
@@ -1527,7 +1430,7 @@ public final class AppModel {
     private(set) var lastHostDeliveryAt: Date?
 
     public func deliverBolus(units: Double, carbsGrams: Double? = nil, bgMgdl: Int? = nil, iobUnits: Double? = nil) async {
-        // P8: the phone's own standard bolus, gated through the single evaluator (child mode + phone
+        // The phone's own standard bolus, gated through the single evaluator (child mode + phone
         // read-only). Reachable only from the phone UI, so the surface is always `.phoneUI`.
         guard allow(.deliverBolus, from: .phoneUI) else { return }
         // Reverse approval (child-mode-only): when child mode is on and set to require a paired
@@ -1563,7 +1466,7 @@ public final class AppModel {
         case .indeterminate:
             lastError = Self.indeterminateOutcomeLockedCopy
             lastHostDeliveryAt = Date()   // IN-02: an indeterminate outcome MAY have delivered — stamp VA-07 supersession too (defense-in-depth)
-            // REMED-17: an immediate GOVERNED heads-up (.warning) — alongside, never replacing, the
+            // An immediate GOVERNED heads-up (.warning) — alongside, never replacing, the
             // AUTHORITATIVE `.bolusReconciliation` post `reconcileUnresolvedDeliveries` issues later for
             // this same durable ledger entry. Distinct dedupe namespace so neither coalesces the other.
             postSafety(.bolusIndeterminate, severity: .warning,
@@ -1621,7 +1524,7 @@ public final class AppModel {
     /// Cancel a bolus that's waiting for remote approval (user backed out).
     public func cancelPendingApproval() { pendingApproval = nil }
 
-    /// Deliver an extended (combo) bolus: `nowUnits` up front, the rest over `durationMinutes`. P8: gated
+    /// Deliver an extended (combo) bolus: `nowUnits` up front, the rest over `durationMinutes`. Gated
     /// through the single evaluator by `surface` — `.phoneUI` (child + phone read-only) for the phone's
     /// own combo bolus; an authenticated peer passes `.macPeer` + its `peerId` so the evaluator enforces
     /// the `.extendedBolus` peer permission and `remotesReadOnly` (owner decision 2026-08-05) while
@@ -1655,7 +1558,7 @@ public final class AppModel {
         case .indeterminate:
             lastError = Self.indeterminateOutcomeLockedCopy
             lastHostDeliveryAt = Date()   // IN-02: an indeterminate outcome MAY have delivered — stamp VA-07 supersession too (defense-in-depth)
-            // REMED-17: an immediate GOVERNED heads-up (.warning), alongside — never replacing — the
+            // An immediate GOVERNED heads-up (.warning), alongside — never replacing — the
             // AUTHORITATIVE `.bolusReconciliation` post issued later for this same ledger entry.
             postSafety(.bolusIndeterminate, severity: .warning,
                        title: Self.indeterminateOutcomeLockedCopy, body: Self.indeterminateOutcomeLockedCopy,
@@ -1669,7 +1572,7 @@ public final class AppModel {
         refresh()
     }
 
-    /// Stop a running bolus. P8: `.childOnly` — the evaluator applies child mode (local/watch/Garmin) and
+    /// Stop a running bolus. `.childOnly` — the evaluator applies child mode (local/watch/Garmin) and
     /// the authenticated-peer `.cancelBolus` permission, but NEVER read-only-blocks it: cancelling is a
     /// safety STOP that must stay available to a read-only viewer on every surface.
     public func cancelBolus(from surface: AccessPolicy.Surface = .phoneUI, peerId: String = "local") async {
@@ -1691,7 +1594,7 @@ public final class AppModel {
     public var pumpReady: Bool { snapshot.connection == .connected }
 
     /// The standard side-effects of a pump control op with NO gating (the caller has already gated via
-    /// the P8 evaluator): surface a thrown error, refresh, and push the new state to remotes promptly.
+    /// the AccessPolicy evaluator): surface a thrown error, refresh, and push the new state to remotes promptly.
     /// Control actions (suspend/resume, temp basal, modes…) are time-sensitive, so we don't wait on the
     /// 15 s throttle. Shared tail for `runControl` / `runGatedTherapy` / the batch reconfigure.
     private func performControl(_ op: () async throws -> Void) async {
@@ -1699,7 +1602,7 @@ public final class AppModel {
             try await op()
             lastError = nil
         } catch PumpBLEClient.ClientError.identityNotEstablished {
-            // CC-06/C4 (REMED-15.5): a distinct, ACTIONABLE message for the trusted-identity send-gate
+            // A distinct, ACTIONABLE message for the trusted-identity send-gate
             // refusal — NOT the generic `error.localizedDescription` fallback (which would read as an
             // opaque/scary error for what is, once the Task 1 C8 fix lands, a genuinely transient
             // condition: a real Mobi is no longer permanently over-gated across a silent reconnect — codex
@@ -1715,7 +1618,7 @@ public final class AppModel {
         forceStatusPush()
     }
 
-    /// P8: run a control write only if the single `AccessPolicy` evaluator permits it from `surface`.
+    /// Run a control write only if the single `AccessPolicy` evaluator permits it from `surface`.
     /// Replaces the old inline `childBlocked(.advancedControl)` + `readOnlyBlocked` pair with the one
     /// decision point, and ADDS the pump-capability + advanced-control-opt-in gate at the funnel
     /// (defense-in-depth, owner decision 2026-08-05) — matching what the UI's `advancedControlAllowed`
@@ -1751,7 +1654,7 @@ public final class AppModel {
         return Date().timeIntervalSince(at) <= Self.unverifiedAckMaxAge
     }
 
-    /// Run an unverified therapy-defining write through the single P8 evaluator, which folds the
+    /// Run an unverified therapy-defining write through the single AccessPolicy evaluator, which folds the
     /// unverified-feature ack (Gate 1) in with child-mode, phone read-only, and the capability +
     /// advanced-control gate — so a new caller can't reach the backend without the on-screen warning AND
     /// the other interlocks. Fails closed (surfaces `lastError`, never touches the backend). One-shot:
@@ -1875,11 +1778,10 @@ public final class AppModel {
 
     // MARK: - §2.1(2)(3)(4) provenance recording (S7 store, S8 wiring)
     //
-    // Phase 16 GO-1 Step 6 (16-06, REMED-16): the disclosure sidecar itself lives in
-    // `ClinicianEditProvenanceRecorder` (closure-free — every method takes plain values, incl. the
-    // write's success bit, and returns plain values; zero back-pointer either direction, D-04). The
-    // therapy WRITES (`setMaxBolus`/`modifyProfileSegment`/…) and `revertSetting`/`revertSegmentField`
-    // (R47, just below) stay HERE in the gated funnel — only the bookkeeping moved.
+    // The disclosure sidecar itself lives in `ClinicianEditProvenanceRecorder` (plain values in/out,
+    // including the write's success bit; no back-pointer). The therapy WRITES (`setMaxBolus`/
+    // `modifyProfileSegment`/…) and `revertSetting`/`revertSegmentField` stay HERE in the gated funnel
+    // — only the bookkeeping moved.
     @ObservationIgnored private let provenanceRecorder = ClinicianEditProvenanceRecorder()
 
     /// The provenance / change-log sidecar (S7), forwarded to `ClinicianEditProvenanceRecorder` so every
@@ -2005,20 +1907,20 @@ public final class AppModel {
                                                          afterOnSuccess: .bool(enabled), succeeded: lastError == nil)
     }
     public func refreshControlIQSettings() async { await source.refreshControlIQSettings(); refresh() }
-    // Sleep schedule — universal/unsigned read (Phase 09.10 D-04): ungated passthrough, no
-    // runControl/runGatedTherapy wrapper. The write (09.10-02) will route through runGatedTherapy.
+    // Sleep schedule — universal/unsigned read: ungated passthrough, no runControl/runGatedTherapy
+    // wrapper. The write routes through runGatedTherapy.
     public func refreshSleepSchedule() async { await source.refreshSleepSchedule(); refresh() }
-    /// Write one native Sleep-schedule slot (Phase 09.10 D-04) — the Mobi editor for a pump with no
-    /// on-pump way to set this. Therapy-defining-adjacent unverified write → ACK funnel `runGatedTherapy`
-    /// (child-mode + phone read-only + advanced opt-in + the one-shot unverified ack + the dedicated
-    /// `supportsSleepScheduleWrite` capability, all via the single P8 evaluator). `op` is the RAW backend
-    /// write, mirroring `setControlIQ`/`createProfile` — never re-enter `runControl`.
+    /// Write one native Sleep-schedule slot — the Mobi editor for a pump with no on-pump way to set
+    /// this. Therapy-defining-adjacent unverified write → ACK funnel `runGatedTherapy` (child-mode +
+    /// phone read-only + advanced opt-in + the one-shot unverified ack + the dedicated
+    /// `supportsSleepScheduleWrite` capability, all via the single AccessPolicy evaluator). `op` is
+    /// the RAW backend write, mirroring `setControlIQ`/`createProfile` — never re-enter `runControl`.
     ///
     /// `sendControl` is fire-and-forget (doesn't itself inspect the ack status — see `TandemBackend`'s
     /// `ChangeTimeDateRequest` note), so after the write completes this consumes the concrete-Tandem-only
-    /// `sleepScheduleWriteError` one-shot sink, via `TandemOnlyOps` (GO-1 Step 7, REMED-16 — mirrors
-    /// `onCommandLatency`/`historySyncState`), to surface a pump-rejected write
-    /// (`SetSleepScheduleResponse.status != 0`) via `lastError`.
+    /// `sleepScheduleWriteError` one-shot sink, via `TandemOnlyOps` (mirrors `onCommandLatency`/
+    /// `historySyncState`), to surface a pump-rejected write (`SetSleepScheduleResponse.status != 0`)
+    /// via `lastError`.
     public func setSleepSchedule(slot: Int, enabled: Bool, activeDays: Int, startMinute: Int, endMinute: Int) async {
         await runGatedTherapy(.setSleepSchedule) {
             try await self.source.setSleepSchedule(slot: slot, enabled: enabled, activeDays: activeDays,
@@ -2029,7 +1931,7 @@ public final class AppModel {
         }
     }
     public func refreshProfiles() async { await source.refreshProfiles(); refresh() }
-    // FB-06 / P8: switching the active profile, renaming, and deleting a profile are therapy-defining
+    // Switching the active profile, renaming, and deleting a profile are therapy-defining
     // (they change the active basal / carb-ratio / ISF the pump doses from), so they route through the
     // SAME single evaluator as the rest of IDP CRUD — `runGatedTherapy(action)` folds the unverified
     // ack in with child-mode, read-only, and the capability + advanced-control gate, then runs the RAW
@@ -2143,7 +2045,7 @@ public final class AppModel {
     /// bolus. Experimental/unvalidated; therapy-defining, so it's fully gated + confirmed upstream.
     /// Returns false (and sets `lastError`) on the first failure.
     func applyPumpSettings(_ p: PumpSettingsBackup) async -> Bool {
-        // FB-06 / P8: the whole batch is ONE gated therapy gesture. Gate it once through the single
+        // The whole batch is ONE gated therapy gesture. Gate it once through the single
         // evaluator (using `.createProfile` as the representative unverified-ack write): this folds the
         // ack in with child-mode, phone read-only, and the capability + advanced-control gate — the same
         // interlocks the per-sub-write `runControl` used to apply, now checked once at the gesture (they
@@ -2222,7 +2124,7 @@ public final class AppModel {
             return
         }
         if deliveryLedgerCoordinator.isSettled(peerId: peerId, requestId: requestId) { return }
-        // P8: gate the request through the single evaluator (child mode for local/watch/Garmin; the
+        // Gate the request through the single evaluator (child mode for local/watch/Garmin; the
         // `.bolus` peer permission + `remotesReadOnly` for an authenticated peer). Echo the exact reason.
         let decision = accessDecision(.deliverBolus, from: surface, peerId: peerId)
         guard decision.allowed else {
@@ -2338,7 +2240,7 @@ public final class AppModel {
                 passcodeSatisfied = BolusPasscodeStore.verify(entered)
             }
         }
-        // P8: gate through the single evaluator (child mode for local/Garmin; the `.bolus` peer
+        // Gate through the single evaluator (child mode for local/Garmin; the `.bolus` peer
         // permission + `remotesReadOnly` for an authenticated peer). Echo the exact denial reason.
         let decision = accessDecision(.deliverBolus, from: surface, peerId: peerId,
                                       bolusPasscodeRequired: passcodeRequired,
@@ -2382,7 +2284,7 @@ public final class AppModel {
             return
         }
         let dkey = RemoteBolusLedger.doseKey(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
-        // T-14-01 (CX-G-01 phone half): reject a re-composed dose whose CONTENT matches this SAME peer's
+        // Reject a re-composed dose whose CONTENT matches this SAME peer's
         // delivery that was authoritatively delivered-or-maybe-delivered within the recency window,
         // REGARDLESS of a FRESH requestId — begin()'s (peer,requestId) key alone cannot see this (a
         // settled-echo-loss retry hazard: the remote never saw the terminal echo and resends with a new
@@ -2500,7 +2402,7 @@ public final class AppModel {
                              usedIncludedStaleBG: usedStale)
     }
 
-    // MARK: - Durable delivery ledger (P0) — thin adapters over `DeliveryLedgerCoordinator` (D-04)
+    // MARK: - Durable delivery ledger (P0) — thin adapters over `DeliveryLedgerCoordinator`
 
     /// The outcome of a delivery routed through the coordinator's durable ledger + global
     /// unresolved-delivery block. A type alias (not a redeclaration) — the coordinator is the single
@@ -2514,7 +2416,7 @@ public final class AppModel {
     }
 
     /// R2-12: the durable Garmin terminal outcomes (oldest→newest) for the bridge's launch-time echo re-seed.
-    /// Thin adapter over `DeliveryLedgerCoordinator.garminTerminalOutcomes()` (D-04).
+    /// Thin adapter over `DeliveryLedgerCoordinator.garminTerminalOutcomes()`.
     func garminTerminalOutcomes() -> [(requestId: String, status: String, message: String?, deliveredUnits: Double?)] {
         deliveryLedgerCoordinator.garminTerminalOutcomes()
     }
@@ -2560,7 +2462,7 @@ public final class AppModel {
             // Peer wire: this `.unknown` echo message is UNCHANGED — already the locked copy, byte-identical.
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .unknown,
                                message: Self.indeterminateOutcomeLockedCopy))
-            // REMED-17: an immediate GOVERNED heads-up (.warning), alongside — never replacing — the
+            // An immediate GOVERNED heads-up (.warning), alongside — never replacing — the
             // AUTHORITATIVE `.bolusReconciliation` post issued later for this same ledger entry.
             postSafety(.bolusIndeterminate, severity: .warning,
                        title: Self.indeterminateOutcomeLockedCopy, body: Self.indeterminateOutcomeLockedCopy,
@@ -2594,7 +2496,7 @@ public final class AppModel {
     /// Distinct from `.remoteBolusRejected` (a dose REFUSED before delivery by a policy/divergence/stale-
     /// approval check — it never reached the pump) and, deliberately, NEVER posted for an INDETERMINATE
     /// outcome: "outcome unknown" may in fact have delivered, so a "failed" banner would be a lie — this
-    /// invariant is preserved unconditionally. REMED-17 (Plan 17-13): an indeterminate outcome instead
+    /// invariant is preserved unconditionally. An indeterminate outcome instead
     /// posts an immediate GOVERNED `.bolusIndeterminate` (.warning) heads-up via `postSafety` at all four
     /// delivery sites — additive, point-in-time, never persisted/replayed, does not break through DND
     /// (owner's Gentle disposition). The AUTHORITATIVE resolution is still owned by the never-suppressible
@@ -2614,7 +2516,7 @@ public final class AppModel {
     /// Same validated signed path as a remote bolus; returns the outcome so the widget can show
     /// delivered/cancelled/failed in place.
     public func deliverWidgetBolus(requestId: String, units: Double, carbsGrams: Double? = nil, bgMgdl: Int? = nil) async -> (delivered: Double, cancelled: Bool, error: String?) {
-        // P8: the Quick-Bolus widget is a LOCAL surface, so the single evaluator applies child mode AND
+        // The Quick-Bolus widget is a LOCAL surface, so the single evaluator applies child mode AND
         // phone read-only (audit A-05 — the widget must honor read-only; the remote-peer paths bypass it).
         let decision = accessDecision(.deliverBolus, from: .quickBolusWidget)
         guard decision.allowed else {
@@ -2648,13 +2550,13 @@ public final class AppModel {
             return (delivered, cancelled, nil)
         case .indeterminate:
             // Peer wire: the `.unknown` echo message stays this EXACT ORIGINAL shorter string,
-            // byte-identical — split out from the USER-FACING copy below (REMED-17 codex CRITICAL #2).
+            // byte-identical — split out from the USER-FACING copy below.
             let echoMsg = Self.widgetIndeterminateEchoMessage
             let userMsg = Self.indeterminateOutcomeLockedCopy   // USER-FACING copy converges to the locked copy
             lastError = userMsg
             lastHostDeliveryAt = Date()   // IN-02: an indeterminate outcome MAY have delivered — stamp VA-07 supersession too (defense-in-depth)
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .unknown, message: echoMsg))
-            // REMED-17: an immediate GOVERNED heads-up (.warning), alongside — never replacing — the
+            // An immediate GOVERNED heads-up (.warning), alongside — never replacing — the
             // AUTHORITATIVE `.bolusReconciliation` post issued later for this same ledger entry.
             postSafety(.bolusIndeterminate, severity: .warning,
                        title: Self.indeterminateOutcomeLockedCopy, body: Self.indeterminateOutcomeLockedCopy,

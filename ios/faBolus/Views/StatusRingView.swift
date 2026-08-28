@@ -11,19 +11,18 @@ struct StatusRingView: View {
     /// feed is live, so nothing extra is drawn (keeps the ring clean in the common case).
     var failover: (name: String, reason: String)? = nil
 
-    // N12 (Dynamic Type): the big glucose number and the ring frame scale with the user's text-size
+    // Dynamic Type: the big glucose number and the ring frame scale with the user's text-size
     // setting (up to the accessibility sizes), instead of a fixed 44 pt / 180 pt that clips or looks
     // tiny for low-vision users. `relativeTo: .largeTitle` ties both to the same scale curve.
     @ScaledMetric(relativeTo: .largeTitle) private var glucoseFontSize: CGFloat = 44
     @ScaledMetric(relativeTo: .largeTitle) private var ringSize: CGFloat = 180
 
-    /// Phase 04-01 (D-10): the display-unit funnel this ring's glucose number + caption route
-    /// through. mg/dL mode renders byte-identical to before this phase.
+    /// The display-unit funnel this ring's glucose number + caption route through.
     private var unit: GlucoseUnit { AppSettings.shared.glucoseDisplayUnit }
     private var unitLabel: String { unit == .mmol ? "mmol/L" : "mg/dL" }
-    /// Owner-requested toggle: gates ONLY the persistent unit CAPTION drawn below the glucose number
-    /// (and its no-reading placeholder) — never the VoiceOver `a11yLabel` below, which always speaks
-    /// the unit regardless of this flag.
+    /// Gates ONLY the persistent unit CAPTION drawn below the glucose number (and its no-reading
+    /// placeholder) — never the VoiceOver `a11yLabel` below, which always speaks the unit
+    /// regardless of this flag.
     private var showUnitLabel: Bool { AppSettings.shared.showGlucoseUnitLabels }
 
     var body: some View {
@@ -74,17 +73,17 @@ struct StatusRingView: View {
                 // No reading, or past the "hide" delay → show no value.
                 Text("—").font(.system(size: glucoseFontSize, weight: .bold, design: .rounded))
                     .lineLimit(1).minimumScaleFactor(0.5)
-                // Owner-requested toggle: with labels hidden, the "no reading yet" placeholder can't
-                // fall back to the (now-gated) unit caption — show a neutral em dash instead, never
-                // the unit and never a blank string.
+                // With labels hidden, the "no reading yet" placeholder can't fall back to the
+                // (now-gated) unit caption — show a neutral em dash instead, never the unit and
+                // never a blank string.
                 Text(snapshot.glucose == nil ? (showUnitLabel ? unitLabel : "—") : "no recent CGM")
                     .font(.caption2).foregroundStyle(.secondary)
             }
             Text(snapshot.connection.rawValue)
                 .font(.caption).foregroundStyle(.secondary)
-            // P12 (app-boundary state): when the link is down for a specific reason (Bluetooth off,
-            // permission denied, …) say so, instead of a bare "Disconnected". nil on remotes (asSnapshot
-            // never sets it), so this line only appears on the phone that owns the pump link.
+            // When the link is down for a specific reason (Bluetooth off, permission denied, …)
+            // say so, instead of a bare "Disconnected". nil on remotes (`asSnapshot` never sets
+            // it), so this line only appears on the phone that owns the pump link.
             if let detail = snapshot.connectionDetail {
                 Text(Self.humanized(detail))
                     .font(.caption2).foregroundStyle(AppTheme.low)
@@ -105,7 +104,7 @@ struct StatusRingView: View {
                     .accessibilityHint(f.reason)
             }
         }
-        // N12 (VoiceOver): the whole ring reads as ONE element — "Glucose 124 mg/dL, ↑, 2 min ago,
+        // VoiceOver: the whole ring reads as ONE element — "Glucose 124 mg/dL, ↑, 2 min ago,
         // Connected" — rather than five separate swipe stops. `.ignore` (not `.combine`) so the label
         // reads a proper sentence with the word "Glucose" up front and the word "stale" injected when
         // the reading is de-emphasized (a signal that is otherwise conveyed only by the grey color).
@@ -114,7 +113,7 @@ struct StatusRingView: View {
         .accessibilityHint(failover?.reason ?? "")
     }
 
-    /// N12: the spoken description of the ring, mirroring what's drawn. Includes "stale" whenever the
+    /// The spoken description of the ring, mirroring what's drawn. Includes "stale" whenever the
     /// reading is de-emphasized so a VoiceOver user gets the same "not current" cue the grey color gives.
     private func a11yLabel(now: Date) -> String {
         let present = GlucoseFreshness.presentation(of: snapshot.glucoseDate, now: now)
@@ -122,7 +121,7 @@ struct StatusRingView: View {
         if let g = snapshot.glucose, present != .hidden {
             parts.append("Glucose \(unit.format(mgdl: g)) \(unitLabel)")
             parts.append(snapshot.trend)
-            // F4 (A5): speak the band word too when it's a live (band-colored) reading — the spoken
+            // Speak the band word too when it's a live (band-colored) reading — the spoken
             // parallel of the on-screen band label, so the band never depends on color alone.
             if present == .fresh { parts.append(GlucoseRange.classify(g).shortLabel) }
             if present == .stale { parts.append("stale") }
@@ -136,7 +135,7 @@ struct StatusRingView: View {
         return parts.joined(separator: ", ")
     }
 
-    /// D3-03: `TandemBackend.applyClientError` (byte-guarded — not editable here) has one fallback path
+    /// `TandemBackend.applyClientError` (byte-guarded — not editable here) has one fallback path
     /// that sets `connectionDetail = "\(ns.domain)#\(ns.code) \(ns.localizedDescription)"` when no more
     /// specific, already-human state string applies. Every OTHER `connectionDetail` assignment in
     /// TandemBackend is already a curated sentence ("Bluetooth is off", "Couldn't reconnect securely.

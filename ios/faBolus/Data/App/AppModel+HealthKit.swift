@@ -1,28 +1,11 @@
 import Foundation
 import faBolusCore
 
-/// Phase 16 GO-1 Step 4 (16-04, REMED-16, R31/R32) — the Apple Health (HealthKit) import/export
-/// METHODS moved verbatim out of `AppModel.swift` into this separate-file extension, alongside the
-/// `HealthKitExportDestination` seam protocol (also moved verbatim, previously declared at the top of
-/// `AppModel.swift`). Behavior-preserving: every function body below is an unchanged copy of the
-/// original `AppModel` member, with the same `#if FABOLUS_HEALTHKIT` gate preserved exactly (per D-13,
-/// the whole hook compiles out of the free/CI build).
-///
-/// **Review concern #1:** the 4 stored properties these methods touch (`healthKitImportSource`,
-/// `lastHealthKitAutoImport`, `healthKitExportDestination`, `lastHealthKitAutoExport`) stay declared
-/// in `AppModel.swift`'s main body — a separate-file extension can't declare stored properties and
-/// can't see a `private` member — widened `private`->`internal` there (never beyond `internal`). The
-/// shared `history` property (also read here) was already widened by the eating-nudge carve above.
-/// `Self.healthKitImportSourceIDs` is a `static let`, which Swift DOES allow an extension (even in a
-/// separate file) to declare directly, so it moves here with zero access change.
-///
-/// `maybeAutoImportAppleHealth()`/`maybeAutoExportAppleHealth()` are still called from
-/// `AppModel.refresh()` in the main file, which is why they are `internal` (dropped `private`) below;
-/// `runHealthKitImport`/`runHealthKitAutoExport` keep their original access (all their other callers
-/// moved here with them).
+/// Apple Health import/export methods. Stored properties stay on `AppModel`. The whole hook compiles
+/// out of the free/CI build (`#if FABOLUS_HEALTHKIT`).
 #if FABOLUS_HEALTHKIT
 
-/// Phase 09.23-03 (D-08/D-12/D-14): the seam `AppModel`'s export hook calls through — lets a test
+/// Seam `AppModel`'s export hook calls through — lets a test
 /// substitute a fake (never touching real `HKHealthStore`) to verify enabled-type routing, mirroring
 /// `HealthKitImportSource`'s role on the import side (`Shared/HealthKitHistoryImporter.swift`).
 /// `HealthKitExporter` conforms below; `AppModel`'s `#if FABOLUS_HEALTHKIT` property is typed as
