@@ -19,12 +19,15 @@ restate it here.
 ## Commands
 - **Core unit tests:** `swift test --package-path Packages/faBolusCore`
 - **Simulator (iOS app + widgets):** `./scripts/build-sim.sh`
-- **Device build:** set `DEVELOPMENT_TEAM` in `LocalConfig.xcconfig`, then `xcodegen generate` →
+- **Device build:** set `DEVELOPMENT_TEAM` in `LocalConfig.xcconfig`, then `./scripts/generate-project.sh` →
   `xcodebuild -scheme faBolus -destination 'id=<UDID>' -allowProvisioningUpdates -derivedDataPath build/DDdevice build` →
   `xcrun devicectl device install app --device <UDID> build/DDdevice/Build/Products/Debug-iphoneos/faBolus.app`
 - **Schema drift** (after touching `RemoteCommand`): `./scripts/check-schema-drift.sh`
-- Run `xcodegen generate` after editing `project.yml`. New files under globbed dirs (`ios/faBolus`,
-  `Shared`) are picked up automatically.
+- Run `./scripts/generate-project.sh` — **not** bare `xcodegen generate` — after editing
+  `project.yml`. `project.yml` is a template: the script derives the real spec by picking the
+  pinned-vs-local `TandemKit` block and dropping retired compile flags. Bare `xcodegen` keeps both
+  `TandemKit` blocks, silently resolves to the unpinned sibling checkout, and fails to compile.
+  New files under globbed dirs (`ios/faBolus`, `Shared`) are picked up automatically.
 
 There is **no Watch app on `main`**. Do not build `faBolusWatch` or assume a `watch/` tree.
 

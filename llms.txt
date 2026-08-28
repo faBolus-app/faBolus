@@ -1,8 +1,10 @@
 # faBolus — LLM guide
 
 > A pump-agnostic remote-bolus + status app for Tandem t:slim X2. The iPhone owns the pump's
-> Bluetooth link (via sibling `TandemKit`); Garmin, Mac, widgets, and a second iPhone are thin
-> remotes that relay confirmed commands to the host phone. Experimental, not FDA-cleared.
+> Bluetooth link (via sibling `TandemKit`). On `main` the remotes are the Garmin watch app and
+> the Quick-Bolus widget: each takes one explicit human confirmation, then relays the dose to the
+> host phone, which recomputes and clamps it before delivering. The Mac menu-bar and
+> iPhone-peer remote clients are off `main` (BRANCHES.md §1.2c). Experimental, not FDA-cleared.
 
 ## Start with
 - [AGENTS.md](AGENTS.md) — commands, how-to-add-X, safety, gotchas.
