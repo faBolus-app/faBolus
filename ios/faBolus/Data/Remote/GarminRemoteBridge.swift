@@ -413,6 +413,15 @@ final class GarminRemoteBridge: NSObject {
                                               stateRestorationIdentifier: "fabolus.connectiq")
         model.addRemoteEcho { [weak self] cmd in self?.send(cmd) }
         // Proactively push status to the watch when pump data changes (prompt refresh while open).
+        // Phase 20 (R2, D-04 / subsumes Phase-19 G-M2): this proactive push is ALSO the event-driven
+        // push-wake trigger for the CLOSED-app Garmin background service. AppModel already drives it on
+        // BOTH channels R2 needs — a new CGM value (`pushStatusIfNeeded`, coalesced by the cadence rule)
+        // and a new/critical pump alert (`forceStatusPush` via `onAlertsChangedFanout`, throttle-bypassed) —
+        // so no new phone-side trigger is required. The watch turns these into an immediate closed-app
+        // refresh via `Background.registerForPhoneAppMessageEvent` → `BgServiceDelegate.onPhoneAppMessage`
+        // (faBolusGarmin), instead of waiting for its own ~5-min temporal poll. Still subject to WR-07
+        // readiness + the single-in-flight/coalescing discipline in `send`/`pump` (no bypass). This is a
+        // statusRead-shaped push only — never a signed/dose-authorizing command.
         model.addStatusListener { [weak self] snap in self?.sendStatus(snap) }
         model.setupGarmin = { [weak self] in self?.selectDevice() }
         // Phone tells the watch when to run wrist eating-sensing (battery: only when wanted).
