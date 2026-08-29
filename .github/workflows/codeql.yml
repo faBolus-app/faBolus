@@ -56,8 +56,17 @@ jobs:
       - name: Place TandemKit as the sibling checkout project.yml expects
         run: mv repos/TandemKit ../TandemKit
 
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_26.app || sudo xcode-select -s /Applications/Xcode.app
+      # Select the NEWEST installed Xcode, exactly as ci.yml's `ios-build` job does. The previous
+      # hardcoded `Xcode_26.app` does not exist on the runner image, so this fell back to the default
+      # `Xcode.app` — an older toolchain whose stricter Sendable checking rejects
+      # `UNUserNotificationCenter.pendingNotificationRequests()` in NotificationCoordinator and failed
+      # the build. The same commit compiles cleanly in `ios-build`, which picks the newest Xcode.
+      - name: Select the newest Xcode
+        run: |
+          echo "Installed Xcodes:"; ls -d /Applications/Xcode*.app 2>/dev/null || true
+          NEWEST="$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)"
+          if [ -n "$NEWEST" ]; then sudo xcode-select -s "$NEWEST/Contents/Developer"; fi
+          echo "Selected Xcode:"; xcodebuild -version
 
       - name: Install XcodeGen
         run: brew install xcodegen

@@ -20,6 +20,13 @@ if [ "${1:-}" = "--lint" ]; then
   MODE=lint
 fi
 
+# swift-format's OUTPUT is version-dependent, so "is the tree formatted?" is only meaningful against a
+# known binary. Default to Xcode's, but let CI pin one (SWIFT_FORMAT=$(brew --prefix)/bin/swift-format)
+# — the runner images lag Xcode by several point releases, and 6.2.3 formats 3 of these files
+# differently from 6.3.0. Homebrew's swift-format 603.0.0 is byte-identical to Xcode 26.6's 6.3.0
+# (verified on exactly those 3 files), which makes it a stable pin.
+SWIFT_FORMAT="${SWIFT_FORMAT:-$(xcrun --find swift-format)}"
+
 # Vendored: ios/faBolus/Vendor (LoopPowerPack) and the four vendored Packages.
 FILES=()
 while IFS= read -r f; do FILES+=("$f"); done < <(
@@ -43,11 +50,11 @@ fi
 # formatted tree.
 # Report the tool version: swift-format's output is version-dependent, so "is the tree formatted?"
 # is only a meaningful question relative to a known formatter. A different Xcode formats differently.
-echo "swift-format $(xcrun swift-format --version) (from $(xcrun --find swift-format))"
+echo "swift-format $("$SWIFT_FORMAT" --version) (from $SWIFT_FORMAT)"
 
 # Fail LOUDLY and separately if swift-format cannot even read the config. Without this the loop below
 # would report every file as "unformatted" — which is what a stale Xcode on a CI runner actually did.
-if ! probe=$(xcrun swift-format format "${FILES[0]}" 2>&1 >/dev/null); then
+if ! probe=$("$SWIFT_FORMAT" format "${FILES[0]}" 2>&1 >/dev/null); then
   echo "❌ swift-format could not run — this is a TOOL/CONFIG problem, not an unformatted tree:" >&2
   echo "   $probe" >&2
   echo "   .swift-format is written for the swift-format shipped with Xcode 26.6 (6.3.0). An older" >&2
@@ -58,7 +65,7 @@ fi
 if [ "$MODE" = lint ]; then
   unformatted=()
   for f in "${FILES[@]}"; do
-    if ! xcrun swift-format format "$f" 2>/dev/null | diff -q - "$f" >/dev/null 2>&1; then
+    if ! "$SWIFT_FORMAT" format "$f" 2>/dev/null | diff -q - "$f" >/dev/null 2>&1; then
       unformatted+=("$f")
     fi
   done
@@ -69,6 +76,6 @@ if [ "$MODE" = lint ]; then
   fi
   echo "✅ ${#FILES[@]} first-party Swift files are formatted"
 else
-  printf '%s\n' "${FILES[@]}" | xargs xcrun swift-format format --in-place --parallel
+  printf '%s\n' "${FILES[@]}" | xargs "$SWIFT_FORMAT" format --in-place --parallel
   echo "✅ formatted ${#FILES[@]} first-party Swift files"
 fi

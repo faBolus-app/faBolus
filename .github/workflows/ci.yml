@@ -228,26 +228,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Pick the NEWEST installed Xcode, not a hardcoded name: swift-format's output is
-      # version-dependent, and the runner image's Xcode set changes over time.
-      - name: Select the newest Xcode
-        run: |
-          newest=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
-          echo "selecting $newest"
-          sudo xcode-select -s "$newest"
-          xcodebuild -version | head -1
+      # PIN the formatter rather than using the runner's Xcode. The image lags Xcode by several point
+      # releases (it shipped 26.3 / swift-format 6.2.3 while .swift-format targets 26.6 / 6.3.0), and
+      # 6.2.3 formats 3 of these files differently — which made this check report a false "unformatted
+      # tree". Homebrew's swift-format 603.0.0 is byte-identical to Xcode 26.6's 6.3.0, verified on
+      # exactly those 3 files, so it is a stable single source of truth for both CI and developers.
+      - name: Install the pinned swift-format
+        run: brew list swift-format >/dev/null 2>&1 || brew install swift-format
 
-      # `format.sh --lint` exits 2 (not 1) when swift-format itself cannot run or cannot read the
-      # config — a stale runner Xcode, not an unformatted tree. Treat that as a skip-with-notice
-      # rather than a finding, so the report never tells anyone to reformat for an older tool.
+      # `format.sh --lint` exits 2 (not 1) when swift-format cannot run or cannot read the config —
+      # a tool problem, not an unformatted tree. Treat that as a skip-with-notice, so the report can
+      # never tell anyone to reformat the tree to satisfy the wrong formatter.
       - name: swift-format — is the tree formatted?
+        env:
+          SWIFT_FORMAT: /opt/homebrew/bin/swift-format
         run: |
           set +e
           ./scripts/format.sh --lint
           rc=$?
           set -e
           if [ "$rc" -eq 2 ]; then
-            echo "::notice::swift-format on this runner cannot read .swift-format — skipping the format report"
+            echo "::notice::swift-format could not read .swift-format — skipping the format report"
             exit 0
           fi
           exit "$rc"
