@@ -20,7 +20,7 @@ public enum GlucoseProvenance: Equatable, Sendable {
     }
     /// True while the CURRENTLY-SHOWN live value came from a failover source rather than the pump —
     /// i.e. the pump's own CGM feed (and therefore its own `cgmAlerts`) is unavailable right now. Used
-    /// by `UrgentLowAlarm.isActive` (C2-01) so the app-owned alarm fires ONLY in that gap; the pump
+    /// by `UrgentLowAlarm.isActive` so the app-owned alarm fires ONLY in that gap; the pump
     /// remains the primary annunciator whenever its own feed is live.
     public var isFailover: Bool {
         if case .failover = self { return true }
@@ -28,11 +28,11 @@ public enum GlucoseProvenance: Equatable, Sendable {
     }
 }
 
-/// **C2-01 — the app-owned urgent-low alarm.** Advisory, source-agnostic: it reads only the already-
+/// **The app-owned urgent-low alarm.** Advisory, source-agnostic: it reads only the already-
 /// ARBITRATED live value `GlucoseArbiter.merge` publishes, never a specific source id, and feeds NO
 /// dose-path calculation (the app layer posts it through the notification pipeline only). Fires ONLY
 /// during a failover (`GlucoseProvenance.isFailover`) — while the pump's own feed is live it remains the
-/// sole annunciator (C2-01's add-alongside decision, not a promote/replace of the pump's own cgmAlerts).
+/// sole annunciator (an add-alongside decision, not a promote/replace of the pump's own cgmAlerts).
 public enum UrgentLowAlarm {
     /// 55 mg/dL — Dexcom's OWN published "Urgent Low" alert threshold (a vendor-defined clinical value
     /// this app reuses, not one it invents). Advisory only; never read by the bolus calculator/dose path.

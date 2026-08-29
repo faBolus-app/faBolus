@@ -174,7 +174,6 @@ jobs:
         run: |
           FABOLUS_NUDGE=0 FABOLUS_GARMIN=0 ./scripts/test-ios.sh \
             -skip-testing:faBolusAppTests/BolusEntrySnapshotTests \
-            -skip-testing:faBolusAppTests/PumpControlSnapshotTests \
             -skip-testing:faBolusAppTests/SettingsSnapshotTests \
             -skip-testing:faBolusAppTests/DashboardSnapshotTests
 
@@ -257,10 +256,20 @@ jobs:
         run: |
           brew list swiftlint >/dev/null 2>&1 || brew install swiftlint
           swiftlint lint --quiet --reporter github-actions-logging || true
-          swiftlint lint --quiet --reporter csv > /tmp/sl.csv || true
-          echo "SwiftLint findings by rule:"
-          cut -d, -f6 /tmp/sl.csv | sort | uniq -c | sort -rn
-          echo "at error severity: $(cut -d, -f5 /tmp/sl.csv | grep -c -i error || true)"
+          # JSON, not CSV: the `reason` column can contain commas, so a `cut -d,` slice silently
+          # mis-reads the columns. That bug made this step report "at error severity: 0" on a tree
+          # that had 7, and histogram `reason` (one bucket per character count) instead of rule_id.
+          swiftlint lint --quiet --reporter json > /tmp/sl.json || true
+          python3 - <<'PY'
+          import collections, json
+          rows = json.load(open("/tmp/sl.json"))
+          by_rule = collections.Counter(r["rule_id"] for r in rows)
+          by_sev = collections.Counter(r["severity"] for r in rows)
+          print("SwiftLint findings by rule:")
+          for rule, n in by_rule.most_common():
+              print(f"{n:6d}  {rule}")
+          print(f"total: {len(rows)}; at error severity: {by_sev.get('Error', 0)}")
+          PY
 
   # Semgrep — the local `.semgrep/deslop.yml` ruleset only, no marketplace packs. Flags AI-agent
   # process residue (phase/ticket breadcrumbs, migration notes, drifted line references) and vacuous

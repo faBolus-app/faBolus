@@ -54,8 +54,9 @@ There is **no Watch app on `main`**. Do not build `faBolusWatch` or assume a `wa
   and 6.3.0 disagree on three files in this tree — so CI pins Homebrew's build
   (`brew install swift-format`, 603.0.0, byte-identical to Xcode 26.6's 6.3.0). Override the binary
   with `SWIFT_FORMAT=/path/to/swift-format` if your Xcode is older.
-  The committed `.swift-format` disables every swift-format *rule* and keeps only the pretty-printer,
-  so it reflows whitespace but never rewrites code. CI reports (does not gate) on an unformatted tree.
+  The committed `.swift-format` turns off every swift-format *rule* except `DoNotUseSemicolons` and
+  keeps the pretty-printer, so it reflows whitespace and strips stray statement semicolons but does
+  not otherwise rewrite code. CI reports (does not gate) on an unformatted tree.
 - `swiftlint lint --quiet` is advisory. Read `.swiftlint.yml` before "fixing" a hit: several rules
   fire on things that are deliberate here — an empty `set {}` on a frozen accessor IS the freeze, an
   explicit `case foo = "foo"` records a wire contract, and the metric rules describe wire-message

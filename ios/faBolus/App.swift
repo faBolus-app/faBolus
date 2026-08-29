@@ -9,7 +9,7 @@ struct FaBolusApp: App {
     @State private var garmin: GarminRemoteBridge?
     @State private var notifier: NotificationCoordinator?
     @State private var widgetBolus: WidgetBolusReceiver?
-    // CR-01: always-on Mobi reject-at-pairing backstop, owned here (outside the SwiftUI
+    // Always-on Mobi reject-at-pairing backstop, owned here (outside the SwiftUI
     // view tree) so it runs regardless of which screen is on screen and while backgrounded — see
     // `AppModel+MobiRejectBackstop.swift`.
     @State private var mobiRejectBackstop: MobiRejectBackstop?
@@ -69,7 +69,7 @@ struct FaBolusApp: App {
                     // not lazily here, so a background BLE relaunch has a live bridge before any view appears.
                     if notifier == nil { notifier = NotificationCoordinator(model: model) }  // broker-owned notification path (§6)
                     if widgetBolus == nil { widgetBolus = WidgetBolusReceiver(model: model) }  // Quick-Bolus widget delivery
-                    // CR-01: start the always-on Mobi reject backstop exactly once — it
+                    // Start the always-on Mobi reject backstop exactly once — it
                     // then runs for the process's lifetime independent of any view's presence.
                     if mobiRejectBackstop == nil {
                         let backstop = MobiRejectBackstop(model: model)

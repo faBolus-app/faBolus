@@ -1,8 +1,8 @@
 import Testing
 @testable import faBolusCore
 
-/// P14 S12 (§2.2.3): the unpair advisory — a Mobi MUST warn about needing the charging base to re-pair;
-/// t:slim / unknown get a plain note. The Mobi warning is unconditional (owner OQ8).
+/// §2.2.3: the unpair advisory — a Mobi MUST warn about needing the charging base to re-pair;
+/// t:slim / unknown get a plain note. The Mobi warning is unconditional.
 struct UnpairAdvisoryTests {
 
     @Test func mobiRequiresTheChargingBaseAndSaysSo() {

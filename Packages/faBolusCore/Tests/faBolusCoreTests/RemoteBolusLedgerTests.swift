@@ -256,7 +256,7 @@ final class RemoteBolusLedgerTests: XCTestCase {
             Self.genuinelyUnresolvedMessage)
     }
 
-    // MARK: - R2-12: terminal-outcome re-echo query (terminalOutcomes)
+    // MARK: - Terminal-outcome re-echo query (terminalOutcomes)
     //
     // The durable ledger can re-echo terminal outcomes to a remote that missed them across an app restart.
     // The query returns only TERMINAL entries for the asked peer, oldest→newest, and never mutates state.

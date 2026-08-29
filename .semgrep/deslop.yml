@@ -5,8 +5,22 @@
 # record of which ticket touched the line? Safety rationale, fail-closed notes, hardware
 # observations, and clamp/confirm rules are KEEP even when a rule below matches them.
 #
-# The path lists cover all three sibling repos (faBolus `ios/` + `Packages/faBolusCore`,
-# TandemKit `Sources/`, faBolusGarmin `source/app`) so one config can be pointed at any of them.
+# The path lists cover all three sibling repos (faBolus `ios/`, `Packages/faBolusCore`,
+# `Packages/faBolusDesign`, `Shared/`; TandemKit `Sources/` + `Tests/`; faBolusGarmin `source/app`,
+# `tests/`, `datafield/`) so one config can be pointed at any of them.
+#
+# TWO STRUCTURAL LIMITS, so a clean run is not mistaken for a clean tree:
+#   1. Every comment rule is anchored to a comment prefix, so a ticket ID inside a STRING LITERAL is
+#      invisible. There are ~82 such lines in faBolus. They are left alone on purpose: an `#expect` /
+#      `Test.assertMessage` failure message is runtime text, and editing it forfeits the token-stream
+#      proof that a deslop pass changed no behavior.
+#   2. Following from that: where a runtime message names a tag, the COMMENT defining that tag is a
+#      KEEP, or the test prints "(WR-02)" with nothing in the file defining it. Those are the
+#      permanent residuals -- 8 in faBolus (CR-01/WR-01/WR-02/WR-03, C1-01), 4 in faBolusGarmin
+#      (CX-G-09, CX-G-07). Do not "fix" them by stripping the comment.
+#
+# On faBolusGarmin, scan `.` and not `source`: `tests/` is in the globs, and the repo ships a
+# `.semgrepignore` because semgrep's built-in default list silently drops a lowercase `tests/`.
 #
 # Run:  semgrep --config .semgrep/deslop.yml --metrics=off <repo>
 rules:
@@ -14,17 +28,23 @@ rules:
     languages: [generic]
     severity: INFO
     message: >-
-      Comment carries a phase/ticket breadcrumb (Phase N, NN-NN, NN.N-NN, D-NN, FEAT-NN, WR-NN,
-      CX-x-NN, REMED-NN, LOCK-NN, T-NN-NN, GO-N). Delete the identifier; keep any surrounding "why".
+      Comment carries a phase/ticket breadcrumb (Phase N, Phase-N, NN-NN, NN.N-NN, D-NN, FEAT-NN,
+      WR-NN, WR-AN, CX-x-NN, REMED-NN, LOCK-NN, T-NN-NN, GO-N, VA-NN, CR-NN, RN-NN, CN-NN, OQN).
+      Delete the identifier; keep any surrounding "why".
       KNOWN RESIDUAL FALSE POSITIVE: a bare numeric range still matches, e.g. "runs 29-30+ chars"
       (a display-width budget) or "22-23" — those are measurements, not tickets. Check before deleting.
     paths:
       include:
         - "ios/**/*.swift"
         - "Packages/faBolusCore/**/*.swift"
+        - "Packages/faBolusDesign/**/*.swift"
+        - "Packages/*/Package.swift"
         - "Shared/**/*.swift"
         - "Sources/**/*.swift"
+        - "Tests/**/*.swift"
         - "source/app/*.mc"
+        - "tests/*.mc"
+        - "datafield/*.mc"
       exclude:
         - "**/Vendor/**"
         - "vendor/**"
@@ -33,6 +53,10 @@ rules:
         - "**/DexcomG6Kit/**"
         - "**/HistoryStore/**"
         - "cliparser/**"
+    # `(?<!bytes )` / `(?<!byte )` fence the wire-offset form ("carbs 13 g @ bytes 17-18"), which is
+    # a field position, not a ticket — pervasive in TandemKit's oracle byte-locks. The `"` fences fence
+    # a QUOTED `NN-NN`, which is a data value rather than a reference — Garmin's alert identities are
+    # `kind-id` strings, so a comment reading `// "31-30" already seen` was matching.
     # The bare `NN-NN` alternative is fenced by lookaround so it does NOT match an ISO date
     # (`2026-08-23` — the `08-23` is preceded by `-`) or a source line range (`.java:72-74` — the
     # `72-74` is preceded by `:`; a comma-continued range like `ConnectIQ.h:53-58,64-68` needs the
@@ -42,7 +66,7 @@ rules:
     # citations. `NN.N-NN` is a separate alternative for this repo's `09.3-04` / `09.15-11` form,
     # which the old pattern never matched at all.
     pattern-regex: >-
-      (?://|/\*|^\s*\*)[^\n]*\b(?:Phase\s+\d+(?:\.\d+)?|\d\d\.\d+-\d\d|(?<![\d:.,-])\d\d-\d\d(?![\d-])|D\d?-\d\d|FEAT-\d\d|WR-\d\d|CX-[A-Z]-\d\d|REMED-\d+|LOCK-\d\d|T-\d\d-\d\d|GO-\d)\b
+      (?://|/\*|^\s*\*)[^\n]*\b(?:Phase[-\s]\d+(?:\.\d+)?|\d\d\.\d+-\d\d|(?<![\d:.,-])(?<!bytes )(?<!byte )(?<!")\d\d-\d\d(?!["\d-])|D\d?-\d\d|FEAT-\d\d|WR-(?:\d\d|A\d)|CX-[A-Z]-\d\d|REMED-\d+|LOCK-\d\d|T-\d\d-\d\d|GO-\d|VA-\d\d|CR-\d\d|[RC]\d-\d\d|OQ\d)\b
 
   - id: migration-breadcrumb-comment
     languages: [generic]
@@ -54,9 +78,14 @@ rules:
       include:
         - "ios/**/*.swift"
         - "Packages/faBolusCore/**/*.swift"
+        - "Packages/faBolusDesign/**/*.swift"
+        - "Packages/*/Package.swift"
         - "Shared/**/*.swift"
         - "Sources/**/*.swift"
+        - "Tests/**/*.swift"
         - "source/app/*.mc"
+        - "tests/*.mc"
+        - "datafield/*.mc"
       exclude:
         - "**/Vendor/**"
         - "vendor/**"
@@ -84,9 +113,14 @@ rules:
       include:
         - "ios/**/*.swift"
         - "Packages/faBolusCore/**/*.swift"
+        - "Packages/faBolusDesign/**/*.swift"
+        - "Packages/*/Package.swift"
         - "Shared/**/*.swift"
         - "Sources/**/*.swift"
+        - "Tests/**/*.swift"
         - "source/app/*.mc"
+        - "tests/*.mc"
+        - "datafield/*.mc"
       exclude:
         - "**/Vendor/**"
         - "vendor/**"

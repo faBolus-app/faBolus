@@ -217,7 +217,7 @@ struct SettingsCatalogTests {
         let suiteName = "SettingsCatalogTests.glucoseDisplayUnit.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
-        defaults.set("mmol", forKey: "glucoseDisplayUnit")  // simulate a pre-Phase-8 stored value
+        defaults.set("mmol", forKey: "glucoseDisplayUnit")  // simulate a legacy stored value
 
         let fresh = AppSettings(defaults: defaults)
         #expect(fresh.glucoseDisplayUnit == .mgdl)  // force-set pin wins over the stored value

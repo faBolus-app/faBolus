@@ -90,7 +90,7 @@ struct TandemDeliveryOutcomeTests {
         #expect(b.deliveryOutcomeUnknown)
     }
 
-    /// CR-03 (VA-04, iOS half): a matching-bolus-id, non-accepted `InitiateBolusResponse` is NOT
+    /// iOS half: a matching-bolus-id, non-accepted `InitiateBolusResponse` is NOT
     /// HMAC-verified — TandemKit CRC-checks the frame and strips the trailing auth block WITHOUT
     /// authenticating it, so an unauthenticable NACK carries no trustworthy signal. It must be treated as
     /// INDETERMINATE and HOLD the delivery lock, never settled as a clean, lock-releasing failure: an
@@ -106,7 +106,7 @@ struct TandemDeliveryOutcomeTests {
         #expect(fake.initiateWriteCount == 1)  // the initiate DID go out — the NACK is post-write
     }
 
-    /// CR-03 (VA-04) ledger half — end-to-end through the durable ledger (`AppModel` over the REAL
+    /// Ledger half — end-to-end through the durable ledger (`AppModel` over the REAL
     /// `TandemBackend`, driven by the deterministic `FakePumpTransport`): a CRC-valid, matching-bolus-id,
     /// non-accepted (forged/garbled) `InitiateBolusResponse` must settle the ledgered delivery as
     /// INDETERMINATE and keep the GLOBAL unresolved-delivery block HELD — never release it as a clean

@@ -30,7 +30,7 @@ public enum SettingProvenance: String, Codable, Sendable, CaseIterable {
 
 /// Stable identity for a tracked therapy setting.
 ///
-/// OQ6 resolution: keyed on the segment's **start time** (minutes past midnight), NOT its array index.
+/// Keyed on the segment's **start time** (minutes past midnight), NOT its array index.
 /// The pump renumbers segment indices when one is deleted (`TandemBackend` rebuilds the array), so an
 /// index key would silently re-point a record at the wrong segment after a delete. A segment's start
 /// time is its natural identity and is unique within a profile, so it survives renumbering — no

@@ -256,7 +256,7 @@ import Testing
     }
 
     @Test func modeNeverBlocksSafetyStopsOnAnySurface() {
-        // OQ9: the mode gate is carved out for `.childOnly` STOPs exactly as Gate 3 is. Even in the most
+        // The mode gate is carved out for `.childOnly` STOPs exactly as Gate 3 is. Even in the most
         // restrictive mode (Simple), a cancel / dismiss stays available on every surface.
         var ctx = openCtx()
         ctx.modeContext = P.ModeGateContext(activeMode: .simple)

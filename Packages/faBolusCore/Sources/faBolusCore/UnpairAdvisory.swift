@@ -1,14 +1,14 @@
 import Foundation
 
-/// P14 S12 (§2.2.3): the unpair-flow advisory. §2.2.3 requires warning the user, before an unpair, that
+/// §2.2.3: the unpair-flow advisory. §2.2.3 requires warning the user, before an unpair, that
 /// a **Tandem Mobi can only be paired again on its charging base** — so an unpair away from home is a
 /// therapy event (no way to reconnect until you're back at the base). That warning is KEPT
-/// unconditionally (owner OQ8). Pure and pump-neutral so the copy lives in one place and is testable.
+/// unconditionally. Pure and pump-neutral so the copy lives in one place and is testable.
 ///
-/// §2.2.3 backup gate (A4, owner decision 2026-08-09) — the unpair flow now OFFERS a settings backup, or
-/// an explicit skip, BEFORE it completes. This supersedes the earlier OQ8 "no forced backup" reading for a
+/// §2.2.3 backup gate (owner decision 2026-08-09) — the unpair flow now OFFERS a settings backup, or
+/// an explicit skip, BEFORE it completes. This supersedes the earlier "no forced backup" reading for a
 /// reason that evaluation under-weighted: an unpair is frequently a prelude to **switching or replacing** a
-/// pump (see the pump-switch settings reset, plan B4), and a pump's therapy settings live only on that pump
+/// pump (see the pump-switch settings reset), and a pump's therapy settings live only on that pump
 /// — once it is unpaired and gone they cannot be re-read. A settings backup taken while still connected
 /// captures the pump's therapy values (carb ratios / correction factors / targets / limits, for manual
 /// re-entry or a Mobi reconfigure) AND the app's own preferences — so it DOES protect something the

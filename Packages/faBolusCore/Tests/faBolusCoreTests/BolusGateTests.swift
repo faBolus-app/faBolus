@@ -74,7 +74,7 @@ struct BolusGateTests {
         #expect(gate().canBolus)  // no staleness knob exists; the gate can't be tripped by an old reading
     }
 
-    /// VA-11: a non-finite amount (NaN / ±inf) must fail closed. It satisfies neither `< minimum` nor
+    /// A non-finite amount (NaN / ±inf) must fail closed. It satisfies neither `< minimum` nor
     /// `> maximum`, so without the explicit `isFinite` guard it would fall through and arm the affordance.
     @Test func nonFiniteAmountFailsClosed() {
         for bad in [Double.nan, .infinity, -.infinity] {
