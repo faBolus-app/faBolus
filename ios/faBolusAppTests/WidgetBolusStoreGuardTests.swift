@@ -5,6 +5,10 @@ import Foundation
 /// An unauthenticated `widgetBolusCancel` Darwin post is dropped unless a single-use, TTL-bounded
 /// App-Group token is present. `takePending()` hard-drops a completed request older than `pendingTTL`
 /// so a stale widget confirm cannot be auto-consumed.
+///
+/// `.serialized` because every test here mutates the ONE real shared App-Group
+/// `UserDefaults(suiteName:)`. Each test clears ONLY its own keys — never
+/// `removePersistentDomain`, which would wipe the container other suites bind to.
 @Suite(.serialized)
 struct WidgetBolusStoreGuardTests {
 

@@ -274,6 +274,12 @@ struct PumpDeviceContextWireTests {
                 "first-ever pairing (no stored peripheral id) scans, as before")
     }
 
+    // No dedicated "nil/unknown-target no-op preserves a pre-set `detectedIsMobi`" test here, and that
+    // is deliberate — do NOT re-add one. Its precondition is not reproducible in this test host: a
+    // fresh `PumpBLEClient(restoreIdentifier:)` can come up with a NON-nil `reconnectTargetId` (e.g.
+    // from CoreBluetooth state restoration), so the assertion proved non-deterministic. The nil-target
+    // path is review-verified instead.
+
     // MARK: - `reapplyTrustedIdentityIfKnown()` clears `detectedIsMobi` on a genuine peripheral mismatch
     //
     // Makes reapply self-defensive against a reconnect-state-machine regression that could leave a

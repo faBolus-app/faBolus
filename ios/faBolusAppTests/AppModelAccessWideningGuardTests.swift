@@ -2,7 +2,15 @@ import Testing
 import Foundation
 
 /// Pins that AppModel's explicit `internal` stored properties are exactly the enumerated advisory set
-/// and that no dose/gate member was widened. Opening `deliveryLedgerCoordinator` would put the delivery ledger on an extension-visible surface.
+/// and that no dose/gate member was widened. Opening `deliveryLedgerCoordinator` would put the
+/// delivery ledger on an extension-visible surface.
+///
+/// Baseline fact this guard depends on (verified, not assumed): before the carve that split AppModel,
+/// `AppModel.swift` contained ZERO declarations using the explicit `internal` keyword — every member
+/// was `private`/`private(set)`/`public`, or carried no modifier at all (Swift's default, which is
+/// already internal and needs no keyword). That is what makes the scan below sound: every literal
+/// `internal var`/`internal let` in the file today is attributable to the carve, with no pre-existing
+/// noise to subtract.
 struct AppModelAccessWideningGuardTests {
 
     // MARK: - Repo/file resolution

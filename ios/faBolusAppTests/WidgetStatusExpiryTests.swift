@@ -3,7 +3,12 @@ import Foundation
 @testable import faBolus
 
 /// Pins that a stuck `.delivering` widget status older than the TTL surfaces `.expired` with request
-/// identity preserved, not `.idle`. Collapsing to idle would re-present the 1-2-3 pad as a safe retry while the original dose outcome is still unknown.
+/// identity preserved, not `.idle`. Collapsing to idle would re-present the 1-2-3 pad as a safe
+/// retry while the original dose outcome is still unknown.
+///
+/// `.serialized` + own-keys-only cleanup: this suite writes the REAL shared App-Group
+/// `UserDefaults(suiteName:)`, so never `removePersistentDomain` — it would clobber the other
+/// suites that bind the same container.
 @Suite(.serialized)
 struct WidgetStatusExpiryTests {
 
