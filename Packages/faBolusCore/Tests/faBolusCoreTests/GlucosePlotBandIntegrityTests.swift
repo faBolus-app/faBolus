@@ -2,8 +2,7 @@ import Testing
 import Foundation
 @testable import faBolusCore
 
-/// RED-first (task 09.13-01/1): written before `GlucosePlotScale.allBandMarksWithinDomain` exists.
-/// D-10 — the §13 band (70..180) and the four threshold marks (54/70/180/250) must stay within the
+/// The §13 band (70..180) and the four threshold marks (54/70/180/250) must stay within the
 /// plotted domain for EVERY floor×ceiling preset combo (8 combos: floorOptions × ceilingOptions), and
 /// the guard must NOT be vacuous — it must correctly reject a deliberately-too-narrow domain.
 struct GlucosePlotBandIntegrityTests {

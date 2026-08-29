@@ -1,7 +1,7 @@
 import Foundation
 import faBolusCore
 
-/// Activity / Sleep mode automation (F1/F2).
+/// Activity / Sleep mode automation.
 ///
 /// Apple Shortcuts *automations* — "When any Workout starts / ends" and "When Sleep Focus turns on /
 /// off" — are the supported native triggers on iPhone + Apple Watch (Garmin can't drive this: a
@@ -21,7 +21,7 @@ enum ModeAutomation {
     /// well underway shouldn't retro-apply a switch).
     private static let pendingTTL: TimeInterval = 15 * 60
     private static var store: UserDefaults? { UserDefaults(suiteName: WidgetStore.appGroup) }
-    // D4-06: key strings moved to the central `AppGroupKeys` registry — values unchanged.
+    // Key strings come from the central `AppGroupKeys` registry — the persisted key values are unchanged.
     private static func key(_ m: Mode) -> String { AppGroupKeys.pendingMode(m.rawValue) }
     private static func tsKey(_ m: Mode) -> String { AppGroupKeys.pendingModeTimestamp(m.rawValue) }
 
@@ -37,7 +37,7 @@ enum ModeAutomation {
     /// human-readable result string for the intent's spoken/text dialog.
     ///
     /// Injectable seams (all default to production): `model` (the live `AppModel.shared`), `now` (the
-    /// clock, for the S3 manual-precedence window), and `post` (the broker poster). Production callers
+    /// clock, for the manual-precedence window), and `post` (the broker poster). Production callers
     /// pass none of them; the app tests inject a model + clock + a capturing poster.
     static func request(
         _ mode: Mode, enabled: Bool,
@@ -52,11 +52,11 @@ enum ModeAutomation {
         }
         let label = label(mode, enabled)
         let modeWord = mode == .exercise ? "Exercise" : "Sleep"
-        // P13: gated on the pump-derived capability (`supportsModes`, Mobi-only in practice), not the
+        // Gated on the pump-derived capability (`supportsModes`, Mobi-only in practice), not the
         // raw `isMobi` model check.
         if let model, model.advancedControlAllowed, model.capabilities.supportsModes {
             if model.pumpReady {
-                // P16 S3: a scheduled switch must DEFER to a recent hands-on change — prompt, don't
+                // A scheduled switch must DEFER to a recent hands-on change — prompt, don't
                 // silently apply. Queue it (harmless; the reconnect drain also honors precedence, so it
                 // expires rather than auto-applying) and post a SUPPRESSIBLE informational reminder. This
                 // is the conservative direction: it withholds an automatic action and asks — it never
@@ -109,10 +109,11 @@ enum ModeAutomation {
     /// Apply any fresh queued requests — called from `AppModel.refresh()` once a mode-capable Mobi is
     /// connected, so a switch requested while offline still lands (within the TTL).
     static func applyPendingIfDue(using model: AppModel, now: Date = Date()) {
-        guard let store, model.canControlModes else { return }  // P13: canControlModes ⇒ supportsModes (Mobi-only)
-        // P16 S3: do NOT silently drain a queued switch while a recent manual action stands — draining it
-        // would be exactly the silent auto-apply S3 prevents. Leave it queued; because the manual window
-        // (60 min) outlives the pending TTL (15 min), it expires on its own if the user never applies it.
+        guard let store, model.canControlModes else { return }  // canControlModes ⇒ supportsModes (Mobi-only)
+        // Do NOT silently drain a queued switch while a recent manual action stands — draining it would be
+        // exactly the silent auto-apply manual precedence prevents. Leave it queued; because the manual
+        // window (60 min) outlives the pending TTL (15 min), it expires on its own if the user never
+        // applies it.
         if ManualPrecedence.shouldDeferAutomation(lastManualActionAt: model.lastManualTherapyActionAt, now: now) {
             return
         }

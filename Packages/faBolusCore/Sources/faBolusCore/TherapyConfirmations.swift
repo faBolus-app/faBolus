@@ -51,8 +51,8 @@ public enum TherapyConfirmations {
     /// double-check prompt when the entered value is wildly off for the pump's TDD, else `nil` — and `nil`
     /// ALSO covers TDD-unknown (TDD comes only from a configured Control-IQ; 0 ⇒ can't compute). WARN-ONLY:
     /// the caller shows this as a passive advisory; it never blocks, clamps, or resizes the edit.
-    /// - Parameter unit: the ACTIVE DISPLAY unit for the returned advisory text (04-08 gap closure,
-    ///   SC1). `TherapyConfirmations` is a `faBolusCore` type and must stay app-independent — it cannot
+    /// - Parameter unit: the ACTIVE DISPLAY unit for the returned advisory text.
+    ///   `TherapyConfirmations` is a `faBolusCore` type and must stay app-independent — it cannot
     ///   read `AppSettings.shared` — so the caller (`PumpWizardViews`) passes the unit through.
     ///   Defaults to `.mgdl` so every pre-existing call site (and this method's own mg/dL-mode wording)
     ///   is byte-identical to before this parameter was added. `isfMgdlPerUnit`/`expected` stay mg/dL

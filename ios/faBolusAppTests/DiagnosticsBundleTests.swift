@@ -2,13 +2,13 @@ import Testing
 import faBolusCore
 @testable import faBolus
 
-/// Phase 09.6-06 (Task 1, Part C-1, D-03.1): behavior pins for the pure `DiagnosticsBundle`
-/// aggregator — fabricated section strings are injected directly (mirrors every prior Part C
-/// diagnostics-text test file's "inject plain values, no live state" precedent). `DiagnosticsBundle`
-/// itself never touches `FileManager`/`WCSession`/`GarminRemoteBridge`/`GlucoseArbiter` — it only
-/// concatenates already-formatted section strings supplied by the caller.
+/// Behavior pins for the pure `DiagnosticsBundle` aggregator — fabricated section strings are injected
+/// directly (mirrors the other diagnostics-text test files' "inject plain values, no live state"
+/// precedent). `DiagnosticsBundle` itself never touches
+/// `FileManager`/`WCSession`/`GarminRemoteBridge`/`GlucoseArbiter` — it only concatenates
+/// already-formatted section strings supplied by the caller.
 struct DiagnosticsBundleTests {
-    /// (a) Stable-order concatenation: sections come back in the SAME order they were supplied, with
+    /// Stable-order concatenation: sections come back in the SAME order they were supplied, with
     /// nothing dropped, added, or reordered.
     @Test func buildConcatenatesSectionsInSuppliedOrderStably() {
         let sections = ["[A]\nfirst", "[B]\nsecond", "[C]\nthird"]
@@ -24,8 +24,8 @@ struct DiagnosticsBundleTests {
         #expect(result.contains("third"))
     }
 
-    /// (b) An absent/empty section renders its header + the explicit "not currently reachable"
-    /// placeholder rather than vanishing (Pitfall 4) — the header is never simply omitted.
+    /// An absent/empty section renders its header + the explicit "not currently reachable" placeholder
+    /// rather than vanishing — the header is never simply omitted.
     @Test func sectionOrPlaceholderRendersHeaderAndPlaceholderWhenSectionIsNil() {
         let block = DiagnosticsBundle.sectionOrPlaceholder(label: "Some Surface", section: nil)
 
@@ -49,7 +49,7 @@ struct DiagnosticsBundleTests {
         #expect(block == supplied)
     }
 
-    /// (c) Purity: identical inputs always produce identical output — no I/O, no async, no hidden
+    /// Purity: identical inputs always produce identical output — no I/O, no async, no hidden
     /// mutable state.
     @Test func buildIsPureAndIdempotentForIdenticalInputs() {
         let sections = ["[A]\nfirst", "[B]\nsecond"]

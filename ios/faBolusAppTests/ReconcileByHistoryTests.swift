@@ -5,12 +5,12 @@ import TandemMessages
 import TandemBLE
 @testable import faBolus
 
-/// Phase 14 Plan 04 (CC-11): `reconcile(bolusId:)` and `reconcileIndeterminateDelivery()` now route
-/// through a shared bounded exact-id `findBolusInHistory(bolusId:)` primitive instead of giving up when
-/// the pump's LAST bolus is a NEWER id — closing the indefinite-lockout gap (T-14-12) while staying
-/// fail-closed on genuine exhaustion. Every scenario here drives the history seam through the REAL parse
-/// path (`injectHistoryLogFrameForTesting` — a real `HistoryLogStreamResponse` frame), never
-/// `MockBackend.reconcileResultsById` (which would only prove mocked behavior, per codex HIGH).
+/// `reconcile(bolusId:)` and `reconcileIndeterminateDelivery()` route through a shared bounded
+/// exact-id `findBolusInHistory(bolusId:)` primitive instead of giving up when the pump's LAST bolus is
+/// a NEWER id — closing the indefinite-lockout gap while staying fail-closed on genuine exhaustion.
+/// Every scenario here drives the history seam through the REAL parse path
+/// (`injectHistoryLogFrameForTesting` — a real `HistoryLogStreamResponse` frame), never
+/// `MockBackend.reconcileResultsById`, which would only prove mocked behavior.
 @Suite(.serialized) @MainActor
 struct ReconcileByHistoryTests {
 
@@ -51,7 +51,7 @@ struct ReconcileByHistoryTests {
 
     /// Unresolved bolusId B; the pump's LAST bolus is a NEWER id C != B — the fast path misses. A
     /// `HistoryLogStreamResponse` frame carrying a type-20 `BolusCompletedHistoryLog`-shaped record for B
-    /// (via the restored `BolusHistoryRecord.bolusId`, Phase 14 14-04 TandemKit change) is injected on the
+    /// (via TandemKit's `BolusHistoryRecord.bolusId`) is injected on the
     /// REAL parse path → `reconcile(B)` must resolve by finding B in history by EXACT id, clearing the
     /// hold — never `.unavailable`-forever just because a newer bolus intervened.
     @Test func newerInterveningBolusResolvesByExactIdHistorySearch() async {
@@ -75,9 +75,9 @@ struct ReconcileByHistoryTests {
         }
     }
 
-    /// A 0U/partial completed record for the target id must still resolve the hold (the restored
-    /// accept-0U decode, Phase 14 14-04 TandemKit change) — a cancelled-before-any-insulin bolus is a
-    /// real, known outcome, not an unresolvable one.
+    /// A 0U/partial completed record for the target id must still resolve the hold (TandemKit's
+    /// accept-0U decode) — a cancelled-before-any-insulin bolus is a real, known outcome, not an
+    /// unresolvable one.
     @Test func zeroUnitHistoryRecordStillResolves() async {
         await withNoCompetingBackfill {
             let (backend, fake) = makeBackend()
@@ -134,8 +134,8 @@ struct ReconcileByHistoryTests {
     }
 
     /// The existing `lastBolusStatus` fast path (the pump's LAST bolus record matches exactly) still
-    /// resolves as before, with NO history request issued at all — unchanged fast path (Addresses codex
-    /// MEDIUM: the fast path must not regress when the history fallback is added).
+    /// resolves as before, with NO history request issued at all — the fast path must not regress now
+    /// that the history fallback exists.
     @Test func matchingLastBolusStillResolvesViaFastPathNoHistoryRequest() async {
         await withNoCompetingBackfill {
             let (backend, fake) = makeBackend()
@@ -152,7 +152,7 @@ struct ReconcileByHistoryTests {
         }
     }
 
-    /// WR-04: a 16-bit `bolusId` wraps after 65536 boluses, so a single page CAN contain two records that
+    /// A 16-bit `bolusId` wraps after 65536 boluses, so a single page CAN contain two records that
     /// share the same id (an old id-reused record and the current one). `bolusRecords` preserves ascending
     /// wire/sequence order within a page, so the intra-page match must be `last(where:)` — the NEWEST
     /// (highest-sequence) record — never `first(where:)` (the oldest). Reconciliation is always for the
@@ -169,7 +169,7 @@ struct ReconcileByHistoryTests {
             try? await Task.sleep(nanoseconds: 150_000_000)
             // Ascending wire order within the page: the OLDER id-reused record (seq 100, delivered 1.0)
             // comes first, the NEWER current record (seq 990, delivered 2.5) comes last. `last(where:)`
-            // must pick the newer one — `first(where:)` (the pre-WR-04 bug) would have picked 1.0.
+            // must pick the newer one — `first(where:)` — the pre-existing bug this pins — would have picked 1.0.
             backend.injectHistoryLogFrameForTesting(
                 FakePumpTransport.historyLogStream(bolusRecordsById: [
                     (
@@ -187,8 +187,8 @@ struct ReconcileByHistoryTests {
 
     // MARK: - reconcileIndeterminateDelivery() — the SAME shared primitive, invoked on reconnect
 
-    /// A dropped initiate response leaves the delivery INDETERMINATE (the real `perform` flow — round-3
-    /// §4 shape, mirrors `TandemDeliveryOutcomeTests.droppedInitiateResponseIsIndeterminate`), pinning
+    /// A dropped initiate response leaves the delivery INDETERMINATE (the real `perform` flow —
+    /// mirrors `TandemDeliveryOutcomeTests.droppedInitiateResponseIsIndeterminate`), pinning
     /// the pump-assigned id as `unknownOutcomeBolusId`. A LATER `lastBolusStatus` reporting a NEWER id
     /// (some other client's bolus intervened) must no longer lock `reconcileIndeterminateDelivery()` out
     /// forever — it must resolve via the SAME shared exact-id history search `reconcile(bolusId:)` uses.

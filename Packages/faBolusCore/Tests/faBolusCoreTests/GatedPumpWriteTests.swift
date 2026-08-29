@@ -1,7 +1,7 @@
 import Testing
 @testable import faBolusCore
 
-/// R3-F: the authoritative therapy-write declared set (the seed for phase P8). Pins the enumeration and its
+/// The authoritative therapy-write declared set. Pins the enumeration and its
 /// gate classification so a new `PumpBackend` write can't be added without a decided gate, and so the
 /// app-test `everyTherapyWriteEntryPointIsCentrallyGated` stays in lockstep with the `.unverifiedAck` set.
 @Suite struct GatedPumpWriteTests {
@@ -19,18 +19,18 @@ import Testing
     @Test func gatePartitionsMatchTheAppModelFunnels() {
         #expect(names(.ledgeredDelivery) == ["deliverBolus", "deliverExtendedBolus"])
         // Both child-only writes are gated by child mode only (NOT read-only) — cancel is a safety STOP,
-        // dismiss is low-risk. This locks the documented gap so P12's BolusGate review can't forget it.
+        // dismiss is low-risk. This locks the documented gap so a future BolusGate review can't forget it.
         #expect(names(.childOnly) == ["cancelBolus", "dismissNotification"])
         #expect(
             names(.unverifiedAck) == [
                 "createProfile", "setActiveProfile", "renameProfile", "deleteProfile",
                 "addProfileSegment", "modifyProfileSegment", "deleteProfileSegment", "setCgmHighLowAlert",
-                // P14 S6: the therapy-defining writes that previously bypassed the ack.
+                // The therapy-defining writes that previously bypassed the ack.
                 "setControlIQ", "setMaxBolus", "setMaxBasal",
-                // Phase 09.10: the Mobi native Sleep-schedule write — flag semantics + slots 1-3 unverified.
+                // The Mobi native Sleep-schedule write — flag semantics + slots 1-3 unverified.
                 "setSleepSchedule"
             ])
-        #expect(names(.controlInterlock).count == 22)  // P14 S6: was 25, three moved to .unverifiedAck
+        #expect(names(.controlInterlock).count == 22)  // was 25, three moved to .unverifiedAck
         // The partition is total and disjoint.
         let total =
             names(.ledgeredDelivery).count + names(.unverifiedAck).count
@@ -38,7 +38,7 @@ import Testing
         #expect(total == GatedPumpWrite.allCases.count)
     }
 
-    /// P13 opt-in axis: `requiresAdvancedControlOptIn` must match, exactly, the set of actions the app
+    /// Opt-in axis: `requiresAdvancedControlOptIn` must match, exactly, the set of actions the app
     /// reaches ONLY behind `advancedControlAllowed` — verified against the live UI 2026-08-05 — so
     /// routing it through the funnel changes no shipped t:slim behavior. The one trap this pins:
     /// `syncTimeToNow` is reachable on Mobi from Settings WITHOUT the opt-in, so it must be EXCLUDED, or
@@ -57,18 +57,18 @@ import Testing
         let expected = names(.controlInterlock).union(names(.unverifiedAck)).subtracting(["syncTimeToNow"])
         #expect(advanced == expected)
         #expect(!advanced.contains("syncTimeToNow"))
-        // Sanity on the count: 22 controlInterlock + 12 unverifiedAck − 1 (syncTimeToNow) = 33. (Phase
-        // 09.10 added setSleepSchedule to .unverifiedAck, growing the union by one over P14 S6's 32.)
+        // Sanity on the count: 22 controlInterlock + 12 unverifiedAck − 1 (syncTimeToNow) = 33.
+        // (setSleepSchedule joined .unverifiedAck, growing the union by one over the previous 32.)
         #expect(advanced.count == 33)
     }
 
-    /// P13 capability axis: `hasRequiredCapability` is the split-out counterpart. syncTimeToNow declares
+    /// Capability axis: `hasRequiredCapability` is the split-out counterpart. syncTimeToNow declares
     /// `supportsTimeSync` (removing the old special-case); the advanced writes require any advanced
     /// capability; delivery + the child-only pair require none (so Gate 5 never blocks a bolus).
     @Test func hasRequiredCapabilitySplitsTimeSyncFromTheAdvancedSet() {
         #expect(GatedPumpWrite.syncTimeToNow.hasRequiredCapability(in: .mobiAdvanced))
         #expect(!GatedPumpWrite.syncTimeToNow.hasRequiredCapability(in: .full))  // t:slim: no timeSync
-        // Phase 09.10: setSleepSchedule declares its OWN dedicated capability (supportsSleepScheduleWrite),
+        // setSleepSchedule declares its OWN dedicated capability (supportsSleepScheduleWrite),
         // not the coarse supportsAnyAdvancedControl set — mirrors the pump protocol's own MOBI_ONLY scope.
         #expect(GatedPumpWrite.setSleepSchedule.hasRequiredCapability(in: .mobiAdvanced))
         #expect(!GatedPumpWrite.setSleepSchedule.hasRequiredCapability(in: .full))  // t:slim: no sleep-schedule write
@@ -82,7 +82,7 @@ import Testing
         }
     }
 
-    /// Phase 2 (Pitfall 3 / Open Question 1): `.setMaxBolus`/`.setMaxBasal` are the two limit-set writes —
+    /// `.setMaxBolus`/`.setMaxBasal` are the two limit-set writes —
     /// they must require the DEDICATED `supportsLimits` capability, not the coarser
     /// `supportsAnyAdvancedControl` set. A capability set that has SOME advanced control (e.g. Control-IQ
     /// settings) but NOT the basal/bolus-limit feature bit must deny both; a set WITH `supportsLimits` must

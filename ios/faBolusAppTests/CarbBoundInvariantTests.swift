@@ -2,9 +2,9 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// WR-01 · VA-10 (audit C-07): the carb→Int conversion inside `TandemBackend.perform(...)` must NEVER
+/// The carb→Int conversion inside `TandemBackend.perform(...)` must NEVER
 /// trap. It runs AFTER a durable ledger commit, so a runtime trap here strands an already-recorded
-/// delivery. The clamp was extracted verbatim into `TandemBackend.clampCarbGrams(_:)` so it can be
+/// delivery. The clamp lives in `TandemBackend.clampCarbGrams(_:)` so it can be
 /// exercised directly. The load-bearing invariant: for EVERY input — `nil`, negative, out-of-range
 /// finite (> `Int.max`), `.infinity`, `-.infinity`, `.nan` — the helper returns a value in `0...1000`
 /// and does not crash. `maxCarbGrams == 1000`.

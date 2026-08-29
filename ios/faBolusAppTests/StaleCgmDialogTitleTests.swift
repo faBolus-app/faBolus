@@ -2,7 +2,7 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// Phase 09.22-04 Task 3 (D-13 / F-15): pins the THREE-way stale-CGM dialog title so "CGM
+/// Pins the THREE-way stale-CGM dialog title so "CGM
 /// unavailable" never sits above a button offering to USE a stale-but-present reading. The old
 /// two-way `newBG == -1 ? "CGM unavailable" : "CGM updated"` conflated two distinct states — no
 /// reading at all vs a stale-but-real reading passed via `staleBG` that CAN still be included. Pure

@@ -3,7 +3,7 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// Phase 04-03 drift guard (T-04-06). The widget/complication extension targets don't link
+/// Drift guard. The widget/complication extension targets don't link
 /// faBolusCore, so `WidgetShared.swift` carries `WidgetGlucoseUnit` — a mirror of the canonical
 /// `faBolusCore.GlucoseUnit`. This test target links BOTH, so it can assert the two never drift:
 /// same guarantee `WidgetGlucoseThresholdsMirrorTests` gives the threshold trio.

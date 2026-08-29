@@ -46,10 +46,10 @@ import faBolusCore
         #expect(model.isGlucoseStale)  // 60 min ≫ any configured stale threshold
 
         // --- WidgetSnapshot (every widget family + the complication) ---
-        // Built exactly as `RemoteCommandWireFixture.publishSnapshot` builds it
-        // (Shared/RemoteCommandWireFixture.swift:233): `glucoseDate` is the SAMPLE time, `updatedAt` is the
-        // PUBLISH/receive time. `updatedAt` is deliberately `now` (a brand-new publish) — staleness
-        // must key off `glucoseDate`, so a fresh publish of an old sample stays stale.
+        // Built exactly as `RemoteCommandWireFixture.publishSnapshot` builds it: `glucoseDate` is the
+        // SAMPLE time, `updatedAt` is the PUBLISH/receive time. `updatedAt` is deliberately `now` (a
+        // brand-new publish) — staleness must key off `glucoseDate`, so a fresh publish of an old
+        // sample stays stale.
         let snap = WidgetSnapshot(
             glucose: model.glucose, glucoseDate: model.glucoseDate,
             updatedAt: now, staleAfterSec: 5 * 60, hideAfterSec: nil)
@@ -87,8 +87,8 @@ import faBolusCore
         #expect(GlucoseFreshness.presentation(of: nil) == .stale)
     }
 
-    /// Audit fix #1 (loop-comms study): a reading whose source timestamp is in the FUTURE must never
-    /// read as fresh. A source with a fast clock stamps readings ahead of `now`; the raw elapsed time
+    /// A reading whose source timestamp is in the FUTURE must never read as fresh. A source with a
+    /// fast clock stamps readings ahead of `now`; the raw elapsed time
     /// then goes negative and — before the fix — `age(of:)` clamped it to 0, so the reading presented
     /// as "fresh" indefinitely. A phantom-fresh future reading could suppress the stale-CGM bolus
     /// warning and mislead a manual dose, so beyond a small clock skew

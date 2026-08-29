@@ -309,8 +309,10 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// supports the authenticated `dismissAck` path AND the connected pump actually honors a remote
     /// dismiss (`supportsRemoteAlertDismiss == true`). Computed FRESH on every `statusRead` reply
     /// (`RemoteStatusComposer`) — NEVER a build-time constant — so a t:slim pump (which only ever
-    /// local-snoozes, never emits an authenticated clear) resolves to `false` and the watch stays on the
-    /// filtered-reconcile fallback instead of stranding a phantom overlay forever; a Mobi (or any
+    /// local-snoozes, never emits an authenticated clear) resolves to `false` and the watch stays on a
+    /// non-ack overlay fallback instead of stranding a phantom overlay forever — for a t:slim that is
+    /// the raw-snapshot prune-and-overlay path, since `supportsRawAlertSnapshot` below is this flag's
+    /// exact negation; the statusRead reconcile is the branch taken only when neither is on; a Mobi (or any
     /// pump honoring the remote dismiss) resolves to `true` and the watch cuts over to authenticated-
     /// ack-only. Absent ⇒ a legacy host that predates this field; the watch's safe default is the
     /// fallback (never stuck). Additive; mirrored in the JSON schema + Monkey C.

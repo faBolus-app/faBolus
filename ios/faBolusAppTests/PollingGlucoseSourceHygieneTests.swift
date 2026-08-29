@@ -3,15 +3,14 @@ import Foundation
 @testable import faBolus
 import faBolusCore
 
-/// C2-02 (monotonic-by-timestamp `latest`) + C2-05 (sub-40 urgent-low sentinel, isolated from the dose
-/// path) hygiene tests for the CGM failover ingest boundary. `PollingGlucoseSource` is an APP-TARGET
-/// class (imports `faBolusCore`, `ios/faBolus/Data/Sources/PollingGlucoseSource.swift:1`), so these live
-/// in `faBolusAppTests` and run via xcodebuild — `Packages/faBolusCore/Tests` cannot instantiate it
-/// (codex MEDIUM, addressed in the 13-03 plan review).
+/// Hygiene tests for the CGM failover ingest boundary: a monotonic-by-timestamp `latest`, plus the
+/// sub-40 urgent-low sentinel isolated from the dose path. `PollingGlucoseSource` is an APP-TARGET
+/// class (imports `faBolusCore`, `ios/faBolus/Data/CGM/Sources/PollingGlucoseSource.swift`), so these live
+/// in `faBolusAppTests` and run via xcodebuild — `Packages/faBolusCore/Tests` cannot instantiate it.
 @MainActor
 struct PollingGlucoseSourceHygieneTests {
 
-    // MARK: - C2-02: `latest` never steps backward in time
+    // MARK: - `latest` never steps backward in time
 
     /// A late/stale poll delivering an OLDER-timestamped reading after a newer one has already been
     /// ingested must not step `latest` backward — the failover value must never appear to regress.
@@ -52,18 +51,18 @@ struct PollingGlucoseSourceHygieneTests {
         #expect(source.latest?.mgdl == 100)
     }
 
-    // MARK: - C2-05: sub-40 vendor reading -> SEPARATE urgent-low sentinel, never a GlucoseSample
+    // MARK: - Sub-40 vendor reading -> SEPARATE urgent-low sentinel, never a GlucoseSample
 
     /// A below-measurable-range (sub-40) vendor reading at the ingest boundary must be surfaced via a
-    /// SEPARATE typed sentinel — but the D-05 gate (`GlucoseSample.init?`) still rejects it exactly as
+    /// SEPARATE typed sentinel — but the range gate (`GlucoseSample.init?`) still rejects it exactly as
     /// before, so it never becomes `latest`, and feeding it through the REAL `GlucoseArbiter.merge`
-    /// leaves `PumpSnapshot.glucose` untouched (T-13-07b: never a dose-input leak on the frozen path).
+    /// leaves `PumpSnapshot.glucose` untouched (never a dose-input leak on the frozen path).
     @Test func subFortyReadingProducesSentinelAndNeverBecomesLatestOrPumpSnapshotGlucose() {
         let source = PollingGlucoseSource(id: "test", priority: 0)
         let now = Date()
         source.ingestRawReading(mgdl: 32, date: now)
 
-        // The D-05 gate itself is untouched — a sub-40 value still fails GlucoseSample.init?.
+        // The range gate itself is untouched — a sub-40 value still fails GlucoseSample.init?.
         #expect(GlucoseSample(mgdl: 32, date: now, sourceID: "test") == nil)
         // It never becomes `latest` — never a dose-eligible numeric sample.
         #expect(source.latest == nil)

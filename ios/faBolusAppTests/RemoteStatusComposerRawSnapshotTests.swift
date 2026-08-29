@@ -3,8 +3,7 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// Plan 14-10 (owner-authorized follow-up to 14-09 checkpoint #3's `raw-snapshot-backstop` option, D1) —
-/// pins `RemoteStatusComposer.compose`'s DYNAMIC, pump-tied `supportsRawAlertSnapshot` emission + the
+/// Pins `RemoteStatusComposer.compose`'s DYNAMIC, pump-tied `supportsRawAlertSnapshot` emission + the
 /// additive `rawAlerts` payload against hand-built `RemoteStatusInputs`/`RemoteStatusSettings`, mirroring
 /// `RemoteStatusComposerDismissAckTests` exactly (same fixed-clock idiom, same bypass of
 /// `AppModel`/`MockBackend`'s hardcoded capability presets).

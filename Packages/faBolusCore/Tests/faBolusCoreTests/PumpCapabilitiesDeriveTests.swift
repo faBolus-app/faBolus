@@ -1,9 +1,9 @@
 import Testing
 @testable import faBolusCore
 
-/// P13-1: `PumpCapabilities.derive(isMobi:features:)` re-sources capabilities from the pump's own
+/// `PumpCapabilities.derive(isMobi:features:)` re-sources capabilities from the pump's own
 /// `PumpFeaturesV1` bitmask instead of inferring everything from one `isMobi` boolean. These pin the
-/// safety contract that makes it shippable without hardware: **absent features ⇒ the exact pre-P13
+/// safety contract that makes it shippable without hardware: **absent features ⇒ the exact model
 /// preset** (pure fallback), and **present features can only NARROW, never widen** the preset.
 struct PumpCapabilitiesDeriveTests {
 
@@ -71,9 +71,9 @@ struct PumpCapabilitiesDeriveTests {
         #expect(caps.supportsControlIQSettings)  // untouched
     }
 
-    // MARK: - Temp-rate gate: capability, never a pump-model check (Phase 09.5 D-01/D-04)
+    // MARK: - Temp-rate gate: capability, never a pump-model check
 
-    /// The temp-rate surfacing gate (`PumpControlView.swift:72`, `TempRateAutomation.swift:78`) reads
+    /// The temp-rate surfacing gate reads
     /// `PumpCapabilities.supportsTempBasal` — a DERIVED capability, never a hardcoded pump-model/`isMobi`
     /// check. Proven in both directions: a capability set with `supportsTempBasal == false` (`.full`,
     /// the t:slim-style floor) reports the gate CLOSED, while one with `supportsTempBasal == true`
@@ -84,7 +84,7 @@ struct PumpCapabilitiesDeriveTests {
     }
 
     // MARK: - supportsSleepScheduleWrite: a NEW dedicated Mobi-only write-gate capability
-    // (Phase 09.10 D-01/D-04) — deliberately NOT folded into supportsControlIQSettings; the read
+    // Deliberately NOT folded into supportsControlIQSettings; the read
     // (PumpBackend.refreshSleepSchedule / PumpSnapshot.sleepSchedules) is universal/ungated and is
     // proven separately at the UI layer, never behind this flag.
 

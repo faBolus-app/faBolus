@@ -2,7 +2,7 @@ import Testing
 import Foundation
 @testable import faBolusCore
 
-/// P13c-1: the clinical glucose bands (70/180/250 + the very-low 54) are consolidated into one
+/// The clinical glucose bands (70/180/250 + the very-low 54) are consolidated into one
 /// source-cited `GlucoseThresholds`, and the two classifiers that read them (`GlucoseRange.classify`
 /// display coloring, `GlucoseStatistics` TIR breakdown) now reference it instead of bare literals.
 ///
@@ -86,13 +86,13 @@ struct GlucoseThresholdsTests {
         #expect(onlyBucket(251) == "veryHigh")
     }
 
-    // MARK: - F4 (A5): the non-color band redundancy channel
+    // MARK: - The non-color band redundancy channel
 
     /// Every band carries a distinct, non-empty label, so the band can be conveyed to VoiceOver
     /// without color (WCAG 1.4.1). A representative reading in each band classifies to the right
-    /// label. Phase 09.29 (owner directive): the on-screen glyph this label used to pair with (via
-    /// the now-deleted `BandIndicator` view and its SF-Symbol-name property) was removed —
-    /// VoiceOver's `shortLabel` channel is unaffected.
+    /// label. The on-screen glyph this label used to pair with (via the now-deleted `BandIndicator`
+    /// view and its SF-Symbol-name property) was removed — VoiceOver's `shortLabel` channel is
+    /// unaffected.
     @Test func everyBandHasADistinctNonColorLabel() {
         let bands: [GlucoseRange] = [.low, .inRange, .high, .urgentHigh]
         let labels = bands.map(\.shortLabel)

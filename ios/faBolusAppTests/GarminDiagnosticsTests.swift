@@ -2,9 +2,9 @@ import Testing
 import faBolusCore
 @testable import faBolus
 
-/// Phase 09.6-04 (Task 1, Part C-4a, D-03.4): behavior pins for the `[Garmin CIQ]` diagnostics
-/// section — a fabricated `GarminDiagnostics.BridgeState` plain value is injected directly (no live
-/// `GarminRemoteBridge`/ConnectIQ instantiation required), mirroring 09.6-03's `RemoteRoleDiagnostics`
+/// Behavior pins for the `[Garmin CIQ]` diagnostics section — a fabricated
+/// `GarminDiagnostics.BridgeState` plain value is injected directly (no live
+/// `GarminRemoteBridge`/ConnectIQ instantiation required), mirroring `RemoteRoleDiagnostics`'s
 /// "inject the already-tracked state as plain values" precedent. Any Garmin device name must never
 /// appear verbatim in the rendered text.
 @MainActor

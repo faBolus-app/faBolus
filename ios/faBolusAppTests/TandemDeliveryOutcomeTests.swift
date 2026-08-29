@@ -310,7 +310,7 @@ struct TandemDeliveryOutcomeTests {
         #expect(b.lastBolusCancelled == false)
     }
 
-    // MARK: - Phase 09.9 D-01 — no-cartridge hard block (fail-closed, never a signed frame)
+    // MARK: - No-cartridge hard block (fail-closed, never a signed frame)
 
     /// `validateDeliver` is the shared pre-flight choke point, called BEFORE permission/initiate are
     /// ever requested — so a no-cartridge refusal must write ZERO frames (not even the permission ask).
@@ -352,7 +352,7 @@ struct TandemDeliveryOutcomeTests {
         #expect(delivered == 2.0)
     }
 
-    /// D-01 (safety, C4 oracle): a refused no-cartridge attempt must not merely throw the right error —
+    /// Safety (C4 oracle): a refused no-cartridge attempt must not merely throw the right error —
     /// it must leave delivery state byte-unchanged (no delivered value ever recorded).
     @Test func noCartridgeRefusalRecordsNothingAsDelivered() async {
         let (b, fake) = make()
@@ -364,10 +364,9 @@ struct TandemDeliveryOutcomeTests {
         #expect(fake.initiateWriteCount == 0)
     }
 
-    /// Debug pump-pairing-loop-api25 REFINEMENT restores the Phase-09.9 invariant that op20
-    /// `LoadStatusRequest` rides the routine fast-poll tier: op20 feeds `cartridgeLoadState` → the 09.9
-    /// fail-closed `cartridgeReadyForBolus` pre-guard (whose `6` default fails OPEN), so it must stay live
-    /// on pumps that support it — an initial fix (commit 9f978a5) had removed it for ALL models, starving
+    /// op20 `LoadStatusRequest` must ride the routine fast-poll tier: op20 feeds `cartridgeLoadState` →
+    /// the fail-closed `cartridgeReadyForBolus` pre-guard (whose `6` default fails OPEN), so it must stay
+    /// live on pumps that support it — an earlier fix (commit 9f978a5) had removed it for ALL models, starving
     /// that pre-guard on newer t:slim + Mobi. The API-2.5 t:slim X2 that rejects op20 no longer loops: it
     /// learns-and-skips op20 via the per-pump persisted `badOpcodes` set (one-drop-ever; see
     /// `PumpLearnedOpcodePersistenceTests`). Proven behaviorally via the `onReadDispatchedForTesting` seam.
@@ -382,7 +381,7 @@ struct TandemDeliveryOutcomeTests {
         )
     }
 
-    // MARK: - Phase 09.9 D-02 — out-of-insulin nack enrichment (honest inference, never over-claimed)
+    // MARK: - Out-of-insulin nack enrichment (honest inference, never over-claimed)
 
     /// BolusPermissionResponse nack site: a real INVALID_PUMPING_STATE nack (reasonId 1) while the
     /// app's last-known reservoir reading was below the requested total must surface the specific
@@ -398,15 +397,15 @@ struct TandemDeliveryOutcomeTests {
         }
         #expect(reservoirUnits == 0.4)
         #expect(fake.initiateWriteCount == 0, "a permission nack must never reach the initiate write")
-        #expect(!indeterminate(e))  // clean pre-initiate failure, not FB-02 indeterminate
+        #expect(!indeterminate(e))  // clean pre-initiate failure, not indeterminate
         #expect(!b.deliveryOutcomeUnknown)  // never blocked
     }
 
-    /// InitiateBolusResponse non-accept site with a low reservoir: post-CR-03 (VA-04) this is NO LONGER a
+    /// InitiateBolusResponse non-accept site with a low reservoir: this is NOT a
     /// clean `.possiblyOutOfInsulin` failure. An unauthenticable initiate NACK is INDETERMINATE and HOLDS
     /// the delivery lock (unlike the permission-nack site, which is authenticated before initiate and stays
     /// a clean `.possiblyOutOfInsulin`). The reservoir-based "possibly out of insulin" hint is NOT lost —
-    /// Phase 09.9 D-02 carries it INSIDE the indeterminate reason so the human-readable detail survives
+    /// it is carried INSIDE the indeterminate reason so the human-readable detail survives
     /// without over-claiming a clean, retryable outcome.
     @Test func initiateNackWithLowReservoirIsIndeterminateCarryingTheReservoirHint() async {
         let (b, fake) = make()

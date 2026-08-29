@@ -47,7 +47,7 @@ struct AppModelControlErrorMappingTests {
         }
 
         /// The seam under test: throws the EXACT error the kit's trusted-identity send gate raises for
-        /// the 15.5-01 tracer opcode (0xCE, `SetSleepScheduleRequest`) — the identical error type
+        /// the tracer opcode (0xCE, `SetSleepScheduleRequest`) — the identical error type
         /// `TandemBackend.sendControl` propagates when `PumpBLEClient.send` refuses pre-write.
         private(set) var suspendDeliveryInvocationCount = 0
         func suspendDelivery() async throws {

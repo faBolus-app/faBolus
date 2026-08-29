@@ -1,7 +1,7 @@
 import Testing
 @testable import faBolusCore
 
-/// CX-T-07 / Pitfall 4: `FillLimits.clampPrimeSize` is the app-side secondary defense against 0 (upstream-
+/// `FillLimits.clampPrimeSize` is the app-side secondary defense against 0 (upstream-
 /// invalid — pumpX2's `FillCannulaRequest` throws on `primeSizeMilliUnits <= 0`) reaching the wire as a
 /// "valid" no-op fill. The kit init (`FillCannulaRequest(primeSize:)`, now throwing) is the primary
 /// boundary; this clamp is the secondary one so `TandemBackend.fillCannula(milliunits: 0)` never even
@@ -21,13 +21,13 @@ struct FillCannulaClampTests {
 
     @Test func clampCapsAtTheDeliberateOneUnitCeilingUnraised() {
         // The 1.0U cap (maxCannulaMilliunits = 1000) is a deliberate app ceiling BELOW the kit's 3000 mU
-        // upstream ceiling — this task raises only the FLOOR (Pitfall 4), never this cap.
+        // upstream ceiling — only the FLOOR was raised, never this cap.
         #expect(FillLimits.clampPrimeSize(9999) == 1000)
         #expect(FillLimits.clampPrimeSize(3000) == 1000)  // even the kit's own ceiling is still capped here
     }
 
     @Test func maxCannulaMilliunitsCapItselfIsUnchanged() {
-        #expect(FillLimits.maxCannulaMilliunits == 1000)  // 1.0 U — unraised (CX-T-07 explicitly keeps this)
+        #expect(FillLimits.maxCannulaMilliunits == 1000)  // 1.0 U — deliberately unraised
         #expect(FillLimits.minCannulaMilliunits == 1)
     }
 }

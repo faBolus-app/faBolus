@@ -6,10 +6,9 @@ import TandemMessages
 import TandemBLE
 @testable import faBolus
 
-/// Phase 16 GO-1 Step 5 (16-05, REMED-16, R24/R29). Characterizes the identity-diff persist
-/// round-trip (`AppModel.persistNewHistory`, the Phase 09.7-01 Pitfall-3 fix) BEFORE it moves into
-/// `HistoryPersistenceCoordinator` (Task 2), so this file is the wall the extraction must stay
-/// green against. Reuses the proven `TandemBackend` + `FakePumpTransport` gap-sync idiom
+/// Characterizes the identity-diff persist round-trip (`AppModel.persistNewHistory`), so this file
+/// is the wall its extraction into `HistoryPersistenceCoordinator` must stay green against.
+/// Reuses the proven `TandemBackend` + `FakePumpTransport` gap-sync idiom
 /// `HistoryLogSyncTests.oldGapRecordPersists` already established for driving a real
 /// `refresh() -> persistNewHistory` cycle end-to-end — no new `AppModel`/`MockBackend` test seam
 /// needed.
@@ -44,11 +43,11 @@ struct HistoryPersistenceRoundTripTests {
         }
     }
 
-    // MARK: - Pitfall-3: a gap-sync record older than the last snapshot still ingests
+    // MARK: - A gap-sync record older than the last snapshot still ingests
 
     /// A gap-fill record dated OLDER than every reading already persisted must still reach
     /// `GlucoseHistoryStore` — the identity-diff keys on "was this exact timestamp in the LAST
-    /// persisted set", never on date ordering, so an interior/forward gap record from D-02 is never
+    /// persisted set", never on date ordering, so an interior/forward gap record is never
     /// silently dropped by a forward-only watermark.
     @Test func gapSyncRecordOlderThanLastSnapshotStillIngests() {
         withCleanCoverage {
@@ -60,7 +59,7 @@ struct HistoryPersistenceRoundTripTests {
             backend.injectStatusFrameForTesting(FakePumpTransport.timeResponse())
             backend.injectStatusFrameForTesting(
                 FakePumpTransport.historyLogStatus(numEntries: 100, firstSequenceNum: 1, lastSequenceNum: 100))
-            // WR-03: receive the whole 1...100 window so held coverage is [1...100].
+            // Receive the whole 1...100 window so held coverage is [1...100].
             injectHistoryStreamChunked(
                 backend,
                 stride(from: UInt32(100), through: UInt32(1), by: -1).map {
@@ -137,7 +136,7 @@ struct HistoryPersistenceRoundTripTests {
     // MARK: - Retention / statistics / approxBytes forwarding stays byte-identical
 
     /// Pins `applyRetention`/`storedStatistics`/`storedHistoryApproxBytes` against a known-shape
-    /// seeded store so Task 2's move (facade forwarding into the coordinator) cannot silently change
+    /// seeded store so the facade's forwarding into the coordinator cannot silently change
     /// the schema or the values these read/write.
     @Test func retentionStatisticsAndApproxBytesForwardConsistently() {
         let backend = MockBackend()

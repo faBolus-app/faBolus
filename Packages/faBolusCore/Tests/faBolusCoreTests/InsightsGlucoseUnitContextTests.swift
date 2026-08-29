@@ -1,10 +1,10 @@
 import XCTest
 @testable import faBolusCore
 
-/// 09.18d-01 (D-15) — the faBolus glucose-unit shim for the LoopInsights endo report. Replaces the
+/// The faBolus glucose-unit shim for the LoopInsights endo report. Replaces the
 /// mirror `LoopInsights_GlucoseUnitContext` (which imports LoopKit/LoopKitUI/HealthKit and carries
-/// AI-prompt methods, D-14) with a thin wrapper over faBolusCore's own `GlucoseUnit`. NO AI-prompt
-/// surface is ported (D-14): this only formats mg/dL values + the TIR range label in the user's unit.
+/// AI-prompt methods) with a thin wrapper over faBolusCore's own `GlucoseUnit`. NO AI-prompt
+/// surface is ported: this only formats mg/dL values + the TIR range label in the user's unit.
 final class InsightsGlucoseUnitContextTests: XCTestCase {
 
     func testMgdlFormatsPlainInteger() {
@@ -26,7 +26,7 @@ final class InsightsGlucoseUnitContextTests: XCTestCase {
         let mgdl = InsightsGlucoseUnitContext(unit: .mgdl)
         XCTAssertEqual(mgdl.tirRangeLabel, "Time in Range (70–180)")
 
-        // mmol/L uses the clinically-conventional rounded threshold labels (D-08), not a raw conversion.
+        // mmol/L uses the clinically-conventional rounded threshold labels, not a raw conversion.
         let mmol = InsightsGlucoseUnitContext(unit: .mmol)
         XCTAssertEqual(mmol.lowThresholdLabel, "3.9")
         XCTAssertEqual(mmol.highThresholdLabel, "10.0")

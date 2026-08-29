@@ -29,7 +29,7 @@ struct HistoryLogSyncTests {
     }
 
     /// Decodes a recorded `HistoryLogRequest` send's cargo (`[startLog(4, LE), numberOfLogs(1)]`,
-    /// `HistoryLogRequests.swift:22-35`) back into its two fields, so a test can assert exactly which
+    /// `HistoryLogRequests.swift`) back into its two fields, so a test can assert exactly which
     /// window was requested without re-parsing bytes inline at every call site.
     private func decodeHistoryLogRequest(_ sent: (opCode: UInt8, cargo: [UInt8], signed: Bool, allowDelivery: Bool))
         -> (startLog: UInt32, numberOfLogs: Int)

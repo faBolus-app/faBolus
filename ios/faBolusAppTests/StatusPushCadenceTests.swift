@@ -3,17 +3,13 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// P12 (§5.4) — the host must push status to the remotes on every NEW glucose SAMPLE, not only when the
+/// The host must push status to the remotes on every NEW glucose SAMPLE, not only when the
 /// mg/dL VALUE changes. A CGM commonly reports the same number twice in a row; the old value-only
 /// comparison let a fresh reading silently NOT reach the remotes, so their displayed age stalled.
-///
-/// Phase 16 GO-1 Step 2 (REMED-16): `shouldPushStatus` relocated from `AppModel` to
-/// `FailoverBadgePresenter` (a pure, verbatim move — same signature, same body) — these assertions
-/// are unchanged, only the callee's namespace moved.
 struct StatusPushCadenceTests {
     private let t0 = Date(timeIntervalSince1970: 1_000_000)
 
-    /// The §5.4 fix: same mg/dL but a NEWER source timestamp = a new sample = push.
+    /// Same mg/dL but a NEWER source timestamp = a new sample = push.
     @Test func newSampleAtTheSameValuePushes() {
         #expect(
             FailoverBadgePresenter.shouldPushStatus(

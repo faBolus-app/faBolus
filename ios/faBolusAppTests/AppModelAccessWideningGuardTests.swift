@@ -123,7 +123,7 @@ struct AppModelAccessWideningGuardTests {
             !source.contains("internal var deliveryLedgerCoordinator"),
             "deliveryLedgerCoordinator must never appear as `internal`")
 
-        // These two keys moved out of AppModel entirely — assert the negative here AND the positive against their new file so the move cannot make this pin unreachable.
+        // These two keys live in HistoryPersistenceCoordinator, not AppModel — assert the negative here AND the positive against that file so their location cannot make this pin unreachable.
         #expect(
             !source.contains("lastPersistedGlucoseKeys"),
             "lastPersistedGlucoseKeys must no longer appear in AppModel.swift at all — it moved to HistoryPersistenceCoordinator.swift (16-05)"

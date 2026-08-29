@@ -1,8 +1,7 @@
 import Testing
 @testable import faBolus
 
-/// Phase 9 (mobi-all-advanced-t-slim-control-last-highest-risk), Plan 01 (MOBI-03, D-04): guards the
-/// Mobi reject-at-pairing DRAFT copy against the one banned phrase REQUIREMENTS.md's MOBI-03 names.
+/// Guards the Mobi reject-at-pairing DRAFT copy against the one banned phrase REQUIREMENTS.md names.
 /// Mirrors `RegulatoryCopyTests.swift`'s exact intent — this does NOT bless the exact wording (that
 /// still needs owner + a §13 clinician sign-off, per BRANCHES.md §13, before an `experimental` build is
 /// distributed); it only prevents the copy from silently regressing to the banned phrase.

@@ -2,7 +2,7 @@ import Testing
 import faBolusCore
 @testable import faBolus
 
-/// Phase 09.6-03 (Task 1, Part C-2, D-03.2): behavior pins for the `[CGM arbiter]` diagnostics
+/// Behavior pins for the `[CGM arbiter]` diagnostics
 /// section — reads the SAME already-arbitrated `GlucoseProvenance` the live UI badge uses
 /// (`AppModel.glucoseProvenance`/`failoverBadge`), never re-runs `GlucoseArbiter.merge`. Redaction:
 /// a `GlucoseSourceStatus.error(String)` case renders its CASE NAME only, never the associated string.

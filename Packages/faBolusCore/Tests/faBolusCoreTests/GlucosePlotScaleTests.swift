@@ -2,13 +2,12 @@ import Testing
 import Foundation
 @testable import faBolusCore
 
-/// RED-first (task 09.13-01/1): written before `GlucosePlotScale` exists, so this fails to
-/// compile/build until the type + its math land. Covers D-01 (defaults + floor<ceiling),
-/// D-02 (discrete preset sets), D-08 (symmetric clamp), D-09 (scaleUnits/recoverUnits round trip),
-/// and the mmol boundLabel (Phase-4 D-08 clinical-rounding precedent).
+/// Covers `GlucosePlotScale`'s defaults (always floor<ceiling), its discrete preset sets, the
+/// symmetric clamp, the scaleUnits/recoverUnits round trip, and the mmol boundLabel's
+/// clinical rounding.
 struct GlucosePlotScaleTests {
 
-    // MARK: - Option sets + defaults (D-01, D-02)
+    // MARK: - Option sets + defaults
 
     @Test func optionSetsAndDefaultsMatchD01D02() {
         #expect(GlucosePlotScale.floorOptions == [40, 50])
@@ -17,7 +16,7 @@ struct GlucosePlotScaleTests {
         #expect(GlucosePlotScale.defaultCeiling == 300)
     }
 
-    // MARK: - resolve() (D-01/D-02/D-10)
+    // MARK: - resolve()
 
     @Test func resolveDefaultsWhenStoredValuesAreAbsent() {
         let r = GlucosePlotScale.resolve(storedFloor: nil, storedCeiling: nil)
@@ -44,7 +43,7 @@ struct GlucosePlotScaleTests {
         }
     }
 
-    // MARK: - clamp() — symmetric, D-08
+    // MARK: - clamp() — symmetric
 
     @Test func clampPinsAboveCeilingToCeiling() {
         #expect(GlucosePlotScale.clamp(400, floor: 40, ceiling: 300) == 300)
@@ -58,7 +57,7 @@ struct GlucosePlotScaleTests {
         #expect(GlucosePlotScale.clamp(120, floor: 40, ceiling: 300) == 120)
     }
 
-    // MARK: - scaleUnits / recoverUnits round trip (D-09)
+    // MARK: - scaleUnits / recoverUnits round trip
 
     @Test func scaleUnitsMapsZeroAndUnitMaxToFloorAndCeiling() {
         #expect(GlucosePlotScale.scaleUnits(0, unitMax: 10, floor: 40, ceiling: 300) == 40)
@@ -77,7 +76,7 @@ struct GlucosePlotScaleTests {
         }
     }
 
-    // MARK: - boundLabel() — mg/dL integer, mmol clinical rounding (D-02)
+    // MARK: - boundLabel() — mg/dL integer, mmol clinical rounding
 
     @Test func boundLabelMgdlIsPlainInteger() {
         #expect(GlucosePlotScale.boundLabel(300, unit: .mgdl) == "300")

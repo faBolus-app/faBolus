@@ -54,12 +54,12 @@ final class PatternInsightsTests: XCTestCase {
         XCTAssertTrue(PatternInsights().insights(cgm: cgm).isEmpty)
     }
 
-    // MARK: - 04-08 gap closure (SC1): the unit param must be display-unit-correct AND leave the
-    // pre-existing default (.mgdl) text byte-identical to before this plan.
+    // MARK: - The unit param must be display-unit-correct AND leave the pre-existing default
+    // (.mgdl) text byte-identical.
 
     func testDefaultUnitParamIsMgdlAndTextUnchanged() {
-        // No `unit:` argument at all — confirms the default-parameter call-site compatibility promise
-        // (Task 1's "default .mgdl to preserve call-site compatibility" instruction).
+        // No `unit:` argument at all — confirms the default-parameter call-site compatibility
+        // promise: the default `.mgdl` preserves call-site compatibility.
         let cgm = series(days: 4, stepMinutes: 5, lowHour: 2)
         let out = PatternInsights().insights(cgm: cgm)
         let low = out.first { $0.title.hasPrefix("Recurring lows") }

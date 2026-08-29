@@ -1,7 +1,7 @@
 import Testing
 @testable import faBolusCore
 
-/// P14 S10 (§2.1(5)): the TDD-relative max-bolus-limit CONFIRM tier — warns, never blocks, and is
+/// The TDD-relative max-bolus-limit CONFIRM tier — warns, never blocks, and is
 /// strictly separate from the absolute 25 U HARD cap (`Interlocks.clampMaxBolusLimit`).
 struct TherapyConfirmationsTests {
 
@@ -38,7 +38,7 @@ struct TherapyConfirmationsTests {
         #expect(Interlocks.clampMaxBolusLimit(1000) == Interlocks.absoluteMaxUnits)
     }
 
-    // MARK: - B1(d) §2.1(5): per-segment therapy-value advisories vs the TDD rules of thumb
+    // MARK: - Per-segment therapy-value advisories vs the TDD rules of thumb
 
     @Test func tddAdvisoriesAreSilentWhenTddUnknown() {
         // TDD 0 ⇒ unknown ⇒ never an advisory (the whole layer needs a configured Control-IQ TDD).
@@ -81,8 +81,9 @@ struct TherapyConfirmationsTests {
         #expect(TherapyConfirmations.basalTddAdvisory(basalUnitsPerHour: 0, totalDailyInsulinUnits: 48) == nil)
     }
 
-    // MARK: - 04-08 gap closure (SC1): isfTddAdvisory's mg/dL literal must convert via a GlucoseUnit param
-    // (no AppSettings in faBolusCore); the no-arg default must stay byte-identical to before this plan.
+    // MARK: - isfTddAdvisory's mg/dL literal must convert via a GlucoseUnit param
+    // (no AppSettings in faBolusCore); the no-arg default must stay byte-identical to the
+    // pre-existing wording.
 
     @Test func isfAdvisoryDefaultUnitTextIsUnchanged() {
         // No `unit:` argument — the pre-existing mg/dL wording must be byte-identical.

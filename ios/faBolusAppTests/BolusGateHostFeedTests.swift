@@ -3,7 +3,7 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// P12 (group D) — the phone host feeds `BolusGate` from its own `PumpSnapshot` + `AccessPolicy`. Pins
+/// The phone host feeds `BolusGate` from its own `PumpSnapshot` + `AccessPolicy`. Pins
 /// that `AppModel.bolusGate` maps the live snapshot correctly (the pure gate logic is covered by
 /// `BolusGateTests`; this covers the host wiring the phone `BolusEntryView` now depends on).
 @Suite(.serialized) @MainActor
@@ -58,7 +58,7 @@ struct BolusGateHostFeedTests {
         }
     }
 
-    /// Phase 09.9 D-01: the phone bolus affordance inherits the no-cartridge hard block through the
+    /// The phone bolus affordance inherits the no-cartridge hard block through the
     /// existing `cartridgeReadyForBolus` → `BolusGate.evaluate(cartridgeReady:)` wire — no per-surface code.
     @Test func midCartridgeChangeReportsNoCartridge() async {
         await withClean {
@@ -71,7 +71,7 @@ struct BolusGateHostFeedTests {
         }
     }
 
-    // MARK: P12 increment 4 — statusCommand emits the semantic bolus availability over the wire
+    // MARK: statusCommand emits the semantic bolus availability over the wire
 
     @Test func statusCommandEmitsCanBolusWhenConnected() async {
         await withClean {
@@ -103,7 +103,7 @@ struct BolusGateHostFeedTests {
         }
     }
 
-    /// Phase 09.9 D-01/D-05: the no-cartridge block propagates to every remote (watch/Garmin/Mac) through
+    /// The no-cartridge block propagates to every remote (watch/Garmin/Mac) through
     /// the existing `cmd.canBolus`/`cmd.bolusBlockReason` wire — no bespoke per-surface build.
     @Test func statusCommandEmitsNoCartridgeWhenCartridgeIsLoading() async {
         await withClean {
@@ -116,7 +116,7 @@ struct BolusGateHostFeedTests {
         }
     }
 
-    // MARK: P15 G5 (§2.3) — the optional remote-only dose ceiling clamps the REMOTE `BolusGate` maximum only
+    // MARK: The optional remote-only dose ceiling clamps the REMOTE `BolusGate` maximum only
 
     private final class FakeLink: RemoteTransport {
         var onReceive: (@MainActor (RemoteCommand) -> Void)?

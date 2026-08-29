@@ -3,14 +3,14 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// CX-G-08 (14-09) — pins the ConnectIQ-free dismiss-ack decision/handler logic
+/// Pins the ConnectIQ-free dismiss-ack decision/handler logic
 /// (`garminDismissAckDecision`, `garminDismissShouldReplay`, `garminHandleDismissAlert`) and the durable
 /// `GarminDismissReceiptStore`, all of which live OUTSIDE `#if GARMIN` precisely so this suite runs in
 /// the default (non-GARMIN) target — mirroring `GarminEchoSeedTests`/`GarminSendOutboxTests`'s own
 /// placement rationale. No ConnectIQ import, no live AppModel, no simulator.
 struct GarminDismissAckBridgeTests {
 
-    // MARK: - garminDismissAckDecision (checkpoint #2 absence-only / #4 typed-outcome)
+    // MARK: - garminDismissAckDecision (absence-only / typed-outcome)
 
     @Test func authenticatedClearedYieldsAck() {
         let decision = garminDismissAckDecision(
@@ -25,7 +25,7 @@ struct GarminDismissAckBridgeTests {
         }
     }
 
-    // MARK: - garminDismissShouldReplay (H2/HIGH-A)
+    // MARK: - garminDismissShouldReplay
 
     @Test func matchingReceiptRequestIdReplays() {
         let receipt = GarminDismissReceipt(
@@ -145,7 +145,7 @@ struct GarminDismissAckBridgeTests {
 
     /// An interleaved statusRead force-push racing the dismiss does not fabricate a removal — the core
     /// handler never inspects `activeNotifications`/statusRead state at all, only the typed outcome, so
-    /// there is no ordering hazard here to defend against (MEDIUM-1).
+    /// there is no ordering hazard here to defend against.
     @Test @MainActor func ackDecisionIsIndependentOfAnyStatusReadOrdering() async {
         let rec = Recorder()
         await garminHandleDismissAlert(
@@ -161,7 +161,7 @@ struct GarminDismissAckBridgeTests {
         #expect(rec.acksSent == [Call(requestId: "r4", alertId: 9, alertKind: 1)])
     }
 
-    // MARK: - GarminDismissReceiptStore (durability, T-14-30/T-14-32, two-lane TTL)
+    // MARK: - GarminDismissReceiptStore (durability, two-lane TTL)
 
     private func freshStore() -> GarminDismissReceiptStore {
         let defaults = UserDefaults(suiteName: "GarminDismissAckBridgeTests-\(UUID().uuidString)")!
@@ -200,7 +200,7 @@ struct GarminDismissAckBridgeTests {
         #expect(store.unackedReceipts().filter { $0.requestId == "r1" }.count == 1)
     }
 
-    /// EXPIRY (M1/HIGH-C, retry lane only): a receipt older than the TTL is no longer found for replay —
+    /// EXPIRY (retry lane only): a receipt older than the TTL is no longer found for replay —
     /// pruning removes it from THIS lane; it never touches/removes any alert on the watch (a separate
     /// display-provisional lane the watch itself owns, never TTL-pruned).
     @Test func expiredReceiptIsNoLongerFoundForReplay() {
@@ -251,7 +251,7 @@ struct GarminDismissAckBridgeTests {
             "the newest entry must survive")
     }
 
-    /// T-14-32/MEDIUM-F: the dismiss-receipt lane is COMPLETELY separate from the bolus
+    /// The dismiss-receipt lane is COMPLETELY separate from the bolus
     /// `garminEchoedRequestIds` UserDefaults key — persisting/acking a dismiss receipt must never write
     /// to that key, so a dismissAck requestId can never evict (or be evicted alongside) a bolus outcome.
     @Test func dismissReceiptLaneNeverTouchesTheBolusEchoedRequestIdsKey() {

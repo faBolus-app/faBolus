@@ -3,16 +3,13 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// Phase 09.15-05 (T1-2, D-08/D-09.1): the `ciqSuspendedForLow` + `ciqSuspendStartEpochSec`
-/// primitive-propagation spine — the SP-1…SP-4 wire-spine pattern cloned from 09.15-01's
-/// `CiqZoneWireTests`. D-09.1 is the safety-critical nuance THIS suite exists to pin: a suspend is
-/// attributed to Control-IQ ONLY when the pump's own control-state says so — never inferred, never
-/// upgraded from a generic `deliverySuspended`. This file grows across the plan's tasks (see
-/// 09.15-05-PLAN.md): Task 2 covers the validate/round-trip/legacy/client-parse assertions below;
-/// Task 3 adds the fail-closed render assertion.
+/// The `ciqSuspendedForLow` + `ciqSuspendStartEpochSec` primitive-propagation spine — the same
+/// wire-spine pattern as `CiqZoneWireTests`. The safety-critical nuance THIS suite exists to pin: a
+/// suspend is attributed to Control-IQ ONLY when the pump's own control-state says so — never
+/// inferred, never upgraded from a generic `deliverySuspended`.
 @Suite struct CiqSuspendWireTests {
 
-    // MARK: - Task 2: validate() epoch bound
+    // MARK: - validate() epoch bound
 
     @Test func validateRejectsAZeroOrNegativeOrOverflowEpoch() {
         for bad in [0, -1, Int(Int32.max) + 1] {
@@ -36,7 +33,7 @@ import faBolusCore
         try cmdAbsent.validate()
     }
 
-    // MARK: - Task 2: Codable round-trip
+    // MARK: - Codable round-trip
 
     @Test func suspendPrimitivesRoundTripThroughJSONUnchanged() throws {
         var cmd = RemoteCommand(kind: .statusRead)
@@ -53,7 +50,7 @@ import faBolusCore
         #expect(backValidated.ciqSuspendStartEpochSec == epoch)
     }
 
-    /// `ciqSuspendedForLow == false` (a fully-known "not CIQ-attributed" fact, D-09.1) must also
+    /// `ciqSuspendedForLow == false` (a fully-known "not CIQ-attributed" fact) must also
     /// round-trip byte-for-byte — never conflated with `nil` (unknown/unread).
     @Test func explicitFalseAttributionRoundTripsDistinctFromNil() throws {
         var cmd = RemoteCommand(kind: .statusRead)
@@ -63,7 +60,7 @@ import faBolusCore
         #expect(back.ciqSuspendedForLow == false)
     }
 
-    // MARK: - Task 2: legacy back-compat
+    // MARK: - Legacy back-compat
 
     /// An OLD JSON blob with the suspend keys ABSENT decodes fine — a legacy host's statusRead reply
     /// (predating these fields) must never fail to decode.
@@ -78,7 +75,7 @@ import faBolusCore
         #expect(validated.ciqSuspendStartEpochSec == nil)
     }
 
-    // MARK: - Task 2: fail-closed on the client (RemoteCommandWireFixture parse)
+    // MARK: - Fail-closed on the client (RemoteCommandWireFixture parse)
 
     private final class FakeLink: RemoteTransport {
         var onReceive: (@MainActor (RemoteCommand) -> Void)?
@@ -89,7 +86,7 @@ import faBolusCore
     }
 
     /// Loading backstop: a freshly-constructed client BEFORE any `apply`/`handle(cmd)` has both suspend
-    /// fields absent — a fresh app launch before the first statusRead reply must show every 09.15
+    /// fields absent — a fresh app launch before the first statusRead reply must show every suspend
     /// surface ABSENT, never a stale/zero placeholder.
     @MainActor
     @Test func freshClientBeforeAnyCommandHasNoCiqSuspendAttribution() {
@@ -99,7 +96,7 @@ import faBolusCore
     }
 
     /// A nil/absent `ciqSuspendedForLow` on the wire yields no rendered claim — the client keeps its
-    /// safe `nil` default when a command never carries the key (D-09.1: falls back to the client's own
+    /// safe `nil` default when a command never carries the key (falls back to the client's own
     /// generic-suspend indicator, never a fabricated "Control-IQ paused").
     @MainActor
     @Test func absentSuspendFieldsOnTheWireKeepTheSafeNilDefault() {
@@ -110,9 +107,9 @@ import faBolusCore
         #expect(m.ciqSuspendStartDate == nil)
     }
 
-    /// SP-5 fail-closed (D-06 guardrail #5, D-09.1): once attribution HAS been shown true, a later
-    /// statusRead that clears it (basal resumes, or the cause is no longer CIQ) MUST clear the client's
-    /// stored value too — never a stale "Control-IQ paused" surviving past the moment it actually ended.
+    /// Fail-closed: once attribution HAS been shown true, a later statusRead that clears it (basal
+    /// resumes, or the cause is no longer CIQ) MUST clear the client's stored value too — never a stale
+    /// "Control-IQ paused" surviving past the moment it actually ended.
     @MainActor
     @Test func aClearedSuspendAttributionOverwritesAPreviouslyKnownTrueRatherThanStaying() {
         let m = RemoteCommandWireFixture(link: FakeLink())
@@ -130,12 +127,12 @@ import faBolusCore
         #expect(m.ciqSuspendStartDate == nil)
     }
 
-    // MARK: - Task 3: fail-closed render — D-09.1 BINDING never-false-claim rule
+    // MARK: - Fail-closed render — the never-false-claim rule
     //
     // `StatusPillsView`'s "basal" pill upgrade is gated on exactly
     // (deliverySuspended && ciqSuspendedForLow == true && ciqSuspendStartDate != nil); these pin the
     // underlying PumpSnapshot-level contract that gate reads, so a generic suspend can never be
-    // mistaken for a pump-confirmed Control-IQ one — the same pure-predicate contract Task 1's
+    // mistaken for a pump-confirmed Control-IQ one — the same pure-predicate contract
     // `CiqSuspendAttributionTests` pins at the faBolusCore layer, re-pinned here at the data boundary
     // the actual render decision consumes.
 
@@ -149,7 +146,7 @@ import faBolusCore
     }
 
     /// A generic suspend where CIQ attribution was never read (`nil`) must ALSO never imply
-    /// "Control-IQ paused" — absent is treated identically to `false` (D-09.1 BINDING).
+    /// "Control-IQ paused" — absent is treated identically to `false`.
     @Test func absentCiqAttributionOnAGenericSuspendAlsoNeverImpliesControlIQPaused() {
         var snap = PumpSnapshot()
         snap.deliverySuspended = true

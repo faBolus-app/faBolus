@@ -57,14 +57,14 @@ final class BackupModelsTests: XCTestCase {
         XCTAssertNotNil(pumpOnly.pumpSettings)
     }
 
-    // MARK: SiteAtlas backup section (09.18a-01, D-10)
+    // MARK: SiteAtlas backup section
 
-    /// 09.18d-02: schema chained to 3 (adds the optional `trackers` section on top of `siteAtlas`).
+    /// Schema chained to 3 (adds the optional `trackers` section on top of `siteAtlas`).
     func testCurrentSchemaIsThree() {
         XCTAssertEqual(FaBolusBackup.currentSchema, 3)
     }
 
-    /// D-10 back-compat: a schema-1 backup (no `siteAtlas` key) still decodes; `siteAtlas` is nil.
+    /// Back-compat: a schema-1 backup (no `siteAtlas` key) still decodes; `siteAtlas` is nil.
     func testSchema1BackupDecodesWithNilSiteAtlas() throws {
         // Hard-coded schema-1 payload — no siteAtlas key at all (as an older app version would have written).
         let schema1JSON = """
@@ -87,9 +87,9 @@ final class BackupModelsTests: XCTestCase {
         XCTAssertNil(decoded.pumpSettings)
     }
 
-    // MARK: Caffeine / Alcohol tracker backup section (09.18d-02, D-14/D-17)
+    // MARK: Caffeine / Alcohol tracker backup section
 
-    /// D-17 back-compat: a schema-2 backup (siteAtlas present, but written before the `trackers` section
+    /// Back-compat: a schema-2 backup (siteAtlas present, but written before the `trackers` section
     /// existed) still decodes; `trackers` is nil while `siteAtlas` is preserved.
     func testSchema2BackupDecodesWithNilTrackers() throws {
         let schema2JSON = """
@@ -163,7 +163,7 @@ final class BackupModelsTests: XCTestCase {
         let backup = FaBolusBackup(meta: meta, siteAtlas: SiteAtlasBackup(entries: [entry]))
         let decoded = try FaBolusBackup.decode(backup.encoded())
         // A freshly-created backup carries the CURRENT schema (Meta.schemaVersion defaults to
-        // FaBolusBackup.currentSchema). SiteAtlas landed in schema 2; trackers (09.18d) bumped
+        // FaBolusBackup.currentSchema). SiteAtlas landed in schema 2; trackers bumped
         // currentSchema to 3, so a fresh backup is 3 regardless of which sections it carries.
         // (Schema-2 backward-compat decoding is covered separately by the schema-2 fixture test above.)
         XCTAssertEqual(decoded.meta.schemaVersion, 3)

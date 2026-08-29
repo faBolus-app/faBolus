@@ -3,9 +3,9 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// P12 §5.2.8 / N21 — the opt-in connection telemetry store: it must stay a no-op until the user opts
-/// in (default OFF), accrue uptime + bucket disconnect reasons + count reconciliation outcomes when on,
-/// and read-modify-write so a sibling process can't clobber it. Mirrors the P9 telemetry test style
+/// The opt-in connection telemetry store: it must stay a no-op until the user opts in (default OFF),
+/// accrue uptime + bucket disconnect reasons + count reconciliation outcomes when on, and
+/// read-modify-write so a sibling process can't clobber it. Mirrors the existing telemetry test style
 /// (injected UserDefaults suite).
 @MainActor
 struct ConnectionTelemetryStoreTests {
@@ -65,11 +65,11 @@ struct ConnectionTelemetryStoreTests {
         #expect(ConnectionTelemetryStore.reasonToken(from: "Peer removed pairing") == "error")
     }
 
-    /// D-03 — a CBError-shaped detail (`TandemBackend.applyClientError`'s enriched
+    /// A CBError-shaped detail (`TandemBackend.applyClientError`'s enriched
     /// `"\(domain)#\(code) \(description)"` format) must bucket on its `domain#code` prefix instead of
     /// collapsing into the generic "error" token; the four pre-existing string-matched inputs above are
     /// unaffected (re-asserted here so a regression in the fallback ordering fails loudly).
-    /// D-02c (09.6-02): the token now also carries the human label (e.g. "→ Connection timeout") — see
+    /// The token also carries the human label (e.g. "→ Connection timeout") — see
     /// `cbErrorCodesRenderHumanLabels` below for the full 0–18 table.
     @Test func reasonTokenBucketsCBErrorDomainCodeInsteadOfGenericError() {
         let token = ConnectionTelemetryStore.reasonToken(
@@ -85,11 +85,11 @@ struct ConnectionTelemetryStoreTests {
         #expect(ConnectionTelemetryStore.reasonToken(from: "Bluetooth is resetting…") == "resetting")
     }
 
-    // MARK: - Part B-c (D-02c): CBError code → human-label decode, failing closed
+    // MARK: - CBError code → human-label decode, failing closed
 
-    /// The verified 0–18 `CBError.Code` table (09.6-RESEARCH.md Code Examples, cross-checked against
-    /// this project's own on-device `CBErrorDomain#7` capture). Every one of the 19 codes must render
-    /// its exact human label appended onto the existing `domain#code` token.
+    /// The verified 0–18 `CBError.Code` table (cross-checked against this project's own on-device
+    /// `CBErrorDomain#7` capture). Every one of the 19 codes must render its exact human label appended
+    /// onto the existing `domain#code` token.
     @Test func cbErrorCodesRenderHumanLabels() {
         let expected: [Int: String] = [
             0: "Unknown", 1: "Invalid parameters", 2: "Invalid handle", 3: "Not connected",
@@ -110,7 +110,7 @@ struct ConnectionTelemetryStoreTests {
     }
 
     /// A code outside the verified 0–18 range must fail closed to the existing raw `domain#code` token —
-    /// never crash, never fabricate a label, never emit unbounded text (V5 input validation).
+    /// never crash, never fabricate a label, never emit unbounded text.
     @Test func cbErrorOutOfRangeCodeFallsBackToRawToken() {
         let token = ConnectionTelemetryStore.reasonToken(from: "CBErrorDomain#42 Some undocumented future code.")
         #expect(token == "CBErrorDomain#42")
@@ -131,7 +131,7 @@ struct ConnectionTelemetryStoreTests {
         #expect(token == "NSPOSIXErrorDomain#7")
     }
 
-    // MARK: - B3a: command-latency dimension
+    // MARK: - Command-latency dimension
 
     @Test func commandLatencyBucketsResponsesAndTimeouts() {
         let (s, _) = makeStore(enabled: true)
@@ -163,8 +163,8 @@ struct ConnectionTelemetryStoreTests {
         #expect(ConnectionTelemetry.latencyBucket(30) == "ge4s")
     }
 
-    /// MIGRATION GUARD (B3a): a P12 blob persisted BEFORE `commandLatency` existed (no such key) must
-    /// upgrade in place — the shipped connect/uptime/disconnect/reconcile counters MUST survive, not reset
+    /// MIGRATION GUARD: a blob persisted BEFORE `commandLatency` existed (no such key) must upgrade in
+    /// place — the shipped connect/uptime/disconnect/reconcile counters MUST survive, not reset
     /// to zero. Regression pin for the synthesized-Codable hazard (a missing non-optional key would throw →
     /// `try? decode` → zeroed telemetry).
     @Test func oldBlobWithoutCommandLatencyPreservesCounters() throws {
@@ -172,7 +172,7 @@ struct ConnectionTelemetryStoreTests {
         let d = UserDefaults(suiteName: suite)!
         d.removePersistentDomain(forName: suite)
         d.set(true, forKey: NotificationRuntime.telemetryEnabledKey)
-        // A pre-B3a JSON payload — note: NO `commandLatency` key.
+        // An older JSON payload — note: NO `commandLatency` key.
         let old = #"{"connectCount":3,"totalUptimeSeconds":600,"disconnects":{"btOff":2},"reconcile":{"delivered":1}}"#
         d.set(Data(old.utf8), forKey: "connectionTelemetry.v1")
 

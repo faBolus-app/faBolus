@@ -3,11 +3,11 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// Phase 09.2 Fix 4 (SC4, D-04): pins that `BolusEntryView.rankedWarnings(...)` — the pure classification/
-/// ordering seam extracted from the inline warning stack (`:439-497`) — always ranks blocking-adjacent
+/// Pins that `BolusEntryView.rankedWarnings(...)` — the pure classification/
+/// ordering seam over the inline warning stack — always ranks blocking-adjacent
 /// conditions (overMax, pumpNotLinked, bolusInFlight, childBlocked) ABOVE advisory-only disclosures, that
-/// the GREY blockers are classified `.blocking` (never demoted merely because they aren't red/orange, per
-/// RESEARCH Pitfall 4), and that no active warning is ever dropped by the reorder. This is
+/// the GREY blockers are classified `.blocking` (never demoted merely because they aren't red/orange),
+/// and that no active warning is ever dropped by the reorder. This is
 /// presentation/ordering ONLY — it does not exercise `BolusGate`/`canBolus`/the dose (those stay pinned by
 /// `BolusGateHostFeedTests` / `StackingGuardDeliverInvariantTests`).
 @Suite @MainActor
@@ -49,7 +49,7 @@ struct BolusWarningRankingTests {
 
     /// The three GREY blocking-adjacent conditions — pumpNotLinked, bolusInFlight, child-mode — each
     /// classify as `.severity == .blocking` even though none render in the "danger" (red) tone, so they
-    /// are never demoted below an orange advisory shown alongside them (RESEARCH Pitfall 4).
+    /// are never demoted below an orange advisory shown alongside them.
     @Test func greyBlockersClassifyAsBlockingNotAdvisory() {
         let warnings = BolusEntryView.rankedWarnings(
             overMax: false, maxUnits: 5.0,
@@ -105,7 +105,7 @@ struct BolusWarningRankingTests {
         #expect(warnings[firstAdvisoryIndex...].allSatisfy { $0.severity == .advisory })
     }
 
-    // MARK: - WR-06 / VA-24: noCartridge surfaces an on-screen blocking reason
+    // MARK: - noCartridge surfaces an on-screen blocking reason
 
     /// During a cartridge change the gate returns `.noCartridge` and disables Deliver; the user must see
     /// WHY. `rankedWarnings(... noCartridge: true)` surfaces a `.blocking`, neutral-tone row whose text is

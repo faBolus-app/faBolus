@@ -2,9 +2,9 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// CX-F-07 (addresses codex HIGH — "jetsam/crash distinction is not implementable as described"):
-/// `GlucoseSourceRecoveryPolicy.decide` replaces the old permanent-until-reselect crash guard. It never
-/// asserts a termination CAUSE — only whether the previous run left its clean-shutdown marker
+/// `GlucoseSourceRecoveryPolicy.decide` replaces the old permanent-until-reselect crash guard. A
+/// jetsam-vs-crash distinction is not implementable, so it never asserts a termination CAUSE —
+/// only whether the previous run left its clean-shutdown marker
 /// (`wasClean`) — and applies a BOUNDED policy: a single unclean start never disables failover; only
 /// `maxUncleanStartsBeforeDisable` unclean starts within `uncleanStartWindow` do, and even that disable
 /// auto-re-probes once `disableWindow` elapses. Pure (no `UserDefaults`, no clock read), so the

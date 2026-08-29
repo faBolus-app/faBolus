@@ -11,7 +11,7 @@ struct PumpErrorCorrelationScopeTests {
 
     private var loadStatusOpcode: UInt8 { LoadStatusRequest.props.opCode }
 
-    // MARK: - CR-01: a rejected control WRITE never blacklists its colliding supported READ
+    // MARK: - CR-01 — a rejected control WRITE never blacklists its colliding supported READ
 
     /// op164 = `SetTempRateRequest` (`.control` WRITE) AND `LastBolusStatusV2Request` (`.currentStatus`
     /// READ). A `.control` op77 whose cargo NAMES op164 (a rejected temp-rate write) must NEVER suppress the
@@ -39,7 +39,7 @@ struct PumpErrorCorrelationScopeTests {
             "a .control write NACK naming op144 must NEVER suppress the colliding CurrentBatteryV2 READ (CR-01)")
     }
 
-    // MARK: - WR-01: an opcode-less control op77 never correlates to an outstanding READ
+    // MARK: - WR-01 — an opcode-less control op77 never correlates to an outstanding READ
 
     /// With op20 the sole outstanding READ (txId 0), an OPCODE-LESS op77 on `.control` whose echoed txId (0)
     /// would otherwise correlate to op20 must NOT blacklist it — a control op77 says nothing about reads.
@@ -69,7 +69,7 @@ struct PumpErrorCorrelationScopeTests {
         #expect(c.badOpcodesForTesting.isEmpty, "the identical op77 on .control must record nothing (CR-01/WR-01)")
     }
 
-    // MARK: - WR-02: fail closed when the echoed txId matches no outstanding read
+    // MARK: - WR-02 — fail closed when the echoed txId matches no outstanding read
 
     /// Full post-pair burst (many outstanding reads with distinct txIds), then a `.currentStatus` op77 whose
     /// echoed txId matches NO outstanding read. The old blind FIFO-oldest fallback would blacklist an
@@ -87,7 +87,7 @@ struct PumpErrorCorrelationScopeTests {
     }
 
     /// The single-outstanding on-demand path still self-heals WITHOUT a txId echo (unambiguous): exactly one
-    /// read outstanding → resolve to it. (Proves WR-02's fail-closed change didn't break the wizard path.)
+    /// read outstanding → resolve to it. (Proves the fail-closed change didn't break the wizard path.)
     @Test func aSoleOutstandingReadSelfHealsEvenWithoutATxIdEcho() async {
         let b = TandemBackend(testTransport: FakePumpTransport())
         await b.refreshLoadStatus()  // op20 sole outstanding, txId 0
@@ -99,7 +99,7 @@ struct PumpErrorCorrelationScopeTests {
             "with exactly one read outstanding, an opcode-less op77 resolves to it unambiguously (WR-02)")
     }
 
-    // MARK: - WR-03: non-vacuous burst correlation — txId echo picks the right read, not the oldest
+    // MARK: - WR-03 — non-vacuous burst correlation: txId echo picks the right read, not the oldest
 
     /// Full burst with 7+ distinct txIds; an op77 echoing op20's REAL wire txId must blacklist op20 — NOT
     /// the FIFO-oldest read. This is only satisfiable via the byTxId branch (op20 is sent last), so it can
@@ -107,7 +107,7 @@ struct PumpErrorCorrelationScopeTests {
     @Test func aBurstOp77EchoingLoadStatusTxIdBlacklistsLoadStatusNotTheOldest() {
         let b = TandemBackend(testTransport: FakePumpTransport())
         b.startPollingForTesting()
-        // api25 static-registry hardening: op20 is identity-gated — released here (default/supported identity)
+        // op20 is identity-gated — released here (default/supported identity)
         // so it is outstanding as fastRead()'s LAST send, exactly as before the deferral.
         b.releaseIdentityGatedReadsForTesting()
         let op20 = loadStatusOpcode
@@ -152,7 +152,7 @@ struct PumpErrorCorrelationScopeTests {
     }
 }
 
-/// IN-02 (debug pump-pairing-loop-api25, deep review): the calc-input reads (op-115 BolusCalcDataSnapshot,
+/// The calc-input reads (op-115 BolusCalcDataSnapshot,
 /// op-109 ControlIQIOB) previously went out via the RAW `send` seam, bypassing the `badOpcodes` never-resend
 /// guard, the `outstandingReads` correlation map, and the standing "read send →" log — inconsistent with
 /// every other status read. They now route through the guarded `sendStatusRead`.

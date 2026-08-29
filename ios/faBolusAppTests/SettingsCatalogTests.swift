@@ -203,7 +203,7 @@ struct SettingsCatalogTests {
         #expect(reloaded.advancedControlEnabled == true)  // persists like any ordinary flag
 
         // But `advancedControlAllowed` stays false regardless, via the OTHER operand — the t:slim-only
-        // `.full` capability preset floors every advanced capability OFF (Models.swift:762-785).
+        // `.full` capability preset in `Models.swift` floors every advanced capability OFF.
         #expect(reloaded.advancedControlAllowed(capabilities: .full) == false)
     }
 

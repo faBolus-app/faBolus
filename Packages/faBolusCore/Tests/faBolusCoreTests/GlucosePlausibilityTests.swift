@@ -1,7 +1,7 @@
 import XCTest
 @testable import faBolusCore
 
-/// D-05: the shared physiologic plausibility gate + the `GlucoseSample` failable init that enforces it.
+/// The shared physiologic plausibility gate + the `GlucoseSample` failable init that enforces it.
 /// REJECT posture (fail-closed) — an out-of-[40,400] value returns `nil`, it is NEVER clamped into
 /// range (clamping is fail-open: it silently substitutes a dose input). Boundaries 40 and 400 are
 /// accepted; 39 and 401 (and the classic garbage 900 / 20) are rejected.
@@ -53,7 +53,7 @@ final class GlucosePlausibilityTests: XCTestCase {
         XCTAssertEqual(s?.sourceID, "src")
     }
 
-    // MARK: - C2-03: ageLabel explicit future/clock-mismatch label (never "now")
+    // MARK: - ageLabel explicit future/clock-mismatch label (never "now")
 
     /// A reading dated more than `futureSkewTolerance` in the future must render an EXPLICIT
     /// future/clock-mismatch label — NEVER "now" (the `age(of:)` `max(0,…)` clamp would otherwise
@@ -73,11 +73,11 @@ final class GlucosePlausibilityTests: XCTestCase {
         XCTAssertFalse(label.isEmpty)
     }
 
-    // MARK: - C2-05 regression: the D-05 gate is BYTE-UNCHANGED by the sub-40 sentinel fix
+    // MARK: - Regression: the plausibility gate is BYTE-UNCHANGED by the sub-40 sentinel fix
 
-    /// The sub-40 urgent-low sentinel (C2-05, landed at the `PollingGlucoseSource` ingest boundary in
+    /// The sub-40 urgent-low sentinel (at the `PollingGlucoseSource` ingest boundary in
     /// the app target) must NOT relax this shared gate: an in-range value still constructs a
-    /// `GlucoseSample`, and an above-400 value still returns nil — exactly as before this plan.
+    /// `GlucoseSample`, and an above-400 value still returns nil — exactly as before.
     func testD05GateUnchangedByC205SentinelFix() {
         XCTAssertNotNil(GlucoseSample(mgdl: 120, date: Date(), sourceID: "t"))
         XCTAssertNil(GlucoseSample(mgdl: 401, date: Date(), sourceID: "t"))

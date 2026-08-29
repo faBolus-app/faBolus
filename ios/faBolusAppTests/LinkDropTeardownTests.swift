@@ -130,13 +130,13 @@ struct LinkDropTeardownTests {
 
         #expect(isIndeterminate(e), "a mid-delivery link drop is an indeterminate outcome")
         #expect(b.deliveryOutcomeUnknown, "the indeterminate delivery holds the global block")
-        // WR-04: the exit defer re-arms polling ONLY on a live link. The link is down, so nothing re-arms.
+        // The exit defer re-arms polling ONLY on a live link. The link is down, so nothing re-arms.
         #expect(
             b.pollTimerIsActiveForTesting == false,
             "WR-04: the perform defer must NOT re-arm a fresh poll timer on a dead link")
     }
 
-    // MARK: - WR-04 part 2 / CR-01: shared teardown stops the predictive machinery on a drop
+    // MARK: - Shared teardown stops the predictive machinery on a drop
 
     /// The predictive-burst path is the highest-risk timer to leak past a drop because it REPEATS. Arm it
     /// the real way (an advancing EGV reading schedules the burst deadline AND the repeating predictive
@@ -163,7 +163,7 @@ struct LinkDropTeardownTests {
         #expect(dispatched.contains(34), "while connected the predictive burst dispatches its V1 EGV read (op34)")
 
         // The drop: `.disconnected` runs `linkDroppedCleanup()` → `stopAllTimers()`, invalidating BOTH
-        // the recurring pollTimer AND the predictive timer (WR-04 part 2).
+        // the recurring pollTimer AND the predictive timer.
         b.applyClientState(.disconnected)
         #expect(b.snapshot.connection == .disconnected)
         #expect(

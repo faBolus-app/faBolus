@@ -3,11 +3,11 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// P15 G3 (§2.3): the per-surface bolus-auth wire round-trip on the shared `RemoteCommandWireFixture`. Pins the
+/// The per-surface bolus-auth wire round-trip on the shared `RemoteCommandWireFixture`. Pins the
 /// **fail-closed** default (a cold launch / glance with no push, and a legacy host that omits the fields,
-/// both keep bolusing hidden) and that a push arms it, with read-only still winning. Re-expressed on the
+/// both keep bolusing hidden) and that a push arms it, with read-only still winning. Expressed on the
 /// Garmin surface — the Apple-Watch sibling (`watchBolusEnabled`/`watchBolusAllowed`) was retired
-/// end-to-end in Phase 17.5 Plan 01 (D1-01/REMED-17); this behavior is otherwise surface-symmetric.
+/// end-to-end; this behavior is otherwise surface-symmetric.
 @MainActor
 @Suite(.serialized) struct RemoteBolusAuthWireTests {
 

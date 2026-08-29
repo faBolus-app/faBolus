@@ -3,12 +3,11 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// Phase 09.22-05 (Task 2, D-12): pins the PURE view-model behind the unified CGM-status surface —
-/// the classification of every CONFIGURED source into `active failover` vs `configured-but-not-selected`
-/// (reusing the arbitrated `GlucoseProvenance` the live badge uses), plus the armed-vs-selected
-/// distinction (F-18) so a Test against a source that isn't armed yet is never mistaken for the live
-/// failover. Mirrors the pure-helper extraction of `CgmCredentialsView.testOutcome` — no SwiftUI view,
-/// no live arbitration.
+/// Pins the PURE view-model behind the unified CGM-status surface — the classification of every
+/// CONFIGURED source into `active failover` vs `configured-but-not-selected` (reusing the arbitrated
+/// `GlucoseProvenance` the live badge uses), plus the armed-vs-selected distinction so a Test against a
+/// source that isn't armed yet is never mistaken for the live failover. Mirrors the pure-helper
+/// extraction of `CgmCredentialsView.testOutcome` — no SwiftUI view, no live arbitration.
 struct CgmStatusSurfaceTests {
 
     private let configured: [(id: String, name: String)] = [
@@ -53,7 +52,7 @@ struct CgmStatusSurfaceTests {
             "with the pump live, no source may be marked active failover")
     }
 
-    /// F-18: a source SELECTED but not yet ARMED (the selection takes effect on relaunch) is shown as
+    /// A source SELECTED but not yet ARMED (the selection takes effect on relaunch) is shown as
     /// `.selectedNotArmed`, while the still-running OLD source keeps driving failover — so a passing
     /// Test on the newly-selected source is not mistaken for the live feed.
     @Test func selectedButNotYetArmedIsDistinctFromTheLiveArmedSource() {
@@ -115,7 +114,7 @@ struct CgmStatusSurfaceTests {
         #expect(CgmStatusView.rowDetail(statusCaseName: "searching", ageSeconds: nil).contains("no reading"))
     }
 
-    // MARK: - WR-01/IN-02/IN-03 (09.24 review): shared Section-2/Section-3 subtitle basis
+    // MARK: - Shared Section-2/Section-3 subtitle basis
     //
     // `CgmSettingsView.currentSelectionSubtitle` (SettingsView.swift) and `configureAndTestSubtitle`
     // must never disagree about whether a source is selected for the same underlying state. Before
@@ -125,7 +124,7 @@ struct CgmStatusSurfaceTests {
     // both call sites now go through, `CgmStatusView.selectionStatusSubtitle`, directly — no live
     // view, no live `AppModel`.
 
-    /// The core WR-01 regression: a `nil` selection (what `GlucoseSourceRegistry.selected()` returns
+    /// The core regression: a `nil` selection (what `GlucoseSourceRegistry.selected()` returns
     /// both for "nothing chosen" AND for a stale/invalid persisted id) must read as "not selected" —
     /// the same family of message Section 2's `configureAndTestSubtitle` shows for `nil` — and must
     /// NEVER render as "Selected —" text, regardless of what a stale armed/provenance state claims.
@@ -152,7 +151,7 @@ struct CgmStatusSurfaceTests {
         #expect(result.isActive == true)
     }
 
-    /// F-18: a selected-but-not-yet-armed source must read as "Selected — reopen the app to arm",
+    /// A selected-but-not-yet-armed source must read as "Selected — reopen the app to arm",
     /// distinct from both the active-failover and the nil/not-selected cases above.
     @Test func selectionStatusSubtitleReflectsSelectedNotArmed() {
         let result = CgmStatusView.selectionStatusSubtitle(

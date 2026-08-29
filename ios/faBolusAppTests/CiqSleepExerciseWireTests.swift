@@ -3,8 +3,8 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// Phase 09.15-10 (T1-9, D-01/D-08/D-09.5): the Sleep/Exercise-awareness primitive-propagation
-/// spine — op-179 `exerciseTimeRemainingSeconds` (already decoded, previously dropped) →
+/// The Sleep/Exercise-awareness primitive-propagation spine — op-179
+/// `exerciseTimeRemainingSeconds` (already decoded, previously dropped) →
 /// `PumpSnapshot`/`SleepExerciseAwareness` pure UI wiring of `ControllerDescriptor.activityPresets`
 /// → `RemoteCommand` additive-optional wire fields → `validate()` bounds → `RemoteCommandWireFixture`
 /// parse/render helpers. Covers: round-trip, legacy absent-key decode, validate bounds,
@@ -12,7 +12,7 @@ import faBolusCore
 /// no card/timer).
 @Suite struct CiqSleepExerciseWireTests {
 
-    // MARK: - SleepExerciseAwareness.activePreset — mutual exclusivity (D-01 T1-9, D-06 #4/#6)
+    // MARK: - SleepExerciseAwareness.activePreset — mutual exclusivity
 
     @Test func normalModeSelectsNoPreset() {
         #expect(SleepExerciseAwareness.activePreset(mode: .normal, descriptor: .controlIQ) == nil)
@@ -35,7 +35,7 @@ import faBolusCore
         #expect(preset?.suspendThresholdMgdl == 79)
     }
 
-    /// The CIQ/CIQ+ discriminator (O7): Sleep AutoBolus differs by variant; Exercise does not.
+    /// The CIQ/CIQ+ discriminator: Sleep AutoBolus differs by variant; Exercise does not.
     @Test func sleepAutoBolusDiffersByVariantExerciseDoesNot() {
         let classicSleep = SleepExerciseAwareness.activePreset(mode: .sleep, descriptor: .controlIQ)
         let plusSleep = SleepExerciseAwareness.activePreset(mode: .sleep, descriptor: .controlIQPlus)
@@ -65,7 +65,7 @@ import faBolusCore
         #expect(SleepExerciseAwareness.exerciseTimerToStore(mode: .exercise, rawRemainingSeconds: 0) == nil)
     }
 
-    // MARK: - Fact-line formatting (pure UI wiring of activityPresets — D-06 guardrail #4)
+    // MARK: - Fact-line formatting (pure UI wiring of activityPresets)
 
     @Test func targetAutoBolusLineReadsRealDescriptorNumbersNoLiteralInCode() {
         let sleepPreset = SleepExerciseAwareness.activePreset(mode: .sleep, descriptor: .controlIQ)!
@@ -101,7 +101,7 @@ import faBolusCore
         #expect(SleepExerciseAwareness.endsAtLabel(seconds: nil, now: now, calendar: cal) == nil)
     }
 
-    // MARK: - compactLine (D-09.5 remote-first form) — mutual exclusivity + fail-closed
+    // MARK: - compactLine (remote-first form) — mutual exclusivity + fail-closed
 
     @Test func compactLineIsNilInNormalMode() {
         #expect(
@@ -135,7 +135,7 @@ import faBolusCore
         #expect(line == "Exercise — ends 5:20")
     }
 
-    // MARK: - SleepWindowDerivation — pure window math (b) pump-communicated, no clinical literal
+    // MARK: - SleepWindowDerivation — pure window math, pump-communicated, no clinical literal
 
     private func utcCalendar() -> Calendar {
         var cal = Calendar(identifier: .gregorian)
@@ -321,7 +321,7 @@ import faBolusCore
 
     /// Loading backstop: a freshly-constructed client BEFORE any `handle(cmd)` has `controlIQMode`
     /// at its safe `0` default — a fresh app launch before the first statusRead reply must show no
-    /// T1-9 card/timer, never a stale/fabricated one.
+    /// activity card/timer, never a stale/fabricated one.
     @MainActor
     @Test func freshClientHasControlIQModeZeroAndNoActivityPreset() {
         let m = RemoteCommandWireFixture(link: FakeLink())
@@ -338,9 +338,9 @@ import faBolusCore
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.controlIQMode = 2
         cmd.exerciseTimeRemainingSec = 1500
-        // Phase 09.15-12 (D-07 belt-and-suspenders): the awareness toggle must be explicitly ON for
-        // these fields to render on the client — this test proves the raw parse mechanics, not the
-        // toggle-suppression behavior (covered by CiqSmartAssistMirrorTests).
+        // Belt-and-suspenders: the awareness toggle must be explicitly ON for these fields to render
+        // on the client — this test proves the raw parse mechanics, not the toggle-suppression behavior
+        // (covered by CiqSmartAssistMirrorTests).
         cmd.ciqSleepExerciseAwarenessEnabled = true
         m.handle(cmd)
         #expect(m.controlIQMode == 2)
@@ -348,7 +348,7 @@ import faBolusCore
         #expect(m.ciqActivityPreset?.name == "Exercise")
     }
 
-    /// SP-5 fail-closed: once Exercise HAS been shown, a later statusRead reporting mode back to
+    /// Fail-closed: once Exercise HAS been shown, a later statusRead reporting mode back to
     /// normal (0) MUST clear the client's stored mode/timer too — never a stale card surviving past
     /// the moment the pump's own state changed.
     @MainActor
@@ -358,7 +358,7 @@ import faBolusCore
         var active = RemoteCommand(kind: .statusRead)
         active.controlIQMode = 2
         active.exerciseTimeRemainingSec = 900
-        // Phase 09.15-12 (D-07 belt-and-suspenders): see note above.
+        // Belt-and-suspenders: see note above.
         active.ciqSleepExerciseAwarenessEnabled = true
         m.handle(active)
         #expect(m.ciqActivityPreset?.name == "Exercise")
@@ -373,10 +373,9 @@ import faBolusCore
         #expect(m.ciqActivityCompactLine == nil)
     }
 
-    /// Watch does not render the Sleep window text (D-09.5 explicit scope) even though it IS
-    /// parsed on the shared `RemoteCommandWireFixture` base — this test pins that the DATA is present so a
-    /// future Mac-only renderer can read it, while documenting (via the SUMMARY) that no Watch view
-    /// consumes it this plan.
+    /// Watch does not render the Sleep window text (explicit scope) even though it IS parsed on the
+    /// shared `RemoteCommandWireFixture` base — this test pins that the DATA is present so a future
+    /// Mac-only renderer can read it, while no Watch view consumes it.
     @MainActor
     @Test func sleepWindowFieldsParseOnTheSharedBaseEvenThoughWatchDoesNotRenderThem() {
         let m = RemoteCommandWireFixture(link: FakeLink())
@@ -384,7 +383,7 @@ import faBolusCore
         cmd.inSleepWindow = true
         cmd.sleepWindowStartMinute = 1320
         cmd.sleepWindowEndMinute = 360
-        // Phase 09.15-12 (D-07 belt-and-suspenders): see note above.
+        // Belt-and-suspenders: see note above.
         cmd.ciqSleepExerciseAwarenessEnabled = true
         m.handle(cmd)
         #expect(m.ciqSleepWindowLine == "Current window: 22:00–06:00")

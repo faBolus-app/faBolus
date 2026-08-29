@@ -8,9 +8,9 @@ import faBolusCore
 /// `RemotePeerPolicy`) at the `DebugMenuView` call site, never re-derived here. `@MainActor` because
 /// the live caller reads `MacPairingCoordinator.shared`, a `@MainActor` singleton; this type itself
 /// takes only plain, already-computed values, so it's fully unit-testable with fabricated peer state
-/// (no live BLE) per the plan's ANALOG note.
+/// (no live BLE).
 ///
-/// PHI/identity constraint (T-09.6-01): a peer's raw display name (a user-chosen device name, e.g.
+/// PHI/identity constraint: a peer's raw display name (a user-chosen device name, e.g.
 /// "Zev's MacBook Pro") never reaches the rendered output. Every peer line redacts `displayName` to
 /// a `stableToken(for:)` — a SHA-256 digest of the name, truncated — so the token is deterministic
 /// across renders (same peer ⇒ same token, useful for correlating repeated diagnostics pulls) while

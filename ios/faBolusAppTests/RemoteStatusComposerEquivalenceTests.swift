@@ -217,7 +217,7 @@ struct RemoteStatusComposerEquivalenceTests {
         }
     }
 
-    // MARK: - WR-02 hardening: enforce the assumption `codeOnly` silently relies on
+    // MARK: - Hardening: enforce the assumption `codeOnly` silently relies on
 
     /// `codeOnly` strips from the FIRST `//` on each line. That is exact ONLY while no string literal on
     /// a line contains `//` before real code — the file's own doc comment concedes this as an UNENFORCED

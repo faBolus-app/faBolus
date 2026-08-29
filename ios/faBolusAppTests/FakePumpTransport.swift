@@ -3,7 +3,7 @@ import TandemMessages
 import TandemBLE
 @testable import faBolus
 
-/// Round-3 §6.1 deterministic fake transport for driving the REAL `TandemBackend.perform` flow with no
+/// Deterministic fake transport for driving the REAL `TandemBackend.perform` flow with no
 /// CoreBluetooth. Scripts a reply per awaited response opcode (a valid response frame, a dropped/lost
 /// response, or a transport error) and records what was written so tests can assert the exact request
 /// cargo and the exact number of initiate writes.
@@ -101,18 +101,18 @@ final class FakePumpTransport: PumpTransport {
     // MARK: - Response frame builders (valid, CRC'd; parser strips the 24-byte HMAC on signed responses)
 
     /// `txId` sets frame[1] — the wire transaction id the pump echoes. Defaults to 0 (the historical
-    /// behavior). WR-03 (debug pump-pairing-loop-api25, deep review): the op77 correlation backstop keys on
-    /// this echoed txId, so a NON-vacuous correlation test must be able to set it to a SPECIFIC outstanding
-    /// read's txId (distinct from the FIFO-oldest) under a real multi-read burst.
+    /// behavior). The op77 correlation backstop (debug pump-pairing-loop-api25) keys on this echoed txId, so
+    /// a NON-vacuous correlation test must be able to set it to a SPECIFIC outstanding read's txId (distinct
+    /// from the FIFO-oldest) under a real multi-read burst.
     /// The session HMAC key the test backend holds by default (mirrors `TandemBackend.init(testTransport:)`'s
-    /// `authKey` default of `[0x01]`). Signed response frames are signed with THIS so VA-04's parser-side
+    /// `authKey` default of `[0x01]`). Signed response frames are signed with THIS so the parser-side
     /// HMAC verification passes on the delivery path — keep in sync with that init default.
     static let signedResponseTestKey: [UInt8] = [0x01]
 
     static func frame(opCode: UInt8, cargo: [UInt8], signed: Bool, txId: UInt8 = 0) -> [UInt8] {
         var body = cargo
         if signed {
-            // VA-04: the parser now VERIFIES the 24-byte signed trailer (4-byte pumpTimeSinceReset +
+            // The parser VERIFIES the 24-byte signed trailer (4-byte pumpTimeSinceReset +
             // 20-byte HMAC-SHA1), so build a VALID one under the test key rather than 24 zero bytes — this
             // lets the delivery-path tests exercise the real verify. The HMAC covers messageData
             // (`[opCode, txId, length] + cargo + pumpTime`) minus its last 20 bytes, i.e. everything before
@@ -180,7 +180,7 @@ final class FakePumpTransport: PumpTransport {
 
     /// op-57 `HomeScreenMirrorResponse` (9 bytes). Byte 0 is `cgmTrendIconId` (0 = the pump's explicit
     /// **no arrow**; 2 = up, etc. — matching `CGMTrendIcon`). The pump's icon is authoritative, so a test
-    /// can pin that a later client-side derivation never overwrites it (E8). Byte 8 = `cgmDisplayData`.
+    /// can pin that a later client-side derivation never overwrites it. Byte 8 = `cgmDisplayData`.
     static func homeScreenMirror(trendIconId: Int) -> [UInt8] {
         var c = [UInt8](repeating: 0, count: 9)
         c[0] = UInt8(trendIconId)
@@ -191,7 +191,7 @@ final class FakePumpTransport: PumpTransport {
     /// op-193 `CurrentEgvGuiDataV2Response` (8 bytes): a VALID reading (`egvStatusId` 1, mg/dL at offset 4)
     /// plus a signed `trendRate` at offset 7 that the client-side derivation turns into an arrow. Used to
     /// prove the derived arrow is only a cold-start bridge and never overwrites the pump's authoritative
-    /// HomeScreenMirror trend (E8). `trendRate` is 0.1 mg/dL/min units (30 ⇒ +3.0 ⇒ a rising arrow).
+    /// HomeScreenMirror trend. `trendRate` is 0.1 mg/dL/min units (30 ⇒ +3.0 ⇒ a rising arrow).
     static func currentEgvV2(mgdl: Int, trendRate: Int) -> [UInt8] {
         var c = [UInt8](repeating: 0, count: 8)
         let bg = le2(mgdl)
@@ -219,7 +219,7 @@ final class FakePumpTransport: PumpTransport {
 
     /// op-21 `LoadStatusResponse` (3 bytes: isLoadingActive@0, loadStateId@1, primeStatusId@2 — see the
     /// kit's `ResponseDirectTests`). Reply to the op20 `LoadStatusRequest` poll; feeds
-    /// `PumpSnapshot.cartridgeLoadState` → the 09.9 `cartridgeReadyForBolus` pre-guard. loadStateId 0/1/2
+    /// `PumpSnapshot.cartridgeLoadState` → the `cartridgeReadyForBolus` pre-guard. loadStateId 0/1/2
     /// (CHANGE_CARTRIDGE/LOAD_CARTRIDGE/PRIME_TUBING) ⇒ not ready; the idle/unknown default 6 ⇒ ready.
     static func loadStatus(isLoadingActive: Bool, loadStateId: Int) -> [UInt8] {
         frame(
@@ -231,7 +231,7 @@ final class FakePumpTransport: PumpTransport {
     /// errorCodeId 6 = BAD_OPCODE — what an older pump answers op192 with, right before tearing the
     /// link down. `requestOpCode: 0` + `errorCode: 0` is the opcode-less `[0,0]` currentStatus variant the
     /// API-2.5 t:slim X2 sends (mechanism B correlates it back by txId). `txId` (frame[1]) echoes the
-    /// failing request's wire txId — WR-03: set it to a specific outstanding read's txId to prove the
+    /// failing request's wire txId — set it to a specific outstanding read's txId to prove the
     /// correlation picks THAT read, not the FIFO-oldest.
     static func errorResponse(requestOpCode: UInt8, errorCode: UInt8 = 6, txId: UInt8 = 0) -> [UInt8] {
         frame(opCode: ErrorResponse.props.opCode, cargo: [requestOpCode, errorCode], signed: false, txId: txId)
@@ -283,7 +283,7 @@ final class FakePumpTransport: PumpTransport {
         return frame(opCode: PumpVersionResponse.props.opCode, cargo: c, signed: false)
     }
 
-    // MARK: - History-log frame builders (Phase 09.7-01 — gap-aware sync)
+    // MARK: - History-log frame builders (gap-aware sync)
 
     /// op-59 `HistoryLogStatusResponse` (12 bytes: numEntries/firstSequenceNum/lastSequenceNum, all
     /// little-endian `UInt32`, per `TandemKit`'s `HistoryLog.swift`).
@@ -316,7 +316,7 @@ final class FakePumpTransport: PumpTransport {
     /// exactly: typeId = short@0 (`HistoryLog.bolusCompletedTypeId` = 20), pumpTimeSec = uint32@2,
     /// sequenceNum = uint32@6, completionStatusId = short@10, bolusId = short@12, iob = float@14,
     /// deliveredUnits = float@18. `bolusId`/`completionStatusId` default to 0 (unused by most existing
-    /// callers, which predate CC-11's restored `BolusHistoryRecord.bolusId` — Phase 14 14-04).
+    /// callers, which predate the restored `BolusHistoryRecord.bolusId`).
     static func bolusHistoryRecord(
         sequenceNum: UInt32, pumpTimeSec: UInt32,
         deliveredUnits: Double, iobUnits: Double,
@@ -347,8 +347,8 @@ final class FakePumpTransport: PumpTransport {
     /// `[numberOfHistoryLogs, streamId, record0(26)…recordN(26)]`. Builds one frame carrying every CGM +
     /// bolus record supplied (`events` accepts pre-built raw 26-byte records for any other record type a
     /// test needs — e.g. an unrecognized/`UnknownHistoryLog` typeId — and defaults to none).
-    /// `bolusRecordsById` (CC-11, Phase 14 14-04) is a separate param from `bolusRecords` — additive, so
-    /// no existing call site needs to change — for a test that needs the restored `bolusId` field.
+    /// `bolusRecordsById` is a separate param from `bolusRecords` — additive, so no existing call site
+    /// needs to change — for a test that needs the restored `bolusId` field.
     static func historyLogStream(
         cgmReadings: [(seq: UInt32, pumpTimeSec: UInt32, mgdl: Int)] = [],
         bolusRecords: [(seq: UInt32, pumpTimeSec: UInt32, delivered: Double, iob: Double)] = [],
@@ -377,8 +377,8 @@ final class FakePumpTransport: PumpTransport {
 
     /// One 26-byte history-log carb-entered record (`CarbEnteredHistoryLog`, typeId 48), matching its
     /// layout exactly: typeId = short@0, pumpTimeSec = uint32@2, sequenceNum = uint32@6, carbs = float@10.
-    /// (Phase 15 15-04, CX-F-05: a generic non-CGM/non-bolus event record for the logbook-events
-    /// future-reject test — `historyLogStream`'s `events:` param accepts pre-built raw records like this.)
+    /// A generic non-CGM/non-bolus event record for the logbook-events future-reject test —
+    /// `historyLogStream`'s `events:` param accepts pre-built raw records like this.
     static func carbEnteredHistoryRecord(sequenceNum: UInt32, pumpTimeSec: UInt32, carbs: Float) -> [UInt8] {
         var r = [UInt8](repeating: 0, count: 26)
         let t = le2(48)
@@ -397,7 +397,7 @@ final class FakePumpTransport: PumpTransport {
     /// byte (records.count derived from `cgmReadings` — the pinned TandemKit commit's
     /// `HistoryLogStreamResponse.init(cargo:)` parses `records` purely from however many 26-byte chunks
     /// fit in the cargo, NOT gated by this header byte, so a mismatch here is a genuine app-observable
-    /// advertised-count-vs-actual disagreement). (Phase 15 15-04, CX-F-05 app-side guard test.)
+    /// advertised-count-vs-actual disagreement). Drives the app-side guard test.
     static func historyLogStreamWithDeclaredCount(
         declaredCount: Int,
         cgmReadings: [(seq: UInt32, pumpTimeSec: UInt32, mgdl: Int)],
@@ -410,7 +410,7 @@ final class FakePumpTransport: PumpTransport {
         return frame(opCode: HistoryLogStreamResponse.props.opCode, cargo: cargo, signed: false)
     }
 
-    // MARK: - CC-08 (Phase 13 13-10): remote-dismiss ack fixtures
+    // MARK: - Remote-dismiss ack fixtures
 
     /// op-69 `AlertStatusResponse` (8-byte little-endian uint64 bitmap; bit N set = notification id N
     /// active). Used to put a real, dismissable alert into `activeNotifications` for a remote-dismiss

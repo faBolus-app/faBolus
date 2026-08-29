@@ -1951,18 +1951,17 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// tampered reply) or a non-zero rejected status both leave the alert VISIBLE. "Snooze locally" (the
     /// guard branch just below, for pumps that don't honor remote dismissal) is UNCHANGED and stays a
     /// distinct, explicitly LOCAL action — it never claims the pump-side alert is gone.
-    /// LEGACY void entry point (MEDIUM-D): calls the typed method ONCE and discards the outcome. Keeps
+    /// LEGACY void entry point: calls the typed method ONCE and discards the outcome. Keeps
     /// existing callers (auto-rules `applyAutoRules`, `PumpBackend.dismissNotification(_:)` call sites)
     /// unchanged. The single op-184 body lives EXCLUSIVELY in `dismissNotificationTyped` below.
     public func dismissNotification(_ alert: PumpAlert) async {
         _ = await dismissNotificationTyped(alert)
     }
 
-    /// TYPED dismiss outcome. OWNS the single op-184
-    /// `DismissNotificationRequest` + `awaitResponse(..., signed: true)` call site (moved intact from the
-    /// old void method — byte-identical signed wire, INVARIANT T-14-29) and returns `.authenticatedCleared`
-    /// from, and ONLY from, the exact `status == 0` branch — never inferred from the shared `acknowledged`
-    /// dict/`lastDismissAck` string (T-14-28). Frozen delivery region :1246-1479 untouched; no dose-math.
+    /// TYPED dismiss outcome. OWNS the single op-184 `DismissNotificationRequest` +
+    /// `awaitResponse(..., signed: true)` call site, and returns `.authenticatedCleared` from, and ONLY
+    /// from, the exact `status == 0` branch — never inferred from the shared `acknowledged`
+    /// dict/`lastDismissAck` string. No dose math here.
     public func dismissNotificationTyped(_ alert: PumpAlert) async -> DismissOutcome {
         guard isPaired else { return .noResponse }
         let kind = NotificationKind(rawValue: alert.kind.rawValue) ?? .alert

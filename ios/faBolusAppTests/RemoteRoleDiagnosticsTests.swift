@@ -2,9 +2,9 @@ import Testing
 import faBolusCore
 @testable import faBolus
 
-/// Phase 09.6-03 (Task 2, Part C-4b, D-03.4): behavior pins for the `[Remote role]` diagnostics
-/// section — fabricated role/peer inputs only (no live BLE/`MacPairingCoordinator` instantiation
-/// required), matching the plan's "inject the host/peer state as plain values" direction.
+/// Behavior pins for the `[Remote role]` diagnostics section — fabricated role/peer inputs only (no
+/// live BLE/`MacPairingCoordinator` instantiation required): the host/peer state is injected as plain
+/// values.
 @MainActor
 struct RemoteRoleDiagnosticsTests {
     @Test func hostWithGrantedAndPendingPeerRendersRoleAndPerPeerLines() {

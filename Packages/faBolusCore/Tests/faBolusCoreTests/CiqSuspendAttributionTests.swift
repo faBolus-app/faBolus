@@ -2,7 +2,7 @@ import Testing
 import Foundation
 @testable import faBolusCore
 
-/// Phase 09.15-05 (T1-2, D-09.1 BINDING fail-closed cause-attribution): pins the pure predicate that
+/// Fail-closed cause attribution: pins the pure predicate that
 /// decides whether an active basal suspend may be labeled "Control-IQ paused" — the safety-critical
 /// nuance distinguishing this from the generic `PumpSnapshot.deliverySuspended` bool, which does NOT
 /// know the cause. `ControlIQSuspendAttribution.isCiqAttributedSuspend(controlStateType:)` must return
@@ -31,7 +31,7 @@ import Foundation
         }
     }
 
-    // MARK: - elapsedMinutesLabel (pure draw-time formatter, D-08 epoch-not-age convention)
+    // MARK: - elapsedMinutesLabel (pure draw-time formatter, epoch-not-age convention)
 
     @Test func elapsedMinutesLabelFormatsWholeMinutesSinceStart() {
         let now = Date()

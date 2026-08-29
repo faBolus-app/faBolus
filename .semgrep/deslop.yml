@@ -35,12 +35,14 @@ rules:
         - "cliparser/**"
     # The bare `NN-NN` alternative is fenced by lookaround so it does NOT match an ISO date
     # (`2026-08-23` — the `08-23` is preceded by `-`) or a source line range (`.java:72-74` — the
-    # `72-74` is preceded by `:`). Both were systematic false positives that flagged exactly the
+    # `72-74` is preceded by `:`; a comma-continued range like `ConnectIQ.h:53-58,64-68` needs the
+    # comma in the class too, or the second half still matches). These were systematic false positives
+    # that flagged exactly the
     # KEEP-class content this ruleset is supposed to protect: hardware-capture dates and oracle
     # citations. `NN.N-NN` is a separate alternative for this repo's `09.3-04` / `09.15-11` form,
     # which the old pattern never matched at all.
     pattern-regex: >-
-      (?://|/\*|^\s*\*)[^\n]*\b(?:Phase\s+\d+(?:\.\d+)?|\d\d\.\d+-\d\d|(?<![\d:.-])\d\d-\d\d(?![\d-])|D\d?-\d\d|FEAT-\d\d|WR-\d\d|CX-[A-Z]-\d\d|REMED-\d+|LOCK-\d\d|T-\d\d-\d\d|GO-\d)\b
+      (?://|/\*|^\s*\*)[^\n]*\b(?:Phase\s+\d+(?:\.\d+)?|\d\d\.\d+-\d\d|(?<![\d:.,-])\d\d-\d\d(?![\d-])|D\d?-\d\d|FEAT-\d\d|WR-\d\d|CX-[A-Z]-\d\d|REMED-\d+|LOCK-\d\d|T-\d\d-\d\d|GO-\d)\b
 
   - id: migration-breadcrumb-comment
     languages: [generic]
@@ -63,8 +65,14 @@ rules:
         - "**/DexcomG6Kit/**"
         - "**/HistoryStore/**"
         - "cliparser/**"
+    # Two fixes over the naive pattern, both from real false positives in this tree:
+    #  * `\bmoved` — without the word boundary, `moved from` matched inside "REmoved from", so
+    #    "peer mode is removed from narrow main" read as a migration breadcrumb. 4 of 5 hits.
+    #  * `carved (out )?of` is GONE. All four uses here mean "excluded from a gate" (AccessPolicyTests,
+    #    ModeCoherenceTests, GatedPumpWrite, FeatureSurfaceAbsenceGuardTests) — a behavioral statement,
+    #    never a code move. It was a 100% false-positive pattern in this codebase.
     pattern-regex: >-
-      (?://|/\*|^\s*\*)[^\n]*(?:moved verbatim|moved (?:from|out of)|was\s+\S+\.swift, now deleted|git rm'?d|carved (?:out )?of|extracted verbatim|lifted verbatim)
+      (?://|/\*|^\s*\*)[^\n]*(?:moved verbatim|\bmoved (?:from|out of)|was\s+\S+\.swift, now deleted|git rm'?d|extracted verbatim|lifted verbatim)
 
   - id: drifted-line-number-reference
     languages: [generic]

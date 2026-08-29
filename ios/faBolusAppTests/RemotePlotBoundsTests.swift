@@ -3,11 +3,10 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// Phase 09.13-02 (glucose plot height customization, D-06/D-07): the shared `RemoteCommandWireFixture`
-/// glucose-plot Y-axis bound channel split. `glucosePlotFloor`/`glucosePlotCeiling` are the
-/// SHARED/phone-scoped bounds — this is the channel the Mac (Plan 03) reads. `smallScreenFloor`/
-/// `smallScreenCeiling` are the Watch/Garmin-facing resolved bounds: the optional override when
-/// present, else the shared bounds. CRITICAL D-07 (threat T-09.13-05): the small-screen override must
+/// The shared `RemoteCommandWireFixture` glucose-plot Y-axis bound channel split.
+/// `glucosePlotFloor`/`glucosePlotCeiling` are the SHARED/phone-scoped bounds — this is the channel the
+/// Mac reads. `smallScreenFloor`/`smallScreenCeiling` are the Watch/Garmin-facing resolved bounds: the
+/// optional override when present, else the shared bounds. CRITICAL: the small-screen override must
 /// NEVER leak into the shared getters, and neither channel may be routed through `watchChartRanges`/
 /// `chartRanges` (the pre-existing time-range mirror the Mac already inherits).
 @MainActor
@@ -29,7 +28,7 @@ import faBolusCore
         #expect(m.smallScreenCeiling == GlucosePlotScale.defaultCeiling)
     }
 
-    /// D-07: with no override on the wire, `smallScreenFloor`/`smallScreenCeiling` == the shared bounds.
+    /// With no override on the wire, `smallScreenFloor`/`smallScreenCeiling` == the shared bounds.
     @Test func overrideAbsentSmallScreenEqualsShared() {
         let m = RemoteCommandWireFixture(link: FakeLink())
         var cmd = RemoteCommand(kind: .statusRead)
@@ -42,7 +41,7 @@ import faBolusCore
         #expect(m.smallScreenCeiling == 400)
     }
 
-    /// D-07 (the load-bearing test): with an override present, `smallScreen*` == the override AND the
+    /// The load-bearing test: with an override present, `smallScreen*` == the override AND the
     /// shared getters STILL == the phone values — the Mac (which reads `glucosePlotFloor`/
     /// `glucosePlotCeiling` directly) never receives the override.
     @Test func overridePresentSmallScreenUsesOverrideSharedStaysPhoneScoped() {
@@ -112,7 +111,7 @@ import faBolusCore
         #expect(m.smallScreenFloor < m.smallScreenCeiling)
     }
 
-    /// D-07: neither channel is ever routed through `watchChartRanges`/`chartRanges` — a push carrying
+    /// Neither channel is ever routed through `watchChartRanges`/`chartRanges` — a push carrying
     /// ONLY `watchChartRanges` (the pre-existing time-range mirror) must not perturb the Y-axis bounds.
     @Test func watchChartRangesNeverPerturbsThePlotBoundChannels() {
         let m = RemoteCommandWireFixture(link: FakeLink())

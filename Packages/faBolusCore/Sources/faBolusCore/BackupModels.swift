@@ -6,7 +6,7 @@ import Foundation
 /// iCloud Drive) — faBolus has no servers.
 public struct FaBolusBackup: Codable, Sendable {
     /// Bump when the on-disk shape changes incompatibly; restore refuses a newer schema than it knows.
-    /// Schema 2 (09.18a-01) adds the optional `siteAtlas` section; schema 3 (09.18d-02) adds the optional
+    /// Schema 2 adds the optional `siteAtlas` section; schema 3 adds the optional
     /// `trackers` section. All payload sections are independently optional, so an older backup — which
     /// lacks a newer key — still decodes with that section nil; restore refuses only a schema *newer*
     /// than it knows.
@@ -22,7 +22,7 @@ public struct FaBolusBackup: Codable, Sendable {
     /// SiteAtlas infusion-site / CGM-sensor placement log (schema 2+). Independently optional so a
     /// schema-1 backup — which has no `siteAtlas` key — still decodes with this nil.
     public var siteAtlas: SiteAtlasBackup?
-    /// Caffeine / alcohol benign-tracker log (schema 3+, 09.18d-02, D-14/D-17). Independently optional
+    /// Caffeine / alcohol benign-tracker log (schema 3+). Independently optional
     /// so a schema-1/2 backup — which has no `trackers` key — still decodes with this nil.
     public var trackers: TrackerBackup?
 
@@ -205,7 +205,7 @@ public struct PumpSettingsBackup: Codable, Sendable {
     }
 }
 
-/// SiteAtlas placement log for the unified backup (schema 2+, 09.18a-01, D-10). Mirrors the
+/// SiteAtlas placement log for the unified backup (schema 2+). Mirrors the
 /// `StoredSite` @Model field shape so a restore can rehydrate the HistoryStore sites. `kind`/`bodySide`
 /// are the raw enum String values ("pump"|"sensor", "front"|"back"), keeping the payload primitive.
 public struct SiteAtlasBackup: Codable, Sendable {
@@ -237,10 +237,10 @@ public struct SiteAtlasEntryBackup: Codable, Sendable, Equatable {
     }
 }
 
-/// Caffeine + alcohol benign-tracker log for the unified backup (schema 3+, 09.18d-02, D-14/D-17).
+/// Caffeine + alcohol benign-tracker log for the unified backup (schema 3+).
 /// Mirrors the `StoredCaffeine`/`StoredAlcohol` @Model field shapes so a restore can rehydrate the
 /// HistoryStore tracker entries. Two independent arrays — either may be empty. Carries ONLY benign
-/// log fields (amount/source/time/id); no risk inference, no AI-prompt context (D-14).
+/// log fields (amount/source/time/id); no risk inference, no AI-prompt context.
 public struct TrackerBackup: Codable, Sendable {
     public var caffeine: [CaffeineEntryBackup]
     public var alcohol: [AlcoholEntryBackup]

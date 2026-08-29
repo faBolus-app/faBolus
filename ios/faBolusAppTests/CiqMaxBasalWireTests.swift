@@ -3,10 +3,10 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// Phase 09.15-08 (T1-8, D-03/D-08): the `maxBasalUnitsPerHour` primitive-propagation spine —
-/// `PumpSnapshot.maxBasalUnitsPerHour` → additive-optional `RemoteCommand.maxBasalUnitsPerHour` wire
-/// field → `validate()` bound → `RemoteCommandWireFixture.maxBasalUnitsPerHour` parse → local
-/// `MaxBasalFraction`/`maxBasalReadout` compute. Mirrors `CiqZoneWireTests`'s structure exactly.
+/// The `maxBasalUnitsPerHour` primitive-propagation spine — `PumpSnapshot.maxBasalUnitsPerHour` →
+/// additive-optional `RemoteCommand.maxBasalUnitsPerHour` wire field → `validate()` bound →
+/// `RemoteCommandWireFixture.maxBasalUnitsPerHour` parse → local `MaxBasalFraction`/`maxBasalReadout`
+/// compute. Mirrors `CiqZoneWireTests`'s structure exactly.
 @Suite struct CiqMaxBasalWireTests {
 
     // MARK: - validate() bound
@@ -54,7 +54,7 @@ import faBolusCore
         }
     }
 
-    // MARK: - memberwise init untouched (SP-1 the LOCKED convention)
+    // MARK: - memberwise init untouched (the LOCKED convention)
 
     @Test func memberwiseInitStillWorksWithoutTheNewField() {
         // The additive-optional field must be settable ONLY post-init — this compiles+runs iff the
@@ -101,7 +101,7 @@ import faBolusCore
     }
 
     /// Loading backstop: a freshly-constructed client BEFORE any `handle(cmd)` has `maxBasalUnitsPerHour`
-    /// absent — a fresh app launch before the first statusRead reply must show the T1-8 readout ABSENT,
+    /// absent — a fresh app launch before the first statusRead reply must show the readout ABSENT,
     /// never a stale/zero placeholder.
     @MainActor
     @Test func freshClientBeforeAnyCommandHasMaxBasalUnitsPerHourAbsent() {
@@ -121,7 +121,7 @@ import faBolusCore
         #expect(m.maxBasalReadout == nil)
     }
 
-    /// SP-5 fail-closed: once a max HAS been shown, a later statusRead that explicitly clears it (the
+    /// Fail-closed: once a max HAS been shown, a later statusRead that explicitly clears it (the
     /// host's own knowledge became unread/`<= 0`) MUST clear the client's stored value too — never a
     /// stale last-known max surviving past the moment it actually cleared. Mirrors `ciqZone`'s
     /// unconditional assign-or-clear proof.
@@ -131,9 +131,9 @@ import faBolusCore
         var cmdWithMax = RemoteCommand(kind: .statusRead)
         cmdWithMax.basalRate = 0.85
         cmdWithMax.maxBasalUnitsPerHour = 1.60
-        // Phase 09.15-12 (D-07 belt-and-suspenders): the readout toggle must be explicitly ON for the
-        // field to render on the client — this test is proving the raw parse/clear mechanics, not the
-        // toggle-suppression behavior (covered by CiqSmartAssistMirrorTests).
+        // Belt-and-suspenders: the readout toggle must be explicitly ON for the field to render on the
+        // client — this test is proving the raw parse/clear mechanics, not the toggle-suppression
+        // behavior (covered by CiqSmartAssistMirrorTests).
         cmdWithMax.ciqMaxBasalReadoutEnabled = true
         m.handle(cmdWithMax)
         #expect(m.maxBasalUnitsPerHour == 1.60)
@@ -145,7 +145,7 @@ import faBolusCore
         #expect(m.maxBasalReadout == nil)
     }
 
-    /// The local-compute contract (D-08): the % is computed on the CLIENT from the mirrored `basalRate` +
+    /// The local-compute contract: the % is computed on the CLIENT from the mirrored `basalRate` +
     /// `maxBasalUnitsPerHour` via `MaxBasalFraction`, never received as a pre-rendered string.
     @MainActor
     @Test func maxBasalReadoutIsComputedLocallyFromBasalRateAndMaxBasalUnitsPerHour() {
@@ -153,7 +153,7 @@ import faBolusCore
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.basalRate = 0.85
         cmd.maxBasalUnitsPerHour = 1.60
-        // Phase 09.15-12 (D-07 belt-and-suspenders): see note above.
+        // Belt-and-suspenders: see note above.
         cmd.ciqMaxBasalReadoutEnabled = true
         m.handle(cmd)
         let readout = m.maxBasalReadout
@@ -161,7 +161,7 @@ import faBolusCore
         #expect(readout!.headline == "53% of your configured max basal rate")
         #expect(readout!.detail.contains("0.85"))
         #expect(readout!.detail.contains("1.60"))
-        // Copy-audit: the propagated-and-locally-rendered label must ALSO pass D-03(iv).
+        // Copy-audit: the propagated-and-locally-rendered label must ALSO avoid the misconstrual words.
         for forbidden in MaxBasalFraction.forbiddenMisconstrualWords {
             #expect(!readout!.headline.localizedCaseInsensitiveContains(forbidden))
             #expect(!readout!.detail.localizedCaseInsensitiveContains(forbidden))
