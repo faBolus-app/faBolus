@@ -14,12 +14,18 @@
 #      TandemBackend and SettingsView. They are warnings. Splitting a god object is a planned,
 #      characterization-tested refactor, not a style fix.
 #
-# Run: swiftlint lint --quiet ios Packages/faBolusCore Shared
+# Run: swiftlint lint --quiet
+# (bare — do NOT pass the `included:` paths on the command line as well. SwiftLint merges CLI
+#  paths with `included:`, so `swiftlint lint ios Packages/faBolusCore Shared` reports every
+#  violation three times.)
 
 included:
   - ios
   - Shared
   - Packages/faBolusCore
+  # First-party and formatted by scripts/format.sh, so it is linted here too. Its `.build` is
+  # excluded below.
+  - Packages/faBolusDesign
 
 excluded:
   # Vendored third-party source. Not ours to restyle; drift against upstream must stay visible.
@@ -43,6 +49,9 @@ disabled_rules:
   - opening_brace
   # Same conflict for wrapped closure signatures.
   - closure_parameter_position
+  # Open hardware-verification debt is recorded IN the source on purpose (`TODO`, `NEEDS-BENCH`,
+  # `UNVERIFIED`) because it gates real-insulin use. Flagging those comments would pressure someone
+  # into deleting the warning rather than answering it.
   - todo
 
 line_length:

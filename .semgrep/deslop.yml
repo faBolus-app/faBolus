@@ -14,17 +14,23 @@ rules:
     languages: [generic]
     severity: INFO
     message: >-
-      Comment carries a phase/ticket breadcrumb (Phase N, NN-NN, NN.N-NN, D-NN, FEAT-NN, WR-NN,
-      CX-x-NN, REMED-NN, LOCK-NN, T-NN-NN, GO-N). Delete the identifier; keep any surrounding "why".
+      Comment carries a phase/ticket breadcrumb (Phase N, Phase-N, NN-NN, NN.N-NN, D-NN, FEAT-NN,
+      WR-NN, WR-AN, CX-x-NN, REMED-NN, LOCK-NN, T-NN-NN, GO-N, VA-NN, CR-NN, RN-NN, CN-NN, OQN).
+      Delete the identifier; keep any surrounding "why".
       KNOWN RESIDUAL FALSE POSITIVE: a bare numeric range still matches, e.g. "runs 29-30+ chars"
       (a display-width budget) or "22-23" — those are measurements, not tickets. Check before deleting.
     paths:
       include:
         - "ios/**/*.swift"
         - "Packages/faBolusCore/**/*.swift"
+        - "Packages/faBolusDesign/**/*.swift"
+        - "Packages/*/Package.swift"
         - "Shared/**/*.swift"
         - "Sources/**/*.swift"
+        - "Tests/**/*.swift"
         - "source/app/*.mc"
+        - "tests/*.mc"
+        - "datafield/*.mc"
       exclude:
         - "**/Vendor/**"
         - "vendor/**"
@@ -42,7 +48,7 @@ rules:
     # citations. `NN.N-NN` is a separate alternative for this repo's `09.3-04` / `09.15-11` form,
     # which the old pattern never matched at all.
     pattern-regex: >-
-      (?://|/\*|^\s*\*)[^\n]*\b(?:Phase\s+\d+(?:\.\d+)?|\d\d\.\d+-\d\d|(?<![\d:.,-])\d\d-\d\d(?![\d-])|D\d?-\d\d|FEAT-\d\d|WR-\d\d|CX-[A-Z]-\d\d|REMED-\d+|LOCK-\d\d|T-\d\d-\d\d|GO-\d)\b
+      (?://|/\*|^\s*\*)[^\n]*\b(?:Phase[-\s]\d+(?:\.\d+)?|\d\d\.\d+-\d\d|(?<![\d:.,-])\d\d-\d\d(?![\d-])|D\d?-\d\d|FEAT-\d\d|WR-(?:\d\d|A\d)|CX-[A-Z]-\d\d|REMED-\d+|LOCK-\d\d|T-\d\d-\d\d|GO-\d|VA-\d\d|CR-\d\d|[RC]\d-\d\d|OQ\d)\b
 
   - id: migration-breadcrumb-comment
     languages: [generic]
@@ -54,9 +60,14 @@ rules:
       include:
         - "ios/**/*.swift"
         - "Packages/faBolusCore/**/*.swift"
+        - "Packages/faBolusDesign/**/*.swift"
+        - "Packages/*/Package.swift"
         - "Shared/**/*.swift"
         - "Sources/**/*.swift"
+        - "Tests/**/*.swift"
         - "source/app/*.mc"
+        - "tests/*.mc"
+        - "datafield/*.mc"
       exclude:
         - "**/Vendor/**"
         - "vendor/**"
@@ -84,9 +95,14 @@ rules:
       include:
         - "ios/**/*.swift"
         - "Packages/faBolusCore/**/*.swift"
+        - "Packages/faBolusDesign/**/*.swift"
+        - "Packages/*/Package.swift"
         - "Shared/**/*.swift"
         - "Sources/**/*.swift"
+        - "Tests/**/*.swift"
         - "source/app/*.mc"
+        - "tests/*.mc"
+        - "datafield/*.mc"
       exclude:
         - "**/Vendor/**"
         - "vendor/**"
