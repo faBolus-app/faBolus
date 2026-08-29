@@ -19,7 +19,7 @@ struct R3CLedgerFaultTests {
     final class FakeLedgerStore: RemoteBolusLedgerPersisting, @unchecked Sendable {
         struct SaveError: Error {}
         var failAllSaves = false
-        var failSaveOnCall: Int? = nil  // 1-based
+        var failSaveOnCall: Int?  // 1-based
         var reportCorruptLoad = false
         private(set) var saveCount = 0
         private var persisted: Data?

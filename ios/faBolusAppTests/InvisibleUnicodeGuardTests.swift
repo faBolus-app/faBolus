@@ -83,12 +83,10 @@ struct InvisibleUnicodeGuardTests {
             for url in Self.allSwiftFiles(under: root) {
                 guard let raw = try? String(contentsOf: url, encoding: .utf8) else { continue }
                 filesScanned += 1
-                for scalar in raw.unicodeScalars {
-                    if Self.invisibleCodePoints.contains(scalar) {
-                        violations.append(
-                            "\(url.path) contains invisible Unicode code point U+\(String(format: "%04X", scalar.value))"
-                        )
-                    }
+                for scalar in raw.unicodeScalars where Self.invisibleCodePoints.contains(scalar) {
+                    violations.append(
+                        "\(url.path) contains invisible Unicode code point U+\(String(format: "%04X", scalar.value))"
+                    )
                 }
             }
         }

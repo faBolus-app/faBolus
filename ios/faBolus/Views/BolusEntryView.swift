@@ -61,8 +61,8 @@ struct BolusEntryView: View {
         let extended: Bool
         // Stale (not merely missing): value + the dose it would produce, so the prompt can offer
         // "include the stale reading". nil ⇒ no reading at all (carbs-only / cancel only).
-        var staleBG: Int? = nil
-        var staleUnits: Double? = nil
+        var staleBG: Int?
+        var staleUnits: Double?
     }
     /// Generation token: a newer edit supersedes this calc so an out-of-order async result can't
     /// overwrite the field with a stale dose.

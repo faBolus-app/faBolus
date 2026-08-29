@@ -98,7 +98,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// `linkDroppedCleanup` + `resetSnapshotForPumpSwitch` (the opposite of `alarmList`/`malfunctionList`/
     /// etc., which are never explicitly reset). Overrides the `PumpBackend` default (which would report
     /// the FILTERED set as raw — a fail-open on the one backend that actually locally filters).
-    public private(set) var rawActiveNotifications: [PumpAlert]? = nil
+    public private(set) var rawActiveNotifications: [PumpAlert]?
     /// The gap-sync's current state for the "Pump history sync" UI section.
     /// Initialized from the persisted `historyLastSyncedAt` so a fresh app launch shows the real last-
     /// synced time rather than always reading "Never" until the next connect.

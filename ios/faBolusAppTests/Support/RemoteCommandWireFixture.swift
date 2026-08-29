@@ -112,15 +112,15 @@ final class RemoteCommandWireFixture {
     /// (`ControlIQZone.rawValue`), mirrored from the phone. A remote renders Tandem's own zone word + icon
     /// locally from this. `nil` ⇒ render the chip/row/field ABSENT — a legacy host, an unread zone, or CIQ
     /// off, never a stale last-known word (D-06 guardrail #5/#6, SP-5 fail-closed).
-    var ciqZone: String? = nil
+    var ciqZone: String?
     /// Phase 09.15 T1-2 (D-08, D-09.1) — whether the pump's OWN control-state currently attributes an
     /// active basal suspend to Control-IQ, mirrored from the phone. Mirrors `ciqZone`'s unconditional
     /// assign-or-clear parse (SP-5 fail-closed): `nil`/`false` ⇒ this remote's OWN generic-suspend
     /// fallback applies — never a fabricated "Control-IQ paused" claim (D-09.1 BINDING).
-    var ciqSuspendedForLow: Bool? = nil
+    var ciqSuspendedForLow: Bool?
     /// The immutable instant `ciqSuspendedForLow` first became true, mirrored from the phone's
     /// `ciqSuspendStartEpochSec` (epoch-not-age convention — elapsed is computed on draw).
-    var ciqSuspendStartDate: Date? = nil
+    var ciqSuspendStartDate: Date?
     /// Phase 09.15 T1-3 (D-01/D-08) — the immutable instant of the most-recent Control-IQ
     /// auto-correction, mirrored from the phone's `lastAutoCorrectionEpochSec` (epoch-not-age
     /// convention — age is computed on draw). `nil` ⇒ render the chip/row/marker ABSENT — a legacy
@@ -128,13 +128,13 @@ final class RemoteCommandWireFixture {
     /// Display-only, never a dose input (C3). A real historical fact never un-happens, so — unlike
     /// `ciqZone`/`ciqSuspendedForLow` — this uses the STANDARD `if let` guard (SP-3): absent on a
     /// later command means only "this reply didn't repeat it", never "it un-happened".
-    var lastAutoCorrectionDate: Date? = nil
+    var lastAutoCorrectionDate: Date?
     /// Phase 09.15 T1-4 (D-01/D-08) — the immutable instant of the most-recent "Control-IQ tried and
     /// couldn't deliver an automatic correction" event, mirrored from the phone's
     /// `ciqLastCouldNotDeliverEpochSec`. Remote MARKER only (no remote-side timeline — remotes never
     /// had the pump history to build one from). `nil` ⇒ render the marker ABSENT. Never surfaced on
     /// widgets/LA (explicit scope, D-08).
-    var ciqLastCouldNotDeliverDate: Date? = nil
+    var ciqLastCouldNotDeliverDate: Date?
     /// Phase 09.15 T1-5 (D-01/D-08) — the immutable instant Control-IQ's automatic correction becomes
     /// available again, mirrored from the phone's `lockoutUntilEpochSec` (epoch-not-age convention).
     /// UNLIKE `lastAutoCorrectionDate`/`ciqLastCouldNotDeliverDate` above (monotonic historical markers
@@ -142,14 +142,14 @@ final class RemoteCommandWireFixture {
     /// so it uses the SAME unconditional assign-or-clear parse as `iobDate`/`therapyDate` (map assign,
     /// clearing to `nil` the moment the host doesn't send one), never the "if let, keep last" guard.
     /// `nil` ⇒ render the bar/ring ABSENT. Display-only, never a dose input (C3).
-    var lockoutUntilDate: Date? = nil
+    var lockoutUntilDate: Date?
     /// Phase 09.15 T1-8 (D-03, D-08) — the pump's configured max-basal delivery limit, mirrored from
     /// the phone's `maxBasalUnitsPerHour`. Unconditional assign-or-clear (SP-5, mirrors `lockoutUntilDate`):
     /// the host relays its current knowledge every statusRead, so a stale value must never survive past
     /// the moment it clears. `nil` ⇒ the T1-8 readout renders ABSENT (D-03(v) fail-closed: hidden, not
     /// zero/dash) — a legacy host, an unread max, or `<= 0` (the host only ever sends a positive value
     /// or `nil`). Display-only, never a dose input (C3).
-    var maxBasalUnitsPerHour: Double? = nil
+    var maxBasalUnitsPerHour: Double?
     /// Phase 09.15 T1-9 (D-01/D-08) — the pump's live Sleep/Exercise activity mode, mirrored from the
     /// phone (previously only `WidgetSnapshot`/`ContentState` carried this). Unconditional assign
     /// (SP-5, mirrors `lockoutUntilDate`): the host relays its CURRENT knowledge every statusRead, so
@@ -160,14 +160,14 @@ final class RemoteCommandWireFixture {
     /// The already-decoded exercise countdown, raw remaining-seconds (NOT an epoch) — a receiver
     /// counts down locally against ITS OWN receipt time for animation only, re-anchored on every
     /// statusRead (D-08 T1-9 note). `nil` ⇒ the timer fact renders ABSENT (SP-5 fail-closed).
-    var exerciseTimeRemainingSec: Int? = nil
+    var exerciseTimeRemainingSec: Int?
     /// The pump's OWN configured sleep-schedule window, evaluated at the phone against `now` (pure
     /// window math, (b) pump-communicated) — iPhone/Mac render the verbose window text from these;
     /// Watch does not render them (D-09.5 explicit scope) even though they ARE parsed here (one
     /// shared parse point, SP-3).
-    var inSleepWindow: Bool? = nil
-    var sleepWindowStartMinute: Int? = nil
-    var sleepWindowEndMinute: Int? = nil
+    var inSleepWindow: Bool?
+    var sleepWindowStartMinute: Int?
+    var sleepWindowEndMinute: Int?
 
     /// Phase 09.15 D-07 (plan 12) — the phone-owned Control-IQ-awareness Smart-Assist toggle states,
     /// mirrored from the phone. Safe defaults mirror each flag's own `AppSettings` D-07 default exactly
@@ -399,7 +399,7 @@ final class RemoteCommandWireFixture {
                 // Reflect the actual delivered amount from the outcome echo immediately, so the
                 // Details "Last bolus" shows the just-delivered value (e.g. 0.05 U) right away
                 // instead of the previous bolus until the next status push arrives.
-                if (cmd.status == .delivered || cmd.status == .cancelled), let d = cmd.deliveredUnits {
+                if cmd.status == .delivered || cmd.status == .cancelled, let d = cmd.deliveredUnits {
                     lastBolusUnits = d
                 }
             }

@@ -481,7 +481,9 @@ public final class AppSettings {
     /// See `ChildModeFreezeGuardTests`.
     public var requireRemoteBolusApproval: Bool {
         get { false }
-        set {}
+        // The empty setter IS the freeze: swallowing the write is what makes this
+        // unreachable by any means, including restore-from-backup.
+        set {}  // swiftlint:disable:this unused_setter_value
     }
 
     /// User-defined auto-rules for pump alerts. **Alarms are never auto-acted** regardless of rules.
@@ -489,7 +491,9 @@ public final class AppSettings {
     /// `TandemBackend.applyAutoRules` then early-returns. See `AlertRulesFreezeGuardTests`.
     public var alertRules: [AlertRule] {
         get { [] }
-        set {}
+        // The empty setter IS the freeze: swallowing the write is what makes this
+        // unreachable by any means, including restore-from-backup.
+        set {}  // swiftlint:disable:this unused_setter_value
     }
 
     /// Upload glucose + boluses + pump status to a Nightscout site. Nightscout is not in
@@ -629,7 +633,9 @@ public final class AppSettings {
     /// `ChildModeFreezeGuardTests`.
     public var childModeEnabled: Bool {
         get { false }
-        set {}
+        // The empty setter IS the freeze: swallowing the write is what makes this
+        // unreachable by any means, including restore-from-backup.
+        set {}  // swiftlint:disable:this unused_setter_value
     }
     public var childAllowed: Set<ChildFeature> {
         didSet { d.set(Self.canonicalChildAllowedData(childAllowed), forKey: "childAllowed") }

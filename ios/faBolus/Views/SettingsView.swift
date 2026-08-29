@@ -451,7 +451,6 @@ struct DisplaySettingsView: View {
     }
 }
 
-
 // MARK: - CGM & failover
 
 struct CgmSettingsView: View {
@@ -1076,7 +1075,7 @@ struct GarminScreensView: View {
                 Section {
                     ForEach(hidden, id: \.self) { id in
                         Button {
-                            settings.garminScreenOrder = settings.garminScreenOrder + [id]
+                            settings.garminScreenOrder += [id]
                         } label: {
                             Label(AppSettings.garminScreenLabel(id), systemImage: "plus.circle")
                         }
