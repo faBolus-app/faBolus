@@ -39,6 +39,8 @@ rules:
         - "**/DexcomG6Kit/**"
         - "**/HistoryStore/**"
         - "cliparser/**"
+    # `(?<!bytes )` / `(?<!byte )` fence the wire-offset form ("carbs 13 g @ bytes 17-18"), which is
+    # a field position, not a ticket — pervasive in TandemKit's oracle byte-locks.
     # The bare `NN-NN` alternative is fenced by lookaround so it does NOT match an ISO date
     # (`2026-08-23` — the `08-23` is preceded by `-`) or a source line range (`.java:72-74` — the
     # `72-74` is preceded by `:`; a comma-continued range like `ConnectIQ.h:53-58,64-68` needs the
@@ -48,7 +50,7 @@ rules:
     # citations. `NN.N-NN` is a separate alternative for this repo's `09.3-04` / `09.15-11` form,
     # which the old pattern never matched at all.
     pattern-regex: >-
-      (?://|/\*|^\s*\*)[^\n]*\b(?:Phase[-\s]\d+(?:\.\d+)?|\d\d\.\d+-\d\d|(?<![\d:.,-])\d\d-\d\d(?![\d-])|D\d?-\d\d|FEAT-\d\d|WR-(?:\d\d|A\d)|CX-[A-Z]-\d\d|REMED-\d+|LOCK-\d\d|T-\d\d-\d\d|GO-\d|VA-\d\d|CR-\d\d|[RC]\d-\d\d|OQ\d)\b
+      (?://|/\*|^\s*\*)[^\n]*\b(?:Phase[-\s]\d+(?:\.\d+)?|\d\d\.\d+-\d\d|(?<![\d:.,-])(?<!bytes )(?<!byte )\d\d-\d\d(?![\d-])|D\d?-\d\d|FEAT-\d\d|WR-(?:\d\d|A\d)|CX-[A-Z]-\d\d|REMED-\d+|LOCK-\d\d|T-\d\d-\d\d|GO-\d|VA-\d\d|CR-\d\d|[RC]\d-\d\d|OQ\d)\b
 
   - id: migration-breadcrumb-comment
     languages: [generic]

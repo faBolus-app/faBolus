@@ -236,8 +236,8 @@ struct PhoneWidgetDoubleDoseTests {
     }
 
     /// The two-actor WIDGET double-dose regression: a remote request composed BEFORE a widget delivery is
-    /// refused — no second pump write. Robust to today's behavior (which is expected to FAIL until C3-01
-    /// lands: today the widget path never stamps `lastHostDeliveryAt`, so this superseded request would
+    /// refused — no second pump write. Robust to today's behavior (which is expected to FAIL until the
+    /// widget path stamps `lastHostDeliveryAt`: today it never does, so this superseded request would
     /// incorrectly proceed).
     @Test func twoActorWidgetDoubleDoseRejectsRequestComposedBeforeWidgetDelivery() async {
         try? await withCleanSettings {

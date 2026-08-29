@@ -18,7 +18,7 @@ enum PairingStore {
     private static let v1CodeAccount = "legacyV1PairingCode"
 
     #if DEBUG
-    /// R2-07 test seam. xctest hosted inside the app lacks the keychain-sharing entitlement, so `SecItemAdd`
+    /// Test seam. xctest hosted inside the app lacks the keychain-sharing entitlement, so `SecItemAdd`
     /// silently fails there — which makes the quick-pair RESUME path (gated on `load()` returning saved
     /// material) otherwise undrivable in a unit test. A test flips this to hold the pairing material in
     /// memory so the REAL resume/watchdog policy runs. Mirrors `BolusPasscodeStore.useInMemoryBackingForTests`.

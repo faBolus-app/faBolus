@@ -24,7 +24,7 @@ struct ResumeRetryTests {
 
     /// 1 — Budget remaining: a quick-pair RESUME failure with a stored secret RETRIES — it consumes one unit
     /// of the retry budget, keeps the stored secret, and does NOT surface a terminal error. This is the core
-    /// R2-07 guarantee that a single transient link glitch no longer forces a full manual re-pair.
+    /// resume-retry guarantee that a single transient link glitch no longer forces a full manual re-pair.
     @Test func resumeFailureWithStoredSecretRetriesAndNeverWipesTheStore() {
         // The xctest host has no functional Keychain, so the resume path is only drivable with the
         // in-memory seam. Scoped per-test + reset in a defer so it never leaks to other suites.
@@ -104,7 +104,7 @@ struct ResumeRetryTests {
 
     /// 3 — Fresh full pair is UNCHANGED: with NO stored secret, `beginPairingForTesting(code: "123456")`
     /// drives a FRESH JPAKE pair (`onFirstPair != nil`), which arms the watchdog with
-    /// `clearStoreOnTimeout: false`. Its timeout takes the pre-R2-07 straight-to-`.error` path — it NEVER
+    /// `clearStoreOnTimeout: false`. Its timeout takes the pre-resume-retry straight-to-`.error` path — it NEVER
     /// enters the resume-retry budget (there is no stored secret to protect), so the retry count stays 0.
     @Test func freshFullPairFailureIsUnchangedAndNeverEntersTheResumeRetryPath() {
         // The xctest host has no functional Keychain, so the resume path is only drivable with the
@@ -138,7 +138,7 @@ struct ResumeRetryTests {
             "the fresh path must not show the resume-recovery copy")
     }
 
-    /// C1-01 (owner-adopted 2026-08-25) — a unique durable-ledger URL so `AppModel` instances in these
+    /// C1-01 — a unique durable-ledger URL so `AppModel` instances in these
     /// tests don't share the App Group ledger with other serialized suites. Mirrors
     /// `SafetyNotificationTests.tempLedgerURL()`.
     private func tempLedgerURL() -> URL {
@@ -146,7 +146,7 @@ struct ResumeRetryTests {
             .appendingPathComponent("resume-retry-ledger-\(UUID().uuidString).json")
     }
 
-    /// 5 — C1-01 (Test 1 of the plan's 3): a transient resume-failure within the retry budget calls the
+    /// 5 — C1-01: a transient resume-failure within the retry budget calls the
     /// RE-ESTABLISH path (`connectKnownPeripheral`), never `disconnect()` — the fix for the bug where
     /// `disconnect()` sets `intentionalDisconnect = true` and kills the kit's reconnect ladder, so the link
     /// never comes back in the background. `client` is a real, unconnected `PumpBLEClient` with no fake
@@ -179,7 +179,7 @@ struct ResumeRetryTests {
             "the retry branch must re-establish (connectKnownPeripheral), never disconnect() (C1-01)")
     }
 
-    /// 6 — C1-01/C1-04 (Test 2 of the plan's 3): the SAME transient resume-failure ALSO fires the typed
+    /// 6 — C1-01: the SAME transient resume-failure ALSO fires the typed
     /// `onReliabilityEvent(.resumeRetryFailed)`, which `AppModel` translates into a never-suppressible
     /// `.pumpDisconnect` post + the escalation ladder — even though this edge dies from `.connecting`, where
     /// `SafetyEdge.connection` never raises (it only fires on a direct `.connected/.bolusing → down` edge).
@@ -241,8 +241,8 @@ struct ResumeRetryTests {
             "the exhausted branch must still alarm — no regression from the typed-event addition")
     }
 
-    /// 8 — `forgetPairing()` (R2-06) remains the ONLY thing that wipes `PairingStore`. Together with tests 1
-    /// and 2 (resume failures NEVER wipe), this pins the R2-07 boundary: the stored secret is durable across
+    /// 8 — `forgetPairing()` remains the ONLY thing that wipes `PairingStore`. Together with tests 1
+    /// and 2 (resume failures NEVER wipe), this pins the resume-retry boundary: the stored secret is durable across
     /// every automatic resume-failure path and is removed ONLY by an explicit user "Forget pairing".
     @Test func forgetPairingRemainsTheOnlyThingThatWipesTheStoredSecret() {
         // The xctest host has no functional Keychain, so the resume path is only drivable with the
@@ -255,7 +255,7 @@ struct ResumeRetryTests {
         #expect(PairingStore.hasAnyPairing, "precondition: a stored secret is present")
 
         let b = TandemBackend(testTransport: FakePumpTransport())  // default double: connected + paired
-        b.forgetPairing()  // R2-06 explicit teardown-and-wipe
+        b.forgetPairing()  // explicit teardown-and-wipe
 
         #expect(PairingStore.load() == nil, "forgetPairing() is the ONLY thing that wipes the stored secret")
         #expect(!PairingStore.hasAnyPairing, "no pairing material survives an explicit forget")

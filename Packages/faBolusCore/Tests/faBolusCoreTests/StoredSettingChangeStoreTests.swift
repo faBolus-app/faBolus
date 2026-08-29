@@ -2,8 +2,8 @@ import Testing
 import Foundation
 @testable import faBolusCore
 
-/// P14 S7. The provenance / change-log sidecar: atomic-write + fail-closed persistence (mirroring
-/// `RemoteBolusLedgerStore`), and the OQ6 stable-key guarantee (keyed on a segment's start time, not its
+/// The provenance / change-log sidecar: atomic-write + fail-closed persistence (mirroring
+/// `RemoteBolusLedgerStore`), and the stable-key guarantee (keyed on a segment's start time, not its
 /// renumbering index).
 struct StoredSettingChangeStoreTests {
 
@@ -85,7 +85,7 @@ struct StoredSettingChangeStoreTests {
         #expect(log.current(b)?.after == .int(3))
     }
 
-    // MARK: OQ6 — keyed on start time, not the renumbering index
+    // MARK: Keyed on start time, not the renumbering index
 
     @Test func provenanceIsKeyedOnStartTimeSoSegmentRenumberIsStable() {
         var log = SettingChangeLog()

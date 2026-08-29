@@ -157,7 +157,7 @@ struct ReadCascadeChainingGuardTests {
             "an EGV reading whose pump timestamp advances (0 → 1000) must schedule a predictive burst")
     }
 
-    /// VA-01 (freshness fail-closed): an EGV reading whose pump timestamp CANNOT be trusted — here no
+    /// Freshness fail-closed: an EGV reading whose pump timestamp CANNOT be trusted — here no
     /// pump↔phone clock anchor exists yet (bootstrap-early), so `cgmReadingDate` returns nil — must set the
     /// glucose VALUE but leave `glucoseDate` nil, so `GlucoseFreshness.isStale` reads it as stale/ineligible
     /// for dosing rather than stamping receive-time and letting a bootstrap-early reading masquerade as
@@ -173,7 +173,7 @@ struct ReadCascadeChainingGuardTests {
             "a nil reading time is stale — never presented as fresh to the dose path")
     }
 
-    /// VA-01 happy path: with the pump↔phone clock anchor established, an EGV whose pump timestamp maps to a
+    /// The happy path: with the pump↔phone clock anchor established, an EGV whose pump timestamp maps to a
     /// recent (trusted) `Date` DOES stamp `glucoseDate` (fresh) and IS promoted into the plot history —
     /// proving the fail-closed change did not break the normal, trusted-timestamp reading.
     @Test func trustedReadingTimeSetsGlucoseDateAndPromotesToHistory() {

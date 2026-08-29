@@ -929,13 +929,13 @@ struct AppModelBehaviorTests {
         }
     }
 
-    // MARK: - VA-07-host (WR-A3): a remote request COMPOSED before a completed host delivery is refused
+    // MARK: - A remote request COMPOSED before a completed host delivery is refused
     //
     // `remoteDeliver(..., sentAt:)` carries the remote's compose-time wall clock. On a remote surface, if a
     // host bolus has since DELIVERED (stamping `lastHostDeliveryAt`), a request whose `sentAt` predates that
     // stamp dosed off pre-bolus state — a double-dose hazard — so it is refused BEFORE the backend, echoing
     // `.failed` with the "delivered after this request was created" message. Defense-in-depth over the
-    // transport-layer VA-02 `sentAt` freshness gate (which `remoteDeliver` bypasses when called directly, so
+    // transport-layer `sentAt` freshness gate (which `remoteDeliver` bypasses when called directly, so
     // a future `sentAt` here is fine — the compose guard is the only `sentAt` check on this path).
     //
     // These use the `.garmin` surface so `surface.isRemote` is true (the divergence/idempotency tests above
@@ -972,7 +972,7 @@ struct AppModelBehaviorTests {
     }
 
     /// The counterpart: with a prior host delivery stamped, a remote request whose `sentAt` is AFTER the
-    /// stamp is NOT rejected by the VA-07-host compose guard — it proceeds to normal handling. Robust: the
+    /// stamp is NOT rejected by the compose guard — it proceeds to normal handling. Robust: the
     /// point is that the supersession message never fires.
     @Test func remoteRequestComposedAfterHostDeliveryProceeds() async {
         try? await withCleanSettings {
@@ -986,7 +986,7 @@ struct AppModelBehaviorTests {
             #expect(backend.snapshot.iobUnits > iob0 + 0.9)
 
             // `sentAt` 120 s in the FUTURE (after the stamp) ⇒ compose guard does NOT fire. remoteDeliver is
-            // called directly (bypasses the VA-02 transport freshness gate), so a future stamp is fine here.
+            // called directly (bypasses the transport freshness gate), so a future stamp is fine here.
             await model.remoteDeliver(
                 requestId: "r-new", units: 1.0,
                 sentAt: Int(Date().timeIntervalSince1970) + 120,
@@ -1001,7 +1001,7 @@ struct AppModelBehaviorTests {
         }
     }
 
-    // MARK: - R2-15 phone-side (WR-A5): a status reply correlates to the request it answers
+    // MARK: - A status reply correlates to the request it answers
 
     /// `statusCommand(includeHistory:replyingTo:)` stamps the incoming request's id onto the reply when
     /// `replyingTo` is non-nil (true correlation), and keeps a fresh UUID when it is nil (an unsolicited push).

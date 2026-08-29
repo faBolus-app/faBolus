@@ -87,7 +87,7 @@ struct BolusPasscodeStoreTests {
         #expect(BolusPasscodeStore.lockoutRemaining == 0)  // not yet locked → counter really reset
     }
 
-    // MARK: - VA-29 hardening (PBKDF2 v2 blob, legacy migration, Keychain-backed backoff)
+    // MARK: - Hardening (PBKDF2 v2 blob, legacy migration, Keychain-backed backoff)
 
     @Test func pbkdf2RoundTrips() {
         reset()
