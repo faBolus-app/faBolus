@@ -6,14 +6,8 @@ import TandemMessages
 import TandemBLE
 @testable import faBolus
 
-/// Phase 09.7-01 (D-02/D-03/D-04 + Pitfall 3 fix). Replaces the one-shot, backward-only,
-/// once-ever-gated history backfill with a gap-aware delta sync: on every connect, `TandemBackend`
-/// reconciles the pump's reported `[firstSequenceNum, lastSequenceNum]` range against the persisted
-/// `AppSettings.historyCoverage` map and fetches ONLY the missing sequence windows — both the
-/// trailing/forward gap (records logged during a disconnect) and any interior/non-sequential holes.
-///
-/// No existing test touched this path at all before this phase (RESEARCH Pitfall 5) — every scenario
-/// here is new coverage, not a regression guard on prior behavior.
+/// On reconnect, history sync must fetch only missing sequence windows — trailing gaps and interior
+/// holes — not re-walk the whole pump log.
 @Suite(.serialized) @MainActor
 struct HistoryLogSyncTests {
 
@@ -42,12 +36,10 @@ struct HistoryLogSyncTests {
         (Bytes.readUint32(sent.cargo, 0), Int(sent.cargo[4]))
     }
 
-    // MARK: - Task 1 (TRACER): forward-gap delta sync end-to-end + persistNewHistory fix
+    // MARK: - Forward-gap delta sync
 
-    /// D-02 (forward gap): a reconnect after a disconnect fetches ONLY the sequences the pump logged
-    /// during the gap — never a full re-walk of the whole available range. Must fail against the old
-    /// once-ever backward walk (which re-fetches unconditionally on the flag's one-shot trigger and does
-    /// not persist any coverage state to diff against).
+    /// A reconnect after a disconnect fetches only the sequences the pump logged during the gap —
+    /// never a full re-walk of the whole available range.
     @Test func forwardGapAfterDisconnect() {
         withCleanCoverage {
             let (backend, fake) = makeBackend()
@@ -56,7 +48,7 @@ struct HistoryLogSyncTests {
             backend.injectStatusFrameForTesting(FakePumpTransport.timeResponse())
             backend.injectStatusFrameForTesting(
                 FakePumpTransport.historyLogStatus(numEntries: 100, firstSequenceNum: 1, lastSequenceNum: 100))
-            // WR-03: coverage now credits only RECEIVED sequences, so the first sync must genuinely receive
+            // Coverage credits only RECEIVED sequences, so the first sync must genuinely receive
             // the whole 1...100 window to hold [1...100] (a single reading would credit only [100...100]).
             injectHistoryStreamChunked(backend, stride(from: UInt32(100), through: UInt32(1), by: -1).map {
                 (seq: $0, pumpTimeSec: UInt32(1_000) * $0, mgdl: 110) })
@@ -87,9 +79,8 @@ struct HistoryLogSyncTests {
         }
     }
 
-    /// Pitfall 3 fix: a gap-filled record whose date is OLDER than everything the app had already
-    /// ingested must still reach `GlucoseHistoryStore` — the old `$0.date > lastGlucoseIngest`
-    /// date-watermark filter silently dropped exactly this case.
+    /// A gap-filled record whose date is older than everything the app had already ingested must still
+    /// reach GlucoseHistoryStore — a date-watermark filter would silently drop exactly this case.
     @Test func oldGapRecordPersists() {
         withCleanCoverage {
             let (backend, fake) = makeBackend()
@@ -102,7 +93,7 @@ struct HistoryLogSyncTests {
             backend.injectStatusFrameForTesting(FakePumpTransport.timeResponse())
             backend.injectStatusFrameForTesting(
                 FakePumpTransport.historyLogStatus(numEntries: 100, firstSequenceNum: 1, lastSequenceNum: 100))
-            // WR-03: receive the whole 1...100 window so held coverage is [1...100] and the second sync's
+            // Receive the whole 1...100 window so held coverage is [1...100] and the second sync's
             // gap is exactly the forward window 101...130 (seq 100 stays the newest ingested reading).
             injectHistoryStreamChunked(backend, stride(from: UInt32(100), through: UInt32(1), by: -1).map {
                 (seq: $0, pumpTimeSec: UInt32(5_000) * $0, mgdl: 111) })
@@ -126,18 +117,18 @@ struct HistoryLogSyncTests {
         }
     }
 
-    // MARK: - Task 2: interior-gap fill + retention bounding + coverage-survives-disconnect + safety cap
+    // MARK: - Interior-gap fill + retention bounding + coverage-survives-disconnect + safety cap
 
-    /// D-02 (interior gap): held coverage 1...50 and 80...130 over a 1...130 pump range must produce
-    /// exactly the interior hole 51...79 — not just a trailing/forward gap.
+    /// Held coverage 1...50 and 80...130 over a 1...130 pump range must produce exactly the interior
+    /// hole 51...79 — not just a trailing/forward gap.
     @Test func interiorGapDetected() {
         let held: [ClosedRange<UInt32>] = [1...50, 80...130]
         let missing = TandemBackend.missingRanges(pumpFirst: 1, pumpLast: 130, retentionFloor: 1, held: held)
         #expect(missing == [51...79])
     }
 
-    /// D-03/Pitfall 1: `historyRetentionDays == 0` must resolve the retention floor to `pumpFirst` (the
-    /// full available range), never an empty/"now" sentinel.
+    /// `historyRetentionDays == 0` must resolve the retention floor to `pumpFirst` (the full available
+    /// range), never an empty/"now" sentinel.
     @Test func retentionZeroMeansFullRange() {
         let floor = TandemBackend.retentionFloorSequence(pumpFirst: 10, pumpLast: 500, retentionDays: 0)
         #expect(floor == 10)
@@ -145,25 +136,22 @@ struct HistoryLogSyncTests {
         #expect(missing == [10...500])
     }
 
-    /// D-03: with `historyRetentionDays > 0`, the fetch floor must be a SUPERSET of the retention window
-    /// (at or below its boundary — never under-fetching within it). Exact date-boundary pruning is left
-    /// to `AppModel.applyRetention`'s existing store-side deletion (the two-place retention design
-    /// recorded in the plan SUMMARY).
+    /// With `historyRetentionDays > 0`, the fetch floor must be a superset of the retention window
+    /// (at or below its boundary — never under-fetching within it).
     @Test func retentionDaysBoundsFetch() {
         let floor = TandemBackend.retentionFloorSequence(pumpFirst: 10, pumpLast: 500, retentionDays: 30)
         #expect(floor <= 10, "the fetch floor must never sit ABOVE pumpFirst — that would under-fetch the retention window")
     }
 
-    /// D-04: the persisted coverage map survives `linkDroppedCleanup` (via `applyClientState(.disconnected)`)
-    /// AND a fresh `AppSettings` load (proving real UserDefaults persistence, not just an in-memory
-    /// struct), and the next connect resumes from it instead of re-walking from scratch.
+    /// The persisted coverage map survives `linkDroppedCleanup` and a fresh AppSettings load, and the
+    /// next connect resumes from it instead of re-walking from scratch.
     @Test func coverageSurvivesDisconnect() {
         withCleanCoverage {
             let (backend, fake) = makeBackend()
             backend.injectStatusFrameForTesting(FakePumpTransport.timeResponse())
             backend.injectStatusFrameForTesting(
                 FakePumpTransport.historyLogStatus(numEntries: 100, firstSequenceNum: 1, lastSequenceNum: 100))
-            // WR-03: receive the whole 1...100 window so the credited (and persisted) coverage is [1...100].
+            // Receive the whole 1...100 window so the credited (and persisted) coverage is [1...100].
             injectHistoryStreamChunked(backend, stride(from: UInt32(100), through: UInt32(1), by: -1).map {
                 (seq: $0, pumpTimeSec: UInt32(1_000) * $0, mgdl: 100) })
             backend.fireHistorySyncTickForTesting()   // window 1...100 credited to AppSettings.shared.historyCoverage
@@ -189,9 +177,8 @@ struct HistoryLogSyncTests {
         }
     }
 
-    /// T-09.7-02 (DoS/battery): a pathological coverage map — many isolated single-sequence holes —
-    /// must never drive the sync past the existing `backfillMaxPages`-style hard cap, no matter how many
-    /// gap windows `missingRanges` computes.
+    /// A pathological coverage map — many isolated single-sequence holes — must never drive the sync
+    /// past the page hard cap, no matter how many gap windows missingRanges computes.
     @Test func gapQueueSafetyCap() {
         withCleanCoverage {
             let (backend, fake) = makeBackend()
@@ -215,7 +202,7 @@ struct HistoryLogSyncTests {
         }
     }
 
-    // MARK: - Plan 02 (D-01/D-05): auto-sync toggle gate + manual "Sync now" trigger
+    // MARK: - Auto-sync toggle gate + manual "Sync now" trigger
 
     /// Save + restore `AppSettings.shared.historySyncEnabled` around a test, mirroring
     /// `withCleanCoverage`'s save/defer-restore idiom for the shared settings singleton.
@@ -226,9 +213,8 @@ struct HistoryLogSyncTests {
         try body()
     }
 
-    /// D-01: the AUTOMATIC on-connect gap-sync check (`HistoryLogStatusRequest`) must be suppressed
-    /// entirely while `historySyncEnabled == false`, and must still run once it's `true` (a regression
-    /// guard on Plan 01's on-connect behavior now that it's gated).
+    /// The automatic on-connect gap-sync check (`HistoryLogStatusRequest`) must be suppressed entirely
+    /// while `historySyncEnabled == false`, and must still run once it's `true`.
     @Test func autoSyncGateSuppressesOnConnect() {
         withCleanCoverage {
             withHistorySyncEnabled(false) {
@@ -246,17 +232,14 @@ struct HistoryLogSyncTests {
         }
     }
 
-    /// UI-SPEC assumption 2: "Sync now" (`AppModel.syncHistoryNow()`) stays available and functional
-    /// even when the auto-sync toggle is OFF — the toggle only gates the AUTOMATIC on-connect trigger,
-    /// never the user's explicit manual request. Drives the response through to confirm the manual path
-    /// reaches the same gap-sync entry point as the on-connect flow (a real `HistoryLogRequest` fetch),
-    /// not just an inert status read.
+    /// "Sync now" (`AppModel.syncHistoryNow()`) stays available even when the auto-sync toggle is OFF —
+    /// the toggle only gates the automatic on-connect trigger, never the user's explicit manual request.
     @Test func syncNowTriggersGapSyncRegardlessOfToggle() {
         withCleanCoverage {
             withHistorySyncEnabled(false) {
                 let (backend, fake) = makeBackend()
                 let model = AppModel(source: backend)
-                backend.setConnectionForTesting(.connected)   // "Sync now" requires an already-connected pump (CR-01: bare .ready is now only .connecting)
+                backend.setConnectionForTesting(.connected)   // "Sync now" requires an already-connected pump (bare .ready is only .connecting)
 
                 model.syncHistoryNow()
                 #expect(fake.sent.contains { $0.opCode == HistoryLogStatusRequest.props.opCode },
@@ -270,7 +253,7 @@ struct HistoryLogSyncTests {
         }
     }
 
-    // MARK: - WR-03 (R2-17): coverage is credited from RECEIVED sequences, never the request cursor
+    // MARK: - Coverage is credited from RECEIVED sequences, never the request cursor
 
     /// `HistoryLogStreamResponse` frames carry a one-byte cargo length (`[count, streamId, records…]`),
     /// so a single injected frame can hold at most 9 × 26-byte records — inject a received sub-range in
@@ -286,12 +269,8 @@ struct HistoryLogSyncTests {
         }
     }
 
-    /// WR-03 (partial receipt): the pump reports 1...100, but only the TOP contiguous sub-range (seq
-    /// 100…60) is actually RECEIVED before the stream stops — the un-received 1...59 is swallowed. Coverage
-    /// must credit ONLY the received `60...100`; `1...59` must stay uncovered so `missingRanges` re-requests
-    /// it on the next sync. Pre-fix, crediting keyed off the request cursor (`backfillNextEnd`, which
-    /// advances at SEND time), so the whole 1...100 was marked covered and 1...59 became a silent, durable
-    /// history gap that was never re-fetched.
+    /// Partial receipt: the pump reports 1...100, but only the top contiguous sub-range is actually
+    /// received before the stream stops. Coverage must credit only the received range so the gap is re-requested.
     @Test func partialReceiptCreditsOnlyReceivedSubRange() {
         withCleanCoverage {
             let (backend, _) = makeBackend()
@@ -314,10 +293,8 @@ struct HistoryLogSyncTests {
         }
     }
 
-    /// WR-03 (nothing received): the pump reports 1...100 and a page is requested, but NO stream frame ever
-    /// arrives (total response loss / a swallowed send / a BLE drop before the first record). Coverage must
-    /// stay EMPTY — an un-received window is credited nothing. Pre-fix, the request cursor advanced at send
-    /// time and inserted the full 1...100 as covered despite zero records landing.
+    /// Nothing received: a page is requested but no stream frame ever arrives. Coverage must stay empty
+    /// — an un-received window is credited nothing.
     @Test func zeroFramesCreditNothing() {
         withCleanCoverage {
             let (backend, _) = makeBackend()
@@ -332,9 +309,8 @@ struct HistoryLogSyncTests {
         }
     }
 
-    /// WR-03 (success-path regression): a fully-received window still credits its whole range. The pump
-    /// reports 1...9 and every record (seq 9…1) arrives in a single frame; coverage must be exactly
-    /// `1...9`, confirming the receipt-based crediting did not regress the ordinary fully-synced case.
+    /// A fully-received window still credits its whole range — receipt-based crediting must not regress
+    /// the ordinary fully-synced case.
     @Test func fullReceiptCreditsWholeRange() {
         withCleanCoverage {
             let (backend, _) = makeBackend()

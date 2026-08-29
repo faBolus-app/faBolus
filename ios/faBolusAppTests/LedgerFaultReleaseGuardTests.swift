@@ -3,21 +3,14 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// Phase 09-01, gaps A3/A4 (guards-FIRST, D-01) — the two block-RELEASE fault paths R3CLedgerFaultTests
-/// left open (see its own header comment): `retryTerminalPersist()`'s SUCCESS path actually RELEASING the
-/// global block (only the stays-on-failure case was previously pinned), and
-/// `clearDeliveryBlockAfterVerification()`'s save-FAILURE branch RETAINING the block instead of releasing
-/// it. Both pin behavior the Wave-2 `DeliveryLedgerCoordinator` extraction (D-03) must reproduce exactly.
-///
-/// D-09: this suite only exercises the ledger/global-block fail-closed layer, independent of
-/// `TandemBackend.validateDeliver`'s own local block.
+/// A successful retry of a failed ledger persist must release the global delivery block. A save failure
+/// during verification must retain it so an unsaved "verified clean" state cannot unlock dosing.
 @Suite(.serialized)
 @MainActor
 struct LedgerFaultReleaseGuardTests {
 
-    /// Same exact string pin as `LedgerBlockPrecedenceGuardTests` (AppModel.swift:611-613) —
-    /// intentionally re-declared here rather than shared, mirroring how each existing ledger-fault suite
-    /// keeps its own literal assertions.
+    /// Same exact string pin as `LedgerBlockPrecedenceGuardTests` — intentionally re-declared here
+    /// rather than shared, mirroring how each existing ledger-fault suite keeps its own literal assertions.
     private static let terminalSaveFailedMessage =
         "Delivery is locked: the last bolus outcome could not be saved. Check the pump/t:connect; "
         + "delivery resumes once the safety ledger is written."
@@ -31,7 +24,7 @@ struct LedgerFaultReleaseGuardTests {
         try await body()
     }
 
-    // MARK: - Gap A3: retryTerminalPersist() SUCCESS releases the block
+    // MARK: - retryTerminalPersist() SUCCESS releases the block
 
     /// Drive the model into `terminalSaveFailed` exactly like `R3CLedgerFaultTests
     /// .terminalSaveFailureRetainsGlobalBlock` (the settle-delivered save throws on call #3), then flip the
@@ -73,7 +66,7 @@ struct LedgerFaultReleaseGuardTests {
         }
     }
 
-    // MARK: - Gap A4: clearDeliveryBlockAfterVerification() save-FAILURE branch
+    // MARK: - clearDeliveryBlockAfterVerification() save-FAILURE branch
 
     /// When the durable save inside `clearDeliveryBlockAfterVerification()` throws, `terminalSaveFailed`
     /// must be SET and the block RETAINED — never released on an unsaved "verified clean" state.

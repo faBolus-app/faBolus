@@ -4,14 +4,8 @@ import TandemBLE
 import faBolusCore
 @testable import faBolus
 
-/// P12 (app-boundary connection-state surfacing). The kit forwards CoreBluetooth states the app used to
-/// DROP (`default: break`) or FLATTEN. Two safety-relevant consequences: a radio power-off could leave a
-/// STALE "Connected" showing, and a transport error's reason never reached the passive HUD viewer.
-///
-/// `applyClientState` / `applyClientError` are the delegate bodies factored out so the state→snapshot
-/// mapping is testable without a live `PumpBLEClient` (a `CBCentralManager`). These pin: every radio-down
-/// state fails closed to `.disconnected` with a user-facing reason (never fabricates connected), the
-/// reason clears on reconnect, and a transport error preserves its description.
+/// Radio-down BLE states must fail closed to disconnected with a user-facing reason. A transport error
+/// must not fabricate or keep a stale Connected.
 @Suite(.serialized) @MainActor
 struct TandemConnectionStateTests {
     private func backend() -> TandemBackend { TandemBackend(testTransport: FakePumpTransport()) }
@@ -48,8 +42,8 @@ struct TandemConnectionStateTests {
         b.applyClientState(.poweredOff)
         #expect(b.snapshot.connectionDetail == "Bluetooth is off")
         b.applyClientState(.ready)
-        // CR-01 (R2-01): bare BLE `.ready` now publishes the not-yet-usable `.connecting` (the usable
-        // `.connected` is published only at the polling/onPaired moment). The stale reason must still clear.
+        // Bare BLE `.ready` publishes the not-yet-usable `.connecting` (usable `.connected` only at
+        // polling/onPaired). The stale reason must still clear.
         #expect(b.snapshot.connection == .connecting)
         #expect(b.snapshot.connectionDetail == nil)   // stale "Bluetooth is off" must not linger
     }
@@ -57,31 +51,21 @@ struct TandemConnectionStateTests {
     @Test func transportErrorPreservesItsReason() {
         struct LinkErr: LocalizedError { var errorDescription: String? { "Peer removed pairing" } }
         let b = backend()
-        // debug pump-background-disconnect (CRITERION 1 & 2, 2026-08-20): `applyClientError` no longer
-        // DOWNGRADES the connection state — `applyClientState` owns it, and a live/recovering link must never
-        // be flipped to `.disconnected` by a transport error (that fired a spurious disconnect banner on every
-        // momentary drop). It now only ENRICHES the reason on a link that is ALREADY down, for the passive HUD
-        // viewer. So drive it from a plain `.disconnected` (the state a real terminal drop lands in via
-        // `applyClientState`) and pin that the machine-token reason is still captured. The "must NOT downgrade
-        // a live/recovering link" half is pinned by `transportErrorNeverDowngradesALiveOrRecoveringLink`.
+        // `applyClientError` no longer downgrades the connection state — `applyClientState` owns it, and
+        // a live/recovering link must never be flipped to `.disconnected` by a transport error. It only
+        // enriches the reason on a link that is already down.
         b.setConnectionForTesting(.disconnected)
         b.applyClientError(LinkErr())
         #expect(b.snapshot.connection == .disconnected)
-        // D-03 (01.1-01): `applyClientError` prefixes the localized description with the bridged NSError
-        // `domain#code` (e.g. "CBErrorDomain#6 ..." for a real CoreBluetooth error) so the reason is a
-        // stable, bucketable token instead of a bare human string — the original description still appears
-        // verbatim as the suffix, which is the "preserves its reason" behavior this test pins.
+        // `applyClientError` prefixes the localized description with the bridged NSError `domain#code`
+        // so the reason is a stable, bucketable token — the original description still appears as the suffix.
         #expect(b.snapshot.connectionDetail?.hasSuffix("Peer removed pairing") == true)
         #expect(b.snapshot.connectionDetail?.contains("#") == true)
     }
 
-    /// debug pump-background-disconnect (CRITERION 1 & 2, 2026-08-20). The kit fires `didError` on an
-    /// unintended drop BEFORE its paired `didChange(.connecting)`, and fires `didError` with NO state change
-    /// at all on a bare read/notify error while still `.ready`. `applyClientError` must therefore NOT
-    /// downgrade a LIVE or RECOVERING link to `.disconnected` — doing so would surface a transient
-    /// `.disconnected` that trips `SafetyEdge.raise` on every momentary drop (CRITERION 1) and promotes a
-    /// transient read/notify hiccup into a spurious disconnect (CRITERION 2, the H2 read-path). The kit's
-    /// `applyClientState` is the sole authority for the connection state.
+    /// The kit fires `didError` on an unintended drop BEFORE its paired `didChange(.connecting)`, and
+    /// with no state change on a bare read/notify error while still `.ready`. `applyClientError` must
+    /// not downgrade a live or recovering link to `.disconnected`.
     @Test func transportErrorNeverDowngradesALiveOrRecoveringLink() {
         let b = backend()
         struct LinkErr: LocalizedError { var errorDescription: String? { "read failed" } }

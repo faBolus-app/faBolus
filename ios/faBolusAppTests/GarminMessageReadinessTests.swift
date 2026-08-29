@@ -2,14 +2,8 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// **WR-07 / R2-13 (commit 47d718b).** Pins `GarminMessageReadiness` — the ConnectIQ-free readiness state
-/// machine the Garmin bridge gates outbound sends on. It lives OUTSIDE `#if GARMIN` precisely so it compiles
-/// and is unit-testable in the default (non-GARMIN) test target, where the ConnectIQ-typed bridge is not.
-///
-/// LOAD-BEARING INVARIANT: readiness's `true` transition is owned SOLELY by `characteristicsDiscovered()`.
-/// A bare ConnectIQ `.connected` device status is NOT message-readiness (the SDK requires waiting for
-/// characteristic discovery). Sending in the post-connect / pre-discovery window silently loses the message,
-/// so `canSend` must stay false until discovery — even while the device reports connected.
+/// Garmin outbound send readiness is armed only by characteristic discovery. A bare ConnectIQ connected
+/// status is not message-readiness — sending in that window silently loses the message.
 struct GarminMessageReadinessTests {
 
     @Test func freshInstanceIsNotReady() {

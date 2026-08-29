@@ -5,22 +5,8 @@ import TandemMessages
 import TandemBLE
 @testable import faBolus
 
-/// Phase 16 16-08 (GO-2 Step 0 fused with Step 1, REMED-16) — characterization suite pinning the
-/// gap-aware history-log sync's CURRENT behavior on `TandemBackend` before it is extracted verbatim into
-/// `PumpHistorySyncCoordinator`. This suite is authored and committed GREEN against the pre-extraction
-/// code (the same `TandemBackend` R6/R18 region `HistoryLogSyncTests`/`HistoryLogTimezoneTests`/
-/// `HistoryLogSyncDeliveryBoundaryTests` already exercise) and MUST stay green, byte-for-byte, once the
-/// move lands — it is the regression wall for that move, not new product behavior.
-///
-/// Six behaviors pinned (plan `<behavior>` list):
-///   1. Identical `HistoryLogRequest` sequence for a fixed pump range + held coverage.
-///   2. `neutralEvent` normalization output for a representative mapped `HistoryLogEvent` kind.
-///   3. `receivedSeqsThisWindow` top-anchored crediting (WR-03) for a mid-window drop.
-///   4. Retry/paging order across TWO gap windows under the injected `fireHistorySyncTickForTesting()`
-///      tick (the existing test-seam substitute for the real 2.5 s `Timer`).
-///   5. `.syncing -> .paused` on link drop; `.idle(lastSynced:)` on an already-fully-covered diff; the
-///      unparseable-historyLog `.error` branch.
-///   6. Zero delivery opcodes in the sent-frame log across every scenario above.
+/// Pins gap-aware history-log sync's request sequence, retry/pause, and zero delivery opcodes so a
+/// coordinator extract cannot change the wire or sneak a delivery command onto the sync path.
 @Suite(.serialized) @MainActor
 struct PumpHistorySyncCharacterizationTests {
 
@@ -101,7 +87,7 @@ struct PumpHistorySyncCharacterizationTests {
         }
     }
 
-    // MARK: - 3. receivedSeqsThisWindow top-anchored crediting (WR-03) for a mid-window drop
+    // MARK: - 3. receivedSeqsThisWindow top-anchored crediting for a mid-window drop
 
     @Test func topAnchoredCreditingOnMidWindowDrop() {
         withCleanCoverage {

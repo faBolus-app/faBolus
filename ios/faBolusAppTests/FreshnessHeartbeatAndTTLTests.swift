@@ -3,28 +3,8 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// P10 (defect group A, R2 follow-ups) — the two aging/liveness fixes that keep a *silent* link and a
-/// *killed host* from ever presenting stale state as live.
-///
-/// WR-01 (R2-08, f28a767): `AppModel.init` now arms the ~20 s `arbiterTimer` `refresh()` heartbeat
-/// UNCONDITIONALLY (was armed only inside the failover-CGM branch), so the default pump-only config also
-/// has a periodic driver for the aging work — the §6 CGM-data-loss edge, the widget publish/App-Group
-/// re-stamp, and staleness re-eval — even when a connected-but-silent pump never fires `source.onChange`.
-///
-/// WR-02 (R2-09, 779db47): a killed host leaves its last snapshot persisted in the App Group, so
-/// `snap.connected` alone would read "connected" forever. `WidgetSnapshot.isConnectionStale(asOf:)`
-/// (keyed off `updatedAt`, the PUBLISH time — not `glucoseDate`, the sample time) ages the connection
-/// flag + the dateless pump metrics past `connectionStaleAfter` (6 min), so the widgets treat a
-/// no-longer-republishing snapshot as not-connected.
-///
-/// Coverage split:
-///  • The widget TTL is a pure value-layer guarantee (deterministic) and is pinned directly here.
-///  • The heartbeat's ARMING itself is not unit-observable (no injected clock, no timer spy). What IS
-///    observable is the *effect* of the call the timer (and foreground-resume) make — `publicRefresh()`
-///    → the same private `refresh()` — so we assert that path's aging behavior: it raises `.cgmDataLoss`
-///    on a fresh→stale transition, fires once (no re-raise on a steady stale state, so a 20 s tick can't
-///    spam), and is a safe no-op on a cold `.disconnected` model. See the note on the gap in
-///    `heartbeatRefreshPathIsSafeAndSilentOnAColdDisconnectedModel`.
+/// A silent pump still ages CGM (stale-CGM fail-closed) and a killed host's persisted snapshot
+/// cannot present as connected forever.
 @MainActor
 @Suite(.serialized) struct FreshnessHeartbeatAndTTLTests {
 
@@ -35,7 +15,7 @@ import faBolusCore
             .appendingPathComponent("freshness-ttl-ledger-\(UUID().uuidString).json")
     }
 
-    // MARK: - WR-02 (R2-09): widget connection TTL (pure value layer — the most deterministic)
+    // MARK: - widget connection TTL (publish time, not sample time)
 
     /// The keystone WR-02 assertion: connection freshness keys off `updatedAt` (the PUBLISH time), NOT
     /// `glucoseDate` (the sample time). A killed host leaves a snapshot whose SAMPLE is recent but whose
@@ -101,7 +81,7 @@ import faBolusCore
         #expect(!fresh.isConnectionStale(asOf: now))                         // metrics shown
     }
 
-    // MARK: - WR-01/WR-02: the heartbeat/foreground refresh path (real seam, best-effort)
+    // MARK: - heartbeat/foreground refresh path
 
     /// WR-01 core: on the default pump-only config (NO failover glucose source) the aging work is driven
     /// by the `refresh()` path the heartbeat + foreground-resume invoke. `publicRefresh()` is that exact

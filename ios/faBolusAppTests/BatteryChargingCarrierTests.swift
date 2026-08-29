@@ -3,15 +3,8 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// Phase 09.27-02 (D-04/D-05): the Codable absent->false drift-guard for `batteryCharging` on the
-/// `WidgetSnapshot` App-Group carrier (widgets/complications). The parallel `FaBolusGlucoseAttributes
-/// .ContentState` (Live Activity) coverage this suite also carried was removed in Phase 7 (07-01,
-/// FEAT-01) alongside the Live Activity type itself. A legacy/older snapshot that predates this field
-/// must decode to `batteryCharging == false` — never a fabricated charging badge on an old payload
-/// (D-05). `.serialized`: the two `publishSnapshot()` tests added for the Watch-render gap closure
-/// write to the SAME real App-Group `WidgetStore` key other tests could theoretically share — mirrors
-/// `WidgetStalenessTests`/`ModeAutomationPrecedenceTests`'s `.serialized` precedent for any suite
-/// that touches `WidgetStore` directly.
+/// A legacy WidgetSnapshot missing batteryCharging must decode to false — never a fabricated charging
+/// badge on an old payload.
 @Suite(.serialized) struct BatteryChargingCarrierTests {
 
     // MARK: - WidgetSnapshot (widgets/complications)
@@ -51,10 +44,8 @@ import faBolusCore
         func send(_ command: RemoteCommand) {}
     }
 
-    /// 09.27-VERIFICATION.md Truth #11 gap closure: the BASE `RemoteCommandWireFixture.publishSnapshot()`
-    /// (which the Watch relies on — it does not override `publishSnapshot`, unlike `MacRemoteModel`)
-    /// must forward the ingested `batteryCharging` into the `WidgetSnapshot` it writes to the App
-    /// Group, not silently drop it back to the `false` default.
+    /// The BASE `RemoteCommandWireFixture.publishSnapshot()` must forward ingested `batteryCharging`
+    /// into the WidgetSnapshot it writes, not silently drop it back to the false default.
     @MainActor
     @Test func remoteClientModelPublishSnapshotForwardsBatteryChargingIntoWidgetSnapshot() {
         let model = RemoteCommandWireFixture(link: FakeLink())
@@ -62,7 +53,7 @@ import faBolusCore
         cmd.batteryPercent = 42
         cmd.batteryCharging = true
         model.handle(cmd)
-        #expect(model.batteryCharging == true)   // sanity: ingest side already verified by WR-01 tests
+        #expect(model.batteryCharging == true)   // sanity: ingest side already verified
 
         model.publishSnapshot()
         let snap = WidgetStore.load()
@@ -71,7 +62,7 @@ import faBolusCore
     }
 
     /// The fail-closed counterpart: a legacy/absent wire key must publish `batteryCharging == false`,
-    /// never a stale `true` (mirrors the WR-01 fail-closed fix on the ingest side).
+    /// never a stale `true`.
     @MainActor
     @Test func remoteClientModelPublishSnapshotPublishesFalseWhenNeverToldCharging() {
         let model = RemoteCommandWireFixture(link: FakeLink())
@@ -84,7 +75,7 @@ import faBolusCore
         #expect(snap?.batteryCharging == false)
     }
 
-    // MARK: - WR-01: RemoteCommandWireFixture.handle ingest is fail-closed, never keep-last, on an absent key
+    // MARK: - RemoteCommandWireFixture.handle ingest is fail-closed, never keep-last, on an absent key
 
     /// The regression this review fix targets: previously `if let c = cmd.batteryCharging {
     /// batteryCharging = c }` kept the LAST-KNOWN value when a later `statusRead` omitted the key —
@@ -104,8 +95,7 @@ import faBolusCore
         #expect(model.batteryCharging == false, "an absent key must NOT keep the last-known 'Charging' claim (WR-01 fail-closed fix)")
     }
 
-    /// A fresh model that never received the field stays fail-closed `false` (D-03's default,
-    /// unaffected by this fix — kept as an explicit regression pin).
+    /// A fresh model that never received the field stays fail-closed `false`.
     @MainActor
     @Test func absentBatteryChargingKeyOnAFreshModelStaysFalse() {
         let model = RemoteCommandWireFixture(link: FakeLink())

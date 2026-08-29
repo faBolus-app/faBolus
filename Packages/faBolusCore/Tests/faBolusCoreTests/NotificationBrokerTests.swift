@@ -2,10 +2,8 @@ import Testing
 import Foundation
 @testable import faBolusCore
 
-/// P9: the pure notification-governance core. Pins the §6 guarantees: the three safety categories are
-/// never suppressible (no setting / quiet-hour / rate-limit / budget can drop them), and every governed
-/// gate (disabled, one-per-episode, quiet-hours, rate-limit, daily + meal budget) suppresses exactly when
-/// it should. Deterministic: a fixed UTC calendar so minute-of-day and the day rollover are stable.
+/// Pins that never-suppressible safety categories cannot be dropped by settings, quiet hours, rate
+/// limits, or budget, and that governed gates suppress only when they should.
 @Suite struct NotificationBrokerTests {
     typealias B = NotificationBroker
     typealias C = NotificationBroker.Category
@@ -31,13 +29,10 @@ import Foundation
     }
 
     @Test func exactlyTheNeverSuppressibleSafetyCategories() {
-        // tslim-reconnect-loop Phase B (item 5) added `pumpConnectionUnstable` as a fourth never-suppressible
-        // category (the non-muteable flap alert). The original trio stays user-configurable; the flap one is
-        // NOT (see `nonConfigurableSafetyCategoryIsTrulyNonMuteable`).
-        // MD-01 (Phase 13 review fix): `urgentLowGlucose` is a fifth never-suppressible category — the
-        // app-owned urgent-low backstop, decoupled from `.cgmDataLoss` so disabling the "CGM data lost"
-        // banner can never silence it. It IS user-configurable (its own acknowledged-disable row), like
-        // the original trio; the flap alert (`pumpConnectionUnstable`) remains the sole non-configurable one.
+        // `pumpConnectionUnstable` is a fourth never-suppressible category (the non-muteable flap alert).
+        // The original trio stays user-configurable; the flap one is NOT.
+        // `urgentLowGlucose` is a fifth never-suppressible category — the app-owned urgent-low backstop,
+        // decoupled from `.cgmDataLoss` so disabling the "CGM data lost" banner can never silence it.
         let safety = Set(C.allCases.filter { $0.neverSuppressible }.map(\.rawValue))
         #expect(safety == ["pumpDisconnect", "bolusReconciliation", "cgmDataLoss", "pumpConnectionUnstable", "urgentLowGlucose"])
         let configurableTrio = Set(C.allCases.filter { $0.neverSuppressible && $0.isUserConfigurable }.map(\.rawValue))
@@ -46,13 +41,13 @@ import Foundation
     }
 
     @Test func isPumpSourcedClassifiesOnlyThePumpAlertCategory() {
-        // D-02: a pure display axis — pumpAlert is the sole pump-sourced category; every other category
-        // (incl. all five never-suppressible safety categories) is app-generated.
+        // pumpAlert is the sole pump-sourced category; every other category (incl. all five
+        // never-suppressible safety categories) is app-generated.
         #expect(Set(C.allCases.filter { $0.isPumpSourced }.map(\.rawValue)) == ["pumpAlert"])
     }
 
     @Test func bolusDeliveryFailedIsGovernedNotASafetyCategory() {
-        // §6 `lastError` Tier-2: a FAILED / BLOCKED delivery notification. The owner decided it is
+        // A FAILED / BLOCKED delivery notification. The owner decided it is
         // SUPPRESSIBLE (unlike the three safety categories) — it defaults ON, can be disabled, and can be
         // snoozed. (The INDETERMINATE outcome it is deliberately NOT posted for stays a
         // `bolusReconciliation` concern, and that category IS never-suppressible.)
@@ -70,9 +65,8 @@ import Foundation
         #expect(!d.deliver && d.reason == .snoozed)
     }
 
-    /// REMED-17: `bolusIndeterminate` is the owner's Gentle disposition — GOVERNED (suppressible), NOT
-    /// in the never-suppressible trio, and ON by default. The trio-set assertion above (still exactly
-    /// THREE members) is unaffected — this is a positive companion proving the new case is governed.
+    /// `bolusIndeterminate` is governed (suppressible), not in the never-suppressible set, and ON by
+    /// default.
     @Test func bolusIndeterminateIsGovernedNotNeverSuppressibleAndDefaultEnabled() {
         #expect(!C.bolusIndeterminate.neverSuppressible)
         #expect(C.bolusIndeterminate.defaultEnabled)
@@ -84,10 +78,8 @@ import Foundation
         #expect(!off.deliver && off.reason == .categoryDisabled)
     }
 
-    /// MD-01 (Phase 13 review fix): the app-owned urgent-low alarm has its OWN never-suppressible
-    /// category, decoupled from `.cgmDataLoss`. Disabling + ACKNOWLEDGING `.cgmDataLoss` (the only way a
-    /// trio category is suppressible) must NOT silence an `.urgentLowGlucose` message — the exact coupling
-    /// the review flagged. Also pins the new category's classification axes.
+    /// The app-owned urgent-low alarm has its own never-suppressible category, decoupled from
+    /// `.cgmDataLoss`. Disabling + acknowledging `.cgmDataLoss` must not silence `.urgentLowGlucose`.
     @Test func urgentLowGlucoseIsAnIndependentNeverSuppressibleCategoryDecoupledFromCgmDataLoss() {
         #expect(C.urgentLowGlucose.neverSuppressible)
         #expect(C.urgentLowGlucose.isUserConfigurable, "it has its own acknowledged-disable row, like the trio")
@@ -106,10 +98,8 @@ import Foundation
     }
 
     @Test func safetyCategoriesAlwaysDeliverEvenFullyLocked() {
-        // 09.25-01 (D-07): re-specified — "a trio delivers UNLESS the user acknowledged the
-        // safety-disable warning." Maximally hostile config for EVERY category: disabled, all-day
-        // quiet, huge rate-limit, AND break-through OFF — proving the config alone (without the
-        // paired acknowledgment) has zero effect on the never-suppressible trio (D-05).
+        // A trio delivers UNLESS the user acknowledged the safety-disable warning. Maximally hostile
+        // config without the paired acknowledgment has zero effect on never-suppressible categories.
         let settings = Dictionary(uniqueKeysWithValues: C.allCases.map {
             ($0, B.CategorySettings(enabled: false, quietStartMinuteOfDay: 0, quietEndMinuteOfDay: 1,
                                     minIntervalSeconds: 99_999, allowCriticalBreakthrough: false))
@@ -120,10 +110,9 @@ import Foundation
             let d = B.decide(msg(c), settings: settings, state: state,
                              budget: B.Budget(dailyTotal: 0, dailyMeal: 0), now: at(3, 0), calendar: cal)
             #expect(d.deliver, "\(c.rawValue) must always deliver when the ack flag is unset")
-            // C6-01 (T-13-14): a never-suppressible delivery is budget-EXEMPT — "still recorded" now means
-            // `lastDeliveredAt`/`notifiedEpisodes` advance, NOT the budget counter (which must stay
-            // untouched so a flapping safety category can never exhaust the budget that gates a genuine
-            // `bolusDeliveryFailed`).
+            // A never-suppressible delivery is budget-exempt: lastDeliveredAt/notifiedEpisodes advance,
+            // but the budget counter must stay untouched so a flapping safety category can never exhaust
+            // the budget that gates a genuine bolusDeliveryFailed.
             #expect(d.nextState.deliveredToday == 999, "\(c.rawValue) is budget-exempt (C6-01) — the daily counter must not move")
             #expect(d.nextState.lastDeliveredAt[c.rawValue] == at(3, 0), "\(c.rawValue) must still be recorded via lastDeliveredAt")
         }
@@ -131,8 +120,8 @@ import Foundation
         let g = B.decide(msg(.pumpAlert), settings: settings, state: state,
                          budget: B.Budget(dailyTotal: 0), now: at(3, 0), calendar: cal)
         #expect(!g.deliver)
-        // NEW arm (D-07): the SAME maximally hostile config, but with the paired acknowledgment
-        // ALSO set — this is the one and only condition under which a trio member suppresses.
+        // The SAME maximally hostile config, but with the paired acknowledgment ALSO set — this is the
+        // one and only condition under which a user-configurable never-suppressible member suppresses.
         let acknowledged = Dictionary(uniqueKeysWithValues: C.allCases.map {
             ($0, B.CategorySettings(enabled: false, quietStartMinuteOfDay: 0, quietEndMinuteOfDay: 1,
                                     minIntervalSeconds: 99_999, allowCriticalBreakthrough: false,
@@ -144,9 +133,8 @@ import Foundation
             #expect(!d.deliver && d.reason == .categoryDisabled,
                     "\(c.rawValue) must suppress once the user acknowledged disabling it")
         }
-        // tslim-reconnect-loop Phase B (item 5): the NON-configurable never-suppressible category
-        // (`pumpConnectionUnstable`) has no acknowledged-disable path — even the paired ack cannot suppress
-        // it (see `nonConfigurableSafetyCategoryIsTrulyNonMuteable`).
+        // The non-configurable never-suppressible category (`pumpConnectionUnstable`) has no
+        // acknowledged-disable path — even a paired ack cannot suppress it.
         for c in C.allCases where c.neverSuppressible && !c.isUserConfigurable {
             let d = B.decide(msg(c), settings: acknowledged, state: state,
                              budget: B.Budget(dailyTotal: 0, dailyMeal: 0), now: at(3, 0), calendar: cal)
@@ -245,8 +233,8 @@ import Foundation
     }
 
     @Test func snoozeSuppressesGovernedUntilTheDeadlineButNeverSafety() {
-        // 09.25-01 (D-07): re-specified — distinguishes a TRANSIENT snooze (never silences a trio,
-        // no matter how it's forced) from the DELIBERATE acknowledged disable (the one path that does).
+        // Distinguishes a TRANSIENT snooze (never silences a never-suppressible category) from the
+        // DELIBERATE acknowledged disable (the one path that does).
         // Snooze pumpAlert until 10:00: suppressed before, delivers after.
         let s = B.snooze(B.State(), category: .pumpAlert, until: at(10, 0))
         #expect(B.decide(msg(.pumpAlert), settings: enabled(.pumpAlert), state: s, now: at(9, 0), calendar: cal).reason == .snoozed)
@@ -273,7 +261,7 @@ import Foundation
     }
 
     @Test func criticalGovernedAlarmBypassesEveryUserAndBudgetSuppression() {
-        // S8 / §6 #6: an occlusion / empty-cartridge / pump-error alarm is surfaced as the GOVERNED
+        // An occlusion / empty-cartridge / pump-error alarm is surfaced as the GOVERNED
         // `.pumpAlert` category but with `Severity.critical`. It must survive a maximally hostile config —
         // category disabled, all-day quiet-hours, huge rate-limit, a snooze in force, and a day past a zero
         // budget — because critical alarms bypass the budget/quiet-hours. A `.warning` in the SAME config
@@ -292,7 +280,7 @@ import Foundation
     }
 
     @Test func breakThroughToggleGatesTheCriticalBypassBothDirections() {
-        // D-04: with break-through OFF, a CRITICAL `.pumpAlert` in a hostile (disabled) config honors
+        // With break-through OFF, a CRITICAL `.pumpAlert` in a hostile (disabled) config honors
         // normal governance instead of bypassing it — it is suppressed exactly like a non-critical message.
         let hostileState = B.State(lastDeliveredAt: ["pumpAlert": at(3, 0)],
                                    dayKey: B.dayKey(at(3, 0), calendar: cal), deliveredToday: 999)
@@ -333,19 +321,18 @@ import Foundation
         #expect(s2 == state)
         let cfg = B.CategorySettings(enabled: true, quietStartMinuteOfDay: 1320, quietEndMinuteOfDay: 420, minIntervalSeconds: 300)
         #expect((try JSONDecoder().decode(B.CategorySettings.self, from: JSONEncoder().encode(cfg))) == cfg)
-        // Non-default allowCriticalBreakthrough round-trips too (D-04 field).
+        // Non-default allowCriticalBreakthrough round-trips too.
         let cfg2 = B.CategorySettings(enabled: true, quietStartMinuteOfDay: 1320, quietEndMinuteOfDay: 420,
                                       minIntervalSeconds: 300, allowCriticalBreakthrough: false)
         #expect((try JSONDecoder().decode(B.CategorySettings.self, from: JSONEncoder().encode(cfg2))) == cfg2)
         let budget = B.Budget(dailyTotal: 40, dailyMeal: 6)
         #expect((try JSONDecoder().decode(B.Budget.self, from: JSONEncoder().encode(budget))) == budget)
-        // 09.25-01 (D-07): userAcknowledgedSafetyDisable round-trips when set…
+        // userAcknowledgedSafetyDisable round-trips when set…
         let cfg3 = B.CategorySettings(enabled: false, userAcknowledgedSafetyDisable: true)
         #expect((try JSONDecoder().decode(B.CategorySettings.self, from: JSONEncoder().encode(cfg3))) == cfg3)
         #expect((try JSONDecoder().decode(B.CategorySettings.self, from: JSONEncoder().encode(cfg3))).userAcknowledgedSafetyDisable == true)
-        // …AND a pre-this-field blob (the shape persisted since Phase 8.1, missing the new key
-        // entirely) decodes with the ack field defaulting to nil — back-compat, per the Future-field
-        // warning: a missing key must never fail the whole decode.
+        // …AND a pre-this-field blob (missing the new key entirely) decodes with the ack field
+        // defaulting to nil — a missing key must never fail the whole decode.
         let preFieldJSON = """
         {"enabled":true,"quietStartMinuteOfDay":0,"quietEndMinuteOfDay":0,"minIntervalSeconds":0,"allowCriticalBreakthrough":true}
         """.data(using: .utf8)!
@@ -354,11 +341,11 @@ import Foundation
         #expect(decoded.enabled == true)
     }
 
-    // MARK: - 13-06 Task 1 (C6-01 / CC-12 / CX-F-08): budget exemption + typed urgency (RED->GREEN)
+    // MARK: - Budget exemption + typed urgency
 
-    /// Behavior Test 1 (exempt): recording a never-suppressible OR `.error`-severity delivery does NOT
-    /// increment `deliveredToday` — a flapping disconnect posting repeated `.error` escalation steps must
-    /// never be able to exhaust the budget that gates a genuine `bolusDeliveryFailed`.
+    /// Recording a never-suppressible OR `.error`-severity delivery does NOT increment `deliveredToday` —
+    /// a flapping disconnect posting repeated `.error` escalation steps must never exhaust the budget that
+    /// gates a genuine `bolusDeliveryFailed`.
     @Test func neverSuppressibleOrErrorSeverityDeliveryIsBudgetExempt() {
         let state = B.State(dayKey: B.dayKey(at(9, 0), calendar: cal))
         // A never-suppressible trio category, plain severity.
@@ -373,8 +360,8 @@ import Foundation
                "an `.error`-severity delivery must not increment deliveredToday even on a governed category")
     }
 
-    /// Behavior Test 2 (no undercount, codex MEDIUM): interleaving several budget-exempt safety deliveries
-    /// with ONE genuinely-counted ordinary delivery never lets the exempt deliveries perturb the counter —
+    /// Interleaving several budget-exempt safety deliveries with ONE genuinely-counted ordinary delivery
+    /// never lets the exempt deliveries perturb the counter —
     /// proving there is no generic per-dedupeKey "withdraw refund" that could undercount (no such refund
     /// exists in `NotificationBroker` at all: since safety/`.error` deliveries never consumed a slot in the
     /// first place, `withdraw`-ing one — an app-layer, OS-request-removal operation with no counterpart
@@ -395,8 +382,8 @@ import Foundation
                "exactly the one genuinely-counted ordinary delivery — the exempt deliveries neither consumed nor refunded a slot")
     }
 
-    /// Behavior Test 3 (budget still applies to non-safety): an ordinary suppressible delivery still
-    /// increments the counter and can still be budget-limited — the exemption above must not have
+    /// An ordinary suppressible delivery still increments the counter and can still be budget-limited —
+    /// the exemption above must not have
     /// accidentally widened to cover governed, non-`.error`, non-safety messages.
     @Test func ordinarySuppressibleDeliveryStillIncrementsAndIsBudgetLimited() {
         let budget = B.Budget(dailyTotal: 1)
@@ -409,11 +396,8 @@ import Foundation
         #expect(!second.deliver && second.reason == .dailyBudgetReached)
     }
 
-    /// Behavior Test 4 (severity→urgency, typed, codex MEDIUM): `requiresBreakthrough` reads a TYPED
-    /// `safetyClass` field on `Message` — never untyped `userInfo` (the Message doesn't carry one, so this
-    /// is asserted simply by constructing every `Message` below without any userInfo-shaped parameter). A
-    /// pump ALARM (`.critical` severity) and a protected alert ID (a force-protected `safetyClass`, even at
-    /// plain `.warning` severity — CX-F-08's "urgent fixed-low") both require breakthrough regardless of
+    /// A pump ALARM (`.critical` severity) and a protected alert ID (a force-protected `safetyClass`, even
+    /// at plain `.warning` severity) both require breakthrough regardless of
     /// `.pumpAlert.neverSuppressible == false`; an ordinary warning does not.
     @Test func requiresBreakthroughReadsTypedSafetyFieldNotUserInfo() {
         let alarm = B.Message(category: .pumpAlert, severity: .critical, title: "Occlusion", body: "b", dedupeKey: "a")
@@ -431,8 +415,8 @@ import Foundation
         #expect(B.requiresBreakthrough(trio), "the never-suppressible trio always requires breakthrough")
     }
 
-    /// 09.25-01 (D-03/D-07): focused decide() coverage — for every trio category, suppression requires
-    /// BOTH `enabled == false` AND `userAcknowledgedSafetyDisable == true`; either alone still delivers.
+    /// For every user-configurable never-suppressible category, suppression requires BOTH
+    /// `enabled == false` AND `userAcknowledgedSafetyDisable == true`; either alone still delivers.
     @Test func trioSuppressedOnlyByAcknowledgedDisable() {
         for c in C.allCases where c.neverSuppressible && c.isUserConfigurable {
             // enabled:false, ack:nil → delivers (the mandatory gate is unmet).
@@ -453,11 +437,8 @@ import Foundation
         }
     }
 
-    /// tslim-reconnect-loop Phase B (item 5): the flap alert (`pumpConnectionUnstable`) is TRULY
-    /// non-muteable. (1) It survives the user having muted `pumpDisconnect` — it is a SEPARATE category, so
-    /// disabling pump-disconnect alerts does not touch it. (2) It has no acknowledged-disable path, so even
-    /// a forged/corrupt settings blob that sets `enabled:false, ack:true` for it can NOT suppress it —
-    /// `decide()` delivers it unconditionally because `isUserConfigurable == false`.
+    /// The flap alert (`pumpConnectionUnstable`) is truly non-muteable. Muting `pumpDisconnect` does not
+    /// touch it, and even a forged settings blob that disables it cannot suppress it.
     @Test func nonConfigurableSafetyCategoryIsTrulyNonMuteable() {
         #expect(C.pumpConnectionUnstable.neverSuppressible)
         #expect(!C.pumpConnectionUnstable.isUserConfigurable, "the flap alert must never be user-configurable")

@@ -5,16 +5,8 @@ import TandemMessages
 import TandemBLE
 @testable import faBolus
 
-/// **MUST-NOT-BLOCK invariant (task #93, Insulin Stacking Guard).** Proves the safety spine of the whole
-/// phase as a coupled pair, mirroring `TandemDeliveryOutcomeTests`' `FakePumpTransport` + `TandemBackend
-/// (testTransport:)` harness: (a) `StackingGuard.calcOverride` is ACTIVE (non-`.none`) for a scenario where
-/// the entered dose exceeds the pump's own calculator suggestion above the pump's own target, and (b) the
-/// REAL deliver path (`TandemBackend.deliverBolus`) through the fake transport still delivers EXACTLY the
-/// consented units while SG1 is firing — the number the user consented to reaches the pump unchanged. A
-/// third assertion pins op-109 IOB parity: the IOB a surface would display (`BolusRecommendation.iobUnits`)
-/// equals the snapshot's `iobUnits` (the same op-109 `swan6hrIOB` source). This test is structured so SG2
-/// (plan 02) and SG3a (plan 04) can extend it with additional firing scenarios against the same
-/// delivered==consented assertion. The delivery path imports nothing from `StackingGuard`.
+/// Pins that when StackingGuard's calc-override is firing, `deliverBolus` still sends exactly the
+/// consented units. The stacking UI must never clamp, rewrite, or block the number the user confirmed.
 @Suite(.serialized) @MainActor
 struct StackingGuardDeliverInvariantTests {
 
@@ -51,9 +43,7 @@ struct StackingGuardDeliverInvariantTests {
         #expect(disclosure.friction != .none)
     }
 
-    /// (b) MUST-NOT-BLOCK: with SG1 active for the exact scenario above, the REAL deliver path through the
-    /// fake transport delivers exactly the consented units — SG1's disclosure never crosses into the number
-    /// that reaches the pump.
+    /// With stacking-guard calc-override active (entered > recommended, glucose above target), deliver still sends exactly the consented units.
     @Test func deliveredEqualsConsentedWhileSG1Fires() async throws {
         let entered = 6.0
         let recommended = 2.0
@@ -88,9 +78,7 @@ struct StackingGuardDeliverInvariantTests {
         #expect(rec.iobUnits == snapshot.iobUnits)
     }
 
-    /// (d) SG2 extension (plan 02): with SG2 ACTIVE (entered >= the pump's own op-115 maxBolusUnits), the
-    /// REAL deliver path through the fake transport still delivers exactly the consented units — SG2's
-    /// disclosure never crosses into the number that reaches the pump, same coupled-pair proof as SG1 above.
+    /// With stacking-guard firing because entered is at/above the pump's own max bolus, deliver still sends exactly the consented units.
     @Test func deliveredEqualsConsentedWhileSG2Fires() async throws {
         let entered = 25.0
         let maxBolusUnits = 25.0
@@ -108,9 +96,7 @@ struct StackingGuardDeliverInvariantTests {
         _ = fake                                       // keep the fake alive for the duration of the assertion
     }
 
-    /// (e) SG3a extension (plan 04): with SG3a escalated to `.disclose` (SG1 fires, override ratio below
-    /// `confirmExtraOverrideRatio`, dose below the pump's own max), the REAL deliver path through the fake
-    /// transport still delivers exactly the consented units — same coupled-pair proof as (b)/(d) above.
+    /// With stacking-guard friction at `.disclose`, deliver still sends exactly the consented units.
     @Test func deliveredEqualsConsentedWhileSG3aDiscloseFires() async throws {
         let entered = 2.5
         let recommended = 2.0   // ratio 1.25 — below the default confirmExtraOverrideRatio (1.5)
@@ -131,10 +117,7 @@ struct StackingGuardDeliverInvariantTests {
         _ = fake
     }
 
-    /// (f) SG3a extension (plan 04): with SG3a escalated to `.confirmExtra` (override ratio at/above
-    /// `confirmExtraOverrideRatio` but below `reenterOverrideRatio`), the REAL deliver path still delivers
-    /// exactly the consented units — the extra confirmation step the phone screen adds never resizes the
-    /// dose before it reaches this path.
+    /// With stacking-guard friction at `.confirmExtra`, deliver still sends exactly the consented units — the extra confirm never resizes the dose.
     @Test func deliveredEqualsConsentedWhileSG3aConfirmExtraFires() async throws {
         let entered = 3.5
         let recommended = 2.0   // ratio 1.75 — between confirmExtraOverrideRatio (1.5) and reenterOverrideRatio (2.0)
@@ -155,12 +138,7 @@ struct StackingGuardDeliverInvariantTests {
         _ = fake
     }
 
-    /// (g) SG3a extension (plan 04): with SG3a escalated to `.reenter` (override ratio at/above
-    /// `reenterOverrideRatio`, the most extreme tier), the REAL deliver path still delivers exactly the
-    /// consented units when re-entered correctly. Also proves the re-type gate's exact-match rule
-    /// (`BolusEntryView.reenterMatches`) structurally rejects a mismatched re-type — a differently-typed
-    /// number never satisfies the same check the phone screen uses to decide whether to proceed, so it can
-    /// never reach this deliver call as a resized amount (T-01-08).
+    /// With stacking-guard friction at `.reenter`, deliver still sends exactly the consented units. A mismatched re-type cannot satisfy the same check the phone screen uses, so it never reaches this path as a resized amount.
     @Test func deliveredEqualsConsentedWhileSG3aReenterFires() async throws {
         let entered = 8.0
         let recommended = 2.0   // ratio 4.0 — far above the default reenterOverrideRatio (2.0)
@@ -188,12 +166,7 @@ struct StackingGuardDeliverInvariantTests {
         _ = fake
     }
 
-    /// (h) 09.2-01 (D-02, SC2): `standardConfirmRoute(for:)` is a PURE mapping extracted from
-    /// `handleStandardConfirm`'s tier switch — proving each SG3a tier still routes to its OWN gate through
-    /// the deferred (`DispatchQueue.main.async`) presentation-timing fix. `.reenter`/`.confirmExtra` route to
-    /// their own escalated-friction dialogs; `.disclose`/`.none` both route straight to `.deliver` (the
-    /// standard confirm dialog's own Deliver call), matching the pre-existing `sg3aAppliedFriction` cap
-    /// (`stackingGuardFrictionEnabled == false` never escalates past `.disclose`).
+    /// `standardConfirmRoute` maps each stacking-guard tier to its own gate: `.reenter`/`.confirmExtra` keep their dialogs; `.disclose`/`.none` go to `.deliver`.
     @Test func standardConfirmRouteMapsEachSG3aTierToItsOwnGate() {
         #expect(BolusEntryView.standardConfirmRoute(for: .reenter) == .reenter)
         #expect(BolusEntryView.standardConfirmRoute(for: .confirmExtra) == .confirmExtra)

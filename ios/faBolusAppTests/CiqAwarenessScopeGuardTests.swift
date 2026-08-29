@@ -3,10 +3,8 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// Control-IQ-awareness helpers must not return a dose-shaped type, and the signed delivery path
-/// must not reference those symbols. New CIQ-awareness primitives must be added to
-/// `forbiddenCiqAwarenessSymbols` (and `knownCiqAwarenessSignatureSources` if they live in a new
-/// file); omitting them silently drops coverage.
+/// Control-IQ-awareness helpers are display-only: they must not return a dose-shaped type, and
+/// the signed delivery path must not reference them.
 struct CiqAwarenessScopeGuardTests {
 
     // MARK: - Source resolution (mirrors WatchDirectBleScopeGuardTests.repoRootURL)
@@ -76,18 +74,14 @@ struct CiqAwarenessScopeGuardTests {
 
     // MARK: - (a) No dose-shaped return type
 
-    /// Allowed return shapes for a Control-IQ-awareness advisory function (D-06 guardrail #1): a fraction,
-    /// disclosure copy, a status flag, or a frozen wire-token enum. Anything else — in particular a bare
-    /// `Double`/`Int`/`UInt32` that could carry a dose or milliunits value — is forbidden.
+    /// Allowed return shapes for a Control-IQ-awareness advisory: a fraction, disclosure copy, a
+    /// status flag, or a frozen wire-token enum. A bare `Double`/`Int`/`UInt32` that could carry a
+    /// dose is forbidden.
     private static let allowedCiqReturnShapes: Set<String> = [
         "Double?", "String?", "String", "Bool", "ControlIQZone?",
-        // T1-8 (09.15-08): `MaxBasalFraction.label` returns the LOCKED headline+detail pair as a tuple of
-        // two Strings — unambiguously disclosure copy, not a dose/units shape (both components are always
-        // formatted STRINGS, never a raw Double the tuple could smuggle a units value through).
+        // Headline+detail is disclosure copy, never a dose/units shape.
         "(headline: String, detail: String)?",
-        // T2-1 (09.15-11): `CiqCeilingFlags.wireMaxBolusEventsExceeded`/`.wireMaxIobEventsExceeded` return
-        // a fail-closed OPTIONAL status flag (nil pre-bench, never a dose/units value) — the nilable
-        // counterpart of the already-allowed bare `Bool` above.
+        // Fail-closed optional status flag (nil pre-bench), never a dose.
         "Bool?",
     ]
 
@@ -105,24 +99,13 @@ struct CiqAwarenessScopeGuardTests {
         return allowedCiqReturnShapes.contains(returnType)
     }
 
-    /// The Control-IQ-awareness TYPE bodies to scan for prong (a), as (file, type-declaration marker)
-    /// pairs. See the suite doc-comment's maintenance note — extend this as later plans add new types.
+    /// Control-IQ-awareness type bodies to scan. Extend this when a new advisory type is added.
     private static let knownCiqAwarenessSignatureSources: [(file: String, typeMarker: String)] = [
         ("Packages/faBolusCore/Sources/faBolusCore/AutoCorrectionDisclosure.swift", "public enum AutoCorrectionDisclosure"),
         ("Packages/faBolusCore/Sources/faBolusCore/Models.swift", "public enum ControlIQZone"),
-        // Phase 23 (23-01, D-06): `ControlIQDisableWarning` (formerly here, moved verbatim from the
-        // deleted `Views/PumpWizardViews.swift` in Phase 9) was deleted outright — the whole type + its
-        // dedicated `CiqDisableWarningTests.swift` are gone from `main` (D-03/D-05). Its
-        // `forbiddenCiqAwarenessSymbols` denylist token below is KEPT unchanged (D-06): a deleted symbol
-        // is trivially absent from the signed delivery path, so the scan stays a strict superset, never
-        // weakened.
-        // T1-8 (09.15-08): the "% of your configured max basal rate" pure fraction + LOCKED label fn.
+        // `ControlIQDisableWarning` is gone; its denylist token stays so the scan is never weakened.
         ("Packages/faBolusCore/Sources/faBolusCore/Models.swift", "public enum MaxBasalFraction"),
-        // T2-3 (09.15-09): the CIQ+ temp-rate bench+capability gate — `isOffered` returns a plain `Bool`
-        // availability flag (already an allowed shape), never a dose/units value.
         ("Packages/faBolusCore/Sources/faBolusCore/ControlIQMode.swift", "public enum CiqPlusTempRate"),
-        // T2-1 (09.15-11): the direct CIQ-ceiling-flags bench+emission gate — both `wireMax*Exceeded`
-        // functions return `Bool?` (already an allowed shape), never a dose/units value.
         ("Packages/faBolusCore/Sources/faBolusCore/Models.swift", "public enum CiqCeilingFlags"),
     ]
 
@@ -145,12 +128,7 @@ struct CiqAwarenessScopeGuardTests {
                         "'\(marker)': signature '\(sig)' returns a shape outside {Double?, String?, String, Bool, ControlIQZone?} — possible dose-shaped return (D-06 guardrail #1)")
             }
         }
-        // A path/region-resolution bug must fail loudly, not pass vacuously with zero signatures checked.
-        // Phase 23 (23-01, D-06): floor re-derived live after `ControlIQDisableWarning`'s catalog entry
-        // (3 signatures: shouldWarn/title/body) was deleted AND after 23-01 Task 2's `AutoCorrectionDisclosure`
-        // slim (D-09) removes `ambientIndicator`/`lockoutMessage`, leaving only `lockoutRemainingFraction`.
-        // Live count across the 5 surviving sources post-slim: AutoCorrectionDisclosure=1,
-        // ControlIQZone=1, MaxBasalFraction=3, CiqPlusTempRate=1, CiqCeilingFlags=2 == 8.
+        // Fail loudly if path/region resolution found fewer signatures than the five sources ship.
         #expect(totalSignaturesChecked >= 8, "fewer CIQ-awareness signatures were found than the phase currently ships — path/region resolution likely broke")
     }
 
@@ -183,27 +161,16 @@ struct CiqAwarenessScopeGuardTests {
 
     // MARK: - (b) The signed delivery path references no Control-IQ-awareness symbol
 
-    /// Every Control-IQ-awareness symbol name introduced by 09.15 so far. See the suite doc-comment's
-    /// maintenance note — later plans (05-12) MUST append their own new symbol names here.
-    ///
-    /// Deliberately does NOT include pre-existing, non-09.15 Control-IQ symbols (`setControlIQ`,
-    /// `controlIQEnabled`, `controlIQMode`, `ControlIQPrecondition`, `ControlIQSettingsView`, …) — those
-    /// predate this phase, are legitimately read by dose-adjacent code (e.g. `setTempBasal`'s CIQ-off
-    /// precondition), and are NOT the disclosure-only surfaces this guardrail scopes.
+    /// Display-only CIQ-awareness symbols that must not appear on the signed delivery path.
+    /// Pre-existing Control-IQ symbols (`setControlIQ`, `controlIQEnabled`, …) are out of scope —
+    /// dose-adjacent code may read those for a CIQ-off precondition.
     private static let forbiddenCiqAwarenessSymbols: [String] = [
         "ciqZone", "ControlIQZone", "lockoutRemainingFraction", "AutoCorrectionDisclosure",
         "ControlIQDisableWarning", "ciqSuspendedForLow", "ciqSuspendStartEpochSec",
         "ciqMaxBolusEventsExceeded", "ciqMaxIobEventsExceeded", "lastAutoCorrectionEpochSec",
         "ciqLastCouldNotDeliverEpochSec",
-        // T1-8 (09.15-08): the max-basal fraction/label fn + the propagated primitive it's built from.
         "MaxBasalFraction", "maxBasalUnitsPerHour",
-        // T2-3 (09.15-09): the CIQ+ temp-rate bench+capability gate — a BENCH-GATED PLACEHOLDER, not a
-        // dose value itself, but forbidden here so the signed delivery path never grows a dependency on
-        // this disclosure-adjacent gate.
         "CiqPlusTempRate",
-        // T2-1 (09.15-11): the direct CIQ-ceiling-flags bench+emission gate — same rationale as
-        // `CiqPlusTempRate` above; `ciqMaxBolusEventsExceeded`/`ciqMaxIobEventsExceeded` were already
-        // pinned here in advance by an earlier plan.
         "CiqCeilingFlags",
     ]
 

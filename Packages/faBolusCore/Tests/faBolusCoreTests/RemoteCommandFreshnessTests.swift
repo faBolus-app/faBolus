@@ -2,11 +2,8 @@ import Testing
 import Foundation
 @testable import faBolusCore
 
-/// P11 (defect group B) — the receive-side freshness bound. A delivery-authorizing command that reached
-/// the host too long after it was composed is refused (a bolus/resume/approval applied minutes late is a
-/// double-dose hazard). Insulin-REDUCING and neutral commands are never freshness-gated (refusing a late
-/// safety action would be the unsafe direction). VA-02: an absent stamp on a freshness-sensitive command
-/// is refused as stale (fail-closed, retryable) — its age can't be verified, so it must not be trusted.
+/// A delivery-authorizing command that arrives too late after compose is refused (late bolus is a
+/// double-dose hazard). Insulin-reducing and neutral commands are never freshness-gated; an absent stamp on a sensitive command is stale.
 struct RemoteCommandFreshnessTests {
     private let now = Date(timeIntervalSince1970: 2_000_000_000)   // well under the Int32.max (2038) ceiling
 
@@ -39,7 +36,7 @@ struct RemoteCommandFreshnessTests {
     }
 
     @Test func absentStampIsStaleForFreshnessSensitive() {
-        // VA-02 (fail-closed): a delivery-authorizing command with no trustworthy creation time can't be
+        // Fail-closed: a delivery-authorizing command with no trustworthy creation time can't be
         // age-verified, so it is refused as stale (retryable) rather than trusted as fresh.
         #expect(RemoteCommandFreshness.isStale(cmd(.bolusRequest, ageSec: nil), now: now))
         // A NON-freshness-sensitive kind with no stamp stays ungated (a late cancel/status is always safe).
@@ -56,8 +53,8 @@ struct RemoteCommandFreshnessTests {
         #expect(!RemoteCommandFreshness.isStale(cmd(.statusRead, ageSec: 3600), now: now))
     }
 
-    /// VA-07 host-side: a request composed BEFORE the host's most recent bolus delivery is superseded (the
-    /// remote dosed off pre-bolus state), so applying it now is a double-dose hazard.
+    /// A request composed BEFORE the host's most recent bolus delivery is superseded (the remote dosed
+    /// off pre-bolus state), so applying it now is a double-dose hazard.
     @Test func composeSupersededWhenHostDeliveredStrictlyAfterCompose() {
         #expect(RemoteCommandFreshness.composeSupersededByHostDelivery(
             sentAt: 1_000_000_000,
@@ -78,7 +75,7 @@ struct RemoteCommandFreshnessTests {
             lastHostDeliveryAt: Date(timeIntervalSince1970: 1_000_000_000)))
     }
 
-    /// No compose stamp to compare against → no supersession possible (VA-02 freshness + the access gate
+    /// No compose stamp to compare against → no supersession possible (freshness + the access gate
     /// remain the other lines of defense).
     @Test func composeNotSupersededWhenSentAtIsAbsent() {
         #expect(!RemoteCommandFreshness.composeSupersededByHostDelivery(

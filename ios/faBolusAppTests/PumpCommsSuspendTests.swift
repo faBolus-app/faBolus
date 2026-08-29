@@ -5,23 +5,12 @@ import TandemMessages
 import TandemBLE
 @testable import faBolus
 
-/// Phase 13 Plan 10 (CC-03 app-side consumer + CC-08 ack-driven remote-dismiss). OWNER-GATED, ADOPTED
-/// 2026-08-25 (`.planning/phases/13-reliability-background-ble-notifications/OWNER-DECISIONS.md`).
-///
-/// CC-03: an app-side pause/re-fetch consumer for a pump-declared `PUMP_COMMUNICATIONS_SUSPENDED`
-/// qualifying event — INERT in production today (see `CommsSuspensionGate`'s doc comment in
-/// `PumpBackgroundSession.swift` and `TandemBackend.handleQualifyingEventBits`'s doc comment for why:
-/// TandemKit's kit-side decode/dispatch producer already landed on that repo's `main`, but faBolus's
-/// own SPM pin predates it). These tests drive the consumer directly via its `#if DEBUG` test seams —
-/// exactly the entry point a future pin-bump would wire to a live kit delegate call.
-///
-/// CC-08: "Clear" on a remote-dismissable alert now hides it only after an authenticated status-zero
-/// proof from the pump, never on the send attempt alone. "Snooze locally" (non-remote-dismissable
-/// pumps) is unchanged.
+/// Pins that a pump-declared comms-suspension holds new routine reads until resume, and that remote-dismiss
+/// hides an alert only after an authenticated status-zero from the pump. Delivery, cancel, and time-sync must never be paused by the same gate.
 @Suite(.serialized) @MainActor
 struct PumpCommsSuspendTests {
 
-    // MARK: - CC-03 (a): new ROUTINE sends are held while suspended, released on resume
+    // MARK: - New routine sends are held while suspended, released on resume
 
     @Test func routineSendsAreHeldWhileSuspendedAndReleasedOnResume() {
         let fake = FakePumpTransport()
@@ -56,7 +45,7 @@ struct PumpCommsSuspendTests {
                 "the pause must never invalidate/remove the poll timer — it stays the watchdog fallback")
     }
 
-    // MARK: - CC-03 (b): deduped targeted re-fetches
+    // MARK: - Deduped targeted re-fetches
 
     @Test func heldRoutineSendsAreDedupedByOpcode() {
         let fake = FakePumpTransport()
@@ -76,7 +65,7 @@ struct PumpCommsSuspendTests {
         #expect(b.pendingRefetchOpcodesForTesting.isEmpty)
     }
 
-    // MARK: - CC-03 (c): an unrecognized qualifying-event bit fails closed
+    // MARK: - An unrecognized qualifying-event bit fails closed
 
     @Test func unrecognizedQualifyingEventBitFailsClosedNeverPauses() {
         let fake = FakePumpTransport()
@@ -102,7 +91,7 @@ struct PumpCommsSuspendTests {
         #expect(!b.isCommsSuspendedForTesting)
     }
 
-    // MARK: - CC-03 (d): delivery / cancel / time-sync / auth are NEVER held by the pause
+    // MARK: - Delivery / cancel / time-sync / auth are never held by the pause
 
     /// Mirrors `TandemDeliveryOutcomeTests.cancelOnFirstPoll` — fires the real `cancelBolus()` mid-poll,
     /// racing an in-flight bolus, while comms are ALREADY marked suspended for the entire flow. Every
@@ -145,7 +134,7 @@ struct PumpCommsSuspendTests {
                 "the pause itself must be untouched by any of the above — it only ever gated routine reads")
     }
 
-    // MARK: - CC-08: ack-driven remote-dismiss
+    // MARK: - Ack-driven remote-dismiss
 
     /// A backend identified as a Mobi (`supportsRemoteAlertDismiss == true`) with a real active alert
     /// (bit 5, "Auto-off" — an ordinary, non-safety-critical alert id) ready to dismiss.
@@ -216,14 +205,9 @@ struct PumpCommsSuspendTests {
         #expect(fake.sent.isEmpty, "a non-remote-dismissable pump must never attempt a signed dismiss send")
     }
 
-    // MARK: - CX-G-08 (14-09): TYPED CC-08 outcome + op-184 wire-proof (checkpoint #4, T-14-28/T-14-29)
+    // MARK: - Typed dismiss outcome + op-184 wire proof
 
-    /// INVARIANT: the op-184 dismiss WIRE is byte-identical. Asserts, via `FakePumpTransport.sent`
-    /// (NOT the bolus `*DeliverInvariant` fixtures — CC-08 protects dismiss, not bolus initiation):
-    /// exactly ONE `DismissNotificationRequest` (op-184) write, with the EXACT cargo the typed method
-    /// composes for (kind, id), `signed == true`, `allowDelivery == false`, and the `DismissNotification
-    /// Response` (op-185) opcode awaited. This is the dismiss-specific proof the move into
-    /// `dismissNotificationTyped` did not alter the signed send call site.
+    /// The op-184 dismiss wire must stay byte-identical: one signed non-delivery write with the typed method's cargo.
     @Test func op184WireIsExactlyOneSignedNonDeliveryWriteWithExactCargo() async throws {
         let setup = try #require(makeMobiBackendWithActiveAlert())
         let (b, fake, alert) = setup
@@ -240,9 +224,7 @@ struct PumpCommsSuspendTests {
         #expect(fake.awaited.contains(DismissNotificationResponse.props.opCode), "op-185 must be awaited")
     }
 
-    /// The TYPED outcome is `.authenticatedCleared` ONLY from the exact `status == 0` signed-response
-    /// branch — mirrors `authenticatedStatusZeroHidesTheAlert` but asserts the typed return value
-    /// directly instead of inferring it from `activeNotifications`/`alertDebug` (T-14-28).
+    /// `.authenticatedCleared` only from the exact `status == 0` signed-response branch.
     @Test func typedOutcomeIsAuthenticatedClearedOnlyOnStatusZero() async throws {
         let setup = try #require(makeMobiBackendWithActiveAlert())
         let (b, fake, alert) = setup

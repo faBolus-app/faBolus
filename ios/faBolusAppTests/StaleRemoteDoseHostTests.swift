@@ -3,19 +3,8 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// Addendum B (Option B, PR-2) — HOST behavior for the explicit per-attempt include-stale intent.
-///
-/// These drive the REAL `AppModel` against the in-memory `MockBackend` (no BLE), exercising the dose-path
-/// change in `resolveRemoteDose`: when a remote sends the explicit `includeStaleBG` intent AND the host's
-/// OWN reading is genuinely stale-but-present AND equals the wire value, the host recomputes the correction
-/// from ITS OWN stale reading (real-not-modelled); otherwise it fails closed to carbs-only exactly as
-/// before. The host stays the single calculator — the wire `bgMgdl` is used ONLY for the equality gate,
-/// never as a dose input — and the FB-01 verified-inputs gate + the 0.10 U divergence guard run unchanged.
-///
-/// `MockBackend` seeds a reading 10 min old (stale, known age). `seedFreshGlucose(_:at:)` lets a test pin a
-/// KNOWN stale value (`at: 10 min ago`) or a fresh one (`at: now`). The mock's `recommendBolus` is the same
-/// oracle-backed calculator the host uses, so the expected dose is probed with `model.recommendBolus(...)`
-/// and the divergence guard sees identical inputs (no flake) — mirroring `AppModelBehaviorTests`.
+/// Pins that a remote `includeStaleBG` intent uses the host's own stale reading as the dose input only
+/// when it matches the wire value; otherwise the host fails closed to carbs-only. The wire `bgMgdl` is never itself a dose input.
 @Suite(.serialized)
 @MainActor
 struct StaleRemoteDoseHostTests {
@@ -63,12 +52,7 @@ struct StaleRemoteDoseHostTests {
         try await body()
     }
 
-    // Phase 3 (03-02, REMOTE-02, F-3/Pitfall F): `grantFullControlPeer` (called
-    // `RemotePeerPolicyStore.setPairedViaQR`/`.setPolicy`, both gone from the minimal deny-by-default
-    // stub) is removed, along with `macApprovalPreservesIncludeStaleProvenance` — its entire scenario
-    // ("Mac host-approval path" staging + confirming a peer-approved bolus) is unconstructable through
-    // any public API now that no peer can ever hold a full-control grant. Accepted coverage loss (F-3
-    // disposition (a)), documented per 03-02-SUMMARY.md — not a silent drop.
+    // No peer can hold a full-control grant, so a Mac host-approval include-stale path is unconstructable.
 
     /// Pin a KNOWN stale reading (10 min old): a fixed value above target so a correction is nonzero, with
     /// a stale timestamp so `freshCorrectionBG == nil` and the include-stale branch is the one under test.
@@ -228,10 +212,8 @@ struct StaleRemoteDoseHostTests {
         // (connect/seed/setLiveIob) never touches that read, so no probe is taken here — the estimate value
         // is irrelevant because resolve is never reached.
 
-        // remotesReadOnly (remote surface): denied before resolve. Phase 3 (03-02, REMOTE-02,
-        // F-3/Pitfall F): re-pointed from the removed `.macPeer`/"mac" to the kept `.garmin`/"garmin" —
-        // an authenticated peer is now ALWAYS denied via Gate 4 (`.notPermittedForPeer`) regardless of
-        // `remotesReadOnly`, so it can no longer pin THIS specific reason/message on a peer surface.
+        // remotesReadOnly: denied before resolve. An authenticated Garmin peer is always denied via
+        // Gate 4 regardless of this flag; this pin uses the read-only surface that still produces this reason.
         try? await withCleanSettings {
             let (model, backend, rec, _) = await makeModel(connected: true)
             backend.setLiveIob(1.0); seedStale(backend, staleBg)
@@ -247,13 +229,7 @@ struct StaleRemoteDoseHostTests {
             #expect(backend.refreshCalcInputsNowCount == 0)          // resolve never ran
         }
 
-        // Phase 7 (07-04, FEAT-04, D-05, SAFETY): the "child mode (watch surface): denied before
-        // resolve" block that used to live here is retired — it set `AppSettings.shared.childModeEnabled
-        // = true`, a setter that is now a permanent no-op (getter-level freeze), so the "denied before
-        // resolve because of child mode" assertion no longer holds; it tested behavior that has been
-        // intentionally removed, not a live regression. Preserved on `dev/child-mode`
-        // (REINTEGRATION.md). The pure-evaluator proof (`AccessPolicy` DOES deny when `childModeEnabled`
-        // is `true`) is untouched in faBolusCore's `AccessPolicyTests`.
+        // Child-mode denial is frozen off (setter is a no-op). AccessPolicyTests still pin the evaluator against `true`.
     }
 
     // MARK: - (j) FIX 2: carbs==0 PURE correction + include-stale (within cap) ⇒ doses off the stale reading

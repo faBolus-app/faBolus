@@ -3,18 +3,8 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// Originally Phase 1 (CGM → Dexcom Share only), Plan 01 (D-06): the app-target boundary test that
-/// pins the narrow-`main` CGM-source contract. `registryContainsOnlyDexcomShare` and
-/// `removedSourceIdsAreAbsent` converged to fully GREEN once Phase 1's Plans 02/03 landed, and were
-/// extended here in Phase 5 (`registryContainsOnlyDexcomShare`, renamed from
-/// `registryContainsOnlyShareAndNightscout`) to also cover HealthKit's (HEALTH-01) and Nightscout's
-/// (HEALTH-02) removal. Mirrors `CgmSourceValidationTests`' registry-enumeration style
-/// (construction-time, no live source, no simulator).
-///
-/// A stand-in `GlucoseSource` for the arbiter-contract test (Task 2, D-05) — mirrors
-/// `GlucoseArbiterTests.MockGlucoseSource` in `Packages/faBolusCore`, reproduced here (not imported —
-/// that type is `private` to its own test target) so this app-target test consumes ONLY the public
-/// `faBolusCore` API, never a removed/renamed concrete source type.
+/// Pins that the CGM registry on main is Dexcom Share only, and that HealthKit, Nightscout, and other
+/// removed sources have no descriptor. A reintroduced source would sit on the arbiter merge path.
 @MainActor
 private final class MockShareLikeGlucoseSource: GlucoseSource {
     let id: String
@@ -34,9 +24,7 @@ private final class MockShareLikeGlucoseSource: GlucoseSource {
 @MainActor
 struct CgmShareOnlyBoundaryTests {
 
-    /// The end state of Phase 5 (HEALTH-01/HEALTH-02): `GlucoseSourceRegistry.enabled` contains ONLY
-    /// Dexcom Share — HealthKit and Nightscout are both gone from narrow `main` (see dev/healthkit's
-    /// and dev/nightscout's REINTEGRATION.md).
+    /// `GlucoseSourceRegistry.enabled` contains only Dexcom Share — HealthKit and Nightscout are gone from main.
     @Test func registryContainsOnlyDexcomShare() {
         let expected: Set<String> = ["dexcom-share"]
         let actual = Set(GlucoseSourceRegistry.enabled.map(\.id))
@@ -55,13 +43,7 @@ struct CgmShareOnlyBoundaryTests {
         }
     }
 
-    /// D-05/D-06: `GlucoseArbiter.merge` is source-agnostic and stays byte-identical across every
-    /// removal in this phase — a fresh Share-shaped `GlucoseSample` must still beat a stale
-    /// `PumpSnapshot` exactly as it does for every other source. Mirrors
-    /// `GlucoseArbiterTests.testFailsOverWhenPumpStale`: a 10-min-stale pump snapshot vs. a
-    /// 30-second-fresh Share-shaped sample, through the real `GlucoseArbiter.merge`. Uses ONLY the
-    /// public `Packages/faBolusCore` API (`GlucoseArbiter`, `PumpSnapshot`, `GlucoseSample`,
-    /// `GlucoseProvenance`, `GlucoseSource`) — never names a removed concrete source type.
+    /// `GlucoseArbiter.merge` is source-agnostic: a fresh Share-shaped sample must still beat a stale pump snapshot.
     @Test func shareReadingFlowsThroughArbiterMerge() throws {
         var stalePump = PumpSnapshot()
         stalePump.glucose = 100

@@ -1,31 +1,18 @@
 import Testing
 import Foundation
 
-/// CX-A-06 regression guard (17-10, Codex arch review). The Codex review confirmed both widgets ALREADY
-/// delegate glucose-band classification to `faBolusCore.GlucoseRange.classify` — there is NO widget-local
-/// threshold reimplementation to replace (verified this plan: `import faBolusCore` +
-/// `GlucoseRange.classify(g)` at `GlucoseWidget.swift:3,50` and `StatusWidget.swift:3,51`; the widget
-/// app-extension target already declares `package: faBolusCore` directly at `project.yml:340`). This suite
-/// PINS that already-resolved finding against regression rather than re-fixing it — no widget source was
-/// rewritten and no type was moved into `faBolusCore` by this plan (CX-A-04 is deferred to Phase 16).
-///
-/// Mirrors `BandDriftGuardTests`' idiom (repo-root walk-up to `project.yml`, `//`-line-comment stripping
-/// before scanning, a "scanned > 0" loud-not-vacuous guard) rather than inventing a new one.
+/// Pins that both widgets import faBolusCore and call `GlucoseRange.classify` with no local 70/180/250
+/// threshold literals. A widget-local band would drift from the dose-path classifier.
 struct WidgetCoreDelegationGuardTests {
 
-    /// The two widget source files this plan's CX-A-06 finding is about. A behavioral widget test isn't
-    /// the right instrument here (Codex, re 17-05): `faBolusAppTests` cannot link the widget extension
-    /// target, so a source-scan guard against these exact files is the correct proof.
+    /// The two widget source files. `faBolusAppTests` cannot link the widget extension, so a source scan is the proof.
     private static let targetFiles = [
         "ios/faBolusWidgets/GlucoseWidget.swift",
         "ios/faBolusWidgets/StatusWidget.swift",
     ]
 
-    /// The canonical mg/dL band-boundary values `faBolusCore.GlucoseRange.classify`/`GlucoseThresholds`
-    /// owns (70 / 180 / 250 — see `Packages/faBolusCore/Sources/faBolusCore/Models.swift:66-72`). A widget
-    /// file containing one of these as a bare numeric literal OUTSIDE a comment would indicate a local
-    /// reimplementation of the classification boundary — exactly the drift this finding exists to prevent
-    /// — rather than delegation to the one sanctioned Core classifier.
+    /// Band-boundary values `GlucoseRange.classify` owns. A widget file containing one as a bare numeric
+    /// literal outside a comment would indicate a local reimplementation of the classification boundary.
     private static let forbiddenThresholdLiterals = ["70", "180", "250"]
 
     /// Resolve the repo root by walking up from `#filePath` until `project.yml` (a stable, always-checked-in

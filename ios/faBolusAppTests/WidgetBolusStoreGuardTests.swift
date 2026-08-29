@@ -2,20 +2,13 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// Guards two Quick-Bolus widget hardening fixes on the `WidgetBolusStore` App-Group surface:
+/// An unauthenticated `widgetBolusCancel` Darwin post is dropped unless a single-use, TTL-bounded
+/// App-Group token is present. `takePending()` hard-drops a completed request older than `pendingTTL`
+/// so a stale widget confirm cannot be auto-consumed.
 ///
-/// **WR-05 / VA-28 (commit 1682298)** — cancel authentication. A `widgetBolusCancel` Darwin post is
-/// system-wide and unauthenticated, so the receiver now requires a single-use, `confirmTTL`-bounded
-/// App-Group token the legitimate cancel intent writes before posting. A co-resident app cannot write the
-/// App-Group container, so a bare/replayed post finds no token and is dropped.
-///
-/// **WR-04 / VA-26 (commit 9b6fbba)** — `takePending()` still hard-drops a completed request older than
-/// `pendingTTL` (120 s), so a stale widget confirm can't be auto-consumed. (The prompt-vs-restage decision
-/// keyed off `promptTTL` lives in `WidgetBolusReceiver` and isn't unit-testable here.)
-///
-/// `.serialized` because every test mutates the one shared App-Group `UserDefaults(suiteName:)`; each test
-/// also clears ONLY its own keys (never `removePersistentDomain`, which would clobber other parallel suites
-/// that share the container).
+/// `.serialized` because every test here mutates the ONE real shared App-Group
+/// `UserDefaults(suiteName:)`. Each test clears ONLY its own keys — never
+/// `removePersistentDomain`, which would wipe the container other suites bind to.
 @Suite(.serialized)
 struct WidgetBolusStoreGuardTests {
 
@@ -25,7 +18,7 @@ struct WidgetBolusStoreGuardTests {
         for k in ["wbPending", "wbCancelReq", "wbCancelAt"] { d.removeObject(forKey: k) }
     }
 
-    // MARK: - WR-05 / VA-28: cancel-intent token
+    // MARK: - Cancel-intent token
 
     /// A bare Darwin post (nothing written) is rejected — the core anti-nuisance property.
     @Test func takeCancelIntentIsFalseWithNoToken() {
@@ -51,7 +44,7 @@ struct WidgetBolusStoreGuardTests {
         #expect(WidgetBolusStore.takeCancelIntent() == false)
     }
 
-    // MARK: - WR-04 / VA-26: pending freshness
+    // MARK: - Pending freshness
 
     /// A fresh completed request is returned and then consumed (removed) so it can't be delivered twice.
     @Test func freshPendingIsReturnedThenConsumed() {

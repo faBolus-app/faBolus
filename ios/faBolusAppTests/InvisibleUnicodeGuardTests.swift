@@ -2,17 +2,7 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// **C6-03 (Phase 17 source-hygiene).** A Trojan-Source-style integrity smell: an invisible/zero-width
-/// Unicode code point silently embedded in source is undetectable by eye and can misdirect a reviewer
-/// (classic Trojan-Source bidi/invisible-character attacks). One such character (U+200B, zero-width
-/// space) was found this session inside a doc comment at `ios/faBolus/Data/ModeAutomation.swift:36`
-/// (17-RESEARCH.md "Zero-width space hygiene (C6-03) — exact location"). This guard pins the tree clean
-/// of the whole invisible-Unicode character class and fails loudly (not vacuously) if the scan ever
-/// walks zero files.
-///
-/// Reuses `BandDriftGuardTests`' `repoRootURL()`/`allSwiftFiles(under:)` walk verbatim (17-PATTERNS.md
-/// "Invisible-Unicode guard"), extended to also cover `Shared/` and `Packages/faBolusCore` — the two
-/// additional trees named in scope (C6-03's must_haves: "ios/faBolus, Shared, or Packages/faBolusCore").
+/// Pins that scanned Swift sources contain no invisible or zero-width Unicode. A hidden code point can change meaning without a visible diff.
 struct InvisibleUnicodeGuardTests {
 
     /// The invisible/zero-width Unicode code points this guard bans anywhere in scanned source:
@@ -64,8 +54,7 @@ struct InvisibleUnicodeGuardTests {
         return results
     }
 
-    /// The three trees named in scope by C6-03's must_haves: `ios/faBolus`, `Shared`, and
-    /// `Packages/faBolusCore`. Each is resolved relative to the repo root.
+    /// Scan `ios/faBolus`, `Shared`, and `Packages/faBolusCore` relative to the repo root.
     private static func scanRoots(repoRoot: URL) -> [URL] {
         [
             repoRoot.appendingPathComponent("ios/faBolus"),

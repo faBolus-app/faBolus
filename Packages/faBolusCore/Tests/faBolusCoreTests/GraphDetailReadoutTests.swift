@@ -2,17 +2,8 @@ import Testing
 import Foundation
 @testable import faBolusCore
 
-/// RED-first (task 09.18b-01/1, the phase TRACER): written before `GraphDetailReadout` exists, so this
-/// fails to compile/build until the pure resolver + its math land. Covers the scrub x→Date→nearest-sample
-/// domain math (D-05/D-06):
-///   - the generic `nearest(to:in:key:within:)` over any `[T]` keyed by a `Date` KeyPath + a tolerance,
-///   - empty input, within/beyond tolerance, strictly-closest across both sides, and the deterministic
-///     tie rule (earlier sample wins),
-///   - the SAME generic shape resolving `GlucoseReading` / `IOBSample` / `BolusMarker` (so 09.18b-02's
-///     rows reuse it without a second implementation).
-///
-/// Mirrors `GlucosePlotScaleTests`' Swift-Testing `#expect` idiom and its display-only discipline:
-/// `GraphDetailReadout` imports Foundation only and references no dose/delivery/signed-path type.
+/// Pins GraphDetailReadout nearest-sample math: empty input, tolerance, closest-across-sides, and
+/// earlier-wins ties. Display-only — no dose or delivery types.
 struct GraphDetailReadoutTests {
 
     // A fixed reference instant so every case is deterministic regardless of wall-clock time.
@@ -73,7 +64,7 @@ struct GraphDetailReadoutTests {
         #expect(GraphDetailReadout.nearest(to: t0, in: readings, key: \.date, within: 600)?.mgdl == 80)
     }
 
-    // MARK: - Same generic shape resolves IOB and bolus (reused by 09.18b-02)
+    // MARK: - Same generic shape resolves IOB and bolus
 
     @Test func nearestResolvesIOBSampleByDate() {
         let iob = [

@@ -33,7 +33,7 @@ struct HeartRateSchemaAbsenceGuardTests {
         return nil
     }
 
-    // MARK: - D-07/D-18.2: no heart-rate token in the signed command contract
+    // MARK: - no heart-rate token in the signed command contract
 
     @Test func signedCommandContractContainsNoHeartRateToken() throws {
         for relativePath in Self.signedContractFiles {

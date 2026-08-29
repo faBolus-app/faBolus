@@ -3,26 +3,13 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// Phase 18 (GO-1 Step 8, REMED-18) — the ORDERING WALL for the `RefreshEffectsCoordinator` extraction.
-///
-/// `AppModel.refresh()` carries a safety-critical, ordering-sensitive sequence: `maybeHandlePumpSwitch()`
-/// mutates `source.snapshot` (clears the prior pump's therapy params) and MUST run BEFORE
-/// `GlucoseArbiter.merge` reads it, and the four safety-edge decisions (connection / CGM-freshness /
-/// staleness-watchdog / urgent-low) MUST be computed from the value captured BEFORE this tick's
-/// bookkeeping reassignment. Final-state assertions alone cannot catch a reorder that still lands on the
-/// same final values — so this suite adds an ORDERED event recorder
-/// (`AppModel.refreshEffectOrderRecorderForTesting`, an additive DEBUG-shaped diagnostic closure fired at
-/// each phase boundary + effect inside `refresh()`) and pins the exact order.
-///
-/// Authored GREEN against the CURRENT (pre-extraction) `refresh()` and committed as the wall the extraction
-/// (Task 2) must stay green against, byte-for-byte in BEHAVIOR (D-05). No existing test scans `refresh()`
-/// by name, so there is no guard-retarget risk.
+/// Pins that `AppModel.refresh()` resets therapy params on a pump-switch before merge, then computes
+/// safety edges from the pre-assignment snapshot. Final-state assertions cannot catch a reorder that still lands on the same values.
 @Suite(.serialized) @MainActor
 struct RefreshOrderingCharacterizationTests {
 
-    /// Mirrors `PumpSwitchTests.makeModel()` (:27-28): a durable temp `ledgerStoreURL` so the pump-switch
-    /// scenario's `.switched` arm does NOT return early on `hasInFlightOrUnresolvedDelivery` (REVIEW M-2 —
-    /// without a durable store `maybeHandlePumpSwitch` defers the reset and the RED step is a false-green).
+    /// Durable temp `ledgerStoreURL` so the pump-switch `.switched` arm does not return early on
+    /// `hasInFlightOrUnresolvedDelivery` — without a store the reset is deferred and the order pin never fires.
     private func makeModel() async -> (AppModel, MockBackend) {
         let s = AppSettings.shared
         s.phoneReadOnly = false; s.childModeEnabled = false
@@ -80,14 +67,10 @@ struct RefreshOrderingCharacterizationTests {
         }
     }
 
-    // MARK: - Scenario (a): pump-switch resets therapy params BEFORE merge reads them (RESEARCH D-05(a))
+    // MARK: - Pump-switch resets therapy params before merge
 
-    /// RED against the pre-fix no-op `MockBackend.resetSnapshotForPumpSwitch()` (therapy fields UNCHANGED,
-    /// still the seeded 10/40/110); GREEN once the additive override lands (reset to the `PumpSnapshot()`
-    /// defaults 0/0/0). Non-vacuous per REVIEW M-1 — asserts `carbRatio`/`isf`/`targetBg` (seed ≠ default),
-    /// NOT `maxBolusUnits` (seed 25 == default 25). REVIEW M-2 — the durable `ledgerStoreURL` in
-    /// `makeModel()` keeps `maybeHandlePumpSwitch`'s `.switched` arm from deferring on
-    /// `hasInFlightOrUnresolvedDelivery`, so the reset actually fires.
+    /// Asserts `carbRatio`/`isf`/`targetBg` (seeded ≠ default), not `maxBolusUnits` (seed 25 == default).
+    /// Without a durable ledger the switch arm defers and this pin would never fire.
     @Test func pumpSwitchResetsTherapyParamsBeforeMergeReadsThem() async {
         PumpSwitchStore.setHandled("real|SOME-OLD-PUMP-UUID"); defer { PumpSwitchStore.clear() }
         let (model, backend) = await makeModel(); defer { backend.disconnect() }
@@ -106,7 +89,7 @@ struct RefreshOrderingCharacterizationTests {
         #expect(model.snapshot.targetBg == 0, "targetBg must be reset to the PumpSnapshot() default before merge")
     }
 
-    // MARK: - Scenario (b): safety edges computed from the PRE-assignment value (RESEARCH D-05(b))
+    // MARK: - Safety edges computed from the pre-assignment value
 
     @Test func safetyEdgesAreComputedFromPreAssignmentState() async {
         PumpSwitchStore.clear(); defer { PumpSwitchStore.clear() }

@@ -2,14 +2,8 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// Phase 09.6-01 (Task 2, Part A/D-01): pins the formalization that the app-side BLE pairing/
-/// transaction diagnostics (`BLESessionLog.record` + `DebugMenuView`'s export-write path) are
-/// PERMANENT first-class — never behind a debug-only compilation gate. 09.6-RESEARCH.md's Summary
-/// found no such gate exists today; this guard makes that fact self-enforcing so a future edit can't
-/// silently re-introduce one.
-///
-/// Mirrors `SettingsReachabilityGuardTests`' `#filePath`-rooted directory-walk technique, applied to
-/// two specific files rather than a whole directory.
+/// BLE pairing and transaction diagnostics must stay first-class, never wrapped in a debug-only
+/// compilation gate.
 struct DiagnosticsGatingGuardTests {
     /// Resolve a repo-relative path by walking up from `#filePath`
     /// (`<root>/ios/faBolusAppTests/DiagnosticsGatingGuardTests.swift`) — same technique as
@@ -57,7 +51,7 @@ struct DiagnosticsGatingGuardTests {
         lines.firstIndex { $0.contains(needle) }
     }
 
-    // MARK: - D-01: the record path is never debug-only gated
+    // MARK: - The record path is never debug-only gated
 
     @Test func bleSessionLogRecordPathIsNotDebugOnlyGated() throws {
         guard let url = Self.resolve("ios/faBolus/Data/Diagnostics/BLESessionLog.swift") else {
@@ -75,7 +69,7 @@ struct DiagnosticsGatingGuardTests {
                 "BLESessionLog.record is wrapped in a debug-only compilation gate — D-01 requires it permanent")
     }
 
-    // MARK: - D-01: the export-write path is never debug-only gated
+    // MARK: - The export-write path is never debug-only gated
 
     @Test func debugMenuExportWritePathIsNotDebugOnlyGated() throws {
         guard let url = Self.resolve("ios/faBolus/Views/DebugMenuView.swift") else {

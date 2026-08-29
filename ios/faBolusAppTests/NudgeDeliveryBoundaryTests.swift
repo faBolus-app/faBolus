@@ -5,15 +5,8 @@ import TandemMessages
 import TandemBLE
 @testable import faBolus
 
-/// **MUST-NOT-REACH boundary (phase #92, faBolusNudge delivery-path boundary).** Proves the INVERSE of
-/// `StackingGuardDeliverInvariantTests`: where that suite proves a friction disclosure never blocks the
-/// consented dose from reaching the pump, this suite proves the advisory `FABOLUS_NUDGE` eating nudge NEVER
-/// supplies the number that reaches the signed delivery seam (`TandemBackend.deliverBolus` /
-/// `GatedPumpWrite`). UNGATED — NOT wrapped in `#if FABOLUS_NUDGE` (D-04) — so this suite compiles and RUNS
-/// under CI's `FABOLUS_NUDGE=0` build: `EatingAlert`, `AppModel.eatingNudge*`, and
-/// `AppModel.openBolusRequested` are all declared OUTSIDE the gate; only their bodies branch on it. This
-/// test asserts the boundary STRUCTURALLY; it does NOT add a runtime is-from-nudge gate to the deliver seam
-/// (D-01). See `.planning/phases/07-fabolusnudge-delivery-path-boundary-92/07-CONTEXT.md`.
+/// The eating-nudge carb estimate is display-only and must never be the number that reaches the
+/// signed dose path (`TandemBackend.deliverBolus` / `GatedPumpWrite`).
 @Suite(.serialized) @MainActor
 struct NudgeDeliveryBoundaryTests {
 
@@ -39,14 +32,9 @@ struct NudgeDeliveryBoundaryTests {
         return (backend, fake)
     }
 
-    // MARK: - Task 1 (TRACER): end-to-end nudge → deliver boundary
+    // MARK: - End-to-end nudge → deliver boundary
 
-    /// MUST-NOT-REACH: a LIVE nudge with `estimatedCarbs == 60` is in flight while the REAL deliver path
-    /// (through `FakePumpTransport`) delivers an EXPLICITLY-entered dose of `3.2`. The delivered amount
-    /// equals the entered dose and is never the nudge's estimate — the only number that ever reaches the
-    /// pump is the one the user typed, proving SC1/SC2/D-05d as a coupled pair (mirrors
-    /// `StackingGuardDeliverInvariantTests.deliveredEqualsConsentedWhileSG1Fires`, inverted into a
-    /// MUST-NOT-REACH shape per D-03).
+    /// The only number that reaches the pump is the one the user typed, never the nudge's estimate.
     @Test func deliveredEqualsExplicitDoseNeverNudgeEstimate() async throws {
         let liveNudge = EatingAlert(estimatedCarbs: 60, at: Date())   // deliberately != the entered dose below
         let entered = 3.2                                            // the ONLY number that should reach the pump
@@ -59,12 +47,8 @@ struct NudgeDeliveryBoundaryTests {
         _ = fake   // keep the fake alive for the duration of the assertion
     }
 
-    /// `EatingAlert.estimatedCarbs` surfaces ONLY through `.message` (D-02/D-05a/D-05c) — there is no
-    /// second stored/computed member on the type a caller could route into a dose. `EatingAlert` (see
-    /// `ios/faBolus/Data/SmartAssist.swift`) declares exactly two members: `estimatedCarbs` (the raw
-    /// number) and `message` (the display string it feeds); `message` is the ONLY other member on the
-    /// type, so the type's own shape — not a runtime probe — is the proof that the number terminates
-    /// there. This test pins the string-level behavior so a future member addition is caught at review.
+    /// `EatingAlert.estimatedCarbs` is display-only: it surfaces through `.message`, never a second
+    /// member a caller could route onto the dose path.
     @Test func nudgeAlertExposesEstimateOnlyViaMessage() {
         let zeroCarbAlert = EatingAlert(estimatedCarbs: 0, at: Date())
         #expect(zeroCarbAlert.message == "Looks like you might be eating. Bolus?")
@@ -74,19 +58,11 @@ struct NudgeDeliveryBoundaryTests {
         #expect(carbAlert.message.contains("42"))
     }
 
-    // MARK: - Task 2: belt-and-suspenders static source scan
+    // MARK: - Source scan: nudge files contain no delivery-seam symbols
 
-    /// Second, independent proof (source-level, D-02/D-05b): the eating-nudge source contains ZERO
-    /// delivery-seam symbols. `EatingTrigger.swift` and `SmartAssist.swift` are scanned WHOLE-FILE (both
-    /// are delivery-symbol-free today); `AppModel+EatingNudge.swift` is scanned by FUNCTION-BODY SLICE
-    /// ONLY, for its three eating-nudge functions located by signature — NEVER whole-file, because
-    /// `deliverBolus`/`remoteDeliver` are legitimately declared elsewhere in `AppModel.swift` (RESEARCH
-    /// Pitfall 1). 16-04 (Phase 16 GO-1 Step 4) retargeted this scan from `AppModel.swift` to
-    /// `AppModel+EatingNudge.swift` after `eatingNudgeActedOn`/`updateEatingNudge`/`dismissEatingNudge`
-    /// were carved into that separate-file extension — ONLY the file-path constant changed; the
-    /// forbidden-symbol list below is byte-identical to before the retarget. A future line-shift in
-    /// `AppModel+EatingNudge.swift` cannot silently widen or narrow the scanned region because the
-    /// slice is found by signature, not by hardcoded line numbers.
+    /// Eating-nudge source must contain zero delivery-seam symbols. Slice `AppModel+EatingNudge`
+    /// by function signature, never whole-file — `deliverBolus`/`remoteDeliver` are legitimately
+    /// declared in `AppModel.swift`.
     @Test func nudgeSourceContainsNoDeliverySeamSymbols() throws {
         // The forbidden delivery-seam identifier set: the two `GatedPumpWrite` delivery verbs plus the
         // signed-write entry-point names. Held as plain string constants — this scan targets the SOURCE
@@ -111,10 +87,9 @@ struct NudgeDeliveryBoundaryTests {
             }
         }
 
-        // Scope (2): function-body-scoped scan of AppModel+EatingNudge.swift's three eating-nudge
-        // functions only (16-04 retarget — was AppModel.swift before the carve). MUST NOT whole-file-scan
-        // AppModel.swift — deliverBolus/remoteDeliver are legitimately declared there, which would be a
-        // guaranteed false positive.
+        // Scope (2): function-body scan of AppModel+EatingNudge.swift's three eating-nudge
+        // functions only. MUST NOT whole-file-scan AppModel.swift — deliverBolus/remoteDeliver
+        // are legitimately declared there.
         let eatingNudgeFileURL = repoRoot.appendingPathComponent("ios/faBolus/Data/App/AppModel+EatingNudge.swift")
         let eatingNudgeSource = try String(contentsOf: eatingNudgeFileURL, encoding: .utf8)
         let eatingNudgeFunctionSignatures = [

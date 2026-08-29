@@ -2,34 +2,15 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// Phase 17 Plan 03 (D1-05/D3-02, D1-04) — pins two source-level safety-copy facts by scanning
-/// production source directly (Swift Testing `@Suite`/`@Test`, mirroring `RegulatoryCopyTests`'s
-/// keyword-presence style and `BandDriftGuardTests`'s repo-root-walk-up + file-read idiom):
-///
-/// 1. **Draft-marker absence (D1-05/D3-02).** `NotificationSettingsView.swift`'s three safety-disable
-///    consent dialogs (`.pumpDisconnect`/`.cgmDataLoss`/`.bolusReconciliation`) must no longer carry the
-///    internal, now-stale clinical-review draft-marker prefix ("§13-DRAFT — pending Phase 10 clinical
-///    review") — §13 is recorded cleared (ROADMAP Phase 11: "✓ Completed 2026-08-23 via owner-accepted
-///    AI-panel review"), so the marker is both leaked internal process jargon and factually stale. This
-///    is a negative scan: the substantive plain-English consequence sentences are NOT touched by this
-///    assertion — only the marker's absence is pinned.
-/// 2. **First-run regulatory framing presence (D1-04).** `ConnectPumpOnboardingView.swift` must reference
-///    `RegulatoryCopy.firstRun` (owner-signed-off 2026-08-09) so a first-time user sees the
-///    experimental/not-FDA-cleared framing on the actual first-run screen, not just in About.
-///
-/// Both assertions read the file's raw text via `String(contentsOf:)` — a source-scan, not a runtime
-/// render — so this suite runs on the xctest host with zero pump/BLE dependency (mirrors
-/// `BandDriftGuardTests`'s host-agnostic idiom, not `RegulatoryCopyTests`'s in-memory string check, since
-/// this needs to see the SOURCE literal, not the compiled `RegulatoryCopy.firstRun` value).
+/// Safety-disable consent dialogs must not leak the stale `§13-DRAFT` clinical-review marker, and
+/// first-run onboarding must surface `RegulatoryCopy.firstRun` so the experimental framing is on
+/// the actual first-run screen.
 @Suite struct SafetyCopyGuardTests {
 
-    /// The exact internal clinical-review draft-marker prefix to negative-scan for (17-RESEARCH.md "Code
-    /// Examples → Existing safety-copy §13-DRAFT string to strip", verbatim as currently authored in
-    /// `NotificationSettingsView.swift:363-372`).
+    /// Exact stale draft-marker prefix this scan forbids.
     static let staleDraftMarker = "§13-DRAFT — pending Phase 10 clinical review"
 
-    /// Resolve the repo root by walking up from `#filePath` until `project.yml` is found — same
-    /// walk-up technique as `BandDriftGuardTests.repoRootURL()`.
+    /// Walk up from `#filePath` until `project.yml` is found.
     private static func repoRootURL() -> URL? {
         let fm = FileManager.default
         var probe = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
@@ -68,13 +49,9 @@ import Foundation
                 "ConnectPumpOnboardingView.swift does not surface RegulatoryCopy.firstRun — the first-run experimental/not-FDA-cleared framing is missing from the actual first-run screen (D1-04)")
     }
 
-    /// D2-08 (WINDOWS ledger #24): the decorative hero antenna glyph at the top of the first-run
-    /// pump-connect screen must be `.accessibilityHidden(true)` so VoiceOver doesn't announce its raw
-    /// SF Symbol name — the title/body text already convey the screen's purpose. Same source-scan idiom
-    /// as the two assertions above; anchored to the hero-icon modifier chain (windowed slice after the
-    /// `antenna.radiowaves.left.and.right` symbol) so an unrelated `.accessibilityHidden` elsewhere in the
-    /// file can't satisfy it vacuously. Mirrors the 17-09 decorative-icon hiding in
-    /// AlertsView/CameraPermissionFallbackView.
+    /// The decorative hero antenna glyph on the first-run pump-connect screen must be
+    /// `.accessibilityHidden(true)` so VoiceOver does not announce its raw SF Symbol name. Windowed
+    /// after the symbol so an unrelated `.accessibilityHidden` elsewhere cannot satisfy it.
     @Test func connectPumpOnboardingViewHidesDecorativeHeroIcon() throws {
         guard let root = Self.repoRootURL() else {
             Issue.record("SafetyCopyGuardTests could not resolve repo root — scan would pass vacuously")

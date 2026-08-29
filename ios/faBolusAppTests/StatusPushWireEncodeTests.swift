@@ -3,16 +3,8 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// Phase 17.5 Plan 01 (D1-01/REMED-17) — the before/after wire-encode proof that gates every deletion in
-/// this phase's retirement of the Apple-Watch-only wire fields. This is the ONE net-new artifact this
-/// plan produces; later plans in the phase (02/03) EXTEND it rather than recreate it.
-///
-/// Test A pins the already-true invariant that non-status commands never carry `watchBolusEnabled` — the
-/// field is only ever set on the `statusRead` reply — so deleting it is provably byte-identical for every
-/// other `Kind`. Test B is the RED-today proof: the REAL `AppModel.statusCommand()` emits
-/// `watchBolusEnabled` unconditionally today; this asserts it is ABSENT from the encoded JSON while the
-/// KEEP siblings (`garminBolusEnabled`, `activeMode`, `watchChartRanges` — none of them Apple-Watch-only)
-/// stay PRESENT, proving the coming deletion in Task 2 is surgical, not broad.
+/// Pins that the status-push JSON no longer emits retired Apple-Watch-only and eating-advisory fields,
+/// while garminBolusEnabled, activeMode, and watchChartRanges stay present. A broad deletion would drop live Garmin contract keys.
 @MainActor
 @Suite(.serialized) struct StatusPushWireEncodeTests {
 
@@ -23,9 +15,7 @@ import faBolusCore
             .appendingPathComponent("status-wire-ledger-\(UUID().uuidString).json")
     }
 
-    /// Test A (non-status byte-safety): `watchBolusEnabled` is never set on `bolusRequest`/`cancelBolus`/
-    /// `dismissAlert` — already true today, and stays true forever, because only `statusCommand()` (the
-    /// `statusRead` reply) touches this field. Documents WHY removing it is byte-identical for these kinds.
+    /// Non-status commands never carry `watchBolusEnabled` — the field was only ever set on the statusRead reply.
     @Test func nonStatusCommandsNeverCarryWatchBolusEnabled() throws {
         let cases: [(String, RemoteCommand)] = [
             ("bolusRequest", RemoteCommand(kind: .bolusRequest, units: 1.0)),
@@ -38,16 +28,7 @@ import faBolusCore
         }
     }
 
-    /// Test B (status-push exact-delta, RED today): drives a REAL `AppModel` (backed by `MockBackend`, no
-    /// hardware) to a connected snapshot and encodes its actual `statusCommand(...)` output — never a
-    /// hand-built `RemoteCommand` — so this proves the real function's wire output, not a stand-in. FAILS
-    /// today because `AppModel.statusCommand()` still emits `watchBolusEnabled` unconditionally; goes GREEN
-    /// once Task 2 deletes the field end-to-end.
-    ///
-    /// Phase 17.5 Plan 03 (D1-01/REMED-17) extends this SAME proof to the eating-advisory wire fields:
-    /// `RemoteStatusComposer.compose(...)` (the real function `AppModel.statusCommand()` now delegates
-    /// to, post-16-01) emits `eatingSensingOn` unconditionally — RED today because it is still present;
-    /// goes GREEN once Task 2 deletes `eatingSensingOn`/`eatingProb` end-to-end.
+    /// Drives a real `AppModel.statusCommand` so the wire output is the production function's, not a stand-in.
     @Test func statusPushDropsWatchBolusEnabledButKeepsSiblings() async throws {
         let backend = MockBackend()
         let model = AppModel(source: backend, ledgerStoreURL: tempLedgerURL())

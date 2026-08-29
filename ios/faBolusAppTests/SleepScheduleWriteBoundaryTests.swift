@@ -5,32 +5,16 @@ import TandemMessages
 import TandemBLE
 @testable import faBolus
 
-/// **MUST-NOT-REACH boundary (Phase 09.10, T-09.10-03).** Proves the L7 mode-only invariant for the Mobi
-/// native Sleep-schedule write TWO independent ways, mirroring `NudgeDeliveryBoundaryTests`' shape (a
-/// structural/property proof + a belt-and-suspenders static source scan):
-///
-/// 1. **Structural/property:** `SetSleepScheduleRequest.props.operationRisk == .settings` — it is signed
-///    and `.control`-characteristic (so `.readOnly` still blocks it), but `modifiesInsulinDelivery` is
-///    UNSET, so `MessageProps.operationRisk` (Core/MessageProps.swift) derives `.settings`, never
-///    `.delivery`. No `WritePolicy` path can elevate a `.settings`-risk message to allow insulin delivery
-///    — the risk class is derived from the message's OWN declared shape, not from how it is sent.
-/// 2. **Source-scan:** a `#filePath`-rooted, balanced-brace scan of `TandemBackend.setSleepSchedule`'s
-///    function body (located by signature, not a hardcoded line range, so a future line-shift in the
-///    source file can't silently widen or narrow the scanned region) proves it calls `sendControl` with
-///    the NON-delivery argument and contains no delivery-enabling call.
-///
-/// **Fault-injection verified to actually bite:** temporarily changed the `setSleepSchedule` call site to
-/// `sendControl(SetSleepScheduleRequest(...), delivery: true)` — `nonDeliverySendSiteContainsNoDeliveryEnablingCall`
-/// went RED (found the forbidden `delivery: true` token in the scanned slice); reverted. This confirms
-/// the scan is not a vacuous always-pass — it actually detects the L7 violation it's written to catch.
+/// Mobi Sleep-schedule write is `.settings` risk, never `.delivery`: `SetSleepScheduleRequest` does
+/// not declare `modifiesInsulinDelivery`, and `TandemBackend.setSleepSchedule` must send via
+/// `delivery: false`.
 @Suite @MainActor
 struct SleepScheduleWriteBoundaryTests {
 
-    // MARK: - Task 2.1: structural/property proof
+    // MARK: - Structural/property proof
 
-    /// `SetSleepScheduleRequest` is signed + `.control` (so `.readOnly` blocks it) but does NOT declare
+    /// `SetSleepScheduleRequest` is signed + `.control` (so `.readOnly` blocks it) but does not declare
     /// `modifiesInsulinDelivery`, so `MessageProps.operationRisk` derives `.settings` — never `.delivery`.
-    /// This is the L7 invariant enforced structurally IN THE KIT, independent of how the app calls it.
     @Test func setSleepScheduleRequestIsSettingsRiskNeverDeliveryRisk() {
         let props = SetSleepScheduleRequest.props
         #expect(props.operationRisk == .settings)
@@ -46,14 +30,11 @@ struct SleepScheduleWriteBoundaryTests {
         #expect(SetSleepScheduleResponse.props.operationRisk != .delivery)
     }
 
-    // MARK: - Task 2.2: belt-and-suspenders static source scan
+    // MARK: - Static source scan
 
-    /// Second, independent proof (source-level): `TandemBackend.setSleepSchedule`'s function body — located
-    /// by signature, not a hardcoded line range — sends via the non-delivery `sendControl(..., delivery:
-    /// false)` form and contains no delivery-enabling call. Scanning the FUNCTION-BODY SLICE only (never
-    /// the whole file) matters because `sendControl(..., delivery: true)` is legitimately called elsewhere
-    /// in the same file (e.g. `suspendDelivery`/`setTempBasal`), which would be a guaranteed false positive
-    /// under a whole-file scan (mirrors `NudgeDeliveryBoundaryTests`' Pitfall-1 note for `AppModel.swift`).
+    /// `TandemBackend.setSleepSchedule`'s function body — located by signature, not a line range — sends
+    /// via `sendControl(..., delivery: false)` and contains no delivery-enabling call. Scanning the
+    /// function-body slice only matters because `delivery: true` is legitimate elsewhere in the same file.
     @Test func nonDeliverySendSiteContainsNoDeliveryEnablingCall() throws {
         let forbidden = ["delivery: true", ".allowDelivery"]
 

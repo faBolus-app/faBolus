@@ -2,20 +2,8 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// **FEAT-04 SAFETY freeze-guard (Phase 7, 07-04, P-D, D-05).** Child Mode is removed from narrow
-/// `main` via a RUNTIME gate: `AppSettings.childModeEnabled` and `.requireRemoteBolusApproval` are
-/// frozen to `false` with a belt-and-suspenders shape — a getter-level freeze (`get { false }
-/// set { } }`) AND (for `childModeEnabled`) removal of the `applyBackup` restore line — so a
-/// settings-restore (local backup) CANNOT resurrect either flag, and no direct setter call can make
-/// either `true` by any other route either. The dose-adjacent evaluator (`AccessPolicy`/
-/// `ChildFeature`/`BolusGate`/`GatedPumpWrite` in faBolusCore) and `AppModel`'s one read of these two
-/// values stay BYTE-IDENTICAL — this suite only proves the settable INPUT can never become `true`
-/// again, never touches the evaluator itself (that pure-logic proof lives in faBolusCore's own
-/// `AccessPolicyTests`, which constructs `AccessContext(childModeEnabled: true, ...)` literals
-/// directly and is unaffected by this freeze).
-///
-/// RED-first: every assertion below FAILS against pre-freeze `main` (the setters/restore still
-/// accept `true`) — proving this guard has teeth. GREEN once the freeze in `AppSettings.swift` lands.
+/// Pins that `childModeEnabled` and `requireRemoteBolusApproval` stay frozen false: a settings
+/// backup restore or a direct setter must never resurrect Child Mode or a no-approver bolus-approval gate. AccessPolicyTests still pin the evaluator against `true` literals.
 @MainActor
 struct ChildModeFreezeGuardTests {
 
@@ -23,7 +11,7 @@ struct ChildModeFreezeGuardTests {
     /// live state to leak between tests — unlike every other `AppSettings` gate in this suite, no
     /// save/restore scaffolding is needed here (by design: that is exactly what "frozen" means).
 
-    // MARK: - childModeEnabled: local-backup restore cannot resurrect it (option a)
+    // MARK: - childModeEnabled: local-backup restore cannot resurrect it
 
     @Test func applyBackupWithChildModeEnabledTrueLeavesItFalse() {
         AppSettings.shared.applyBackup(["childModeEnabled": .bool(true)])
@@ -31,7 +19,7 @@ struct ChildModeFreezeGuardTests {
                 "a restored backup carrying childModeEnabled=true must never resurrect Child Mode (FEAT-04, D-05, SAFETY)")
     }
 
-    // MARK: - childModeEnabled: no direct setter call can arm it either (option b, defense-in-depth)
+    // MARK: - childModeEnabled: no direct setter call can arm it either
 
     @Test func directSetterCallOnChildModeEnabledHasNoEffect() {
         AppSettings.shared.childModeEnabled = true

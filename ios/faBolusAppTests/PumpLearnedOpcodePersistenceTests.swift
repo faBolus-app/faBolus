@@ -4,25 +4,9 @@ import TandemMessages
 import TandemBLE
 @testable import faBolus
 
-/// Tests for the OWNER REFINEMENT of debug session `pump-pairing-loop-api25` (2026-08-19).
-///
-/// The initial A+B fix (commit 9f978a5) stopped the API-2.5 t:slim X2 reconnect loop by removing op20
-/// `LoadStatusRequest` from `fastRead()` for ALL pump models (mechanism A). Owner review found a dose-path
-/// side effect: op20 feeds `PumpSnapshot.cartridgeLoadState` → the 09.9 fail-closed bolus pre-guard
-/// `cartridgeReadyForBolus` (whose default `cartridgeLoadState = 6` fails OPEN). Removing op20 from the poll
-/// left that defense-in-depth pre-guard stale/ready on newer t:slim + Mobi (which DO support op20).
-///
-/// The refinement (this suite pins it):
-///  1. op20 is RESTORED to the recurring `fastRead()` poll for all models, so the pre-guard stays LIVE on a
-///     pump that supports op20.
-///  2. Mechanism B's learned-bad-opcode set now PERSISTS across reconnects AND app relaunches, KEYED TO
-///     PUMP IDENTITY (`PumpBadOpcodeStore`, keyed by peripheral UUID + a firmware stamp). So the API-2.5
-///     pump drops op20 exactly ONCE (first-ever connect), learns it, persists it, and skips it forever —
-///     while a DIFFERENT pump/firmware never inherits that skip and keeps polling op20.
-///
-/// Safety invariants pinned here: never suppress op0; a different pump never inherits another's skip (key
-/// isolation); a firmware change re-tests the opcode; a supported pump keeps op20 live so its pre-guard is
-/// fed. `PumpTransactionCoordinator` is OUT of scope (09.11); the TandemKit pin stays HELD.
+/// Learned bad opcodes persist per pump identity so an API-2.5 t:slim can skip op20 after one drop
+/// without starving the cartridge pre-guard on pumps that still support it. Never persist op0 or
+/// dose-input reads (op108/op115); never share a skip across pumps or firmware.
 @Suite(.serialized) @MainActor
 struct PumpLearnedOpcodePersistenceTests {
 
@@ -73,11 +57,9 @@ struct PumpLearnedOpcodePersistenceTests {
         #expect(store.entry(for: "A").firmware == "3.0")
     }
 
-    /// R2-10 (CR-02): a dose-input READ rejection (op108 `ControlIQIOBRequest` IOB / op115
-    /// `BolusCalcDataSnapshotRequest` therapy) must NEVER be durably persisted — op109 is the SOLE IOB
-    /// source, so a persisted skip would fail-close `recommendBolus` forever with no re-probe (bricks the
-    /// bolus calculator on that pump). The store's belt-and-suspenders guard drops these before any write.
-    /// Contrast with op20, which persists normally (its cartridge pre-guard self-heal is unchanged).
+    /// A dose-input READ rejection (op108 IOB / op115 therapy) must never be durably persisted — op109
+    /// is the sole IOB source, so a persisted skip would brick `recommendBolus` on that pump with no
+    /// re-probe. Contrast with op20, which persists normally.
     @Test func doseInputReadRejectionsAreNeverPersistedWhileOp20Is() {
         let (store, suite, defaults) = isolatedStore()
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -146,8 +128,7 @@ struct PumpLearnedOpcodePersistenceTests {
                 "op20 must not be re-sent on a post-learn connection")
     }
 
-    /// PRE-GUARD LIVE: a pump with no learned op20 rejection keeps polling op20, and the reply updates
-    /// `cartridgeLoadState` so the 09.9 `cartridgeReadyForBolus` pre-guard stays live.
+    /// A pump with no learned op20 rejection keeps polling op20 so `cartridgeReadyForBolus` stays live.
     @Test func supportedPumpKeepsPollingLoadStatusAndPreGuardStaysLive() {
         let (store, suite, defaults) = isolatedStore()
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -235,13 +216,11 @@ struct PumpLearnedOpcodePersistenceTests {
         #expect(!dispatched.contains(loadStatusOpcode))
     }
 
-    // MARK: - WR-05: a mid-session firmware change purges the IN-MEMORY learned set (same backend)
+    // MARK: - Mid-session firmware change purges the in-memory learned set
 
-    /// WR-05 (deep review): the durable store resets on a firmware change, but `badOpcodes` survives
-    /// reconnects for the scheduler's lifetime. On the SAME backend (no relaunch) a firmware change must
-    /// ALSO purge the in-memory op20, so op20 is re-polled under the new firmware — not kept skipped until
-    /// the app is relaunched. `aFirmwareChangeReTestsLoadStatus` above uses a FRESH backend and so does not
-    /// exercise this in-memory retention.
+    /// The durable store resets on a firmware change, but `badOpcodes` survives reconnects for the
+    /// scheduler's lifetime. On the same backend (no relaunch) a firmware change must also purge the
+    /// in-memory op20 so it is re-polled under the new firmware.
     @Test func aFirmwareChangeOnTheSameBackendClearsInMemoryLearnedAndRePolls() async {
         let (store, suite, defaults) = isolatedStore()
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -269,10 +248,10 @@ struct PumpLearnedOpcodePersistenceTests {
         #expect(!skipped.contains(loadStatusOpcode), "op20 is no longer skipped after the firmware change")
     }
 
-    // MARK: - IN-03: the store LRU-caps the number of retained pumps
+    // MARK: - Store LRU-caps retained pumps
 
-    /// IN-03 (deep review): pairing many pumps over time must not grow the persisted map unbounded — the
-    /// store caps retained pumps and evicts the least-recently-updated first.
+    /// Pairing many pumps over time must not grow the persisted map unbounded — the store caps retained
+    /// pumps and evicts the least-recently-updated first.
     @Test func theStoreLruCapsRetainedPumps() {
         let (store, suite, defaults) = isolatedStore()
         defer { defaults.removePersistentDomain(forName: suite) }

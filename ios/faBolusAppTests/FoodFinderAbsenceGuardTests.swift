@@ -15,11 +15,8 @@ struct FoodFinderAbsenceGuardTests {
             .deletingLastPathComponent()   // → repo root
     }
 
-    /// The FoodFinder compile gate is retired (see `project.yml` / `scripts/generate-project.sh`),
-    /// and `ios/faBolus` is an unconditional source include — so absence from the working tree IS
-    /// the build-exclusion mechanism for the barcode/OpenFoodFacts + BYO-key AI carb-estimate
-    /// surface. A re-added file under any of these directories compiles into the app with nothing
-    /// to stop it, and an AI carb estimate is an input to a bolus. Preserved on `dev/food-finder`.
+/// FoodFinder trees must stay off the working tree: the compile gate is gone, so a re-added file
+/// compiles into the app. An AI carb estimate is a bolus input.
     @Test func foodFinderDirectoriesAreAbsentFromWorkingTree() {
         let removedRelativeDirs = [
             "ios/faBolus/Data/FoodFinder",

@@ -2,18 +2,8 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// **CR / R2-12.** Pins `garminSendDisposition` — the ConnectIQ-free classifier for a Garmin outbound
-/// `sendMessage` result that backs the bridge's durable terminal-echo outbox. It lives OUTSIDE `#if GARMIN`
-/// (next to `GarminMessageReadiness`) precisely so it compiles and is unit-testable in the default
-/// (non-GARMIN) test target, where the ConnectIQ-typed bridge is not.
-///
-/// LOAD-BEARING INVARIANT: a terminal command echo (`isEcho == true`) must NEVER be dropped on an EXPLICIT
-/// send-failure — it re-enqueues to the FRONT of the durable `echoQueue`, which WR-07's readiness-gated
-/// reconnect/discovery drain replays. Dropping a terminal `bolusStatus` echo permanently loses the outcome
-/// and strands the watch at "delivering…" forever (it makes the watch-side R2-02 stuck-terminal permanent).
-/// A coalesced status snapshot (`isEcho == false`) is coalescing-safe and MAY be dropped on failure — a
-/// newer status supersedes it. The `#if GARMIN` completion closure AND the send-watchdog's
-/// `maxSendAttempts`-exhaustion path route their keep/drop decision through this one helper.
+/// Pins that a failed Garmin terminal-echo send re-enqueues to the front of the durable outbox and is
+/// never dropped. Dropping it strands the watch at "delivering…" with the outcome lost.
 struct GarminSendOutboxTests {
 
     // MARK: success ⇒ ack (drop-from-outbox), regardless of payload class

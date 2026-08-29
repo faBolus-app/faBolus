@@ -3,20 +3,9 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// P15 Addendum B (AB3) — the shared `RemoteCommandWireFixture` seams the Apple Watch, Mac, and remote-iPhone
-/// all use to offer the stale-CGM three-way choice, plus the divergence-guard consistency that the
-/// include-stale path depends on.
-///
-/// The three-way DECISION itself (which bg feeds the calculation, whether a path sends anything) is
-/// pinned in faBolusCore `StaleBolusPromptTests`. Here we pin the CLIENT behavior:
-///   • `staleCarbWarnNeeded` — warn iff a stale-but-real reading exists (fresh / no-reading bypass),
-///   • `deliverCarbs(_:includeStaleBG:)` — the stale value is sent for the correction ONLY on the
-///     explicit per-attempt include, else dropped (today's carbs-only behavior), and
-///   • the `remoteEstimateUnits` on the wire is computed from the SAME bg the host will recompute with,
-///     so the host's 0.10 U divergence guard doesn't reject an included-stale dose (the critical bug the
-///     AB3 plan calls out).
-/// The watch UI has no unit-test seam; it routes through these model methods, so pinning them here guards
-/// the watch's (and Mac's) Addendum B wiring.
+/// Remote clients send a stale BG for correction only on an explicit per-attempt include, and
+/// `remoteEstimateUnits` is computed from that same BG so the host's 0.10 U divergence guard does
+/// not reject a legitimate include.
 @MainActor
 @Suite(.serialized) struct StaleCarbClientTests {
 

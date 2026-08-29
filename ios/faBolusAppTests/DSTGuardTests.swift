@@ -2,26 +2,8 @@ import Testing
 import Foundation
 import faBolusCore
 
-/// P16 N16 — DST guard.
-///
-/// The only 24-slot, hour-of-day-indexed cache in faBolus (`basalScheduleByHour`) was DELETED in F2
-/// (it was display/telemetry-only with no live dose/therapy consumer), so the latent basal DST exposure
-/// is *removed*, not merely mitigated — a reader that indexed a 24-entry array by `Calendar.hour` would
-/// have shifted by one slot across a spring-forward/fall-back boundary. That reader no longer exists, and
-/// its absence is enforced at compile time (the `AppSettings` property and `AppModel.basalByHour()` are gone).
-///
-/// A repo scan for the REMAINING therapy- or schedule-relevant hour-of-day / calendar logic found:
-///   • `NotificationBroker.inQuietHours` — quiet-hours suppression (notification-only, never a dose).
-///   • `AlertRuleEngine.action` — time-window rule matching (advisory alert auto-actions, never a dose).
-///   • `AlertRulesView` — the same minute-of-day math for the editor UI (display-only).
-///   • `ModeAutomation` — a 15-min pending TTL + 60-min manual-precedence window, both pure elapsed-
-///     *duration* math (`timeIntervalSince`), event-triggered by Shortcuts — DST-immune, not hour-scheduled.
-/// None is on a dose/therapy schedule path, and every hour-of-day consumer already derives its
-/// hour/minute from a timezone-aware `Calendar` (default `.current`) rather than raw `TimeInterval`
-/// arithmetic — so all are already DST-correct.
-///
-/// This test pins that DST-correctness on the representative scheduling helper (quiet-hours) across an
-/// actual spring-forward transition, so a future refactor to naive UTC/offset math would fail here.
+/// Remaining hour-of-day scheduling (quiet hours) must use a timezone-aware `Calendar`, not
+/// raw-offset math, so a DST spring-forward cannot shift the window.
 struct DSTGuardTests {
     typealias B = NotificationBroker
 

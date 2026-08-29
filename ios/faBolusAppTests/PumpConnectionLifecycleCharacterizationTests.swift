@@ -5,36 +5,22 @@ import TandemMessages
 import faBolusCore
 @testable import faBolus
 
-/// GO-2 Step 2 (16-09, REMED-16, CX-A-03) — scripted-lifecycle characterization, authored against CURRENT
-/// (pre-move) `TandemBackend` behavior and committed GREEN as the wall `PumpConnectionLifecycle`'s
-/// extraction (Task 2) must stay green against, byte-for-byte.
-///
-/// **Review concern #5 (the reason this suite exists):** `linkDroppedCleanup()` is a single, safety-
-/// critical, ORDERED teardown sequence — waiter resume → `failPumpWaiters` → history → the three
-/// TandemBackend-owned resets → scheduler stop/advance → `coordinator = nil` → `authenticationKey = []`
-/// → `cancelPairingWatchdog()`. A reorder here (e.g. clearing the auth key BEFORE `failPumpWaiters` runs,
-/// or cancelling the watchdog before the coordinator is cleared) could leave a signed continuation
-/// resolved against a half-torn-down session. Final-state assertions alone (`isPairedForTesting == false`,
-/// etc.) cannot catch a reorder that still lands on the same final values — so this suite adds an ORDERED
-/// event recorder (`onLinkDroppedCleanupStepForTesting`, a new DEBUG-only diagnostic closure fired at each
-/// step inside `linkDroppedCleanup()` — see the "Deviations" section of this plan's SUMMARY) and asserts
-/// the exact sequence, not just the end state.
+/// Pins the ordered `linkDroppedCleanup()` teardown: waiters, history, backend resets, then auth-key
+/// clear. Clearing the key or cancelling the watchdog early can resolve a signed continuation against a half-torn-down session even when the final state looks identical.
 @Suite(.serialized) @MainActor
 struct PumpConnectionLifecycleCharacterizationTests {
     private func backend() -> TandemBackend { TandemBackend(testTransport: FakePumpTransport()) }
 
-    /// The exact teardown order `linkDroppedCleanup()` runs today (TandemBackend.swift, current
-    /// numbering) — the wall Task 2's extraction must reproduce byte-for-byte.
+    /// The exact teardown order `linkDroppedCleanup()` must keep. A reorder can look identical in the final state.
     private static let expectedTeardownOrder = [
         "completeGlucoseRead", "completeCalcInputRead", "failPumpWaiters", "historyLinkDropped",
         "historyStatusReset", "detectedIsMobiReset", "pumpFeatureBitsReset", "stopAllTimers",
         "notePollCycleEnded", "coordinatorCleared", "authKeyCleared", "cancelPairingWatchdog",
     ]
 
-    // MARK: - Call-order recorder (review concern #5)
+    // MARK: - Call-order recorder
 
-    /// The CR-02 "unintended drop surfaces as `.connecting`" path: `applyClientState(.connecting)` from a
-    /// live link must run the FULL teardown, in the exact documented order.
+    /// An unintended drop that surfaces as `.connecting` from a live link must run the full teardown, in order.
     @Test func dropToConnectingFromLiveRunsTeardownInExactOrder() {
         let b = backend()
         b.setConnectionForTesting(.connected)
@@ -138,10 +124,7 @@ struct PumpConnectionLifecycleCharacterizationTests {
         #expect(b.isPairedForTesting == false, "no stray pairing progress after the drop")
     }
 
-    // MARK: - Watchdog arm/fire/cancel (reuses the existing pairingTimeoutSecForTesting/
-    // firePairingWatchdogForTesting seams — PairingWatchdogTests/ResumeRetryTests already pin the full
-    // behavior; this is the scripted-lifecycle harness's own representative pin so a Task 2 regression
-    // shows up in THIS suite too, not only the pre-existing ones).
+    // MARK: - Watchdog arm/fire/cancel (so a teardown-order regression shows up in this suite too)
 
     @Test func watchdogTimeoutFailsClosedAndCancelIsIdempotent() {
         let b = TandemBackend(testTransport: FakePumpTransport(), authKey: [])
@@ -206,15 +189,10 @@ struct PumpConnectionLifecycleCharacterizationTests {
         #expect(body.contains("ResponseParser.parse"), "ResponseParser.parse must still live in TandemBackend.swift's didReceiveFrame")
     }
 
-    // MARK: - VA-06: op33 now forwards the REAL negotiated apiVersion (reverses the CX-T-04 deferral)
+    // MARK: - op33 forwards the real negotiated apiVersion
 
-    /// tslim-reconnect-loop Phase B (2026-08-27) — DELIBERATE REVERSAL of the prior
-    /// `setDeviceContextApiVersionStaysNilByteForByte` characterization. The op33-driven device-context
-    /// re-wire used to pass `apiVersion: nil` (fail-open → every kit `minApi` floor inert). It now
-    /// forwards the REAL negotiated `ApiVersion` op33 reported, so the floors bite (kit-layer
-    /// defense-in-depth for reads AND writes). This pins the new correct wiring at BOTH ends:
-    ///  (a) `PumpResponseApplier`'s op33 case constructs the real version from the frame, and
-    ///  (b) the `TandemBackend` binding forwards it into `client.setDeviceContext(apiVersion:)`.
+    /// Passing `apiVersion: nil` after op33 would leave every kit `minApi` floor inert. The applier must
+    /// build the real version from the frame, and TandemBackend must forward it into `setDeviceContext`.
     @Test func op33ForwardsRealNegotiatedApiVersionIntoTheSendGate_VA06() throws {
         let applierSource = try Self.readSource(relativeTo: "ios/faBolus/Data/Tandem/PumpResponseApplier.swift")
         #expect(applierSource.contains("ApiVersion(major: m.majorVersion, minor: m.minorVersion)"),

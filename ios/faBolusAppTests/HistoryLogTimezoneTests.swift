@@ -5,28 +5,8 @@ import TandemMessages
 import TandemBLE
 @testable import faBolus
 
-/// **VA-18 / WR-01 (fix a96f553) — DST/travel boundary invariant for pump-history placement.**
-///
-/// `TandemBackend.finishBackfill()` used to convert every buffered history record with a SINGLE UTC
-/// offset captured at sync time (`sec - TimeZone.current.secondsFromGMT()`), so across a DST boundary or
-/// travel it stamped historical records with TODAY's offset instead of the offset in effect at each
-/// record's own instant — shifting them by ~1 h at a DST edge (whole hours across zones), corrupting the
-/// medical timeline and which record is promoted as "latest glucose" (`snapshot.glucoseDate`). The fix
-/// treats the pump seconds as naive wall-clock components (read against the UTC-anchored 2008 epoch) and
-/// re-anchors them in the pump/user zone via a zone `Calendar`, applying the DST-correct per-record offset.
-///
-/// These tests drive the real gap-sync → `finishBackfill` path (same harness as `HistoryLogSyncTests`)
-/// with records placed relative to a REAL DST transition (`TimeZone.nextDaylightSavingTimeTransition`,
-/// mirroring `DSTGuardTests`), never a hardcoded instant, so they are not tied to a specific year.
-///
-/// The fix reads its zone via the `#if DEBUG historyBackfillTimeZoneForTesting` seam (production:
-/// `TimeZone.current`). Each test injects a DST-observing zone (`America/Los_Angeles`) directly into the
-/// backend AND uses that same explicit zone for its own `Calendar` math — so the boundary is exercised
-/// DETERMINISTICALLY on any host. (The earlier approach set `NSTimeZone.default` and hoped `TimeZone.current`
-/// would follow; it does on a Pacific dev box but NOT on the UTC CI runner, so those tests passed locally and
-/// failed CI. `withDefaultTimeZone` is kept as harmless belt-and-suspenders.) Every expected instant is
-/// recomputed with the SAME zone `Calendar` reinterpretation the fix uses (never a literal), so the
-/// assertions stay self-consistent with the fix regardless of the CI host zone.
+/// History records keep the DST-correct offset at each instant so stale-CGM / latest-glucose
+/// promotion cannot shift by an hour at a DST or travel edge.
 @Suite(.serialized) @MainActor
 struct HistoryLogTimezoneTests {
 

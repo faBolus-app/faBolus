@@ -2,8 +2,14 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// Pins that `ios/faBolus/Intents/` is absent and that no file under `ios/faBolus` conforms to
-/// `AppShortcutsProvider`. Does not scan `Shared/WidgetBolusIntents.swift`.
+/// Pins that `ios/faBolus/Intents/` stays gone and that no file under `ios/faBolus` conforms to
+/// `AppShortcutsProvider` — i.e. the APP TARGET exposes no Siri/Shortcuts surface.
+///
+/// This is NOT a blanket "App Intents cannot dose" guarantee, and must not be read as one:
+/// `Shared/WidgetBolusIntents.swift` declares the Quick-Bolus widget's App Intents (the 1-2-3
+/// confirm flow that hands a dose to the app), is excluded from the app target and compiled into
+/// the widget extension — so App Intents ARE a live dose path here. This scan deliberately does
+/// not cover it.
 struct ShortcutsAbsenceGuardTests {
 
     /// Resolve the repo root by walking up from this file's own `#filePath`

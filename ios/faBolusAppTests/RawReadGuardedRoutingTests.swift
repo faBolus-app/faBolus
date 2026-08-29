@@ -5,28 +5,8 @@ import TandemMessages
 import TandemBLE
 @testable import faBolus
 
-/// tslim-reconnect-loop (Phase B, item 4). The raw-send reads — HistoryLog (op60), the IDP cascade
-/// (IDPSettings op64 / IDPSegment op66), ProfileStatus, and the auto-on-connect HistoryLogStatus (op58) —
-/// used to go out via raw `tx.send`/`client.send`, bypassing the `badOpcodes` never-resend backstop and
-/// the op-77 correlation the tiered poll reads get. They now route through the GUARDED read path
-/// (`sendOnDemandRead` → `sendStatusRead`), so a pump that rejects one of them self-heals (learn-and-stop)
-/// instead of the app hammering it every connection/page — while a pump that supports them (e.g. the
-/// owner's, where HistoryLog streams fine) is unaffected: the guard only ever SKIPS an opcode the pump has
-/// actually rejected. HISTORY stays GRACEFUL by design (guarded path + dynamic self-heal, never
-/// hard-disabled).
-///
-/// Two proofs per read family:
-///  (a) ROUTING: injecting the response frame that triggers the send now fires `onReadDispatchedForTesting`
-///      (that seam fires ONLY from `sendStatusRead`). Pre-item-4 these sites went through raw `tx`/`client`
-///      and NEVER fired it (see `ReadCascadeChainingGuardTests`' B3 doc) — so this observation is itself the
-///      routing change.
-///  (b) GUARD: with the read's opcode seeded into `badOpcodes`, the send is SKIPPED — captured neither in
-///      the fake transport's `sent` nor re-dispatched. This is the whole point of item 4 and was impossible
-///      before the reroute (a raw `tx.send` ignores `badOpcodes` entirely).
-///
-/// Byte-identity: the scheduler's `send` closure forwards the SAME `tx.send(authenticationKey:[],
-/// pumpTimeSinceReset:0, allowInsulinDelivery:false)` defaults these sites used, so no wire bytes change
-/// (and the signed dose/delivery path is untouched — every read here is unsigned).
+/// History and IDP reads go through the guarded path so a pump rejection self-heals (fail-closed
+/// skip) instead of hammering; dose/delivery writes are untouched.
 @Suite(.serialized) @MainActor
 struct RawReadGuardedRoutingTests {
 

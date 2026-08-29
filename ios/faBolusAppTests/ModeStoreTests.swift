@@ -3,21 +3,8 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// P14 S3 — the mode state machine. Phase 8 (08-01, LOCK-01) inverted the first-run branch: a fresh
-/// install starts EVERYONE directly at Advanced (no Simple/guided-unlock onboarding), and the first-run
-/// onboarding flag is force-set `true` unconditionally so the KEPT `ConnectPumpOnboardingView` step stays
-/// reachable. The CR-01 gap-closure (08-REVIEW.md) then tightened `init` further: it now unconditionally
-/// forces the active mode to `.advanced` on EVERY launch, first-run OR returning, ignoring whatever
-/// "modeEarned" a pre-Phase-8 build may have persisted — a stale sub-.advanced value can no longer strand
-/// a device below Advanced, since `ModeViews.swift` (the only UI that could ever raise the mode back up)
-/// is deleted.
-///
-/// 17-07 (D1-02): the guided-unlock state machine (`completeNextObjective`/`expertOptOutToAdvanced`/
-/// `select`/`returnTo`/`earnedMode`/the `"modeEarned"` key) that used to stay compiled-but-unreachable per
-/// 08-OWNER-FLAGS.md Flag 1 is removed from `ModeStore` outright, so the tests that used to exercise it
-/// directly are removed too. What remains below documents the retained behavior: `AppSettings.appMode`
-/// forced to `.advanced` on every launch (first-run or returning, regardless of stale disk state) and the
-/// two first-run onboarding flags.
+/// Every launch forces `appMode` to `.advanced` so a stale persisted sub-Advanced value cannot strand
+/// the device with no recovery UI (`ModeViews` is gone).
 @Suite(.serialized) @MainActor
 struct ModeStoreTests {
 
@@ -38,27 +25,24 @@ struct ModeStoreTests {
     }
 
     @Test func staleSubAdvancedModeEarnedCanNoLongerStrandAReturningUser() {
-        // CR-01 regression (08-REVIEW.md): a user upgrading from a pre-Phase-8 build with a persisted
-        // "modeEarned" = "standard" (or anything below .advanced) must NOT be clamped down on relaunch —
-        // `ModeViews.swift` (the only UI that could raise the mode back to Advanced) is deleted, so a
-        // clamp here would permanently strand the device below Advanced with zero recovery UI, silently
-        // losing `GatedPumpWrite`-gated pump-control functionality (temp basal, profile CRUD, CGM-session
-        // control, max bolus/basal, time sync, Control-IQ settings, alert config).
+        // A leftover "modeEarned" below Advanced must not clamp the device on relaunch —
+        // `ModeViews` (the only UI that could raise the mode back) is gone, so a clamp would
+        // permanently strand pump-control functionality with zero recovery UI.
         let saved = AppSettings.shared.appMode
         defer { AppSettings.shared.appMode = saved }
         let d = freshDefaults()
-        d.set(AppMode.standard.rawValue, forKey: "modeEarned")   // stale pre-17-07 key; no longer read
+        d.set(AppMode.standard.rawValue, forKey: "modeEarned")   // stale key; no longer read
         AppSettings.shared.appMode = .standard
         let s = store(d)
         #expect(s.activeMode == .advanced)               // active mode forced to Advanced regardless
     }
 
     @Test func evenAPoisonedSimpleModeEarnedIsForcedToAdvancedOnRelaunch() {
-        // Same CR-01 regression at the lowest tier — belt-and-suspenders across the whole enum range.
+        // Same stranding check at the lowest tier.
         let saved = AppSettings.shared.appMode
         defer { AppSettings.shared.appMode = saved }
         let d = freshDefaults()
-        d.set(AppMode.simple.rawValue, forKey: "modeEarned")     // stale pre-17-07 key; no longer read
+        d.set(AppMode.simple.rawValue, forKey: "modeEarned")     // stale key; no longer read
         AppSettings.shared.appMode = .simple
         let s = store(d)
         #expect(s.activeMode == .advanced)

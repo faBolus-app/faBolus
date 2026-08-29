@@ -1,23 +1,19 @@
 import Testing
 import Foundation
 
-/// Phase 16 GO-1 Step 4 (16-04 Task 3, REMED-16, review concern #1 / suggestion #2) — the
-/// source-scan guard proving the `private`->`internal` access-widening this carve required (a
-/// separate-file `extension AppModel` cannot declare stored properties and cannot see a `private`
-/// member of the type it extends) is EXACTLY the enumerated advisory set below — no more, no fewer
-/// — and, critically, that NO dose/gate member was ever included.
+/// Pins that AppModel's explicit `internal` stored properties are exactly the enumerated advisory set
+/// and that no dose/gate member was widened. Opening `deliveryLedgerCoordinator` would put the
+/// delivery ledger on an extension-visible surface.
 ///
-/// **Baseline fact this guard depends on (verified, not assumed):** before Phase 16 (`git show
-/// 0da3867:ios/faBolus/Data/AppModel.swift`, the 16-01 tracer commit, close to the pre-phase
-/// baseline), `AppModel.swift` contained ZERO stored-property declarations using the explicit
-/// `internal` keyword — every property was either `private`/`private(set)`/`public` or had no
-/// modifier at all (Swift's own default, which is *already* `internal` and needs no keyword). That
-/// means every literal `internal var`/`internal let`/`internal lazy var` occurrence in the CURRENT
-/// `AppModel.swift` is attributable to this carve's widening, with no baseline noise to filter out —
-/// a plain substring scan is a genuine, non-vacuous proof, not an approximation.
+/// Baseline fact this guard depends on (verified, not assumed): before the carve that split AppModel,
+/// `AppModel.swift` contained ZERO declarations using the explicit `internal` keyword — every member
+/// was `private`/`private(set)`/`public`, or carried no modifier at all (Swift's default, which is
+/// already internal and needs no keyword). That is what makes the scan below sound: every literal
+/// `internal var`/`internal let` in the file today is attributable to the carve, with no pre-existing
+/// noise to subtract.
 struct AppModelAccessWideningGuardTests {
 
-    // MARK: - Repo/file resolution (mirrors AppModelReferenceAuditTests' idiom)
+    // MARK: - Repo/file resolution
 
     private static func repoRootURL() -> URL? {
         let fm = FileManager.default
@@ -36,29 +32,18 @@ struct AppModelAccessWideningGuardTests {
         return try String(contentsOf: url, encoding: .utf8)
     }
 
-    /// Phase 16 GO-1 Step 5 (16-05, CX-A-08 retarget): `lastPersistedGlucoseKeys`/
-    /// `lastPersistedBolusKeys` moved OUT of `AppModel.swift` entirely, into their own dedicated
-    /// `HistoryPersistenceCoordinator` — not a same-type widening, so the ORIGINAL scan target
-    /// (`AppModel.swift`) can never find them again and would otherwise vacuous-pass. Retargeted here
-    /// per the source-text guard-retargeting rule (verify against actual source, not the plan's draft).
+    /// `lastPersistedGlucoseKeys`/`lastPersistedBolusKeys` live in `HistoryPersistenceCoordinator`, not AppModel.
+    /// Scanning only AppModel.swift would vacuous-pass after the move.
     private static func historyPersistenceCoordinatorSource() throws -> String {
         let root = try #require(Self.repoRootURL(), "could not resolve repo root from #filePath")
         let url = root.appendingPathComponent("ios/faBolus/Data/App/HistoryPersistenceCoordinator.swift")
         return try String(contentsOf: url, encoding: .utf8)
     }
 
-    // MARK: - The enumerated widened set (verified against source — see 16-04 SUMMARY)
+    // MARK: - The enumerated widened set
 
-    /// The EXACT 17 stored-property declarations widened `private`->`internal` by this carve, held as
-    /// their exact declaration-line substrings (not bare property names) so the check is precise and
-    /// cannot accidentally match an unrelated occurrence of the same word elsewhere in the file.
-    ///
-    /// IN-01 caveat: `"internal var history: GlucoseHistoryStore?"` was a *stored* property when 16-04
-    /// widened it, but 16-05 (one plan later, same phase) turned `history` into a *computed* property
-    /// (`internal var history: GlucoseHistoryStore? { historyPersistence.store }`). The `source.contains`
-    /// substring match below still holds because the computed declaration line starts with the identical
-    /// prefix — so this array's name ("stored-property") is inaccurate for this one entry only. The guard
-    /// is still proving the `private`->`internal` visibility survives; it is NOT proving stored-vs-computed.
+    /// Exact declaration-line substrings widened to `internal`. `history` is now computed but still starts
+    /// with this prefix — the guard pins visibility, not stored-vs-computed.
     static let widenedStoredPropertyDeclarations: [String] = [
         "internal var history: GlucoseHistoryStore?",
         "internal var eatingEngine = EatingTriggerEngine(",
@@ -79,11 +64,7 @@ struct AppModelAccessWideningGuardTests {
         "internal var alertIntel = AppModel.loadAlertIntel()",
     ]
 
-    /// The ONE new (not widened — it never existed before, so there is no `private`->`internal`
-    /// transition to prove) `internal` COMPUTED property this carve added: a thin, read-only seam so
-    /// `AppModel+Backup.swift`'s `buildPrivacyExport` can read the ledger snapshot WITHOUT widening
-    /// `deliveryLedgerCoordinator` itself (review concern #1's dose-adjacent exception — see its own
-    /// doc comment in `AppModel.swift`).
+    /// Thin read-only seam so backup export can read the ledger snapshot without widening `deliveryLedgerCoordinator`.
     static let newInternalSeamDeclaration = "internal var privacyExportLedgerSnapshot: RemoteBolusLedger"
 
     /// Every literal `internal var`/`internal let`/`internal lazy var` occurrence in `AppModel.swift`
@@ -121,12 +102,8 @@ struct AppModelAccessWideningGuardTests {
                 "Expected new internal seam missing from AppModel.swift: '\(Self.newInternalSeamDeclaration)'")
     }
 
-    /// No dose/gate member was widened: `deliveryLedgerCoordinator` (the dose-adjacent ledger/
-    /// global-block coordinator owning `runLedgeredDelivery`) stays `private` — the carve added a
-    /// thin read-only seam NEXT TO it instead of widening the coordinator itself. The two
-    /// history-diff keys (Phase 16 GO-1 Step 5 / 16-05: now owned by `HistoryPersistenceCoordinator`,
-    /// not `AppModel`) also stay `private` in their new home, proving the widening was minimal, not
-    /// "widen everything nearby".
+    /// No dose/gate member was widened: `deliveryLedgerCoordinator` stays `private`. The history-diff keys
+    /// stay `private` in HistoryPersistenceCoordinator.
     @Test func noDoseOrGateMemberWasWidened() throws {
         let source = try Self.appModelSource()
 
@@ -137,10 +114,7 @@ struct AppModelAccessWideningGuardTests {
         #expect(!source.contains("internal var deliveryLedgerCoordinator"),
                 "deliveryLedgerCoordinator must never appear as `internal`")
 
-        // 16-05 retarget (CX-A-08): these two keys moved OUT of AppModel.swift entirely (a dedicated
-        // coordinator extraction, not a same-type widening) — assert the negative here (never
-        // reappears in AppModel.swift) AND the positive against their actual new file, so this stays
-        // a loud, non-vacuous proof rather than an assertion the move made permanently unreachable.
+        // These two keys moved out of AppModel entirely — assert the negative here AND the positive against their new file so the move cannot make this pin unreachable.
         #expect(!source.contains("lastPersistedGlucoseKeys"),
                 "lastPersistedGlucoseKeys must no longer appear in AppModel.swift at all — it moved to HistoryPersistenceCoordinator.swift (16-05)")
         #expect(!source.contains("lastPersistedBolusKeys"),
@@ -153,8 +127,7 @@ struct AppModelAccessWideningGuardTests {
                 "lastPersistedBolusKeys must stay `private` in HistoryPersistenceCoordinator.swift — no method outside the coordinator touches it")
     }
 
-    /// Fault-injection proof for the line-scan helper itself (mirrors `AppModelReferenceAuditTests`'
-    /// `markerCheckerDiscriminatesActiveFromCommentOnly` idiom): a synthetic source string containing
+    /// Fault-injection proof for the line-scan helper itself: a synthetic source string containing
     /// an explicit-`internal` stored-property line must be detected, and one that only NAMES a
     /// property in a doc comment (no `internal var`/`internal let` keyword) must not — proving the
     /// checker discriminates a real declaration from mere prose.
@@ -165,7 +138,7 @@ struct AppModelAccessWideningGuardTests {
         #expect(Self.allExplicitInternalDeclarationLines(in: proseLike).isEmpty)
     }
 
-    // MARK: - WR-02 hardening: enforce the backtick-quoting convention this scan silently relies on
+    // MARK: - Backtick-quoting convention this scan relies on
 
     /// Returns the comment portion of each line (everything from the first `//` onward, covering `//`
     /// and `///` line/doc comments). The count-based guard above scans the WHOLE line for the literal

@@ -3,14 +3,8 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// P10 (defect group A) — the iOS widgets must age glucose off the reading's OWN sample timestamp,
-/// under the phone's published freshness policy, exactly like the Mac widget (the reference impl).
-/// Pins two halves of the iOS staleness defect:
-///  1. the pure fresh → stale → hidden transitions the crossing-timeline entries and the views key off
-///     (evaluated at the entry's date, since a widget renders ahead of time), and
-///  2. that the iOS publisher now actually PUBLISHES the policy — the defect was that it left
-///     `staleAfterSec`/`hideAfterSec` nil, so every iOS widget silently fell back to the 6-min hardcode
-///     regardless of the user's Settings value.
+/// iOS widgets must age glucose off the sample timestamp under the phone's published freshness policy,
+/// including future-skew. A missing policy must not silently fall back to a 6-minute hardcode.
 @MainActor
 @Suite(.serialized) struct WidgetStalenessTests {
     private func mins(_ m: Double, after base: Date) -> Date { base.addingTimeInterval(m * 60) }
@@ -77,18 +71,14 @@ import faBolusCore
         let snap = WidgetPublisher.makeSnapshot(MockBackend().snapshot, history: [], alerts: [],
                                                 staleAfterSec: 7 * 60, hideAfterSec: 20 * 60)
         // Explicit Double literals — `7 * 60` alone binds as Int against the `TimeInterval?` field.
-        #expect(snap.staleAfterSec == 420.0)   // was nil before P10 (silent 6-min fallback)
+        #expect(snap.staleAfterSec == 420.0)   // was nil (silent 6-min fallback)
         #expect(snap.hideAfterSec == 1200.0)
     }
 
-    // MARK: - Phase 09.9-04 (D-05): WidgetSnapshot.cartridgeReady
+    // MARK: - WidgetSnapshot.cartridgeReady
 
-    /// WR-04 (debug pump-pairing-loop-api25, deep review): `makeSnapshot` now maps the Guardrail-B tri-state
-    /// — a positive widget "ready" is presented ONLY for a CONFIRMED `.ready` op-20 reply, never the
-    /// fail-open default. A CONFIRMED loading state maps to not-ready; an UNKNOWN/auto-excluded state maps
-    /// to the non-positive `false` ("omit the positive badge" — the Bool can't carry a third state), so a
-    /// state that was never read is never shown as a positive "ready". (Full WR-04 coverage — widget + the
-    /// `Bool?` remote wire — lives in `CartridgeReadinessRemotePresentationTests`.)
+    /// `makeSnapshot` presents a positive widget "ready" only for a confirmed `.ready` op-20 reply,
+    /// never the fail-open default. An unknown/auto-excluded state must not show as ready.
     @Test func makeSnapshotMapsCartridgeReadyFromTheConfirmedTriState() {
         var pump = MockBackend().snapshot
         pump.cartridgeLoadState = 6                 // idle
@@ -114,7 +104,7 @@ import faBolusCore
     /// true` (the safe "ready" default) — an older widget-extension binary must never render a false
     /// "cartridge not ready" scare from a missing key. An explicit `false` round-trips unchanged.
     @Test func cartridgeReadyDecodesToSafeDefaultOnLegacyPayloadAndRoundTripsExplicitFalse() throws {
-        // Simulate a pre-Phase-09.9-04 payload: encode a snapshot, then strip the key before decoding.
+        // Simulate a legacy payload: encode a snapshot, then strip the key before decoding.
         let snap = WidgetSnapshot(glucose: 120)
         var obj = try JSONSerialization.jsonObject(with: JSONEncoder().encode(snap)) as! [String: Any]
         obj.removeValue(forKey: "cartridgeReady")

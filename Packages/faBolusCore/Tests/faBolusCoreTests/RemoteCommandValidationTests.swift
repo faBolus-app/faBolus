@@ -71,7 +71,7 @@ final class RemoteCommandValidationTests: XCTestCase {
         }
     }
 
-    // MARK: - P3: kind-specific cross-field rules
+    // MARK: - Kind-specific cross-field rules
 
     func testZeroDurationExtendedRejected() {
         let json = #"{"version":1,"kind":"bolusRequest","requestId":"r1","units":2,"extendedMinutes":0,"extendedNowUnits":1}"#
@@ -108,7 +108,7 @@ final class RemoteCommandValidationTests: XCTestCase {
         XCTAssertEqual(back.history?.count, 288)
     }
 
-    // MARK: - Phase 09.13-02 (D-06/D-11, threat T-09.13-04) — plot bound validation
+    // MARK: - Plot bound validation
 
     /// Absent is fine (⇒ receiver's own default/shared fallback); a present in-range pair passes.
     func testGlucosePlotBoundsAbsentOrInRangePasses() throws {
@@ -126,7 +126,7 @@ final class RemoteCommandValidationTests: XCTestCase {
     }
 
     /// A hostile/garbled out-of-range value on any of the four fields fails closed rather than driving
-    /// an invalid remote axis (T-09.13-04).
+    /// an invalid remote axis.
     func testGlucosePlotBoundOutOfRangeRejected() {
         for field in ["glucosePlotFloor", "glucosePlotCeiling", "glucosePlotFloorSmall", "glucosePlotCeilingSmall"] {
             let json = #"{"version":1,"kind":"bolusStatus","requestId":"r1","\#(field)":5000}"#
@@ -140,11 +140,10 @@ final class RemoteCommandValidationTests: XCTestCase {
         }
     }
 
-    // MARK: - CX-G-08 (14-09, checkpoint #1/#4): dismissAck cross-field rule
+    // MARK: - dismissAck cross-field rule
     //
-    // A dismissAck carries no dedicated schema property (it reuses alertId/alertKind), so nothing in
-    // the JSON schema can require them — this Swift-only rule is the ONLY enforcement (T-14-27). See
-    // scripts/validate-schema-payloads.py's documented cross-field asymmetry note.
+    // A dismissAck reuses alertId/alertKind, so the JSON schema cannot require them — this Swift-only
+    // rule is the only enforcement.
 
     func testDismissAckMissingBothAlertFieldsRejected() {
         let json = #"{"version":1,"kind":"dismissAck","requestId":"r1"}"#

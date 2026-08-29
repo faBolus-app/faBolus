@@ -4,14 +4,8 @@ import faBolusCore
 import HistoryStore
 @testable import faBolus
 
-/// LOCK-03 boundary test (Phase 8, 08-01, Pitfall 2). Proves the pinned 24h retention is ACTUALLY
-/// APPLIED, not merely a locked-looking-but-inert setting: seeds a persisted `GlucoseHistoryStore`
-/// (via the `#if DEBUG` `setHistoryStoreForTesting` seam) with a sample older than the pin and a fresh
-/// sample, runs the SAME `model.applyRetention(days:)` call the new `App.swift` `.onAppear` launch
-/// call site performs, and asserts the stale sample is pruned while the fresh one survives.
-/// `AppModel.applyRetention(days:)` itself is byte-identical (D-08) — this test proves the NEW caller
-/// (App.swift) + the pinned value together actually enforce the lock, closing the gap Pitfall 2 warns
-/// about (`DataHistoryView.swift`, the only prior caller, is deleted this same plan).
+/// The pinned 24h history retention must actually prune samples older than the window, not sit as an
+/// inert setting.
 @Suite(.serialized) @MainActor
 struct HistoryRetentionAppliedBoundaryTests {
 
@@ -45,7 +39,7 @@ struct HistoryRetentionAppliedBoundaryTests {
         #expect(before.count == 2, "both seeded samples must be present before applyRetention runs")
 
         // The SAME call the new App.swift launch call site performs.
-        #expect(AppSettings.shared.historyRetentionDays == 1)   // LOCK-03 pin: 24h == 1 day
+        #expect(AppSettings.shared.historyRetentionDays == 1)   // 24h == 1 day
         model.applyRetention(days: AppSettings.shared.historyRetentionDays)
 
         let after = model.storedGlucoseForTesting(in: (now.addingTimeInterval(-72 * 3600))...now)
@@ -53,9 +47,8 @@ struct HistoryRetentionAppliedBoundaryTests {
         #expect(after.first?.mgdl == 120, "the fresh (1h) sample must survive")
     }
 
-    /// A retention of 0 ("keep everything" — the pre-Phase-8 fallback) must remain a no-op, proving
-    /// `applyRetention`'s own `guard days > 0` semantics are unaffected by this phase's pin (the pin
-    /// changes WHAT value is passed in, never how the guarded method interprets it).
+    /// A retention of 0 ("keep everything") must remain a no-op: `applyRetention`'s `guard days > 0`
+    /// is unaffected by which value the pin passes in.
     @Test func applyRetentionIsANoOpForTheKeepEverythingValue() throws {
         let model = try makeModelWithInMemoryHistory()
         let now = Date()

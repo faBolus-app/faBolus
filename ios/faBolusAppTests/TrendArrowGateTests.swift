@@ -4,17 +4,7 @@ import TandemMessages
 import TandemBLE
 @testable import faBolus
 
-/// E8 regression. The pump's `HomeScreenMirrorResponse` trend icon is the AUTHORITATIVE arrow — including
-/// its explicit "no arrow" state, which the client-side `CurrentEgvGuiDataV2Response.trendRate` derivation
-/// cannot express. The prior guard (`snapshot.trend.isEmpty` only) conflated "pump says no arrow" ("") with
-/// "not polled yet", so a valid EGV frame overwrote the pump's authoritative empty with a derived arrow —
-/// the exact E8 symptom ("app shows an arrow when the pump shows none"), reproduced on every surface that
-/// reads `snapshot.trend`.
-///
-/// The fix gates the derived fallback on "the pump trend was never received", so it is a cold-start bridge
-/// only. These pin: (1) an explicit pump no-arrow is never overwritten; (2) a real pump arrow is never
-/// overwritten by a conflicting derived one; and (3) the legitimate pre-first-mirror fallback still works
-/// (so the fix didn't silently delete it).
+/// Pins that the pump HomeScreenMirror trend icon is authoritative, including explicit no-arrow. A derived EGV rate must not overwrite that empty with an arrow, or every surface that reads `snapshot.trend` disagrees with the pump.
 @Suite(.serialized) @MainActor
 struct TrendArrowGateTests {
     private func backend() -> TandemBackend { TandemBackend(testTransport: FakePumpTransport()) }
@@ -26,8 +16,8 @@ struct TrendArrowGateTests {
         // The pump explicitly shows NO arrow…
         b.injectStatusFrameForTesting(FakePumpTransport.homeScreenMirror(trendIconId: noArrow))
         #expect(b.snapshot.trend == "")
-        // …then a valid EGV frame arrives whose rate WOULD derive a rising arrow. It must NOT overwrite
-        // the pump's authoritative empty (this is the E8 defect).
+        // …then a valid EGV frame arrives whose rate would derive a rising arrow. It must not overwrite
+        // the pump's authoritative empty.
         b.injectStatusFrameForTesting(FakePumpTransport.currentEgvV2(mgdl: 120, trendRate: 30))
         #expect(b.snapshot.trend == "", "the pump's explicit no-arrow must survive a later EGV frame")
     }

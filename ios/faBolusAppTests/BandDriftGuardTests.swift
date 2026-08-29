@@ -2,31 +2,8 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// **SC2/SC3 drift-guard (Phase 09.1, D-06; T-09.1-10/T-09.1-11).** Proves the Plan 01-04 extraction is
-/// SELF-ENFORCING: no production surface outside `faBolusDesign`/`faBolusCore` may hardcode a raw
-/// band-color literal inside a function/property that classifies a glucose band. Modeled on this repo's
-/// two existing Phase-7 boundary suites — `NudgeDeliveryBoundaryTests.balancedFunctionBody` (the
-/// brace-balance slicer) and `LiveActivityBoundaryTests.allSwiftFiles(under:)` (the repo-wide `.swift`
-/// enumerator) — reused here rather than reinvented (09.1-RESEARCH.md "Code Examples").
-///
-/// Two independent prongs (09.1-RESEARCH.md Pitfall 4 — a whole-file/whole-function raw-color ban
-/// false-positives on ~20+ legitimate, unrelated raw-color sites already in this repo: staleness
-/// captions, pairing/auth status, bolus-outcome tint, generic error text):
-///
-/// 1. **Forward scan** — locate every band-classification entry point (`GlucoseRange.classify(`,
-///    `.rangeCategory`, `WidgetSnapshot.rangeCategory(`) in production source, slice the SMALLEST
-///    brace-balanced block already open around that line, and assert the slice is free of raw
-///    band-color identifiers. Scoping to the SMALLEST enclosing block — not the whole outer function,
-///    as the RESEARCH's own sketch implies — matters here: `StatusRingView.content(now:)` and
-///    `WatchGlanceView.body` both contain a classify call inside one small
-///    `if present == .fresh { ... }` block AND an unrelated, legitimate raw `.orange` SIBLING statement
-///    later in the SAME outer function (a failover badge / a stale-age caption — neither classifies a
-///    band). A function-level slice would false-positive on those two real sites; a block-level slice,
-///    scoped to whatever brace is innermost-open at the moment the classify line is reached, does not —
-///    the sibling statement's own braces open only AFTER the classifying block has already closed, so
-///    they are never part of the same slice.
-/// 2. **Deletion-assertion** — the concrete duplicate-classifier sites this phase deleted (Plans
-///    01-05; 09.1-RESEARCH.md "Summary count") are confirmed gone from production source.
+/// Production surfaces must not hardcode band colors next to classify; glucose color is
+/// display-only and must stay in the one sanctioned mapping.
 struct BandDriftGuardTests {
 
     // MARK: - Scan vocabulary
@@ -37,11 +14,8 @@ struct BandDriftGuardTests {
         "GlucoseRange.classify(", ".rangeCategory", "WidgetSnapshot.rangeCategory(",
     ]
 
-    /// Forbidden raw `Color` identifiers inside a classifying block, outside `faBolusDesign`/
-    /// `faBolusCore` (the two modules that own the ONE sanctioned mapping,
-    /// `faBolusDesign.AppTheme.glucoseColor`). These are the exact four bare system colors every
-    /// surface's now-deleted local switch used (09.1-RESEARCH.md "Deprecated/outdated"), plus a raw
-    /// literal-RGB constructor.
+    /// Forbidden raw Color identifiers inside a classifying block. Glucose color is display-only
+    /// and must stay in `AppTheme.glucoseColor`.
     static let forbiddenRawBandColors = [".red", ".green", ".yellow", ".orange", "Color(red:"]
 
     // MARK: - Repo enumeration (mirrors LiveActivityBoundaryTests' idiom)
@@ -61,15 +35,8 @@ struct BandDriftGuardTests {
         return nil
     }
 
-    /// Recursively enumerate every production `.swift` file under `root`, skipping build artifacts,
-    /// any `*Tests` directory (this file's own directory included — its `forbiddenRawBandColors`/
-    /// `bandClassificationEntryPoints` string constants are the scan's NEEDLES, not something to scan),
-    /// and `faBolusDesign`/`faBolusCore` — the two modules that own the one sanctioned classifier +
-    /// color mapping and are explicitly out of this scan's scope (D-06's own wording: "outside
-    /// faBolusDesign/faBolusCore"). `.skipsHiddenFiles` already drops dotfile dirs (`.git`, `.build`,
-    /// `.claude`, `.gsd`, any stale sibling git worktree checked out under a hidden dir) — the explicit
-    /// list below is belt-and-suspenders for non-hidden build/dependency directories, mirroring
-    /// `LiveActivityBoundaryTests.allSwiftFiles(under:)` verbatim plus the two package exemptions.
+    /// Production `.swift` files, skipping tests and the two modules that own the sanctioned
+    /// classifier (`faBolusDesign`/`faBolusCore`).
     private static func allSwiftFiles(under root: URL) -> [URL] {
         let fm = FileManager.default
         let skipDirNames: Set<String> = [
@@ -90,11 +57,7 @@ struct BandDriftGuardTests {
         return results
     }
 
-    /// Strip `//`-style line comments — necessary because several production files' OWN doc comments
-    /// legitimately name the deleted symbols/forbidden identifiers in prose (explaining what must never
-    /// reappear in CODE; see e.g. `mac/faBolusMac/MacComponents.swift`'s doc comment naming
-    /// `RemoteClientModel.band`), so an unstripped scan would false-positive on those doc comments.
-    /// Same technique as `LiveActivityBoundaryTests.stripLineComments`.
+    /// Strip line comments so a scan does not false-positive on docs that name forbidden tokens.
     private static func stripLineComments(_ source: String) -> String {
         source.split(separator: "\n", omittingEmptySubsequences: false).map { line -> String in
             if let idx = line.range(of: "//") { return String(line[..<idx.lowerBound]) }
@@ -139,13 +102,9 @@ struct BandDriftGuardTests {
         return collected.joined(separator: "\n")
     }
 
-    // MARK: - Prong 1: forward scan (SC2)
+    // MARK: - Forward scan
 
-    /// Every function/computed-property that classifies a glucose band, anywhere in production source
-    /// outside `faBolusDesign`/`faBolusCore`, must not ALSO hardcode a raw band-color literal in the
-    /// same immediate block. Also a loud-not-vacuous guard (mirrors
-    /// `RescueCarbGuardTests`/`LiveActivityBoundaryTests`' own `scanned > 0` pattern): a path/regex
-    /// regression must fail loudly, not pass by scanning nothing.
+    /// A classifying block must not hardcode a raw band color. Fail loudly if the scan finds nothing.
     @Test func noRawBandColorInsideAnyClassifyingBlockOutsideDesignOrCore() throws {
         let repoRoot = try #require(Self.repoRootURL(),
                                      "could not resolve repo root from #filePath=\(#filePath)")
@@ -178,38 +137,14 @@ struct BandDriftGuardTests {
                 "expected to find at least one band-classifying block under \(repoRoot.path) — scan broke (would otherwise pass vacuously)")
     }
 
-    /// Pins the scan's scope boundary (09.1-RESEARCH.md Open Questions #1/#2, Assumptions A2/A3):
-    /// the AGP 5-way Time-in-Range bar (`StatsCardView.tirBar`, classifies via `GlucoseStatistics`
-    /// percentages, not `GlucoseRange`) and the glucose chart scatter-points (`GlucoseChartView.body`,
-    /// `WatchChartView.body`, `MacComponents.MacChartView`, all coloring per-point via
-    /// `AppTheme.glucoseColor` directly with no local classify call) are deliberately OUT of D-01..D-07's
-    /// scope and must NOT be flagged. This documents + freezes today's boundary — if a future refactor
-    /// wires either surface through a sanctioned entry point directly, the forward scan above starts
-    /// covering it automatically; until then, this test proves they aren't silently exempted by a
-    /// scan bug rather than by design (each of these declarations genuinely contains zero sanctioned
-    /// entry points today).
-    ///
-    /// **Phase 17 (D2-03) update:** this pin's scope is unchanged and still correct — `tirBar` still
-    /// contains zero `bandClassificationEntryPoints` triggers even after being routed through
-    /// `AppTheme.veryLow/.low/.inRange/.high/.veryHigh`. What changed is that the raw-literal ban now
-    /// ALSO applies to `tirBar` directly, via the new `noRawBandColorInStatsCardViewTirBar` test below
-    /// (a second, independent scan keyed off `tirBar`'s signature rather than a classify-entry-point
-    /// trigger) — so `tirBar` is simultaneously out of THIS pin's forward-scan trigger scope and inside
-    /// the raw-literal ban's coverage, closing the gap D2-03 found without touching this pin's own
-    /// boundary claim.
+    /// `tirBar` and the chart scatter points color via `AppTheme` with no local classify call, so
+    /// they stay out of the classify-entry-point scan by design, not a scan bug.
     @Test func agpBarAndChartScatterPointsContainNoDirectClassifyEntryPoint() throws {
         let repoRoot = try #require(Self.repoRootURL(),
                                      "could not resolve repo root from #filePath=\(#filePath)")
         let pins: [(file: String, signature: String)] = [
             ("ios/faBolus/Views/StatsCardView.swift", "func tirBar("),
             ("ios/faBolus/Views/GlucoseChartView.swift", "var body: some View {"),
-            // Phase 3 (03-01, D-01/D-06 out-of-scope fix): mac/faBolusMac/MacComponents.swift (and its
-            // `MacChartView`) was git rm'd from main entirely in the Mac-remote delete-on-main plan —
-            // preserved on dev/mac. Removed from this pin list rather than left dangling (a read against
-            // a path that no longer exists on main would throw, not fail the intended assertion).
-            // Phase 3 (03-03, REMOTE-03): watch/faBolusWatch/WatchChartView.swift was git rm'd from main
-            // entirely in the Watch-remote delete-on-main plan — preserved on dev/watch-remote. Removed
-            // from this pin list for the same reason as MacChartView above.
         ]
         for pin in pins {
             let url = repoRoot.appendingPathComponent(pin.file)
@@ -223,14 +158,8 @@ struct BandDriftGuardTests {
         }
     }
 
-    /// **Phase 17 (D2-03), NEW — not the exemption pin above.** The pin at
-    /// `agpBarAndChartScatterPointsContainNoDirectClassifyEntryPoint` only proves `tirBar` contains no
-    /// `bandClassificationEntryPoints` trigger (it classifies via `GlucoseStatistics` percentages, not
-    /// `GlucoseRange.classify`/`.rangeCategory`) — that pin still holds and is orthogonal to this
-    /// assertion. This test bans the same `forbiddenRawBandColors` directly inside `tirBar`'s own
-    /// balanced-brace body regardless of the classify-entry-point trigger, so the five raw
-    /// `.red`/.orange/.green/.yellow/`Color.yellow.opacity` band literals (D2-03) cannot resurface once
-    /// routed through `AppTheme.veryLow/.low/.inRange/.high/.veryHigh`.
+    /// `tirBar` classifies via percentages, not `GlucoseRange.classify`, so it is also scanned
+    /// directly: raw band-color literals must not resurface there.
     @Test func noRawBandColorInStatsCardViewTirBar() throws {
         let repoRoot = try #require(Self.repoRootURL(),
                                      "could not resolve repo root from #filePath=\(#filePath)")
@@ -267,13 +196,9 @@ struct BandDriftGuardTests {
         }
     }
 
-    // MARK: - Prong 2: deletion assertion (SC1/D-03)
+    // MARK: - Deleted duplicate classifiers must not return
 
-    /// The concrete duplicate-classifier sites this phase deleted (Plans 01-05) are confirmed gone from
-    /// production source. `MacTheme.swift` is checked by file-existence (the whole file was deleted,
-    /// 09.1-04); the rest are checked by their EXACT original signature text (captured from git history
-    /// at the commit immediately before each deletion), so a future re-addition under the same name is
-    /// caught even if the body changes.
+    /// Duplicate band-color classifiers deleted from production must stay gone.
     @Test func legacyBandColorDuplicateSitesAreAllDeleted() throws {
         let repoRoot = try #require(Self.repoRootURL(),
                                      "could not resolve repo root from #filePath=\(#filePath)")

@@ -3,14 +3,8 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// Debug session `pump-pairing-loop-api25` — DEEP-REVIEW WR-04 (remote/widget transparency parity).
-///
-/// Guardrail B's contract (Models.swift): the CONFIRMED-ready PRESENTATION must read `cartridgeReadiness`,
-/// never the fail-open `cartridgeReadyForBolus` bool (which is `true` for `.unknown`). The Debug menu
-/// already follows this, but the widget snapshot and the `RemoteCommand.cartridgeReady` relayed to
-/// Garmin/Watch/Mac still mirrored the fail-open bool — so an op-20-excluded pump PRESENTED a fail-open
-/// "ready" from a state that was never read. WR-04 maps `.unknown` to a NON-POSITIVE presentation on both
-/// wires. The dose-path BLOCK decision (`cartridgeReadyForBolus`, used by `BolusGate`) is UNCHANGED.
+/// Widget and remote presentation of cartridge readiness must not show fail-open "ready" for .unknown.
+/// The dose-path block (`cartridgeReadyForBolus`) is unchanged.
 @Suite(.serialized) @MainActor
 struct CartridgeReadinessRemotePresentationTests {
 

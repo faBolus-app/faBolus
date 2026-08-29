@@ -1,15 +1,8 @@
 import XCTest
 @testable import faBolusCore
 
-/// v3 handoff §5.3: `transferUserInfo` is a guaranteed, FIFO, opportunistic-latency queue and must
-/// **never** carry a bolus — *"A stale queued bolus could deliver minutes later."* Before this fix
-/// the (now-retired) WatchConnectivity transport's `send` fell back to it for every command, including
-/// `.bolusRequest`, both when the peer was unreachable and when the live send errored.
-///
-/// The former WatchConnectivity transport owned a non-injectable `WCSession.default` and only compiled
-/// where WatchConnectivity exists, so the *rule* lives in `RemoteSendDisposition` and is pinned here.
-/// What these tests do NOT cover: that `BLELink` actually calls it — that is a one-line read of its
-/// `send`.
+/// Mutating remote commands must never be queued: a stale queued bolus could deliver minutes later.
+/// The rule lives in RemoteSendDisposition so it can be pinned without a live WatchConnectivity session.
 final class RemoteSendDispositionTests: XCTestCase {
 
     /// Every command that reaches the pump, or authorizes something that does.

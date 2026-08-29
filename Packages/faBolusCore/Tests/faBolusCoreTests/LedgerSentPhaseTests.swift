@@ -1,16 +1,8 @@
 import XCTest
 @testable import faBolusCore
 
-/// Round-3 §5 introduced an explicit `sentToPump` phase so reconciliation stops inferring "never sent"
-/// from a missing bolus id. These tests pin the invariant that made that safe:
-///
-/// **A bolus id implies `sentToPump`.** The pump is the only thing that mints an id, so an id can only
-/// exist after a pump write. If the two can disagree, `unreconciled()` reports an id-bearing record as
-/// not-sent, the host auto-clears the global delivery block, and a dose that may have landed stops
-/// blocking a second one.
-///
-/// This is a regression suite: the first version of the phase change set `sentToPump` only in
-/// `markSent`, so `markDelivering(bolusId:)` produced exactly that disagreement.
+/// A bolus id implies `sentToPump`. If they disagree, unreconciled() can auto-clear the global delivery
+/// block on a dose that may have landed.
 final class LedgerSentPhaseTests: XCTestCase {
 
     func testMarkDeliveringWithABolusIdImpliesSentToPump() {

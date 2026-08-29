@@ -4,19 +4,8 @@ import TandemMessages
 import TandemBLE
 @testable import faBolus
 
-/// CX-F-04 regression: a transient op77 `ErrorResponse` on `PumpReadScheduler.alertRead()`'s burst
-/// (`AlertStatusRequest`, `AlarmStatusRequest`, `CGMAlertStatusRequest`, `ReminderStatusRequest`,
-/// `MalfunctionStatusRequest`; 5 total — tslim-reconnect-loop Phase B removed the CC-10 AAM requests from
-/// this burst) must never durably blacklist the CGM-alert mirror. Mirrors the
-/// EXISTING `doseInputReadOpcodes` (R2-10) precedent exactly (see `PumpUnsupportedReadSelfHealTests`/
-/// `PumpLearnedOpcodePersistenceTests`): op74 `CGMAlertStatusRequest` is the confirmed mechanism finding
-/// (CONTEXT.md "Q. CX-F-04"), and its burst-mates share the IDENTICAL exposure — all five are sent
-/// back-to-back with no per-message throttling inside `alertRead()`, so `resolveErrorResponse`'s txId-echo/
-/// FIFO backstop can mis-correlate a single transient error (MESSAGE_BUFFER_FULL / CRC_MISMATCH /
-/// TRANSACTION_ID_MISMATCH — never `BAD_OPCODE`, per the documented API-2.5 `UNDEFINED_ERROR(0)` pairing-loop
-/// fix this must not break) to ANY opcode still outstanding in that same burst. All five are therefore held
-/// out of the durable store, re-probed every connect, and (op74 only, per Task 2) disclosed via
-/// `safetyDegradedNotes` when currently unavailable.
+/// Pins that a transient ErrorResponse on the unthrottled alert-read burst never durably blacklists those
+/// opcodes. A permanent skip would silence the CGM-alert mirror (and its burst-mates) after a one-shot buffer, CRC, or txId mismatch.
 @Suite(.serialized) @MainActor
 struct PumpBadOpcodeReprobeTests {
 
@@ -83,10 +72,7 @@ struct PumpBadOpcodeReprobeTests {
         #expect(dispatched.contains(cgmAlertOpcode), "op74 must be RE-SENT on the next connection cycle")
     }
 
-    /// Widened scope (CONTEXT.md "Q. CX-F-04"): op74's burst-mates share the identical unthrottled-burst
-    /// exposure, so they must ALSO never reach the durable store. (tslim-reconnect-loop Phase B removed the
-    /// 2 CC-10 AAM requests from this burst — they are no longer burst-mates and `alertRead()` never sends
-    /// them; the static registry seeds op120/op146 via `formUnion` and never persists them regardless.)
+    /// Burst-mates share the same unthrottled-burst exposure, so they must also never reach the durable store.
     @Test func alertReadFamilyBurstMatesAreNeverDurablyPersisted() {
         let (store, suite, defaults) = isolatedStore()
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -120,7 +106,7 @@ struct PumpBadOpcodeReprobeTests {
                 "op74 must not be re-dispatched again this connection-lifetime")
     }
 
-    // MARK: - Test 3 (dose-input parity): R2-10's doseInputReadOpcodes are unaffected by this change
+    // MARK: - Dose-input allowlist is unaffected by the alert-read never-blacklist
 
     @Test func doseInputReadOpcodesRemainUnchangedByTheAlertReadOpcodesAddition() {
         let iob = ControlIQIOBRequest.props.opCode                 // op108
@@ -149,7 +135,7 @@ struct PumpBadOpcodeReprobeTests {
         #expect(dispatched.contains(iob), "op108 must still be RE-SENT on the next connection cycle")
     }
 
-    // MARK: - Task 2: a current-session op74 skip is disclosed via safetyDegradedNotes
+    // MARK: - A current-session op74 skip is disclosed via safetyDegradedNotes
 
     @Test func aSkippedOp74IsDisclosedInSafetyDegradedNotes() {
         #expect(PumpReadCatalog.safetyRelevantReadOpcodes.contains(cgmAlertOpcode),

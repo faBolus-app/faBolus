@@ -2,26 +2,9 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// C6-02 (13-05): `WidgetBolusReceiver` registers TWO Darwin (CFNotificationCenter) observers whose C
-/// callbacks capture nothing — they run independently of Swift ARC and, unless explicitly removed with
-/// the exact `center`/`observer` pair used to register them, keep firing (re-posting a Foundation
-/// notification) even after the owning `WidgetBolusReceiver` instance is deallocated. Before this fix
-/// the receiver never removed anything (not even its own block-observer tokens, which weren't retained),
-/// so a re-created instance — e.g. after a scene teardown/re-appear — would leave the DEALLOCATED
-/// instance's Darwin registration live alongside the new one, and a single Darwin post from the widget
-/// would re-post the bridged Foundation notification an EXTRA time, driving `handlePending()`/the cancel
-/// path twice for one tap.
-///
-/// This suite proves the fix behaviorally on the real, cross-process Darwin notification bus — not a
-/// grep for `deinit` — by posting the actual Darwin notification and measuring how many EXTRA Foundation
-/// reposts each live-vs-deallocated receiver contributes per post.
-///
-/// Ambient-baseline note: these tests run hosted inside the real `faBolus` app (an app-target test
-/// bundle), whose own `RootContainerView.onAppear` (`App.swift`) constructs a real, long-lived
-/// `WidgetBolusReceiver` of its own for the whole test session — so a naive "exactly one repost" count
-/// would be off by however many ambient listeners are already registered. Every assertion below is
-/// stated as a DELTA relative to a freshly-measured ambient baseline (two posts, before touching any
-/// receiver of our own), so the test is correct regardless of that ambient contamination.
+/// Deinit must remove both Darwin observers; otherwise a re-created receiver double-dispatches one
+/// widget tap onto `handlePending()` / cancel. Counts are deltas against the ambient app-hosted
+/// receiver so a naive "exactly one repost" assertion cannot pass.
 @MainActor
 @Suite(.serialized) struct WidgetBolusReceiverLifecycleTests {
 

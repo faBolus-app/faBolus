@@ -4,25 +4,8 @@ import TandemMessages
 import TandemBLE
 @testable import faBolus
 
-/// Debug session `pump-pairing-loop-api25` — HARDENING PASS Guardrail A (SCOPE GUARD).
-///
-/// mechanism B / `badOpcodes` governs ONLY CURRENT_STATUS reads (`PumpReadScheduler.sendStatusRead`). The
-/// delivery/control WRITE path (`deliverBolus`/`deliverExtendedBolus`/`sendControl` →
-/// `PumpTransactionCoordinator`, on the `.control` characteristic) must NEVER be suppressed by `badOpcodes`.
-/// This suite locks that "B can only ever drop a READ, never a delivery command" property by construction —
-/// at every entry point to `badOpcodes` (the `named`-cargo insert path, the on-demand/FIFO correlation, and
-/// the durable-store hydration/persist).
-///
-/// **The opcode-space collision this must respect.** Raw request opcodes are reused across characteristics:
-/// op164 is `SetTempRateRequest` (`.control` WRITE) AND `LastBolusStatusV2Request` (`.currentStatus` READ);
-/// op144 is `EnterChangeCartridgeModeRequest` (WRITE) AND `CurrentBatteryV2Request` (READ). `badOpcodes` is
-/// characteristic-blind (raw `UInt8`), so the exclusion set (`PumpReadCatalog.deliveryControlWriteOpcodes`)
-/// is the delivery/control set MINUS the read-colliding opcodes — otherwise excluding op164/op144 would
-/// break those READS' legitimate self-heal. A colliding opcode in `badOpcodes` is still safe: it suppresses
-/// only the `.currentStatus` read; the `.control` write path never consults `badOpcodes`.
-///
-/// `PumpTransactionCoordinator` is OUT of scope (09.11) — this suite asserts ABOUT the boundary, it does not
-/// touch the coordinator. The TandemKit pin stays HELD (1a09dba).
+/// `badOpcodes` may suppress currentStatus reads only — never a delivery/control write — even when
+/// the same raw opcode is reused across characteristics (op164/op144).
 @Suite(.serialized) @MainActor
 struct PumpDeliveryOpcodeScopeGuardTests {
 
@@ -55,11 +38,9 @@ struct PumpDeliveryOpcodeScopeGuardTests {
             "the read-only never-resend set and the delivery/control-write set must be disjoint")
     }
 
-    /// R2-10 (CR-02): the dose-input READ allowlist (op108 IOB / op115 therapy) must be DISJOINT from the
-    /// delivery/control-WRITE guard set — a dose-input read is a CURRENT_STATUS read, never a delivery
-    /// command, so the two sets can never reclassify each other. It must also be a SUBSET of the read set
-    /// (the only opcodes that may legitimately enter `badOpcodes`). This is what lets the write-opcode
-    /// fail-closed guardrail and the dose-input re-probe allowlist coexist without interfering.
+    /// The dose-input READ allowlist (op108 IOB / op115 therapy) must be disjoint from the
+    /// delivery/control-WRITE guard set and a subset of the currentStatus read set, so the write
+    /// fail-closed guardrail and the dose-input re-probe allowlist cannot reclassify each other.
     @Test func doseInputReadSetIsDisjointFromDeliveryWritesAndIsASubsetOfReads() {
         #expect(!PumpReadCatalog.doseInputReadOpcodes.isEmpty)
         #expect(PumpReadCatalog.doseInputReadOpcodes

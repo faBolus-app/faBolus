@@ -5,43 +5,9 @@ import TandemMessages
 import TandemBLE
 @testable import faBolus
 
-/// Phase 09 (D-01, gaps B3/B4/B5 —
-/// `.planning/phases/09-god-object-refactor-appmodel-tandembackend-extraction/`). Wave 1 guard tests for
-/// Target B's RESPONSE-driven read chains — the follow-up sends `TandemBackend`'s `didReceiveFrame`
-/// delegate switch triggers off an incoming frame, not off a poll tick — plus the predictive-burst
-/// lifecycle. These close the three remaining Target-B gaps the analyzer found MISSING (D-06/D-07)
-/// before Wave 4's response-applier extraction lands.
-///
-/// - B3 (IDP cascade): `ProfileStatusResponse` → N `IDPSettingsRequest` (one per present idp id);
-///   `IDPSettingsResponse` → M `IDPSegmentRequest` (one per segment, only while that profile is being
-///   viewed). **Production note**: both send sites (`TandemBackend.swift`'s `ProfileStatusResponse`/
-///   `IDPSettingsResponse` cases) used to call `client.send(...)` directly — the real, un-fakeable
-///   `PumpBLEClient` — instead of the injectable `tx` seam `sendStatusRead()`/the `HistoryLogStatusRequest`
-///   cases already use. `client.send` always throws `.notReady` with no live `CBCentralManager` (see
-///   `PumpEgvPollTests`'s own doc comment: "there is no live CBCentralManager... the injected
-///   FakePumpTransport never sees them"), and — unlike `sendStatusRead()` — these two call sites never
-///   fired `onReadDispatchedForTesting` either, so gap B3 had NO observation point at all, by either
-///   mechanism. Phase 09.2 Task 3 routes both sites through `tx` instead (`tx == client` whenever no test
-///   transport is injected — i.e. always, in production — so this is byte-identical wire behavior with
-///   the SAME defaults `client.send` itself used), exactly mirroring the pattern the very next case
-///   (`TimeSinceResetResponse` → `HistoryLogStatusRequest`) already used. This is the ONLY reason this
-///   suite's `git diff` on `TandemBackend.swift` is not empty for gap B3 — see 09-02-SUMMARY.md's
-///   Deviations section for the full account. `setViewedProfileIdForTesting` (also added) avoids routing
-///   through the real `refreshProfileSegments(idpId:)`, which is `async`, requires a live connection, and
-///   burns a real 1.4s `Task.sleep`.
-/// - B4 (history cascade): an unsolicited `TimeSinceResetResponse` triggers `HistoryLogStatusRequest` at
-///   most ONCE per BLE connection lifetime (`historyStatusRequestedThisConnection`); a subsequent
-///   `HistoryLogStatusResponse` with `numEntries > 0` starts a gap sync (`historySyncState == .syncing`);
-///   `numEntries == 0` resolves an OPTIMISTIC `.syncing` (armed by `triggerManualHistorySync()`) back to
-///   `.idle`. No production change — `HistoryLogStatusRequest already goes through the injectable `tx`.
-/// - B5 (predictive burst): an EGV reading whose pump timestamp ADVANCES schedules a predictive-burst
-///   deadline; a LATER advancing reading reschedules it forward; a non-advancing reading does not
-///   reschedule it; `runPredictiveBurst()` (the burst's own recurring kick) does not dispatch while
-///   disconnected — one of `runPredictiveBurst()`'s two documented stop conditions (the OTHER being the
-///   real recurring `Timer`'s own deadline check, which this suite does not wait out — that would need
-///   either a real ~10s wall-clock wait or a clock-injection seam this plan does not add). Needed one new
-///   read-only test accessor, `predictiveBurstDeadlineForTesting` (mirrors `pollTimerIsActiveForTesting`'s
-///   existing shape/precedent exactly), since nothing previously exposed the scheduled deadline.
+/// Pins response-driven IDP, history, and predictive-burst chains through the injectable transport
+/// so a pump rejection fail-closes instead of hammering, and an untrusted EGV timestamp stays
+/// stale-CGM (never stamped now onto the dose path).
 @Suite(.serialized) @MainActor
 struct ReadCascadeChainingGuardTests {
 

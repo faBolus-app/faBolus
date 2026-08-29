@@ -2,72 +2,29 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// **D-05 full-surface regression guard (Phase 09.29, Plan 05 teardown).** Proves the deletion of the
-/// confusing good/bad `BandIndicator` glyph — swept across ALL eight glucose surfaces by waves 01-04 —
-/// is SELF-ENFORCING going forward, and that each surface's real CGM trend arrow survives the edit.
-/// Started as a one-surface tracer scaffold in 09.29-01 (scoped to `StatusRingView.swift` only);
-/// expansion waves 02-04 swept the remaining call sites; this teardown wave widens the scan to the full
-/// eight-surface list per 09.29-DIAGNOSIS.md §A, now that `GlucoseRange.symbolName` and
-/// `BandIndicator.swift` are deleted (09.29-05 Task 1). Modeled on `BandDriftGuardTests`' repo-walk-up +
-/// loud-not-vacuous idiom (09.29-CONTEXT.md D-05).
-///
-/// The scan needles are DELIBERATELY narrow: the shared glyph view's instantiation (`BandIndicator(`)
-/// and the glucose band-symbol expression forms (`band.symbolName` / `band?.symbolName`) — NEVER a bare
-/// `symbolName` grep. `ClinicianTierAck`/`StoredSettingChange` own an unrelated `symbolName` used in
-/// `SettingChangeLogView.swift` and `PumpWizardViews.swift` (name collision; neither file is in the
-/// pinned surface list below) — a bare-string needle would false-positive on those.
-///
-/// WR-02 (09.29 review) — the needle list ALSO forbids a hardcoded, ternary-selected reintroduction of
-/// one of the four literal SF Symbol strings the deleted `GlucoseRange.symbolName` used to produce
-/// (`bandGlyphSymbolNeedles` below), catching a differently-named reintroduction of the same confusing
-/// good/bad-glyph pattern, not just a literal `BandIndicator` type. That check is scoped to lines that
-/// ALSO contain a ternary (`?` … `:`) — a band-conditioned glyph CHOICE — so it does not false-positive
-/// on legitimate, unconditional, unrelated uses of the same common SF Symbols. (Historical note: two of
-/// the original eight pinned files — `mac/faBolusMac/MacComponents.swift`'s `MacAlertsView` pump-alert
-/// triangle and `mac/faBolusMacWidgets/FaBolusMacWidgetBundle.swift`'s `MacQuickBolusWidget`
-/// delivered/failed status icons — were the motivating false-positive case for this ternary scoping;
-/// both were git rm'd from `main` in Phase 3's Mac-remote delete-on-main plan (03-01) and removed from
-/// `pinnedSurfaces` below — out-of-scope fix, see 03-02-SUMMARY.md.)
-///
-/// CR-01 (09.29 review): `everyPinnedSurfaceSpeaksTheZoneWordToVoiceOver` below additionally guards
-/// the VoiceOver zone-word regression this review found — 5 of the 8 pinned surfaces had NO
-/// accessibility mechanism for the band other than the now-deleted `BandIndicator`'s own
-/// `.accessibilityLabel(shortLabel)`, and lost the spoken cue entirely when it was deleted with no test
-/// catching the gap. This is a text-scan proxy (proves `.shortLabel` feeds SOME
-/// `.accessibilityLabel`/`.accessibilityValue` in the file), not full UI-tree/snapshot verification —
-/// the review's own words: "the existing text-scan guard can't verify accessibility wiring."
+/// Pins that glucose surfaces never reintroduce a good/bad band glyph; trend arrows and VoiceOver
+/// zone words stay, because display-only must never look like a dose-quality signal.
 struct GlucoseStatusGlyphGuardTests {
 
     // MARK: - Scan vocabulary
 
-    /// The band-glyph forms this guard forbids inside a glucose surface. Deliberately NOT a bare
-    /// `symbolName` string — see file doc comment.
+    /// Forbidden band-glyph forms. Not a bare `symbolName` string — that collides with unrelated types.
     static let bandGlyphNeedles = [
         "BandIndicator(", "band.symbolName", "band?.symbolName",
     ]
 
-    /// WR-02: the four literal SF Symbol strings `GlucoseRange.symbolName` used to produce before its
-    /// deletion — forbidden ONLY on a line that also contains a ternary (`?`), see file doc comment.
+    /// Literal SF Symbols the deleted band glyph used — forbidden only on a line that also has a ternary.
     static let bandGlyphSymbolNeedles = [
         "arrow.down.circle.fill", "checkmark.circle.fill", "arrow.up.circle.fill", "exclamationmark.triangle.fill",
     ]
 
-    /// The real CGM trend-arrow tokens that must survive the band-glyph removal — every pinned surface
-    /// renders its trend through one of these three forms (09.29-05-PLAN.md Task 2).
+    /// Real CGM trend-arrow tokens that must survive; display-only, never a dose-quality signal.
     static let trendArrowNeedles = [".trend", "snap.trendArrow", "context.arrow"]
 
-    /// CR-01 GUARD: the VoiceOver zone word this guard now requires SOME accessibility annotation to carry.
+    /// VoiceOver zone word that some accessibility annotation must still carry.
     static let zoneWordNeedle = ".shortLabel"
 
-    /// The glucose surfaces the D-02 sweep (waves 01-04) touched, pinned BY PATH
-    /// (09.29-DIAGNOSIS.md §A table) — originally eight; six after Phase 3 (03-01) git rm'd
-    /// `mac/faBolusMac/MacComponents.swift` + `mac/faBolusMacWidgets/FaBolusMacWidgetBundle.swift` from
-    /// `main` (preserved on dev/mac) — out-of-scope fix, see 03-02-SUMMARY.md; four after Phase 3
-    /// (03-03) git rm'd `watch/faBolusWatch/WatchHUDView.swift` +
-    /// `watch/faBolusWatchWidgets/GlucoseComplication.swift` from `main` (preserved on dev/watch-remote,
-    /// REMOTE-03, delete-on-main) — same out-of-scope-fix posture as the Mac removal above; now three
-    /// after Phase 7 (07-01, FEAT-01) git rm'd `ios/faBolusWidgets/GlucoseLiveActivity.swift` from
-    /// `main` (preserved on dev/live-activity) — same out-of-scope-fix posture again.
+    /// Glucose surfaces the glyph must not reappear on.
     static let pinnedSurfaces = [
         "ios/faBolus/Views/StatusRingView.swift",
         "ios/faBolusWidgets/GlucoseWidget.swift",
@@ -124,17 +81,9 @@ struct GlucoseStatusGlyphGuardTests {
         return collected.joined(separator: "\n")
     }
 
-    /// WR-01 (09.29 review): splits a pinned surface's (comment-stripped) source into independent
-    /// "render blocks" — everything between one boundary line and the next — so a per-block trend-arrow
-    /// count can catch a future STRAY DUPLICATE render within the SAME block, without false-positiving
-    /// on the many pinned surfaces that legitimately render the trend arrow once EACH in several
-    /// separate blocks (e.g. `GlucoseWidget.swift`'s four `WidgetFamily` `case`s, or the now-removed
-    /// `GlucoseLiveActivity.swift`'s several independent region-backing `struct`s/`func`s it was
-    /// originally written against). A boundary is
-    /// any line (after trimming) that starts a new `case`/`default:` switch arm, or a new
-    /// `struct`/`func` declaration — the granularity at which "one render" is actually meaningful for
-    /// these files (confirmed by inspection: every pinned surface's trend-arrow renders each land in
-    /// their own such block today).
+    /// Splits a pinned surface into independent render blocks (case/default/struct/func) so a
+    /// per-block trend-arrow count can catch a stray duplicate without false-positiving on
+    /// WidgetFamily cases that each render the trend once.
     private static func splitIntoRenderBlocks(_ source: String) -> [String] {
         let lines = source.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         var blocks: [[String]] = [[]]
@@ -163,16 +112,9 @@ struct GlucoseStatusGlyphGuardTests {
 
     // MARK: - Tests
 
-    /// Prong 1 (glyph-gone): every pinned glucose surface, stripped of comments, must contain none of
-    /// `bandGlyphNeedles`, AND (WR-02) must not hardcode a ternary-selected literal SF Symbol string
-    /// from `bandGlyphSymbolNeedles` (the exact strings the deleted `GlucoseRange.symbolName` produced)
-    /// — catching a differently-named reintroduction of the same confusing good/bad-glyph pattern, e.g.
-    /// `Image(systemName: g < 70 ? "arrow.down.circle.fill" : "checkmark.circle.fill")`. The symbol
-    /// check requires a ternary (`?`) on the SAME line as the needle, so it does not false-positive on
-    /// this file set's two legitimate, unconditional, unrelated uses of these same common SF Symbols
-    /// (`MacComponents.swift`'s `MacAlertsView` pump-alert triangle, `FaBolusMacWidgetBundle.swift`'s
-    /// `MacQuickBolusWidget` delivered/failed status icons — see file doc comment). Loud-not-vacuous:
-    /// asserts the scanned count equals eight — the full pinned list, not a partial/broken scan.
+    /// Every pinned glucose surface must contain no band glyph, and must not hardcode a
+    /// ternary-selected band SF Symbol. Ternary scoping avoids false positives on unrelated uses
+    /// of the same common symbols. Scanned count must equal the pinned list, not a broken scan.
     @Test func noPinnedSurfaceContainsABandGlyph() throws {
         let repoRoot = try #require(Self.repoRootURL(),
                                      "could not resolve repo root from #filePath=\(#filePath)")

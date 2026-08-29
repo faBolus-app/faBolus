@@ -3,17 +3,8 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// Phase 9 (09-03, P-C): closes RESEARCH Pitfall 1 — deleting the `mockMobi` `BackendDescriptor`
-/// (`BackendRegistry.swift:16`) without ALSO patching `ConnectPumpOnboardingView`'s hardcoded
-/// demo-backend id would make `BackendRegistry.selected()`'s fallback-to-`enabled[0]` resolve the
-/// "Use a demo pump" button to the REAL `TandemBackend` on a device (not a Simulator surprise — a
-/// real-BLE surprise). Mirrors `CgmShareOnlyBoundaryTests`' registry-enumeration idiom
-/// (construction-time, no live BLE, no hardware dependency).
-///
-/// Do NOT weaken either `@Test` to "select() didn't throw" (the RESEARCH warning sign) — both
-/// assertions below are needed: `enabledContainsNoSimulatedMobi` is RED before the descriptor is
-/// deleted (mock-mobi still present), and `onboardingDemoIdResolvesToMockBackendNotTandem` proves
-/// the demo id resolves to a `MockBackend` TYPE, not merely a non-throwing call.
+/// Pins that Simulated Mobi is gone from the compiled backend set, and that the onboarding "demo pump"
+/// id resolves to MockBackend, never TandemBackend. Falling back to `enabled[0]` on a device would open real BLE.
 @MainActor
 struct BackendRegistryTests {
 
@@ -34,10 +25,8 @@ struct BackendRegistryTests {
         body()
     }
 
-    /// The onboarding demo id resolves to a `MockBackend` TYPE — never the real `TandemBackend`
-    /// (Pitfall 1). Red before the id patch: pre-fix `demoBackendId` was `"mock-mobi"`, so selecting
-    /// today's `"mock-tslim"` id would (pre-fix) have hit no descriptor at all and fallen back to
-    /// `enabled[0]`, which is `tandem` on a device.
+    /// The onboarding demo id resolves to a `MockBackend` type — never the real `TandemBackend`.
+    /// A missing id would fall back to `enabled[0]`, which is `tandem` on a device.
     @Test func onboardingDemoIdResolvesToMockBackendNotTandem() {
         withRestoredSelection {
             BackendRegistry.select(Self.demoBackendId)
@@ -52,8 +41,8 @@ struct BackendRegistryTests {
         }
     }
 
-    /// Simulated Mobi is fully removed — not merely hidden — from the compiled-in backend set
-    /// (MOBI-01, D-01); Simulated t:slim X2 survives as the simulator template.
+    /// Simulated Mobi is fully removed — not merely hidden — from the compiled-in backend set.
+    /// Simulated t:slim X2 survives as the simulator template.
     @Test func enabledContainsNoSimulatedMobi() {
         let ids = Set(BackendRegistry.enabled.map(\.id))
         #expect(!ids.contains("mock-mobi"), "Simulated Mobi must be removed from BackendRegistry.enabled")

@@ -2,14 +2,8 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// Phase 09.14 (D-01/WR-04) — `AppSettings.restoreOrder`'s `emptyMeansEmpty` parameter was originally
-/// added so the (now-removed) `liveActivityFields` restore path could distinguish "key absent" (`nil`
-/// → fall back to `all`) from "key present but `[]`" (→ honor the explicit empty selection). Live
-/// Activity, and this file's 3 `liveActivityFields`-specific tests, were removed in Phase 7 (07-01,
-/// FEAT-01) — renamed from `LiveActivityFieldsRestoreOrderTests.swift`. What remains is the
-/// non-regression coverage for the shared `restoreOrder` helper's OTHER 3 consumers
-/// (`detailsOrder`/`watchDetailsOrder`/`pillsOrder`), which keep falling back to their full list on a
-/// persisted `[]` and must never silently change that behavior.
+/// detailsOrder, watchDetailsOrder, and pillsOrder must keep falling back to their full list when a
+/// persisted [] is restored.
 struct RestoreOrderEmptyFallbackTests {
 
     private func freshSuiteName() -> String { "RestoreOrderEmptyFallbackTests.\(UUID().uuidString)" }

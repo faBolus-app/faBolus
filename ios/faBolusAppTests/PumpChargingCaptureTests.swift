@@ -5,15 +5,8 @@ import TandemMessages
 import TandemBLE
 @testable import faBolus
 
-/// Phase 09.27 Plan 01 (D-01/D-02/D-03) — the op-145 apply-site truthfulness guard. Mirrors
-/// `CartridgeReadinessFailClosedTests`'s apply-site pattern: drive a real, CRC'd frame through
-/// `TandemBackend.injectStatusFrameForTesting` (the REAL parse + `PumpResponseApplier.apply` path,
-/// no CoreBluetooth) and assert `snapshot.batteryCharging`.
-///
-/// jwoglom's V2 javadoc notes the extra V2 bytes (incl. `chargingStatus`) "often read 0" — the wire
-/// semantics of a genuine `chargingStatus == 1` are UNVERIFIED-GUESS (Phase-11 bench-gated). This
-/// suite proves the app-side capture is at least truthful and fail-closed: only a positive `== 1`
-/// ever reads as charging; every other/absent value reads as not-charging, never a false badge.
+/// Only chargingStatus == 1 applies as charging; every other or absent value fails closed. Wire
+/// semantics of a genuine == 1 remain unverified.
 @Suite(.serialized) @MainActor
 struct PumpChargingCaptureTests {
 
@@ -46,7 +39,7 @@ struct PumpChargingCaptureTests {
         #expect(!b.snapshot.batteryCharging)
     }
 
-    /// byte-2 == 2 / 255 (any non-1 value) -> `batteryCharging == false` — fail-closed (D-03): the app
+    /// byte-2 == 2 / 255 (any non-1 value) -> `batteryCharging == false` — fail-closed: the app
     /// never over-claims a state the pump did not positively report `== 1`.
     @Test func anyOtherChargingStatusValueFailsClosedToNotCharging() {
         for other in [2, 255] {
@@ -56,7 +49,7 @@ struct PumpChargingCaptureTests {
         }
     }
 
-    /// A snapshot that never saw an op-145 reply -> `batteryCharging == false` (default, D-03).
+    /// A snapshot that never saw an op-145 reply -> `batteryCharging == false` (default).
     @Test func aSnapshotThatNeverSawOp145DefaultsToNotCharging() {
         let b = TandemBackend(testTransport: FakePumpTransport())
         #expect(!b.snapshot.batteryCharging)
