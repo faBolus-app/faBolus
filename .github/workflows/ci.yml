@@ -174,7 +174,6 @@ jobs:
         run: |
           FABOLUS_NUDGE=0 FABOLUS_GARMIN=0 ./scripts/test-ios.sh \
             -skip-testing:faBolusAppTests/BolusEntrySnapshotTests \
-            -skip-testing:faBolusAppTests/PumpControlSnapshotTests \
             -skip-testing:faBolusAppTests/SettingsSnapshotTests \
             -skip-testing:faBolusAppTests/DashboardSnapshotTests
 

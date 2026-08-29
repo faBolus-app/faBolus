@@ -44,7 +44,7 @@ branch and must still be resolved before any reintegration onto `main`; entries 
     set" and "duplicate profile 0".)
   - `SetIDPSegmentRequest`: `idpStatusId` = the changed-fields bitmask (`31` = all) for create/modify,
     `0` for delete — from the captured `SetIDPSegmentRequest` vectors. (Was `0` = "nothing changed",
-    the likely reason writes didn't take.) Byte-locked in `RemoteEntryAndIdpOracleTests`.
+    the likely reason writes didn't take.) Byte-locked in TandemKit `RemoteEntryAndIdpOracleTests`.
 - **Where:** `TandemBackend.createProfile` / `setSegment`; UI in `PumpWizardViews.swift`
   (`ProfileCreateView`, `ProfileSegmentsView`, `SegmentEditSheet`).
 - **Risk:** insulin-affecting (changes the basal schedule). Gated behind advanced-control + Mobi +
@@ -75,7 +75,7 @@ branch and must still be resolved before any reintegration onto `main`; entries 
 ## 4. Carb-bolus pump metadata (FOOD1 / foodVolume / bolusIOB / isAutopopBg) — audit C-07
 - **Now correct + oracle-locked:** a carb bolus sends `bolusTypeBitmask = FOOD1 (1)` (not FOOD2) with
   `foodVolume == totalVolume`, matching the reverse-engineered reference captures
-  (`InitiateBolusExtendedTests.carbBolusFood1CargoMatchesOracle` / `…WithIobCargoMatchesOracle`). Carbs
+  (TandemKit `InitiateBolusExtendedTests.carbBolusFood1CargoMatchesOracle` / `…WithIobCargoMatchesOracle`). Carbs
   are bounded to [0, 1000] g and BG to [0, 600] mg/dL before conversion. Delivered dose is driven by
   `totalVolume` and is unchanged by these metadata fields.
 - **`bolusIOB` — now wired (FB-04, done):** `perform()` sends the **frozen calculator IOB** — the active
@@ -84,14 +84,14 @@ branch and must still be resolved before any reintegration onto `main`; entries 
   `InitiateBolusRequest` constructors as `bolusIOB: bolusIobMu` (`:556`/`:559`). It is the FROZEN value,
   not the live snapshot (a live IOB may have moved since approval, which wouldn't preserve the approved
   inputs); when no frozen IOB is supplied it sends `0` rather than substituting a live read. The oracle
-  byte-lock (`InitiateBolusExtendedTests.carbBolusWithIobCargoMatchesOracle`, vector ID10653:
+  byte-lock (TandemKit `InitiateBolusExtendedTests.carbBolusWithIobCargoMatchesOracle`, vector ID10653:
   `bolusIOB 130` == 0.13 U) proves the encoding. Metadata only — never changes the delivered dose.
   (Still bench-gate the end-to-end pump graph / Control-IQ effect — the *value sent* is verified, its
   on-pump interpretation is not.)
 - **BG entry now matches captured ground truth (no longer a guess):** the six captured real-app
   `RemoteBgEntryRequest` vectors all send `entryType = MANUAL (0)` + `source = REMOTE (1)`. faBolus now
   sends exactly that (was `source = PUMP (0)` via the old `isAutopopBg:false` convenience — which
-  contradicted every capture). Byte-locked in `RemoteEntryAndIdpOracleTests`. The "isAutopopBg" concept
+  contradicted every capture). Byte-locked in TandemKit `RemoteEntryAndIdpOracleTests`. The "isAutopopBg" concept
   was a misread: the real app doesn't set an autopop flag, it always uses MANUAL/REMOTE.
 - **Still unverified (bench-gate before trusting the pump graph / Control-IQ carb awareness):**
   - **Extended + carbs**: `foodVolume` is left 0 for the extended path (**no oracle vector exists** for a

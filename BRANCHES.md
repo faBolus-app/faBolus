@@ -7,13 +7,17 @@ Written per §1.1–§1.4 and §13 of the v3 handoff. It is deliberately in the 
 `CONTRIBUTING.md` / `ARCHITECTURE.md`, **not** in the mkdocs site: it is contributor governance, not
 end-user documentation.
 
-## The three branches
+## The branches
 
 | Branch | What it is | CI | Who runs it |
 |---|---|---|---|
-| `deprecated` | A **frozen snapshot** of `main` as it stood on 2026-08-04, *before* the round-3 safety fixes. Tag `deprecated/2026-08-04-v0.1.0-build1`. **Not a supported fallback** — rolling back here reintroduces every known P0. No further commits. | — | nobody; forensics/bisection only |
 | `main` | The current, CI-green, release-blocking-set baseline. Everything here has passed CI under the real toolchain. | push + PR + dispatch | self-compilers following the build docs |
 | `experimental` | Work that meets the §1.2 classification below. Default-off, unproven, or unverifiable-against-the-pump features live here until promoted. | push + PR + dispatch | **the developer only**, until the clinical-review gate is satisfied (below) |
+
+The pre-fix state is kept as a TAG, not a branch: `deprecated/2026-08-04-v0.1.0-build1` is a frozen
+snapshot of `main` as it stood on 2026-08-04, before the round-3 safety fixes. It is **not a supported
+fallback** — rolling back to it reintroduces every known P0. There is no `deprecated` branch on any
+remote; use the tag for forensics/bisection.
 
 Two tags track goodness over time:
 
