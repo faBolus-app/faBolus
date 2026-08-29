@@ -29,15 +29,14 @@ public enum GlucoseFreshness {
     }
 
     /// The MAXIMUM age at which a stale-but-real CGM reading may still be **explicitly included** in a
-    /// correction via the include-stale override (Addendum B). A reading in the window
+    /// correction via the include-stale override. A reading in the window
     /// `(staleAfter, maxIncludableStaleness]` is genuinely stale yet recent enough that a remote MAY, with
     /// explicit per-attempt intent, ask the host to recompute a correction from it. Beyond this cap the
     /// reading is too old to dose a correction from at all: the app fails closed to carbs-only, exactly as
     /// an *unacknowledged* stale reading always has. Without this bound the include-stale branch could
     /// recompute a full insulin-INCREASING correction off a reading of arbitrary age (30 min, 2 h, older)
     /// — the hazard this cap closes. Default 15 minutes, anchored to LoopKit's `inputDataRecencyInterval`
-    /// (its 15-minute maximum glucose age for a dosing decision). §13-cleared 2026-08-23 (AI-panel review);
-    /// owner-adjustable at runtime like `staleAfter`/`hideAfter`.
+    /// (its 15-minute maximum glucose age for a dosing decision). Owner-adjustable at runtime like `staleAfter`/`hideAfter`.
     public static var maxIncludableStaleness: TimeInterval {
         get { _maxIncludableStaleness.withLock { $0 } }
         set { _maxIncludableStaleness.withLock { $0 = newValue } }
@@ -70,7 +69,7 @@ public enum GlucoseFreshness {
     /// True iff a reading taken at `date` exists AND its age falls in the window
     /// `(staleAfter, maxIncludableStaleness]` — i.e. it is genuinely stale (past `staleAfter`) yet no older
     /// than the includable cap. This is the ONLY window in which a stale reading may be explicitly included
-    /// in a correction (the include-stale override, Addendum B); beyond the cap the reading is too old to
+    /// in a correction (the include-stale override); beyond the cap the reading is too old to
     /// dose from and the caller must fail closed to carbs-only. A nil date, or one dated more than
     /// `futureSkewTolerance` in the FUTURE, is untrustworthy and returns false (the SAME future-skew
     /// handling as `isStale`). A FRESH reading (within `staleAfter`) also returns false: it belongs to the
@@ -95,7 +94,7 @@ public enum GlucoseFreshness {
     /// Compact relative age label for a reading taken at `date`, e.g. "now", "3 min ago",
     /// "1h 12m ago". Shown next to every reading so its age is always visible.
     ///
-    /// C2-03: a reading dated more than `futureSkewTolerance` in the FUTURE returns an EXPLICIT
+    /// A reading dated more than `futureSkewTolerance` in the FUTURE returns an EXPLICIT
     /// future/clock-mismatch label ("clock ahead") instead of falling through to the normal cases.
     /// Without this, `age(of:)`'s `max(0, …)` clamp collapses a negative elapsed time to 0, so
     /// `s < 30` reads true and the reading is mislabeled "now" — exactly the misleading state
@@ -125,19 +124,19 @@ public struct GlucoseSample: Sendable, Equatable {
     public let date: Date
     /// The trend **as reported by the source**, or `nil` when the source does not report one.
     ///
-    /// C8: faBolus never calculates a trend arrow, and "no trend available" must render as *no arrow*
+    /// faBolus never calculates a trend arrow, and "no trend available" must render as *no arrow*
     /// rather than a flat one. This defaulted to `.flat`, so every source without a trend — HealthKit
     /// among them — silently published "steady", an inferred clinical signal dressed as a reported one.
     public let trend: GlucoseTrend?
     /// Stable id of the source that produced it (matches its `GlucoseSourceDescriptor.id`).
     public let sourceID: String
-    /// D-05 shared plausibility gate: FAILS (returns `nil`) for a value outside the physiologic range
+    /// Shared plausibility gate: FAILS (returns `nil`) for a value outside the physiologic range
     /// `[GlucosePlausibility.minimum, .maximum]` — REJECT, not clamp (clamping is fail-open, silently
-    /// substituting a dose input). This is the ONLY initializer, so every `GlucoseSource` is FORCED
+    /// substituting a dose input). This is the only initializer, so every `GlucoseSource` is forced
     /// through the gate at construction: no source's `latest` or `history` can ever hold an implausible
     /// value, and the Test-flow UI (which reads `source.latest` directly, bypassing the arbiter) cannot
     /// render garbage as a Test "success". `GlucoseReading` (shared with the pump's own ungated history)
-    /// is deliberately NOT gated — only `GlucoseSample`, the failover-only type (Pitfall 3).
+    /// is deliberately not gated — only `GlucoseSample`, the failover-only type.
     public init?(mgdl: Int, date: Date, trend: GlucoseTrend? = nil, sourceID: String) {
         guard GlucosePlausibility.isPlausible(mgdl: mgdl) else { return nil }
         self.mgdl = mgdl; self.date = date; self.trend = trend; self.sourceID = sourceID
@@ -147,10 +146,10 @@ public struct GlucoseSample: Sendable, Equatable {
     public var isStale: Bool { GlucoseFreshness.isStale(date) }
 }
 
-/// How a `GlucoseSource` physically connects — a typed classification (D-06) that later waves branch
-/// on instead of scattered `id == "dexcom-g6-ble" || id == "dexcom-g7-ble"` string literals. Lives on
-/// the protocol only (mirroring `priority`'s placement), so a new source is FORCED to classify itself
-/// — there is deliberately no protocol extension default a new BLE source could silently inherit.
+/// How a `GlucoseSource` physically connects — a typed classification later waves branch on instead
+/// of scattered `id == "dexcom-g6-ble" || id == "dexcom-g7-ble"` string literals. Lives on the
+/// protocol only (mirroring `priority`'s placement), so a new source is forced to classify itself —
+/// there is deliberately no protocol extension default a new BLE source could silently inherit.
 public enum GlucoseConnectionKind: Sendable, Equatable {
     case localBLE        // Dexcom G6 / G7 — CoreBluetooth passive read
     case cloudPoll       // Dexcom Share / Nightscout / LibreLinkUp — polled over the network
@@ -180,8 +179,8 @@ public protocol GlucoseSource: AnyObject {
     var id: String { get }
     /// Selection priority when several sources are healthy (higher wins). Local BLE outranks cloud.
     var priority: Int { get }
-    /// Typed connection classification (D-06) — later waves' Test-flow/copy logic branch on this
-    /// instead of `id`-string literals. No extension default: every source must classify itself.
+    /// Typed connection classification — Test-flow/copy logic branches on this instead of `id`-string
+    /// literals. No extension default: every source must classify itself.
     var connectionKind: GlucoseConnectionKind { get }
     /// Most recent reading, or nil if none yet.
     var latest: GlucoseSample? { get }

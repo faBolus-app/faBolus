@@ -15,9 +15,8 @@ struct StatsCardView: View {
     /// (unchanged); only its displayed string converts.
     private var unit: GlucoseUnit { AppSettings.shared.glucoseDisplayUnit }
 
-    /// "<value> mg/dL"/"<value> mmol/L" — a whole-phrase catalog VARIANT selected by the active
-    /// display unit (not a glued suffix). `Localizable.xcstrings` carries both as siblings.
-    /// Bare value (no unit phrase) when labels are hidden.
+    /// Whole-phrase catalog variant per display unit (not a glued suffix). Bare value when
+    /// unit labels are hidden.
     private func glucoseLabel(_ mgdl: Int) -> String {
         let value = unit.format(mgdl: mgdl)
         guard AppSettings.shared.showGlucoseUnitLabels else { return value }
@@ -57,12 +56,8 @@ struct StatsCardView: View {
         }
     }
 
-    /// Stacked AGP band bar: very-low / low / in-range / high / very-high.
-    ///
-    /// Routed through `faBolusDesign.AppTheme`'s band tokens instead of raw `Color` literals —
-    /// `AppTheme.veryLow`/`.veryHigh` are the severe-band tokens (WCAG-audited by
-    /// `AppThemeContrastAuditTests`); `.low`/`.inRange`/`.high` are the pre-existing §13-locked
-    /// tokens. Pinned raw-literal-free by `BandDriftGuardTests.noRawBandColorInStatsCardViewTirBar`.
+    /// Stacked AGP band bar. Uses `AppTheme` band tokens (not raw `Color` literals) so severe
+    /// vs ordinary bands stay WCAG-audited and `BandDriftGuardTests` can pin the source.
     @ViewBuilder private func tirBar(_ s: GlucoseStatistics) -> some View {
         GeometryReader { geo in
             HStack(spacing: 0) {

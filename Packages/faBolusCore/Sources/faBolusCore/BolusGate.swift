@@ -1,9 +1,9 @@
 import Foundation
 
 /// The single "can this surface start a bolus right now?" decision, shared by every bolus affordance
-/// (phone, Apple Watch, Garmin, Mac, remote-iPhone) so they agree instead of each hand-rolling a check
-/// (v3 handoff defect group D). Pure and stateless, like `AccessPolicy` — the caller supplies the inputs
-/// it can see and gets back `(canBolus, reason)`; the `reason` is what the surface shows when disabled.
+/// (phone, Garmin, Mac, remote-iPhone) so they agree instead of each hand-rolling a check. Pure and
+/// stateless, like `AccessPolicy` — the caller supplies the inputs it can see and gets back
+/// `(canBolus, reason)`; the `reason` is what the surface shows when disabled.
 ///
 /// It composes with, and does not replace, `AccessPolicy` (permission: child/read-only/capability/ack/peer)
 /// — the caller passes the `AccessPolicy.AccessDecision` in as one input. What `BolusGate` adds on top is
@@ -11,7 +11,7 @@ import Foundation
 /// dose is already in flight.
 ///
 /// **Not gated here on purpose:** CGM staleness. A stale reading only nils the correction BG auto-fill; it
-/// must never disable the bolus button (group-A/D contract). A test pins that `canBolus` ignores staleness.
+/// must never disable the bolus button. A test pins that `canBolus` ignores staleness.
 public enum BolusBlockReason: Equatable, Sendable {
     case remoteUnreachable            // this remote can't reach the host phone
     case pumpNotLinked                // the pump link is down (disconnected/scanning/connecting/error)
@@ -74,7 +74,7 @@ public enum BolusGate {
         if !cartridgeReady { return (false, .noCartridge) }
         if !access.allowed { return (false, .accessDenied(access.reason ?? .notPermittedForPeer)) }
         // A non-finite amount (NaN/±inf) satisfies neither `< minimum` nor `> maximum`, so without this
-        // guard it would fall through to `(true, nil)` and arm the affordance (VA-11). `validateDeliver`
+        // guard it would fall through to `(true, nil)` and arm the affordance. `validateDeliver`
         // fail-closes it before the pump write, but the gate itself must reject it too — fail-closed.
         if !amount.isFinite { return (false, .belowMinimum(minimum)) }
         if amount < minimum { return (false, .belowMinimum(minimum)) }

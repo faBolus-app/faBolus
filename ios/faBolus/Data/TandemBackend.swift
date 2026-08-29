@@ -9,9 +9,6 @@ import os
 import UIKit
 #endif
 
-// `HistorySyncState` lives in faBolusCore (`HistorySyncState.swift`); this file's `import faBolusCore`
-// makes it visible unqualified at every existing call site.
-
 /// The read/poll-domain error type for `readScheduler.send`'s comms-suspension hold. A routine STATUS
 /// READ that is declined while a pump comms-suspension is active is NOT a bolus/delivery outcome, so
 /// it must not borrow `BolusError.pumpRejected` (a case named and typed for the delivery domain) — a
@@ -21,7 +18,7 @@ import UIKit
 /// with no behavior change (and the gate is never paused in production yet — the kit-side producer
 /// hasn't been pin-bumped in).
 enum PumpReadError: Error, LocalizedError {
-    /// A routine read was held because a pump comms-suspension (CC-03, app-side pause) is active.
+    /// A routine read was held because a pump comms-suspension (app-side pause) is active.
     case heldDuringCommsSuspension(String)
     var errorDescription: String? {
         switch self {
@@ -30,19 +27,19 @@ enum PumpReadError: Error, LocalizedError {
     }
 }
 
-/// C1-01/C1-04: a typed, notification-agnostic reliability signal the backend emits so `AppModel` (which
+/// A typed, notification-agnostic reliability signal the backend emits so `AppModel` (which
 /// owns the private `postSafety`/`scheduleDisconnectEscalation`) can translate it into a user-facing
 /// alert — the backend itself never imports `NotificationCoordinator` or calls those private methods
-/// directly (codex MEDIUM, 13-REVIEWS.md). `TandemBackend`-concrete only, mirroring the
+/// directly. `TandemBackend`-concrete only, mirroring the
 /// `onCommandLatency`/`onWillRetryReconnect` sink pattern (the `PumpBackend` protocol stays clean).
 public enum ReliabilityEvent: Equatable, Sendable {
     /// A quick-pair RESUME failed and the bounded retry branch re-established the link
-    /// (`connectKnownPeripheral`, not `disconnect()` — C1-01) rather than erroring outright. This edge
+    /// (`connectKnownPeripheral`, not `disconnect()`) rather than erroring outright. This edge
     /// dies from `.connecting`, which `SafetyEdge.connection` never raises on (it fires only on a direct
     /// `.connected/.bolusing → down` edge) — so a genuine background flap on this path would otherwise
-    /// never alarm the user (C1-04). Fired once per bounded retry attempt.
+    /// never alarm the user. Fired once per bounded retry attempt.
     case resumeRetryFailed
-    /// tslim-reconnect-loop (Phase B, item 5): the pump link is FLAPPING — a run of live→`.connecting`
+    /// The pump link is FLAPPING — a run of live→`.connecting`
     /// re-pair/re-drop cycles crossed the flap-rate threshold within the rolling window (see
     /// `ConnectionFlapDetector`). The loop's drops fold to `.connecting`, so `SafetyEdge.connection` never
     /// raises on them; this typed edge lets `AppModel` translate a flap STORM into the never-suppressible,
@@ -70,7 +67,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// pull without a new instrumented build.
     /// HARD PHI CONSTRAINT: only ever logs scheme name / message type name / opcode / byte COUNT /
     /// outcome token — never the pairing code, derived secret, `centralChallenge`, or any frame/cargo
-    /// bytes (all `.public` here are non-sensitive integers or fixed enum-like tokens, per D-08).
+    /// bytes (all `.public` here are non-sensitive integers or fixed enum-like tokens).
     private static let pairingLog = Logger(subsystem: "com.fabolus.app", category: "ble")
     /// Tandem (via TandemKit) supports the full bolus/status feature set. Advanced control
     /// (suspend/resume, temp basal, modes, profiles, CIQ settings, limits, cartridge/fill, time
@@ -82,10 +79,10 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// guarantee. On real t:slim X2 hardware the signed time write is **not** honored (the pump doesn't
     /// change its clock, and `sendControl` can't tell — it doesn't inspect the response status), so
     /// time sync stays Mobi-only.
-    /// P13: capabilities are derived from the pump model refined by the pump's OWN `PumpFeaturesV1`
+    /// Capabilities are derived from the pump model refined by the pump's OWN `PumpFeaturesV1`
     /// bitmask (`pumpFeatureBits`, cached from op 79 in `didReceiveFrame`). Before that frame lands —
-    /// or on firmware that never answers — `derive` falls back to the exact model preset, so this is a
-    /// pure superset of the pre-P13 behavior. The feature bits can only *narrow* the preset, never
+    /// or on firmware that never answers — `derive` falls back to the exact model preset. The feature
+    /// bits can only *narrow* the preset, never
     /// widen it (see `PumpCapabilities.derive`), so it can't reveal a control the model didn't allow.
     public var capabilities: PumpCapabilities {
         PumpCapabilities.derive(isMobi: snapshot.isMobi, features: pumpFeatureBits)
@@ -119,21 +116,21 @@ public final class TandemBackend: NSObject, PumpBackend {
         return sleepScheduleWriteError
     }
     public var onChange: (@MainActor () -> Void)?
-    /// P0: fired the moment the pump grants permission and assigns a bolus id, before the initiate write,
+    /// Fired the moment the pump grants permission and assigns a bolus id, before the initiate write,
     /// so the host can persist the id durably for later reconciliation.
     public var commitBolusId: (@MainActor (Int) async -> Bool)?
-    /// B3a (§5.2.8): observational command round-trip latency sink. `seconds` = a response arrived after
+    /// Observational command round-trip latency sink. `seconds` = a response arrived after
     /// that long; `nil` = the wait ran to its deadline with no response (a timeout). Fired from
     /// `awaitResponse` for every response-bearing command; the host buckets + counts it only when the
     /// diagnostics opt-in is on. Never influences control flow — purely a diagnostic signal.
     public var onCommandLatency: (@MainActor (Double?) -> Void)?
-    /// D-05: observational reconnect-ladder sink — fired once per scheduled attempt (attempt#/jittered
+    /// Observational reconnect-ladder sink — fired once per scheduled attempt (attempt#/jittered
     /// delay) from `PumpBLEClient.scheduleNextReconnectAttempt()`, including a silently-failed attempt
     /// that never reaches a `didChange`/`didError` state edge. Same concrete-Tandem-only, opt-in-gated
     /// diagnostic-sink shape as `onCommandLatency` above (the `PumpBackend` protocol stays clean); never
     /// influences control flow.
     public var onWillRetryReconnect: (@MainActor (Int, TimeInterval) -> Void)?
-    /// C1-01/C1-04: typed reliability-event sink — same concrete-Tandem-only sink shape as
+    /// Typed reliability-event sink — same concrete-Tandem-only sink shape as
     /// `onCommandLatency`/`onWillRetryReconnect` above. `AppModel` wires this to translate an event into
     /// its private `postSafety`/`scheduleDisconnectEscalation` calls; the backend never references
     /// `NotificationCoordinator` and never calls those private methods itself.
@@ -161,7 +158,7 @@ public final class TandemBackend: NSObject, PumpBackend {
             return (id == 2 || id == 26) ? .occlusion : .other        // Occlusion (delivery stopped)
         case .alert:
             if id == 0 || id == 17 { return .lowInsulin }              // Low insulin in the cartridge
-            // CC-09: the full upstream loss-of-coverage taxonomy (pumpX2 AlertStatusResponse.java:107) —
+            // The full upstream loss-of-coverage taxonomy (pumpX2 AlertStatusResponse.java:107) —
             // 40 (CGM error) / 41 / 42 / 48 (CGM unavailable) all mean the app has lost CGM coverage. IDs
             // 41/42 previously fell through to `.other` (auto-snooze/dismiss-eligible), delaying CGM-loss
             // awareness; classifying them here protects them before any user auto-rule runs.
@@ -210,9 +207,9 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// auto-dismiss). `autoSnooze` (and `autoDismiss` on a pump that can't honor a remote dismiss)
     /// records a local ack immediately (hide + stop notifying) — a PURE local snooze never claims the
     /// alert is actually gone on the pump, so hiding it immediately is honest. `autoDismiss` on a pump
-    /// that DOES support remote dismissal instead defers to `dismissNotification(_:)`, which (CC-08)
+    /// that DOES support remote dismissal instead defers to `dismissNotification(_:)`, which
     /// hides the alert only after an authenticated status-zero proof the pump actually cleared it — this
-    /// function must NOT pre-ack that case, or it would reproduce the exact optimistic-hide CC-08 fixes.
+    /// function must NOT pre-ack that case, or it would hide an alert the pump never confirmed.
     /// SAFETY: alarms **and** malfunctions are never auto-acted — the malfunction list is excluded here,
     /// and the engine additionally refuses the `.alarm` kind.
     private func applyAutoRules(_ raw: [PumpNotification], now: Date) {
@@ -223,7 +220,7 @@ public final class TandemBackend: NSObject, PumpBackend {
             let key = noteKey(n)
             if acknowledged[key] != nil || protectedKeys.contains(key) { continue }
             let alert = Self.toAlert(n)
-            // §6 force-protection: `autoSuppression` returns nil (never auto-acted) for the loss-of-coverage
+            // Force-protection: `autoSuppression` returns nil (never auto-acted) for the loss-of-coverage
             // safety set — occlusion / CGM-data-loss / low-insulin — regardless of a matching rule, and
             // delegates `.other` to `AlertRuleEngine` exactly as before. This closes the hole where a
             // user auto-rule could snooze a CGM-loss (kind 3) or low-insulin (kind 1) alert.
@@ -231,7 +228,7 @@ public final class TandemBackend: NSObject, PumpBackend {
             guard let action = NotificationBroker.autoSuppression(for: alert, safetyClass: klass, rules: rules,
                                                                   now: now, glucose: snapshot.glucose) else { continue }
             if action == .autoDismiss, capabilities.supportsRemoteAlertDismiss {
-                // CC-08: don't pre-ack — `dismissNotification` itself gates the hide on the pump's
+                // Don't pre-ack — `dismissNotification` itself gates the hide on the pump's
                 // authenticated response, never on this send attempt.
                 Task { [weak self] in await self?.dismissNotification(alert) }
             } else {
@@ -262,7 +259,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     // Restore identifier enables CoreBluetooth state restoration: iOS relaunches the app on pump
     // BLE events (with `bluetooth-central` background mode) and hands the connection back.
     private let client = PumpBLEClient(restoreIdentifier: "com.fabolus.app.pump")
-    /// Round-3 §6.1 seam: the signed/delivery flow goes through `tx` (the real `client` in production, or
+    /// The signed/delivery flow goes through `tx` (the real `client` in production, or
     /// an injected fake in tests) so `perform` can be driven with no CoreBluetooth. Connection, scanning,
     /// pairing, and the delegate stay on `client`.
     private let injectedTransport: PumpTransport?
@@ -296,28 +293,28 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// `authenticationKey`/`coordinator`/`pairingCode`/`detectedIsMobi`/the delivery lock itself — every
     /// one of those stays owned and published here on `TandemBackend`; the lifecycle type reaches them
     /// only through the injected get/set closures (see its own doc comment). `linkDroppedCleanup()`
-    /// itself — the shared teardown spine — also stays here, unmoved (review concern #5); the lifecycle
+    /// itself — the shared teardown spine — also stays here, unmoved; the lifecycle
     /// only calls OUT to it.
     private let lifecycle = PumpConnectionLifecycle()
-    /// debug pump-background-disconnect (owner-authorized 2026-08-20, re-scoped): app-side belt-and-
-    /// suspenders for the kit's background reconnect. When a reconnect attempt is scheduled while the app is
-    /// backgrounded, it holds ONE `beginBackgroundTask` window open so the kit's main-RunLoop
-    /// `reconnectTick()` gets the runtime to establish/observe the pending `central.connect()` (which the
-    /// kit now issues INLINE on a genuine drop — see `PumpBLEClient.planUnintendedDropRecovery` — and which
-    /// CoreBluetooth completes while suspended). It never issues connect itself and never resets the kit's
-    /// flap-throttle ladder. H2 (keeping the link warm across a suspend) is battery-neutral by construction —
-    /// the kit keeps its notification subscriptions across background — so NO polling keep-alive read is
-    /// issued (owner constraint: no battery drain). See `PumpBackgroundSession`. Wired with the real UIKit
-    /// seams in the production `init()` only; the test-transport init leaves it inert (default seams).
+    /// App-side belt-and-suspenders for the kit's background reconnect. When a reconnect attempt is
+    /// scheduled while the app is backgrounded, it holds ONE `beginBackgroundTask` window open so the
+    /// kit's main-RunLoop `reconnectTick()` gets the runtime to establish/observe the pending
+    /// `central.connect()` (which the kit now issues INLINE on a genuine drop — see
+    /// `PumpBLEClient.planUnintendedDropRecovery` — and which CoreBluetooth completes while suspended).
+    /// It never issues connect itself and never resets the kit's flap-throttle ladder. Keeping the link
+    /// warm across a suspend is battery-neutral by construction — the kit keeps its notification
+    /// subscriptions across background — so NO polling keep-alive read is issued. See
+    /// `PumpBackgroundSession`. Wired with the real UIKit seams in the production `init()` only; the
+    /// test-transport init leaves it inert (default seams).
     private let bgSession = PumpBackgroundSession()
-    /// CC-03 (app-side consumer only — see `CommsSuspensionGate`'s doc comment in `PumpBackgroundSession.swift`
+    /// App-side consumer only — see `CommsSuspensionGate`'s doc comment in `PumpBackgroundSession.swift`
     /// for why this is INERT in production today, and `handleQualifyingEventBits` below for the exact
     /// pin-bump seam that would wire it to a live signal). Gates ONLY `readScheduler.send`'s injected
     /// closure below — never `cancelBolus`/`perform`/`awaitResponse`/`dismissNotification`, none of which
     /// reference it.
     private let commsSuspensionGate = CommsSuspensionGate()
 
-    /// CX-F-06: forward a scene fg->bg transition into `bgSession` so a reconnect SCHEDULED while still
+    /// Forward a scene fg->bg transition into `bgSession` so a reconnect SCHEDULED while still
     /// foreground (no background window taken then — the RunLoop was already alive) is re-evaluated the
     /// moment the scene backgrounds, instead of being stranded until the kit's own Timer happens to fire
     /// first. Concrete-Tandem-only sink shape (mirrors `onCommandLatency`/`onWillRetryReconnect`/
@@ -327,21 +324,18 @@ public final class TandemBackend: NSObject, PumpBackend {
         bgSession.enteredBackground()
     }
 
-    /// CC-03 (app-side consumer): the pump's qualifying-events 32-bit bitmap bit for a communications
+    /// The pump's qualifying-events 32-bit bitmap bit for a communications
     /// suspension. Hand-transcribed here (NOT imported from TandemKit's `QualifyingEvent` OptionSet)
-    /// because faBolus's SPM pin (`Package.resolved`, `f72e872`) predates the kit-side decode commit
-    /// that type ships in (`dbd2d3a`, TandemKit `main`, landed via that repo's own Phase-15 15-03 plan —
-    /// confirmed NOT yet consumed by this app's pin via `git merge-base --is-ancestor`, not assumed).
+    /// because faBolus's SPM pin predates the kit-side decode commit that type ships in.
     /// Value transcribed byte-exact from `QualifyingEvent.pumpCommunicationsSuspended` (rawValue
     /// `524288` == bit 19) — Don't-Hand-Roll: never invent a value here; re-derive from the kit source
-    /// if this ever needs to change. Once a future, deliberate pin-bump step both bumps the pin AND
+    /// if this ever needs to change. Once a future, deliberate pin-bump both bumps the pin AND
     /// conforms `TandemBackend` to the kit's new `PumpBLEClientDelegate.pumpClient(_:didReceiveQualifyingEvent:)`
     /// method (calling `handleQualifyingEventBits(event.rawValue)` from it), this local constant is
-    /// deleted in favor of importing the real type — matching this file's own C1-02 "kit commit landed,
-    /// pin bump is a separate owner-scoped step" precedent (see 13-08-SUMMARY.md).
+    /// deleted in favor of importing the real type.
     private static let pumpCommunicationsSuspendedBit: UInt32 = 524288
 
-    /// CC-03 app-side consumer entry point. INERT in production today (see `pumpCommunicationsSuspendedBit`'s
+    /// App-side consumer entry point. INERT in production today (see `pumpCommunicationsSuspendedBit`'s
     /// doc comment) — nothing calls this from a live BLE delegate yet. Fails CLOSED on any bit other
     /// than the one known `pumpCommunicationsSuspendedBit`: an unrecognized/future qualifying-event bit
     /// (including every OTHER real, named bit in the kit's `QualifyingEvent` enum — alert/alarm/reminder/
@@ -392,16 +386,16 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// Latest bolus-calculator settings (carb ratio / ISF / target) for recommendBolus.
     private var calcSnapshot: BolusCalcDataSnapshotResponse?
 
-    // Oracle bolus-type bits (audit C-07, BolusDeliveryHistoryLog.BolusType): FOOD1 is used when there
+    // Oracle bolus-type bits (BolusDeliveryHistoryLog.BolusType): FOOD1 is used when there
     // ARE carbs, FOOD2 when there are none. `perform` selects between them by carb presence and OR-s in
     // EXTENDED for a combo bolus — it no longer hard-codes FOOD2 with carbs populated (which was
     // internally inconsistent with the reverse-engineered reference).
     private static let food1 = 1    // carbs present
     private static let food2 = 8    // units-only (no carbs)
     private static let extendedBit = 4
-    private static let maxCarbGrams = 1000   // sanity bound before UInt/Int conversion (audit C-07)
-    /// Clamp a carb-grams value to a pump-safe `Int` in `0...maxCarbGrams` (audit C-07 / WR-01 · VA-10).
-    /// Extracted verbatim from `perform(...)` so it can be exercised directly. Clamps in Double space
+    private static let maxCarbGrams = 1000   // sanity bound before UInt/Int conversion
+    /// Clamp a carb-grams value to a pump-safe `Int` in `0...maxCarbGrams`.
+    /// Factored out of `perform(...)` so the clamp can be unit-tested directly. Clamps in Double space
     /// BEFORE the `Int(_:)` conversion — mirrors the `iobU` pattern — so a finite out-of-range Double
     /// (> `Int.max`), `nil`, or a non-finite Double (`.infinity`/`.nan`) can never trap the conversion.
     /// Carbs is pump metadata only; clamp, never reject (units are separately validated).
@@ -409,11 +403,11 @@ public final class TandemBackend: NSObject, PumpBackend {
         guard let c = c, c.isFinite else { return 0 }
         return Int(min(max(c.rounded(), 0), Double(Self.maxCarbGrams)))
     }
-    /// DIF-core IOB cross-check tolerance (owner-confirmable, §13). The dose is built from op-109
+    /// DIF-core IOB cross-check tolerance. The dose is built from op-109
     /// `swan6hrIOB` (hardware-verified to match the pump display); op-115 `iob` is only a divergence
     /// check. If the two pump reads of active insulin disagree by more than this, we can't stand behind
-    /// either → treat IOB as stale and fail closed. 0.05 U = one pump increment. Recorded for the §13
-    /// clinical-review gate; tune here if the two frames prove to differ systematically on hardware.
+    /// either → treat IOB as stale and fail closed. 0.05 U = one pump increment. Tune here if the two
+    /// frames prove to differ systematically on hardware.
     private static let iobCrossCheckEpsilonUnits = 0.05
     /// Anchor mapping the pump's clock to the phone's, so pump timestamps convert correctly
     /// regardless of the pump's timezone/epoch. Refreshed from TimeSinceReset.
@@ -432,18 +426,18 @@ public final class TandemBackend: NSObject, PumpBackend {
     private var detectedIsMobi: Bool?
     // The `badOpcodes` never-resend backstop lives on `readScheduler`. The `ErrorResponse`
     // delegate case (on `responseApplier`) feeds it via `readScheduler.insertBadOpcode(_:)`.
-    /// debug pump-pairing-loop-api25 (refinement): DURABLE, per-pump memory of the read opcodes THIS pump
-    /// has rejected, so the learned `badOpcodes` skip survives an app relaunch (not just a reconnect) and
-    /// is scoped to pump identity — a DIFFERENT pump never inherits it. Keyed by the pump's peripheral UUID
-    /// (`currentPumpKey()`), stamped with the firmware read from the pump so a firmware change re-tests.
-    /// Injectable so the test suite runs against an isolated `UserDefaults` suite, never `.standard`.
+    /// Durable, per-pump memory of the read opcodes THIS pump has rejected, so the learned `badOpcodes`
+    /// skip survives an app relaunch (not just a reconnect) and is scoped to pump identity — a DIFFERENT
+    /// pump never inherits it. Keyed by the pump's peripheral UUID (`currentPumpKey()`), stamped with
+    /// the firmware read from the pump so a firmware change re-tests. Injectable so the test suite runs
+    /// against an isolated `UserDefaults` suite, never `.standard`.
     private var badOpcodeStore: PumpBadOpcodeStore = .standard
     #if DEBUG
     /// Test override for `currentPumpKey()` — lets a persistence test pin a stable pump identity without a
     /// live CoreBluetooth peripheral. nil (default) uses the real `PumpPeripheralStore` identity.
     private var injectedPumpKeyForTesting: String?
     #endif
-    /// P13: the pump's own capability bitmask (`PumpFeaturesV1Response`, op 79), projected to the
+    /// The pump's own capability bitmask (`PumpFeaturesV1Response`, op 79), projected to the
     /// neutral `PumpFeatureBits` at the decode boundary and consumed by `capabilities`. nil until the
     /// once-per-connect `staticRead` reply lands (or on firmware that never answers) → preset fallback.
     /// Reset on disconnect so a model/firmware change on reconnect re-derives cleanly. Written by
@@ -453,8 +447,8 @@ public final class TandemBackend: NSObject, PumpBackend {
     // published here (the coordinator mutates it only through the injected `withHistoryEvents` sink).
     public private(set) var historyEvents: [HistoryEvent] = []
     #if DEBUG
-    /// VA-18 test seam: forwards to `historySyncCoordinator`'s own storage (moved with the R6 fields in
-    /// the test-facing API (`backend.historyBackfillTimeZoneForTesting = ...`) is unchanged.
+    /// Test seam: forwards to `historySyncCoordinator`'s own storage; the test-facing API
+    /// (`backend.historyBackfillTimeZoneForTesting = ...`) is unchanged.
     var historyBackfillTimeZoneForTesting: TimeZone? {
         get { historySyncCoordinator.historyBackfillTimeZoneForTesting }
         set { historySyncCoordinator.historyBackfillTimeZoneForTesting = newValue }
@@ -487,12 +481,12 @@ public final class TandemBackend: NSObject, PumpBackend {
     private var cancelRequested = false
     public private(set) var lastBolusCancelled = false
 
-    // PX-08: the signed request/response flow (time, permission, initiate, current/last bolus status) is
+    // The signed request/response flow (time, permission, initiate, current/last bolus status) is
     // now owned by the TandemKit transaction coordinator via `client.sendAwaitingResponse` (see
     // `awaitResponse`), not hand-rolled continuation slots. The coordinator correlates by
     // (characteristic, opcode), bounds each with a deadline, and is failed-closed by the client on every
     // disconnect / transport error — so a lost reply can neither hang a bolus nor leave the write policy
-    // elevated (audit A-03 / FB-02).
+    // elevated.
     // The single-flight glucose/calc-input coalescers live on `readScheduler` —
     // see `PumpReadScheduler.glucoseWaiters`/`calcInputWaiters`. `linkDroppedCleanup`/
     // `applyClientError` below call `readScheduler.completeGlucoseRead()`/`completeCalcInputRead()`
@@ -507,7 +501,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     func injectStatusFrameForTesting(_ frame: [UInt8]) {
         pumpClient(client, didReceiveFrame: frame, on: .currentStatus)
     }
-    /// Test seam (CR-01/WR-01, debug pump-pairing-loop-api25 deep review): mirrors
+    /// Test seam: mirrors
     /// `injectStatusFrameForTesting` but feeds the frame on the `.control` characteristic — so a test can
     /// reproduce a NACKed control/delivery WRITE's op77 (which the pinned kit also decodes as `ErrorResponse`
     /// on `.control`, and which reaches `apply` on `.opcodeFIFO` pumps) and assert it NEVER mutates the
@@ -536,25 +530,25 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// state, so an app-side test can assert the reapplication/op33-clobber-fix proofs without a live
     /// CoreBluetooth central.
     var identityTrustedForTesting: Bool { client.identityTrusted }
-    /// Test seam (CC-06/C1): read-only observation of the kit's private connected-model state.
+    /// Test seam: read-only observation of the kit's private connected-model state.
     var connectedPumpModelForTesting: TandemMessages.PumpModel? { client.connectedPumpModel }
-    /// Test seam (VA-06): read-only observation of the kit's private negotiated-API-version state, so a
+    /// Test seam: read-only observation of the kit's private negotiated-API-version state, so a
     /// test can assert op33 now supplies the REAL apiVersion (not nil) into the device/API send gate.
     var negotiatedApiVersionForTesting: TandemMessages.ApiVersion? { client.negotiatedApiVersion }
-    /// Test seam (CC-06/C1): the kit's pure `identityGateError(for:)` send-gate decision — no transport
+    /// Test seam: the kit's pure `identityGateError(for:)` send-gate decision — no transport
     /// needed, so a test can assert the [.mobi]-restricted 0xCE tracer send is (or isn't) gated.
     func identityGateErrorForTesting(_ message: Message) -> PumpBLEClient.ClientError? {
         client.identityGateError(for: message)
     }
-    /// Test seam (VA-06): the kit's pure `deviceSupportError(for:)` device/API send-gate decision, so a
+    /// Test seam: the kit's pure `deviceSupportError(for:)` device/API send-gate decision, so a
     /// test can assert a below-`minApi` read is filtered on the API-2.5 t:slim (gate bites) yet supported
     /// on a Mobi — WITHOUT a live transport. This gate consults `connectedPumpModel`/`negotiatedApiVersion`
     /// regardless of trust, so it reflects exactly what op33 supplied via `setDeviceContext`.
     func deviceSupportErrorForTesting(_ message: Message) -> PumpBLEClient.ClientError? {
         client.deviceSupportError(for: message)
     }
-    /// Test seam (CC-06/C10): arms the kit's `reconnectTargetId` (via `connectKnownPeripheral`, which
-    /// sets it before its powered-on guard) so a test can establish the C10 cross-check precondition —
+    /// Test seam: arms the kit's `reconnectTargetId` (via `connectKnownPeripheral`, which
+    /// sets it before its powered-on guard) so a test can establish the cross-check precondition —
     /// `reapplyTrustedIdentityIfKnown()` only stamps trust when `client.reconnectTargetId` matches
     /// `PumpPeripheralStore.id()` — with no live BLE central.
     func armReconnectTargetForTesting(_ id: UUID) {
@@ -582,14 +576,14 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// The profile whose segments are being read into snapshot.viewedProfileSegments (-1 = none).
     private var viewedProfileId = -1
 
-    /// PX-08: send a request and await its correlated, typed response via the transaction coordinator.
+    /// Send a request and await its correlated, typed response via the transaction coordinator.
     /// A synchronous send/build failure propagates as-is (a clean *pre-write* failure); a post-write
     /// timeout/disconnect surfaces as `PumpTransactionCoordinator.TxError` (which a delivery caller maps to
     /// *indeterminate* — see `perform`). Replaces the old hand-owned continuation slots.
     private func awaitResponse<T: Message>(_ message: Message, as _: T.Type, deadline: TimeInterval,
                                            signed: Bool = false, allowInsulinDelivery: Bool = false,
                                            serialized: Bool = false) async throws -> T {
-        // B3a (§5.2.8): time the round-trip for the observational latency dimension. `start` is a
+        // Time the round-trip for the observational latency dimension. `start` is a
         // monotonic clock (never wall-clock), so a system time change can't skew it. On a response, report
         // the elapsed seconds; on a throw that ran to the deadline (a genuine timeout), report `nil`; a fast
         // pre-flight failure (e.g. not connected) is NOT a latency signal and reports nothing. This wraps
@@ -616,7 +610,7 @@ public final class TandemBackend: NSObject, PumpBackend {
         guard let parsed = try? ResponseParser.parse(frame: frame, characteristic: message.characteristic,
                                                      authenticationKey: authenticationKey),
               let typed = parsed.message as? T else {
-            // VA-04: a signed response now fails-closed (throws) unless its HMAC verifies under the session
+            // A signed response now fails-closed (throws) unless its HMAC verifies under the session
             // key — a forged/tampered signed control ack is rejected here rather than trusted.
             throw BolusError.pumpRejected("could not parse \(T.self) response")
         }
@@ -630,21 +624,21 @@ public final class TandemBackend: NSObject, PumpBackend {
         pumpTimeAnchor = (m.currentTime, Date())
         if !historyStatusRequestedThisConnection {
             historyStatusRequestedThisConnection = true
-            // D-01 (Phase 09.7-02): the AUTOMATIC on-connect check is gated on the user's toggle —
+            // The AUTOMATIC on-connect check is gated on the user's toggle —
             // `triggerManualHistorySync` (the "Sync now" affordance) bypasses this gate entirely and
             // stays available regardless (UI-SPEC assumption 2).
             guard AppSettings.shared.historySyncEnabled else { return }
-            // tslim-reconnect-loop (Phase B, item 4): the auto-on-connect history-status read (op58) now
+            // The auto-on-connect history-status read (op58) now
             // routes through the GUARDED read path (`sendOnDemandRead`) instead of raw `tx.send`, so it
             // picks up the `badOpcodes` never-resend backstop + op-77 correlation. `HistoryLogStatusRequest`
-            // is unsigned/unelevated (`.read`-risk, permitted under the default `.readOnly` policy, D-06);
+            // is unsigned/unelevated (`.read`-risk, permitted under the default `.readOnly` policy);
             // the scheduler's `send` closure preserves the same `injectedTransport` seam + wire bytes.
             _ = readScheduler.sendOnDemandRead(HistoryLogStatusRequest())
         }
     }
 
     /// One-shot reads used by the bolus-progress loop (routine polling is paused meanwhile). Bounded via
-    /// the coordinator deadline so a single lost status reply can't freeze the poll loop (audit A-03).
+    /// the coordinator deadline so a single lost status reply can't freeze the poll loop.
     private func currentBolusStatus() async throws -> CurrentBolusStatusResponse {
         try await awaitResponse(CurrentBolusStatusRequest(), as: CurrentBolusStatusResponse.self, deadline: 4)
     }
@@ -662,7 +656,7 @@ public final class TandemBackend: NSObject, PumpBackend {
         get { client.writePolicy } set { client.writePolicy = newValue }
     }
 
-    // MARK: - Signed-transaction serialization (audit A-03)
+    // MARK: - Signed-transaction serialization
     // Every top-level signed/control workflow (bolus, suspend/resume, temp-basal, modes, cartridge,
     // dismiss-notification) runs under this async lock so two never interleave and clobber each other's
     // response continuation slot. The in-bolus status polls + `cancelBolus` are intentionally NOT gated:
@@ -674,7 +668,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// (queuing manual double-taps would double-dose). Set synchronously right after the guard.
     private var deliveryInProgress = false
 
-    // FB-02: distinguish a pre-send failure from a post-send UNKNOWN outcome.
+    // Distinguish a pre-send failure from a post-send UNKNOWN outcome.
     /// Set true the instant the `InitiateBolusRequest` write is issued, so a subsequent lost response
     /// (timeout/disconnect) is classified `.indeterminate` (the bolus may have started) rather than a
     /// plain failure. Cleared when a bolus transaction begins.
@@ -688,7 +682,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// deadline" case doesn't wait the full production minimum. Nil ⇒ the production computed deadline.
     var deliveryPollTimeoutOverride: TimeInterval?
 
-    /// Round-3 §4: mark the current initiate INDETERMINATE (write issued, outcome unknown) and throw so
+    /// Mark the current initiate INDETERMINATE (write issued, outcome unknown) and throw so
     /// the caller leaves the durable ledger unresolved + globally blocked. Never fabricates a result.
     private func indeterminate(_ bolusId: Int, _ reason: String) -> BolusError {
         initiateWritten = true
@@ -718,11 +712,11 @@ public final class TandemBackend: NSObject, PumpBackend {
         return try await body()
     }
 
-    /// Resume any non-coordinator waiter on a transport/parse error (audit A-03). The signed request/
+    /// Resume any non-coordinator waiter on a transport/parse error. The signed request/
     /// response flow is now owned by `client.transactions`, which the client itself fails-closed
     /// (`failAll(.connectionLost)`) on every disconnect / read / notify-state error — so here we only
     /// resume the remaining hand-owned waiter (the best-effort CGM-hardware read) and belt-and-suspenders
-    /// reset the write policy. FB-02: a lost reply *after* the initiate write surfaces to the delivery
+    /// reset the write policy. A lost reply *after* the initiate write surfaces to the delivery
     /// caller as `TxError` from `sendAwaitingResponse` and is mapped to `.indeterminate` in `perform`.
     private func failPumpWaiters(_ error: Error) {
         _ = error
@@ -747,8 +741,8 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// Wire `bgSession`'s injected seams to the real UIKit background-task API. Called from the production
     /// `init()` ONLY — the `#if DEBUG init(testTransport:)` path deliberately leaves `bgSession` on its
     /// inert defaults (no `UIApplication`, `isForeground` → `true`, so it never arms a task under test).
-    /// H2 keeps the link warm with no app-side radio activity (the kit keeps its notifications subscribed),
-    /// so there is no keep-alive seam to wire. debug pump-background-disconnect.
+    /// The kit keeps its notifications subscribed across background, so there is no keep-alive
+    /// seam to wire — no app-side radio activity while suspended.
     private func wireBackgroundSession() {
         #if canImport(UIKit)
         bgSession.beginTask = { name, onExpire in
@@ -762,18 +756,17 @@ public final class TandemBackend: NSObject, PumpBackend {
         #endif
     }
 
-    /// Wires `readScheduler`'s injected closures (D-04 hook pattern) — called from BOTH initializers
+    /// Wires `readScheduler`'s injected closures — called from BOTH initializers
     /// right after `super.init()`, since Swift's two-phase init forbids a `[weak self]`-capturing
     /// closure inside the very expression that constructs the property holding it.
     private func wireReadScheduler() {
         // Route through `tx` (== `client` in production, since `injectedTransport` is nil — so this is
         // byte-identical to the prior `client.send(msg)`: same default authKey/pumpTimeSinceReset/no
-        // -delivery args) so the read's wire txId is captured for mechanism-B op77 correlation (debug
-        // pump-pairing-loop-api25). Under test `tx` is the injected `FakePumpTransport`, which yields an
-        // observable txId and records the send.
+        // -delivery args) so the read's wire txId is captured for op77 correlation. Under test `tx` is
+        // the injected `FakePumpTransport`, which yields an observable txId and records the send.
         readScheduler.send = { [weak self] msg in
             guard let self else { return 0 }
-            // CC-03 (app-side consumer): hold NEW routine reads while a pump comms-suspension is
+            // Hold NEW routine reads while a pump comms-suspension is
             // active — this is the ONE choke point every `PumpReadScheduler`-issued read (the 15s/60s
             // tiered poll included) funnels through, so gating it here pauses every routine read with
             // zero change to `PumpReadScheduler` itself; the poll cadence/timer keep running unchanged
@@ -783,7 +776,7 @@ public final class TandemBackend: NSObject, PumpBackend {
             // never be held-then-released by it — see `commsSuspensionGate`'s doc comment.
             if self.commsSuspensionGate.shouldHoldRoutineSend() {
                 self.commsSuspensionGate.noteHeldRoutineSend(opcode: msg.opCode)
-                // LW-02: read-domain error, NOT `BolusError` — this is a held routine READ, never a bolus
+                // Read-domain error, NOT `BolusError` — this is a held routine READ, never a bolus
                 // rejection. `sendStatusRead`'s generic catch handles it identically (inert-today: the gate
                 // is never paused in production).
                 throw PumpReadError.heldDuringCommsSuspension("CC-03 app-side pause")
@@ -793,19 +786,19 @@ public final class TandemBackend: NSObject, PumpBackend {
         readScheduler.isConnected = { [weak self] in self?.snapshot.connection == .connected }
         readScheduler.pumpTimeAnchor = { [weak self] in self?.pumpTimeAnchor }
         readScheduler.onStartPollingCycleBegin = { [weak self] in self?.responseApplier.resetCycleState() }
-        // debug pump-pairing-loop-api25 (refinement): durable, per-pump learned-bad-opcode hydrate/persist.
+        // Durable, per-pump learned-bad-opcode hydrate/persist.
         readScheduler.loadPersistedBadOpcodes = { [weak self] in self?.persistedBadOpcodesForCurrentPump() ?? [] }
         readScheduler.persistBadOpcode = { [weak self] opcode in self?.persistBadOpcodeForCurrentPump(opcode) }
-        // debug pump-pairing-loop-api25 (static-registry hardening): the pump identity that keys the STATIC
-        // known-unsupported-reads registry, read live off the snapshot the bootstrap op33/op85 responses
-        // populate — so the deferred identity-gated read (op20) is suppressed before the first send on a
-        // KNOWN-bad combo (t:slim X2 sw 2.5). Distinct from the per-pump LEARNED store above — never persisted.
+        // The pump identity that keys the STATIC known-unsupported-reads registry, read live off the
+        // snapshot the bootstrap op33/op85 responses populate — so the deferred identity-gated read
+        // (op20) is suppressed before the first send on a KNOWN-bad combo (t:slim X2 sw 2.5). Distinct
+        // from the per-pump LEARNED store above — never persisted.
         readScheduler.pumpIdentityForStaticExclusion = { [weak self] in
             (self?.snapshot.isMobi, self?.snapshot.softwareVersion ?? "")
         }
     }
 
-    // MARK: - Per-pump durable learned-bad-opcode persistence (debug pump-pairing-loop-api25 refinement)
+    // MARK: - Per-pump durable learned-bad-opcode persistence
 
     /// The DURABLE identity key for the currently-adopted pump — its CoreBluetooth peripheral UUID, the same
     /// identity `PumpPeripheralStore` persists at discovery (available BEFORE the first `fastRead()` of every
@@ -833,7 +826,7 @@ public final class TandemBackend: NSObject, PumpBackend {
         let currentFirmware = snapshot.softwareVersion
         if let learnedFirmware = entry.firmware, !currentFirmware.isEmpty, learnedFirmware != currentFirmware {
             badOpcodeStore.reset(for: key)   // firmware changed → stale skip discarded; re-test under new fw
-            // WR-05 (deep review): also purge the entries learned under the OLD firmware from the scheduler's
+            // Also purge the entries learned under the OLD firmware from the scheduler's
             // IN-MEMORY set. `badOpcodes` survives reconnects for the scheduler's lifetime, so on the SAME
             // backend a firmware change would otherwise keep op20 skipped until relaunch even though the store
             // was just reset. Clearing exactly `entry.opcodes` (what was persisted under the old firmware)
@@ -868,7 +861,7 @@ public final class TandemBackend: NSObject, PumpBackend {
             body(&self.iobHistory)
         }
         responseApplier.send = { [weak self] msg in
-            // tslim-reconnect-loop (Phase B, item 4): the chained IDP/history reads this closure emits
+            // The chained IDP/history reads this closure emits
             // (IDPSettings op64, IDPSegment op66, HistoryLogStatus op58) now route through the GUARDED
             // read path (`sendOnDemandRead` → `sendStatusRead`) instead of raw `tx.send`, so they pick up
             // the `badOpcodes` never-resend backstop + op-77 correlation they used to bypass. Byte-identical
@@ -881,14 +874,14 @@ public final class TandemBackend: NSObject, PumpBackend {
         responseApplier.schedulePredictiveBurst = { [weak self] date in self?.readScheduler.schedulePredictiveBurst(afterReadingAt: date) }
         responseApplier.cgmReadingDate = { [weak self] pumpSec, now in self?.readScheduler.cgmReadingDate(pumpSec: pumpSec, now: now) }
         responseApplier.insertBadOpcode = { [weak self] opcode in self?.readScheduler.insertBadOpcode(opcode) }
-        // Mechanism B (debug pump-pairing-loop-api25): resolve an inbound op77 to the true failing
-        // opcode (cargo requestCodeId when named, else the outstanding read correlated by echoed txId /
-        // FIFO), record it in `badOpcodes`, and return it for the standing diagnostic log line.
+        // Resolve an inbound op77 to the true failing opcode (cargo requestCodeId when named, else
+        // the outstanding read correlated by echoed txId / FIFO), record it in `badOpcodes`, and
+        // return it for the standing diagnostic log line.
         responseApplier.resolveBadOpcodeForError = { [weak self] requestCodeId, txId in
             self?.readScheduler.resolveErrorResponse(requestCodeId: requestCodeId, txId: txId)
                 ?? UInt8(truncatingIfNeeded: requestCodeId)
         }
-        // GO-2 Step 1 (16-08): re-pointed at `historySyncCoordinator` — the gap-sync state machine now
+        // Gap-sync state lives on `historySyncCoordinator` — the gap-sync state machine now
         // lives there; see its own doc comment's STATE-OWNERSHIP CONTRACT.
         responseApplier.beginGapSync = { [weak self] first, last in
             self?.historySyncCoordinator.beginGapSync(pumpFirst: first, pumpLast: last)
@@ -897,12 +890,12 @@ public final class TandemBackend: NSObject, PumpBackend {
         responseApplier.appendHistoryStreamFrame = { [weak self] m in
             self?.historySyncCoordinator.appendHistoryStreamFrame(m)
         }
-        // CC-11: fires for EVERY incoming HistoryLogStreamResponse, independent of `backfillActive` —
+        // Fires for EVERY incoming HistoryLogStreamResponse, independent of `backfillActive` —
         // see `findBolusInHistory(bolusId:)` and `historyStreamFrameObserved`'s doc comment.
         responseApplier.historyStreamFrameObserved = { [weak self] m in
             guard let self, let target = self.historySearchTarget else { return }
             self.historySearchRecordsScanned += m.records.count
-            // WR-04: `bolusRecords` preserves ascending wire/sequence order within a page, and bolusId is a
+            // `bolusRecords` preserves ascending wire/sequence order within a page, and bolusId is a
             // 16-bit value that wraps after 65536 boluses. Use `last(where:)` (not `first(where:)`) so the
             // NEWEST (highest-sequence) match in the page wins on an id reuse — reconciliation is always for
             // the most-recently-sent bolus id, never an old id-reused record.
@@ -919,14 +912,14 @@ public final class TandemBackend: NSObject, PumpBackend {
         responseApplier.viewedProfileId = { [weak self] in self?.viewedProfileId ?? -1 }
         responseApplier.detectedIsMobi = { [weak self] in self?.detectedIsMobi }
         responseApplier.applyDeviceContext = { [weak self] isMobi, apiVersion, trusted in
-            // CC-06/C1 (REMED-15.5): forward the trust bit `PumpResponseApplier` computed at the op33
+            // Forward the trust bit `PumpResponseApplier` computed at the op33
             // call site — the op33 heuristic itself is never trusted.
-            // VA-06 (tslim-reconnect-loop Phase B): forward the REAL negotiated apiVersion op33 reported,
+            // Forward the REAL negotiated apiVersion op33 reported,
             // so the kit's minApi send-gate floors bite (they were inert while apiVersion stayed nil).
             self?.client.setDeviceContext(model: isMobi ? .mobi : .tslim, apiVersion: apiVersion, trusted: trusted)
         }
-        // debug pump-pairing-loop-api25 (static-registry hardening): once op33 identifies the pump, let the
-        // scheduler consult the static registry and dispatch the deferred identity-gated read(s).
+        // Once op33 identifies the pump, let the scheduler consult the static registry and dispatch
+        // the deferred identity-gated read(s).
         responseApplier.noteBootstrapVersionIdentified = { [weak self] in self?.readScheduler.noteBootstrapVersionIdentified() }
         responseApplier.setPumpFeatureBits = { [weak self] bits in self?.pumpFeatureBits = bits }
         responseApplier.setCalcSnapshot = { [weak self] snapshot in self?.calcSnapshot = snapshot }
@@ -947,7 +940,7 @@ public final class TandemBackend: NSObject, PumpBackend {
         }
     }
 
-    /// Wires `historySyncCoordinator`'s injected closures (D-04 hook pattern) — called from BOTH
+    /// Wires `historySyncCoordinator`'s injected closures — called from BOTH
     /// initializers right after `super.init()`, same two-phase-init reason as `wireReadScheduler()`/
     /// `wireResponseApplier()`. Every published field
     /// (`historySyncState`/`snapshot`/`glucoseHistory`/`iobHistory`/`bolusMarkers`/`historyEvents`) is
@@ -956,7 +949,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// comment).
     private func wireHistorySyncCoordinator() {
         historySyncCoordinator.send = { [weak self] msg in
-            // tslim-reconnect-loop (Phase B, item 4): the HistoryLog (op60) backfill pages now route through
+            // The HistoryLog (op60) backfill pages now route through
             // the GUARDED read path (`sendOnDemandRead` → `sendStatusRead`) instead of raw `tx.send`, so a
             // pump that rejects op60 with op-77 self-heals (learn-and-stop) rather than re-triggering a
             // teardown every page. GRACEFUL: on a pump that supports history (e.g. the owner's) op60 is
@@ -989,7 +982,7 @@ public final class TandemBackend: NSObject, PumpBackend {
         historySyncCoordinator.onChange = { [weak self] in self?.onChange?() }
     }
 
-    /// Wires `lifecycle`'s injected closures (D-04 hook pattern) — called from BOTH initializers right
+    /// Wires `lifecycle`'s injected closures — called from BOTH initializers right
     /// after `super.init()`, same two-phase-init reason as `wireReadScheduler()`/`wireResponseApplier()`/
     /// `wireHistorySyncCoordinator()`. `authenticationKey`/`coordinator`/
     /// `pairingCode`/`detectedIsMobi`/`snapshot` all stay OWNED and PUBLISHED here on `TandemBackend` —
@@ -1028,7 +1021,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     }
 
     #if DEBUG
-    /// Test-only (round-3 §6.1): drive the signed/delivery flow through a fake transport with a
+    /// Test-only: drive the signed/delivery flow through a fake transport with a
     /// pre-established connected + paired state, so `perform` can be exercised without CoreBluetooth.
     init(testTransport: PumpTransport, authKey: [UInt8] = [0x01]) {
         self.injectedTransport = testTransport
@@ -1039,12 +1032,12 @@ public final class TandemBackend: NSObject, PumpBackend {
         wireConnectionLifecycle()
         self.authenticationKey = authKey
         self.snapshot.connection = .connected
-        // Phase 2 (D-07/Pitfall 1): default this test-double to "op-115 already read" — mirrors the
+        // Default this test-double to "op-115 already read" — mirrors the
         // connection/auth default-to-ready precedent above — so the new fail-closed freshness guard in
         // `validateDeliver` doesn't block every pre-existing delivery test that never scripts an op-115
         // reply. Tests that specifically want the unread window use `setTherapyParamsDateForTesting(nil)`.
         self.snapshot.therapyParamsDate = Date()
-        // CR-01 (VA-05): default this test-double to an IDENTIFIED t:slim X2 — mirrors the
+        // Default this test-double to an IDENTIFIED t:slim X2 — mirrors the
         // connection/auth/op-115 default-to-ready precedents above — so the new fail-closed pump-family
         // guard in `validateDeliver` (`snapshot.pumpModel == .tslimX2`) doesn't block every pre-existing
         // delivery test that never scripts an op33 identity. Tests that want a `.mobi` / `.unknown` family
@@ -1053,50 +1046,49 @@ public final class TandemBackend: NSObject, PumpBackend {
     }
     /// Test-only: flip the connection state to simulate a mid-delivery link drop.
     func setConnectionForTesting(_ c: PumpConnectionState) { snapshot.connection = c }
-    /// Test-only (CR-01/VA-05): directly set the pump-family identity, since `snapshot`'s setter is
+    /// Test-only: directly set the pump-family identity, since `snapshot`'s setter is
     /// private outside this file. Used to recreate the `.mobi` / `.unknown` families the new fail-closed
     /// pump-family guard in `validateDeliver` blocks on (the default test-double is an identified t:slim X2).
     func setPumpModelIdentityForTesting(pumpModelName: String, isMobi: Bool) {
         snapshot.pumpModelName = pumpModelName
         snapshot.isMobi = isMobi
     }
-    /// Test-only (Phase 2): directly set/clear the op-115 freshness stamp, since `snapshot`'s setter is
+    /// Test-only: directly set/clear the op-115 freshness stamp, since `snapshot`'s setter is
     /// private outside this file. Used to recreate the never-read-op-115 window that the new fail-closed
     /// guard in `validateDeliver` blocks on.
     func setTherapyParamsDateForTesting(_ date: Date?) { snapshot.therapyParamsDate = date }
-    /// Test-only (Phase 09.9 D-01): directly set the raw `cartridgeLoadState`, since `snapshot`'s setter
+    /// Test-only: directly set the raw `cartridgeLoadState`, since `snapshot`'s setter
     /// is private outside this file. Used to recreate a mid change/load/prime-tubing state that the
     /// no-cartridge fail-closed guard in `validateDeliver` blocks on.
     func setCartridgeLoadStateForTesting(_ state: Int) { snapshot.cartridgeLoadState = state }
-    /// Test-only (debug pump-pairing-loop-api25 refinement): point the durable per-pump learned-bad-opcode
-    /// persistence at an isolated store + a pinned pump identity, so a persistence/keying/firmware-re-test
-    /// test can run entirely off `UserDefaults.standard`. The wired `loadPersistedBadOpcodes`/
-    /// `persistBadOpcode` closures read these back dynamically, so calling this after construction is enough.
+    /// Test-only: point the durable per-pump learned-bad-opcode persistence at an isolated store + a
+    /// pinned pump identity, so a persistence/keying/firmware-re-test test can run entirely off
+    /// `UserDefaults.standard`. The wired `loadPersistedBadOpcodes`/`persistBadOpcode` closures read
+    /// these back dynamically, so calling this after construction is enough.
     func configurePersistedBadOpcodesForTesting(store: PumpBadOpcodeStore, pumpKey: String) {
         badOpcodeStore = store
         injectedPumpKeyForTesting = pumpKey
     }
-    /// Test-only (debug pump-pairing-loop-api25 refinement): set the last-known firmware/API version, since
+    /// Test-only: set the last-known firmware/API version, since
     /// `snapshot`'s setter is private outside this file. Used to exercise the firmware-change re-test path
     /// in `persistedBadOpcodesForCurrentPump()` without building a full `ApiVersionResponse` frame.
     func setSoftwareVersionForTesting(_ version: String) { snapshot.softwareVersion = version }
-    /// Test-only (debug pump-pairing-loop-api25 static-registry hardening): release the deferred
-    /// identity-gated read(s) (op20) as if this cycle's bootstrap op33 `ApiVersionResponse` had just
-    /// identified the pump — consulting the STATIC registry with whatever identity the test set (via
-    /// `setSoftwareVersionForTesting` / the default). Lets a persistence/self-heal test drive the
-    /// post-version dispatch without building a version frame; the REAL op33-frame path is covered
-    /// end-to-end by `PumpStaticUnsupportedReadRegistryTests`.
+    /// Test-only: release the deferred identity-gated read(s) (op20) as if this cycle's bootstrap
+    /// op33 `ApiVersionResponse` had just identified the pump — consulting the STATIC registry with
+    /// whatever identity the test set (via `setSoftwareVersionForTesting` / the default). Lets a
+    /// persistence/self-heal test drive the post-version dispatch without building a version frame;
+    /// the REAL op33-frame path is covered end-to-end by `PumpStaticUnsupportedReadRegistryTests`.
     func releaseIdentityGatedReadsForTesting() { readScheduler.noteBootstrapVersionIdentified() }
-    /// Test-only (Phase 09.9 D-02): directly set the last-known `reservoirUnits` reading, since
+    /// Test-only: directly set the last-known `reservoirUnits` reading, since
     /// `snapshot`'s setter is private outside this file. Used to recreate the "last known reading was
     /// below the requested total" precondition that the `.possiblyOutOfInsulin` nack enrichment reads.
     func setReservoirUnitsForTesting(_ units: Double) { snapshot.reservoirUnits = units }
-    /// Test-only (Phase 09.2 Task 3, gap B3): directly set `viewedProfileId`, since the only production
+    /// Test-only: directly set `viewedProfileId`, since the only production
     /// setter (`refreshProfileSegments(idpId:)`) is `async`, requires `snapshot.connection == .connected`,
     /// and burns a real 1.4s `Task.sleep` — lets a test arm "viewing profile X" before injecting an
     /// `IDPSettingsResponse`/`IDPSegmentResponse` frame, to pin the segment-read cascade deterministically.
     func setViewedProfileIdForTesting(_ id: Int) { viewedProfileId = id }
-    /// Test seam (tslim-reconnect-loop Phase B, item 4): seed an opcode into the scheduler's in-memory
+    /// Test seam: seed an opcode into the scheduler's in-memory
     /// never-resend `badOpcodes` set, so a test can prove the newly-guarded raw-send reads (HistoryLog
     /// op60, IDP op64/op66, ProfileStatus) are now SKIPPED by that backstop — behavior impossible before
     /// they were routed through `sendOnDemandRead`.
@@ -1176,7 +1168,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// directly, without waiting on the live 15s-repeating `Timer`.
     func firePollTimerTickForTesting() { readScheduler.firePollTimerTickForTesting() }
 
-    /// FIFTH fix cycle test seam: like `startPollingForTesting()` but does NOT immediately invalidate
+    /// Test seam: like `startPollingForTesting()` but does NOT immediately invalidate
     /// `pollTimer` — lets a test observe that `pollTimer` is a live `Timer` right after `startPolling()`
     /// runs, then separately verify `linkDroppedCleanup()` (via `applyClientState`) is what tears it down.
     func startPollingLeavingPollTimerRunningForTesting() {
@@ -1190,25 +1182,24 @@ public final class TandemBackend: NSObject, PumpBackend {
 
     /// Test accessor: opcodes currently marked as pump-rejected (never re-sent this session).
     var badOpcodesForTesting: Set<UInt8> { readScheduler.badOpcodesForTesting }
-    /// Test accessor (WR-03): the in-flight op77-correlation map (txId → opcode) recorded this cycle,
+    /// Test accessor: the in-flight op77-correlation map (txId → opcode) recorded this cycle,
     /// forwarded from `readScheduler` so a burst test can look up a specific read's real wire txId.
     var outstandingReadsForTesting: [(txId: UInt8, opcode: UInt8)] { readScheduler.outstandingReadsForTesting }
 
-    /// Part B-a (Phase 09.6-01, D-02a): production read accessor for the `[Capability/opcode]`
-    /// diagnostics section. Consumed by `AppModel.badOpcodesForDiagnostics`. `public` (widened from
-    /// `internal` in 16-09, GO-2 Step 2): required to satisfy `PumpDiagnosticsProviding` — Swift requires
-    /// a public protocol's requirement witness to be at least as visible as the protocol itself, even
+    /// Production read accessor for the `[Capability/opcode]`
+    /// diagnostics section. Consumed by `AppModel.badOpcodesForDiagnostics`. `public` because
+    /// a public protocol's requirement witness must be at least as visible as the protocol itself, even
     /// for a conformance declared entirely within this module. No behavior change.
     public var badOpcodesForDiagnostics: Set<UInt8> { readScheduler.badOpcodesForDiagnostics }
-    /// SEVENTH fix cycle test seam: run one predictive-burst kick.
+    /// Test seam: run one predictive-burst kick.
     func simulatePredictiveBurstForTesting() { readScheduler.simulatePredictiveBurstForTesting() }
 
-    /// Phase 09.7-01 test seam: fires the gap-sync page-done debounce immediately, without waiting on a
+    /// Test seam: fires the gap-sync page-done debounce immediately, without waiting on a
     /// real 2.5 s `Timer` — mirrors `simulateRecurringFastAndStaticReadTickForTesting`'s "synchronous
     /// effect only" shape. A test calls this once per page/window boundary it wants to force.
     func fireHistorySyncTickForTesting() { historySyncCoordinator.backfillPageDone() }
 
-    /// CR-01 test seam: override the pairing-handshake watchdog deadline so a timeout test doesn't wait
+    /// Test seam: override the pairing-handshake watchdog deadline so a timeout test doesn't wait
     /// the real 30 s. `nil` (default) uses the production deadline — changes no production behavior.
     /// Forwards to `lifecycle` (the sole store now).
     var pairingTimeoutSecForTesting: Double? {
@@ -1216,24 +1207,24 @@ public final class TandemBackend: NSObject, PumpBackend {
         set { lifecycle.pairingTimeoutSecForTesting = newValue }
     }
 
-    /// CR-01 test seam: fire the armed pairing-handshake watchdog synchronously (mirrors
+    /// Test seam: fire the armed pairing-handshake watchdog synchronously (mirrors
     /// `firePollTimerTickForTesting`), so a test can drive `beginPairingForTesting(code:)` then assert the
     /// fail-closed teardown without a live 30 s `Timer`.
     func firePairingWatchdogForTesting() { lifecycle.firePairingWatchdogForTesting() }
 
-    /// CR-02 test accessor: the scheduler's current poll-cycle generation, forwarded so a `.connecting`
+    /// Test accessor: the scheduler's current poll-cycle generation, forwarded so a `.connecting`
     /// unintended-drop test can assert `linkDroppedCleanup()` advanced it.
     var pollCycleGenerationForTesting: Int { readScheduler.pollCycleGenerationForTesting }
 
-    /// CR-02/CR-03 test accessor: whether the backend currently holds a non-empty `authenticationKey`
+    /// Test accessor: whether the backend currently holds a non-empty `authenticationKey`
     /// (drives `isPaired`), so a teardown test can assert the auth key/coordinator were cleared.
     var isPairedForTesting: Bool { isPaired }
 
-    /// CR-03 test accessor: whether the pairing `coordinator` is currently live (non-nil), so a
+    /// Test accessor: whether the pairing `coordinator` is currently live (non-nil), so a
     /// forget/teardown test can assert it was torn down.
     var pairingCoordinatorIsLiveForTesting: Bool { coordinator != nil }
 
-    /// R2-07 test seam: the bounded quick-pair RESUME retry budget consumed this reconnect cycle
+    /// Test seam: the bounded quick-pair RESUME retry budget consumed this reconnect cycle
     /// (0…`maxResumeRetries`). Read-only, so a resume-failure test can pin the budget progression
     /// exactly — incremented on each bounded retry, reset to 0 once the budget is exhausted (and by a
     /// successful `onPaired`) — rather than only inferring "retried vs errored" from the connection
@@ -1241,7 +1232,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// Forwards to `lifecycle` (the sole store now).
     var resumeRetryCountForTesting: Int { lifecycle.resumeRetryCountForTesting }
 
-    /// C1-01 test seam: which reconnect action `handleResumeFailure()`'s retry branch invoked on the kit
+    /// Test seam: which reconnect action `handleResumeFailure()`'s retry branch invoked on the kit
     /// `client` — `.reestablish` (`connectKnownPeripheral`, the fix) or `.disconnect` (the pre-fix bug
     /// this plan removes). `client` is a real `PumpBLEClient` with no fake-double seam (unlike `tx`), and
     /// its `intentionalDisconnect` flag has no public accessor even for testing — so this records INTENT
@@ -1251,7 +1242,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// Forwards to `lifecycle` — `ResumeRetryAction`/the field lives on `lifecycle`.
     var resumeRetryActionForTesting: PumpConnectionLifecycle.ResumeRetryAction? { lifecycle.resumeRetryActionForTesting }
 
-    /// Test seam (Phase 15 15-04, CX-F-05): directly seed a pre-existing LIVE dosing-snapshot glucose
+    /// Test seam: directly seed a pre-existing LIVE dosing-snapshot glucose
     /// value + date, since `snapshot`'s setter is private outside this file. Used to prove
     /// `finishBackfill` never overwrites a pre-existing live reading — backfill populates `glucoseHistory`
     /// (the chart) only.
@@ -1325,10 +1316,10 @@ public final class TandemBackend: NSObject, PumpBackend {
         // Scope of the guarantee (honest): this collapses the therapy-param staleness the clinician-edit /
         // profile-segment-boundary / profile-switch hazards can cause from up-to-~10-min (the routine-poll
         // cache) to at most the ~1 s a reply is in transit. `noteCalcInputArrived` correlates frames only by
-        // opcode, NOT per-request (txId correlation is Addendum G, deferred to newer-firmware bench), so in a
-        // sub-second race a routine-poll reply already in transit when this compose began can satisfy the
-        // proof on ~1-s-old params. Clinically indistinguishable (a segment boundary ±1 s); txId correlation
-        // closes it fully. Recorded for §13 in dosing-input-freshness-plan-2026-08-07.md.
+        // opcode, NOT per-request (txId correlation would close it fully but needs newer-firmware
+        // bench), so in a sub-second race a routine-poll reply already in transit when this compose
+        // began can satisfy the proof on ~1-s-old params. Clinically indistinguishable (a segment
+        // boundary ±1 s).
         let inputsFreshThisAttempt = await readScheduler.refreshCalcInputsConfirmed()
 
         var rec = BolusRecommendation()
@@ -1341,7 +1332,7 @@ public final class TandemBackend: NSObject, PumpBackend {
         rec.therapyStale = snapshot.isTherapyStale(now: now)
         let carbs: Double? = carbsGrams > 0 ? carbsGrams : nil
 
-        // Cross-check the op-115 `iob` against the op-109 `swan6hrIOB` the dose uses (owner decision 3): a
+        // Cross-check the op-115 `iob` against the op-109 `swan6hrIOB` the dose uses: a
         // mismatch beyond epsilon means the two pump reads of active insulin disagree, so we can't trust
         // either → mark IOB stale (fails closed via the same gate as an aged read).
         if let s = calcSnapshot {
@@ -1351,7 +1342,7 @@ public final class TandemBackend: NSObject, PumpBackend {
 
         if inputsFreshThisAttempt, let s = calcSnapshot, s.carbRatio > 0, !rec.iobStale, !rec.therapyStale {
             // Verified AND confirmed-fresh-this-attempt pump profile → the single oracle-backed calculator
-            // (audit C-01). Below-target BG correctly *reduces* the dose; IOB (op-109 swan6hrIOB) only
+            // Below-target BG correctly *reduces* the dose; IOB (op-109 swan6hrIOB) only
             // offsets a BG correction. `inputsFreshThisAttempt` is the per-attempt gate; the two `!…Stale`
             // clauses additionally carry the op-115↔op-109 IOB cross-check result below.
             let profile = BolusMath.Profile(carbRatioGramsPerUnit: s.carbRatioGramsPerUnit,
@@ -1391,7 +1382,7 @@ public final class TandemBackend: NSObject, PumpBackend {
             // `inputsVerified = false`. The BG correction needs trustworthy therapy: keep it only when we
             // actually HAVE last-known therapy AND either therapy wasn't the stale input or the owner
             // accepted last-known therapy (`allowStaleTherapy`). If op-115 never arrived we cannot size a
-            // correction → stay carbs-only for that sub-case (the frozen owner decision). include-last-known
+            // correction → stay carbs-only for that sub-case. include-last-known
             // IOB is realized by the profile carrying `snapshot.iobUnits` (the op-109 swan6hrIOB the verified
             // branch also uses): it keeps SUBTRACTING it, never zeroes it. With no override this is exactly
             // the DIF-core carbs-only dose (`overrideBg == nil`).
@@ -1426,13 +1417,13 @@ public final class TandemBackend: NSObject, PumpBackend {
     }
 
     /// Force a fresh CGM read and wait (bounded ~2.5 s) for it, so a correction uses the newest value.
-    /// Forwards to `readScheduler` (Phase 09 Wave 3, D-06) — see `PumpReadScheduler.refreshGlucoseNow()`.
+    /// Forwards to `readScheduler` — see `PumpReadScheduler.refreshGlucoseNow()`.
     public func refreshGlucoseNow() async {
         await readScheduler.refreshGlucoseNow()
     }
 
     /// DIF-core: force a fresh op-115 (CR/ISF/target/max) + op-109 (IOB) read. Forwards to
-    /// `readScheduler` (Phase 09 Wave 3, D-06) — see `PumpReadScheduler.refreshCalcInputsNow()`.
+    /// `readScheduler` — see `PumpReadScheduler.refreshCalcInputsNow()`.
     public func refreshCalcInputsNow() async {
         await readScheduler.refreshCalcInputsNow()
     }
@@ -1444,7 +1435,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     }
 
     /// Delivers a standard bolus via the validated signed path. Raises the write policy to
-    /// `.allowDelivery` only for this call. `perform` picks FOOD1/FOOD2 by carb presence (audit C-07).
+    /// `.allowDelivery` only for this call. `perform` picks FOOD1/FOOD2 by carb presence.
     public func deliverBolus(units: Double, carbsGrams: Double?, bgMgdl: Int?, iobUnits: Double?) async throws -> Double {
         try validateDeliver(total: units)
         let mu = UInt32((units * 1000).rounded())
@@ -1459,7 +1450,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     public func deliverExtendedBolus(totalUnits: Double, nowUnits: Double, durationMinutes: Int,
                                      carbsGrams: Double?, bgMgdl: Int?, iobUnits: Double?) async throws -> Double {
         try validateDeliver(total: totalUnits)
-        let safeNow = nowUnits.isFinite ? nowUnits : 0          // audit A-07: no NaN into UInt32(...)
+        let safeNow = nowUnits.isFinite ? nowUnits : 0          // no NaN into UInt32(...)
         let now = max(0, min(safeNow, totalUnits))
         let nowMu = UInt32((now * 1000).rounded())
         let laterMu = UInt32((max(0, totalUnits - now) * 1000).rounded())
@@ -1475,14 +1466,14 @@ public final class TandemBackend: NSObject, PumpBackend {
 
     /// Shared pre-flight validation for any delivery (standard or extended).
     private func validateDeliver(total: Double) throws {
-        // FB-02: a prior bolus with an UNKNOWN outcome blocks any new delivery until it's reconciled
+        // A prior bolus with an UNKNOWN outcome blocks any new delivery until it's reconciled
         // against the pump (a duplicate here could be a real double-dose).
         guard !deliveryOutcomeUnknown else {
             throw BolusError.indeterminate("a previous bolus outcome is unknown — verify on the pump first")
         }
         guard snapshot.connection == .connected || snapshot.connection == .bolusing else { throw BolusError.notConnected }
         guard isPaired else { throw BolusError.pumpRejected("not paired") }
-        // CR-01 (VA-05): fail closed unless the identified family is exactly t:slim X2. Blocks .mobi
+        // Fail closed unless the identified family is exactly t:slim X2. Blocks .mobi
         // AND .unknown (not-yet-identified) — a synchronous structural interlock at the single delivery
         // chokepoint, independent of the async MobiReject backstop. This covers every delivery surface
         // (phone owner, Watch, Garmin, widget) at once and preserves phone-owner semantics; no change
@@ -1496,13 +1487,13 @@ public final class TandemBackend: NSObject, PumpBackend {
         // has been read at least once. Before this guard, an unread `maxBolusUnits` silently fell back to
         // `PumpSnapshot`'s permissive 25 U default — the absolute ceiling, not necessarily the pump's real
         // configured max. Gated ONLY on "never read" (`== nil`), never on staleness (read-but-old); a
-        // stale-but-once-read value still bounds the max-bound guard below (D-02 — staleness is the
+        // stale-but-once-read value still bounds the max-bound guard below (staleness is the
         // calculator path's job, not this one).
         guard snapshot.therapyParamsDate != nil else {
             throw BolusError.pumpRejected("waiting to read the pump's max bolus — try again in a moment")
         }
-        // Reject non-finite / negative before any `UInt32(... * 1000)` conversion, which would trap
-        // (audit A-07). The max clamp only bounds the upper end.
+        // Reject non-finite / negative before any `UInt32(... * 1000)` conversion, which would trap.
+        // The max clamp only bounds the upper end.
         guard total.isFinite, total >= 0 else { throw BolusError.pumpRejected("invalid dose") }
         guard total <= snapshot.maxBolusUnits, total <= Interlocks.absoluteMaxUnits else {
             throw BolusError.exceedsMax(min(snapshot.maxBolusUnits, Interlocks.absoluteMaxUnits))
@@ -1515,7 +1506,7 @@ public final class TandemBackend: NSObject, PumpBackend {
         }
     }
 
-    /// FB-02 reconciliation: resolve an unknown-outcome bolus against the pump's actual bolus history.
+    /// Resolve an unknown-outcome bolus against the pump's actual bolus history.
     /// Reads the pump's last bolus; if it matches the id we were waiting on, we now KNOW the outcome, so
     /// clear the block and return the delivered amount. If the pump's LAST bolus
     /// is a DIFFERENT (newer) id — a bolus intervened elsewhere between our unresolved attempt and this
@@ -1538,7 +1529,7 @@ public final class TandemBackend: NSObject, PumpBackend {
         return delivered
     }
 
-    /// P0/CC-11: reconcile a specific pump bolus id against the pump's authoritative history. Tries the
+    /// Reconcile a specific pump bolus id against the pump's authoritative history. Tries the
     /// fast path first (the pump's LAST bolus record matches exactly — unchanged from before); if that
     /// misses (e.g. a NEWER bolus intervened pump-side since the unresolved attempt), falls through to a
     /// bounded exact-id HISTORY search (`findBolusInHistory`) instead of giving up — so an intervening
@@ -1549,15 +1540,15 @@ public final class TandemBackend: NSObject, PumpBackend {
         await findBolusInHistory(bolusId: bolusId)
     }
 
-    /// CC-11 (Phase 14 14-04): the shared bounded exact-id history-query primitive both `reconcile(bolusId:)`
+    /// The shared bounded exact-id history-query primitive both `reconcile(bolusId:)`
     /// and `reconcileIndeterminateDelivery()` route through. (1) the existing `lastBolusStatus()` fast path
     /// — unchanged; (2) on a miss, issues `HistoryLogStatusRequest` to learn the current log range —
     /// INDEPENDENT of `AppSettings.historySyncEnabled` (a reconciliation safety read, not a user-facing
     /// sync preference) — then walks BACKWARD from the pump's most recent sequence number in bounded
     /// `HistoryLogRequest(startLog:numberOfLogs:)` pages (reusing the SAME request types the routine
     /// gap-sync backfill uses — see `requestBackfillPage` — never a hand-rolled transport), searching the
-    /// typed `BolusCompletedHistoryLog`/`BolusHistoryRecord` records for `bolusId == target` (using the
-    /// restored `BolusHistoryRecord.bolusId`, Phase 14 14-04 TandemKit change) including a validated 0U/
+    /// typed `BolusCompletedHistoryLog`/`BolusHistoryRecord` records for `bolusId == target` (using
+    /// `BolusHistoryRecord.bolusId`) including a validated 0U/
     /// partial completion; (3) bounded by page count (`historySearchMaxPages`), record count
     /// (`historySearchMaxRecords`), and a per-page settle timeout (`historySearchPerPageTimeout`) — on
     /// exhaustion with no match, fails CLOSED (`.unavailable`; never a blind retry, never assumes
@@ -1579,7 +1570,7 @@ public final class TandemBackend: NSObject, PumpBackend {
         if let last = try? await lastBolusStatus(), last.bolusId == bolusId {
             return resolved(last.deliveredUnits)
         }
-        // CC-11: the fast path missed — possibly a newer bolus intervened. Query recent HISTORY by exact
+        // The fast path missed — possibly a newer bolus intervened. Query recent HISTORY by exact
         // id instead of giving up. `awaitResponse` also reaches the SAME passive dispatch the routine
         // on-connect check does (harmless/additive: at worst it opportunistically also catches up a
         // behind chart/logbook sync; it never competes with THIS search, which observes every incoming
@@ -1601,7 +1592,7 @@ public final class TandemBackend: NSObject, PumpBackend {
             let count = min(UInt32(Self.historySearchPageSize), available)
             guard count > 0 else { break }
             let startLog = nextEnd - (count - 1)
-            // tslim-reconnect-loop (Phase B, item 4): the reconciliation-search HistoryLog (op60) pages now
+            // The reconciliation-search HistoryLog (op60) pages now
             // route through the GUARDED read path. On a pump that rejects op60 this fails closed to
             // `.unavailable` (page times out with no match) exactly as a raw op-77'd send would — but
             // without re-triggering a teardown mid-reconciliation. op60 is an unsigned read: the signed
@@ -1625,30 +1616,30 @@ public final class TandemBackend: NSObject, PumpBackend {
     private func perform(totalMu: UInt32, extendedMu: UInt32, extendedSeconds: UInt32,
                          displayUnits units: Double,
                          carbsGrams: Double? = nil, bgMgdl: Int? = nil, iobUnits: Double? = nil) async throws -> Double {
-        // Audit A-03: reject a second bolus while one is mid-flight (set synchronously so a double-tap
+        // Reject a second bolus while one is mid-flight (set synchronously so a double-tap
         // can't slip past before the flag is raised). Then serialize behind any other signed transaction.
         // This is the INNER, per-backend double-tap guard; the cross-client "one delivery at a time" mutex
-        // that spans every remote lives above the backend in `AppModel.computeDeliveryBlockReason` (S6), so
+        // that spans every remote lives above the backend in `AppModel.computeDeliveryBlockReason`, so
         // it holds even for a second PumpBackend that would not share this flag.
         guard !deliveryInProgress else { throw BolusError.pumpRejected("a bolus is already in progress") }
         deliveryInProgress = true
         defer { deliveryInProgress = false }
         await acquirePumpTx()
         defer { releasePumpTx() }
-        initiateWritten = false   // FB-02: reset per transaction; set true once the initiate is on the wire
+        initiateWritten = false   // reset per transaction; set true once the initiate is on the wire
         // Snapshot the last-known reservoir reading BEFORE the attempt, so a later nack
         // can be compared against the reading that was current when the bolus was requested — never a
         // value this same attempt might have mutated.
         let reservoirBeforeAttempt = snapshot.reservoirUnits
 
-        // Fresh signing timestamp (the pump validates the HMAC against its clock). PX-08: awaited via the
+        // Fresh signing timestamp (the pump validates the HMAC against its clock). Awaited via the
         // transaction coordinator — a timeout/disconnect here is a clean *pre-initiate* failure (nothing
         // was delivered), so it propagates as-is (not indeterminate).
         let time = try await awaitResponse(TimeSinceResetRequest(), as: TimeSinceResetResponse.self, deadline: 5)
         applyTimeResponse(time)
         signingTimestamp = time.currentTime
 
-        // PX-03/04: elevate only for this bolus, and ALWAYS restore .readOnly when perform exits (success,
+        // Elevate only for this bolus, and ALWAYS restore .readOnly when perform exits (success,
         // throw, or cancellation) — never a prior, possibly-elevated value. The elevation spans the
         // permission→initiate→poll window so an in-flight cancel (a signed op) still authorizes.
         tx.writePolicy = .allowDelivery
@@ -1673,7 +1664,7 @@ public final class TandemBackend: NSObject, PumpBackend {
             throw BolusError.pumpRejected(detail)
         }
         currentBolusId = perm.bolusId
-        // Round-3 §5: the pump assigned this id and NO initiate has been written yet. Durably record it
+        // The pump assigned this id and NO initiate has been written yet. Durably record it
         // (acknowledged) BEFORE any metadata/initiate write. If the host can't persist it, ABORT here — a
         // clean pre-initiate failure (nothing was delivered) rather than writing an initiate whose id
         // isn't durably recorded (which a relaunch could mistake for "not sent").
@@ -1690,23 +1681,23 @@ public final class TandemBackend: NSObject, PumpBackend {
         // change the delivered dose). Best-effort: a failed entry must NEVER abort the bolus, so the
         // InitiateBolus below still fires. Also mirrored inline in InitiateBolusRequest.bolusCarbs/BG.
         // Bound carbs before the Int/UInt16 conversion so a garbage value can't overflow or land as an
-        // absurd pump record (audit C-07). BG is already an Int; clamp to a sane 16-bit-safe range.
+        // absurd pump record. BG is already an Int; clamp to a sane 16-bit-safe range.
         // Clamp in Double space BEFORE the Int(_:) conversion — mirrors the iobU pattern below — so a
         // finite out-of-range Double (> Int.max) or a non-finite Double (.infinity/.nan) can never trap
         // the conversion. Carbs is pump metadata only; clamp, never reject (units are separately validated).
         let carbsInt = Self.clampCarbGrams(carbsGrams)
         let bgInt = max(0, min(600, bgMgdl ?? 0))
-        // bolusIOB metadata (audit C-07 / FB-04): send the **frozen calculator IOB** — the active insulin
+        // bolusIOB metadata: send the **frozen calculator IOB** — the active insulin
         // the dose was computed against, captured at freeze time and threaded through the delivery API —
         // in **milliunits**, matching the reference app's captured request (byte-locked against oracle
-        // vector ID10653: bolusIOB 130 == 0.13 U). FB-04: use the FROZEN value, NOT the live snapshot
+        // vector ID10653: bolusIOB 130 == 0.13 U). Use the FROZEN value, NOT the live snapshot
         // (the live IOB may have moved since the dose was approved, which wouldn't preserve the approved
         // inputs). If no frozen IOB was provided, send 0 rather than substituting a live value. Metadata
         // only — never changes the delivered dose; guarded so a non-finite value can't trap the conversion.
         let frozenIob = iobUnits ?? 0.0
         let iobU = frozenIob.isFinite ? max(0.0, frozenIob) : 0.0
         let bolusIobMu = UInt32(min((iobU * 1000).rounded(), 1_000_000))
-        // Oracle bolus-type selection (audit C-07): carbs → FOOD1, else FOOD2; | EXTENDED for a combo.
+        // Oracle bolus-type selection: carbs → FOOD1, else FOOD2; | EXTENDED for a combo.
         let extended = extendedMu > 0
         let foodBit = carbsInt > 0 ? Self.food1 : Self.food2
         let bitmask = extended ? (foodBit | Self.extendedBit) : foodBit
@@ -1721,7 +1712,7 @@ public final class TandemBackend: NSObject, PumpBackend {
                          allowInsulinDelivery: false)
         }
         if bgInt > 0 {
-            // Match the reference app's captured RemoteBgEntryRequest exactly (audit C-07): all six
+            // Match the reference app's captured RemoteBgEntryRequest exactly: all six
             // real-app BLE captures (RemoteBgEntryRequestTest.ID10652/10676/10677/10678 + the two G7
             // calibrate vectors) send entryType = MANUAL (byte 3 = 0) and source = REMOTE (byte 4 = 1) —
             // "entered remotely via BLE" — for a bolus-window BG. faBolus previously sent source = PUMP
@@ -1733,7 +1724,7 @@ public final class TandemBackend: NSObject, PumpBackend {
                          allowInsulinDelivery: false)
         }
 
-        // FB-04: send the frozen calculator IOB (`bolusIobMu`) — no longer 0. PX-07: build via the throwing
+        // Send the frozen calculator IOB (`bolusIobMu`) — no longer 0. Build via the throwing
         // `validating:` constructor so out-of-range/incoherent cargo is rejected HERE (a synchronous
         // pre-send failure) rather than silently truncating or trapping on the wire.
         let request: InitiateBolusRequest = try extended
@@ -1743,7 +1734,7 @@ public final class TandemBackend: NSObject, PumpBackend {
             : InitiateBolusRequest(validating: totalMu, bolusID: perm.bolusId, bolusTypeBitmask: bitmask,
                                    foodVolume: foodVolume, correctionVolume: 0, bolusCarbs: carbsInt, bolusBG: bgInt, bolusIOB: bolusIobMu,
                                    extendedVolume: 0, extendedSeconds: 0, extended3: 0)
-        // Round-3 §4: `sendAwaitingResponse` writes the initiate BEFORE it suspends, so once we call it
+        // `sendAwaitingResponse` writes the initiate BEFORE it suspends, so once we call it
         // EVERY non-authoritative exit is INDETERMINATE (the pump may be mid-bolus): a lost/garbage/
         // mismatched reply, a disconnect, or a poll that never confirms completion. A *synchronous* build/
         // send failure throws BEFORE the write → a clean, retryable failure. Only a parsed, matching,
@@ -1761,7 +1752,7 @@ public final class TandemBackend: NSObject, PumpBackend {
                                                         characteristic: InitiateBolusRequest.props.characteristic,
                                                         authenticationKey: authenticationKey),
               let ini = iniParsed.message as? InitiateBolusResponse else {
-            // VA-04: a forged/tampered/absent-HMAC initiate response no longer parses — it fails closed
+            // A forged/tampered/absent-HMAC initiate response no longer parses — it fails closed
             // here and, being post-write, is routed to indeterminate + HOLD (never a trusted clean NACK).
             throw indeterminate(perm.bolusId, "unparseable initiate response")
         }
@@ -1769,7 +1760,7 @@ public final class TandemBackend: NSObject, PumpBackend {
             throw indeterminate(perm.bolusId, "initiate response bolus id mismatch")
         }
         guard ini.accepted else {
-            // CR-03 (VA-04, iOS half): the parsed response is NOT HMAC-verified — TandemKit's
+            // The parsed response is NOT HMAC-verified — TandemKit's
             // ResponseParser CRC-checks the frame and strips the trailing auth block WITHOUT
             // authenticating it, so a matching-bolus-id, non-accepted frame carries NO trustworthy
             // authentication signal. An active BLE attacker could let the real initiate reach the
@@ -1799,13 +1790,13 @@ public final class TandemBackend: NSObject, PumpBackend {
         snapshot.lastBolusDate = Date()
         onChange?()
         readScheduler.pausePollingForDelivery()   // pause routine polling so its reads don't interfere
-        // WR-04 (R2-20) part 1: resume routine polling on exit ONLY if the link is still live. On the
+        // Resume routine polling on exit ONLY if the link is still live. On the
         // `throw indeterminate(..., "connection lost during delivery")` exit the link is already down (a
         // drop ran `linkDroppedCleanup()` → `stopAllTimers()`); an unconditional re-arm here would start a
         // fresh 15s `pollTimer` on a dead link whose first tick fires bootstrap/fast/static reads that
         // throw against a disconnected central. A genuine reconnect re-arms via
-        // `onPaired → markUsableAndStartPolling()` (CR-01 spine), so nothing is lost on the dropped-mid-
-        // bolus path. (Part 2 — stopping `predictivePollTimer` on drop — is handled by CR-01's
+        // `onPaired → markUsableAndStartPolling()`, so nothing is lost on the dropped-mid-
+        // bolus path. (Part 2 — stopping `predictivePollTimer` on drop — is handled in
         // `stopAllTimers()` inside `linkDroppedCleanup()`.)
         defer {
             if snapshot.connection == .connected || snapshot.connection == .bolusing {
@@ -1834,7 +1825,7 @@ public final class TandemBackend: NSObject, PumpBackend {
         // Authoritative completion: settle from the MATCHING last-bolus record only — no fallback to the
         // requested units. An unavailable/mismatched final status is indeterminate. We do NOT invent a
         // cancellation flag (no verified pump cancellation semantics): a partial simply reports fewer
-        // units (round-3 §4.7/§4.8).
+        // units.
         guard let last = try? await lastBolusStatus(), last.bolusId == currentBolusId else {
             throw indeterminate(perm.bolusId, "final bolus status unavailable or mismatched")
         }
@@ -1859,7 +1850,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     }
 
     /// Request a bolus cancel. This is only a *request*: the in-flight `perform` loop keeps polling for the
-    /// pump's AUTHORITATIVE terminal (round-3 §4) — a failed/unconfirmed cancel never fabricates a
+    /// pump's AUTHORITATIVE terminal — a failed/unconfirmed cancel never fabricates a
     /// cancelled outcome or a guessed delivered amount. Safe to call from the phone HUD or a remote.
     public func cancelBolus() async {
         guard currentBolusId != 0 else { return }
@@ -1874,12 +1865,12 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// Clear a pump notification with a signed DismissNotificationRequest. It's a signed CONTROL
     /// message but does NOT modify insulin delivery, so it runs under `.allowNonDelivery`.
     ///
-    /// CC-08: a remote-dismissable alert hides only AFTER an authenticated status-zero proof that the
+    /// A remote-dismissable alert hides only AFTER an authenticated status-zero proof that the
     /// pump actually cleared it — never on the send attempt alone. The prior implementation recorded the
     /// local ack (hide) unconditionally right after firing the send, regardless of a later failure/NACK/
     /// no-response, so a still-active alert could silently disappear from the phone for up to
     /// `snoozeWindow` (30 min). Awaiting the signed `DismissNotificationResponse` (opcode 185, HMAC-
-    /// verified by `awaitResponse`'s `ResponseParser` — VA-04) and gating the ack on `status == 0` closes
+    /// verified by `awaitResponse`'s `ResponseParser`) and gating the ack on `status == 0` closes
     /// that gap: a thrown error (pre-write failure, timeout, disconnect, or a failed HMAC verify on a
     /// tampered reply) or a non-zero rejected status both leave the alert VISIBLE. "Snooze locally" (the
     /// guard branch just below, for pumps that don't honor remote dismissal) is UNCHANGED and stays a
@@ -1912,7 +1903,7 @@ public final class TandemBackend: NSObject, PumpBackend {
             return .localSnoozeOnly
         }
         // Fresh signing timestamp for the HMAC. Serialized behind any other signed transaction and
-        // timed-out so a lost time-sync reply can't hang / clobber another transaction (audit A-03).
+        // timed-out so a lost time-sync reply can't hang / clobber another transaction.
         await acquirePumpTx()
         let time: TimeSinceResetResponse
         do {
@@ -1921,15 +1912,15 @@ public final class TandemBackend: NSObject, PumpBackend {
         applyTimeResponse(time)
         signingTimestamp = time.currentTime
 
-        // Dismissing an alert is a BENIGN signed op (audit P-01) — it needs only the benign tier, not the
-        // therapy-config-capable `.allowNonDelivery`. PX-03/04: always restore .readOnly (not a prior,
+        // Dismissing an alert is a BENIGN signed op — it needs only the benign tier, not the
+        // therapy-config-capable `.allowNonDelivery`. Always restore .readOnly (not a prior,
         // possibly-elevated value) when this scope ends.
         client.writePolicy = .allowBenignControl
         defer { client.writePolicy = .readOnly; releasePumpTx() }
         lastDismissAck = ""
         alertDebug = "clearing id \(alert.id) kind \(alert.kind.rawValue) — awaiting pump confirmation"
         onChange?()
-        // CC-08: await the pump's own signed ack (via the transaction coordinator, correlated by opcode
+        // Await the pump's own signed ack (via the transaction coordinator, correlated by opcode
         // 185) instead of firing the signed write and ack'ing immediately. Its own `deadline: 5` timeout
         // replaces the old separate 3.5s DispatchQueue fallback — a lost reply now throws here directly.
         do {
@@ -1978,14 +1969,14 @@ public final class TandemBackend: NSObject, PumpBackend {
 
     /// Fresh-timestamp, policy-raised signed send for a control command. `delivery` selects the
     /// WritePolicy + the insulin-delivery signing flag. Fire-and-send: the response updates state.
-    /// Serialized behind any other signed transaction (audit A-03) so its awaited time-sync can't overlap.
+    /// Serialized behind any other signed transaction so its awaited time-sync can't overlap.
     private func sendControl(_ message: Message, delivery: Bool) async throws {
         guard snapshot.connection == .connected || snapshot.connection == .bolusing else {
             throw BolusError.notConnected
         }
         try await withPumpTx {
             try await refreshSigningTimestamp()
-            // PX-03/04: scoped one-operation elevation — always restored to .readOnly (even on throw).
+            // Scoped one-operation elevation — always restored to .readOnly (even on throw).
             try await tx.withWritePolicy(delivery ? .allowDelivery : .allowNonDelivery) {
                 _ = try tx.send(message, authenticationKey: authenticationKey,
                                 pumpTimeSinceReset: signingTimestamp, allowInsulinDelivery: delivery)
@@ -1998,7 +1989,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     public func suspendDelivery() async throws { try await sendControl(SuspendPumpingRequest(), delivery: true) }
     public func resumeDelivery() async throws { try await sendControl(ResumePumpingRequest(), delivery: true) }
     public func setTempBasal(percent: Int, durationMinutes: Int) async throws {
-        // CX-T-07: the kit init now throws out-of-range args (15..4320 min, 0..250%) BEFORE any truncating
+        // The kit init now throws out-of-range args (15..4320 min, 0..250%) BEFORE any truncating
         // byte-encode — a synchronous, pre-send rejection rather than a silently-converted command.
         try await sendControl(try SetTempRateRequest(minutes: durationMinutes, percent: percent), delivery: true)
     }
@@ -2044,7 +2035,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     public func enterFillTubingMode() async throws { try await sendControl(EnterFillTubingModeRequest(), delivery: true) }
     public func exitFillTubingMode() async throws { try await sendControl(ExitFillTubingModeRequest(), delivery: false) }
     public func fillCannula(milliunits: Int) async throws {
-        // CX-T-07 / Pitfall 4: shared clamp floors at 1 (0 is upstream-invalid — pumpX2's FillCannulaRequest
+        // Shared clamp floors at 1 (0 is upstream-invalid — pumpX2's FillCannulaRequest
         // rejects it) and caps at the deliberate 1.0U maxCannulaMilliunits (unchanged, NOT raised alongside
         // the kit's 3000 mU ceiling). Two-layer defense: the kit init (below) is the primary boundary.
         let clamped = FillLimits.clampPrimeSize(milliunits)
@@ -2052,10 +2043,10 @@ public final class TandemBackend: NSObject, PumpBackend {
     }
     public func refreshLoadStatus() async {
         guard snapshot.connection == .connected else { return }
-        // Debug pump-pairing-loop-api25: op20 LoadStatus is gated OUT of `fastRead()`'s pre-capability
-        // burst (mechanism A); this on-demand path keeps the capability. Routed through the scheduler's
-        // guarded send (not a bare `client.send`) so it honours the `badOpcodes` never-resend guard and
-        // records the read for op77 correlation (mechanism B). Reply handled in didReceiveFrame.
+        // op20 LoadStatus is gated OUT of `fastRead()`'s pre-capability burst; this on-demand path
+        // keeps the capability. Routed through the scheduler's guarded send (not a bare `client.send`)
+        // so it honours the `badOpcodes` never-resend guard and records the read for op77 correlation.
+        // Reply handled in didReceiveFrame.
         readScheduler.sendOnDemandRead(LoadStatusRequest())
         try? await Task.sleep(nanoseconds: 600_000_000)
     }
@@ -2063,12 +2054,12 @@ public final class TandemBackend: NSObject, PumpBackend {
     // Settings — non-insulin config.
     public func setMaxBolus(units: Double) async throws {
         let clamped = Interlocks.clampMaxBolusLimit(units)   // shared hard-cap clamp (defense-in-depth; funnel clamps too)
-        // CX-T-07 owner decision (ALIGN UP): clampMaxBolusLimit's floor is now 1.0 U, matching the kit's
+        // clampMaxBolusLimit's floor is now 1.0 U, matching the kit's
         // SetMaxBolusLimitRequest throwing floor — no supported value should throw here.
         try await sendControl(try SetMaxBolusLimitRequest(maxBolusMilliunits: Int((clamped * 1000).rounded())), delivery: false)
     }
     public func setMaxBasal(unitsPerHour: Double) async throws {
-        // WR-02: shared clamp floors at the kit's SetMaxBasalLimitRequest throwing floor (1.0 U/hr) AND
+        // Shared clamp floors at the kit's SetMaxBasalLimitRequest throwing floor (1.0 U/hr) AND
         // caps at its throwing ceiling (15.0 U/hr), mirroring setMaxBolus/clampMaxBolusLimit. A value above
         // 15 U/hr now clamps to 15.0 and dispatches rather than throwing a raw ValidationError (defense-in-
         // depth; the funnel clamps too).
@@ -2118,7 +2109,7 @@ public final class TandemBackend: NSObject, PumpBackend {
         try? await Task.sleep(nanoseconds: 600_000_000)
     }
 
-    // Sleep schedule — universal/unsigned read (Phase 09.10 D-04), NOT capability-gated. Mirrors
+    // Sleep schedule — universal/unsigned read, NOT capability-gated. Mirrors
     // refreshControlIQSettings() exactly; the reply is handled in didReceiveFrame.
     public func refreshSleepSchedule() async {
         guard snapshot.connection == .connected else { return }
@@ -2126,10 +2117,11 @@ public final class TandemBackend: NSObject, PumpBackend {
         try? await Task.sleep(nanoseconds: 600_000_000)
     }
 
-    /// Write one native Sleep-schedule slot (Phase 09.10 D-04, Mobi-only by capability — gated at the
-    /// `GatedPumpWrite.setSleepSchedule` funnel, not here). L7 mode-only: `delivery: false` — see
-    /// `SetSleepScheduleRequest.props` (signed, `.control`, `modifiesInsulinDelivery` unset) →
-    /// `operationRisk == .settings`, never `.delivery` (proven by `SleepScheduleWriteBoundaryTests`).
+    /// Write one native Sleep-schedule slot (Mobi-only by capability — gated at the
+    /// `GatedPumpWrite.setSleepSchedule` funnel, not here). Settings write, not delivery:
+    /// `delivery: false` — see `SetSleepScheduleRequest.props` (signed, `.control`,
+    /// `modifiesInsulinDelivery` unset) → `operationRisk == .settings`, never `.delivery`
+    /// (proven by `SleepScheduleWriteBoundaryTests`).
     ///
     /// Upstream scopes this opcode Mobi-only: `SetSleepScheduleRequest.java` / `SetSleepScheduleResponse.java`
     /// are annotated `supportedDevices=MOBI_ONLY, minApi=MOBI_API_V3_5` — identical to `SetTempRateRequest`.
@@ -2144,8 +2136,7 @@ public final class TandemBackend: NSObject, PumpBackend {
         // `flag: 3` is the value observed in jwoglom's captured Tandem-app writes (upstream
         // `SetSleepScheduleRequestTest`, 2024-03-28 "Live Humans iPhone" capture; BOTH the enable and the
         // disable of slot 0 assert `flag == 3`) — NOT the old placeholder `1`. Its semantic meaning is
-        // still undocumented, but 3 is the golden-capture value to replicate byte-for-byte (RESEARCH
-        // addendum 2026-08-15 Item 2).
+        // still undocumented, but 3 is the golden-capture value to replicate byte-for-byte.
         try await sendControl(SetSleepScheduleRequest(slot: slot, schedule: scheduleBytes, flag: 3), delivery: false)
     }
 
@@ -2153,7 +2144,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     public func refreshProfiles() async {
         guard snapshot.connection == .connected else { return }
         viewedProfileId = -1                           // list refresh must not trigger segment reads
-        // tslim-reconnect-loop (Phase B, item 4): route the profile (IDP) list read through the GUARDED
+        // Route the profile (IDP) list read through the GUARDED
         // read path (was raw `client.send`) so it gets the `badOpcodes` backstop + op-77 correlation.
         _ = readScheduler.sendOnDemandRead(ProfileStatusRequest())   // → IDPSettings cascade in didReceiveFrame
         try? await Task.sleep(nanoseconds: 1_400_000_000)
@@ -2179,7 +2170,7 @@ public final class TandemBackend: NSObject, PumpBackend {
             firstSegmentProfileBasalRate: Int((max(0, basalRateUnitsPerHour) * 1000).rounded()),
             firstSegmentProfileTargetBG: targetBg, firstSegmentProfileISF: isf,
             profileInsulinDuration: insulinDurationMinutes,
-            // Reference-captured new-profile values (audit C-07, CreateIDPRequestTest.new1 + the field
+            // Reference-captured new-profile values (CreateIDPRequestTest.new1 + the field
             // doc-comments): timeSegmentBitmask 31 = all segment fields set; bolusSettingsBitmask 5 =
             // insulinDuration|carbEntry; idpSourceId 255 (0xFF / -1 sentinel) = brand-new profile, not a
             // duplicate. faBolus previously sent 1 / 0 / 0, which tells the pump almost nothing is set
@@ -2191,7 +2182,7 @@ public final class TandemBackend: NSObject, PumpBackend {
         guard snapshot.connection == .connected else { return }
         viewedProfileId = idpId
         snapshot.viewedProfileSegments = []
-        // tslim-reconnect-loop (Phase B, item 4): route the IDP-settings read (op64) through the GUARDED
+        // Route the IDP-settings read (op64) through the GUARDED
         // read path (was raw `client.send`) so it gets the `badOpcodes` backstop + op-77 correlation.
         _ = readScheduler.sendOnDemandRead(IDPSettingsRequest(idpId: idpId))   // → segment reads cascade in didReceiveFrame
         try? await Task.sleep(nanoseconds: 1_400_000_000)
@@ -2212,7 +2203,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     }
     // operationId: 0 modify, 1 create, 2 delete (IDPSegmentOperation). idpStatusId is a CHANGED-FIELDS
     // bitmask (IDPSegmentStatus: BASAL_RATE 1 | CARB_RATIO 2 | TARGET_BG 4 | CORRECTION_FACTOR 8 |
-    // START_TIME 16). Audit C-07: the captured SetIDPSegmentRequest vectors pass this bitmask (a new
+    // START_TIME 16). The captured SetIDPSegmentRequest vectors pass this bitmask (a new
     // segment used 31 = all fields); faBolus previously sent 0, telling the pump NO field changed — the
     // likely reason segment writes didn't take. We set all fields each call, so 31 (all) for create/modify;
     // 0 for delete (nothing to mark). Reference-aligned but still bench-gated (basal schedule).
@@ -2278,7 +2269,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     // Tiered polling, poll cadence, and predictive-burst live on `readScheduler`.
     // `lastCgmPumpSec` and `applyEgvReading` live on `responseApplier`.
 
-    /// Decode boundary (P13): project the pump's `PumpFeaturesV1` capability bitmask onto the neutral
+    /// Decode boundary: project the pump's `PumpFeaturesV1` capability bitmask onto the neutral
     /// `PumpFeatureBits` faBolusCore consumes — keeping the PumpX2 message type out of the core. Called
     /// by `responseApplier`'s `PumpFeaturesV1Response` case.
     static func featureBits(from r: PumpFeaturesV1Response) -> PumpFeatureBits {
@@ -2342,7 +2333,7 @@ extension TandemBackend: PumpBLEClientDelegate {
         // connection must never be emitted as THIS connection's proof-of-absence oracle.
         rawActiveNotifications = nil
         // Resume any glucose-refresh / calc-input-refresh waiters so they don't hang across a
-        // disconnect (audit C-05). A resumed calc-input refresh leaves the dates untouched → the dose
+        // disconnect. A resumed calc-input refresh leaves the dates untouched → the dose
         // path reads them as stale and fails closed. Unconditional (see the note where `readScheduler`
         // is declared) — both are no-ops when nothing is in flight.
         readScheduler.completeGlucoseRead()
@@ -2353,23 +2344,22 @@ extension TandemBackend: PumpBLEClientDelegate {
         #if DEBUG
         onLinkDroppedCleanupStepForTesting?("completeCalcInputRead")
         #endif
-        // Resume every signed-flow continuation with an error + drop delivery writes (audit A-03).
+        // Resume every signed-flow continuation with an error + drop delivery writes.
         failPumpWaiters(BolusError.notConnected)
         #if DEBUG
         onLinkDroppedCleanupStepForTesting?("failPumpWaiters")
         #endif
-        // D-05 (UI-SPEC partial/interrupted state): a sync mid-flight when the link drops is a benign,
-        // resumable pause — the persisted coverage map guarantees the next connect resumes correctly —
-        // never a red error. GO-2 Step 0/1 (16-08): the history subset of this cleanup (the `.syncing`→
-        // `.paused` transition + every R6 in-flight-walk field) moved into
+        // A sync mid-flight when the link drops is a benign, resumable pause — the persisted coverage
+        // map guarantees the next connect resumes correctly — never an error banner. The history subset of
+        // this cleanup (the `.syncing`→`.paused` transition + in-flight-walk fields) lives in
         // `historySyncCoordinator.linkDropped()`. `AppSettings.historyCoverage` (the persisted coverage
         // map) is deliberately NOT cleared there either, so the next connect resumes from where this one
-        // left off instead of re-walking from scratch (D-04).
+        // left off instead of re-walking from scratch.
         historySyncCoordinator.linkDropped()
         #if DEBUG
         onLinkDroppedCleanupStepForTesting?("historyLinkDropped")
         #endif
-        // Re-check history status on the next connect (D-02: a fresh connect always re-syncs against the
+        // Re-check history status on the next connect (a fresh connect always re-syncs against the
         // persisted coverage map). `historyStatusRequestedThisConnection` stays TandemBackend's own field
         // (never touched by the coordinator).
         historyStatusRequestedThisConnection = false
@@ -2380,51 +2370,48 @@ extension TandemBackend: PumpBLEClientDelegate {
         #if DEBUG
         onLinkDroppedCleanupStepForTesting?("detectedIsMobiReset")
         #endif
-        pumpFeatureBits = nil  // re-read the capability bitmask on the next connect (P13)
+        pumpFeatureBits = nil  // re-read the capability bitmask on the next connect
         #if DEBUG
         onLinkDroppedCleanupStepForTesting?("pumpFeatureBitsReset")
         #endif
-        // FIFTH fix cycle (`.planning/debug/pump-pairing-loop.md`, on-device capture #4 direct log
-        // analysis, see `PumpReadScheduler.scheduleAlertRead()`'s doc comment for the full mechanism):
         // `pollTimer` was previously invalidated ONLY at the top of the next `startPolling()` call, so a
         // cycle that dropped less than 15s after starting left its `pollTimer` ticking through the whole
         // reconnect gap — confirmed, via the captured app log, to land its first tick inside a LATER
         // cycle's post-pair settle window and inject a stale `scheduleAlertRead()`/`alertRead()` call
         // ahead of that cycle's own bootstrap-trio-first read burst. Invalidating it here, the instant
         // the link is confirmed down, stops it at the source — this is additive to (not a replacement
-        // for) `scheduleAlertRead()`'s own new generation guard, which also closes the narrower gap of
+        // for) `scheduleAlertRead()`'s own generation guard, which also closes the narrower gap of
         // a call already in flight when this fires.
         //
-        // CR-01 (R2-01) / WR-04 (R2-20) part 2: stop BOTH timers (`pollTimer` AND `predictivePollTimer`)
-        // instead of only `pollTimer` — an armed predictive one-shot / in-flight predictive burst must not
-        // survive a drop and fire reads into a dead link. `stopAllTimers()` replaces the old
-        // `invalidatePollTimerOnDisconnect()` (pollTimer-only).
+        // Stop BOTH timers (`pollTimer` AND `predictivePollTimer`) instead of only `pollTimer` — an armed
+        // predictive one-shot / in-flight predictive burst must not survive a drop and fire reads into a
+        // dead link.
         readScheduler.stopAllTimers()
         #if DEBUG
         onLinkDroppedCleanupStepForTesting?("stopAllTimers")
         #endif
-        // CR-01/CR-02 (R2-01/R2-05): advance the scheduler's poll-cycle generation so any already-armed
+        // Advance the scheduler's poll-cycle generation so any already-armed
         // `scheduleAlertRead()` / queued read from the cycle that just ended recognizes it is stale and
         // no-ops immediately, rather than injecting a rogue read into the reconnect gap or the next cycle.
         readScheduler.notePollCycleEnded()
         #if DEBUG
         onLinkDroppedCleanupStepForTesting?("notePollCycleEnded")
         #endif
-        // CR-01 (R2-01): a late/stale pairing coordinator must not survive a link-down — a late
+        // A late/stale pairing coordinator must not survive a link-down — a late
         // AUTHORIZATION frame could otherwise advance a dead handshake. Rebuilt fresh in
         // `pumpClientDidBecomeReady` on the next connect.
         coordinator = nil
         #if DEBUG
         onLinkDroppedCleanupStepForTesting?("coordinatorCleared")
         #endif
-        // CR-01 (R2-01): drop the auth key so `isPaired` fails closed across the gap — a signed read must
+        // Drop the auth key so `isPaired` fails closed across the gap — a signed read must
         // never land in the pre-auth window before `onPaired` rebuilds the key. `validateDeliver` (which
         // gates on `.connected` AND `isPaired`) therefore also fails closed until the next real pair.
         authenticationKey = []
         #if DEBUG
         onLinkDroppedCleanupStepForTesting?("authKeyCleared")
         #endif
-        // CR-01 (R2-01): the pairing-handshake watchdog is per-connection — cancel it here so a drop that
+        // The pairing-handshake watchdog is per-connection — cancel it here so a drop that
         // happens mid-handshake doesn't leave a stale timer that later fires against a torn-down link.
         lifecycle.cancelPairingWatchdog()
         #if DEBUG
@@ -2445,11 +2432,11 @@ extension TandemBackend: PumpBLEClientDelegate {
 
     public var hasStoredPairing: Bool { PairingStore.hasAnyPairing }
     public func forgetPairing() {
-        // CR-03 (R2-06): atomic teardown-BEFORE-clear. The old body cleared durable creds only, leaving the
+        // Atomic teardown-BEFORE-clear. The old body cleared durable creds only, leaving the
         // live transport + poll timers + pairing coordinator running — so the subsequent re-pair scan
         // (`SettingsView` "Forget pairing" → `PairingSheet` → `connect()` → `startScan()`) began against a
         // STILL-connected peripheral. A connected pump is not a dependable discovery target, so the recovery
-        // action could wedge the very connection it means to repair (Codex RA-01). Tear the link fully down
+        // action could wedge the very connection it means to repair. Tear the link fully down
         // first, reusing existing helpers (no new teardown code), mirroring the disconnect-then-forget order
         // `AppModel+MobiReject.swift` already relies on.
         disconnect()          // stopAllTimers() + client.disconnect() (cancels connected/pending peripheral, scan timeout, reconnect watchdog)
@@ -2457,11 +2444,11 @@ extension TandemBackend: PumpBLEClientDelegate {
         linkDroppedCleanup()  // fail in-flight waiters; invalidate backfill/history timers; clear authKey/coordinator/watchdog
         snapshot.connection = .disconnected; onChange?()   // no stale "Connected"/"Bolusing" survives
         // THEN the durable creds, keeping the existing order — the learned-bad-opcode key derives from the
-        // peripheral identity, so reset it BEFORE `PumpPeripheralStore.clear()` (debug pump-pairing-loop-api25).
+        // peripheral identity, so reset it BEFORE `PumpPeripheralStore.clear()`.
         // A fresh pair then re-tests every read rather than inheriting a prior pairing's skips.
         if let key = currentPumpKey() { badOpcodeStore.reset(for: key) }
-        // WR-02 (REMED-15.5): clear the trusted-identity record too, alongside the sibling durable
-        // stores — a forgotten pump must leave NO stale trusted record. Composes with CR-01: after
+        // Clear the trusted-identity record too, alongside the sibling durable
+        // stores — a forgotten pump must leave NO stale trusted record. After
         // forget + re-pair the empty trust store forces a fresh authoritative scan (a genuine
         // didDiscover re-establishes the name-derived trusted identity).
         PairingStore.clear(); PumpPeripheralStore.clear(); TrustedPumpIdentityStore.clear(); authenticationKey = []
@@ -2498,7 +2485,7 @@ extension TandemBackend: PumpBLEClientDelegate {
         guard let parsed = try? ResponseParser.parse(frame: frame, characteristic: ch,
                                                      authenticationKey: authenticationKey) else {
             // A genuinely unparseable frame on the history-log characteristic while a gap sync is
-            // active is a genuine sync failure (red, distinct from the benign `.paused` disconnect
+            // active is a genuine sync failure (distinct from the benign `.paused` disconnect
             // case) — surfaced rather than silently dropped. The persisted coverage map is untouched,
             // so a retry ("Sync now") or the next connect resumes correctly. Delegates to
             // `historySyncCoordinator.abortWithSyncError`, which no-ops when no backfill is active.
@@ -2510,8 +2497,7 @@ extension TandemBackend: PumpBLEClientDelegate {
         // Status-response APPLICATION lives on `PumpResponseApplier`. This delegate keeps ONLY the
         // `.authorization` CRC gate + `ResponseParser.parse` boundary + the historyLog-unparseable
         // error branch above. `parsed.txId` (frame[1]) is threaded through for the op77 correlation
-        // backstop — the pump echoes the failing request's txId there (debug pump-pairing-loop-api25,
-        // mechanism B). `ch` (the frame's characteristic) is threaded too so the op77 case can record
+        // backstop — the pump echoes the failing request's txId there. `ch` (the frame's characteristic) is threaded too so the op77 case can record
         // into the read-only `badOpcodes` ONLY for a `.currentStatus` READ error — a `.control` WRITE
         // NACK (which also decodes as ErrorResponse on `.opcodeFIFO` pumps) must never suppress a read.
         responseApplier.apply(parsed.message, txId: parsed.txId, characteristic: ch)
@@ -2523,12 +2509,12 @@ extension TandemBackend: PumpBLEClientDelegate {
         onChange?()
     }
 
-    /// D-05: the kit's reconnect ladder scheduled another throttled attempt — surface it via
+    /// The kit's reconnect ladder scheduled another throttled attempt — surface it via
     /// `onWillRetryReconnect` (the host records it into `BLESessionLog`, mirroring `onCommandLatency`'s
     /// sink shape) rather than reaching into a shared session-log store directly, since `TandemBackend`
     /// has no reference to the app's `BLESessionLog` (owned by `AppModel`).
     public func pumpClient(_ c: PumpBLEClient, willRetryReconnect attempt: Int, after delay: TimeInterval) {
-        // debug pump-background-disconnect (H1): the PINNED kit just scheduled a throttled reconnect on its
+        // The PINNED kit just scheduled a throttled reconnect on its
         // main-RunLoop Timer. If we're backgrounded, hold a background-execution window open so that Timer
         // can actually fire and re-issue `central.connect()` (which CoreBluetooth then completes while
         // suspended). This grants the EXISTING, already-throttled ladder runtime — it never issues connect
@@ -2538,8 +2524,8 @@ extension TandemBackend: PumpBLEClientDelegate {
         onChange?()
     }
 
-    /// Factored out of the delegate for testability (see `applyClientState`). P12 (app-boundary state):
-    /// preserve the disconnect REASON for the passive HUD viewer — previously the concrete error reached
+    /// Factored out of the delegate for testability (see `applyClientState`). Preserve the disconnect
+    /// REASON for the passive HUD viewer — previously the concrete error reached
     /// only the in-flight bolus caller (via `failPumpWaiters`), never the snapshot, so a viewer saw a
     /// bare "Disconnected" with no cause.
     func applyClientError(_ error: Error) {
@@ -2556,22 +2542,22 @@ extension TandemBackend: PumpBLEClientDelegate {
             failPumpWaiters(error)
             return
         }
-        // debug pump-background-disconnect (CRITERION 1 & 2, 2026-08-20): a transport error must NEVER change
-        // the connection STATE. `applyClientState` (the kit's authoritative `didChange`) is the SOLE owner of
-        // it: a genuine drop always arrives there as `.connecting` (recovering — the kit deliberately skips the
-        // `.disconnected` flicker and goes straight to reconnecting, see `PumpBLEClient.didDisconnectPeripheral`),
-        // `.disconnected` (hard / radio powered-off / user), or `.reconnectExhausted` → `.error` (the ladder
-        // gave up), each carrying its own detail. Pre-fix this method forced `snapshot.connection = .disconnected`
-        // on ANY error; since the kit fires `didError` BEFORE its paired `didChange(.connecting)` on a drop (and
-        // fires `didError` with NO state change at all on a bare read/notify error — `didUpdateValueFor` /
-        // `didUpdateNotificationStateFor` — while still `.ready`), that transient `.disconnected` tripped
-        // `SafetyEdge.raise` (via `AppModel.refresh`, which runs synchronously per `onChange`), firing a
-        // SPURIOUS `.pumpDisconnect` banner + escalation on EVERY momentary drop (CRITERION 1) and on a
-        // transient read hiccup (CRITERION 2 — the H2 read-path state-churn hazard). We now only ENRICH the
-        // reason on a link that is ALREADY showing a plain `.disconnected` (for the passive HUD viewer) — never
-        // downgrading a live/recovering link, and never clobbering the terminal `.error` t:connect guidance.
+        // A transport error must NEVER change the connection STATE. `applyClientState` (the kit's
+        // authoritative `didChange`) is the SOLE owner of it: a genuine drop always arrives there as
+        // `.connecting` (recovering — the kit deliberately skips the `.disconnected` flicker and goes
+        // straight to reconnecting, see `PumpBLEClient.didDisconnectPeripheral`), `.disconnected`
+        // (hard / radio powered-off / user), or `.reconnectExhausted` → `.error` (the ladder gave up),
+        // each carrying its own detail. Pre-fix this method forced `snapshot.connection = .disconnected`
+        // on ANY error; since the kit fires `didError` BEFORE its paired `didChange(.connecting)` on a
+        // drop (and fires `didError` with NO state change at all on a bare read/notify error —
+        // `didUpdateValueFor` / `didUpdateNotificationStateFor` — while still `.ready`), that transient
+        // `.disconnected` tripped `SafetyEdge.raise` (via `AppModel.refresh`, which runs synchronously
+        // per `onChange`), firing a SPURIOUS `.pumpDisconnect` banner + escalation on EVERY momentary
+        // drop and on a transient read hiccup. We now only ENRICH the reason on a link that is ALREADY
+        // showing a plain `.disconnected` (for the passive HUD viewer) — never downgrading a
+        // live/recovering link, and never clobbering the terminal `.error` t:connect guidance.
         if snapshot.connection == .disconnected {
-            // D-03: capture the stable machine token (domain + code), not just the human-readable
+            // Capture the stable machine token (domain + code), not just the human-readable
             // description — `CBError`/`NSError` bridging always succeeds for any Swift `Error`, so this
             // survives into `ConnectionTelemetryStore.reasonToken` and the diagnostics dump richer than the
             // old bare "error" bucket. `localizedDescription` is still appended for the human-readable tail.
@@ -2579,7 +2565,7 @@ extension TandemBackend: PumpBLEClientDelegate {
             snapshot.connectionDetail = "\(ns.domain)#\(ns.code) \(ns.localizedDescription)"
         }
         // A transport error orphans any in-flight signed transaction — resume its waiters and drop
-        // delivery writes so nothing hangs and the next connection starts read-only (audit A-03).
+        // delivery writes so nothing hangs and the next connection starts read-only.
         // UNCONDITIONAL (independent of the connection-state decision above): the dose path must always fail
         // closed on a transport error, even when we leave the displayed link untouched because the kit is
         // recovering it. `failPumpWaiters` never touches `snapshot.connection`, so this cannot re-introduce
@@ -2591,7 +2577,7 @@ extension TandemBackend: PumpBLEClientDelegate {
 }
 
 extension Notification.Name {
-    /// Posted when an indeterminate bolus outcome (FB-02) is reconciled against the pump. userInfo:
+    /// Posted when an indeterminate bolus outcome is reconciled against the pump. userInfo:
     /// `bolusId` (Int) and `delivered` (Double, units actually delivered).
     static let faBolusIndeterminateResolved = Notification.Name("faBolusIndeterminateResolved")
 }

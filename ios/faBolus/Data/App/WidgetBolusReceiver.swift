@@ -15,7 +15,7 @@ extension Notification.Name {
 @MainActor
 final class WidgetBolusReceiver {
     private weak var model: AppModel?
-    /// C6-02: the CFNotificationCenter Darwin observer identity (`Unmanaged.passUnretained(self)`).
+    /// The CFNotificationCenter Darwin observer identity (`Unmanaged.passUnretained(self)`).
     /// The two `CFNotificationCenterAddObserver` calls below register C callbacks that capture NOTHING —
     /// they run independently of this instance's ARC lifetime and, unless explicitly removed with the
     /// SAME `center`/`observer` pair, keep firing (and re-posting a Foundation notification) even after
@@ -34,7 +34,7 @@ final class WidgetBolusReceiver {
     /// `@MainActor` class. A plain stored property CAN be read there.)
     private nonisolated(unsafe) var darwinObserver: UnsafeMutableRawPointer!
     /// The block-observer tokens `NotificationCenter.default.addObserver(forName:...)` returns — previously
-    /// discarded (codex MEDIUM), so they could never be removed and a re-created receiver would leak a
+    /// discarded, so they could never be removed and a re-created receiver would leak a
     /// stale block still holding this instance's `[weak self]`.
     private nonisolated(unsafe) var pendingToken: NSObjectProtocol?
     private nonisolated(unsafe) var cancelToken: NSObjectProtocol?
@@ -57,7 +57,7 @@ final class WidgetBolusReceiver {
         }
         cancelToken = NotificationCenter.default.addObserver(forName: .widgetBolusCancel, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
-                // VA-28: only act on a cancel corroborated by the App-Group token the widget's own
+                // Only act on a cancel corroborated by the App-Group token the widget's own
                 // cancel intent wrote (single-use + TTL-bounded). A bare/replayed Darwin post from a
                 // co-resident app finds no token and is dropped.
                 guard let model = self?.model, WidgetBolusStore.takeCancelIntent() else { return }
@@ -66,7 +66,7 @@ final class WidgetBolusReceiver {
         }
     }
 
-    /// C6-02: tear down BOTH observer systems so a deallocated instance leaves nothing behind — no stale
+    /// Tear down BOTH observer systems so a deallocated instance leaves nothing behind — no stale
     /// Darwin registration re-posting into a dead receiver, and no leaked block observer.
     deinit {
         CFNotificationCenterRemoveObserver(darwinCenter, darwinObserver,
@@ -84,21 +84,21 @@ final class WidgetBolusReceiver {
     func handlePending() {
         guard let model, let r = WidgetBolusStore.takePending() else { return }
         Task {
-            // Read-only is a local gate the widget must respect too (audit A-05).
+            // Read-only is a local gate the widget must respect too.
             if AppSettings.shared.phoneReadOnly {
                 WidgetBolusStore.setStatus(WidgetBolusStatus(phase: .failed, requestId: r.requestId,
                                                              message: "faBolus is read-only"))
                 reload(); return
             }
             if r.mode == "carbs" {
-                // Audit C-03: the widget confirmed GRAMS, not units, and would dose off possibly-stale
+                // The widget confirmed GRAMS, not units, and would dose off possibly-stale
                 // glucose. A carb bolus must NOT deliver in place — stage a host-owned review that
                 // freezes the real units (fresh CGM, fail-closed) and needs an in-app confirm.
                 // `presentRemoteBolus` resolves + freezes; the widget tells the user to finish in-app.
-                // FB-09: resolve the estimate off the SAME fresh, staleness-gated BG the host uses in
+                // Resolve the estimate off the SAME fresh, staleness-gated BG the host uses in
                 // resolveRemoteDose (refresh first, then `freshCorrectionBG`) — otherwise the estimate
-                // (previously off raw, possibly-stale `snapshot.glucose`) and the authoritative dose
-                // diverge and the guard rejects with a confusing "dose changed" and no review to act on.
+                // (off raw, possibly-stale `snapshot.glucose`) and the authoritative dose diverge
+                // and the guard rejects with a confusing "dose changed" and no review to act on.
                 await model.refreshGlucoseNow()
                 let est = await model.recommendBolus(carbsGrams: r.amount, bgMgdl: model.freshCorrectionBG).recommendedUnits
                 await model.presentRemoteBolus(requestId: r.requestId, units: 0, carbsGrams: r.amount,
@@ -114,7 +114,7 @@ final class WidgetBolusReceiver {
                                                              message: "No insulin needed"))
                 reload(); return
             }
-            // VA-26: only deliver in place for a live handoff (age ~0, the Darwin-woke path). A request
+            // Only deliver in place for a live handoff (age ~0, the Darwin-woke path). A request
             // that only surfaced via a foreground fallback (app was suspended when confirmed) could be up
             // to ~2 min old — do NOT auto-dose it late by surprise. Convert it to a host-owned in-app
             // re-confirm, exactly like the carbs branch above.

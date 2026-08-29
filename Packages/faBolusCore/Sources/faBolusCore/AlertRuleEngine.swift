@@ -86,20 +86,19 @@ public enum AlertRuleEngine {
     }
 }
 
-// MARK: - D-02 (Phase 09.15-03, T1-7 dropped): pump-alert copy verification/overlay
+// MARK: - Pump-alert copy overlay
 
-/// D-02: the existing pump-alert mirror (`TandemBackend.activeNotifications: [PumpAlert]` →
-/// `AlertsView`) already surfaces Control-IQ's own alerts — no new faBolus advisory is added (T1-7 is
-/// dropped). This is a client-side copy OVERLAY for specific pump alert ids whose decoded name the
-/// pump-protocol layer doesn't (yet) carry, so the mirror still surfaces them with clean, neutral,
-/// Tandem-sourced copy instead of a generic `"Alert N"` fallback.
+/// The existing pump-alert mirror (`TandemBackend.activeNotifications` → `AlertsView`) already
+/// surfaces Control-IQ's own alerts — no new faBolus advisory is added. This is a client-side copy
+/// overlay for specific pump alert ids whose decoded name the protocol layer doesn't yet carry, so
+/// the mirror still surfaces them with clean, neutral, Tandem-sourced copy instead of a generic
+/// `"Alert N"` fallback.
 ///
 /// **Control-IQ High Alert (#50)** — Tandem's own "CIQ increased delivery but glucose is still high"
-/// alert (BRAINSTORM IDEA 10, verbatim Tandem guidance): "test your blood glucose and treat as
-/// necessary, and check your infusion site." Provenance **(c)** Tandem-sourced. Never upgraded to "give
-/// a bolus" (D-06 guardrail #10 — neutral, non-directive copy). Compare **Control-IQ Low Alert (#51)**,
-/// which the decode layer (`TandemKit` `AlertStatusResponse.names[51]`) already names cleanly today —
-/// this overlay leaves that one untouched (`resolve` never overrides a real decoded name).
+/// alert: "test your blood glucose and treat as necessary, and check your infusion site." Never
+/// upgraded to "give a bolus" (neutral, non-directive copy). Compare **Control-IQ Low Alert (#51)**,
+/// which the decode layer already names cleanly — this overlay leaves that one untouched (`resolve`
+/// never overrides a real decoded name).
 public enum PumpAlertCopyOverlay {
     /// id → (title, detail) for alerts this overlay improves. Pure data; applied only when the caller's
     /// own decoded copy looks like a generic placeholder (see `resolve`).
@@ -123,10 +122,9 @@ public enum PumpAlertCopyOverlay {
     }
 }
 
-/// D-06 guardrail #10 (neutral, non-directive copy): a copy-audit predicate, true when `text` contains
-/// an imperative DOSING verb that would upgrade a neutral Tandem-sourced alert into directive dosing
-/// advice (e.g. "give a bolus"). Case-insensitive substring check, mirrors the T1-8 copy-audit
-/// convention (a label must never contain certain words).
+/// Neutral, non-directive copy: true when `text` contains an imperative dosing verb that would
+/// upgrade a Tandem-sourced alert into directive dosing advice (e.g. "give a bolus").
+/// Case-insensitive substring check.
 public enum AlertCopyAudit {
     public static let imperativeDosingVerbs = ["bolus", "give insulin", "deliver insulin", "inject", "dose now"]
 

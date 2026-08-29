@@ -9,26 +9,17 @@ struct ConnectPumpOnboardingView: View {
     let modeStore: ModeStore
     @State private var showPairing = false
 
-    /// Load-bearing (UI-SPEC): `BackendRegistry.makeSelected()` runs once at `App.swift` init — there is
-    /// no live backend hot-swap. Selecting the demo pump only persists a choice for NEXT launch, so the
-    /// footnote below is the entire state contract (no spinner, no fake progress, no relaunch mechanism).
-    ///
-    /// Phase 9 (09-03, MOBI-01, RESEARCH Pitfall 1): the Simulated-Mobi descriptor this id used to name
-    /// is removed from `BackendRegistry.enabled` in the SAME commit as this edit. Deleting that
-    /// descriptor WITHOUT this patch would make `BackendRegistry.selected()`'s fallback-to-`enabled[0]`
-    /// resolve this button to the REAL `TandemBackend` on a device — a genuine on-device safety hazard,
-    /// not a cosmetic one. `BackendRegistryTests.onboardingDemoIdResolvesToMockBackendNotTandem` pins this.
+    /// Backend selection applies on next launch only (`BackendRegistry.makeSelected()` runs once at
+    /// `App.swift` init). This id must stay a mock: if it vanished from `BackendRegistry.enabled`,
+    /// `selected()` would fall back to `enabled[0]` (real `TandemBackend`) and this button would
+    /// pair a live pump. Pinned by `BackendRegistryTests`.
     private static let demoBackendId = "mock-tslim"
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 18) {
-                    // D2-08 (WINDOWS ledger #24): decorative — the "Connect your pump" title and body
-                    // below already state this screen's purpose, so hide the hero glyph from VoiceOver
-                    // rather than letting it announce its raw SF Symbol name. Mirrors the decorative-icon
-                    // hiding applied in 17-09 to AlertsView/CameraPermissionFallbackView and the existing
-                    // StatusPillsView/StatusRingView convention.
+                    // Decorative — title/body already name the screen; don't announce the SF Symbol.
                     Image(systemName: "antenna.radiowaves.left.and.right")
                         .font(.system(size: 56)).foregroundStyle(.tint)
                         .accessibilityHidden(true)
@@ -38,10 +29,7 @@ struct ConnectPumpOnboardingView: View {
                         .foregroundStyle(.secondary)
                         .padding(.horizontal)
 
-                    // D1-04: the owner-signed-off (2026-08-09) experimental/not-FDA-cleared framing,
-                    // reused verbatim from RegulatoryCopy — never redrafted here (17-PATTERNS.md
-                    // "Existing-signed-off copy reuse over new copy"). RegulatoryCopyTests already pins
-                    // its required-keyword content.
+                    // Owner-signed-off experimental / not-FDA-cleared framing — reuse, don't redraft.
                     Text(RegulatoryCopy.firstRun)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -64,8 +52,7 @@ struct ConnectPumpOnboardingView: View {
                         }
                         .buttonStyle(.bordered).controlSize(.large)
 
-                        // UI-SPEC §1: verbatim reuse of the SettingsView.swift:526 disclosure — the
-                        // honest "no live swap" state contract, always visible under the button.
+                        // Honest "no live swap": selecting a demo pump takes effect on next launch.
                         Text("Takes effect after you reopen the app.")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
@@ -79,8 +66,7 @@ struct ConnectPumpOnboardingView: View {
 
                     Divider().padding(.vertical, 4)
 
-                    // D-02: optional, skippable CGM-failover guidance — no explicit skip control, since
-                    // leaving the screen via any of the three actions above already skips it.
+                    // Optional backup-CGM guidance — leaving via any of the three actions above skips it.
                     VStack(spacing: 8) {
                         Text("Optional: add a backup glucose feed").font(.headline)
                         Text("faBolus can use an independent glucose feed — such as Dexcom Share — as a backup. It's only shown if the pump's own reading goes stale. This is optional and you can skip it.")
@@ -106,9 +92,7 @@ struct ConnectPumpOnboardingView: View {
                 modeStore.completePumpOnboarding()
             }
         }
-        // Phase 9 Plan 01 (MOBI-01/MOBI-03, D-03): reject-at-pairing observer — same shared helper as
-        // MainHUDView's/SettingsView's triggers (`ios/faBolus/Data/AppModel+MobiReject.swift`), anchored
-        // at this view's root so it OUTLIVES the transient `PairingSheet` presented above.
+        // Mobi reject-at-pairing: observe here so it outlives the transient PairingSheet.
         .onChange(of: model.snapshot.pumpModel) { _, _ in model.rejectMobiIfDetected() }
     }
 }

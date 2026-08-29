@@ -1,12 +1,12 @@
 import Foundation
 import faBolusCore
 
-/// F7 (P16) — the "verbose BLE session logging" half of the in-app debug console: a lightweight,
+/// The "verbose BLE session logging" half of the in-app debug console: a lightweight,
 /// bounded, **in-memory** ring buffer of connection-layer events (connect / disconnect + reason /
 /// reconnect). Local-only, opt-in, read-only diagnostics.
 ///
 /// It records **nothing** unless the shared "share local diagnostics" opt-in is on (the SAME flag the
-/// P9 notification telemetry and the P12 `ConnectionTelemetryStore` gate on), keeps only the last
+/// notification telemetry and `ConnectionTelemetryStore` gate on), keeps only the last
 /// `capacity` entries (oldest dropped first), and is **forgotten on restart** — never persisted, never
 /// uploaded. It is populated from the connection-state-transition edges `AppModel` already observes
 /// (`SafetyEdge.connection` in `refresh()`), so there is **no new BLE poll / scan / timer and no cadence
@@ -25,7 +25,7 @@ final class BLESessionLog {
     }
 
     private let store: UserDefaults
-    /// Ring-buffer cap (~100 by default, F7 locked default). Oldest entries are dropped first.
+    /// Ring-buffer cap (~100 by default). Oldest entries are dropped first.
     let capacity: Int
     /// The last `capacity` events, oldest first. In-memory only — a process restart forgets them.
     private(set) var entries: [Entry] = []
@@ -35,7 +35,7 @@ final class BLESessionLog {
         self.store = store ?? .standard
     }
 
-    /// The shared opt-in — the same flag P9/P12 telemetry use (one diagnostics switch); default OFF.
+    /// The shared opt-in — the same flag sibling telemetry uses (one diagnostics switch); default OFF.
     var enabled: Bool { store.bool(forKey: NotificationRuntime.telemetryEnabledKey) }
 
     /// Record a connection-layer event. A **no-op unless opted in**. Appends and trims to `capacity`.
@@ -48,7 +48,7 @@ final class BLESessionLog {
     /// Discard the in-memory log (offered in the console; also called by "Delete all on-device data").
     func clear() { entries.removeAll() }
 
-    /// D-04 — pairs each `.connect`/`.reconnect`/`.restore` edge with the NEXT `.disconnect` edge, using
+    /// Pairs each `.connect`/`.reconnect`/`.restore` edge with the NEXT `.disconnect` edge, using
     /// only the existing `Entry.at` timestamps already recorded. A pure function of the input array: no
     /// new `Kind` case, no new stored field, no dependence on `enabled`/UserDefaults. A trailing open span
     /// (a connect/reconnect/restore with no following disconnect yet) is dropped — it's still connected,

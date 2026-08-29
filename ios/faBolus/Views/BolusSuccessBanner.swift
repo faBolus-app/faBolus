@@ -3,11 +3,8 @@ import Foundation
 
 /// Transient advisory confirmation for the embedded BolusEntryView. Pure display: no `AppModel`,
 /// no delivery API, no dose-path logic — maps an already-resolved `Signal` to display text.
-///
-/// §13 NOTICE: the amount-stating copy templates in `BolusConfirmation.banner(for:units:extended:)`
-/// are DRAFT experimental-distribution surface and must pass owner/clinical review before an
-/// `experimental` build is distributed. Deliberately not added to `RegulatoryCopy.swift` (already
-/// signed-off).
+/// Amount-stating templates in `banner(for:)` are experimental-distribution copy, not the
+/// signed-off `RegulatoryCopy` set.
 
 /// A resolved bolus outcome banner: two lines of already-formatted display text plus a `kind` the
 /// view uses to pick its icon/tint. `nil` from `BolusConfirmation.banner` means "show nothing" — there
@@ -20,38 +17,30 @@ struct BolusSuccessBanner: Equatable {
     let kind: Kind
     let primary: String
     let secondary: String
-    /// A per-presentation identity assigned at construction. The
-    /// auto-dismiss guard in `BolusEntryView.present(_:)` must compare THIS token, not full-value
-    /// equality — two back-to-back deliveries of the same amount produce byte-identical
-    /// `kind`/`primary`/`secondary`, so a content-`==` check would let the FIRST banner's timer
-    /// dismiss the SECOND (distinct) presentation early. Defaulted so the memberwise initializer used
-    /// by `BolusConfirmation.banner(...)` is unchanged.
+    /// Per-presentation identity. `BolusEntryView.present(_:)` must compare this token, not content
+    /// equality — two back-to-back deliveries of the same amount are byte-identical in
+    /// `kind`/`primary`/`secondary`, so a content-`==` check would let the first timer dismiss the
+    /// second toast. Defaulted so `BolusConfirmation.banner(...)`'s memberwise init stays unchanged.
     let token = UUID()
 
-    /// Content equality (kind/primary/secondary) only — `token` is deliberately EXCLUDED so any
-    /// consumer comparing banners by displayed content keeps working. `present(_:)` compares `token`
-    /// explicitly for its identity check; nothing relies on two constructions being `==` by token.
+    /// Content equality only — `token` is excluded so consumers comparing displayed content keep
+    /// working. `present(_:)` compares `token` explicitly.
     static func == (lhs: BolusSuccessBanner, rhs: BolusSuccessBanner) -> Bool {
         lhs.kind == rhs.kind && lhs.primary == rhs.primary && lhs.secondary == rhs.secondary
     }
 }
 
-/// Pure, dependency-free mapping from an ALREADY-RESOLVED bolus outcome to display text. NEVER
-/// synthesizes a "delivered" banner for a pending outcome, and NEVER synthesizes a banner at all
-/// unless the caller supplies real information to show — a truthful confirmation, never a false
-/// one, and never a SILENT one either once the caller knows what happened.
+/// Maps an already-resolved bolus outcome to display text. Never synthesizes "delivered" for a
+/// pending outcome, and never a silent banner once the caller knows what happened.
 enum BolusConfirmation {
-    /// The three outcomes a bolus attempt can resolve to, from the caller's ALREADY-KNOWN
-    /// `model.lastError` / `model.pendingApproval` state (see `BolusEntryView.deliverFrozen` and its
-    /// `.onChange(of: model.pendingApproval)` handler) — this type never inspects `AppModel` itself.
+    /// Outcomes from the caller's already-known `lastError` / `pendingApproval` — this type never
+    /// inspects `AppModel` itself.
     enum Signal {
         /// Awaiting remote (child-mode) approval — `pendingApproval != nil`. NEVER a banner.
         case staged
-        /// Blocked / indeterminate / failed / rejected / timed out. When the
-        /// caller supplies a `message` (AppModel's already-accurate `lastError`, which covers BOTH the
-        /// failed and the indeterminate case), this now produces a
-        /// truthful WARNING banner carrying that message, closing the visible silent-outcome asymmetry
-        /// without a new `.indeterminate` case (that distinction lives in frozen `AppModel` only).
+        /// Blocked / indeterminate / failed / rejected / timed out. A supplied `message`
+        /// (`AppModel.lastError`) becomes a warning banner so a non-success is never silent; omit it
+        /// to stay silent. Failed vs indeterminate stays in `AppModel` — this type does not split them.
         case failed
         /// The bolus actually completed with `lastError == nil` and no pending approval. The ONLY
         /// signal that produces a `.success` banner.
@@ -59,7 +48,7 @@ enum BolusConfirmation {
     }
 
     /// Extended (combo) bolus detail for the "{now} U now, {total} U total over {duration} min"
-    /// secondary line (Copywriting Contract §3). `nil` (the default) means a standard bolus.
+    /// secondary line. `nil` (the default) means a standard bolus.
     struct ExtendedDetail {
         let nowUnits: Double
         let totalUnits: Double
@@ -77,17 +66,14 @@ enum BolusConfirmation {
         case .staged:
             return nil
         case .failed:
-            // Fail-closed: no message means the caller has nothing truthful to show yet — stay silent
-            // rather than show an empty/generic warning (mirrors the original "never a false banner"
-            // property, applied to "never an empty one" too).
+            // Fail-closed: no message means nothing truthful to show yet — stay silent rather than
+            // invent an empty/generic warning.
             guard let message else { return nil }
             return BolusSuccessBanner(kind: .warning, primary: String(localized: "Bolus not delivered"),
                                        secondary: message)
         case .delivered:
-            // Route the delivered-amount/combo templates through Localizable.xcstrings. Numeric
-            // formatting (`"%.2f U"`/`"%d min"`) is pre-rendered into plain strings and interpolated as
-            // `%@` — the same "%@ mg/dL"-style idiom `StatsCardView.glucoseLabel` already uses — so the
-            // catalog carries the surrounding phrase, not a raw numeric-format specifier.
+            // Catalog whole phrases; pre-render `"%.2f U"` / `"%d min"` and interpolate as `%@`
+            // so Localizable never owns a raw numeric-format specifier.
             let primary = String(localized: "Bolus delivered")
             let secondary: String
             if let extended {
@@ -103,13 +89,9 @@ enum BolusConfirmation {
     }
 }
 
-/// The transient toast itself — `.success` shows a `checkmark.circle.fill` in plain `Color.green` (NOT
-/// `AppTheme.inRange`, see the file-level note above); `.warning` shows an
-/// `exclamationmark.triangle.fill` in plain `Color.orange` — same reasoning: a plain system color, not
-/// a semantic design-system token, so this bolus-outcome affordance never collides with a clinical
-/// glucose-band color. Both share the same `.headline`/`.subheadline` text and `thinMaterial`
-/// rounded-card chrome. This view owns no delivery
-/// state — it only renders the strings (and kind) it's given.
+/// Transient toast. Uses plain `Color.green` / `Color.orange` — never `AppTheme.inRange` /
+/// glucose-band tokens — so a bolus outcome cannot be read as a clinical range. Owns no delivery
+/// state; renders the strings and kind it's given.
 struct BolusSuccessBannerView: View {
     let banner: BolusSuccessBanner
 

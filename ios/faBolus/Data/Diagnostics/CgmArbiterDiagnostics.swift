@@ -1,17 +1,15 @@
 import Foundation
 import faBolusCore
 
-/// Phase 09.6-03 (Task 1, Part C-2, D-03.2): pure `[CGM arbiter]` diagnostics-text section builder.
-/// Surfaces which CGM source is currently winning and why, read from the SAME already-arbitrated
-/// `GlucoseProvenance` the live UI "via <source>" badge uses (`AppModel.glucoseProvenance` /
-/// `failoverBadge`) — this type never re-runs `GlucoseArbiter.merge` or recomputes provenance
-/// (Don't Hand-Roll).
+/// Pure `[CGM arbiter]` diagnostics-text section builder. Surfaces which CGM source is currently
+/// winning and why, read from the SAME already-arbitrated `GlucoseProvenance` the live UI "via
+/// <source>" badge uses (`AppModel.glucoseProvenance` / `failoverBadge`) — this type never re-runs
+/// `GlucoseArbiter.merge` or recomputes provenance.
 ///
-/// PHI constraint (T-09.6-01): only provenance/status CASE NAMES are emitted (`pump`/`failover`,
-/// `pumpStale`/`pumpMissing`, `idle`/`needsSetup`/`searching`/`connected`/`stale`/`error`) — never a
-/// glucose value, and `GlucoseSourceStatus.error`'s associated `String` is deliberately discarded and
-/// redacted to the bare case name "error" so an arbitrary upstream error message never reaches the
-/// shareable export.
+/// PHI: only provenance/status CASE NAMES are emitted (`pump`/`failover`, `pumpStale`/`pumpMissing`,
+/// `idle`/`needsSetup`/`searching`/`connected`/`stale`/`error`) — never a glucose value, and
+/// `GlucoseSourceStatus.error`'s associated `String` is deliberately discarded and redacted to the
+/// bare case name "error" so an arbitrary upstream error message never reaches the shareable export.
 enum CgmArbiterDiagnostics {
     /// Case-name-only projection of a `GlucoseSourceStatus`, discarding `.error`'s associated string.
     private static func caseName(_ status: GlucoseSourceStatus) -> String {

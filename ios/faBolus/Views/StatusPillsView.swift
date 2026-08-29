@@ -22,9 +22,8 @@ struct StatusPillsView: View {
     @ViewBuilder private func pillFor(_ id: String, now: Date) -> some View {
         switch id {
         case "iob":
-            // Grey (AppTheme.low) + age the IOB pill when the active-insulin read is stale, via the
-            // shared `CalcInputFreshness` presentation — mirrors `cgmPill`. Absent date ⇒ hidden ⇒ no age to
-            // show ⇒ normal styling (like the CGM pill), never invented as fresh on the dose path itself.
+            // Grey + age when IOB is stale (`CalcInputFreshness`). Missing date ⇒ no age, never
+            // invented as fresh on the dose path.
             let iobStale = CalcInputFreshness.iobPresentation(of: snapshot.iobDate, now: now) == .stale
             pill(icon: "drop.fill", tint: iobStale ? AppTheme.low : AppTheme.insulin,
                  value: String(format: "%.2f U", snapshot.iobUnits),
@@ -34,15 +33,11 @@ struct StatusPillsView: View {
             pill(icon: "cross.vial.fill", tint: .teal,
                  value: String(format: "%.0f U", snapshot.reservoirUnits), label: "Reservoir")
         case "battery":
-            // The ONE source of truth for the glyph/"Charging" text/tint-override decision; routes
-            // through `BatteryChargingPresentation` instead of a second copy of the level->glyph
-            // switch, so every surface that reuses this helper stays identical to this pill.
+            // Single glyph/"Charging"/tint decision — don't fork a second level→glyph switch.
             let battery = BatteryChargingPresentation.make(percent: snapshot.batteryPercent,
                                                              charging: snapshot.batteryCharging)
             pill(icon: battery.symbolName,
                  tint: battery.usesLowTint ? AppTheme.low : .green,
-                 // Consume the centralized `valueText` instead of re-interpolating the "N% · Charging"
-                 // string here (single source of truth for the formatted label).
                  value: battery.valueText,
                  label: "Pump")
         case "cgm":
@@ -108,7 +103,7 @@ struct StatusPillsView: View {
 
     private func cgmPill(now: Date) -> some View {
         let active = snapshot.cgmActive
-        // No reading → treat as hidden; otherwise fresh/stale/hidden by age.
+        // No reading → hidden; otherwise fresh/stale/hidden by age.
         let present: GlucosePresentation = snapshot.glucose == nil
             ? .hidden : GlucoseFreshness.presentation(of: snapshot.glucoseDate, now: now)
         let age = snapshot.glucoseDate.map { GlucoseFreshness.ageLabel(for: $0, now: now) }
@@ -123,12 +118,11 @@ struct StatusPillsView: View {
                     tint: tint, value: value, label: "CGM", stale: present == .stale)
     }
 
-    /// Whether the therapy params (CR/ISF/target — one shared op-115 stamp) are stale for display.
+    /// Therapy params (CR/ISF/target share one op-115 stamp) stale for display.
     private func therapyStale(_ now: Date) -> Bool {
         CalcInputFreshness.therapyPresentation(of: snapshot.therapyParamsDate, now: now) == .stale
     }
-    /// Append the read's age to a calc-input pill's label when it's stale ("Active Insulin · 7 min
-    /// ago"), so a greyed pill also names HOW old — mirroring the CGM pill's age readout.
+    /// Age on a stale calc-input label so a greyed pill also names how old.
     private func calcAgedLabel(_ base: String, date: Date?, stale: Bool, now: Date) -> String {
         guard stale, let d = date else { return base }
         return "\(base) · \(CalcInputFreshness.ageLabel(for: d, now: now))"
@@ -136,8 +130,7 @@ struct StatusPillsView: View {
 
     private func pill(icon: String, tint: Color, value: String, label: String, stale: Bool = false) -> some View {
         HStack(spacing: 8) {
-            // The tint-colored SF Symbol is decorative (the label/value already name the field),
-            // so it's hidden from VoiceOver to avoid reading the raw symbol name.
+            // Decorative — label/value already name the field; don't announce the SF Symbol.
             Image(systemName: icon).foregroundStyle(tint)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
@@ -149,9 +142,7 @@ struct StatusPillsView: View {
         .padding(.horizontal, 12).padding(.vertical, 10)
         .frame(maxWidth: .infinity)
         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 12))
-        // One VoiceOver element reading "<label>, <value>" (the aged label already carries the
-        // "· N min ago" when stale). "stale" is appended so a greyed pill also SAYS it's stale — that
-        // state is otherwise conveyed only by the grey (AppTheme.low) tint.
+        // One VoiceOver element. Append "stale" — otherwise that state is only the grey tint.
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(stale ? "\(label), \(value), stale" : "\(label), \(value)")
     }

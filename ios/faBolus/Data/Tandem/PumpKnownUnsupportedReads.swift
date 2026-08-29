@@ -1,37 +1,35 @@
 import Foundation
 import TandemMessages
 
-/// STATIC registry of CURRENT_STATUS read opcodes a specific pump MODEL + FIRMWARE is KNOWN to reject
-/// (debug session `pump-pairing-loop-api25`, static-registry hardening pass — ADDITIVE on top of the
-/// on-device-verified dynamic op77 self-heal at HEAD a48bb44, which stays).
+/// Static registry of CURRENT_STATUS read opcodes a specific pump model + firmware is known to reject.
+/// Additive on top of the on-device dynamic op77 self-heal, which stays.
 ///
-/// **Why a static table on top of the dynamic self-heal.** On a FRESH install / never-before-seen pump the
+/// **Why a static table on top of the dynamic self-heal.** On a fresh install / never-before-seen pump the
 /// app cannot know it is a bad combo at `startPolling()` time — `softwareVersion` is unknown until the async
 /// op33 `ApiVersionResponse` returns; only `isMobi` (from the BLE name) is known before then. So op20
-/// `LoadStatusRequest` (the last read of `PumpReadScheduler.fastRead()`) was sent BLINDLY in the pre-version
+/// `LoadStatusRequest` (the last read of `PumpReadScheduler.fastRead()`) was sent blindly in the pre-version
 /// burst and the evidenced pump dropped the BLE link ~2-3× (~25 s) before the dynamic self-heal learned and
 /// persisted the skip. This registry lets the scheduler seed the exclusion into the never-resend `badOpcodes`
-/// set BEFORE op20 is ever sent — provided op20 is DEFERRED out of the pre-version burst and dispatched only
+/// set BEFORE op20 is ever sent — provided op20 is deferred out of the pre-version burst and dispatched only
 /// once the bootstrap version responses identify the pump (`PumpReadScheduler.noteBootstrapVersionIdentified`).
 ///
-/// **On-wire evidence for the one seeded entry** (`.planning/debug/pump-pairing-loop-api25.md`): on the
-/// API-2.5, non-Control-IQ t:slim X2 (software/API version "2.5"), op20 → an op77 `ErrorResponse` whose real
-/// 2-byte currentStatus cargo is `[0,0]` (no opcode) → the pump tears the link down ~90 ms later
-/// (CBErrorDomain#7). op164/op144 (both minApi=API_V2_5) SUCCEED on this pump, proving it is ≥ API_V2_5, so
-/// there is no minApi/version gate the client could use — the rejection is specific to this (model, firmware)
-/// combo, which is exactly what a static table keyed on identity captures.
+/// **On-wire evidence for the seeded entry.** On the API-2.5, non-Control-IQ t:slim X2 (software/API
+/// version "2.5"), op20 → an op77 `ErrorResponse` whose real 2-byte currentStatus cargo is `[0,0]` (no
+/// opcode) → the pump tears the link down ~90 ms later (CBErrorDomain#7). op164/op144 (both minApi=API_V2_5)
+/// succeed on this pump, proving it is ≥ API_V2_5, so there is no minApi/version gate the client could use —
+/// the rejection is specific to this (model, firmware) combo.
 ///
-/// **Identity fields (kit 1a09dba).** `ApiVersionResponse` (op33) carries `majorVersion`/`minorVersion` (→
+/// **Identity fields.** `ApiVersionResponse` (op33) carries `majorVersion`/`minorVersion` (→
 /// `PumpSnapshot.softwareVersion` "major.minor") and a computed `isMobi` (`major>3 || (major==3 &&
-/// minor>=5)`) — the FULL evidenced key. `PumpVersionResponse` (op85) additionally carries `modelNum` (offset
-/// 44); it rides the same bootstrap trio and is available for a future, finer key, but the current evidenced
-/// entry needs only op33's fields.
+/// minor>=5)`) — the full evidenced key. `PumpVersionResponse` (op85) additionally carries `modelNum`
+/// (offset 44); it rides the same bootstrap trio and is available for a finer key, but the current
+/// evidenced entry needs only op33's fields.
 ///
-/// **Keyed PRECISELY — never broadened.** The entry matches ONLY `isMobi == false` (a t:slim X2, not a Mobi)
+/// **Keyed precisely — never broadened.** The entry matches ONLY `isMobi == false` (a t:slim X2, not a Mobi)
 /// AND `softwareVersion == "2.5"`. It deliberately does NOT exclude op20 for all t:slim X2: a newer firmware
 /// may support op20, and the dynamic op77 self-heal + per-pump persistence already cover any unknown-bad
 /// combo (one-drop-then-learn). The static table is re-derived from identity on EVERY connect and is NEVER
-/// persisted — it stays additive to, and distinct from, the per-pump LEARNED `PumpBadOpcodeStore`.
+/// persisted — it stays additive to, and distinct from, the per-pump learned `PumpBadOpcodeStore`.
 ///
 /// Non-isolated, pure, `Sendable` — safe to read from the `@MainActor` scheduler and the test suite alike.
 enum PumpKnownUnsupportedReads {
@@ -46,21 +44,17 @@ enum PumpKnownUnsupportedReads {
     static func unsupportedReadOpcodes(isMobi: Bool?, softwareVersion: String) -> Set<UInt8> {
         // Evidenced entries — t:slim X2 (non-Mobi), software/API 2.5:
         //   • op20  LoadStatusRequest  → op77 ErrorResponse cargo [0,0] → BLE teardown (~90 ms). See type doc.
-        //   • op120 HighestAamRequest  ┐ Control-IQ-era auto-adjustment-mode (AAM) reads that Phase 15 / CC-10
-        //   • op146 ActiveAamBitsRequest┘ appended to `PumpReadScheduler.alertRead()`. Debug session
-        //     `tslim-reconnect-loop` (2026-08-27, pumpX2-oracle differential): on this Control-IQ-off /
-        //     no-CGM API-2.5 t:slim X2 the pump rejects these Control-IQ-era reads (op-77) and DELIBERATELY
-        //     tears the BLE link down ~90 ms later (HCI 0x13 remote-user-terminated) → a connect/disconnect
-        //     flap that only LOOKED like a fixed ~2 s watchdog because the deterministic read schedule reached
-        //     the offending tail at a fixed offset. Suppressing them here (seeded into `badOpcodes` the instant
-        //     op33 identifies the pump, before the DEFERRED `alertRead()` burst sends them — see
-        //     `PumpReadScheduler.runIdentityGatedReadsOnce`) reproduces the bench zero-disconnect
-        //     (`bench-t1-coverage-resilience.md`: the SAME TandemKit stack held THIS pump zero-disconnect once
-        //     every unsupported opcode was pre-filtered). Kept a READ-only, precisely-keyed static seed exactly
-        //     like op20 — the dynamic op77 self-heal + per-pump persistence remain the net for any OTHER combo.
-        //     (op118 MalfunctionStatus was ALSO 0/18-answered in the capture but is a safety/malfunction read
-        //     that PREDATES the CC-10 AAM additions and is only "re-verify"/MEDIUM-confidence, so it is
-        //     deliberately NOT suppressed here — see the debug session; on-device bisection decides it.)
+        //   • op120 HighestAamRequest / op146 ActiveAamBitsRequest — Control-IQ-era auto-adjustment-mode
+        //     (AAM) reads. On this Control-IQ-off / no-CGM API-2.5 t:slim X2 the pump rejects them (op-77)
+        //     and tears the BLE link down ~90 ms later (HCI 0x13 remote-user-terminated) → a connect/
+        //     disconnect flap that only looked like a fixed ~2 s watchdog because the deterministic read
+        //     schedule reached the offending tail at a fixed offset. Seeded into `badOpcodes` the instant
+        //     op33 identifies the pump, before the deferred `alertRead()` burst sends them (see
+        //     `PumpReadScheduler.runIdentityGatedReadsOnce`). READ-only, precisely-keyed static seed —
+        //     the dynamic op77 self-heal + per-pump persistence remain the net for any other combo.
+        //     op118 MalfunctionStatus was also 0/18-answered in the capture but is a safety/malfunction
+        //     read with only medium-confidence evidence, so it is deliberately NOT suppressed here;
+        //     on-device bisection decides it.
         if isMobi == false, softwareVersion == "2.5" {
             return [LoadStatusRequest.props.opCode,
                     HighestAamRequest.props.opCode,

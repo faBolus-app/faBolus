@@ -11,12 +11,12 @@ extension AppModel {
     /// Mobi — safe to call unconditionally from every trigger, and safe to call more than once
     /// (idempotent: `disconnect()`/`forgetPairing()` are cheap no-ops once already torn down).
     ///
-    /// Per RESEARCH Pitfall 3: this checks the OUTCOME-driving fact (`snapshot.pumpModel`), never
-    /// asserts `isMobi` "never" becomes true — it legitimately does, momentarily, before this runs.
+    /// Checks the OUTCOME-driving fact (`snapshot.pumpModel`), never asserts `isMobi` "never"
+    /// becomes true — it legitimately does, momentarily, before this runs.
     ///
-    /// Flag 1: deliberately does NOT call
-    /// `PumpModelStore.clear()` — cosmetic-only drift (a phantom Mobi unpair-confirmation copy for a
-    /// user who never successfully pairs anything after upgrading), zero safety impact, smaller diff.
+    /// Deliberately does NOT call `PumpModelStore.clear()` — cosmetic-only drift (a phantom Mobi
+    /// unpair-confirmation copy for a user who never successfully pairs anything after upgrading),
+    /// zero safety impact.
     @MainActor
     public func rejectMobiIfDetected() {
         guard snapshot.pumpModel == .mobi else { return }
@@ -28,11 +28,8 @@ extension AppModel {
     }
 }
 
-// §13 NOTICE: this wording is DRAFT and is experimental-distribution surface — the Mobi-reject message
-// must pass owner + §13 clinical review (endocrinologist / CDCES) before any `experimental` build is
-// distributed. `MobiRejectCopyTests` asserts this never contains the
-// banned phrase (REQUIREMENTS.md MOBI-03), mirroring `RegulatoryCopyTests`'s guard-only style — this
-// does NOT bless the exact wording.
+// User-facing Mobi-reject copy. Tests assert it never contains the banned phrase; this does
+// NOT bless the exact wording.
 enum MobiRejectCopy {
     static let mobiNotSupported =
         "Tandem Mobi isn't supported in this version of faBolus. This build supports the Tandem t:slim X2 only."

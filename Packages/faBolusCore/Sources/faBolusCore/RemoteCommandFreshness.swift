@@ -1,11 +1,11 @@
 import Foundation
 
-/// Receive-side freshness bound for inbound remote commands (v3 handoff defect group B).
+/// Receive-side freshness bound for inbound remote commands.
 ///
-/// The shipped P0 fix stopped the *send* side from queueing a pump-mutating command for opportunistic
-/// later delivery. This closes the other end: the host refuses a **delivery-authorizing** command that
-/// arrives too long after it was composed — a bolus (or resume/approval) retransmitted or backlogged by a
-/// slow transport and applied minutes late is a double-dose hazard. It complements, and does not replace,
+/// The send side already refuses to queue a pump-mutating command for opportunistic later delivery.
+/// This closes the other end: the host refuses a **delivery-authorizing** command that arrives too
+/// long after it was composed — a bolus (or resume/approval) retransmitted or backlogged by a slow
+/// transport and applied minutes late is a double-dose hazard. It complements, and does not replace,
 /// the idempotency ledger (which dedups *retries* of the *same* request) and the access gates.
 ///
 /// Only `RemoteCommand.Kind.isFreshnessSensitive` commands are gated — the insulin-INCREASING set. A late
@@ -18,13 +18,13 @@ import Foundation
 /// **Ordering invariant (load-bearing).** Hosts apply this gate at dispatch, *before* the idempotency
 /// ledger's replay check. That is safe **only** because no transport ever late-redelivers a pump-mutating
 /// command: a mutating command is sent live or reported undeliverable, never queued/retransmitted across a
-/// reconnect (V3-P0a — `transferUserInfo` never carries a bolus; BLELink drops un-flushed frames on
-/// disconnect; `SealedTransport` reports-undeliverable and monotonically drops replays), and no client
-/// auto-resends a pending bolus with its *original* `requestId`/`sentAt` (`startPending` always mints a
-/// fresh stamp). So a genuinely stale command and a ledger-replayable one are mutually exclusive. If a
-/// future transport is ever allowed to re-queue a mutating command, move the ledger's `.replay` check
-/// AHEAD of this gate so a request whose outcome is already known replays its result instead of being
-/// refused as stale (which would otherwise push the user toward a manual re-dose).
+/// reconnect (`transferUserInfo` never carries a bolus; BLELink drops un-flushed frames on disconnect;
+/// `SealedTransport` reports-undeliverable and monotonically drops replays), and no client auto-resends a
+/// pending bolus with its *original* `requestId`/`sentAt` (`startPending` always mints a fresh stamp). So a
+/// genuinely stale command and a ledger-replayable one are mutually exclusive. If a future transport is
+/// ever allowed to re-queue a mutating command, move the ledger's `.replay` check AHEAD of this gate so a
+/// request whose outcome is already known replays its result instead of being refused as stale (which
+/// would otherwise push the user toward a manual re-dose).
 public enum RemoteCommandFreshness {
     /// Maximum age of a delivery-authorizing command before the host refuses it. Generous relative to
     /// normal transport latency (sub-second to a few seconds) yet well under the "minutes late" hazard the
@@ -53,9 +53,9 @@ public enum RemoteCommandFreshness {
     public static let rejectionMessage =
         "This request is too old to apply safely — send it again."
 
-    /// VA-07 host-side: true when a remote request composed at `sentAt` predates the host's most recent
+    /// True when a remote request composed at `sentAt` predates the host's most recent
     /// bolus delivery — the remote dosed off pre-bolus state, so applying it now is a double-dose hazard.
-    /// Absent `sentAt` or no prior host delivery ⇒ false (no supersession possible; VA-02 freshness + the
+    /// Absent `sentAt` or no prior host delivery ⇒ false (no supersession possible; freshness + the
     /// access gate remain the other lines of defense). Both sides are wall-clock Unix seconds.
     public static func composeSupersededByHostDelivery(sentAt: Int?, lastHostDeliveryAt: Date?) -> Bool {
         guard let sentAt, let last = lastHostDeliveryAt else { return false }

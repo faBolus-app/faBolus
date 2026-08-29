@@ -2,27 +2,25 @@ import Foundation
 import faBolusCore
 import UserNotifications
 
-/// Phase 13-01 Task 2 (CX-F-03 depth, T3-01/02) — AlertStore-style persist-then-replay of issued §6
-/// safety alerts (`.pumpDisconnect` / `.cgmDataLoss` / `.bolusReconciliation`), so a still-unresolved
-/// alert issued before a cold-restoration relaunch — one whose live in-memory schedule (or an
-/// OS-pending request) didn't survive — is guaranteed to reach the user rather than silently vanish.
-/// Loop `playbackAlertsFromPersistence` / Trio `replayUnacknowledgedAlerts` pattern (reproduced, not
-/// copied).
+/// Persist-then-replay of issued safety alerts (`.pumpDisconnect` / `.cgmDataLoss` /
+/// `.bolusReconciliation`), so a still-unresolved alert issued before a cold-restoration relaunch —
+/// one whose live in-memory schedule (or an OS-pending request) didn't survive — is guaranteed to
+/// reach the user rather than silently vanish.
 ///
 /// Holds the FULL content `NotificationPoster.post` needs to reconstruct a `UNNotificationRequest`
-/// byte-for-byte — NOT merely `{dedupeKey, issuedDate, escalationStep}` (codex HIGH: that shape can't
-/// reconstruct the alert, and an inherently-immediate alert like `.cgmDataLoss`/`.bolusReconciliation`
-/// has no escalation step at all). Persisted through the same App-Group `UserDefaults` Codable idiom
-/// `NotificationRuntime` already uses (no Core Data, no new package this phase).
+/// byte-for-byte — NOT merely `{dedupeKey, issuedDate, escalationStep}` (that shape can't reconstruct
+/// the alert, and an inherently-immediate alert like `.cgmDataLoss`/`.bolusReconciliation` has no
+/// escalation step at all). Persisted through the same App-Group `UserDefaults` Codable idiom
+/// `NotificationRuntime` already uses.
 ///
-/// An entry is written BEFORE the OS request is submitted (`SafetyAlertPoster.post` — atomic-persist-
-/// before-post, codex MEDIUM) and removed only when the underlying condition resolves or is acknowledged
+/// An entry is written BEFORE the OS request is submitted (`SafetyAlertPoster.post` —
+/// persist-before-post) and removed only when the underlying condition resolves or is acknowledged
 /// (`NotificationCoordinator.withdraw(_:)` / `withdrawAll(for:)`, BOTH of which must prune it — a
 /// category-wide withdrawal that left a durable entry behind would replay it after the condition
 /// resolved).
 @MainActor
 final class SafetyAlertStore {
-    static let key = AppGroupKeys.safetyAlerts   // D4-06: moved to the central registry — value unchanged.
+    static let key = AppGroupKeys.safetyAlerts
     private let store: UserDefaults
     private(set) var entries: [String: Entry]   // keyed by dedupeKey
 
@@ -121,10 +119,10 @@ final class SafetyAlertStore {
     }
 }
 
-/// Wraps `NotificationPoster.post` with the atomic-persist-before-post discipline CX-F-03/T3-01
-/// requires for the never-suppressible safety categories: the full replay content is written to `store`
-/// BEFORE the OS `add(_:)` closure runs, so a process death between persist and post can never lose the
-/// alert, and a process death AFTER persist-but-before-post still leaves a durable, replayable record.
+/// Wraps `NotificationPoster.post` with persist-before-post for the never-suppressible safety
+/// categories: the full replay content is written to `store` BEFORE the OS `add(_:)` closure runs, so
+/// a process death between persist and post can never lose the alert, and a process death AFTER
+/// persist-but-before-post still leaves a durable, replayable record.
 @MainActor
 enum SafetyAlertPoster {
     @discardableResult
@@ -145,7 +143,7 @@ enum SafetyAlertPoster {
             userInfo: SafetyAlertStore.sanitize(userInfo), categoryIdentifier: categoryId,
             issuedDate: now, deadline: deadline, kind: deadline == nil ? .immediate : .delayed,
             lifecycleState: .issued)
-        store.record(entry)   // persist BEFORE post (T3-01) — never the reverse order
+        store.record(entry)   // persist BEFORE post — never the reverse order
         return NotificationPoster.post(message, runtime: runtime, userInfo: userInfo, categoryId: categoryId,
                                        trigger: trigger, allowCritical: allowCritical, now: now, add: add)
     }

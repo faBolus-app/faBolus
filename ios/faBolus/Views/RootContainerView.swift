@@ -5,7 +5,7 @@ import faBolusCore
 struct RootContainerView: View {
     @Bindable var model: AppModel
     @State private var router = AppRouter()
-    // Singleton — init force-sets `appMode` to `.advanced` once. Sole writer of `AppSettings.appMode`.
+    // Singleton; sole writer of `AppSettings.appMode` (forces `.advanced` once at init).
     @State private var modeStore = ModeStore.shared
 
     var body: some View {

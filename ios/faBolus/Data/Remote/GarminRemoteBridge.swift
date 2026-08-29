@@ -1,12 +1,12 @@
 import Foundation
 import faBolusCore
 
-/// WR-07 (R2-13): ConnectIQ-free readiness state machine for Garmin outbound sends. The vendored SDK is
-/// explicit (ConnectIQ.h:53-58,64-68) that `IQDeviceStatus_Connected` does NOT mean the device's services
-/// and characteristics are discovered — the companion app must wait for `deviceCharacteristicsDiscovered:`
-/// before it can communicate. This tiny helper encodes just the boolean readiness transitions so they get
-/// unit-test coverage in the default (non-GARMIN) target, where the `#if GARMIN` bridge below is NOT
-/// compiled. Callers still AND-in their ConnectIQ-typed preconditions (`app != nil`, `!sendInFlight`).
+/// ConnectIQ-free readiness for Garmin outbound sends. The vendored SDK is explicit
+/// (ConnectIQ.h:53-58,64-68) that `IQDeviceStatus_Connected` does NOT mean services and
+/// characteristics are discovered — wait for `deviceCharacteristicsDiscovered:` before
+/// communicating. Encodes just the boolean transitions so they get unit coverage in the
+/// default (non-GARMIN) target, where the `#if GARMIN` bridge is not compiled. Callers still
+/// AND-in ConnectIQ-typed preconditions (`app != nil`, `!sendInFlight`).
 struct GarminMessageReadiness {
     private(set) var isReady = false
     /// Characteristics discovered → the device is ready for communication.
@@ -18,16 +18,14 @@ struct GarminMessageReadiness {
     var canSend: Bool { isReady }
 }
 
-/// CR (R2-12): ConnectIQ-free classification of a Garmin outbound `sendMessage` result, so the durable
-/// terminal-echo outbox policy gets unit coverage in the default (non-GARMIN) target — mirroring
-/// `GarminMessageReadiness` above, which lives OUTSIDE `#if GARMIN` for the same reason.
+/// ConnectIQ-free classification of a Garmin outbound `sendMessage` result, so the durable
+/// terminal-echo outbox policy gets unit coverage in the default (non-GARMIN) target.
 ///
-/// A terminal command echo (bolus outcome, etc.; `isEcho == true`) must survive an EXPLICIT send-failure:
-/// it is re-enqueued to the FRONT of the durable `echoQueue` (WR-07's readiness drain replays it on
-/// reconnect/discovery) rather than dropped. Dropping a terminal `bolusStatus` echo permanently loses the
-/// outcome and leaves the watch stuck "delivering…" forever (it makes the watch-side R2-02 stuck-terminal
-/// permanent). A coalesced status snapshot (`isEcho == false`) MAY still be dropped on failure — a newer
-/// status supersedes it, so it is coalescing-safe.
+/// A terminal command echo (bolus outcome, etc.; `isEcho == true`) must survive an explicit
+/// send-failure: re-enqueue to the front of `echoQueue` rather than drop. Dropping a terminal
+/// `bolusStatus` echo permanently loses the outcome and leaves the watch stuck "delivering…".
+/// A coalesced status snapshot (`isEcho == false`) may still be dropped — a newer status
+/// supersedes it.
 enum GarminSendDisposition: Equatable {
     /// Transport acknowledged the send (ConnectIQ `.success`) — clear it from the outbox.
     case ack
@@ -35,49 +33,42 @@ enum GarminSendDisposition: Equatable {
     case reenqueueFront
     /// Explicit failure of a coalescing-safe status snapshot — safe to drop.
     case drop
-    /// I-M3: an UNRECOVERABLE echo failure (`GarminSendResult.permanentFailure` — AppNotFound/
-    /// UnsupportedType/InsufficientMemory, IQConstants.h:34-48). Retrying it forever busy-loops for
-    /// nothing, so it is surfaced (to `GarminDiagnostics`, by the caller) and dropped from the
-    /// in-memory outbox — UNLIKE `.reenqueueFront`, this is NOT retried. The durable
-    /// `RemoteBolusLedger` launch re-seed (`seedTerminalEchoesFromLedger`) remains the terminal-outcome
-    /// backstop, so a permanently-failed echo is not lost forever, only not retried THIS session.
+    /// Unrecoverable echo failure (`GarminSendResult.permanentFailure` — AppNotFound /
+    /// UnsupportedType / InsufficientMemory, IQConstants.h:34-48). Retrying forever busy-loops,
+    /// so it is surfaced once and dropped from the in-memory outbox — unlike `.reenqueueFront`,
+    /// this is NOT retried. The durable `RemoteBolusLedger` launch re-seed remains the
+    /// terminal-outcome backstop.
     case surfaceAndDrop
 }
 
 /// success ⇒ `.ack`; failure of an echo ⇒ `.reenqueueFront`; failure of a non-echo status ⇒ `.drop`.
-/// Both the `#if GARMIN` `sendMessage` completion AND the send-watchdog's `maxSendAttempts`-exhaustion
-/// path route their keep/drop decision through this one helper.
+/// Both the `#if GARMIN` `sendMessage` completion AND the send-watchdog's attempt-exhaustion
+/// path route keep/drop through this helper.
 ///
-/// Kept UNCHANGED (never widened/replaced) alongside the granular `GarminSendResult` overload below —
-/// every existing call site and test that only has a boolean success/failure signal (the send-watchdog's
-/// timeout exhaustion has no permanent/transient signal of its own; see `sendWatchdogFired`) still routes
-/// through this exact seam.
+/// Kept as a boolean seam alongside the granular `GarminSendResult` overload below — the
+/// watchdog's timeout has no permanent/transient signal of its own.
 func garminSendDisposition(success: Bool, isEcho: Bool) -> GarminSendDisposition {
     if success { return .ack }
     return isEcho ? .reenqueueFront : .drop
 }
 
-/// I-M3: ConnectIQ-free classification of a Garmin outbound `sendMessage` result with PERMANENT-vs-
-/// TRANSIENT granularity — mirrors the `IQConstants.h` distinction (`AppNotFound`/`UnsupportedType`/
-/// `InsufficientMemory` are permanent; every other failure, including ones we can't individually
-/// characterize, is treated as transient) without any raw `IQSendMessageResult` crossing this boundary.
+/// ConnectIQ-free send result with permanent-vs-transient granularity — mirrors IQConstants.h
+/// (`AppNotFound` / `UnsupportedType` / `InsufficientMemory` are permanent; every other failure,
+/// including ones we can't characterize, is transient). No raw `IQSendMessageResult` crosses here.
 enum GarminSendResult: Equatable {
     case success
     case transientFailure
     case permanentFailure
 }
 
-/// success ⇒ `.ack`; TRANSIENT failure of an echo ⇒ `.reenqueueFront` (UNCHANGED never-drop invariant —
-/// identical to the boolean seam above); PERMANENT failure of an echo ⇒ `.surfaceAndDrop` (a NEW
-/// disposition — an unrecoverable error retried forever helps nobody, so surface it once and drop from
-/// the in-memory outbox; the durable ledger re-seed is the backstop); ANY non-echo (coalescing-safe)
-/// status failure ⇒ `.drop`, regardless of permanent/transient — a newer status supersedes it either way.
+/// success ⇒ `.ack`; transient echo failure ⇒ `.reenqueueFront` (never-drop, same as the boolean
+/// seam); permanent echo failure ⇒ `.surfaceAndDrop` (unrecoverable — surface once, drop from the
+/// in-memory outbox; ledger re-seed is the backstop); any non-echo status failure ⇒ `.drop`
+/// regardless of permanent/transient — a newer status supersedes it either way.
 ///
-/// A SEPARATE overload from `garminSendDisposition(success:isEcho:)` above (different parameter label,
-/// so both coexist without ambiguity) — the `#if GARMIN` `sendMessage` completion routes through THIS
-/// one (it has the real `IQSendMessageResult` to classify); the send-watchdog's timeout-exhaustion path
-/// has no such signal and stays on the plain boolean seam (a timeout is always treated as transient —
-/// the safe default when the actual outcome is unknown).
+/// Separate overload from `garminSendDisposition(success:isEcho:)`. The `#if GARMIN` completion
+/// routes here (it has a real `IQSendMessageResult`); the watchdog timeout stays on the boolean
+/// seam (a timeout is always treated as transient — the safe default when the outcome is unknown).
 func garminSendDisposition(result: GarminSendResult, isEcho: Bool) -> GarminSendDisposition {
     switch result {
     case .success: return .ack
@@ -86,20 +77,17 @@ func garminSendDisposition(result: GarminSendResult, isEcho: Bool) -> GarminSend
     }
 }
 
-/// I-L1: pure, ConnectIQ-free cap of the outbound Garmin status history array to the watch-plot point
-/// budget, applied bridge-side (below, via `garminCapStatusHistory`) BEFORE send — a transport-level
-/// transform that does NOT touch `AppModel`/`RemoteStatusComposer`'s shared `statusCommand` shape
-/// (other remotes — Mac, iPhone — still see the full up-to-288-point history `RemoteStatusComposer`
-/// already caps to; that buffer serves EVERY remote, not just Garmin's plot). Lives OUTSIDE `#if
-/// GARMIN` (mirrors `garminSendDisposition`) so it compiles and is unit-testable in the default
-/// target. Uncapped, an oversize history payload risks the SAME `InsufficientMemory`/`UnsupportedType`
-/// failure I-M3 now classifies as PERMANENT (dropped, no retry) — so a status push that never needed
-/// the extra points could silently stall the watch chart forever (T-19-20).
+/// Caps the outbound Garmin status history array to the watch-plot point budget, applied
+/// bridge-side BEFORE send. Does not touch `AppModel`/`RemoteStatusComposer`'s shared
+/// `statusCommand` shape (Mac/iPhone still see the full up-to-288-point history). Lives
+/// outside `#if GARMIN` so it compiles in the default target. Uncapped, an oversize payload
+/// risks the same `InsufficientMemory`/`UnsupportedType` failure classified as permanent
+/// (dropped, no retry) — a status push that never needed the extra points could stall the
+/// watch chart.
 enum GarminHistoryCap {
-    /// The venu3s watch-face chart's point budget — matches the widest `watchChartRanges` bucket
-    /// plotted on a small, low-res watch screen with generous headroom over what's visually
-    /// distinguishable at that resolution. NOT tied to `RemoteStatusComposer`'s 288-point (24h)
-    /// buffer, which serves every remote, not just Garmin's plot.
+    /// venu3s watch-face chart budget — matches the widest `watchChartRanges` bucket with
+    /// headroom over what's distinguishable at that resolution. Not tied to the composer's
+    /// 288-point (24h) buffer, which serves every remote.
     static let pointBudget = 144
 
     /// Newest-tail, order-preserving cap: an array longer than `pointBudget` keeps the LAST
@@ -124,32 +112,26 @@ func garminCapStatusHistory(_ dict: [String: Any]) -> [String: Any] {
     return out
 }
 
-/// G-M3 (phone half) — pure, ConnectIQ-free decode of the out-of-band `imu_window` envelope. Lives
-/// OUTSIDE `#if GARMIN` (Foundation-only — `Data`/`NSNumber`, no ConnectIQ import) so BOTH wire
-/// versions get unit coverage in the default (non-GARMIN) target, mirroring `GarminMessageReadiness`/
-/// `garminSendDisposition` above.
+/// Decode of the out-of-band `imu_window` envelope. Lives outside `#if GARMIN` (Foundation-only)
+/// so both wire versions get unit coverage in the default target.
 ///
 /// - v1 (legacy, unversioned or `v:1`): `data` is a flat `[Number]` of Float samples, SAMPLE-MAJOR
-///   (each sample's `ch` channel values contiguous), oldest→newest — unchanged from today's behavior.
-/// - v2 (compact, 19-04's watch encoder — THIS is the wire contract 19-05 defines and 19-04, which
-///   `depends_on: [19-05]`, mirrors EXACTLY):
+///   (each sample's `ch` channel values contiguous), oldest→newest.
+/// - v2 (compact, the current wire contract):
 ///     - `ch` (Int) channel count (e.g. 6: accelX/Y/Z, gyroX/Y/Z), `n` (Int) samples per channel.
-///     - `scale` (`[Number]`, length == `ch`) — ONE dequantization scale PER CHANNEL INDEX, chosen/
-///       owned by the watch-side encoder and carried IN the envelope — `float = int16 * scale[ch]`.
-///       Never a hardcoded duplicate constant on either side, so the two sides can never silently
-///       drift apart if the scale is ever retuned.
-///     - `data` — the packed int16 "ByteArray": `n * ch * 2` raw bytes (0...255), little-endian pairs,
-///       sample-major. Accepted as EITHER a `[Number]` of raw bytes OR a Foundation `Data` (the
-///       vendored ConnectIQ SDK's documented `sendMessage` message types are String/Number/Null/
-///       Array/Dictionary only — no ByteArray/Data entry — so the REAL bridged Swift type for a
-///       Monkey C `ByteArray` arriving watch→phone is genuinely unverified pre-device; this decoder
-///       covers both plausible shapes so a real-device mismatch needs only a data-shape fix here, not
-///       an envelope redesign — DEFERRED OWNER, flagged in the 19-05 SUMMARY).
+///     - `scale` (`[Number]`, length == `ch`) — one dequantization scale per channel, owned by the
+///       watch encoder and carried IN the envelope — `float = int16 * scale[ch]`. Never a hardcoded
+///       duplicate on either side, so the sides cannot silently drift if the scale is retuned.
+///     - `data` — packed int16: `n * ch * 2` raw bytes, little-endian, sample-major. Accepted as
+///       either a `[Number]` of raw bytes OR Foundation `Data`. The vendored ConnectIQ SDK's
+///       documented `sendMessage` types are String/Number/Null/Array/Dictionary only — no ByteArray
+///       — so the real bridged Swift type for a Monkey C `ByteArray` is unverified pre-device;
+///       covering both shapes means a mismatch needs only a data-shape fix here, not an envelope
+///       redesign.
 ///
-/// FAIL-SAFE (T-19-21): ANY malformed/mismatched-length/oversized envelope decodes to an EMPTY array —
-/// never a garbled or partially-decoded window. `imu_window` is advisory-only (never a dose input);
-/// `AppModel.ingestGarminIMUWindow`'s `accelPipeline.predict` already no-ops on an empty window, so
-/// failing safe here costs nothing but one skipped inference tick.
+/// ANY malformed/mismatched-length/oversized envelope decodes to an EMPTY array — never a
+/// garbled or partial window. `imu_window` is advisory-only (never a dose input);
+/// `AppModel.ingestGarminIMUWindow`'s `accelPipeline.predict` already no-ops on empty.
 enum GarminImuWindowDecode {
     /// Defensive upper bound on total samples (`n * ch`) — the largest real window is
     /// `WINDOW(150) * ch(6) = 900`; this leaves generous headroom while still rejecting a spoofed
@@ -203,25 +185,22 @@ enum GarminImuWindowDecode {
     }
 }
 
-/// I-M2: ConnectIQ-free classification of a `getAppStatus` result onto `GarminDiagnostics.AppInstallState`
-/// — lives OUTSIDE `#if GARMIN` (mirrors `garminSendDisposition`/`GarminMessageReadiness`) so it compiles
-/// and is unit-testable in the default (non-GARMIN) target; no `IQAppStatus` type crosses this boundary,
-/// only the one `Bool?` bit the `#if GARMIN` completion already reduces it to (`nil` when the completion
-/// itself never resolved a status — distinct from an explicit `false`, so a transient probe failure is
-/// never confused with a genuinely-absent/mismatched watch app).
+/// ConnectIQ-free classification of a `getAppStatus` result onto `GarminDiagnostics.AppInstallState`.
+/// Lives outside `#if GARMIN` so it compiles in the default target. `nil` when the completion never
+/// resolved a status — distinct from an explicit `false`, so a transient probe failure is never
+/// confused with a genuinely-absent/mismatched watch app.
 func garminClassifyAppInstallState(installed: Bool?) -> GarminDiagnostics.AppInstallState {
     guard let installed else { return .unknown }
     return installed ? .installed : .notInstalled
 }
 
-/// R2-12 (cross-restart echo persistence): a terminal outcome to re-enqueue as a `bolusStatus` echo on
-/// launch. Pure/ConnectIQ-free (mirrors `garminSendDisposition`/`GarminMessageReadiness`) so the seeding
-/// decision gets unit coverage in the default (non-GARMIN) target.
+/// A terminal outcome to re-enqueue as a `bolusStatus` echo on launch. ConnectIQ-free so the
+/// seeding decision gets unit coverage in the default target.
 struct GarminEchoSeed: Equatable { let requestId: String; let status: String; let deliveredUnits: Double?; let message: String? }
 
-/// R2-12: which of the ledger's durable terminal outcomes to re-enqueue as echoes on launch — those NOT
-/// already confirmed-sent to the watch. `alreadyEchoed` is the durable set of requestIds whose echo was
-/// previously acked. Pure/ConnectIQ-free (unit-testable in the default target).
+/// Which of the ledger's durable terminal outcomes to re-enqueue as echoes on launch — those NOT
+/// already confirmed-sent to the watch. `alreadyEchoed` is the durable set of requestIds whose
+/// echo was previously acked.
 func garminEchoesToSeed(terminalOutcomes: [(requestId: String, status: String, message: String?, deliveredUnits: Double?)],
                         alreadyEchoed: Set<String>) -> [GarminEchoSeed] {
     terminalOutcomes.filter { !alreadyEchoed.contains($0.requestId) }
@@ -234,19 +213,17 @@ func garminEchoesToSeed(terminalOutcomes: [(requestId: String, status: String, m
 // so `GarminDismissAckBridgeTests` exercises the REAL branching logic in the default (non-GARMIN) test
 // target — no ConnectIQ import, no live `AppModel`/`GarminDismissReceiptStore` singleton required.
 
-/// Whether an incoming dismiss command should be answered by REPLAYING a stored
-/// receipt rather than re-running the dismiss against the pump. A retry REUSES the same `requestId`, so
-/// once CC-08 clears the alert (it drops out of `activeNotifications`), a same-requestId retry would hit
-/// `AppModel.dismissAlert`'s missing-alert guard with no way to re-derive the outcome — this check runs
-/// BEFORE that guard is ever reached.
+/// Whether an incoming dismiss should be answered by replaying a stored receipt rather than
+/// re-running the dismiss against the pump. A retry reuses the same `requestId`, so once the
+/// alert drops out of `activeNotifications`, a same-id retry would hit `dismissAlert`'s
+/// missing-alert guard with no way to re-derive the outcome — this check runs first.
 func garminDismissShouldReplay(receipt: GarminDismissReceipt?, requestId: String) -> Bool {
     receipt?.requestId == requestId
 }
 
-/// The ack decision for a FRESH (non-replayed) dismiss attempt. `.authenticatedCleared` is the ONLY
-/// outcome that yields an ack; every other outcome (rejected / noResponse / localSnoozeOnly /
-/// notAuthenticated) sends nothing — the watch's fail-closed default (stay visible, keep retrying)
-/// is exactly right.
+/// Ack decision for a fresh (non-replayed) dismiss. `.authenticatedCleared` is the only outcome
+/// that yields an ack; every other (rejected / noResponse / localSnoozeOnly / notAuthenticated)
+/// sends nothing — the watch's fail-closed default (stay visible, keep retrying) is right.
 enum GarminDismissAckDecision: Equatable {
     case ack(requestId: String, alertId: Int, alertKind: Int)
     case noAck
@@ -257,17 +234,14 @@ func garminDismissAckDecision(outcome: DismissOutcome, requestId: String, alertI
     return .ack(requestId: requestId, alertId: alertId, alertKind: alertKind)
 }
 
-/// The ConnectIQ-free CORE of the dismiss-handling flow: given the incoming command's identity, a
-/// receipt lookup, an async dismiss-performer, and injectable sinks for "persist a receipt" / "send a
-/// command" / "send the statusRead backstop", runs the full replay-or-dismiss branch exactly once.
+/// ConnectIQ-free core of dismiss handling: replay-or-dismiss, exactly once.
 ///
-/// - On a receipt replay: sends the stored ack, then the statusRead backstop. Never re-runs the dismiss
-///   (H2/HIGH-A — the alert may already be gone from `activeNotifications`).
-/// - On a fresh dismiss returning `.authenticatedCleared`: persists the receipt SYNCHRONOUSLY (via
-///   `persistReceipt`, before `sendAck` is called — H2's ordering requirement) then sends the ack, then
-///   the statusRead backstop.
-/// - On every other outcome: sends NO ack, only the statusRead backstop (unconditional, mirrors the
-///   pre-ack behavior so a capability-absent/false watch's local-snooze fallback still gets a fresh list).
+/// - Receipt replay: send the stored ack, then the statusRead backstop. Never re-run the dismiss
+///   (the alert may already be gone from `activeNotifications`).
+/// - Fresh dismiss returning `.authenticatedCleared`: persist the receipt synchronously (before
+///   `sendAck`) then send the ack, then the statusRead backstop.
+/// - Every other outcome: no ack, only the statusRead backstop (so a capability-absent watch's
+///   local-snooze fallback still gets a fresh list).
 @MainActor
 func garminHandleDismissAlert(
     requestId: String, alertId: Int, alertKind: Int,
@@ -285,7 +259,7 @@ func garminHandleDismissAlert(
     let outcome = await performDismiss()
     switch garminDismissAckDecision(outcome: outcome, requestId: requestId, alertId: alertId, alertKind: alertKind) {
     case .ack(let rid, let aid, let akind):
-        persistReceipt(rid, aid, akind)   // BEFORE sendAck — H2 ordering
+        persistReceipt(rid, aid, akind)   // BEFORE sendAck — persist must win the race against a crash
         sendAck(rid, aid, akind)
     case .noAck:
         break
@@ -298,10 +272,10 @@ import ConnectIQ
 
 /// Bridges the Garmin venu3s (Connect IQ) remote to the iPhone host. Receives the watch app's
 /// messages via the Connect IQ Mobile SDK, maps them to `RemoteCommand`, and routes them to `AppModel`.
-/// Like the Apple Watch, the watch confirms on-device (hold-to-deliver) and the host delivers directly
-/// — there is NO second human confirmation on the phone. The host still recomputes carbs→units, runs
-/// the divergence guard, and enforces the max-bolus clamp + message signing. Status is echoed back to
-/// the watch. Requires the Garmin Connect Mobile app installed + the watch paired to it.
+/// The watch confirms on-device (hold-to-deliver) and the host delivers directly — there is no
+/// second human confirmation on the phone. The host still recomputes carbs→units, runs the
+/// divergence guard, and enforces the max-bolus clamp + message signing. Status is echoed back.
+/// Requires Garmin Connect Mobile installed and the watch paired to it.
 @MainActor
 final class GarminRemoteBridge: NSObject {
     /// Custom URL scheme for the SDK's device-selection callback (see Info.plist CFBundleURLTypes).
@@ -330,11 +304,8 @@ final class GarminRemoteBridge: NSObject {
     }
     private static let deviceDefaultsKey = "garminSelectedDevice"
 
-    /// 09.6-04 (Part C-4a, D-03.4): weak app-wide reference so `DebugMenuView` can read this bridge's
-    /// already-tracked messaging state for `[Garmin CIQ]` diagnostics without threading a new
-    /// parameter through `DebugMenuView`'s init (its declared call site in `SettingsView.swift` is
-    /// out of this plan's scope, same constraint 09.6-03 documented for the Mac/remote-role side).
-    /// Set once, in `init`, mirroring the app's other `.shared` singletons (e.g. `MacPairingCoordinator`).
+    /// Weak app-wide reference so diagnostics can read this bridge's messaging state without
+    /// threading a new parameter through `DebugMenuView`. Set once in `init`.
     static weak var shared: GarminRemoteBridge?
 
     private weak var model: AppModel?
@@ -346,26 +317,24 @@ final class GarminRemoteBridge: NSObject {
     // behind it. We keep at most ONE send in flight, coalesce status pushes (only the latest matters),
     // and never drop command echoes (bolus outcome, etc.) — echoes are sent first.
     private var sendInFlight = false
-    // WR-07 (R2-13): message-readiness gate. ConnectIQ `.connected` does NOT mean characteristics are
-    // discovered; sending before `deviceCharacteristicsDiscovered:` silently loses messages. Gate pump()
-    // on this and drain the queue when discovery lands (single-device bridge, so a scalar is enough).
+    // Message-readiness gate. ConnectIQ `.connected` does NOT mean characteristics are
+    // discovered; sending before `deviceCharacteristicsDiscovered:` silently loses messages.
+    // Gate pump() on this and drain the queue when discovery lands.
     private var readiness = GarminMessageReadiness()
     private var pendingStatus: [String: Any]?     // latest coalesced statusRead payload
     private var echoQueue: [[String: Any]] = []   // ordered command echoes; never coalesced/dropped
-    // R2-12 (cross-restart echo persistence): the in-memory `echoQueue` above replays terminal echoes
-    // until transport-acked WITHIN a process. `seedTerminalEchoesFromLedger()` (called at launch) closes
-    // the across-restart gap by re-seeding it from the durable RemoteBolusLedger's terminal Garmin
-    // outcomes that were NOT already confirmed-sent (tracked in `alreadyEchoedKey`). `didSeedTerminalEchoes`
+    // In-memory `echoQueue` replays terminal echoes until transport-acked within a process.
+    // `seedTerminalEchoesFromLedger()` (at launch) closes the across-restart gap from the durable
+    // ledger's terminal Garmin outcomes that were not already confirmed-sent. `didSeedTerminalEchoes`
     // makes the seed idempotent per launch.
     private var didSeedTerminalEchoes = false
-    // R2-12: durable set of requestIds whose terminal echo was already confirmed-sent to the watch, so the
-    // launch-time re-seed does not re-echo an outcome the watch already received. Bounded (~256, oldest
-    // dropped) in UserDefaults to avoid unbounded growth.
+    // Durable set of requestIds whose terminal echo was already confirmed-sent, so launch
+    // re-seed does not re-echo an outcome the watch already received. Bounded (~256, oldest
+    // dropped) in UserDefaults.
     private static let alreadyEchoedKey = "garminEchoedRequestIds"
     private static let alreadyEchoedCap = 256
-    // The durable dismiss-ack receipt outbox — a SEPARATE lane, its
-    // own UserDefaults key ("garminDismissReceipts"), never touching `alreadyEchoedKey` above. A
-    // dismissAck echo can therefore never evict (or be evicted by) a bolus outcome's 256-entry set.
+    // Dismiss-ack receipt outbox — a separate UserDefaults key, never touching `alreadyEchoedKey`.
+    // A dismissAck echo can therefore never evict (or be evicted by) a bolus outcome's 256-entry set.
     private static let dismissReceiptStore = GarminDismissReceiptStore.shared
     private var didSeedDismissReceipts = false
     // A2 send-watchdog: ConnectIQ's `sendMessage` completion has NO timeout, so a lost/never-fired
@@ -381,47 +350,37 @@ final class GarminRemoteBridge: NSObject {
     private var inFlight: (payload: [String: Any], isEcho: Bool, attempts: Int)?
     private static let sendTimeout: TimeInterval = 8
     private static let maxSendAttempts = 3
-    // R2-12: after an EXPLICIT send-failure we deliberately do NOT re-pump synchronously (re-sending the
-    // just-failed payload immediately is a busy tight-loop). A single bounded-backoff timer schedules one
-    // deferred pump() so a transient failure still recovers even without a reconnect/discovery event; the
-    // WR-07 readiness gate in pump() still defers the actual transmit until the device is message-ready.
+    // After an explicit send-failure we do NOT re-pump synchronously (that busy-loops the just-failed
+    // payload). A bounded-backoff timer schedules one deferred pump() so a transient failure still
+    // recovers even without a reconnect; the readiness gate still defers transmit until message-ready.
     private var sendBackoff: Timer?
     private static let sendBackoffInterval: TimeInterval = 4
 
-    // 09.6-04 (Part C-4a, D-03.4): read-only, additive diagnostics state — no new send path. The
-    // last completed send's outcome (mapped from ConnectIQ's `IQSendMessageResult` onto the
-    // ConnectIQ-free `GarminDiagnostics.SendOutcome` vocabulary right here, at the one place this
-    // file already imports ConnectIQ) and how many times the send-watchdog has fired this session.
+    // Read-only diagnostics: last completed send outcome (mapped from ConnectIQ at the one place
+    // this file imports ConnectIQ) and how many times the send-watchdog has fired this session.
     private(set) var lastSendOutcomeForDiagnostics: GarminDiagnostics.SendOutcome = .none
     private(set) var sendWatchdogFireCountForDiagnostics = 0
-    // I-M2: the watch-app install/version state from the most recent `getAppStatus` probe — read-only,
-    // additive diagnostics state mirroring `lastSendOutcomeForDiagnostics` above. Defaults to
-    // `.installed` (matches `GarminDiagnostics.BridgeState`'s own default) so a bridge that hasn't yet
-    // completed its first `registerApp()` probe doesn't misreport a not-installed state it hasn't
-    // actually observed.
+    // Watch-app install/version from the most recent `getAppStatus` probe. Defaults to `.installed`
+    // so a bridge that hasn't completed its first `registerApp()` probe doesn't misreport a
+    // not-installed state it hasn't observed.
     private(set) var appInstallStateForDiagnostics: GarminDiagnostics.AppInstallState = .installed
 
     init(model: AppModel) {
         self.model = model
         super.init()
         Self.shared = self
-        // WR-08 (R2-14): opt into CoreBluetooth state restoration (ConnectIQ.h:133-135) so iOS can
-        // relaunch us in the background on BLE activity — paired with early (launch-time) construction so
-        // a background relaunch has a live bridge to answer a remote request. `restoreDevice()` below is
-        // the intended reconnect-on-launch behavior (the SDK does not handle willRestoreState itself).
+        // Opt into CoreBluetooth state restoration (ConnectIQ.h:133-135) so iOS can relaunch us
+        // in the background on BLE activity — paired with early (launch-time) construction so a
+        // background relaunch has a live bridge. `restoreDevice()` is the intended reconnect-on-launch
+        // (the SDK does not handle willRestoreState itself).
         ConnectIQ.sharedInstance().initialize(withUrlScheme: Self.urlScheme, uiOverrideDelegate: nil,
                                               stateRestorationIdentifier: "fabolus.connectiq")
         model.addRemoteEcho { [weak self] cmd in self?.send(cmd) }
-        // Proactively push status to the watch when pump data changes (prompt refresh while open).
-        // Phase 20 (R2, D-04 / subsumes Phase-19 G-M2): this proactive push is ALSO the event-driven
-        // push-wake trigger for the CLOSED-app Garmin background service. AppModel already drives it on
-        // BOTH channels R2 needs — a new CGM value (`pushStatusIfNeeded`, coalesced by the cadence rule)
-        // and a new/critical pump alert (`forceStatusPush` via `onAlertsChangedFanout`, throttle-bypassed) —
-        // so no new phone-side trigger is required. The watch turns these into an immediate closed-app
-        // refresh via `Background.registerForPhoneAppMessageEvent` → `BgServiceDelegate.onPhoneAppMessage`
-        // (faBolusGarmin), instead of waiting for its own ~5-min temporal poll. Still subject to WR-07
-        // readiness + the single-in-flight/coalescing discipline in `send`/`pump` (no bypass). This is a
-        // statusRead-shaped push only — never a signed/dose-authorizing command.
+        // Proactive status push when pump data changes. AppModel already drives this on a new CGM
+        // value and a new/critical pump alert, so the closed-app Garmin background service can
+        // refresh immediately via `Background.registerForPhoneAppMessageEvent` instead of waiting
+        // for its ~5-min temporal poll. Still subject to readiness + single-in-flight/coalescing
+        // in `send`/`pump`. StatusRead-shaped only — never a signed/dose-authorizing command.
         model.addStatusListener { [weak self] snap in self?.sendStatus(snap) }
         model.setupGarmin = { [weak self] in self?.selectDevice() }
         // Phone tells the watch when to run wrist eating-sensing (battery: only when wanted).
@@ -431,11 +390,8 @@ final class GarminRemoteBridge: NSObject {
         restoreDevice()
     }
 
-    // I-M1: unregister on deallocation — mirrors `registerApp()`'s own unregister-before-register at
-    // the top (below). Without this, a bridge instance that's replaced/deallocated (unlikely in normal
-    // app life — `Self.shared`/`AppModel` hold it for the process lifetime — but real in tests/previews
-    // that construct a fresh instance) would leave its delegate registered against the SDK's singleton
-    // forever, a stale listener that never gets cleaned up.
+    // Unregister on deallocation. Without this, a replaced instance (tests/previews) would leave
+    // its delegate registered against the SDK singleton forever.
     deinit {
         ConnectIQ.sharedInstance().unregister(forAllDeviceEvents: self)
         ConnectIQ.sharedInstance().unregister(forAllAppMessages: self)
@@ -443,23 +399,19 @@ final class GarminRemoteBridge: NSObject {
 
     var hasDevice: Bool { device != nil }
 
-    /// 09.6-04: total outstanding messages this bridge is holding (the in-flight send, if any, plus
-    /// the queued command echoes plus a pending coalesced status push) — read directly from the
-    /// already-tracked queue state, never recomputed or re-derived.
+    /// Outstanding messages this bridge is holding (in-flight send, queued echoes, pending status).
     var queueDepthForDiagnostics: Int {
         echoQueue.count + (pendingStatus == nil ? 0 : 1) + (inFlight == nil ? 0 : 1)
     }
 
-    /// 09.6-04: this bridge's paired device's live ConnectIQ connection status, or `false` when no
-    /// device is paired at all (callers should check `hasDevice` first to distinguish "never paired"
-    /// from "paired but disconnected").
+    /// Paired device's live ConnectIQ connection status, or `false` when no device is paired.
+    /// Check `hasDevice` first to distinguish "never paired" from "paired but disconnected".
     var deviceConnectedForDiagnostics: Bool {
         guard let device else { return false }
         return ConnectIQ.sharedInstance().getDeviceStatus(device) == .connected
     }
 
-    /// 09.6-04: the paired device's raw name, if known — redaction happens at `GarminDiagnostics`'s
-    /// rendering boundary, never here; this accessor exists only to hand that raw value across.
+    /// Paired device's raw name, if known — redaction happens at `GarminDiagnostics`, never here.
     var deviceNameForDiagnostics: String? { device?.friendlyName ?? device?.modelName }
 
     /// Opens Garmin Connect Mobile so the user can pick which paired device runs the remote.
@@ -492,13 +444,10 @@ final class GarminRemoteBridge: NSObject {
 
     private func registerApp() {
         guard let device else { return }
-        // I-M1: unregister any PRIOR registration for `self` BEFORE re-registering. `registerApp()` is
-        // called from BOTH `restoreDevice()` (launch) and `handleOpenURL()` (re-select) — with no
-        // unregister, a repeated call STACKS listeners (ConnectIQ.h:220-227/:264-272: "a device/app may
-        // have multiple listeners if this method is called more than once"), causing duplicate
-        // `handle(cmd)` (status flip-flop, duplicate cancel/dismiss) and a stale registration against
-        // the PREVIOUS device on a device switch. `unregisterForAll…` is safe even on the very first
-        // call — a no-op when nothing was registered yet.
+        // Unregister any prior registration BEFORE re-registering. Called from both `restoreDevice()`
+        // (launch) and `handleOpenURL()` (re-select). Without unregister, a repeated call stacks
+        // listeners (ConnectIQ.h:220-227/:264-272), causing duplicate `handle(cmd)` and a stale
+        // registration against the previous device on a switch. Safe on first call — a no-op.
         ConnectIQ.sharedInstance().unregister(forAllDeviceEvents: self)
         ConnectIQ.sharedInstance().unregister(forAllAppMessages: self)
         // Sideloaded app: store UUID == app UUID.
@@ -506,16 +455,14 @@ final class GarminRemoteBridge: NSObject {
         self.app = app
         ConnectIQ.sharedInstance().register(forDeviceEvents: device, delegate: self)
         ConnectIQ.sharedInstance().register(forAppMessages: app, delegate: self)
-        // WR-07 already-connected-at-registration edge case (ConnectIQ.h:58): if the device was already
-        // connected before we registered, `deviceCharacteristicsDiscovered:` may not re-fire, leaving
-        // readiness stuck false. Probe the app's status; a reachable, installed IQAppStatus means the
-        // device is communicable → arm readiness and drain. (Fail-safe: nil/not-installed keeps it false.)
+        // Already-connected-at-registration (ConnectIQ.h:58): if the device was connected before we
+        // registered, `deviceCharacteristicsDiscovered:` may not re-fire, leaving readiness stuck
+        // false. Probe app status; a reachable, installed IQAppStatus means communicable → arm
+        // readiness and drain. (nil/not-installed keeps it false.)
         ConnectIQ.sharedInstance().getAppStatus(app) { [weak self] appStatus in
-            // Read the one Sendable bit (installed?) HERE, in the nonisolated completion, so only a
-            // `Bool?` crosses to the main actor — capturing the non-Sendable `IQAppStatus` into the
-            // @MainActor Task trips Swift 6 "Sending 'appStatus' risks causing data races". `nil` (the
-            // completion itself never resolved a status) is preserved as its OWN tri-state bit — I-M2's
-            // `garminClassifyAppInstallState` distinguishes it from an explicit `installed == false`.
+            // Read the one Sendable bit (installed?) HERE so only a `Bool?` crosses to the main
+            // actor — capturing non-Sendable `IQAppStatus` into a @MainActor Task trips Swift 6.
+            // `nil` (completion never resolved) is its own tri-state bit, distinct from `false`.
             let installed: Bool? = appStatus?.isInstalled
             Task { @MainActor in
                 guard let self else { return }
@@ -526,24 +473,21 @@ final class GarminRemoteBridge: NSObject {
                     self.readiness.characteristicsDiscovered()
                     self.pump()
                 case .notInstalled:
-                    // I-M2: a VISIBLE, actionable state — corrects the "✓" `restoreDevice()`/
-                    // `handleOpenURL()` already set SYNCHRONOUSLY (before this async probe resolves),
-                    // instead of leaving it stand while readiness silently never arms.
-                    // `openConnectIQAppStore()` is exposed below for a future UI "Install" action; never
-                    // auto-invoked here — launching Garmin Connect Mobile unprompted on every cold
-                    // start (registerApp() runs from restoreDevice() at EVERY launch) would be its own
-                    // unwanted surprise, not a fix.
+                    // Visible, actionable state — corrects the "✓" `restoreDevice()`/`handleOpenURL()`
+                    // already set synchronously (before this async probe resolves).
+                    // `openConnectIQAppStore()` is exposed for a future UI "Install" action; never
+                    // auto-invoked here — launching Garmin Connect unprompted on every cold start
+                    // (registerApp runs from restoreDevice at every launch) would be its own surprise.
                     self.model?.garminStatus = state.statusText
                 case .unknown:
-                    break   // fail-safe: no status change, readiness stays false — matches prior behavior
+                    break   // fail-safe: no status change, readiness stays false
                 }
             }
         }
     }
 
-    /// I-M2: launches Garmin Connect Mobile's Connect IQ Store page for the paired watch app — the
-    /// store-link a not-installed/wrong-app-id `garminStatus` should OFFER. Exposed for a future UI
-    /// action (out of this plan's file scope); a no-op if no app has been resolved yet.
+    /// Opens Garmin Connect Mobile's Connect IQ Store page for the paired watch app. No-op if no
+    /// app has been resolved yet.
     func openConnectIQAppStore() {
         guard let app else { return }
         ConnectIQ.sharedInstance().showStore(for: app)
@@ -554,11 +498,8 @@ final class GarminRemoteBridge: NSObject {
     /// bolus's "delivered"/"cancelled" outcome or make the CGM lag behind the phone.
     private func send(_ cmd: RemoteCommand) {
         guard let rawDict = try? cmd.asDictionary() else { return }
-        // I-L1: cap the outbound history/historyEpochs arrays (if present — a no-op for the many
-        // non-status dicts, e.g. bolus/dismiss echoes, that never carry them) to the watch-plot point
-        // budget BEFORE enqueueing. Single choke point — every `includeHistory:true` send site (the
-        // statusRead reply, the proactive `sendStatus` push, and dismissAlert's statusRead backstop)
-        // funnels through this one `send()`.
+        // Cap history/historyEpochs (no-op for dicts that never carry them) to the watch-plot
+        // budget BEFORE enqueueing. Single choke point — every includeHistory send funnels here.
         let dict = garminCapStatusHistory(rawDict)
         if cmd.kind == .statusRead {
             pendingStatus = dict
@@ -575,10 +516,9 @@ final class GarminRemoteBridge: NSObject {
         pump()
     }
 
-    /// R2-12: seed the durable terminal-echo outbox from the ledger at launch, so a bolus outcome recorded
-    /// in the durable RemoteBolusLedger but never echoed to the watch (app killed/relaunched before the echo
-    /// was transport-acked) is replayed once the watch is message-ready. Filters out outcomes already
-    /// confirmed-sent (durable `alreadyEchoedKey` set). Idempotent per launch (`didSeedTerminalEchoes`).
+    /// Seed the durable terminal-echo outbox from the ledger at launch, so a bolus outcome recorded
+    /// but never echoed (app killed before the echo was transport-acked) is replayed once the watch
+    /// is message-ready. Filters outcomes already confirmed-sent. Idempotent per launch.
     func seedTerminalEchoesFromLedger() {
         guard !didSeedTerminalEchoes, let model else { return }
         didSeedTerminalEchoes = true
@@ -590,25 +530,22 @@ final class GarminRemoteBridge: NSObject {
                                     deliveredUnits: seed.deliveredUnits, message: seed.message)
             if let dict = try? cmd.asDictionary() { echoQueue.append(dict) }
         }
-        pump()   // WR-07 readiness gate defers the actual transmit until the device is message-ready
+        pump()   // readiness gate defers transmit until the device is message-ready
     }
 
-    /// The launch-time analogue of `seedTerminalEchoesFromLedger()` for the
-    /// dismiss-ack lane: any receipt persisted (an authenticated pump clear proven) but never actually
-    /// sent (the phone died in the gap between persist and transport-confirmed send) is resent proactively
-    /// — the watch's own bounded retry would eventually re-request it, but this closes the gap without
-    /// waiting on that. Idempotent per launch (`didSeedDismissReceipts`). Never touches the bolus
-    /// `alreadyEchoedKey` lane (T-14-32).
+    /// Launch-time analogue of `seedTerminalEchoesFromLedger()` for the dismiss-ack lane: a receipt
+    /// persisted (authenticated pump clear proven) but never sent is resent proactively. Idempotent
+    /// per launch. Never touches the bolus `alreadyEchoedKey` lane.
     func seedUnsentDismissAcksFromReceiptStore() {
         guard !didSeedDismissReceipts, let model else { return }
         didSeedDismissReceipts = true
         for receipt in Self.dismissReceiptStore.unackedReceipts() {
             send(model.dismissAckCommand(requestId: receipt.requestId, alertId: receipt.alertId, alertKind: receipt.alertKind))
         }
-        pump()   // WR-07 readiness gate defers the actual transmit until the device is message-ready
+        pump()   // readiness gate defers transmit until the device is message-ready
     }
 
-    // R2-12: durable already-echoed requestId set (UserDefaults, bounded).
+    // Durable already-echoed requestId set (UserDefaults, bounded).
     private static func alreadyEchoedRequestIds() -> Set<String> {
         Set(UserDefaults.standard.stringArray(forKey: alreadyEchoedKey) ?? [])
     }
@@ -621,7 +558,7 @@ final class GarminRemoteBridge: NSObject {
     }
 
     private func pump() {
-        // WR-07: also gate on message-readiness — a send before characteristics discovery is silently
+        // Also gate on message-readiness — a send before characteristics discovery is silently
         // lost. Enqueue-before-pump means gating here only DEFERS the transmit; discovery drains it.
         guard let app, readiness.canSend, !sendInFlight else { return }
         let next: [String: Any]; let isEcho: Bool; let attempts: Int
@@ -639,22 +576,18 @@ final class GarminRemoteBridge: NSObject {
         sendGeneration &+= 1
         let gen = sendGeneration
         armSendWatchdog(generation: gen)
-        // I-L2 (optional, low-priority — SDK 1.8.0): mark coalescing-safe status snapshots
-        // (`!isEcho`) as transient sends, so a busy/backgrounded watch may coalesce/drop a stale one
-        // without holding up delivery of the NEXT (newer) status — a terminal echo (`isEcho == true`)
-        // is NEVER marked transient (it must not be silently coalesced away by the transport itself,
-        // independent of I-M3's own permanent/transient RESULT classification below, which is a
-        // different axis: this `isTransient` flag describes the OUTBOUND send; I-M3 classifies the
-        // INBOUND result).
+        // Mark coalescing-safe status snapshots (`!isEcho`) as transient so a busy/backgrounded
+        // watch may drop a stale one without holding up the next. A terminal echo is NEVER marked
+        // transient (must not be silently coalesced by the transport). Distinct from permanent/
+        // transient RESULT classification below: this flag describes the outbound send.
         ConnectIQ.sharedInstance().sendMessage(next, to: app, progress: nil, completion: { [weak self] result in
             Task { @MainActor in
                 guard let self, gen == self.sendGeneration else { return }   // watchdog already superseded this send
                 self.sendWatchdog?.invalidate(); self.sendWatchdog = nil
-                // I-M3: classify onto the neutral, ConnectIQ-free GarminSendResult vocabulary right at
-                // this boundary — no raw IQSendMessageResult ever crosses into GarminDiagnostics or the
-                // disposition helper. Permanent (IQConstants.h:34-48): the device/app itself rejects the
-                // message outright — retrying it can never succeed. Everything else (including timeouts/
-                // busy/internal errors) is transient — may well succeed on a later attempt.
+                // Classify onto ConnectIQ-free GarminSendResult at this boundary — no raw
+                // IQSendMessageResult crosses into GarminDiagnostics or the disposition helper.
+                // Permanent (IQConstants.h:34-48): the device/app rejects the message outright —
+                // retrying can never succeed. Everything else is transient.
                 let sendResult: GarminSendResult
                 switch result {
                 case .success: sendResult = .success
@@ -662,31 +595,25 @@ final class GarminRemoteBridge: NSObject {
                     sendResult = .permanentFailure
                 default: sendResult = .transientFailure
                 }
-                // 09.6-04: decode onto the neutral, ConnectIQ-free GarminDiagnostics.SendOutcome
-                // vocabulary right at this boundary — no raw IQSendMessageResult ever crosses into
-                // GarminDiagnostics.
+                // Map onto ConnectIQ-free GarminDiagnostics.SendOutcome at this boundary.
                 switch sendResult {
                 case .success: self.lastSendOutcomeForDiagnostics = .delivered
                 case .transientFailure: self.lastSendOutcomeForDiagnostics = .failed
                 case .permanentFailure: self.lastSendOutcomeForDiagnostics = .permanentlyFailed
                 }
                 let isEcho = self.inFlight?.isEcho ?? false
-                // R2-12/I-M3: classify the result. A TRANSIENT failure of a terminal command echo must
-                // NOT be dropped — durable-park it to the FRONT of echoQueue so WR-07's readiness-gated
-                // reconnect/discovery drain replays it. A PERMANENT echo failure is surfaced above
-                // (lastSendOutcomeForDiagnostics) and dropped — NOT re-parked (retrying an unrecoverable
-                // error forever helps nobody); the durable RemoteBolusLedger re-seed remains the
-                // terminal-outcome backstop. A coalesced status snapshot is safe to drop either way.
+                // Transient failure of a terminal echo must NOT be dropped — park it at the front of
+                // echoQueue so a readiness-gated reconnect drain replays it. Permanent echo failure is
+                // surfaced above and dropped — NOT re-parked; the ledger re-seed remains the backstop.
+                // A coalesced status snapshot is safe to drop either way.
                 switch garminSendDisposition(result: sendResult, isEcho: isEcho) {
                 case .reenqueueFront:
                     if let f = self.inFlight { self.echoQueue.insert(f.payload, at: 0) }
                 case .ack:
-                    // R2-12: a terminal echo was confirmed sent — record its requestId durably so a
-                    // launch-time re-seed from the ledger does not re-echo an outcome the watch already got.
-                    // A dismissAck echo routes to its OWN durable lane
-                    // (GarminDismissReceiptStore, keyed peer+requestId) — NEVER `markAlreadyEchoed`, which
-                    // is the bolus-only 256-entry set. Distinguished by the payload's `kind`, mirroring how
-                    // `handle()` dispatches inbound commands by kind.
+                    // Terminal echo confirmed sent — record its requestId durably so a launch re-seed
+                    // does not re-echo an outcome the watch already got. A dismissAck echo routes to
+                    // its own durable lane (GarminDismissReceiptStore) — NEVER `markAlreadyEchoed`,
+                    // which is the bolus-only 256-entry set. Distinguished by payload `kind`.
                     if let f = self.inFlight, f.isEcho, let rid = f.payload["requestId"] as? String {
                         if (f.payload["kind"] as? String) == "dismissAck" {
                             Self.dismissReceiptStore.markAcked(peer: "garmin", requestId: rid)
@@ -702,9 +629,9 @@ final class GarminRemoteBridge: NSObject {
                 if sendResult == .success {
                     self.pump()   // drain the next queued message (echo first, else the latest status)
                 } else {
-                    // Do NOT synchronously re-pump on an explicit failure — re-sending the just-failed
-                    // payload immediately busy-loops. Recovery rides WR-07's readiness-gated reconnect drain
-                    // plus a bounded backoff (a permanent failure has nothing left to re-pump for THIS
+                    // Do NOT synchronously re-pump on an explicit failure — that busy-loops the
+                    // just-failed payload. Recovery rides the readiness-gated reconnect drain plus
+                    // a bounded backoff (a permanent failure has nothing left to re-pump for THIS
                     // payload, but the backoff still drains whatever else is queued).
                     self.scheduleBackoffPump()
                 }
@@ -737,12 +664,10 @@ final class GarminRemoteBridge: NSObject {
             if f.attempts < Self.maxSendAttempts {
                 inFlight = f   // bounded re-attempt
             } else {
-                // R2-12/I-M3: attempts exhausted. A watchdog TIMEOUT carries no permanent/transient
-                // signal of its own (no IQSendMessageResult was ever received) — stays on the plain
-                // boolean seam, always treated as transient (the safe default absent better
-                // information), so a terminal echo durable-parks to the FRONT of echoQueue (never
-                // dropped) exactly like the completion path's transient case; a coalescing-safe status
-                // snapshot is dropped.
+                // Attempts exhausted. A watchdog TIMEOUT has no permanent/transient signal (no
+                // IQSendMessageResult) — stays on the boolean seam, always treated as transient,
+                // so a terminal echo parks at the front of echoQueue (never dropped); a coalescing
+                // status snapshot is dropped.
                 if garminSendDisposition(success: false, isEcho: f.isEcho) == .reenqueueFront {
                     echoQueue.insert(f.payload, at: 0)
                 }
@@ -752,11 +677,9 @@ final class GarminRemoteBridge: NSObject {
         pump()
     }
 
-    /// R2-12: schedule a single bounded-backoff pump() after an explicit send-failure. We do this instead
-    /// of re-pumping synchronously so we don't busy-loop re-sending the just-failed payload; a transient
-    /// failure still recovers even absent a reconnect/discovery event. Coalesced — one pending backoff is
-    /// enough (a reconnect drain or a later send may beat it; both are harmless no-ops). The pump() it fires
-    /// still honors the WR-07 readiness gate, so it only transmits when the device is message-ready.
+    /// Schedule a single bounded-backoff pump() after an explicit send-failure instead of re-pumping
+    /// synchronously (that busy-loops the just-failed payload). Coalesced — one pending backoff is
+    /// enough. The pump() it fires still honors the readiness gate.
     private func scheduleBackoffPump() {
         guard sendBackoff == nil else { return }
         sendBackoff = Timer.scheduledTimer(withTimeInterval: Self.sendBackoffInterval, repeats: false) { [weak self] _ in
@@ -772,11 +695,10 @@ final class GarminRemoteBridge: NSObject {
 
     private func handle(_ cmd: RemoteCommand) {
         guard let model else { return }
-        // Group B (P11): refuse a delivery-authorizing command that arrived too long after it was composed —
-        // a bolus applied minutes late is a double-dose hazard. Only insulin-INCREASING kinds are gated
-        // (RemoteCommandFreshness); a late cancel is still honored. (A current faBolusGarmin remote stamps
-        // `sentAt` on these kinds, so freshness IS enforced; a legacy Garmin app that omits the stamp is
-        // not gated — the check is additive / backward-compatible.)
+        // Refuse a delivery-authorizing command that arrived too long after it was composed —
+        // a bolus applied minutes late is a double-dose hazard. Only insulin-INCREASING kinds are
+        // gated; a late cancel is still honored. Additive: a legacy Garmin that omits `sentAt`
+        // is not gated.
         if RemoteCommandFreshness.isStale(cmd) {
             send(RemoteCommand(kind: .bolusStatus, requestId: cmd.requestId,
                                status: .failed, message: RemoteCommandFreshness.rejectionMessage))
@@ -784,17 +706,16 @@ final class GarminRemoteBridge: NSObject {
         }
         switch cmd.kind {
         case .bolusRequest:
-            // The watch already confirmed via hold-to-deliver — deliver directly, no phone
-            // dialog. The pump still enforces max + signing. Blocked when Garmin is read-only.
+            // Watch already confirmed via hold-to-deliver — deliver directly, no phone dialog.
+            // Pump still enforces max + signing. Blocked when Garmin is read-only.
             guard !AppSettings.shared.remotesReadOnly else {
                 send(RemoteCommand(kind: .bolusStatus, requestId: cmd.requestId, status: .failed, message: "Read-only mode"))
                 return
             }
-            // Units mode sends `units`; carbs mode sends `carbsGrams` (+ bgMgdl + the Garmin's own
-            // estimate). The host recomputes carbs→units, runs the divergence guard, records carbs.
+            // Host recomputes carbs→units, runs the divergence guard, records carbs.
             guard cmd.units != nil || (cmd.carbsGrams ?? 0) > 0 else { return }
-            // C2 §2.3: forward the entered bolus passcode (if any) so the host verifies it against the
-            // salted hash. When a passcode is required and this is absent/wrong, `remoteDeliver` denies and
+            // Forward the entered bolus passcode so the host verifies it against the salted hash.
+            // When a passcode is required and this is absent/wrong, `remoteDeliver` denies and
             // echoes `.failed` — the watch never verifies or stores it.
             Task { await model.remoteDeliver(requestId: cmd.requestId, units: cmd.units,
                                              carbsGrams: cmd.carbsGrams, bgMgdl: cmd.bgMgdl.map(Int.init),
@@ -807,10 +728,8 @@ final class GarminRemoteBridge: NSObject {
             // the watch would flip cancelled → delivered.
             Task { await model.cancelBolus(from: .garmin, peerId: "garmin") }
         case .dismissAlert:
-            // Route through the ConnectIQ-free core handler so the receipt-replay /
-            // authenticated-ack decision logic is identical to what GarminDismissAckBridgeTests exercises
-            // in the default target — only the closures below (real AppModel call, real
-            // GarminDismissReceiptStore, real send()) are GARMIN-specific.
+            // Route through the ConnectIQ-free core so receipt-replay / authenticated-ack is
+            // identical to what GarminDismissAckBridgeTests exercises in the default target.
             if let id = cmd.alertId, let k = cmd.alertKind {
                 let requestId = cmd.requestId
                 Task { [weak self] in
@@ -850,24 +769,22 @@ extension GarminRemoteBridge: IQAppMessageDelegate, IQDeviceEventDelegate {
         // Eating-detection IMU windows ride an out-of-band envelope (not the safety-critical
         // RemoteCommand schema) — route them to phone-side inference before RemoteCommand parsing.
         if dict["type"] as? String == "imu_window" {
-            // G-M3 (phone half): accepts BOTH the legacy v1 flat-Float envelope and 19-04's v2 compact
-            // int16 envelope (dequantized here) — see `GarminImuWindowDecode`'s doc comment for the
-            // wire contract. Fail-safe to empty on any malformed/oversized input (T-19-21).
+            // Accepts both the legacy v1 flat-Float envelope and v2 compact int16. Fail-safe
+            // to empty on any malformed/oversized input.
             let raw = GarminImuWindowDecode.decode(dict)
             Task { @MainActor in self.model?.ingestGarminIMUWindow(rawWindow: raw) }
             return
         }
-        guard let cmd = try? RemoteCommand.fromValidated(dict) else { return }   // audit A-07
+        guard let cmd = try? RemoteCommand.fromValidated(dict) else { return }
         Task { @MainActor in self.handle(cmd) }
     }
     nonisolated func deviceStatusChanged(_ device: IQDevice!, status: IQDeviceStatus) {
-        // WR-07: clear readiness whenever the device is not connected; the `true` transition is owned
-        // solely by deviceCharacteristicsDiscovered (a bare `.connected` is NOT message-ready). Hop to
-        // the main actor like the other ConnectIQ callbacks.
+        // Clear readiness whenever the device is not connected; the `true` transition is owned
+        // solely by deviceCharacteristicsDiscovered (a bare `.connected` is NOT message-ready).
         Task { @MainActor in self.readiness.deviceStatusChanged(isConnected: status == .connected) }
     }
 
-    /// WR-07: characteristics discovered → messaging is ready. Set readiness and drain anything that
+    /// Characteristics discovered → messaging is ready. Set readiness and drain anything that
     /// queued during the post-connect / pre-discovery window (echoes, coalesced status).
     nonisolated func deviceCharacteristicsDiscovered(_ device: IQDevice!) {
         Task { @MainActor in
@@ -885,9 +802,8 @@ extension GarminRemoteBridge: IQAppMessageDelegate, IQDeviceEventDelegate {
 /// (`init(model:)` + `handleOpenURL(_:)`) so nothing else changes.
 @MainActor
 final class GarminRemoteBridge {
-    /// 09.6-04: mirrors the `#if GARMIN` variant's `.shared` + diagnostics read surface so
-    /// `GarminDiagnostics`/`DebugMenuView` compile and behave sensibly (unreachable empty state)
-    /// in a build without the Connect IQ SDK.
+    /// Mirrors the `#if GARMIN` variant's `.shared` + diagnostics surface so
+    /// `GarminDiagnostics`/`DebugMenuView` compile in a build without the Connect IQ SDK.
     static weak var shared: GarminRemoteBridge?
 
     init(model: AppModel) { model.garminStatus = nil; Self.shared = self }
@@ -899,11 +815,10 @@ final class GarminRemoteBridge {
     var sendWatchdogFireCountForDiagnostics: Int { 0 }
     var deviceConnectedForDiagnostics: Bool { false }
     var deviceNameForDiagnostics: String? { nil }
-    /// I-M2: mirrors the `#if GARMIN` variant's diagnostics surface — no device, no probe, nothing to
-    /// report; `.unknown` (never `.installed`, which would misreport readiness this stub never has).
+    /// Mirrors the `#if GARMIN` diagnostics surface — no device, no probe; `.unknown` (never
+    /// `.installed`, which would misreport readiness this stub never has).
     var appInstallStateForDiagnostics: GarminDiagnostics.AppInstallState { .unknown }
-    /// I-M2: no-op mirror of the `#if GARMIN` variant's store-link action — there's no ConnectIQ SDK
-    /// (and so no `IQApp`/store page) to open in this build.
+    /// No-op mirror of the `#if GARMIN` store-link action — no ConnectIQ SDK in this build.
     func openConnectIQAppStore() {}
 }
 

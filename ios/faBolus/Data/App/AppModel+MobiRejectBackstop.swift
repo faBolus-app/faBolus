@@ -20,7 +20,7 @@ final class MobiRejectBackstop {
     func start() {
         guard !running else { return }
         running = true
-        // CR-01 (VA-05): reject an ALREADY-CURRENT Mobi before arming future observation.
+        // Reject an ALREADY-CURRENT Mobi before arming future observation.
         // `withObservationTracking`'s `onChange` fires only on the NEXT mutation, never against the
         // value already present — so a Mobi made current before `start()` runs (CoreBluetooth
         // state-restoration reconnect, or a stored/identified Mobi applied before the backstop wires

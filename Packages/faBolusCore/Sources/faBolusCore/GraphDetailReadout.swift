@@ -1,17 +1,13 @@
 import Foundation
 
-/// The single shared "value at a scrubbed timestamp" resolver for the GraphDetailView readout
-/// (Phase 09.18b, D-05/D-06). Given a scrub `Date` (recovered from the chart's x-axis via
-/// `ChartProxy.value(atX:)`) and one of faBolus's OWN in-memory feed arrays
-/// (`[GlucoseReading]`/`[IOBSample]`/`[BolusMarker]` — never Loop's closed-loop stores), it returns the
-/// single sample nearest that instant, or `nil` when the nearest sample is farther away than the
-/// caller's tolerance (→ the readout row renders an em dash, never a fabricated number).
+/// Shared "value at a scrubbed timestamp" resolver for the graph-detail readout. Given a scrub
+/// `Date` and one of faBolus's own in-memory feed arrays (`[GlucoseReading]` / `[IOBSample]` /
+/// `[BolusMarker]`), it returns the sample nearest that instant, or `nil` when the nearest sample is
+/// farther than the caller's tolerance — the row then shows an em dash, never a fabricated number.
 ///
-/// **Display-only (mirrors `GlucosePlotScale`'s D-11 discipline).** This type imports Foundation only
-/// and references no dose/delivery/signed-path type. It recovers a value already stored for DISPLAY at a
-/// point in time — it never alters, filters, or clinically judges a reading, and nothing it returns is a
-/// dose input. The generic `nearest(...)` is the reusable primitive every readout row is built on, so
-/// 09.18b-02's HR row slots in with no new nearest-sample implementation.
+/// Display-only: Foundation only, no dose/delivery/signed-path type. Recovers a value already stored
+/// for display; never alters or clinically judges a reading, and nothing it returns is a dose input.
+/// The generic `nearest(...)` is the one primitive every readout row is built on.
 public enum GraphDetailReadout {
 
     /// The single sample in `samples` whose `key` `Date` is closest to `date`, provided that closest
@@ -24,9 +20,9 @@ public enum GraphDetailReadout {
     ///   smaller `Date`) is returned. Stable regardless of the array's original order, so a scrub never
     ///   flickers between two equidistant points.
     ///
-    /// Generic over the sample type + its `Date` KeyPath so the SAME resolver serves glucose, IOB,
-    /// bolus (and, in 09.18b-02, HR). The caller extracts the value it wants (`.mgdl`/`.iob`/`.units`)
-    /// from the returned sample.
+    /// Generic over the sample type + its `Date` KeyPath so the same resolver serves glucose, IOB,
+    /// and bolus. The caller extracts the value it wants (`.mgdl` / `.iob` / `.units`) from the
+    /// returned sample.
     public static func nearest<T>(to date: Date,
                                   in samples: [T],
                                   key: KeyPath<T, Date>,

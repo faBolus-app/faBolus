@@ -1,25 +1,22 @@
 import Foundation
 import CryptoKit
 
-/// Phase 09.6-04 (Task 1, Part C-4a, D-03.4): pure `[Garmin CIQ]` diagnostics-text section builder.
-/// Surfaces the phone-side `GarminRemoteBridge`'s already-tracked messaging state — send-queue
-/// depth, the last send's outcome, how many times the send-watchdog has fired, and device
-/// connection status — read directly at the `DebugMenuView` call site, never re-derived or
-/// re-probed here (no new ConnectIQ send is ever issued from this file). Phone-side only (RESEARCH
-/// Assumption A3): answers "did my message reach the watch" without a second Connect IQ build.
+/// Pure `[Garmin CIQ]` diagnostics-text section builder. Surfaces the phone-side
+/// `GarminRemoteBridge`'s already-tracked messaging state — send-queue depth, the last send's
+/// outcome, how many times the send-watchdog has fired, and device connection status — read
+/// directly at the `DebugMenuView` call site, never re-derived or re-probed here (no new ConnectIQ
+/// send is ever issued from this file). Phone-side only: answers "did my message reach the watch"
+/// without a second Connect IQ build.
 ///
-/// Mirrors 09.6-03's `RemoteRoleDiagnostics`/`CgmArbiterDiagnostics` shape: this type takes a plain,
-/// already-projected `BridgeState` value rather than the live `GarminRemoteBridge` instance, so it's
-/// fully unit-testable with fabricated state (no live ConnectIQ device or bridge instantiation
-/// needed) and stays free of any ConnectIQ import — the neutral `SendOutcome` vocabulary is owned
-/// here; `GarminRemoteBridge` (which already imports ConnectIQ under `#if GARMIN`) maps its raw
-/// `IQSendMessageResult`/watchdog-timeout signal onto it at that boundary (Pattern 4).
+/// Takes a plain, already-projected `BridgeState` value rather than the live `GarminRemoteBridge`
+/// instance, so it's fully unit-testable with fabricated state (no live ConnectIQ device) and stays
+/// free of any ConnectIQ import — the neutral `SendOutcome` vocabulary is owned here;
+/// `GarminRemoteBridge` (which already imports ConnectIQ under `#if GARMIN`) maps its raw
+/// `IQSendMessageResult`/watchdog-timeout signal onto it at that boundary.
 ///
-/// PHI/identity constraint (T-09.6-01): a Garmin device's raw name (user-assigned, e.g. "Zev's
-/// venu3s") never reaches the rendered output — every device line redacts `deviceName` to a
-/// `stableToken(for:)` (SHA-256, truncated), deterministic across renders like
-/// `RemoteRoleDiagnostics`'s peer-name redaction (same rationale: `Hasher` is process-randomized,
-/// SHA-256 via `CryptoKit` is not).
+/// PHI/identity: a Garmin device's raw name (user-assigned) never reaches the rendered output —
+/// every device line redacts `deviceName` to a `stableToken(for:)` (SHA-256, truncated),
+/// deterministic across renders. `Hasher` is process-randomized; SHA-256 via `CryptoKit` is not.
 @MainActor
 enum GarminDiagnostics {
     /// Neutral projection of a ConnectIQ send completion / send-watchdog outcome. `GarminRemoteBridge`
@@ -30,13 +27,13 @@ enum GarminDiagnostics {
         case delivered
         case failed
         case timedOut = "timed out"
-        /// I-M3: an UNRECOVERABLE send failure (AppNotFound/UnsupportedType/InsufficientMemory,
-        /// IQConstants.h:34-48) — distinguished from `.failed` (transient; the bridge keeps retrying
-        /// it) so diagnostics can tell "still retrying" apart from "gave up, ledger is the backstop".
+        /// An unrecoverable send failure (AppNotFound/UnsupportedType/InsufficientMemory) —
+        /// distinguished from `.failed` (transient; the bridge keeps retrying it) so diagnostics can
+        /// tell "still retrying" apart from "gave up, ledger is the backstop".
         case permanentlyFailed = "permanently failed (unrecoverable)"
     }
 
-    /// I-M2: neutral projection of a `getAppStatus` result — `GarminRemoteBridge` maps the raw
+    /// Neutral projection of a `getAppStatus` result — `GarminRemoteBridge` maps the raw
     /// `IQAppStatus?`/`isInstalled` bit onto this vocabulary at the one place it already imports
     /// ConnectIQ (mirrors `SendOutcome` above). `.unknown` is the fail-safe default when the
     /// completion itself couldn't determine a status (never treated as `.installed`).
@@ -45,8 +42,8 @@ enum GarminDiagnostics {
         case installed = "installed"
         case notInstalled = "not installed / wrong app id"
 
-        /// User-facing status text — used both for `AppModel.garminStatus` (I-M2's visible not-
-        /// installed state) and diagnostics rendering.
+        /// User-facing status text — used both for `AppModel.garminStatus` (visible not-installed
+        /// state) and diagnostics rendering.
         var statusText: String {
             switch self {
             case .installed: return "ready"
@@ -71,10 +68,9 @@ enum GarminDiagnostics {
         /// Raw device name, if known — redacted to a stable token before it ever reaches the
         /// rendered text; never rendered verbatim.
         let deviceName: String?
-        /// I-M2: the watch-app install/version state — defaults to `.installed` (the pre-19-05
-        /// behavior: no distinct not-installed signal existed) so every EXISTING call site that
-        /// constructs a `BridgeState` without this new field (e.g. `DebugMenuView`) keeps compiling
-        /// and rendering exactly as before.
+        /// The watch-app install/version state — defaults to `.installed` so existing call sites
+        /// that construct a `BridgeState` without this field (e.g. `DebugMenuView`) keep compiling
+        /// and rendering as before.
         let appInstallState: AppInstallState = .installed
     }
 
@@ -93,7 +89,7 @@ enum GarminDiagnostics {
     /// - Parameters:
     ///   - state: the bridge's already-tracked messaging state, or `nil` when no Garmin device has
     ///     ever been selected/paired (renders the explicit "not currently reachable" empty state,
-    ///     never an omitted header — Pitfall 4).
+    ///     never an omitted header).
     ///   - enabled: the SAME shared "Share local diagnostics" opt-in every other section gates on.
     ///     When `false`, no queue/send/watchdog/device value is ever rendered — only the header plus
     ///     the shared empty-state prompt (even if `state` is populated).
@@ -119,7 +115,7 @@ enum GarminDiagnostics {
         } else {
             lines.append("Device: disconnected")
         }
-        // I-M2: surface the not-installed/wrong-app state explicitly — never a silent "✓" while
+        // Surface the not-installed/wrong-app state explicitly — never a silent "✓" while
         // readiness never arms. Only rendered when it's NOT the default "installed" (avoids adding
         // noise to the common-case output every existing test already pins).
         if state.appInstallState != .installed {

@@ -11,16 +11,12 @@ struct PrivacyDataView: View {
 
     @State private var message: String?
 
-    // Erase
     @State private var confirmErase = false
     @State private var confirmFullReset = false
 
-    /// Owner-only surface for the destructive erase: hidden for a read-only (caregiver) phone. The
-    /// `childModeEnabled` check is a defensive leftover from when Child mode gated all of Settings
-    /// behind a PIN (`SettingsLockGate`, removed Phase 7, 07-04, FEAT-04, D-05) — `childModeEnabled` is
-    /// now a permanently-frozen `false`, so this half of the condition can never filter anything out
-    /// again, but reading the (unchanged, still-live) property costs nothing and keeps the defense in
-    /// depth if it's ever reintegrated (`dev/child-mode`).
+    /// Owner-only: hide erase on a read-only (caregiver) phone. Still AND `childModeEnabled` so a
+    /// future child-mode reintegration (`dev/child-mode`) cannot expose erase without that gate —
+    /// the flag is frozen false on main today.
     private var isOwner: Bool { !settings.phoneReadOnly && !settings.childModeEnabled }
 
     var body: some View {

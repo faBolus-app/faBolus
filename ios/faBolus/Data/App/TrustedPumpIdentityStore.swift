@@ -1,23 +1,20 @@
 import Foundation
 
-/// C1 (post-codex-review, safety-critical, REMED-15.5/CC-06): persists ONLY the TRUSTED,
-/// BLE-name-derived pump model, keyed by CoreBluetooth peripheral identifier — deliberately SEPARATE
-/// from `PumpModelStore` (a single, GLOBAL, non-peripheral-keyed store already polluted by the op33
-/// API-version heuristic on every silent reconnect whose name-detection doesn't run; see
-/// `PumpModelStore`'s own doc comment). This store is NEVER written by the op33 heuristic — its only
-/// writer is `PumpConnectionLifecycle.applyDidDiscover` (a genuine BLE-name detection).
+/// Persists ONLY the TRUSTED, BLE-name-derived pump model, keyed by CoreBluetooth peripheral
+/// identifier — deliberately SEPARATE from `PumpModelStore` (a single, GLOBAL, non-peripheral-keyed
+/// store already polluted by the op33 API-version heuristic on every silent reconnect whose
+/// name-detection doesn't run). This store is NEVER written by the op33 heuristic — its only writer
+/// is `PumpConnectionLifecycle.applyDidDiscover` (a genuine BLE-name detection). Mobi reject-at-pairing
+/// depends on this trusted identity remaining name-derived, not heuristic.
 ///
 /// Read by `PumpConnectionLifecycle.reapplyTrustedIdentityIfKnown()` to re-establish a TRUSTED identity
 /// on every silent reconnect / restoration path that bypasses `didDiscover` (retrieve-and-connect,
-/// CoreBluetooth state restoration, watchdog-rescan-direct-connect — see
-/// `.planning/phases/15.5-send-gate-fail-closed-until-identity/15.5-RESEARCH.md` "Trusted-Identity
-/// Design (post-review C1)" §A2). Mirrors `PumpPeripheralStore`'s file shape/idiom (a small,
-/// UserDefaults-backed, `enum`-namespaced store with `set`/`get`/`clear`).
+/// CoreBluetooth state restoration, watchdog-rescan-direct-connect).
 ///
-/// Keyed by `peripheral.uuidString` (not a single global slot) because a future/edge-case pump swap
-/// must not let a DIFFERENT peripheral inherit this peripheral's trusted record — the reapplication
-/// site (codex C10) additionally cross-checks the kit's `reconnectTargetId` before ever reading this
-/// store, so a stale entry for a stale peripheral is simply never looked up for the wrong session.
+/// Keyed by `peripheral.uuidString` (not a single global slot) because a pump swap must not let a
+/// DIFFERENT peripheral inherit this peripheral's trusted record — the reapplication site additionally
+/// cross-checks the kit's `reconnectTargetId` before ever reading this store, so a stale entry for a
+/// stale peripheral is simply never looked up for the wrong session.
 enum TrustedPumpIdentityStore {
     /// `[String: Bool]` — uuidString -> isMobi. A dictionary (not per-peripheral keys) keeps this a
     /// single UserDefaults entry, mirroring `PumpModelStore`'s single-value simplicity while still being

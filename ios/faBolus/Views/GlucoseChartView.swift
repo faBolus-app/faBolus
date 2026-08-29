@@ -35,14 +35,8 @@ enum GlucoseChartAccessibility {
         }
     }
 
-    /// One `AXDataPoint` per visible reading, labeled
-    /// `"<time>, <value> <unit>, <band word>"` (e.g. "2:14 PM, 124 mg/dL, In range") — the spoken
-    /// parallel of the on-screen value + color band. The reading's TIME is
-    /// now folded into each point's own label so a VoiceOver user swiping through the chart can tell
-    /// WHEN each reading occurred (trend/timing is exactly what a glucose chart exists to convey, and
-    /// the x-axis `valueDescriptionProvider` returns "" for lack of a per-axis descriptor). Time uses
-    /// the locale-aware short style (`.formatted(date:.omitted, time:.shortened)`), so it honors the
-    /// user's 12/24-hour setting without a stored `DateFormatter`.
+    /// One AXDataPoint per reading: time + value + unit + band, so VoiceOver can tell WHEN each
+    /// point occurred. Locale short time honors 12/24h without a stored DateFormatter.
     static func dataPoints(for readings: [GlucoseReading], unit: GlucoseUnit) -> [AXDataPoint] {
         let unitLabel = unit == .mmol ? "mmol/L" : "mg/dL"
         return readings.map { r in
@@ -67,8 +61,7 @@ private struct GlucoseChartAccessibilityRepresentable: AXChartDescriptorRepresen
         let dataPoints = GlucoseChartAccessibility.dataPoints(for: readings, unit: unit)
         let mgdlValues = readings.map { Double($0.mgdl) }
         let dateValues = readings.map { $0.date.timeIntervalSinceReferenceDate }
-        // Guard against an empty visible window (e.g. glucose toggled off) so the range stays a
-        // valid non-inverted ClosedRange instead of crashing.
+        // Empty window (glucose toggled off) must stay a valid non-inverted range.
         let now = Date().timeIntervalSinceReferenceDate
         let xAxis = AXNumericDataAxisDescriptor(
             title: "Time",
@@ -99,9 +92,8 @@ struct GlucoseChartView: View {
     var showGlucose: Bool = true
     var showIOB: Bool = true
     var showBolusBars: Bool = true
-    /// The display-unit funnel the Y-axis tick LABELS and the "mg/dL"/"mmol/L" caption route
-    /// through. The chart domain, PointMark data, and AxisMarks tick VALUES stay mg/dL-scaled —
-    /// only the rendered text below changes.
+    /// Y-axis tick labels and the unit caption. Domain, PointMarks, and AxisMarks values stay
+    /// mg/dL-scaled — only rendered text converts.
     private var unit: GlucoseUnit { AppSettings.shared.glucoseDisplayUnit }
 
     /// True when any unit-scaled (right-axis) series is visible.
@@ -112,11 +104,8 @@ struct GlucoseChartView: View {
     private var visibleIOB: [IOBSample] { iob.filter { $0.date >= start } }
     private var visibleBoluses: [BolusMarker] { boluses.filter { $0.date >= start } }
 
-    // Glucose plot domain (left axis): user-configurable via
-    // AppSettings.shared.glucosePlotFloor/Ceiling, resolved through GlucosePlotScale at
-    // AppSettings init so this is always a safe in-set pair — no hardcoded 40/300 literal remains
-    // here. IOB/bolus (units) are scaled into this domain and labeled on the right axis via the
-    // SAME shared math, so both bounds always drive both the scale and the label recovery.
+    // Glucose plot domain: user floor/ceiling via GlucosePlotScale — no hardcoded 40/300.
+    // IOB/bolus scale into this domain; right-axis labels recover via the same math.
     private var gLo: Double { Double(AppSettings.shared.glucosePlotFloor) }
     private var gHi: Double { Double(AppSettings.shared.glucosePlotCeiling) }
     private var iobMax: Double {
@@ -136,13 +125,11 @@ struct GlucoseChartView: View {
                 RectangleMark(yStart: .value("Low", GlucoseThresholds.low), yEnd: .value("High", GlucoseThresholds.high))
                     .foregroundStyle(AppTheme.inRange.opacity(0.12))
                 ForEach(visible) { r in
-                    // Symmetric clamp — an out-of-range reading pins to the visible top/bottom
-                    // edge instead of being clipped out of the plot by chartYScale's domain. Display
-                    // only: r.mgdl itself (used for the point's color below) is never altered.
+                    // Clamp display-only: out-of-range pins to the plot edge instead of clipping
+                    // out. r.mgdl (color) is never altered.
                     let plottedY = GlucosePlotScale.clamp(r.mgdl, floor: AppSettings.shared.glucosePlotFloor,
                                                            ceiling: AppSettings.shared.glucosePlotCeiling)
-                    // Color stays the primary cue, but the SHAPE is an added, non-color
-                    // channel — a colorblind user can still tell low/in-range/high apart.
+                    // Shape is a non-color channel so colorblind users can still tell bands apart.
                     let symbolKind = GlucoseChartAccessibility.symbolKind(for: r.mgdl)
                     PointMark(x: .value("Time", r.date), y: .value("Glucose", plottedY))
                         .foregroundStyle(AppTheme.glucoseColor(r.mgdl))
@@ -178,8 +165,7 @@ struct GlucoseChartView: View {
                 AxisMarks(position: .trailing, values: [scaleUnits(0), scaleUnits(iobMax / 2), scaleUnits(iobMax)]) { value in
                     AxisValueLabel {
                         if let p = value.as(Double.self) {
-                            // Recovery reads BOTH bounds via the same shared math scaleUnits used,
-                            // so the right-axis label stays correct at every floor/ceiling combo.
+                            // Recover via the same math as scaleUnits so labels stay correct.
                             let recovered = GlucosePlotScale.recoverUnits(
                                 p, unitMax: iobMax, floor: AppSettings.shared.glucosePlotFloor,
                                 ceiling: AppSettings.shared.glucosePlotCeiling)
@@ -194,15 +180,11 @@ struct GlucoseChartView: View {
                 AxisGridLine(); AxisValueLabel(format: .dateTime.hour())
             }
         }
-        // Lets VoiceOver swipe through individual glucose data points (value + band word)
-        // instead of announcing the chart as a single opaque image. Empty when glucose is hidden —
-        // nothing to describe in that state.
+        // VoiceOver swipes individual points (value + band). Empty when glucose is hidden.
         .accessibilityChartDescriptor(GlucoseChartAccessibilityRepresentable(
             readings: showGlucose ? visible : [], unit: unit))
         .overlay(alignment: .topLeading) {
-            // This axis caption is the only persistent unit label the chart
-            // draws — hidden entirely when off, never a bare fallback (the axis itself stays labeled
-            // with numeric ticks either way).
+            // Only persistent unit label on the chart. Hidden entirely when off — never a bare fallback.
             if showGlucose && AppSettings.shared.showGlucoseUnitLabels {
                 Text(unit == .mmol ? String(localized: "mmol/L") : String(localized: "mg/dL"))
                     .font(.caption2).foregroundStyle(.secondary).padding(.leading, 2)

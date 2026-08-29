@@ -8,21 +8,12 @@ import faBolusCore
 @MainActor
 public enum GlucoseSourceRegistry {
     /// Sources compiled into this build. Empty selection = pump-relayed glucose only (no failover).
-    /// Added per phase: Dexcom G7 passive BLE, then LibreLinkUp, Nightscout, Dexcom Share
-    /// (cloud fallback). HealthKit (Eversense) was removed from narrow `main` in Phase 5 (HEALTH-01) —
-    /// see dev/healthkit's REINTEGRATION.md for the pre-removal descriptor shape. Nightscout was
-    /// removed from narrow `main` in Phase 5 (HEALTH-02) — see dev/nightscout's REINTEGRATION.md.
+    /// Currently Dexcom Share (cloud fallback).
     public static let enabled: [GlucoseSourceDescriptor] = {
         var list: [GlucoseSourceDescriptor] = [
-            // dexcom-g7-ble, dexcom-g6-ble, and librelinkup removed from narrow `main` — Phase 1,
-            // Plan 03 (G7, CGM-01/CGM-02) and Plan 02 (G6 + LibreLinkUp, CGM-03/CGM-04), then
-            // retro-cleaned to a physical `git rm` in Phase 2.5 (D-01/D-07, CLEAN-03) — the source
-            // files no longer exist on `main` at all; they are preserved on origin/dev/cgm-extra.
             GlucoseSourceDescriptor(id: "dexcom-share", name: "Dexcom Share (cloud)",
                                     sensors: ["Dexcom G6", "Dexcom G7"]) { _ in DexcomShareSource() },
         ]
-        // xdrip-appgroup removed from narrow `main` — Phase 1, Plan 01 (CGM-05), then git rm'd
-        // outright in Phase 2.5 (D-07, CLEAN-03); preserved on origin/dev/cgm-extra.
         return list
     }()
 
@@ -35,7 +26,7 @@ public enum GlucoseSourceRegistry {
     public static func selectedId() -> String? { UserDefaults.standard.string(forKey: key) }
 
     /// Persist the chosen source id (nil clears it). Applied on next launch / re-init. Also clears the
-    /// CX-F-07 bounded-recovery bookkeeping (the clean-shutdown marker + the persisted
+    /// bounded-recovery bookkeeping (the clean-shutdown marker + the persisted
     /// `GlucoseSourceRecoveryState`) so a re-selected source is auto-started again on the next launch —
     /// any earlier unclean-start tally / disable window belonged to whichever source was selected
     /// before, and must never carry over onto a freshly (re-)selected one.
@@ -52,25 +43,23 @@ public enum GlucoseSourceRegistry {
     }
 
     /// Build the selected source, or nil when none is configured/available. The ONE production
-    /// instance (D-06) — passes `restoreStateEnabled: true`.
+    /// instance — passes `restoreStateEnabled: true`.
     public static func makeSelected() -> GlucoseSource? { selected()?.make(true) }
 
     /// The descriptor for a specific source id (for the credentials "test all" diagnostic).
     public static func descriptor(id: String) -> GlucoseSourceDescriptor? { all.first { $0.id == id } }
     /// Build a specific source by id (for testing a not-necessarily-selected source). This is the
-    /// ephemeral `CgmCredentialsView` "Test" path — always `restoreStateEnabled: false` (D-06), so it
+    /// ephemeral `CgmCredentialsView` "Test" path — always `restoreStateEnabled: false`, so it
     /// can never collide with the production instance's restore identifier.
     ///
-    /// W-04 (D-14) — KEEP-WITH-COMMENT: this has ZERO remaining PRODUCTION call sites (the live Test
-    /// flow now observes the already-running `AppModel.glucoseSource` production instance via
-    /// `glucoseSourceProbe`, never a second ephemeral central). It is still exercised by
-    /// `DexcomG6RestoreIdentifierTests`, which pins the invariant that the by-id build path carries
-    /// `restoreStateEnabled: false` — the sole guard against the dup-restore-id SIGABRT. Keeping it
-    /// (and `CgmCredentialsView.sourcesToTest`) is the chosen low-risk option under full-hardening
-    /// scope; do NOT delete either without migrating those test call sites in the same change.
+    /// Zero remaining production call sites (the live Test flow observes the already-running
+    /// `AppModel.glucoseSource` production instance via `glucoseSourceProbe`, never a second
+    /// ephemeral central). Kept because tests pin that the by-id build path carries
+    /// `restoreStateEnabled: false` — the sole guard against the dup-restore-id SIGABRT. Do NOT
+    /// delete without migrating those test call sites in the same change.
     public static func make(id: String) -> GlucoseSource? { descriptor(id: id)?.make(false) }
 
-    // MARK: - CX-F-07: bounded crash-loop recovery persistence
+    // MARK: - Bounded crash-loop recovery persistence
 
     private static let recoveryStateKey = "glucoseSourceRecoveryState.v1"
 
@@ -92,7 +81,7 @@ public enum GlucoseSourceRegistry {
     }
 }
 
-/// CX-F-07: pure, persisted state for the bounded crash-loop recovery policy below. Codable so
+/// Pure, persisted state for the bounded crash-loop recovery policy below. Codable so
 /// `GlucoseSourceRegistry` can round-trip it through `UserDefaults` (JSON) across launches.
 public struct GlucoseSourceRecoveryState: Equatable, Codable {
     /// Consecutive unclean-start count observed within `GlucoseSourceRecoveryPolicy.uncleanStartWindow`.
@@ -107,17 +96,16 @@ public struct GlucoseSourceRecoveryState: Equatable, Codable {
     }
 }
 
-/// **CX-F-07 — bounded crash-loop recovery, replacing the old permanent-until-reselect crash guard.**
+/// **Bounded crash-loop recovery — not a permanent-until-reselect crash guard.**
 ///
-/// Addresses codex HIGH ("jetsam/crash distinction is not implementable as described"): iOS cannot
-/// reliably tell a benign jetsam/watchdog/OOM background termination apart from a genuine CGM-source
-/// crash, so this policy NEVER classifies a termination reason. `AppModel.init` tracks only whether the
-/// PREVIOUS run left its clean-shutdown marker (`wasClean` — set on an orderly teardown of the CGM
-/// source, cleared at the start of every run; its ABSENCE at the next launch means "ended without
-/// cleanup", cause UNKNOWN) and feeds that, plus the persisted `GlucoseSourceRecoveryState`, through this
-/// PURE decision function — no `UserDefaults`, no clock read — so the disable/re-probe boundary is
-/// unit-testable directly. A SINGLE unclean start (the overwhelmingly common real-world case: the app
-/// was simply suspended, then jetsam'd, in the background) NEVER disables failover; only
+/// iOS cannot reliably tell a benign jetsam/watchdog/OOM background termination apart from a genuine
+/// CGM-source crash, so this policy NEVER classifies a termination reason. `AppModel.init` tracks only
+/// whether the PREVIOUS run left its clean-shutdown marker (`wasClean` — set on an orderly teardown of
+/// the CGM source, cleared at the start of every run; its ABSENCE at the next launch means "ended
+/// without cleanup", cause UNKNOWN) and feeds that, plus the persisted `GlucoseSourceRecoveryState`,
+/// through this PURE decision function — no `UserDefaults`, no clock read — so the disable/re-probe
+/// boundary is unit-testable directly. A SINGLE unclean start (the overwhelmingly common real-world
+/// case: the app was simply suspended, then jetsam'd, in the background) NEVER disables failover; only
 /// `maxUncleanStartsBeforeDisable` unclean starts within `uncleanStartWindow` do, and even that disable
 /// is itself BOUNDED (`disableWindow`) — it auto-re-probes once the window elapses rather than requiring
 /// the user to manually re-select the source in Settings forever.

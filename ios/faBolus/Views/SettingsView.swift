@@ -63,8 +63,7 @@ struct SettingsView: View {
                     ForEach(SettingsCategory.allCases) { cat in
                         Label(cat.title, systemImage: cat.icon).tag(SettingsSidebarItem.category(cat))
                             .hoverEffect(.automatic)
-                        // Privacy & data sits among the category rows now — between "Remotes & devices"
-                        // and "About & help" — instead of in the Safety group below.
+                        // Privacy & data sits among categories (after Remotes, before About).
                         if cat == .remotes {
                             Label("Privacy & data", systemImage: "hand.raised")
                                 .tag(SettingsSidebarItem.privacyData)
@@ -129,9 +128,8 @@ struct SettingsView: View {
                                 Label(cat.title, systemImage: cat.icon)
                             }
                             .hoverEffect(.automatic)
-                            // Privacy & data lives among the category rows now — between "Remotes &
-                            // devices" and "About & help" — instead of in its own section below the
-                            // Safety (read-only) toggle.
+                            // Privacy & data among categories (after Remotes, before About), not
+                            // in a section below the Safety toggle.
                             if cat == .remotes {
                                 NavigationLink { PrivacyDataView(model: model) } label: {
                                     Label("Privacy & data", systemImage: "hand.raised")
@@ -265,9 +263,8 @@ enum SettingsSidebarItem: Hashable {
     case safety
     case privacyData
 
-    /// The canonical set of non-category rows `sidebarList`'s second section renders — single source
-    /// of truth cross-checked against `SettingsExtraIndex.entries` by `SettingsSidebarParityTests` so
-    /// the two can never silently drift apart.
+    /// Non-category sidebar rows. `SettingsSidebarParityTests` cross-checks this against
+    /// `SettingsExtraIndex.entries` so the two cannot drift.
     static let allExtras: [SettingsSidebarItem] = [.safety, .privacyData]
 }
 
@@ -399,7 +396,7 @@ struct CgmSettingsView: View {
     var body: some View {
         Form {
             Section {
-                // String/registry-backed picker, not an AppSettings Bool — cannot use `guardedToggle`.
+                // String/registry-backed picker — not an AppSettings Bool, so `guardedToggle` doesn't apply.
                 Picker("Failover CGM", selection: $selectedGlucoseSource) {
                     Text("None (pump only)").tag("")
                     ForEach(GlucoseSourceRegistry.enabled) { Text($0.name).tag($0.id) }
@@ -457,8 +454,8 @@ struct CgmSettingsView: View {
         return "Selected: \(selected.name)"
     }
 
-    /// Section-3 subtitle. Uses the same validated `GlucoseSourceRegistry.selected()` basis as
-    /// Section 2 so a stale persisted id cannot say "Selected" while step 2 says "Not selected".
+    /// Same `GlucoseSourceRegistry.selected()` basis as Section 2 so a stale persisted id cannot
+    /// say "Selected" here while step 2 says "Not selected".
     private var currentSelectionSubtitle: (text: String, isActive: Bool) {
         let selected = GlucoseSourceRegistry.selected().map { (id: $0.id, name: $0.name) }
         return CgmStatusView.selectionStatusSubtitle(selected: selected,
@@ -480,10 +477,9 @@ struct PumpSettingsView: View {
     @Bindable var settings: AppSettings
     @State private var showPairing = false
     @State private var selectedBackend = BackendRegistry.selected().id
-    // Unpair funnel. `repairAfter` re-opens pairing after unpair ("Re-pair with new code").
     @State private var unpairStep: UnpairStep?
     private enum UnpairStep: Identifiable {
-        case confirm(repairAfter: Bool)   // S12 charging-base confirm
+        case confirm(repairAfter: Bool)   // charging-base confirm before unpair
         var id: String { switch self { case .confirm(let r): return "confirm-\(r)" } }
         var repairAfter: Bool { switch self { case .confirm(let r): return r } }
     }
@@ -493,7 +489,7 @@ struct PumpSettingsView: View {
                 LabeledContent("Status", value: model.snapshot.connection.rawValue)
                 connectionControls
                 if model.hasStoredPairing && model.capabilities.supportsPairing {
-                    // Confirm before unpair; a Mobi gets the charging-base warning (re-pairing needs the base).
+                    // Confirm before unpair; a Mobi needs the charging base to re-pair.
                     Button("Forget pairing", role: .destructive) { unpairStep = .confirm(repairAfter: false) }
                 }
             }
@@ -508,7 +504,7 @@ struct PumpSettingsView: View {
         }
         .navigationTitle("Pump & control")
         .sheet(isPresented: $showPairing) { PairingSheet(model: model) { showPairing = false } }
-        // Unpair confirm, with the model-appropriate warning (Mobi ⇒ charging-base caveat).
+        // Unpair confirm (Mobi copy includes the charging-base caveat).
         .confirmationDialog("Forget pairing?",
                isPresented: Binding(get: { if case .confirm = unpairStep { return true } else { return false } },
                                     set: { if !$0, case .confirm = unpairStep { unpairStep = nil } }),
@@ -523,7 +519,7 @@ struct PumpSettingsView: View {
         } message: {
             Text(model.unpairConfirmation)
         }
-        // Reject-at-pairing observer at this root so it outlives the transient `PairingSheet`.
+        // Mobi reject-at-pairing: observe here so it outlives the transient PairingSheet.
         .onChange(of: model.snapshot.pumpModel) { _, _ in model.rejectMobiIfDetected() }
     }
 
@@ -551,11 +547,10 @@ struct PumpSettingsView: View {
 struct RemotesSettingsView: View {
     @Bindable var model: AppModel
     @Bindable var settings: AppSettings
-    // One-time warning the first time Garmin bolusing is enabled.
+    // First-enable warning for Garmin bolusing.
     @State private var showGarminBolusWarning = false
-    // C2 §2.3: the OPTIONAL Garmin bolus passcode set-UI. `passcodeSet` mirrors the Keychain-backed
-    // `BolusPasscodeStore.isRequired` (refreshed on appear + after every set/clear) so the section shows
-    // the right state without making the store observable.
+    // Optional Garmin bolus passcode UI. `passcodeSet` mirrors Keychain-backed
+    // `BolusPasscodeStore.isRequired` (refreshed on appear + after set/clear) — the store isn't Observable.
     @State private var showSetPasscode = false
     @State private var passcodeSet = false
 
@@ -569,8 +564,8 @@ struct RemotesSettingsView: View {
             requestConfirm: { showGarminBolusWarning = true }
         )
     }
-    /// §2.3: the optional remote-only dose ceiling. The toggle arms it at the default cap; the picker edits
-    /// the value. `nil` (off) ⇒ the pump's max alone governs remote boluses.
+    /// Optional remote-only dose ceiling. Toggle arms the default cap; picker edits it.
+    /// `nil` (off) ⇒ the pump's max alone governs remote boluses.
     private var remoteCeilingOn: Binding<Bool> {
         Binding(get: { settings.remoteBolusCeiling != nil },
                 set: { on in settings.remoteBolusCeiling = on ? (settings.remoteBolusCeiling ?? AppSettings.defaultRemoteBolusCeiling) : nil })
@@ -619,7 +614,7 @@ struct RemotesSettingsView: View {
 
     var body: some View {
         Form {
-            // Read-only override listed first — it wins over the enable and ceiling below.
+            // Read-only override listed first — it wins over enable and ceiling below.
             Section {
                 Text(garminBolusStatusSummary)
                     .font(.subheadline).foregroundStyle(.secondary)
@@ -751,11 +746,10 @@ struct RemotesSettingsView: View {
             }
         }
         .navigationTitle("Remotes & devices")
-        // C2 §2.3: keep the passcode section's state in sync with the Keychain-backed store.
+        // Keep the passcode section in sync with the Keychain-backed store.
         .onAppear { passcodeSet = BolusPasscodeStore.isRequired }
         .sheet(isPresented: $showSetPasscode) {
-            // Honor setPasscode's Bool return — a Keychain upsert failure must surface as a
-            // failure (keep the sheet open with an error), not a successful change.
+            // Honor the store's Bool — a failed save keeps the sheet open.
             BolusPasscodeEntryView { code in
                 let ok = BolusPasscodeStore.setPasscode(code)
                 if ok { passcodeSet = BolusPasscodeStore.isRequired }
@@ -776,8 +770,7 @@ struct RemotesSettingsView: View {
 /// Set (or change) the optional 4-digit Garmin bolus passcode. Entered twice to confirm; stored
 /// via `BolusPasscodeStore` (salted SHA-256 in the Keychain; the raw code is never persisted).
 struct BolusPasscodeEntryView: View {
-    /// The validated 4-digit code to store. Returns whether it was actually stored — a Keychain
-    /// upsert failure must be surfaced here rather than assumed to have succeeded.
+    /// The validated 4-digit code to store. Returns whether it was actually stored.
     let onSet: (String) -> Bool
     @Environment(\.dismiss) private var dismiss
     @State private var pin = ""
@@ -810,8 +803,7 @@ struct BolusPasscodeEntryView: View {
         let digits = pin.filter(\.isNumber)
         guard BolusPasscodeStore.isValidFormat(digits) else { error = "Use exactly 4 digits."; return }
         guard pin == confirm else { error = "Passcodes don't match."; return }
-        // Honor the store's Bool return — a failed save keeps the sheet open with an error
-        // instead of dismissing as if the passcode had changed.
+        // Failed save keeps the sheet open instead of dismissing as if the passcode changed.
         guard onSet(digits) else { error = "Couldn't save the passcode. Try again."; return }
         dismiss()
     }
@@ -847,7 +839,7 @@ struct AboutSettingsView: View {
     }
 }
 
-// MARK: - Reorder/customize sub-editors (unchanged)
+// MARK: - Reorder/customize sub-editors
 
 /// Choose which Garmin screens appear, their swipe order, and which opens first. Toggle screens
 /// on/off, drag to reorder (Edit), and pick the default. Pushed to the watch on its next status update.
@@ -929,9 +921,7 @@ struct CustomizeListView: View {
 
     private var hidden: [String] { allIds.filter { !order.contains($0) } }
 
-    /// Pure guard: whether removing `removingCount` items from a list of `currentCount` is allowed.
-    /// `allowEmpty` bypasses the "at least one stays shown" floor entirely. Extracted for unit testing
-    /// (`CustomizeListViewGuardTests`) — the `.onDelete` closure below is the only caller.
+    /// Whether removing items is allowed. `allowEmpty` bypasses the "at least one stays shown" floor.
     static func canDelete(currentCount: Int, removingCount: Int, allowEmpty: Bool) -> Bool {
         allowEmpty || currentCount - removingCount >= 1
     }
@@ -956,8 +946,7 @@ struct CustomizeListView: View {
             } header: {
                 Text("Shown (top → bottom)")
             } footer: {
-                // Suppress the "drag to reorder, swipe to hide" footer when there's nothing left to
-                // drag/swipe — the empty-hint row above already carries the full message.
+                // Don't show "drag to reorder" when there's nothing left to drag.
                 if !order.isEmpty { Text(shownFooter) }
             }
             if !hidden.isEmpty {
@@ -1016,7 +1005,7 @@ struct GarminComplicationsView: View {
                 var slots = settings.garminComplicationSlots
                 while slots.count < 3 { slots.append("none") }
                 slots[index] = newValue
-                // Rebuild the ordered selection: drop "None", de-dupe (first slot wins), cap at 3.
+                // De-dupe (first slot wins), drop "None", cap at 3.
                 var out: [String] = []
                 for f in slots where f != "none" && !out.contains(f) { out.append(f) }
                 settings.garminComplicationSlots = Array(out.prefix(3))

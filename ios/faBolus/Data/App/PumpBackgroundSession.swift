@@ -6,14 +6,14 @@ import UIKit
 
 /// App-side background-execution coordinator for the pump BLE link.
 ///
-/// Debug session `pump-background-disconnect` (owner-authorized 2026-08-20, re-scoped pass). The pump link
-/// used to drop while the app was backgrounded and only reconnect once the app was reopened. The ROOT fix
-/// lives in TandemKit (`PumpBLEClient`): on a genuine (stable-then-dropped) link it now re-issues ONE
-/// background-safe `central.connect()` INLINE on the drop, so a pending connect exists immediately and
-/// CoreBluetooth completes it while the app is suspended — the main-RunLoop reconnect Timer could never
-/// ISSUE that connect in the background. See `PumpBLEClient.planUnintendedDropRecovery`.
+/// The pump link used to drop while the app was backgrounded and only reconnect once the app was
+/// reopened. The ROOT fix lives in TandemKit (`PumpBLEClient`): on a genuine (stable-then-dropped)
+/// link it now re-issues ONE background-safe `central.connect()` INLINE on the drop, so a pending
+/// connect exists immediately and CoreBluetooth completes it while the app is suspended — the
+/// main-RunLoop reconnect Timer could never ISSUE that connect in the background. See
+/// `PumpBLEClient.planUnintendedDropRecovery`.
 ///
-/// This coordinator is the APP-SIDE BELT-AND-SUSPENDERS for that recovery (rail 3): while the app is not
+/// This coordinator is the APP-SIDE BELT-AND-SUSPENDERS for that recovery: while the app is not
 /// foreground and the kit's reconnect ladder has scheduled an attempt, it holds ONE `beginBackgroundTask`
 /// window open so the main RunLoop keeps running for the brief post-CB-wake interval the kit needs to
 /// establish/observe the pending connect. It NEVER issues connect itself and NEVER calls
@@ -23,12 +23,10 @@ import UIKit
 /// the link terminates (`linkDidTerminate`), or the OS reclaims it (`taskExpired`) — it never loops and
 /// never periodically wakes the radio.
 ///
-/// H2 (keeping the link warm across a suspend) is handled WITHOUT any app-side radio activity: the kit keeps
+/// Keeping the link warm across a suspend is handled WITHOUT any app-side radio activity: the kit keeps
 /// its characteristic notification subscriptions across background (it only unsubscribes on disconnect), so
-/// peripheral-pushed traffic keeps the link warm at zero added battery cost. The prior pass's polling
-/// keep-alive READ was REMOVED per the owner's hard acceptance constraint ("no battery drain") — a periodic
-/// radio wake is not permitted; if on-device evidence later shows the pump genuinely needs one, that is a
-/// separate owner decision (see the debug doc's UAT/battery checklist), not something added here.
+/// peripheral-pushed traffic keeps the link warm at zero added battery cost. A periodic keep-alive READ
+/// is not permitted.
 ///
 /// Pure, injectable seams (`beginTask`/`endTask`/`isForeground`) keep the whole state machine unit-testable
 /// with no `UIApplication` and no live BLE — a bare instance (default seams) is completely inert
@@ -53,9 +51,9 @@ final class PumpBackgroundSession {
     // MARK: - State
 
     private var token: Int?
-    private var wantReconnect = false   // H1: a background reconnect is in progress
+    private var wantReconnect = false   // a background reconnect is in progress
 
-    // MARK: - H1: background reconnect window (belt-and-suspenders for the kit's inline connect)
+    // MARK: - Background reconnect window (belt-and-suspenders for the kit's inline connect)
 
     /// The kit's reconnect ladder just scheduled an attempt (delegate `willRetryReconnect`). If the app is
     /// not foreground, hold a single background-execution window open so the kit's main-RunLoop
@@ -81,7 +79,7 @@ final class PumpBackgroundSession {
         syncTask(reason: "terminated")
     }
 
-    /// CX-F-06: the scene just entered the background — re-run the SAME arm/disarm decision `syncTask`
+    /// The scene just entered the background — re-run the SAME arm/disarm decision `syncTask`
     /// already makes on every ladder event, now against the freshly-backgrounded `isForeground()`
     /// value. A reconnect can be SCHEDULED (`willAttemptReconnect`) while the app is STILL foreground —
     /// `syncTask` correctly takes no window then, since the RunLoop is already alive — but `wantReconnect`
@@ -129,31 +127,22 @@ final class PumpBackgroundSession {
     var isTaskActiveForTesting: Bool { token != nil }
 }
 
-// MARK: - CC-03 (app-side consumer): pause-on-comms-suspension gate
+// MARK: - Pause-on-comms-suspension gate
 
-/// CC-03, app-side consumer HALF only. TandemKit's kit-side qualifying-event bitmap decode/dispatch/
-/// clear (the PRODUCER of the signal this gate consumes) already landed on TandemKit `main`
-/// (`dbd2d3a`, "CC-03 kit half", authorized in-repo by that project's own `15-03-PLAN.md`) — but
-/// faBolus's own SPM pin (`Package.resolved`, revision `f72e872`) is an ANCESTOR of that commit, not a
-/// descendant, so from THIS app's build the producer genuinely does not exist yet (confirmed via
-/// `git merge-base --is-ancestor`, not assumed). This type is therefore an INERT seam: nothing in
-/// production feeds it a live value today (see `TandemBackend.handleQualifyingEventBits`'s doc comment
-/// for the exact one-line wiring a future, deliberate pin-bump step would add — mirroring this file's
-/// own C1-02 precedent of "kit fix landed, pin bump is a separate owner-scoped step").
-///
-/// A pure, MainActor-isolated pause/resume gate for NEW ROUTINE reads ONLY. Delivery, cancel,
-/// authentication, and time-sync are EXEMPT by construction, not by a runtime bypass check: none of
-/// `TandemBackend.cancelBolus()`/`perform(...)`/`awaitResponse(...)`/`dismissNotification(...)` ever
-/// reference this type, so there is no code path through which a signed/delivery-affecting transaction
-/// could be held-then-released by it. Only `TandemBackend`'s `readScheduler.send` closure (the ONE
-/// choke point every `PumpReadScheduler`-issued read — the 15s/60s tiered poll included — funnels
-/// through) consults `shouldHoldRoutineSend()`.
+/// App-side consumer of TandemKit's communications-suspension signal. A pure, MainActor-isolated
+/// pause/resume gate for NEW ROUTINE reads ONLY. Delivery, cancel, authentication, and time-sync are
+/// EXEMPT by construction, not by a runtime bypass check: none of `TandemBackend.cancelBolus()` /
+/// `perform(...)` / `awaitResponse(...)` / `dismissNotification(...)` ever reference this type, so
+/// there is no code path through which a signed/delivery-affecting transaction could be held-then-
+/// released by it. Only `TandemBackend`'s `readScheduler.send` closure (the ONE choke point every
+/// `PumpReadScheduler`-issued read — the 15s/60s tiered poll included — funnels through) consults
+/// `shouldHoldRoutineSend()`.
 ///
 /// Self-heals past `maxHoldDuration` so a missed/lost resume signal can never wedge routine reads shut
-/// forever: `TandemBackend`'s existing poll cadence is kept running unconditionally (never removed, per
-/// the plan's own directive) and is exactly the watchdog that recovers from that case — each tick
-/// re-checks `shouldHoldRoutineSend()` fresh, so the very next successful resume (explicit or
-/// self-healed) is picked up with no separate replay mechanism needed.
+/// forever: `TandemBackend`'s existing poll cadence is kept running unconditionally and is exactly the
+/// watchdog that recovers from that case — each tick re-checks `shouldHoldRoutineSend()` fresh, so the
+/// very next successful resume (explicit or self-healed) is picked up with no separate replay mechanism
+/// needed.
 @MainActor
 final class CommsSuspensionGate {
     private static let log = Logger(subsystem: "com.fabolus.app", category: "ble")

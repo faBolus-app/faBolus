@@ -43,39 +43,39 @@ final class DeliveryLedgerCoordinator {
     // MARK: - Ledger + store
 
     /// Idempotency ledger: a duplicated/retried remote bolus (same peer + requestId) cannot deliver
-    /// twice (audit A-02). Keyed by authenticated peer identity + requestId; MainActor-isolated.
-    /// FB-03: durable — persisted (App Group) so exactly-once survives a process restart mid-delivery.
+    /// twice. Keyed by authenticated peer identity + requestId; MainActor-isolated.
+    /// Durable — persisted (App Group) so exactly-once survives a process restart mid-delivery.
     private let remoteBolusLedgerStore: any RemoteBolusLedgerPersisting
     private lazy var remoteBolusLedger: RemoteBolusLedger = {
         let outcome = remoteBolusLedgerStore.loadOutcome()
         if outcome.failedClosed { ledgerFailedClosed = true }
         return outcome.ledger
     }()
-    /// P0: true when the durable ledger existed but couldn't be read (corrupt/unreadable). An unreadable
+    /// True when the durable ledger existed but couldn't be read (corrupt/unreadable). An unreadable
     /// ledger may be hiding an unresolved delivery, so while this is set ALL delivery is blocked (fail
     /// closed) until the user verifies on the pump and clears it.
     private var ledgerFailedClosed = false
-    /// Round-3 §5.8: no durable safety-ledger location exists (no App Group / Application Support). Delivery
+    /// No durable safety-ledger location exists (no App Group / Application Support). Delivery
     /// must stay disabled rather than fall back to a volatile store.
     private var noDurableStore = false
-    /// Round-3 §5.6/5.7: a terminal (or manual-clear) ledger save failed; keep the global block until a
+    /// A terminal (or manual-clear) ledger save failed; keep the global block until a
     /// clean save succeeds, and retry persistence in the background.
     private var terminalSaveFailed = false
-    /// P0: the ledger entry (peer, requestId) whose delivery is currently in flight, so the pump's
+    /// The ledger entry (peer, requestId) whose delivery is currently in flight, so the pump's
     /// `commitBolusId` handshake lands the assigned bolus id on the right entry. Deliveries are
     /// serialized (one at a time), so a single slot suffices.
     private var inFlightDeliveryKey: (peerId: String, requestId: String)?
 
-    /// - Parameter ledgerStoreURL: overrides the durable idempotency-ledger file (FB-03). Tests inject a
+    /// - Parameter ledgerStoreURL: overrides the durable idempotency-ledger file. Tests inject a
     ///   unique temp URL so instances don't share the App Group ledger; production uses the default.
-    /// - Parameter ledgerStore: injects the durable store directly (round-3 §5 fault-injection matrix —
-    ///   a store that throws on a chosen save, or reports a corrupt load). Takes precedence over
-    ///   `ledgerStoreURL`. Production leaves it nil. `forceNoDurableStore` exercises the §5.8
-    ///   no-storage-location block, which the filesystem path can't reproduce on a normal test host.
+    /// - Parameter ledgerStore: injects the durable store directly (a store that throws on a chosen
+    ///   save, or reports a corrupt load). Takes precedence over `ledgerStoreURL`. Production leaves
+    ///   it nil. `forceNoDurableStore` exercises the no-storage-location block, which the filesystem
+    ///   path can't reproduce on a normal test host.
     init(ledgerStoreURL: URL? = nil,
          ledgerStore: (any RemoteBolusLedgerPersisting)? = nil,
          forceNoDurableStore: Bool = false) {
-        // Round-3 §5.8: require a DURABLE store (App Group / test override). If none exists, do NOT fall
+        // Require a DURABLE store (App Group / test override). If none exists, do NOT fall
         // back to a volatile /tmp file — create a placeholder store but keep delivery disabled via
         // `noDurableStore` (surfaced as a recoverable block), so a bolus is never tracked in a store that
         // can vanish.
@@ -95,7 +95,7 @@ final class DeliveryLedgerCoordinator {
     /// `persistTerminalOrBlock()` (which keeps the block until the clean save lands).
     private func persistLedger() { remoteBolusLedgerStore.saveBestEffort(remoteBolusLedger) }
 
-    /// Round-3 §5.6/5.7: persist a TERMINAL/clean ledger state durably; if the save fails, retain the
+    /// Persist a TERMINAL/clean ledger state durably; if the save fails, retain the
     /// global block (`terminalSaveFailed`) and retry — never release the block on an unsaved terminal.
     private func persistTerminalOrBlock() {
         do {
@@ -126,13 +126,13 @@ final class DeliveryLedgerCoordinator {
     #if DEBUG
     /// Test seam: `retryTerminalPersist()` is private and, on failure, re-schedules itself on a 5 s
     /// `Task.sleep` — untestable deterministically without this. Calls the SAME production method
-    /// synchronously so a test can drive the release-on-retry-success path (Wave 1 gap A3) without
-    /// sleeping. Test scaffolding only — relocated here from `AppModel` in Wave 2 (D-03); it compiles to
-    /// nothing in Release and never changes production dose/delivery/wire behavior.
+    /// synchronously so a test can drive the release-on-retry-success path without sleeping. Test
+    /// scaffolding only; it compiles to nothing in Release and never changes production
+    /// dose/delivery/wire behavior.
     func retryTerminalPersistForTesting() { retryTerminalPersist() }
     #endif
 
-    /// Round-3 §5: the backend's acknowledged bolus-id handshake. Records the pump-assigned id on the
+    /// The backend's acknowledged bolus-id handshake. Records the pump-assigned id on the
     /// in-flight entry AND flips its explicit `sentToPump` phase, then saves DURABLY. Returns true only if
     /// the save succeeded — the backend must abort before writing metadata/initiate on false, so a save
     /// failure can never leave an id-less record a relaunch mistakes for "not sent."
@@ -143,15 +143,14 @@ final class DeliveryLedgerCoordinator {
         catch { return false }
     }
 
-    // MARK: - Global delivery block (P0)
+    // MARK: - Global delivery block
 
     private func computeDeliveryBlockReason() -> String? {
         // Evaluate `unreconciled()` first so the lazy ledger load runs (which sets `ledgerFailedClosed`).
         let unresolved = remoteBolusLedger.unreconciled()
         // The precedence itself is a pure faBolusCore function (`RemoteBolusLedger.blockReason`) —
         // this is the ONLY caller in the app target, so the strings have one source of truth with
-        // zero-`AppModel` unit coverage in `RemoteBolusLedgerTests`. Byte-identical to the inline copy
-        // Wave 1's `LedgerBlockPrecedenceGuardTests` pinned.
+        // zero-`AppModel` unit coverage in `RemoteBolusLedgerTests`.
         return RemoteBolusLedger.blockReason(noDurableStore: noDurableStore, ledgerFailedClosed: ledgerFailedClosed,
                                              terminalSaveFailed: terminalSaveFailed, unresolved: unresolved,
                                              inFlightDeliveryKey: inFlightDeliveryKey)
@@ -164,7 +163,7 @@ final class DeliveryLedgerCoordinator {
     /// completes.
     func refreshDeliveryBlock() { onDeliveryBlockChanged(computeDeliveryBlockReason()) }
 
-    /// P0 escape hatch: the user has checked the pump/t:connect and confirms there is no unconfirmed
+    /// Escape hatch: the user has checked the pump/t:connect and confirms there is no unconfirmed
     /// delivery. Settle every unresolved entry as verified and clear a fail-closed (corrupt-ledger) lock,
     /// writing a fresh clean ledger, so delivery can resume. Never called automatically.
     func clearDeliveryBlockAfterVerification() {
@@ -173,7 +172,7 @@ final class DeliveryLedgerCoordinator {
                                      status: RemoteCommand.Status.delivered.rawValue,
                                      message: "Cleared after manual verification on the pump.")
         }
-        // Round-3 §5.6: only release the block once the clean ledger is durably saved.
+        // Only release the block once the clean ledger is durably saved.
         do {
             try remoteBolusLedgerStore.save(remoteBolusLedger)
             ledgerFailedClosed = false
@@ -184,14 +183,12 @@ final class DeliveryLedgerCoordinator {
         refreshDeliveryBlock()
     }
 
-    // MARK: - F1 (§13) on-device data export/erase support
+    // MARK: - On-device data export/erase support
     //
-    // These are NOT part of the original :523-653/:2386-2507 D-03 cluster, but they read/mutate the same
-    // ledger internals (moved here with everything else) — `AppModel.buildPrivacyExport` /
-    // `eraseAllOnDeviceHealthData` / `maybeHandlePumpSwitch` consult them via these narrow accessors
-    // instead of reaching into coordinator-private state.
+    // `AppModel.buildPrivacyExport` / `eraseAllOnDeviceHealthData` / `maybeHandlePumpSwitch` consult
+    // the ledger via these narrow accessors instead of reaching into coordinator-private state.
 
-    /// F1: a read-only snapshot of the ledger for the unified privacy-data export. Pure read.
+    /// A read-only snapshot of the ledger for the unified privacy-data export. Pure read.
     var currentLedgerSnapshot: RemoteBolusLedger { remoteBolusLedger }
 
     /// True while a delivery is in flight or the global block is set — used by callers (pump-switch
@@ -199,7 +196,7 @@ final class DeliveryLedgerCoordinator {
     /// still needs. No message; see `eraseRefusalReason()` for the erase path's own worded refusal.
     var hasInFlightOrUnresolvedDelivery: Bool { inFlightDeliveryKey != nil || computeDeliveryBlockReason() != nil }
 
-    /// F1: whether the given (peer, requestId) already reached a terminal outcome (used by
+    /// Whether the given (peer, requestId) already reached a terminal outcome (used by
     /// `presentRemoteBolus` to ignore a duplicate/already-handled remote request).
     func isSettled(peerId: String, requestId: String) -> Bool {
         remoteBolusLedger.isSettled(peerId: peerId, requestId: requestId)
@@ -222,14 +219,14 @@ final class DeliveryLedgerCoordinator {
         remoteBolusLedger.hasExistingEntry(peerId: peerId, requestId: requestId)
     }
 
-    /// R2-12: the durable terminal outcomes recorded for the Garmin peer, oldest→newest, so the bridge can
+    /// The durable terminal outcomes recorded for the Garmin peer, oldest→newest, so the bridge can
     /// re-seed its terminal-echo outbox at launch (a bolus outcome recorded in the ledger but never echoed
     /// across an app restart). Thin read-only passthrough — the bridge never touches the private ledger.
     func garminTerminalOutcomes() -> [(requestId: String, status: String, message: String?, deliveredUnits: Double?)] {
         remoteBolusLedger.terminalOutcomes(peerId: "garmin")
     }
 
-    /// F1: the SAME refusal gate `eraseAllOnDeviceHealthData` enforces — never erase over an in-flight or
+    /// The SAME refusal gate `eraseAllOnDeviceHealthData` enforces — never erase over an in-flight or
     /// otherwise unresolved delivery (the ledger + snapshot are needed to reconcile it). Returns the
     /// worded refusal reason, or nil when it's safe to proceed.
     func eraseRefusalReason() -> String? {
@@ -242,14 +239,14 @@ final class DeliveryLedgerCoordinator {
         return nil
     }
 
-    /// F1: reset the ledger audit trail to fresh/empty, persisted durably (best-effort — the caller has
+    /// Reset the ledger audit trail to fresh/empty, persisted durably (best-effort — the caller has
     /// already confirmed via `eraseRefusalReason()` that no unresolved entry exists to lose).
     func resetLedgerForErase() {
         remoteBolusLedger = RemoteBolusLedger()
         remoteBolusLedgerStore.saveBestEffort(remoteBolusLedger)
     }
 
-    // MARK: - Durable delivery ledger (P0)
+    // MARK: - Durable delivery ledger
 
     /// The outcome of a delivery routed through the durable ledger + global unresolved-delivery block.
     enum DeliveryOutcome {
@@ -264,7 +261,7 @@ final class DeliveryLedgerCoordinator {
 
     /// Route EVERY delivery surface (local standard/extended, widget, Watch, Garmin, Mac, peer) through
     /// this one method so exactly-once idempotency AND the global unresolved-delivery block are enforced in
-    /// a single place (P0). It (1) refuses to start while any prior sent transaction is unresolved or the
+    /// a single place. It (1) refuses to start while any prior sent transaction is unresolved or the
     /// ledger is unreadable, (2) records intent DURABLY before the first pump write, (3) tags the in-flight
     /// entry so the pump's assigned bolus id is persisted before initiate, and (4) settles /
     /// marks-indeterminate on outcome. `onStarted` fires only after intent is durably recorded.
@@ -275,7 +272,7 @@ final class DeliveryLedgerCoordinator {
         // Global block: survives restart via the durable ledger; corrupt ledger fails closed.
         if let reason = computeDeliveryBlockReason() { return .blocked(reason) }
 
-        // `usedIncludedStaleBG` is DURABLE provenance only (Addendum B): recorded on a new ledger entry,
+        // `usedIncludedStaleBG` is DURABLE provenance only: recorded on a new ledger entry,
         // never part of `doseKey` or the conflict/replay/in-flight decision.
         switch remoteBolusLedger.begin(peerId: peerId, requestId: requestId, doseKey: doseKey,
                                        usedIncludedStaleBG: usedIncludedStaleBG) {
@@ -285,7 +282,7 @@ final class DeliveryLedgerCoordinator {
         case .conflict: return .blocked("Duplicate request id with different dose — rejected.")
         }
         defer { refreshDeliveryBlock() }
-        // Durable point (FB-03): mark delivering + persist atomically BEFORE the first pump write. If the
+        // Durable point: mark delivering + persist atomically BEFORE the first pump write. If the
         // intent can't be recorded, refuse to deliver (a crash after an unrecorded write could double-dose).
         remoteBolusLedger.markDelivering(peerId: peerId, requestId: requestId)
         do { try remoteBolusLedgerStore.save(remoteBolusLedger) }
@@ -306,11 +303,13 @@ final class DeliveryLedgerCoordinator {
             remoteBolusLedger.settle(peerId: peerId, requestId: requestId,
                                      status: (cancelled ? RemoteCommand.Status.cancelled : .delivered).rawValue,
                                      deliveredUnits: delivered)
-            persistTerminalOrBlock()   // §5.6: keep the block until this terminal state is durably saved
+            persistTerminalOrBlock()   // keep the block until this terminal state is durably saved
             return .delivered(units: delivered, cancelled: cancelled)
         } catch let e as BolusError where e.isIndeterminate {
-            // FB-02: sent but outcome unknown → leave the entry unreconciled (keeps the GLOBAL block on)
-            // and tell the surface to verify. Reconciliation by bolus id clears it later.
+            // Sent but outcome unknown (timeout/disconnect after initiate) → leave the entry
+            // unreconciled (keeps the GLOBAL block on) and tell the surface to verify. This is
+            // indeterminate, not failed — a retry of the same request must not redose.
+            // Reconciliation by bolus id clears it later.
             _ = e
             remoteBolusLedger.markIndeterminate(peerId: peerId, requestId: requestId)
             persistLedger()
@@ -323,7 +322,7 @@ final class DeliveryLedgerCoordinator {
         }
     }
 
-    /// P0 — reconcile every unresolved delivery in the durable ledger against the pump, releasing the
+    /// Reconcile every unresolved delivery in the durable ledger against the pump, releasing the
     /// global block only for entries settled from an AUTHORITATIVE pump result. Call at launch and on
     /// every reconnect. An entry with NO pump bolus id was interrupted before the pump granted permission
     /// (so nothing could have been delivered) → safe to settle as not-delivered. An entry WITH an id is
@@ -333,7 +332,7 @@ final class DeliveryLedgerCoordinator {
         guard !unresolved.isEmpty else { refreshDeliveryBlock(); return }
         var changed = false
         for entry in unresolved {
-            // Round-3 §5: decide from the EXPLICIT phase, not merely a missing id. `sentToPump == false`
+            // Decide from the EXPLICIT phase, not merely a missing id. `sentToPump == false`
             // proves pre-initiate (the id was never durably recorded, so the backend aborted before the
             // initiate write) → safe to settle as not-delivered. `sentToPump == true` means the initiate is
             // imminent/issued → reconcile by id; stay blocked unless the pump authoritatively resolves it.
@@ -345,7 +344,7 @@ final class DeliveryLedgerCoordinator {
                 postSafety(.bolusReconciliation, .warning, "Bolus not delivered",
                            "A bolus that was interrupted never reached the pump (0 U). Re-enter it if you still need it.",
                            "reconcile-\(entry.peerId)-\(entry.requestId)")
-                recordReconciliation(.notDelivered)   // §5.2.8
+                recordReconciliation(.notDelivered)
                 changed = true
                 continue
             }
@@ -363,14 +362,14 @@ final class DeliveryLedgerCoordinator {
                                ? "Reconciled from the pump: \(f) U delivered before it was cancelled."
                                : "Reconciled from the pump: \(f) U delivered.",
                            "reconcile-\(entry.peerId)-\(entry.requestId)")
-                recordReconciliation(cancelled ? .cancelled : .delivered)   // §5.2.8
+                recordReconciliation(cancelled ? .cancelled : .delivered)
                 changed = true
             case .unavailable:
-                recordReconciliation(.unavailable)   // §5.2.8: stayed unresolved
+                recordReconciliation(.unavailable)   // stayed unresolved
                 break   // stay blocked; retry on next reconnect / manual verification
             }
         }
-        // Round-3 §5.6: release the block only once the settled ledger is durably saved.
+        // Release the block only once the settled ledger is durably saved.
         if changed { persistTerminalOrBlock() }
         refreshDeliveryBlock()
         refresh()

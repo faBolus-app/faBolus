@@ -1,20 +1,18 @@
 import Foundation
 
-/// CX-G-08 (14-09, H2/HIGH-A/T-14-30) — a durable authenticated-dismiss RECEIPT: proof that a
-/// Garmin-initiated dismiss `(peer, requestId, alertId, alertKind)` was CC-08 pump-cleared
-/// (`.authenticatedCleared`). Persisted at the BRIDGE layer, NOT inside `TandemBackend
-/// .dismissNotificationTyped` — the typed method sees only a `PumpAlert` (no peer, no requestId), so it
-/// literally cannot key a receipt; `cmd.requestId` exists only where `GarminRemoteBridge` reads the
-/// incoming `RemoteCommand`. This is why the receipt moves one layer up from the backend.
+/// A durable authenticated-dismiss receipt: proof that a Garmin-initiated dismiss
+/// `(peer, requestId, alertId, alertKind)` was pump-cleared (`.authenticatedCleared`). Persisted at
+/// the BRIDGE layer, NOT inside `TandemBackend.dismissNotificationTyped` — the typed method sees only
+/// a `PumpAlert` (no peer, no requestId), so it cannot key a receipt; `cmd.requestId` exists only
+/// where `GarminRemoteBridge` reads the incoming `RemoteCommand`.
 ///
-/// Lane 1 (RETRY/PENDING) from the plan's two-lane lifecycle block, phone side: a named TTL WELL under
-/// the pump's 30-min re-nag window, capped, oldest-pruned. Pruning removes NO alert on the watch — it
-/// only stops this phone-side replay lane from answering a very-late/duplicate retry; the watch's own
-/// retry lane (AppState.mc) has the matching TTL and simply stops resending once its own entry expires.
+/// Phone-side retry/pending lane: a named TTL well under the pump's 30-min re-nag window, capped,
+/// oldest-pruned. Pruning removes NO alert on the watch — it only stops this phone-side replay lane
+/// from answering a very-late/duplicate retry; the watch's own retry lane has the matching TTL and
+/// simply stops resending once its own entry expires.
 ///
-/// EXEMPT from `GarminRemoteBridge`'s bolus `garminEchoedRequestIds` set (T-14-32/MEDIUM-F) — a
-/// completely separate `UserDefaults` key, so a dismiss receipt can never evict (or be evicted by) a
-/// bolus echo's 256-entry durable set.
+/// Separate `UserDefaults` key from `GarminRemoteBridge`'s bolus `garminEchoedRequestIds` set, so a
+/// dismiss receipt can never evict (or be evicted by) a bolus echo's 256-entry durable set.
 struct GarminDismissReceipt: Codable, Equatable {
     let peer: String
     let requestId: String
@@ -39,9 +37,8 @@ struct GarminDismissReceipt: Codable, Equatable {
 final class GarminDismissReceiptStore: @unchecked Sendable {
     static let shared = GarminDismissReceiptStore()
 
-    /// Named TTL WELL under the pump's 30-min re-nag window (TandemBackend.swift, `snoozeWindow`) — the
-    /// plan's two-lane lifecycle block picks 10 minutes as the concrete example; both watch and phone
-    /// lanes use the SAME window so the two ends stop correlating together.
+    /// Named TTL WELL under the pump's 30-min re-nag window (`TandemBackend.snoozeWindow`) — both
+    /// watch and phone lanes use the SAME window so the two ends stop correlating together.
     static let ttl: TimeInterval = 10 * 60
     /// Bounded outbox (oldest pruned) — mirrors `alreadyEchoedCap`'s bounded-growth discipline.
     static let cap = 32
@@ -53,10 +50,10 @@ final class GarminDismissReceiptStore: @unchecked Sendable {
 
     /// Persist a receipt SYNCHRONOUSLY (no await) — called the INSTANT `.authenticatedCleared` is
     /// observed, BEFORE the correlated `dismissAck` is sent. The gap between the pump's authenticated
-    /// clear and this call completing is the plan's documented FAIL-CLOSED crash window: if the phone
-    /// dies there, no receipt exists, and the watch's own durable overlay simply stays visible and
-    /// keeps retrying — never fail-open. Replaces any existing receipt for the same (peer, requestId) —
-    /// a lost-ack RETRY reuses the identical requestId, so this is naturally idempotent.
+    /// clear and this call completing is a fail-closed crash window: if the phone dies there, no
+    /// receipt exists, and the watch's own durable overlay simply stays visible and keeps retrying —
+    /// never fail-open. Replaces any existing receipt for the same (peer, requestId) — a lost-ack
+    /// retry reuses the identical requestId, so this is naturally idempotent.
     func persist(peer: String, requestId: String, alertId: Int, alertKind: Int, now: Date = Date()) {
         var all = allReceipts()
         all.removeAll { $0.peer == peer && $0.requestId == requestId }
@@ -75,11 +72,10 @@ final class GarminDismissReceiptStore: @unchecked Sendable {
         save(all)
     }
 
-    /// Look up an UNEXPIRED receipt by `(peer, requestId)` for REPLAY — the bridge calls this BEFORE
+    /// Look up an unexpired receipt by `(peer, requestId)` for replay — the bridge calls this BEFORE
     /// `AppModel.dismissAlert`'s missing-alert guard, so a retry that reuses the same requestId after
     /// the alert has already been filtered out of `activeNotifications` still gets its ack replayed
-    /// (H2/HIGH-A) instead of silently falling through the guard with no re-ack. Pruned lazily on read
-    /// (mirrors the two-lane lifecycle block's "MAY expire and MAY be pruned" for the retry lane).
+    /// instead of silently falling through the guard with no re-ack. Pruned lazily on read.
     func receipt(peer: String, requestId: String, now: Date = Date()) -> GarminDismissReceipt? {
         pruneExpired(now: now).first { $0.peer == peer && $0.requestId == requestId }
     }
@@ -91,10 +87,10 @@ final class GarminDismissReceiptStore: @unchecked Sendable {
         pruneExpired(now: now).filter { !$0.acked }
     }
 
-    /// Drop expired (`now - createdAt >= ttl`) AND clock-rolled (future `createdAt`) entries — the
-    /// plan's clock-rollback discipline treats a future timestamp as invalid/expired on this lane too
-    /// (pruning removes no ALERT; the watch's own display-provisional overlay is a separate lane that is
-    /// NEVER pruned by expiry — see AppState.mc). Persists the pruned set back if anything changed.
+    /// Drop expired (`now - createdAt >= ttl`) AND clock-rolled (future `createdAt`) entries — a
+    /// future timestamp is invalid/expired on this lane too (pruning removes no ALERT; the watch's
+    /// own display-provisional overlay is a separate lane that is NEVER pruned by expiry). Persists
+    /// the pruned set back if anything changed.
     @discardableResult
     private func pruneExpired(now: Date) -> [GarminDismissReceipt] {
         let all = allReceipts()

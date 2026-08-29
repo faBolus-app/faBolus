@@ -63,9 +63,7 @@ struct LogbookView: View {
 
 private struct LogbookRow: View {
     let event: HistoryEvent
-    // Amber, matching the established informational-not-alarm convention elsewhere in the app
-    // (e.g. BolusEntryView's advisory `exclamationmark.triangle` warnings), never red like
-    // `.alarm`'s filled triangle — no fabricated urgency.
+    // Amber for could-not-deliver: informational, not an alarm. Red would fabricate urgency.
     private var iconTint: Color { event.category == .couldNotDeliver ? .orange : .secondary }
     var body: some View {
         HStack(spacing: 12) {

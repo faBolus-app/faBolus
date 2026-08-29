@@ -24,27 +24,27 @@ public enum AccessPolicy {
         /// Any non-local surface is a remote and is subject to `remotesReadOnly`.
         public var isRemote: Bool { !isLocal }
         /// Authenticated peers carry a per-peer `RemotePeerPolicy` and bypass child-mode (they are a
-        /// separately-authenticated controller) — exactly the old `enforceChildLock: false` path.
+        /// separately-authenticated controller).
         public var isAuthenticatedPeer: Bool {
             switch self { case .macPeer, .caregiverPhonePeer: return true; default: return false }
         }
     }
 
-    /// The mode axis, folded in as one more input to the one evaluator (NOT a sixth
-    /// mechanism). Carries the active experience mode and the per-feature toggles the user set within it
-    /// (owner decision #4). `evaluate` gains exactly one ordered `.modeDisallowed` / `.featureDisabledInMode`
-    /// check at the reserved slot; no surface or funnel signature changes.
+    /// The mode axis, folded in as one more input to the one evaluator (NOT a sixth mechanism).
+    /// Carries the active experience mode and the per-feature toggles the user set within it.
+    /// `evaluate` gains exactly one ordered `.modeDisallowed` / `.featureDisabledInMode` check at the
+    /// reserved slot; no surface or funnel signature changes.
     ///
     /// The default is `.advanced` with no toggles — a **no-op**: Advanced sees every action, so an app
     /// that has not yet wired a real mode source (or a caller that omits `modeContext`) behaves exactly as
-    /// before. S3 supplies the real active mode (the Objectives ModeStore) and flips the app default to
-    /// Simple together with the unlock path, so `main` never has a Simple-with-no-way-out window.
+    /// before. A real mode store must ship together with the unlock path, so `main` never has a
+    /// Simple-with-no-way-out window.
     public struct ModeGateContext: Sendable, Equatable {
         /// The active experience mode. Higher modes see strictly more (see `AppMode`'s ordering).
         public var activeMode: AppMode
         /// Features the user has explicitly turned off inside their current mode — finer-grained control
-        /// than the mode alone (owner decision #4). Empty ⇒ no per-feature restriction. Never populated by
-        /// a safety STOP (see `evaluate`'s carve-out).
+        /// than the mode alone. Empty ⇒ no per-feature restriction. Never populated by a safety STOP
+        /// (see `evaluate`'s carve-out).
         public var disabledFeatures: Set<GatedPumpWrite>
         public init(activeMode: AppMode = .advanced, disabledFeatures: Set<GatedPumpWrite> = []) {
             self.activeMode = activeMode
@@ -61,8 +61,8 @@ public enum AccessPolicy {
         // Gate 3 — read-only
         public var phoneReadOnly: Bool
         public var remotesReadOnly: Bool
-        // Gate 5 — pump capability + advanced-control opt-in. `isMobi` retired — capabilities are
-        // now pump-derived (from the pump's own feature bitmask) and are the sole capability signal.
+        // Gate 5 — pump capability + advanced-control opt-in. Capabilities are pump-derived (from the
+        // pump's own feature bitmask) and are the sole capability signal — not a raw `isMobi` check.
         public var advancedControlOptIn: Bool
         public var capabilities: PumpCapabilities
         // Gate 1 — unverified-feature acknowledgment
@@ -89,7 +89,7 @@ public enum AccessPolicy {
                     advancedControlOptIn: Bool, capabilities: PumpCapabilities,
                     hasRecentUnverifiedAck: Bool, peerPolicy: RemotePeerPolicy? = nil,
                     modeContext: ModeGateContext = .init(),
-                    // Fail-closed default (§2.3): a caller that forgets to thread the per-surface remote
+                    // Fail-closed default: a caller that forgets to thread the per-surface remote
                     // bolus enable must NOT silently arm Garmin bolusing. The one production call site
                     // (AppModel) always passes the real persisted value; this default only guards a future
                     // second call site.
@@ -120,9 +120,9 @@ public enum AccessPolicy {
         case remotesReadOnly
         case capabilityUnavailable
         case unverifiedAckRequired
-        case modeDisallowed(required: AppMode)   // P14: feature not in the active mode
-        case featureDisabledInMode               // P14: user turned this feature off within the mode
-        case remoteBolusDisabled                 // P15 §2.3: bolusing from this remote is turned off
+        case modeDisallowed(required: AppMode)   // feature not in the active mode
+        case featureDisabledInMode               // user turned this feature off within the mode
+        case remoteBolusDisabled                 // bolusing from this remote is turned off
         case remoteBolusPasscodeRequired         // Garmin bolus needs the correct passcode
 
         public var userMessage: String {
@@ -163,8 +163,8 @@ public enum AccessPolicy {
             }
         }
 
-        // Gate 2 — child mode. Local + watch/Garmin surfaces are subject to it; an authenticated peer
-        // bypasses it (it just passed its own per-peer policy), exactly as `enforceChildLock: false` did.
+        // Gate 2 — child mode. Local + Garmin surfaces are subject to it; an authenticated peer
+        // bypasses it (it just passed its own per-peer policy).
         if context.childModeEnabled && !surface.isAuthenticatedPeer {
             if !context.childAllowed.contains(action.requiredChildFeature) {
                 return .deny(.childLocked(action.requiredChildFeature))
@@ -173,19 +173,19 @@ public enum AccessPolicy {
 
         // Gate 3 — read-only. CARVE-OUT: `.childOnly` actions (cancel bolus, dismiss alert) are never
         // read-only-blocked — cancelling is a safety STOP that must stay available, and clearing an alert
-        // is low-risk. Every other action: local ⇒ phoneReadOnly, remote ⇒ remotesReadOnly (the latter now
-        // covering the Mac/caregiver peer path too — owner decision 2026-08-05).
+        // is low-risk. Every other action: local ⇒ phoneReadOnly, remote ⇒ remotesReadOnly (including
+        // Mac/caregiver peers).
         if action.gate != .childOnly {
             if surface.isLocal && context.phoneReadOnly { return .deny(.phoneReadOnly) }
             if surface.isRemote && context.remotesReadOnly { return .deny(.remotesReadOnly) }
         }
 
-        // P15 §2.3 — per-surface remote bolus authorization. Bolusing from Garmin is an explicit,
-        // default-OFF opt-in on the phone, INDEPENDENT of `remotesReadOnly` (which already denied above if
-        // set). Only the actual deliver from that paired remote is gated — every other surface/action, and
+        // Per-surface remote bolus authorization. Bolusing from Garmin is an explicit, default-OFF
+        // opt-in on the phone, INDEPENDENT of `remotesReadOnly` (which already denied above if set).
+        // Only the actual deliver from that paired remote is gated — every other surface/action, and
         // the authenticated-peer paths, are unaffected. Fail-closed: a phone that never enabled the surface
         // denies here regardless of what the remote UI showed.
-        // VA-30: gate BOTH ledgered deliveries (normal AND extended bolus). Keying on `.deliverBolus`
+        // Gate BOTH ledgered deliveries (normal AND extended bolus). Keying on `.deliverBolus`
         // alone left `.deliverExtendedBolus` from a paired remote ungated by the per-surface enable —
         // latent today (extended bolus isn't Garmin-reachable) but exactly the drift this single
         // evaluator exists to prevent.
@@ -204,13 +204,12 @@ public enum AccessPolicy {
             return .deny(.remoteBolusPasscodeRequired)
         }
 
-        // Gate 5 — pump capability + advanced-control opt-in (enforced at the funnel — owner decision
-        // 2026-08-05). P13: two independent axes. The opt-in axis matches today's `advancedControlAllowed`
-        // exactly; the capability axis is now driver-derived from the pump's own feature bitmask (P13-1),
-        // so `isMobi` is gone. `syncTimeToNow` needs `supportsTimeSync` but NOT the opt-in — the split
-        // removes the old special-case (a defense-in-depth tightening: the funnel now also refuses it on
-        // a pump lacking that capability, which the UI already hides and no remote verb can reach).
-        // Delivery + childOnly require neither axis, so Gate 5 stays a no-op there.
+        // Gate 5 — pump capability + advanced-control opt-in, enforced at the funnel. Two independent
+        // axes: the opt-in axis matches `advancedControlAllowed`; the capability axis is driver-derived
+        // from the pump's own feature bitmask (`isMobi` is gone). `syncTimeToNow` needs `supportsTimeSync`
+        // but NOT the opt-in — the funnel also refuses it on a pump lacking that capability, which the UI
+        // already hides and no remote verb can reach. Delivery + childOnly require neither axis, so Gate 5
+        // stays a no-op there.
         if action.requiresAdvancedControlOptIn && !context.advancedControlOptIn {
             return .deny(.capabilityUnavailable)
         }
@@ -223,11 +222,11 @@ public enum AccessPolicy {
             return .deny(.unverifiedAckRequired)
         }
 
-        // P14 (Slice 2) — the mode gate: one ordered input, evaluated last so an earlier gate's precedence
-        // and message are unchanged. CARVE-OUT (OQ9): a mode NEVER restricts a safety STOP. `.childOnly`
-        // (cancel bolus / dismiss alert) is skipped here exactly as Gate 3 skips it — otherwise Simple mode
-        // would silently disable a cancel. The default context is `.advanced` with no toggles, so this is a
-        // no-op until S3 supplies a real active mode.
+        // Mode gate: one ordered input, evaluated last so an earlier gate's precedence and message are
+        // unchanged. CARVE-OUT: a mode NEVER restricts a safety STOP. `.childOnly` (cancel bolus /
+        // dismiss alert) is skipped here exactly as Gate 3 skips it — otherwise Simple mode would
+        // silently disable a cancel. The default context is `.advanced` with no toggles, so this is a
+        // no-op until a real active mode is supplied.
         if action.gate != .childOnly {
             if context.modeContext.activeMode < action.requiredMode {
                 return .deny(.modeDisallowed(required: action.requiredMode))

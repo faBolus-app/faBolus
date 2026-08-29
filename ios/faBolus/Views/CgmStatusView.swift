@@ -2,29 +2,25 @@ import SwiftUI
 import faBolusCore
 import faBolusDesign
 
-/// D-12: a real, non-debug CGM-status surface listing every CONFIGURED failover source's live
-/// status/age/provenance — reusing the SAME already-arbitrated `GlucoseProvenance` the live "via
-/// <source>" badge and `CgmArbiterDiagnostics` read (never re-running `GlucoseArbiter.merge`). It
-/// distinguishes the ACTIVE failover from a source that is merely configured-but-not-selected, and —
-/// per F-18 — surfaces a source that is SELECTED but not yet ARMED (the selection takes effect on the
-/// next launch), so a passing Test on an unarmed source is never mistaken for the live feed. Replaces
-/// the 7-tap hidden debug menu as the place this information exists (F-08/F-09); reachable from
-/// Settings › CGM & failover.
+/// Lists every configured failover source's live status, age, and provenance. Reads the SAME
+/// already-arbitrated `GlucoseProvenance` the live "via <source>" badge uses — never re-runs
+/// `GlucoseArbiter.merge`. Distinguishes the active failover from configured-but-not-selected, and
+/// surfaces selected-but-not-yet-armed (selection takes effect on the next launch) so a passing Test
+/// on an unarmed source is never mistaken for the live feed. Reachable from Settings › CGM & failover.
 ///
-/// The classification/row/label/detail logic is PURE and `static` (mirroring
-/// `CgmCredentialsView.testOutcome`/`sourcesToTest`), so it is unit-tested by `CgmStatusSurfaceTests`
-/// without a live view. The `body` only wires already-tracked model state into those pure helpers —
-/// no new persisted state, no dose logic, no re-arbitration.
+/// Classification/row/label/detail logic is pure and `static` so it can be unit-tested without a live
+/// view. The `body` only wires already-tracked model state into those helpers — no new persisted
+/// state, no dose logic, no re-arbitration.
 struct CgmStatusView: View {
     let model: AppModel
 
     // MARK: - Pure, unit-testable status model
 
-    /// How one CONFIGURED failover source relates to the live glucose picture (D-12).
+    /// How one configured failover source relates to the live glucose picture.
     enum Classification: Equatable {
         case activeFailover        // arbitrated as the live source right now (provenance == .failover(this))
         case armedPumpLive         // the running source, but the pump feed is live (no failover active)
-        case selectedNotArmed      // selected in Settings but not yet the running instance — reopen to arm (F-18)
+        case selectedNotArmed      // selected in Settings but not yet the running instance — reopen to arm
         case configuredNotSelected // has saved config but isn't the selected source
     }
 
@@ -91,16 +87,12 @@ struct CgmStatusView: View {
         }
     }
 
-    /// WR-01/IN-02/IN-03 (09.24 review): the single, shared, pure basis for `CgmSettingsView`'s
-    /// Section-2 "Configure & test" subtitle and Section-3 "Status" subtitle. Both MUST agree on
-    /// whether a source is selected for the SAME underlying state — before this helper existed,
-    /// Section 3 read the raw, unvalidated `GlucoseSourceRegistry.selectedId()` while Section 2
-    /// validated against `GlucoseSourceRegistry.selected()`, so a stale/invalid persisted id (one
-    /// that no longer resolves to a descriptor in `enabled`) made the two sections contradict each
-    /// other. Callers must pass the ALREADY-VALIDATED selection — i.e. `GlucoseSourceRegistry
-    /// .selected()` (not the raw id) — so `nil` here always means "not selected" to both call sites.
-    /// `nonisolated static` and pure (mirrors `classify`), so it's directly unit-testable (closes
-    /// IN-03) without a live view or a live `AppModel`.
+    /// Shared subtitle for Settings' "Configure & test" and "Status" sections. Both MUST agree on
+    /// whether a source is selected for the same state — the raw `selectedId()` can be a stale
+    /// persisted id that no longer resolves, while `selected()` validates against `enabled`. Callers
+    /// must pass the already-validated selection (`GlucoseSourceRegistry.selected()`, not the raw id)
+    /// so `nil` always means "not selected" at both call sites. Pure so it is unit-testable without a
+    /// live view.
     nonisolated static func selectionStatusSubtitle(selected: (id: String, name: String)?, armedId: String?,
                                                      provenance: GlucoseProvenance) -> (text: String, isActive: Bool) {
         guard let selected else {
@@ -143,8 +135,8 @@ struct CgmStatusView: View {
                          armedAgeSeconds: age)
     }
 
-    /// True when the persisted selection differs from the running instance — the F-18 case that a Test
-    /// runs against a source that isn't armed yet.
+    /// True when the persisted selection differs from the running instance — a Test then runs against
+    /// a source that isn't armed yet.
     private var needsRelaunchToArm: Bool {
         guard let sel = GlucoseSourceRegistry.selectedId(), !sel.isEmpty else { return false }
         return model.glucoseSourceProbe?.id != sel
@@ -165,9 +157,8 @@ struct CgmStatusView: View {
                 Text("Live status for each source you've configured. Only ONE source is armed at a time — the one you selected — so status and age are live only for that source; the rest are shown for reference. This reads the same arbitration the live glucose badge uses; it never changes how the app doses.")
             }
 
-            // 09.24-01 (D-03): a read-only echo of the most recent Test outcome (AppModel-owned
-            // state, already tracked today) — this page NEVER hosts a Test button or re-triggers
-            // the Test flow; the Test action stays on the Configure & test page.
+            // Read-only echo of the most recent Test outcome. This page never hosts a Test button
+            // or re-triggers the Test flow — that stays on the Configure & test page.
             Section {
                 switch model.cgmTestOutcome {
                 case nil:
@@ -216,16 +207,16 @@ struct CgmStatusView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    /// D-03: the currently-selected source's display name, read directly from the registry (mirrors
-    /// `CgmCredentialsView.selectedSourceName` — not duplicated as a shared helper here).
+    /// Currently-selected source's display name, read from the registry (same convention as
+    /// `CgmCredentialsView.selectedSourceName`).
     private var lastTestSourceName: String {
         guard let id = GlucoseSourceRegistry.selectedId() else { return "the selected source" }
         return GlucoseSourceRegistry.descriptor(id: id)?.name ?? id
     }
 
-    /// Compact "{bg} · {age}" success line, mirroring `CgmCredentialsView.successDetail`'s
-    /// display-unit + age-string conventions (no ProgressView, no elapsed counter, no error dump —
-    /// the full diagnostic stays on the Configure & test page, D-03).
+    /// Compact "{bg} · {age}" success line, matching `CgmCredentialsView.successDetail`'s
+    /// display-unit + age-string conventions. No ProgressView, elapsed counter, or error dump —
+    /// the full diagnostic stays on the Configure & test page.
     private func lastTestSuccessDetail(_ sample: GlucoseSample) -> String {
         let age = Int(max(0, Date().timeIntervalSince(sample.date)))
         let ageStr = age < 60 ? "\(age)s ago" : "\(age / 60) min ago"
@@ -241,11 +232,8 @@ struct CgmStatusView: View {
                 Spacer()
                 Text(Self.classificationLabel(row.classification))
                     .font(.caption)
-                    // WR-02 (09.24 review): was the raw system `Color.green`, which rendered a
-                    // visibly different "active" green than the design-system `AppTheme.inRange`
-                    // used a few lines away on this same screen family (CgmStatusView's own "Last
-                    // test result" success icon, and SettingsView's statusSubtitleColor). Standardize
-                    // on ONE green for "active/live" across the screen.
+                    // AppTheme.inRange, not system Color.green — one "active/live" green across this
+                    // screen family (Last-test success icon, Settings status subtitle).
                     .foregroundStyle(row.classification == .activeFailover ? AppTheme.inRange : Color.secondary)
             }
             if let s = row.statusCaseName {

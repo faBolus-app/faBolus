@@ -6,13 +6,13 @@ import Foundation
 public struct HistoryEvent: Identifiable, Sendable, Equatable {
     public enum Category: String, Sendable, CaseIterable {
         case bolus, carbs, bg, basal, tempRate, mode, cartridge, alarm, alert, reminder, pumping
-        /// Phase 09.15 T1-3 (D-01) — "Control-IQ auto-corrected" (`bolusSource == 7`, a decoded-but-
-        /// previously-dropped `BolusDeliveryHistoryLog` fact). Display-only, never a dose input (C3).
+        /// Control-IQ auto-corrected (`bolusSource == 7` on a `BolusDeliveryHistoryLog`). Display-only,
+        /// never a dose input.
         case autoCorrection
-        /// Phase 09.15 T1-4 (D-01) — "Control-IQ tried and couldn't deliver an automatic correction"
-        /// (`AaAutoBolusRejectedHistoryLog`/`CorrectionDeclinedHistoryLog`, decoded+registered but
-        /// previously dropped). Never speculates WHY (D-06 guardrail #6). Rendered amber (never red —
-        /// informational, not an alarm), distinctly from `.alarm`'s red-adjacent severity.
+        /// Control-IQ tried and could not deliver an automatic correction
+        /// (`AaAutoBolusRejectedHistoryLog` / `CorrectionDeclinedHistoryLog`). Never speculates why —
+        /// neither log exposes a reason. Rendered amber (informational, not an alarm), distinct from
+        /// `.alarm`.
         case couldNotDeliver
         case other
 

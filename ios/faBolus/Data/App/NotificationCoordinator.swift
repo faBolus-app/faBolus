@@ -4,7 +4,7 @@ import TandemMessages
 import UserNotifications
 import UIKit
 
-/// P9 §6 — the single owner of the local-notification path.
+/// The single owner of the local-notification path.
 ///
 /// Before this, three independent posters built `UNNotificationRequest`s directly (`PumpAlertNotifier`,
 /// `AppModel.notifyRemoteBolusRejected`, `ModeAutomation.remind`), only one handled authorization or a
@@ -28,17 +28,16 @@ import UIKit
 @MainActor
 final class NotificationRuntime {
     private let store: UserDefaults
-    // D4-06: key strings moved to the central `AppGroupKeys` registry — values unchanged.
+    // Key strings live in the central `AppGroupKeys` registry — values unchanged.
     static let stateKey = AppGroupKeys.notificationBrokerState
     static let telemetryKey = AppGroupKeys.notificationBrokerTelemetry
-    /// Per-category `NotificationBroker.CategorySettings` (Phase 8.1) — previously in-memory-only (see
-    /// RESEARCH.md Critical Correction); now App-Group-persisted like `state`/`telemetry` so a preference the
-    /// user sets survives a relaunch and is honored by every out-of-process poster.
+    /// Per-category `NotificationBroker.CategorySettings` — App-Group-persisted like `state`/`telemetry`
+    /// so a preference the user sets survives a relaunch and is honored by every out-of-process poster.
     static let settingsKey = AppGroupKeys.notificationBrokerSettings
     private let stateKey = NotificationRuntime.stateKey
     private let telemetryKey = NotificationRuntime.telemetryKey
     private let settingsKey = NotificationRuntime.settingsKey
-    /// App-Group flag (default false, opt-in per N21) gating telemetry accrual — App-Group-backed so the
+    /// App-Group flag (default false, opt-in) gating telemetry accrual — App-Group-backed so the
     /// out-of-process mode-reminder intent honors the same choice the main app made.
     static let telemetryEnabledKey = AppGroupKeys.notificationTelemetryEnabled
     private(set) var state: NotificationBroker.State
@@ -74,7 +73,7 @@ final class NotificationRuntime {
     /// True when the user has opted into local notification telemetry (default false).
     var telemetryEnabled: Bool { store.bool(forKey: Self.telemetryEnabledKey) }
 
-    /// F1 (§13) — erase the persisted broker runtime state + per-category telemetry BLOBS from the App
+    /// Erase the persisted broker runtime state + per-category telemetry BLOBS from the App
     /// Group (for "Delete all on-device data"). Leaves the opt-in flag and per-category SETTINGS alone —
     /// those are preferences, not accumulated data.
     static func eraseStoredBlobs(store: UserDefaults? = UserDefaults(suiteName: WidgetStore.appGroup)) {
@@ -197,9 +196,10 @@ enum NotificationPoster {
     /// one request. `add` is injectable so tests observe posted requests without a real notification
     /// center; `now` keeps the clock explicit. Returns the decision so callers can log a suppression.
     ///
-    /// `trigger` defaults to `nil` (deliver immediately), so every existing caller is unchanged. S7 passes
-    /// a `UNTimeIntervalNotificationTrigger` so a pump-disconnect escalation step is delivered by the OS at
-    /// its elapsed time even while the app is suspended — a user who walked away still gets the escalation.
+    /// `trigger` defaults to `nil` (deliver immediately), so every existing caller is unchanged. The
+    /// pump-disconnect escalation ladder passes a `UNTimeIntervalNotificationTrigger` so a step is
+    /// delivered by the OS at its elapsed time even while the app is suspended — a user who walked
+    /// away still gets the escalation.
     @discardableResult
     static func post(_ message: NotificationBroker.Message,
                      runtime: NotificationRuntime,
@@ -216,24 +216,24 @@ enum NotificationPoster {
         let content = UNMutableNotificationContent()
         content.title = message.title
         content.body = message.body
-        // §6/S8 B6: iOS Critical Alerts (alert even under Do Not Disturb / the ringer switch) for the
+        // iOS Critical Alerts (alert even under Do Not Disturb / the ringer switch) for the
         // never-suppressible SAFETY categories only, and only when the caller says the entitlement is
         // granted + the user has it on (`allowCritical`). Everything else keeps the normal sound/level, so
         // this can never over-escalate a routine or governed notification.
-        // CC-12/CX-F-08 (T-13-15): breakthrough is driven by `NotificationBroker.requiresBreakthrough` —
+        // Breakthrough is driven by `NotificationBroker.requiresBreakthrough` —
         // the never-suppressible trio (unchanged), OR a `.critical`-severity message (a pump ALARM
         // surfaced as the GOVERNED `.pumpAlert` category), OR a message carrying a force-protected typed
         // `safetyClass` (an urgent fixed-low/occlusion/low-insulin/CGM-loss alert at plain `.warning`
         // severity). Decoupled from `category.neverSuppressible` alone, so a governed pump alarm breaks
         // through Focus/DND exactly like the safety trio — closing the gap where alarms couldn't break
-        // through DND and a fixed-low ALERT posted `.warning` (CC-12/CX-F-08).
+        // through DND and a fixed-low ALERT posted `.warning`.
         let breakthrough = NotificationBroker.requiresBreakthrough(message)
         if allowCritical && breakthrough {
             content.interruptionLevel = .critical
             content.sound = .defaultCritical
         } else {
             content.sound = .default
-            // CR-01: graceful degradation while the Critical-Alerts entitlement is pending (or the user
+            // Graceful degradation while the Critical-Alerts entitlement is pending (or the user
             // hasn't opted in) — anything requiring breakthrough still must break through Focus/DND, or the
             // "time-sensitive delivery" promise is false. `.timeSensitive` does that without requiring the
             // special-request Critical Alerts entitlement; it only needs the lightweight Time-Sensitive
@@ -262,7 +262,7 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     private weak var model: AppModel?
     private let center = UNUserNotificationCenter.current()
     private let runtime: NotificationRuntime
-    /// Phase 13-01 Task 2 (CX-F-03 depth): the durable persist-then-replay log for issued safety alerts.
+    /// Durable persist-then-replay log for issued safety alerts.
     private let safetyAlertStore: SafetyAlertStore
     /// Identity keys of pump alerts currently posted, so we don't re-evaluate an already-active alert on
     /// every refresh and can withdraw the ones that clear.
@@ -279,15 +279,15 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         super.init()
         center.delegate = self
         registerCategories()
-        // B6: also request critical-alert permission. Harmless (a no-op) when the app lacks the
+        // Also request critical-alert permission. Harmless (a no-op) when the app lacks the
         // critical-alerts entitlement — iOS itself downgrades a `.critical` notification to a normal one
         // when the app isn't entitled, so gating `NotificationPoster.post`'s content on the user's
-        // `criticalAlertsEnabled` alone (D-05) is correct and degrades gracefully at the OS level.
-        // Phase 5 (D-14, 05-03): `.badge` so `UNUserNotificationCenter.setBadgeCount` (the app-icon
-        // glucose badge, `GlucoseBadge.apply`) is actually honored — without it iOS silently ignores
-        // every `setBadgeCount` call regardless of the user's opt-in.
+        // `criticalAlertsEnabled` alone is correct and degrades gracefully at the OS level.
+        // `.badge` so `UNUserNotificationCenter.setBadgeCount` (the app-icon glucose badge,
+        // `GlucoseBadge.apply`) is actually honored — without it iOS silently ignores every
+        // `setBadgeCount` call regardless of the user's opt-in.
         center.requestAuthorization(options: [.alert, .sound, .criticalAlert, .badge]) { _, _ in }
-        // D-03: query the OS grant state for the honest-status UI (AlertRulesView). Uses ONLY the async
+        // Query the OS grant state for the honest-status UI (AlertRulesView). Uses ONLY the async
         // `notificationSettings()` API — the older completion-handler form runs its block on a background
         // queue, and a `@MainActor`-inferred closure there is the exact SIGTRAP CI's Xcode 16.4 hit at
         // launch (see `registerCategories`'s note on the same hazard). The async form resumes on the
@@ -300,36 +300,35 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         model.notificationSink = { [weak self] msg, userInfo, categoryId in
             self?.post(msg, userInfo: userInfo, categoryId: categoryId)
         }
-        // CX-F-03: flush any safety alert `AppModel.postSafety` buffered before this sink existed —
+        // Flush any safety alert `AppModel.postSafety` buffered before this sink existed —
         // covers both a viewless restoration launch (no `.onAppear` ever ran before now) and the ordinary
         // foreground path alike, since this line runs unconditionally at construction either way.
         model.flushPendingSafety()
         model.notificationWithdrawSink = { [weak self] keys in self?.withdraw(keys) }
-        // 09.25 WR-01: withdraw every OS-outstanding request for a whole CATEGORY (used when the user
+        // Withdraw every OS-outstanding request for a whole CATEGORY (used when the user
         // disables a safety-trio category via the confirm-on-disable dialog) — distinct from `withdraw(_:)`
         // above, which only knows a fixed list of dedupe keys.
         model.notificationWithdrawCategorySink = { [weak self] category in self?.withdrawAll(for: category) }
-        // S7: schedule the pump-disconnect escalation ladder as OS-delivered notifications.
+        // Schedule the pump-disconnect escalation ladder as OS-delivered notifications.
         model.notificationScheduleSink = { [weak self] steps in self?.scheduleDisconnectEscalation(steps) }
-        // CX-F-02: arm/cancel the pre-armed background staleness watchdog.
+        // Arm/cancel the pre-armed background staleness watchdog.
         model.notificationStalenessSink = { [weak self] date in self?.scheduleStalenessWatchdog(from: date) }
         model.notificationStalenessCancelSink = { [weak self] in self?.cancelStalenessWatchdog() }
         model.addNotificationsSubscriber { [weak self] alerts in self?.syncPumpAlerts(alerts) }
-        // CX-F-03 depth (T3-01/02): replay any still-unresolved safety alert persisted from a prior
-        // launch, AFTER the sink is wired + the pending-safety buffer flushed above, so a restoration
-        // launch reconstructs and re-submits every not-yet-resolved entry.
+        // Replay any still-unresolved safety alert persisted from a prior launch, AFTER the sink is
+        // wired + the pending-safety buffer flushed above, so a restoration launch reconstructs and
+        // re-submits every not-yet-resolved entry.
         replayPersistedSafetyAlerts()
     }
 
-    /// D-03: query the OS grant state via the modern async API and cache it for the honest-status UI
+    /// Query the OS grant state via the modern async API and cache it for the honest-status UI
     /// (`AlertRulesView`). Called from `init` and again on foreground so a user who flips OS notification
     /// permissions in Settings sees the status update without relaunching. `.enabled` means the entitlement
     /// is granted AND the user authorized critical alerts; any other value (`.notSupported`/`.disabled`) is
-    /// treated identically by the honest-status logic (`AlertRulesView.shouldShowHonestStatus`) — see
-    /// 08-RESEARCH.md Open Question #1 on which exact value iOS reports pre-entitlement.
+    /// treated identically by the honest-status logic (`AlertRulesView.shouldShowHonestStatus`).
     ///
     /// UI-only: this cache is NEVER read by `post`'s `allowCritical` gate or by `NotificationBroker.decide`
-    /// (D-05) — it exists solely to drive `AppSettings.criticalAlertGrantActive` for display.
+    /// — it exists solely to drive `AppSettings.criticalAlertGrantActive` for display.
     private func refreshGrantState() async {
         // Swift 6 strict concurrency (CI's Xcode 16.4): `UNNotificationSettings` is non-Sendable, so
         // awaiting `notificationSettings()` directly here would send it back onto this `@MainActor` type —
@@ -355,12 +354,11 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         guard !dedupeKeys.isEmpty else { return }
         center.removeDeliveredNotifications(withIdentifiers: dedupeKeys)
         center.removePendingNotificationRequests(withIdentifiers: dedupeKeys)
-        // CX-F-03 depth (codex MEDIUM): also prune the durable replay log, so a resolved condition can
-        // never replay on the next launch.
+        // Also prune the durable replay log, so a resolved condition can never replay on the next launch.
         safetyAlertStore.remove(dedupeKeys: dedupeKeys)
     }
 
-    /// 09.25 WR-01: withdraw every OS-outstanding (pending OR already-delivered) notification for
+    /// Withdraw every OS-outstanding (pending OR already-delivered) notification for
     /// `category` — called when the user disables a safety-trio category via the confirm-on-disable
     /// dialog, so the dialog's "faBolus will no longer alert you" promise is immediately true rather than
     /// only for the NEXT event (a pump-disconnect escalation step scheduled BEFORE the disable would
@@ -372,9 +370,9 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     /// enumerate ahead of time. Best-effort / fire-and-forget: this is a UI-adjacent cleanup, not part of
     /// the governed decide()/post() path, so a caller never awaits it.
     func withdrawAll(for category: NotificationBroker.Category) {
-        // CX-F-03 depth (codex MEDIUM): prune the durable replay log SYNCHRONOUSLY — the category-wide
-        // OS-outstanding query below is best-effort/async, but the durable store must never be left
-        // holding an entry the caller believes was just fully withdrawn.
+        // Prune the durable replay log SYNCHRONOUSLY — the category-wide OS-outstanding query below
+        // is best-effort/async, but the durable store must never be left holding an entry the caller
+        // believes was just fully withdrawn.
         safetyAlertStore.removeAll(for: category)
         Task { @MainActor [center] in
             let pending = await center.pendingNotificationRequests()
@@ -410,12 +408,12 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         // Default a governed category to its registered id (which carries the SNOOZE action) unless the
         // caller already supplied one (pump alerts pass PUMP_ALERT for their CLEAR action).
         let cat = categoryId.isEmpty ? Self.categoryIdentifier(for: message.category) : categoryId
-        // B6: request the OS Critical Alert level when the user opted in; the poster restricts it to the
+        // Request the OS Critical Alert level when the user opted in; the poster restricts it to the
         // never-suppressible safety categories, and iOS ignores it unless the app holds the entitlement
         // (graceful degradation at the OS level — see the note in `init`).
         let allowCritical = AppSettings.shared.criticalAlertsEnabled
-        // CX-F-03 depth: a never-suppressible safety category is persisted (atomic-persist-before-post)
-        // through SafetyAlertPoster so it can be replayed on the next launch; every other category keeps
+        // A never-suppressible safety category is persisted (persist-before-post) through
+        // SafetyAlertPoster so it can be replayed on the next launch; every other category keeps
         // using the plain poster unchanged. `deadline` (the absolute fire time for a delayed escalation
         // step) is meaningful only on this branch — ignored otherwise.
         if message.category.neverSuppressible {
@@ -428,7 +426,7 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
                                        add: { [center] in center.add($0) })
     }
 
-    // MARK: S7 — pump-disconnect escalation ladder
+    // MARK: Pump-disconnect escalation ladder
 
     /// Schedule each `DisconnectEscalation` step as an OS-delivered notification that fires at its elapsed
     /// time even while the app is suspended (`UNTimeIntervalNotificationTrigger`), in the never-suppressible
@@ -441,7 +439,7 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
             let msg = NotificationBroker.Message(
                 category: .pumpDisconnect, severity: .error,
                 title: step.title, body: step.body, dedupeKey: step.id)
-            // CX-F-03 depth: the persisted `deadline` is the absolute fire time (`now + afterSeconds`),
+            // The persisted `deadline` is the absolute fire time (`now + afterSeconds`),
             // so a replay on a later launch re-derives a strictly-positive interval relative to a FRESH
             // `now`, rather than ever reusing this step's original (now stale) `afterSeconds` directly.
             post(msg, trigger: UNTimeIntervalNotificationTrigger(timeInterval: step.afterSeconds, repeats: false),
@@ -449,7 +447,7 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         }
     }
 
-    // MARK: CX-F-02 — pre-armed background CGM-staleness watchdog
+    // MARK: Pre-armed background CGM-staleness watchdog
 
     /// Pre-arm (or re-arm) `StalenessWatchdog`'s single delayed notification to fire
     /// `GlucoseFreshness.staleAfter` seconds past `date` (the fresh datum that just triggered the
@@ -475,7 +473,7 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         withdraw([StalenessWatchdog.dedupeKey])
     }
 
-    // MARK: CX-F-03 depth — persisted safety-alert replay on launch
+    // MARK: Persisted safety-alert replay on launch
 
     /// Pure decision: given a persisted entry's optional `deadline` and the current time, the trigger to
     /// use when replaying it — `nil` (immediate post) for an inherently-immediate entry (`deadline ==
@@ -488,22 +486,21 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         return UNTimeIntervalNotificationTrigger(timeInterval: deadline.timeIntervalSince(now), repeats: false)
     }
 
-    /// AlertStore-style persist-then-replay (CX-F-03 depth, T3-01/02): reconstruct + re-submit every
-    /// still-unresolved safety-alert entry from `safetyAlertStore` at launch, so an alert issued before a
-    /// cold-restoration relaunch is guaranteed to reach the user rather than silently vanish. Loop
-    /// `playbackAlertsFromPersistence` / Trio `replayUnacknowledgedAlerts` pattern (reproduced, not
-    /// copied). Does NOT re-persist (each entry is already durable) — only reconstructs + re-submits the
-    /// OS request through the plain (non-recording) poster, so `issuedDate` is never clobbered by a replay.
+    /// Persist-then-replay: reconstruct + re-submit every still-unresolved safety-alert entry from
+    /// `safetyAlertStore` at launch, so an alert issued before a cold-restoration relaunch is guaranteed
+    /// to reach the user rather than silently vanish. Does NOT re-persist (each entry is already durable)
+    /// — only reconstructs + re-submits the OS request through the plain (non-recording) poster, so
+    /// `issuedDate` is never clobbered by a replay.
     private func replayPersistedSafetyAlerts(now: Date = Date()) {
         let allowCritical = AppSettings.shared.criticalAlertsEnabled
-        // MD-02 (Phase 13 review fix): `SafetyAlertPoster.post` persists the durable entry BEFORE the
-        // broker decides (the T3-01 persist-before-post guarantee, which must NOT be weakened for the
-        // enabled case). The one way a never-suppressible entry is still suppressed is the user's own
-        // acknowledged-disable of that trio category — in which case the entry is dead state with no
-        // natural pruning path other than a condition-resolve/toggle. Lower-risk option (b): opportunistically
-        // prune any entry whose replay decision comes back `.categoryDisabled`, so a permanently-unresolved,
-        // user-disabled entry can't be re-loaded/re-evaluated/re-suppressed on every launch forever. This
-        // touches only the replay path — the persist-before-post ordering for the enabled case is unchanged.
+        // `SafetyAlertPoster.post` persists the durable entry BEFORE the broker decides (the
+        // persist-before-post guarantee, which must NOT be weakened for the enabled case). The one way a
+        // never-suppressible entry is still suppressed is the user's own acknowledged-disable of that trio
+        // category — in which case the entry is dead state with no natural pruning path other than a
+        // condition-resolve/toggle. Opportunistically prune any entry whose replay decision comes back
+        // `.categoryDisabled`, so a permanently-unresolved, user-disabled entry can't be
+        // re-loaded/re-evaluated/re-suppressed on every launch forever. This touches only the replay path
+        // — the persist-before-post ordering for the enabled case is unchanged.
         var suppressedDisabledKeys: [String] = []
         for entry in safetyAlertStore.unresolvedEntries() {
             let msg = NotificationBroker.Message(category: entry.category, severity: entry.severity,
@@ -532,7 +529,7 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
 
     private func key(_ n: PumpAlert) -> String { "pumpalert-\(n.kind.rawValue)-\(n.id)" }
 
-    /// §6/S8 B6 — whether a pump notification is a user-opted-out MIRRORED ALARM and should NOT be
+    /// Whether a pump notification is a user-opted-out MIRRORED ALARM and should NOT be
     /// re-notified by the app. True ONLY for a pump ALARM (`.alarm`, which the pump annunciates itself)
     /// when the user opted out. Lower-priority pump ALERTS still surface, and this can never match the
     /// app-only never-suppressible safety trio (they aren't `PumpAlert`s and post on other paths). Pure.
@@ -545,7 +542,7 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     private func syncPumpAlerts(_ notifications: [PumpAlert]) {
         let active = Set(notifications.map(key))
         for n in notifications where !postedPumpAlerts.contains(key(n)) {
-            // §6/S8 B6: the user can opt out of the app RE-notifying pump ALARMS (kind `.alarm`) — the pump
+            // The user can opt out of the app RE-notifying pump ALARMS (kind `.alarm`) — the pump
             // itself already annunciates them audibly, so mirroring them can be notification fatigue (esp.
             // on a t:slim). Lower-priority pump ALERTS still surface. We skip WITHOUT recording it as posted,
             // so turning the opt-out back off re-surfaces a still-active alarm on the next sync. This gates
@@ -553,7 +550,7 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
             if Self.suppressesMirroredAlarm(kind: n.kind, optedOut: AppSettings.shared.suppressMirroredPumpAlarms) { continue }
             let k = key(n)
             postedPumpAlerts.insert(k)
-            // CC-12/CX-F-08: populate the TYPED safety marker from the pump's OWN alert identity
+            // Populate the TYPED safety marker from the pump's OWN alert identity
             // (`TandemBackend.safetyClass`, the same classification `applyAutoRules` force-protects on) so
             // `requiresBreakthrough` can decide interruption level from it — never from untyped userInfo.
             // `.other` maps to `nil` (no marker) so an un-classified alert is unaffected.
@@ -645,11 +642,11 @@ enum SafetyEdge: Equatable {
     /// connected. A `nil` previous state (the first observation) never raises, so a cold launch that starts
     /// disconnected isn't reported as a "drop".
     ///
-    /// debug pump-background-disconnect (CRITERION 1, 2026-08-20): the kit now recovers an unintended drop
-    /// silently in the background — a genuine drop goes `.connected → .connecting` (the kit skips the
-    /// `.disconnected` flicker; see `PumpBLEClient.didDisconnectPeripheral`) and reconnects without ever
-    /// surfacing a down state. So the raise must NOT fire on the transient `.connecting` reconnect window;
-    /// it fires only when the link reaches a TERMINAL down state:
+    /// The kit recovers an unintended drop silently in the background — a genuine drop goes
+    /// `.connected → .connecting` (the kit skips the `.disconnected` flicker; see
+    /// `PumpBLEClient.didDisconnectPeripheral`) and reconnects without ever surfacing a down state. So
+    /// the raise must NOT fire on the transient `.connecting` reconnect window; it fires only when the
+    /// link reaches a TERMINAL down state:
     ///   • `.error` (the reconnect ladder GAVE UP → `.reconnectExhausted`). This is reached from the
     ///     recovering `.connecting`/`.scanning` state, NOT directly from a live one, so it must raise even
     ///     though the immediately-preceding state wasn't live — otherwise the drop→reconnect→exhaust path
@@ -677,7 +674,7 @@ enum SafetyEdge: Equatable {
         return .none
     }
 
-    /// C2-01: a generic boolean-condition edge-detector, for a safety condition (like the urgent-low
+    /// Generic boolean-condition edge-detector, for a safety condition (like the urgent-low
     /// alarm) whose "active" test is a plain `Bool` rather than a typed state transition — raise once on
     /// false→true, clear once on true→false, never re-fire while the condition is steady.
     static func edge(wasActive: Bool, isActive: Bool) -> SafetyEdge {
@@ -687,17 +684,17 @@ enum SafetyEdge: Equatable {
     }
 }
 
-/// tslim-reconnect-loop (Phase B, item 5): flap-rate escalation. The reconnect loop's drops fold to
-/// `.connecting` (never `.disconnected`/`.error`), so `SafetyEdge.connection` deliberately returns `.none`
-/// through them — by design, so a single silent background reconnect doesn't alarm. The cost is that a
-/// STORM of them (the on-device evidence: 18 pair→drop cycles over ~11.5 min) is also silent. This pure
-/// detector counts the live-link → `.connecting` re-pair/re-drop cycles in a rolling window and escalates
-/// ONCE (latched) when they cross a threshold, so the app can raise a user-visible, NON-MUTEABLE
-/// "can't hold a connection to this pump" state instead of flapping in silence.
+/// Flap-rate escalation. The reconnect loop's drops fold to `.connecting` (never `.disconnected`/
+/// `.error`), so `SafetyEdge.connection` deliberately returns `.none` through them — by design, so a
+/// single silent background reconnect doesn't alarm. The cost is that a STORM of them is also silent.
+/// This pure detector counts the live-link → `.connecting` re-pair/re-drop cycles in a rolling window
+/// and escalates ONCE (latched) when they cross a threshold, so the app can raise a user-visible,
+/// NON-MUTEABLE "can't hold a connection to this pump" state instead of flapping in silence.
 ///
-/// Pure + value-typed (mirrors `SafetyEdge`/`StalenessWatchdogEdge`): the owner (`PumpConnectionLifecycle`,
-/// which observes every kit state transition — not the sampled `refresh()` tick, so it never misses a fast
-/// ~2 s cycle) feeds each flap and acts on the returned decision. Unit-testable without any BLE/transport.
+/// Pure + value-typed (mirrors `SafetyEdge`/`StalenessWatchdogEdge`): the owner
+/// (`PumpConnectionLifecycle`, which observes every kit state transition — not the sampled
+/// `refresh()` tick, so it never misses a fast ~2 s cycle) feeds each flap and acts on the returned
+/// decision. Unit-testable without any BLE/transport.
 struct ConnectionFlapDetector: Equatable {
     /// The rolling window over which flap cycles are counted.
     static let window: TimeInterval = 120   // 2 minutes
@@ -732,7 +729,7 @@ struct ConnectionFlapDetector: Equatable {
     }
 }
 
-/// CX-F-02: pure decision for the pre-armed background staleness watchdog (`StalenessWatchdog`,
+/// Pure decision for the pre-armed background staleness watchdog (`StalenessWatchdog`,
 /// faBolusCore) — arm/re-arm on an ADVANCED fresh glucose datum, cancel once the feed is no longer
 /// fresh (the real `SafetyEdge.freshness` → `.cgmDataLoss` edge has already alarmed for real by then).
 /// Kept beside `SafetyEdge` for the same reason: unit-testable without driving a full `refresh()` cycle.

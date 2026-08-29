@@ -1,10 +1,10 @@
 import Foundation
 
-/// Persisted map of the pump history-log sequence ranges the phone already holds (D-04). Replaces the
+/// Persisted map of the pump history-log sequence ranges the phone already holds. Replaces the
 /// boolean `didBackfill` gate — a SET of ranges (not a single high-water mark) can express both "the
 /// phone missed records logged during a disconnect" (a trailing/forward gap) and "the phone has some but
 /// not all past data" (an interior/non-sequential gap), which is exactly what
-/// `TandemBackend.missingRanges` needs to compute the exact windows still worth fetching (D-02).
+/// `TandemBackend.missingRanges` needs to compute the exact windows still worth fetching.
 ///
 /// Persisted exactly like `AppSettings.eatingTriggerConfig` — JSON-in-UserDefaults, `backsUp: false`
 /// (derived/rebuildable local cache, not a user preference; see `SettingsCatalog`'s "historyCoverage" row).
@@ -37,7 +37,7 @@ public struct HistoryCoverageMap: Codable, Equatable, Sendable {
             let last = merged[merged.count - 1]
             // Overlapping, or directly adjacent (last.upperBound + 1 == r.lowerBound) — guard the +1
             // against UInt32.max overflow (the pump's sequence numbers are real-world bounded, but the
-            // arithmetic must never trap on a pathological/adversarial value, T-09.7-01).
+            // arithmetic must never trap on a pathological/adversarial value).
             let adjacentOrOverlapping = last.upperBound >= r.lowerBound
                 || (last.upperBound != UInt32.max && last.upperBound + 1 == r.lowerBound)
             if adjacentOrOverlapping {

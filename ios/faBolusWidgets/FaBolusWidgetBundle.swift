@@ -35,10 +35,10 @@ struct FaBolusProvider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping (Timeline<FaBolusEntry>) -> Void) {
         let snap = WidgetStore.load() ?? .placeholder
         let now = Date()
-        // P10 (group A) — extra entries at the stale/hide crossings so the widgets grey/hide at the
+        // Extra entries at the stale/hide crossings so the widgets grey/hide at the
         // right moment. A widget renders ahead of time, so each view keys off its ENTRY's date (not
         // wall-clock); without crossing entries a fresh entry never re-rendered into its stale/hidden
-        // state until the next app reload. Mirrors the Mac provider.
+        // state until the next app reload.
         var dates: [Date] = [now]
         if let d = snap.glucoseDate {
             let stale = d.addingTimeInterval(snap.staleAfterSec ?? 6 * 60)
@@ -65,14 +65,12 @@ enum WidgetUI {
     /// True when the reading is older than 6 minutes (hide the number).
     static func isStale(_ snap: WidgetSnapshot) -> Bool { snap.isGlucoseStale }
 
-    // P10 (group A) — `now`-parameterized variants honoring the phone's PUBLISHED freshness policy,
+    // `now`-parameterized variants honoring the phone's PUBLISHED freshness policy,
     // evaluated at the widget entry's date (a widget renders ahead of time, so wall-clock `Date()` is
-    // prep time, not display time). These mirror the Mac widget's helpers.
-    //
-    // Phase 09.1 (D-03): the band-color derivation itself moved to the call sites
-    // (`GlucoseWidgetView.color`, `StatusWidgetView.color`, `ActivityViewContext.glucoseColor`), which
-    // now classify via `faBolusCore.GlucoseRange.classify` and color via `faBolusDesign.AppTheme
-    // .glucoseColor(_:stale:)` directly — no local `Int`-category switch remains in this file.
+    // prep time, not display time). Band-color derivation lives at the call sites
+    // (`GlucoseWidgetView.color`, `StatusWidgetView.color`), which classify via
+    // `faBolusCore.GlucoseRange.classify` and color via `faBolusDesign.AppTheme.glucoseColor(_:stale:)`
+    // directly — no local `Int`-category switch remains in this file.
     /// Glucose number at `now`: the value while fresh/stale, "--" once hidden past the policy.
     static func glucoseText(_ snap: WidgetSnapshot, now: Date) -> String {
         if snap.isHidden(asOf: now) { return "--" }
