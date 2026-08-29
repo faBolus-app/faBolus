@@ -68,7 +68,10 @@ struct NudgeDeliveryBoundaryTests {
         // The forbidden delivery-seam identifier set: the two `GatedPumpWrite` delivery verbs plus the
         // signed-write entry-point names. Held as plain string constants — this scan targets the SOURCE
         // files below, never this test file itself, so their appearance here is not what's under test.
-        let forbidden = ["deliverBolus", "deliverExtendedBolus", "remoteDeliver", "perform(totalMu"]
+        // `totalMu` rather than `perform(totalMu`: the bare parameter label survives a formatter
+        // wrapping the call across lines, where the call-shape token would not. It appears ONLY on
+        // TandemBackend's signed-write entry point, so it cannot false-positive on these files.
+        let forbidden = ["deliverBolus", "deliverExtendedBolus", "remoteDeliver", "totalMu"]
 
         let testFileURL = URL(fileURLWithPath: #filePath)
         let repoRoot =

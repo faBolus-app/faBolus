@@ -34,7 +34,10 @@ struct CiqAwarenessScopeGuardTests {
     /// guard — only an actual signature change does.
     private static func functionSignatures(in source: String) -> Set<String> {
         let pattern =
-            #"(?:public\s+)?(?:static\s+)?func\s+[A-Za-z_][A-Za-z0-9_]*\s*\([^{}]*\)(?:\s*->\s*[^{\n]+?)?\s*(?=\{)"#
+            // The return-type group must tolerate NEWLINES (`[^{]`, not `[^{\n]`): the formatter wraps a
+            // long signature so `-> Type` can land on its own line, and a newline-intolerant group makes
+            // the whole match fail — the scan then silently sees one fewer signature.
+            #"(?:public\s+)?(?:static\s+)?func\s+[A-Za-z_][A-Za-z0-9_]*\s*\([^{}]*\)(?:\s*->\s*[^{]+?)?\s*(?=\{)"#
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
         let ns = source as NSString
         let matches = regex.matches(in: source, range: NSRange(location: 0, length: ns.length))
@@ -93,9 +96,18 @@ struct CiqAwarenessScopeGuardTests {
 
     /// Extracts the substring after the LAST `-> ` in a normalized signature (its return type), or `nil`
     /// if the signature has no return type at all (`Void` — never a dose by construction).
+    /// Canonical means interior whitespace collapsed (done by the caller) AND no padding immediately
+    /// inside a bracket. The padding matters: the formatter wraps a long return type across lines
+    /// (`-> (\n    headline: String, detail: String\n)?`), which normalizes to
+    /// `( headline: String, detail: String )?` and would miss an otherwise-identical allow-list entry —
+    /// failing this guard on a formatting change rather than on a real dose-shaped return.
     private static func ciqReturnType(of signature: String) -> String? {
         guard let arrowRange = signature.range(of: "-> ", options: .backwards) else { return nil }
-        return String(signature[arrowRange.upperBound...]).trimmingCharacters(in: .whitespaces)
+        var t = String(signature[arrowRange.upperBound...]).trimmingCharacters(in: .whitespaces)
+        for (padded, tight) in [("( ", "("), (" )", ")"), ("[ ", "["), (" ]", "]"), ("< ", "<"), (" >", ">")] {
+            t = t.replacingOccurrences(of: padded, with: tight)
+        }
+        return t
     }
 
     /// The prong-(a) checker: `true` iff `signature` has no return type, or its return type is one of the
@@ -207,10 +219,15 @@ struct CiqAwarenessScopeGuardTests {
             return
         }
         let deliverRegions: [(name: String, marker: String)] = [
-            ("deliverBolus", "public func deliverBolus(units:"),
-            ("deliverExtendedBolus", "public func deliverExtendedBolus(totalUnits:"),
-            ("validateDeliver", "private func validateDeliver(total:"),
-            ("perform", "private func perform(totalMu:")
+            // Markers are declaration-name PREFIXES, deliberately stopping at the opening paren: a
+            // formatter may wrap a long signature onto the next line ("func perform(\n    totalMu: …"),
+            // which silently breaks any marker that includes the first parameter label — the scan then
+            // finds no region and this guard goes vacuous rather than red. Each prefix is verified unique
+            // in TandemBackend.swift by `deliverRegionMarkersAreUnique` below.
+            ("deliverBolus", "public func deliverBolus("),
+            ("deliverExtendedBolus", "public func deliverExtendedBolus("),
+            ("validateDeliver", "private func validateDeliver("),
+            ("perform", "private func perform(")
         ]
         for (name, marker) in deliverRegions {
             guard let region = Self.balancedBraceRegion(in: backendSource, afterMarker: marker) else {
@@ -258,7 +275,7 @@ struct CiqAwarenessScopeGuardTests {
     /// trip it.
     @Test func theForbiddenSymbolScanCatchesAnInjectedReference() throws {
         guard let backendSource = Self.readSource("ios/faBolus/Data/TandemBackend.swift"),
-            let region = Self.balancedBraceRegion(in: backendSource, afterMarker: "private func perform(totalMu:")
+            let region = Self.balancedBraceRegion(in: backendSource, afterMarker: "private func perform(")
         else {
             Issue.record("could not resolve TandemBackend.swift perform() region for the fault-injection check")
             return
@@ -275,6 +292,29 @@ struct CiqAwarenessScopeGuardTests {
             #expect(
                 Self.regionContainsAnyForbiddenSymbol(poisoned) != nil,
                 "the scan failed to catch an injected reference to '\(poison)' — it would not go RED for a real regression"
+            )
+        }
+    }
+
+    /// A balanced-brace scan is only as good as its marker. Each deliver-region marker is a
+    /// declaration-name prefix, so it must match EXACTLY ONE declaration in `TandemBackend.swift`:
+    /// zero matches makes `signedDeliveryPathReferencesNoCiqAwarenessSymbol` record an Issue (that
+    /// half fails loudly), but TWO matches would silently scan the wrong function body and report
+    /// clean. This closes that second hole.
+    @Test func deliverRegionMarkersAreUnique() throws {
+        let source = try #require(
+            Self.readSource("ios/faBolus/Data/TandemBackend.swift"),
+            "could not resolve ios/faBolus/Data/TandemBackend.swift from #filePath=\(#filePath)")
+        for marker in [
+            "public func deliverBolus(",
+            "public func deliverExtendedBolus(",
+            "private func validateDeliver(",
+            "private func perform("
+        ] {
+            let hits = source.components(separatedBy: marker).count - 1
+            #expect(
+                hits == 1,
+                "marker '\(marker)' matches \(hits) declarations in TandemBackend.swift — a balanced-brace scan needs exactly one"
             )
         }
     }
