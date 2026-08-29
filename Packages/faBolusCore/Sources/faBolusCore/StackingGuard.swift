@@ -75,7 +75,7 @@ public enum StackingGuard {
     /// carb bolus taken exactly as the calculator recommended, at ANY size, is not an override); glucose is
     /// absent or at/below `targetMgdl`; or `displaysNumericDose` is false.
     ///
-    /// `pumpIOBUnits` is accepted (op-109 `swan6hrIOB`, the same value later plans' SG2 stacking check reads)
+    /// `pumpIOBUnits` is accepted (op-109 `swan6hrIOB`)
     /// and surfaced as optional `detail` context when SG1 fires — it never affects whether SG1 fires.
     public static func calcOverride(
         enteredUnits: Double,
@@ -257,7 +257,7 @@ public enum StackingGuard {
     // MARK: - SG3b: temp-rate offer (BLOCKED, strictly inert)
 
     /// **SG3b** — a structurally-unreachable stub. `SetTempRateRequest` is Mobi-only and requires
-    /// Control-IQ OFF (`TempRateRequests.swift:3-5`), while SG3b's entire premise — offering the 150%
+    /// Control-IQ OFF (TandemKit's `TempRateRequests.swift`), while SG3b's entire premise — offering the 150%
     /// temp-rate as an alternative to a correction bolus — only makes sense while Control-IQ is ON. That
     /// contradiction means this function can never legitimately fire; it exists ONLY to complete the
     /// `Friction`/`Disclosure` type surface, documented BLOCKED until a saline-bench check of

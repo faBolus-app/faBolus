@@ -14,7 +14,7 @@ struct PumpUnsupportedReadSelfHealTests {
 
     // MARK: - op20 is polled (refinement) AND reachable on-demand
 
-    /// op20 rides the recurring fast-read burst again (refinement) so `cartridgeLoadState` — and the 09.9
+    /// op20 rides the recurring fast-read burst again (refinement) so `cartridgeLoadState` — and the
     /// `cartridgeReadyForBolus` pre-guard it feeds — stays live on a pump that supports it. (A pump that
     /// REJECTS op20 learns-and-skips it durably — see `PumpLearnedOpcodePersistenceTests`.)
     @Test func fastReadBurstSendsLoadStatusOnAPumpWithNoLearnedRejection() {
@@ -35,7 +35,7 @@ struct PumpUnsupportedReadSelfHealTests {
     }
 
     /// The full post-pair startup burst sends op20 on a pump with no learned rejection — the pre-guard is fed
-    /// from the first poll. api25 static-registry hardening: op20 is IDENTITY-GATED (deferred out of the
+    /// from the first poll. op20 is IDENTITY-GATED (deferred out of the
     /// pre-version burst), so it is dispatched once the bootstrap version responses identify the pump — here
     /// a SUPPORTED pump (default identity, not the t:slim X2 sw-2.5 bad combo), released via the test seam.
     @Test func postPairStartupBurstSendsLoadStatusOnAPumpWithNoLearnedRejection() {
@@ -110,7 +110,8 @@ struct PumpUnsupportedReadSelfHealTests {
     /// forever with no re-probe. Unlike op20 (which learns-and-STAYS-skipped across reconnects), a dose-input
     /// read op77'd this connection is skipped only for the REST of this session and is DROPPED from
     /// `badOpcodes` on the next `startPolling()`, so it is re-sent every connection. op20 (NOT a dose input)
-    /// stays skipped across the reconnect — the contrast that proves the R2-10 allowlist is dose-input-scoped.
+    /// stays skipped across the reconnect — the contrast that proves the re-probe allowlist is
+    /// dose-input-scoped.
     @Test func aDoseInputReadOp77dThisConnectionIsReProbedNextConnectionWhileOp20StaysSkipped() {
         let b = TandemBackend(testTransport: FakePumpTransport())
         let iob = ControlIQIOBRequest.props.opCode  // op108 (dose input)
@@ -177,8 +178,8 @@ struct PumpUnsupportedReadSelfHealTests {
         )
     }
 
-    /// `AppModel.badOpcodesForDiagnostics` is a computed property re-evaluating the cast on every read
-    /// (R5) — proves the `?? []` fallback fires under a MockBackend source, identical to the pre-16-07
+    /// `AppModel.badOpcodesForDiagnostics` is a computed property re-evaluating the cast on every read —
+    /// proves the `?? []` fallback fires under a MockBackend source, identical to the older
     /// `(source as? TandemBackend)?.badOpcodesForDiagnostics ?? []`.
     @Test func badOpcodesForDiagnosticsIsEmptyUnderMockBackend() {
         let model = AppModel(source: MockBackend(), ledgerStoreURL: tempLedgerURL())
@@ -187,8 +188,8 @@ struct PumpUnsupportedReadSelfHealTests {
             "a non-Tandem backend must report no rejected opcodes rather than crashing the diagnostics read-out")
     }
 
-    /// `AppModel.historySyncState` (D-01/D-05) is only ever advanced away from its `.idle(lastSynced:
-    /// nil)` default by the narrowed cast inside `refresh()` (R29/R34) — under MockBackend that cast is
+    /// `AppModel.historySyncState` is only ever advanced away from its `.idle(lastSynced:
+    /// nil)` default by the narrowed cast inside `refresh()` — under MockBackend that cast is
     /// always nil, so the observable state never leaves its initial idle value.
     @Test func historySyncStateStaysIdleUnderMockBackend() {
         let model = AppModel(source: MockBackend(), ledgerStoreURL: tempLedgerURL())
@@ -197,8 +198,8 @@ struct PumpUnsupportedReadSelfHealTests {
             "history-sync state must stay idle under a non-Tandem backend — the narrowed cast never fires for it")
     }
 
-    /// `syncHistoryNow()`/`stopHistorySync()` (D-05 "Sync now"/"Stop syncing", R29) are no-ops under a
-    /// non-Tandem backend both before AND after the 16-07 narrowing — calling them must not crash and
+    /// `syncHistoryNow()`/`stopHistorySync()` (the "Sync now"/"Stop syncing" actions) are no-ops under a
+    /// non-Tandem backend both before AND after the narrowing — calling them must not crash and
     /// must not perturb `historySyncState`, exactly mirroring the old `(source as? TandemBackend)?...`
     /// no-op.
     @Test func syncHistoryNowAndStopHistorySyncAreNoOpsUnderMockBackend() {

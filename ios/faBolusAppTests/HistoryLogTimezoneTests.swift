@@ -38,7 +38,7 @@ struct HistoryLogTimezoneTests {
         try body()
     }
 
-    /// Inverse of the VA-18 fix's reinterpretation: returns the pump seconds (against the UTC-anchored
+    /// Inverse of `finishBackfill`'s reinterpretation: returns the pump seconds (against the UTC-anchored
     /// `HistoryLog.jan12008UnixEpoch`) whose *naive UTC breakdown* equals `target`'s wall-clock components
     /// in the pump zone. Feeding this to the pump-history stream makes `finishBackfill` re-anchor those
     /// components in `TimeZone.current` and place the record back at exactly `target`.
@@ -98,7 +98,7 @@ struct HistoryLogTimezoneTests {
     @Test func standardTimeRecordPlacedAtItsOwnOffsetNotTodays() {
         withCleanCoverage {
             withDefaultTimeZone("America/Los_Angeles") {
-                let tz = TimeZone(identifier: "America/Los_Angeles")!  // VA-18: explicit DST zone injected below — host-independent (not TimeZone.current)
+                let tz = TimeZone(identifier: "America/Los_Angeles")!  // explicit DST zone injected below — host-independent (not TimeZone.current)
                 var utcCal = Calendar(identifier: .gregorian)
                 utcCal.timeZone = TimeZone(identifier: "UTC")!
                 var zoneCal = Calendar(identifier: .gregorian)
@@ -118,7 +118,7 @@ struct HistoryLogTimezoneTests {
 
                 let sec = pumpSec(placingRecordAt: target, zoneCal: zoneCal, utcCal: utcCal)
                 let (backend, _) = makeBackend()
-                backend.historyBackfillTimeZoneForTesting = tz  // VA-18: finishBackfill re-anchors into THIS zone (deterministic on UTC CI too)
+                backend.historyBackfillTimeZoneForTesting = tz  // finishBackfill re-anchors into THIS zone (deterministic on UTC CI too)
                 runSync(backend, cgm: [(seq: 1, pumpTimeSec: sec, mgdl: 120)])
 
                 #expect(backend.glucoseHistory.count == 1)
@@ -127,7 +127,7 @@ struct HistoryLogTimezoneTests {
                 #expect(
                     approxEqual(placed, target),
                     "record must land at the offset in effect at its own instant, not today's")
-                // CX-F-05 (review-sharpened): `finishBackfill` no longer promotes into the live dosing
+                // `finishBackfill` no longer promotes into the live dosing
                 // snapshot at all — see `backfillNeverPromotesIntoLiveDosingSnapshotPreExistingValuePreserved`
                 // below for the dedicated live-read-preservation contract. A backend with no pre-existing
                 // live reading stays `nil` here (fail-closed for dosing, never invents one from history).
@@ -161,7 +161,7 @@ struct HistoryLogTimezoneTests {
     @Test func straddlingSpringForwardKeepsTrueElapsedSpacing() {
         withCleanCoverage {
             withDefaultTimeZone("America/Los_Angeles") {
-                let tz = TimeZone(identifier: "America/Los_Angeles")!  // VA-18: explicit DST zone injected below — host-independent (not TimeZone.current)
+                let tz = TimeZone(identifier: "America/Los_Angeles")!  // explicit DST zone injected below — host-independent (not TimeZone.current)
                 var utcCal = Calendar(identifier: .gregorian)
                 utcCal.timeZone = TimeZone(identifier: "UTC")!
                 var zoneCal = Calendar(identifier: .gregorian)
@@ -184,7 +184,7 @@ struct HistoryLogTimezoneTests {
                 let secAfter = pumpSec(placingRecordAt: tAfter, zoneCal: zoneCal, utcCal: utcCal)
 
                 let (backend, _) = makeBackend()
-                backend.historyBackfillTimeZoneForTesting = tz  // VA-18: finishBackfill re-anchors into THIS zone (deterministic on UTC CI too)
+                backend.historyBackfillTimeZoneForTesting = tz  // finishBackfill re-anchors into THIS zone (deterministic on UTC CI too)
                 runSync(
                     backend,
                     cgm: [
@@ -222,7 +222,7 @@ struct HistoryLogTimezoneTests {
         }
     }
 
-    // MARK: - Case 3: backfill NEVER promotes into the live dosing snapshot (CX-F-05, review-sharpened)
+    // MARK: - Case 3: backfill NEVER promotes into the live dosing snapshot
 
     /// `finishBackfill` used to promote the newest deduped CGM reading into `snapshot.glucose`/
     /// `glucoseDate` — a backfilled/mis-anchored historical record could therefore taint the live dosing
@@ -232,7 +232,7 @@ struct HistoryLogTimezoneTests {
     @Test func backfillNeverPromotesIntoLiveDosingSnapshotPreExistingValuePreserved() {
         withCleanCoverage {
             withDefaultTimeZone("America/Los_Angeles") {
-                let tz = TimeZone(identifier: "America/Los_Angeles")!  // VA-18: explicit DST zone injected below — host-independent (not TimeZone.current)
+                let tz = TimeZone(identifier: "America/Los_Angeles")!  // explicit DST zone injected below — host-independent (not TimeZone.current)
                 var utcCal = Calendar(identifier: .gregorian)
                 utcCal.timeZone = TimeZone(identifier: "UTC")!
                 var zoneCal = Calendar(identifier: .gregorian)
@@ -250,7 +250,7 @@ struct HistoryLogTimezoneTests {
                 let secNewer = pumpSec(placingRecordAt: tNewer, zoneCal: zoneCal, utcCal: utcCal)
 
                 let (backend, _) = makeBackend()
-                backend.historyBackfillTimeZoneForTesting = tz  // VA-18: finishBackfill re-anchors into THIS zone (deterministic on UTC CI too)
+                backend.historyBackfillTimeZoneForTesting = tz  // finishBackfill re-anchors into THIS zone (deterministic on UTC CI too)
                 // A LIVE reading already on the snapshot BEFORE the sync runs — a real value the live CGM
                 // read path (never the backfill path) owns.
                 let liveDate = Date().addingTimeInterval(-120)
@@ -287,7 +287,7 @@ struct HistoryLogTimezoneTests {
         }
     }
 
-    // MARK: - CX-F-05 review-sharpening: failable pumpDate rejects (never clamps) a future-anchored record
+    // MARK: - Failable pumpDate rejects (never clamps) a future-anchored record
 
     /// A CGM record re-anchored more than `GlucoseFreshness.futureSkewTolerance` (5 min) beyond `now` must
     /// be DROPPED, not clamped to `now` — proven by injecting one clearly-future record alongside one
@@ -366,7 +366,7 @@ struct HistoryLogTimezoneTests {
         }
     }
 
-    // MARK: - Cross-zone-travel (beyond VA-18's single-zone DST coverage)
+    // MARK: - Cross-zone-travel (beyond the single-zone DST coverage above)
 
     /// West travel + an un-synced pump clock: the pump kept logging wall-clock numbers as if it were
     /// still on the ORIGIN zone (e.g. America/New_York) after the user traveled west, but the app
@@ -375,7 +375,7 @@ struct HistoryLogTimezoneTests {
     /// NY-wall-clock record as an LA-wall-clock record shifts the resolved instant HOURS into the future —
     /// well beyond `futureSkewTolerance` — so the fix must drop it (not clamp it to `now`), and any
     /// PRE-EXISTING live dosing reading must survive completely untouched. This is a genuine cross-ZONE
-    /// scenario (two different named zones), beyond VA-18's single-zone (LA) DST-transition coverage.
+    /// scenario (two different named zones), beyond the single-zone (LA) DST-transition coverage above.
     @Test func crossZoneTravelWithUnsyncedPumpClockRejectsFutureAnchoredRecordAndPreservesLiveSnapshot() {
         withCleanCoverage {
             let originTZ = TimeZone(identifier: "America/New_York")!  // where the pump's clock was last set
@@ -412,7 +412,7 @@ struct HistoryLogTimezoneTests {
         }
     }
 
-    // MARK: - App-side history-stream advertised-count guard (composes with 15-02's kit-side isValid)
+    // MARK: - App-side history-stream advertised-count guard (composes with the kit-side isValid)
 
     /// `appendHistoryStreamFrame` must refuse to append/advance a page when the frame's actual record
     /// count disagrees with its own advertised `numberOfHistoryLogs` header byte — app-side defense in

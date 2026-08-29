@@ -2,7 +2,7 @@ import SwiftUI
 import faBolusCore
 import faBolusDesign
 
-/// modern banner listing active pump alerts/alarms, each with a Clear button that sends a
+/// Modern banner listing active pump alerts/alarms, each with a Clear button that sends a
 /// signed dismiss to the pump — so the user can clear them without reaching for the pump.
 struct AlertsBannerView: View {
     @Bindable var model: AppModel
@@ -12,7 +12,7 @@ struct AlertsBannerView: View {
         VStack(spacing: 8) {
             ForEach(model.activeNotifications) { n in
                 HStack(alignment: .top, spacing: 10) {
-                    // D2-08: decorative — the kind (alarm/CGM alert/other) is already carried by the
+                    // Decorative — the kind (alarm/CGM alert/other) is already carried by the
                     // title text below, so hide the glyph from VoiceOver rather than announcing its raw
                     // symbol name. Mirrors StatusPillsView/StatusRingView's existing convention.
                     Image(systemName: icon(n.kind))
@@ -26,7 +26,7 @@ struct AlertsBannerView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
-                    // D2-08: one VoiceOver element reading "<title>, <detail>" instead of two
+                    // One VoiceOver element reading "<title>, <detail>" instead of two
                     // fragmented swipe stops.
                     .accessibilityElement(children: .combine)
                     Spacer(minLength: 8)

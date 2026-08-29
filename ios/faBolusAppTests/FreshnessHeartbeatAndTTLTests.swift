@@ -17,7 +17,7 @@ import faBolusCore
 
     // MARK: - widget connection TTL (publish time, not sample time)
 
-    /// The keystone WR-02 assertion: connection freshness keys off `updatedAt` (the PUBLISH time), NOT
+    /// The keystone assertion: connection freshness keys off `updatedAt` (the PUBLISH time), NOT
     /// `glucoseDate` (the sample time). A killed host leaves a snapshot whose SAMPLE is recent but whose
     /// last PUBLISH is old — that must read connection-stale, because nothing is re-stamping `updatedAt`.
     /// A brand-new publish (fresh `updatedAt`) reads connection-fresh even when nothing else changed.
@@ -59,7 +59,7 @@ import faBolusCore
         #expect(justStale.isConnectionStale(asOf: now))
     }
 
-    /// WR-02 render/logic boundary. The widget views expose no unit seam, so the two predicates they use
+    /// Render/logic boundary. The widget views expose no unit seam, so the two predicates they use
     /// are reproduced verbatim from the source and pinned against a stale-connection snapshot:
     ///   • `QuickBolusView.isConnected  = snap.connected && !snap.isConnectionStale(asOf:)` — the confirm
     ///     pad is enabled only when this is true, so a killed-host snapshot disables the pad even though
@@ -89,10 +89,10 @@ import faBolusCore
 
     // MARK: - heartbeat/foreground refresh path
 
-    /// WR-01 core: on the default pump-only config (NO failover glucose source) the aging work is driven
+    /// On the default pump-only config (NO failover glucose source) the aging work is driven
     /// by the `refresh()` path the heartbeat + foreground-resume invoke. `publicRefresh()` is that exact
     /// path (a public wrapper over the private `refresh()`), so it re-evaluates freshness against the
-    /// current state and raises the never-suppressible §6 `.cgmDataLoss` on a fresh→stale transition.
+    /// current state and raises the never-suppressible `.cgmDataLoss` on a fresh→stale transition.
     ///
     /// A previously-fresh feed (a fresh reading, driven in via the backend's own `onChange`) then going
     /// stale must post exactly ONE `.cgmDataLoss`. Critically, a SUBSEQUENT `publicRefresh()` — a bare
@@ -124,7 +124,7 @@ import faBolusCore
         #expect(posted.filter { $0.category == .cgmDataLoss }.count == 1)
     }
 
-    /// WR-01 safety: the unconditional heartbeat must be harmless on a cold, `.disconnected`, pump-only
+    /// Safety: the unconditional heartbeat must be harmless on a cold, `.disconnected`, pump-only
     /// model. `publicRefresh()` (the heartbeat/foreground call) issues no BLE read — its only outbound
     /// action, `maybeAutoSyncPumpTime()`, is self-gated on `snapshot.connection == .connected` (verified in
     /// source) and so no-ops here — and posts NO spurious safety notification: startup down is not a

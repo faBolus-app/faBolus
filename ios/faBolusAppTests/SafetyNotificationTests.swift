@@ -181,11 +181,11 @@ import TandemMessages
         #expect(!model.deliveryGloballyBlocked)  // and the interrupted entry cleared (not a permanent lock)
     }
 
-    // MARK: - Phase 13-01 (CX-F-03): viewless-launch wiring + pending-safety buffer
+    // MARK: - Viewless-launch wiring + pending-safety buffer
 
     /// Test 1 (viewless launch): `AppModel` + `NotificationCoordinator` constructed with NO SwiftUI view
     /// and NO `.onAppear` anywhere in the call chain — mirroring exactly how `FaBolusApp.init()` now
-    /// constructs the coordinator (CX-F-03) so a viewless CoreBluetooth cold-restoration relaunch still
+    /// constructs the coordinator, so a viewless CoreBluetooth cold-restoration relaunch still
     /// gets a live sink. Overriding `model.notificationSink` immediately after construction (the same
     /// idiom every other test in this file already uses to observe `postSafety`) proves `postSafety`
     /// reaches whatever sink is currently attached the instant one exists — no separate "attach" ceremony,

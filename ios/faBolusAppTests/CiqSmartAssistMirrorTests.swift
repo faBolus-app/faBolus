@@ -3,12 +3,11 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// Phase 09.15-12 (D-07, guardrail #13): the belt-and-suspenders CIQ-awareness toggle-mirror parity
-/// test. Proves a remote SUPPRESSES a Control-IQ-awareness feature whose mirrored toggle is OFF even
-/// when the corresponding wire FIELD is still present on the command (the "the phone forgot to also
-/// gate the field emission" case this plan's threat register calls T-09.15-12-T) — and that a legacy
-/// command with the mirror keys entirely absent resolves to the SAME safe default each flag's own
-/// `AppSettings` D-07 default already implies (non-suppressing for the always-on features,
+/// The belt-and-suspenders CIQ-awareness toggle-mirror parity test. Proves a remote SUPPRESSES a
+/// Control-IQ-awareness feature whose mirrored toggle is OFF even when the corresponding wire FIELD is
+/// still present on the command (the "the phone forgot to also gate the field emission" case) — and
+/// that a legacy command with the mirror keys entirely absent resolves to the SAME safe default each
+/// flag's own `AppSettings` default already implies (non-suppressing for the always-on features,
 /// suppressing for the opt-in ones).
 @Suite struct CiqSmartAssistMirrorTests {
 
@@ -20,7 +19,7 @@ import faBolusCore
         func send(_ command: RemoteCommand) {}
     }
 
-    // MARK: - Field present, toggle OFF ⇒ suppressed (belt-and-suspenders, guardrail #13)
+    // MARK: - Field present, toggle OFF ⇒ suppressed (belt-and-suspenders)
 
     @MainActor
     @Test func stateReadoutFieldsLeakedWhileToggleOffAreSuppressedOnTheClient() {
@@ -102,7 +101,7 @@ import faBolusCore
     @MainActor
     @Test func legacyCommandWithMirrorKeysAbsentDefaultsToSafeBehaviorPerFeature() {
         let m = RemoteCommandWireFixture(link: FakeLink())
-        var cmd = RemoteCommand(kind: .statusRead)  // predates this plan: every mirror key absent
+        var cmd = RemoteCommand(kind: .statusRead)  // legacy: every mirror key absent
         cmd.ciqZone = ControlIQZone.increases.rawValue
         cmd.lockoutUntilEpochSec = Int(Date().timeIntervalSince1970) + 1800
         cmd.maxBasalUnitsPerHour = 4.0
@@ -129,7 +128,7 @@ import faBolusCore
     }
 
     /// Loading backstop: a freshly-constructed client (before any statusRead) has every mirrored
-    /// toggle at its safe default — matching each flag's own `AppSettings` D-07 default exactly.
+    /// toggle at its safe default — matching each flag's own `AppSettings` default exactly.
     @MainActor
     @Test func freshClientBeforeAnyCommandHasSafeToggleDefaults() {
         let m = RemoteCommandWireFixture(link: FakeLink())

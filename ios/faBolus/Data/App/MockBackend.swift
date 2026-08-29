@@ -86,7 +86,7 @@ public final class MockBackend: PumpBackend {
             BolusMarker(date: now.addingTimeInterval(-1500), units: 1.0)
         ]
         snapshot.glucose = readings.last?.mgdl
-        // Group A: a backend MUST publish the reading's timestamp alongside its value. Leaving this nil
+        // A backend MUST publish the reading's timestamp alongside its value. Leaving this nil
         // was the live reproducer — the phone correctly read "unknown age ⇒ stale" and
         // showed no recent CGM, while the Garmin watch stamped the same reading "now" and let it dose.
         // Any new backend has the same obligation; see `PumpSnapshot.isGlucoseStale`.
@@ -148,7 +148,7 @@ public final class MockBackend: PumpBackend {
         glucoseHistory.append(GlucoseReading(date: at, mgdl: last))
         if glucoseHistory.count > 72 { glucoseHistory.removeFirst() }
         snapshot.glucose = last
-        snapshot.glucoseDate = at  // group A: value and timestamp move together, always
+        snapshot.glucoseDate = at  // value and timestamp move together, always
         snapshot.iobUnits = max(0, snapshot.iobUnits - 0.02)
         snapshot.iobDate = at  // DIF-core: IOB value and its receive-time move together, always
         onChange?()
@@ -169,21 +169,21 @@ public final class MockBackend: PumpBackend {
     /// Test knob: when true, the NEXT `deliverBolus`/`deliverExtendedBolus` throws
     /// `.indeterminate` (as if the initiate response was lost after the write). One-shot.
     public var forceIndeterminateNextDelivery = false
-    /// Test knob (WR-02 · VA-22): when set, the NEXT `deliverBolus`/`deliverExtendedBolus` COMMITS only
+    /// Test knob: when set, the NEXT `deliverBolus`/`deliverExtendedBolus` COMMITS only
     /// `delivered` units (a mid-flight cancel/partial) instead of the full requested amount, and reports
     /// `cancelled` via `lastBolusCancelled`. One-shot; nil in production (like `forceIndeterminateNextDelivery`).
     /// Lets a test prove the success banner reports the ACTUAL committed units, not the frozen request.
     public var forceNextDeliveryPartial: (delivered: Double, cancelled: Bool)?
-    /// Test hook (P11/S6): when set, `deliverBolus`/`deliverExtendedBolus` awaits this once the delivery
+    /// Test hook: when set, `deliverBolus`/`deliverExtendedBolus` awaits this once the delivery
     /// is IN FLIGHT (bolus id recorded, `.bolusing`, before completion) instead of the fixed sleep — so a
     /// test can hold one delivery open on the pump and issue a concurrent one to exercise the cross-client
     /// in-flight mutex. nil in production (like `commitBolusId` / `forceIndeterminateNextDelivery`).
     public var onDeliverInFlight: (@MainActor () async -> Void)?
 
-    /// Test knob (GA-05): seed a FRESH glucose reading. The seeded history is deliberately 10 minutes
+    /// Test knob: seed a FRESH glucose reading. The seeded history is deliberately 10 minutes
     /// old, so the default state is stale-with-a-known-age. Lets a test exercise the non-stale
-    /// correction path. (It used to be stale because `glucoseDate` was nil — an unknown age. That was
-    /// the group-A reproducer, since remotes could then invent a timestamp for it.)
+    /// correction path. (It used to be stale because `glucoseDate` was nil — an unknown age, which let
+    /// remotes invent a timestamp for it.)
     public func seedFreshGlucose(_ mgdl: Int, at date: Date = Date()) {
         snapshot.glucose = mgdl
         snapshot.glucoseDate = date
@@ -331,7 +331,7 @@ public final class MockBackend: PumpBackend {
         let bolusId = nextBolusId
         nextBolusId += 1
         lastAssignedBolusId = bolusId
-        // Round-3 §5: the host must durably record the id; abort pre-initiate if it can't.
+        // The host must durably record the id; abort pre-initiate if it can't.
         if let commit = commitBolusId, await commit(bolusId) == false {
             throw BolusError.pumpRejected("mock: could not record bolus id — not initiated")
         }
@@ -343,7 +343,7 @@ public final class MockBackend: PumpBackend {
         onChange?()
         if let hook = onDeliverInFlight { await hook() } else { try? await Task.sleep(nanoseconds: 1_200_000_000) }
         snapshot.connection = .connected
-        // WR-02 (VA-22): honor the partial/cancel knob so a test can drive delivered < requested; otherwise
+        // Honor the partial/cancel knob so a test can drive delivered < requested; otherwise
         // commit the full amount and report not-cancelled (resets any prior partial so the knob is one-shot).
         var committed = totalUnits
         if let partial = forceNextDeliveryPartial {
@@ -353,9 +353,9 @@ public final class MockBackend: PumpBackend {
         } else {
             lastBolusCancelled = false
         }
-        // (§3.2 R3 / Q5.4) INTENTIONAL simulator state, NOT the C4 invented-IOB defect: a MockBackend has
-        // no pump to read, so its IOB is necessarily synthesized. The C4 violation was the REAL backend
-        // fabricating IOB instead of reading the pump — removed in TandemBackend. Kept so a demo's IOB
+        // INTENTIONAL simulator state, NOT an invented-IOB defect: a MockBackend has no pump to read, so
+        // its IOB is necessarily synthesized. The invented-IOB violation was the REAL backend fabricating
+        // IOB instead of reading the pump — removed in TandemBackend. Kept so a demo's IOB
         // responds to a demo bolus (use `setLiveIob` to override). See also the sibling site below.
         snapshot.iobUnits += committed
         snapshot.lastBolusUnits = committed
@@ -381,7 +381,7 @@ public final class MockBackend: PumpBackend {
         let bolusId = nextBolusId
         nextBolusId += 1
         lastAssignedBolusId = bolusId
-        // Round-3 §5: the host must durably record the id; abort pre-initiate if it can't.
+        // The host must durably record the id; abort pre-initiate if it can't.
         if let commit = commitBolusId, await commit(bolusId) == false {
             throw BolusError.pumpRejected("mock: could not record bolus id — not initiated")
         }
@@ -393,7 +393,7 @@ public final class MockBackend: PumpBackend {
         onChange?()
         if let hook = onDeliverInFlight { await hook() } else { try? await Task.sleep(nanoseconds: 1_200_000_000) }
         snapshot.connection = .connected
-        // WR-02 (VA-22): honor the partial/cancel knob so a test can drive delivered < requested; otherwise
+        // Honor the partial/cancel knob so a test can drive delivered < requested; otherwise
         // commit the full amount and report not-cancelled (resets any prior partial so the knob is one-shot).
         var committed = units
         if let partial = forceNextDeliveryPartial {
@@ -403,7 +403,7 @@ public final class MockBackend: PumpBackend {
         } else {
             lastBolusCancelled = false
         }
-        snapshot.iobUnits += committed  // (§3.2 R3 / Q5.4) intentional simulator IOB — see the carb-path note above (C4 N/A to a mock)
+        snapshot.iobUnits += committed  // intentional simulator IOB — see the carb-path note above (N/A to a mock)
         snapshot.lastBolusUnits = committed
         snapshot.lastBolusDate = Date()
         onChange?()

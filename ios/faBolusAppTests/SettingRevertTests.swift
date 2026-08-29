@@ -109,7 +109,7 @@ struct SettingRevertTests {
         #expect(cur?.before == .double(1.4) && cur?.after == .double(0.8))  // new change recorded
     }
 
-    // MARK: Provenance-parity characterization (16-06 Task 1)
+    // MARK: Provenance-parity characterization
     //
     // Pins the provenance rows a scripted edit sequence (change, no-op change, failed change)
     // produces AGAINST CURRENT CODE, before `ClinicianEditProvenanceRecorder` is extracted out of

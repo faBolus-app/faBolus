@@ -4,15 +4,14 @@ import faBolusCore
 import TandemMessages
 @testable import faBolus
 
-/// Phase 09.15-06 (T1-3/T1-4, D-01/D-08): the `lastAutoCorrectionEpochSec` / `ciqLastCouldNotDeliverEpochSec`
-/// primitive-propagation spine — the SP-1…SP-4 wire-spine pattern cloned from 09.15-01's
-/// `CiqZoneWireTests` / 09.15-05's `CiqSuspendWireTests`. UNLIKE those two prior primitives, these are
-/// monotonic historical markers derived from `TandemBackend.neutralEvent` decode — a real occurrence
-/// never un-happens, so the client-side parse uses the STANDARD SP-3 `if let` guard (never the
-/// unconditional assign-or-clear ciqZone/ciqSuspendedForLow need).
+/// The `lastAutoCorrectionEpochSec` / `ciqLastCouldNotDeliverEpochSec` primitive-propagation spine —
+/// the same wire-spine pattern as `CiqZoneWireTests` / `CiqSuspendWireTests`. UNLIKE those two prior
+/// primitives, these are monotonic historical markers derived from `TandemBackend.neutralEvent` decode
+/// — a real occurrence never un-happens, so the client-side parse uses the standard `if let` guard
+/// (never the unconditional assign-or-clear ciqZone/ciqSuspendedForLow need).
 @Suite struct CiqHistoryEventWireTests {
 
-    // MARK: - Task 1: neutralEvent decode
+    // MARK: - neutralEvent decode
 
     private func rawHistoryLog(byte14: Int = 0, count: Int = 26) -> [UInt8] {
         var raw = [UInt8](repeating: 0, count: count)
@@ -29,8 +28,8 @@ import TandemMessages
     }
 
     /// Every OTHER `bolusSource` value must NOT be misread as a Control-IQ auto-correction — the
-    /// `where m.bolusSource == 7` guard is exact, never a range/bitmask (D-06 guardrail #6: no
-    /// fabricated auto-correction from an unrelated bolus source).
+    /// `where m.bolusSource == 7` guard is exact, never a range/bitmask (no fabricated
+    /// auto-correction from an unrelated bolus source).
     @MainActor
     @Test func everyOtherBolusSourceIsNotMisreadAsAnAutoCorrection() {
         for source in [0, 1, 2, 6, 8, 255] {
@@ -56,8 +55,8 @@ import TandemMessages
         #expect(event?.title == "Control-IQ tried and couldn't deliver an automatic correction")
     }
 
-    /// D-06 guardrail #6 (never speculates why): neither struct exposes a reason field, and the
-    /// mapped event's `detail` must stay empty rather than inventing one.
+    /// Never speculates why: neither struct exposes a reason field, and the mapped event's `detail`
+    /// must stay empty rather than inventing one.
     @MainActor
     @Test func couldNotDeliverEventNeverSpeculatesADetailReason() {
         let log = AaAutoBolusRejectedHistoryLog(cargo: rawHistoryLog())
@@ -65,7 +64,7 @@ import TandemMessages
         #expect(event?.detail == "")
     }
 
-    // MARK: - Task 1: LogbookView render — T1-4 icon is amber, never red (D-06)
+    // MARK: - LogbookView render — the could-not-deliver icon is amber, never red
 
     @Test func couldNotDeliverCategorySymbolIsTheNonFilledExclamationTriangle() {
         #expect(HistoryEvent.Category.couldNotDeliver.symbol == "exclamationmark.triangle")
@@ -73,7 +72,7 @@ import TandemMessages
         #expect(HistoryEvent.Category.couldNotDeliver.symbol != HistoryEvent.Category.alarm.symbol)
     }
 
-    // MARK: - Task 2: validate() epoch bound
+    // MARK: - validate() epoch bound
 
     @Test func validateRejectsAZeroOrNegativeOrOverflowEpoch() {
         for bad in [0, -1, Int(Int32.max) + 1] {
@@ -100,7 +99,7 @@ import TandemMessages
         try cmdAbsent.validate()
     }
 
-    // MARK: - Task 2: Codable round-trip
+    // MARK: - Codable round-trip
 
     @Test func historyMarkerPrimitivesRoundTripThroughJSONUnchanged() throws {
         var cmd = RemoteCommand(kind: .statusRead)
@@ -118,7 +117,7 @@ import TandemMessages
         #expect(backValidated.ciqLastCouldNotDeliverEpochSec == epoch2)
     }
 
-    // MARK: - Task 2: legacy back-compat
+    // MARK: - Legacy back-compat
 
     /// An OLD JSON blob with the marker keys ABSENT decodes fine — a legacy host's statusRead reply
     /// (predating these fields) must never fail to decode.
@@ -133,7 +132,7 @@ import TandemMessages
         #expect(validated.ciqLastCouldNotDeliverEpochSec == nil)
     }
 
-    // MARK: - Task 2: fail-closed on the client (RemoteCommandWireFixture parse)
+    // MARK: - Fail-closed on the client (RemoteCommandWireFixture parse)
 
     private final class FakeLink: RemoteTransport {
         var onReceive: (@MainActor (RemoteCommand) -> Void)?
@@ -144,7 +143,7 @@ import TandemMessages
     }
 
     /// Loading backstop: a freshly-constructed client BEFORE any `apply`/`handle(cmd)` has both
-    /// markers absent — a fresh app launch before the first statusRead reply must show every 09.15
+    /// markers absent — a fresh app launch before the first statusRead reply must show every marker
     /// surface ABSENT, never a stale/zero placeholder.
     @MainActor
     @Test func freshClientBeforeAnyCommandHasNoHistoryMarkers() {
@@ -164,7 +163,7 @@ import TandemMessages
         #expect(m.ciqLastCouldNotDeliverDate == nil)
     }
 
-    /// SP-3 standard guard (UNLIKE ciqZone/ciqSuspendedForLow's unconditional clear): a real
+    /// The standard `if let` guard (UNLIKE ciqZone/ciqSuspendedForLow's unconditional clear): a real
     /// historical fact never un-happens, so once a marker HAS been seen, a LATER statusRead that
     /// simply doesn't repeat the key must keep the last-known value, never clear it back to nil.
     @MainActor
@@ -201,7 +200,7 @@ import TandemMessages
         #expect(m.lastAutoCorrectionDate == Date(timeIntervalSince1970: TimeInterval(newer)))
     }
 
-    // MARK: - Task 3: fail-closed render — StatusPillsView's underlying predicate (D-01/D-08/D-07)
+    // MARK: - Fail-closed render — StatusPillsView's underlying predicate
 
     /// The chip's underlying gate (toggle on AND a real date present) never fires on a nil date —
     /// pinned at the `PumpSnapshot` level, mirroring `CiqSuspendWireTests`'s render-predicate pins.
@@ -212,7 +211,8 @@ import TandemMessages
     }
 
     /// The positive case: a real date is eligible to render an age label via the shared
-    /// `CalcInputFreshness.ageLabel` convention (same one T1-3's chip and T1-4's marker both use).
+    /// `CalcInputFreshness.ageLabel` convention (same one the auto-correction chip and the
+    /// could-not-deliver marker both use).
     @Test func aRealLastAutoCorrectionDateProducesAnAgeLabel() {
         var snap = PumpSnapshot()
         snap.lastAutoCorrectionDate = Date().addingTimeInterval(-12 * 60)
@@ -223,8 +223,8 @@ import TandemMessages
     // MARK: - Backstop: Garmin ≤~28-char DetailsView.detailRow budget at FONT_XTINY
 
     /// `DetailsView.mc`'s new rows are hand-mirrored here (Monkey C isn't runnable from this Swift
-    /// suite) — a literal backstop pinning the exact templates against the plan's own ~28-char
-    /// budget, at both a common (2-digit) and a worst-case (3-digit minute) elapsed value.
+    /// suite) — a literal backstop pinning the exact templates against the ~28-char budget, at both a
+    /// common (2-digit) and a worst-case (3-digit minute) elapsed value.
     @Test func garminAutoCorrectionAndCouldNotDeliverRowsFitTheCharBudget() {
         for mins in [7, 42, 999] {
             let autoCorrectionRow = "Auto-correction: \(mins)m ago"

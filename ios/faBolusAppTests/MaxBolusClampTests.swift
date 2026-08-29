@@ -4,14 +4,14 @@ import faBolusCore
 import TandemMessages
 @testable import faBolus
 
-/// P14 S9. The absolute 25 U max-bolus cap is a HARD block enforced at the funnel AND in every backend
+/// The absolute 25 U max-bolus cap is a HARD block enforced at the funnel AND in every backend
 /// through the one shared `Interlocks.clampMaxBolusLimit`, so a requested limit above 25 U can never take
-/// effect — on ANY backend. Before S9 the `MockBackend` skipped the clamp entirely and only `TandemBackend`
+/// effect — on ANY backend. Previously the `MockBackend` skipped the clamp entirely and only `TandemBackend`
 /// enforced it. Distinct from the per-bolus DELIVERY block (`deliverBolus` throws), which is unchanged.
 @Suite(.serialized) @MainActor
 struct MaxBolusClampTests {
 
-    /// The gap S9 closes: MockBackend used to store the raw value unclamped.
+    /// The gap this closes: MockBackend used to store the raw value unclamped.
     @Test func mockBackendClampsTheMaxBolusLimit() async throws {
         let mock = MockBackend()
         try await mock.setMaxBolus(units: 30)
@@ -50,8 +50,8 @@ struct MaxBolusClampTests {
             "the WRITTEN limit must be capped to 25 U (25000 mU) even when 30 U is requested")
     }
 
-    /// CX-T-07 owner decision (ALIGN UP, 2026-08-25): a max-bolus limit request below the app's OLD 0.05 U
-    /// floor is now floored to the kit's 1.0 U throwing floor — never throws at the kit boundary.
+    /// A max-bolus limit request below the app's OLD 0.05 U floor is aligned UP to the kit's 1.0 U
+    /// throwing floor — never throws at the kit boundary.
     @Test func tandemBackendFloorsTheWrittenLimitToTheNewKitFloor() async throws {
         let fake = FakePumpTransport()
         let backend = TandemBackend(testTransport: fake)
@@ -65,9 +65,9 @@ struct MaxBolusClampTests {
             "the WRITTEN limit must be floored to 1.0 U (1000 mU) even when 0.1 U is requested")
     }
 
-    // MARK: - WR-02 (15-GAP-01): setMaxBasal ceiling clamp, symmetric with setMaxBolus
+    // MARK: - setMaxBasal ceiling clamp, symmetric with setMaxBolus
 
-    /// WR-02: a max-basal limit above the kit's byte-verified 15.0 U/hr throwing ceiling must be CLAMPED to
+    /// A max-basal limit above the kit's byte-verified 15.0 U/hr throwing ceiling must be CLAMPED to
     /// 15.0 (15000 mU/hr) at the backend and dispatched — not thrown as a raw `ValidationError`. Before this
     /// `TandemBackend.setMaxBasal` clamped only the floor, so a 20 U/hr request threw at the kit boundary.
     @Test func tandemBackendClampsTheWrittenMaxBasalLimit() async throws {
@@ -83,7 +83,7 @@ struct MaxBolusClampTests {
             "the WRITTEN limit must be capped to 15.0 U/hr (15000 mU) even when 20 U/hr is requested")
     }
 
-    /// WR-02 companion: a sub-floor max-basal request is floored to the kit's 1.0 U/hr throwing floor.
+    /// Companion: a sub-floor max-basal request is floored to the kit's 1.0 U/hr throwing floor.
     @Test func tandemBackendFloorsTheWrittenMaxBasalLimit() async throws {
         let fake = FakePumpTransport()
         let backend = TandemBackend(testTransport: fake)
@@ -97,9 +97,9 @@ struct MaxBolusClampTests {
             "the WRITTEN limit must be floored to 1.0 U/hr (1000 mU) even when 0.1 U/hr is requested")
     }
 
-    // MARK: - Phase 2 (D-01/D-02/D-03): fail-closed unread-op-115 freshness gate
+    // MARK: - Fail-closed unread-op-115 freshness gate
 
-    /// The core Phase-2 fix (SC1): a manual units bolus attempted while `therapyParamsDate == nil`
+    /// A manual units bolus attempted while `therapyParamsDate == nil`
     /// (op-115 has never been read) must be fail-closed — thrown as `BolusError.pumpRejected`, BEFORE
     /// any delivery bytes are constructed (`validateDeliver` runs first thing inside `deliverBolus`,
     /// ahead of any `perform`/BLE write). Without the guard, the permissive 25 U default
@@ -125,7 +125,7 @@ struct MaxBolusClampTests {
             "no delivery bytes may be constructed while op-115 is unread")
     }
 
-    // MARK: - D-06: boundary neighbors — the freshness guard composes with the max-bound guard
+    // MARK: - Boundary neighbors — the freshness guard composes with the max-bound guard
 
     private static let boundaryBolusId = 9911
 

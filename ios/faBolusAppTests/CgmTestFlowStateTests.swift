@@ -3,12 +3,12 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// Phase 09.20-04 (change 3, D-13 UX): pins the pure decision function behind the "Test" flow's
-/// DETERMINATE waiting state. The Test action OBSERVES the selected source's already-running
-/// production instance (`AppModel.glucoseSourceProbe`) rather than building a second ephemeral
-/// central — so a reading already buffered when Test is tapped resolves `.success` INSTANTLY
-/// (elapsed 0), sidestepping the dup-restore-id SIGABRT D-06 (Plan 03) fixed. Kept pure and
-/// unit-testable, like `CgmCredentialsView.sourcesToTest` (`CgmSourceValidationTests`).
+/// Pins the pure decision function behind the "Test" flow's DETERMINATE waiting state. The Test action
+/// OBSERVES the selected source's already-running production instance (`AppModel.glucoseSourceProbe`)
+/// rather than building a second ephemeral central — so a reading already buffered when Test is tapped
+/// resolves `.success` INSTANTLY (elapsed 0), sidestepping the duplicate-restore-id SIGABRT a second
+/// central caused. Kept pure and unit-testable, like `CgmCredentialsView.sourcesToTest`
+/// (`CgmSourceValidationTests`).
 @MainActor
 struct CgmTestFlowStateTests {
 
@@ -17,7 +17,7 @@ struct CgmTestFlowStateTests {
     private final class StubGlucoseSource: GlucoseSource {
         let id = "stub"
         let priority = 100
-        let connectionKind: GlucoseConnectionKind = .localBLE  // D-06: conformers must classify
+        let connectionKind: GlucoseConnectionKind = .localBLE  // conformers must classify
         var latest: GlucoseSample?
         var history: [GlucoseReading] = []
         var status: GlucoseSourceStatus
@@ -31,7 +31,7 @@ struct CgmTestFlowStateTests {
     }
 
     private func sample(_ mgdl: Int = 120) -> GlucoseSample {
-        // The failable init (D-05) never fails here — the default mgdl (120) is in-range.
+        // The failable init never fails here — the default mgdl (120) is in-range.
         GlucoseSample(mgdl: mgdl, date: Date(), trend: .flat, sourceID: "stub")!
     }
 
@@ -101,7 +101,7 @@ struct CgmTestFlowStateTests {
         #expect(outcome == .success(stub.latest!))
     }
 
-    // MARK: - D-06/D-09: the timeout WINDOW is keyed on the typed connectionKind, not id-string literals
+    // MARK: - The timeout WINDOW is keyed on the typed connectionKind, not id-string literals
 
     @Test func timeoutWindowIsKeyedOnConnectionKind() {
         // .localBLE keeps the already-correct ~6-min Dexcom wake-cycle window (PRESERVED — G6 + G7).
@@ -115,7 +115,7 @@ struct CgmTestFlowStateTests {
         #expect(CgmTestCoordinator.cgmTestTimeout(for: .localOnDevice) > 0)
     }
 
-    // MARK: - D-09: waiting/timeout COPY is source-appropriate per category, never reusing BLE copy
+    // MARK: - waiting/timeout COPY is source-appropriate per category, never reusing BLE copy
 
     @Test func bleCopyMentionsTheWakeCycleAndDexcomApp() {
         let waiting = CgmCredentialsView.waitingHeadline(kind: .localBLE, sourceName: "Dexcom G7")
@@ -127,7 +127,7 @@ struct CgmTestFlowStateTests {
 
     @Test func cloudCopyIsAuthNetworkFramedNotBLE() {
         let waiting = CgmCredentialsView.waitingHeadline(kind: .cloudPoll, sourceName: "Nightscout")
-        // auth/network framing, and NEVER the BLE "sensor wake cycle" / "Dexcom app" language (F-12).
+        // auth/network framing, and NEVER the BLE "sensor wake cycle" / "Dexcom app" language.
         #expect(waiting.contains("Nightscout"))
         #expect(!waiting.contains("Dexcom app"))
         #expect(!waiting.lowercased().contains("wake cycle"))
@@ -148,7 +148,7 @@ struct CgmTestFlowStateTests {
         #expect(timeout.lowercased().contains("syncing"))
     }
 
-    // MARK: - W-03: a mid-Test source change aborts the poll loop (which clears BOTH in-progress + outcome)
+    // MARK: - A mid-Test source change aborts the poll loop (which clears BOTH in-progress + outcome)
 
     @Test func testAbortsWhenSourceChangesMidTest() {
         // Started against "dexcom-g7-ble"; the live probe now reports a DIFFERENT source → abort.
@@ -165,9 +165,9 @@ struct CgmTestFlowStateTests {
             !CgmTestCoordinator.cgmTestShouldAbort(startedSourceId: "dexcom-g7-ble", currentProbeId: "dexcom-g7-ble"))
     }
 
-    // MARK: - Phase 16 GO-1 Step 3 (REMED-16): drive CgmTestCoordinator directly (not the view),
-    // proving the extracted state machine reproduces AppModel's pre-move transitions exactly, under
-    // an injected clock (CX-A-08 — no wall-clock Date()/Task.sleep needed to make these deterministic).
+    // MARK: - Drive CgmTestCoordinator directly (not the view), proving the extracted state machine
+    // reproduces AppModel's pre-move transitions exactly, under an injected clock (no wall-clock
+    // Date()/Task.sleep needed to make these deterministic).
 
     private func makeCoordinator(
         probeId: String = "dexcom-g7-ble",
@@ -201,7 +201,7 @@ struct CgmTestFlowStateTests {
         #expect(coordinator.state.inProgress == false)
     }
 
-    /// Force timeout via the injected clock (CX-A-08): `now()` reports past the timeout window with
+    /// Force timeout via the injected clock: `now()` reports past the timeout window with
     /// nothing buffered -> `.timeout`, and `performTick` reports the run as terminal (`done == true`).
     @Test func performTickReturnsTimeoutOnceTheInjectedClockPassesTheWindow() {
         let coordinator = makeCoordinator(latest: nil, status: .searching)
@@ -213,7 +213,7 @@ struct CgmTestFlowStateTests {
         #expect(coordinator.state.inProgress == false)
     }
 
-    /// W-03 abort path returns to idle: a `performTick` whose live probe id no longer matches the
+    /// The abort path returns to idle: a `performTick` whose live probe id no longer matches the
     /// started source clears BOTH `inProgress` and `outcome` and reports terminal — the same "no
     /// frozen stale .waiting screen" contract `AppModel.startCgmTest`'s poll body enforced inline.
     @Test func performTickAbortsToIdleWhenProbeSourceChangesMidRun() {

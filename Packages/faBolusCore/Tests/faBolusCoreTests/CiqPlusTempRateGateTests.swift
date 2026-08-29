@@ -1,7 +1,7 @@
 import Testing
 @testable import faBolusCore
 
-/// Phase 09.15 T2-3 (D-04) — the Control-IQ+-only temp-rate placeholder's bench + capability gate. Pins
+/// The Control-IQ+-only temp-rate placeholder's bench + capability gate. Pins
 /// two independent axes so a future regression on either one goes RED:
 /// (1) `benchVerifiedDefault` ships `false` — the option is inert regardless of the connected pump's
 ///     controller variant.

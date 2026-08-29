@@ -62,7 +62,7 @@ struct StaleCalcInputPromptTests {
         #expect(msg.contains(CalcInputFreshness.ageLabel(for: stale, now: now)))
     }
 
-    // MARK: - 04-08 gap closure (SC1): StaleTherapyPrompt's "target %d mg/dL" literal must convert via a
+    // MARK: - StaleTherapyPrompt's "target %d mg/dL" literal must convert via a
     // GlucoseUnit param (no AppSettings in faBolusCore); the no-arg default must stay byte-identical.
 
     @Test func therapyWarningDefaultUnitTextIsUnchanged() {

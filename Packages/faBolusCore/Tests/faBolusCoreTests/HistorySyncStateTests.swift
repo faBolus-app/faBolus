@@ -1,10 +1,9 @@
 import XCTest
 @testable import faBolusCore
 
-/// Phase 16 16-08 (GO-2 Step 1, REMED-16): `HistorySyncState` relocated from `TandemBackend.swift` into
-/// `faBolusCore` per the owner's move-to-core decision. Pins `Equatable` conformance for every case,
-/// including the two cases with associated values (`idle(lastSynced:)`/`error(_:)`), so a future
-/// refactor of this enum can't silently break the equality the UI/`AppModel` diffing relies on.
+/// Pins `HistorySyncState`'s `Equatable` conformance for every case, including the two cases with
+/// associated values (`idle(lastSynced:)`/`error(_:)`), so a future refactor of this enum can't
+/// silently break the equality the UI/`AppModel` diffing relies on.
 final class HistorySyncStateTests: XCTestCase {
     func testIdleEqualityIsKeyedByLastSynced() {
         let date = Date(timeIntervalSince1970: 1_700_000_000)

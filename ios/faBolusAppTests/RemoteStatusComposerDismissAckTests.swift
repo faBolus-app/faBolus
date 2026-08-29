@@ -3,7 +3,7 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// CX-G-08 (14-09, checkpoint #5) — pins `RemoteStatusComposer.compose`'s DYNAMIC, pump-tied
+/// Pins `RemoteStatusComposer.compose`'s DYNAMIC, pump-tied
 /// `supportsDismissAck` emission directly against hand-built `RemoteStatusInputs`/`RemoteStatusSettings`
 /// (bypassing `AppModel`/`MockBackend`, whose `.full`/`.mobiAdvanced` capability presets both hardcode
 /// `supportsRemoteAlertDismiss == true` and so can't exercise the false/t:slim branch). Mirrors
@@ -45,8 +45,10 @@ struct RemoteStatusComposerDismissAckTests {
     }
 
     /// A t:slim-like pump (supportsRemoteAlertDismiss == false, local-snooze only, no op-184) ⇒
-    /// `supportsDismissAck` is false — the watch stays on the 14-08 fallback rather than stranding a
-    /// phantom overlay forever (M2/checkpoint #5).
+    /// `supportsDismissAck` is false — the watch stays on its non-ack overlay fallback rather than
+    /// stranding a phantom ack overlay forever. (Which fallback depends on the other capability: a
+    /// t:slim also gets `supportsRawAlertSnapshot == true`, so it prunes-and-overlays from `rawAlerts`;
+    /// the statusRead reconcile is the branch taken only when neither capability is on.)
     @Test func tSlimLikePumpEmitsSupportsDismissAckFalse() {
         let cmd = RemoteStatusComposer.compose(inputs(supportsRemoteAlertDismiss: false))
         #expect(cmd.supportsDismissAck == false)

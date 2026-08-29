@@ -5,12 +5,12 @@ import TandemMessages
 import TandemBLE
 @testable import faBolus
 
-/// LOCK-05 boundary test (Phase 8, 08-01, tracer). Proves `TandemBackend.syncTimeToNow()` — the pump
-/// clock-sync WRITE path — still reaches the pump through the real signed-control pipeline with ZERO UI
-/// surface present. Mirrors `StackingGuardDeliverInvariantTests`' `FakePumpTransport` +
-/// `TandemBackend(testTransport:)` harness (lines 9-37 there). This phase removes the Settings/
-/// PumpControlView UI + forces `autoSyncPumpTime` OFF by default; it does NOT touch `PumpResponseApplier`'s
-/// READ-side time anchor or `GatedPumpWrite.syncTimeToNow` — both stay byte-identical (D-07).
+/// Boundary test proving `TandemBackend.syncTimeToNow()` — the pump clock-sync WRITE path — still
+/// reaches the pump through the real signed-control pipeline with ZERO UI surface present. Mirrors
+/// `StackingGuardDeliverInvariantTests`' `FakePumpTransport` + `TandemBackend(testTransport:)` harness.
+/// The clock-sync UI (Settings/PumpControlView) is gone and `autoSyncPumpTime` defaults OFF; neither
+/// `PumpResponseApplier`'s READ-side time anchor nor `GatedPumpWrite.syncTimeToNow` is touched — both
+/// stay byte-identical.
 @Suite(.serialized) @MainActor
 struct ClockSyncHiddenBoundaryTests {
 
@@ -25,8 +25,8 @@ struct ClockSyncHiddenBoundaryTests {
     }
 
     /// `syncTimeToNow()` still issues the signed `ChangeTimeDateRequest` (opcode 0xD6) write through the
-    /// fake transport with zero UI constructed anywhere in this test — LOCK-05 removes the Settings/
-    /// PumpControlView surfaces, never the write path itself.
+    /// fake transport with zero UI constructed anywhere in this test — what was removed is the
+    /// Settings/PumpControlView surfaces, never the write path itself.
     @Test func syncTimeToNowStillIssuesTheWriteWithNoUIPresent() async throws {
         let (backend, fake) = makeSyncableBackend()
         try await backend.syncTimeToNow()
@@ -35,8 +35,8 @@ struct ClockSyncHiddenBoundaryTests {
             "the pump time-sync command must still reach the transport with no UI surface present")
     }
 
-    /// The existing connection precondition is unchanged by this phase — LOCK-05 pins the SETTING
-    /// default (`autoSyncPumpTime = false`), never the control-write's own connection guard.
+    /// The existing connection precondition is unchanged — what changed is the SETTING default
+    /// (`autoSyncPumpTime = false`), never the control-write's own connection guard.
     @Test func syncTimeToNowStillRequiresConnectionWithNoUIPresent() async throws {
         let fake = FakePumpTransport()
         let backend = TandemBackend(testTransport: fake)

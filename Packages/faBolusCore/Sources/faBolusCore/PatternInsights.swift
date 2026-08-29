@@ -41,7 +41,7 @@ public final class PatternInsights {
     let cfg: Config
     public init(config: Config = Config()) { self.cfg = config }
 
-    /// - Parameter unit: the ACTIVE DISPLAY unit for the generated prose (04-08 gap closure, SC1).
+    /// - Parameter unit: the ACTIVE DISPLAY unit for the generated prose.
     ///   `PatternInsights` is a `faBolusCore` type and must stay app-independent — it cannot read
     ///   `AppSettings.shared` — so the caller (`SmartAssist`/`AppModel.therapyInsights()`) passes the
     ///   unit through. Defaults to `.mgdl` so every pre-existing call site (and this method's own

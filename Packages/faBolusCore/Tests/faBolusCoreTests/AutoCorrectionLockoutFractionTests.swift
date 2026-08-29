@@ -2,12 +2,12 @@ import Foundation
 import Testing
 @testable import faBolusCore
 
-/// T1-5 core: `AutoCorrectionDisclosure.lockoutRemainingFraction` — a pure TIME-FILL fraction (elapsed /
+/// `AutoCorrectionDisclosure.lockoutRemainingFraction` — a pure TIME-FILL fraction (elapsed /
 /// documented lockout window, clamped to [0, 1]) proving the "fraction, never units" safety property
-/// (D-06 guardrail #1) at the unit level, before any UI renders a countdown bar from it. The fraction fills
+/// at the unit level, before any UI renders a countdown bar from it. The fraction fills
 /// UP as the lockout expires (0.0 = just started, ~1.0 = about to clear) — it is NOT a draining battery and
 /// NOT a percent-of-ceiling. Mirrors the same no-controller / off / unknown-window guard shape the removed
-/// S1 lockout disclosure used PLUS a guard of its own: nil once the lockout has actually expired (no active
+/// lockout disclosure used PLUS a guard of its own: nil once the lockout has actually expired (no active
 /// lockout to show).
 struct AutoCorrectionLockoutFractionTests {
 
@@ -45,7 +45,7 @@ struct AutoCorrectionLockoutFractionTests {
         #expect(fraction! < 1.0)
     }
 
-    // MARK: expired lockout — no active lockout to disclose (D-06 guardrail #5 fail-closed)
+    // MARK: expired lockout — no active lockout to disclose (fail-closed)
 
     @Test func exactlyExpiredLockoutIsNil() {
         let now = Date()
@@ -75,7 +75,7 @@ struct AutoCorrectionLockoutFractionTests {
         #expect(abs(fraction! - 0.0) < 0.01)
     }
 
-    // MARK: same no-controller/off/unknown-window guard gates (the former S1 lockout disclosure) — always nil, never a stale/frozen bar
+    // MARK: same no-controller/off/unknown-window guard gates (the former lockout disclosure) — always nil, never a stale/frozen bar
 
     @Test func noControllerNeverProducesAFraction() {
         let now = Date()
@@ -115,7 +115,7 @@ struct AutoCorrectionLockoutFractionTests {
         #expect(fraction == nil)
     }
 
-    // MARK: fraction, never units (D-06 guardrail #1) — the return type itself is the proof
+    // MARK: fraction, never units — the return type itself is the proof
 
     @Test func returnTypeIsAFractionNeverADoseValue() {
         // Compile-time proof: `fraction` below is statically typed `Double?`. A dose/units value in this

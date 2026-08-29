@@ -2,10 +2,10 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// **SC3 (Phase 09.2, D-03; T-09.2-07/T-09.2-08).** Pins `RootTabView.resolveSelection(current:phoneReadOnly:)`
-/// — the pure guard behind the `.onChange(of: settings.phoneReadOnly)` wiring that stops the user being
-/// stranded on the Bolus tab (`tag(1)`) once `phoneReadOnly` hides it. Only tag `1` is conditionally
-/// removed (`RootTabView.swift:23-26`); tags 0/2/3/4 are always present and must never be disturbed.
+/// Pins `RootTabView.resolveSelection(current:phoneReadOnly:)` — the pure guard behind the
+/// `.onChange(of: settings.phoneReadOnly)` wiring that stops the user being stranded on the Bolus tab
+/// (`tag(1)`) once `phoneReadOnly` hides it. Only tag `1` is conditionally removed (in
+/// `RootTabView.swift`); tags 0/2/3/4 are always present and must never be disturbed.
 @MainActor
 @Suite struct RootTabSelectionGuardTests {
 

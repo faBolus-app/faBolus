@@ -76,7 +76,7 @@ public enum StaleTherapyPrompt {
     /// profile is available (so the user sees exactly what the dose will be sized from); a compact fallback
     /// when only the fact of staleness is known.
     ///
-    /// - Parameter unit: the ACTIVE DISPLAY unit for the ISF/target figures (04-08 gap closure, SC1).
+    /// - Parameter unit: the ACTIVE DISPLAY unit for the ISF/target figures.
     ///   `StaleCalcInputPrompt` is a `faBolusCore` type and must stay app-independent — it cannot read
     ///   `AppSettings.shared` — so the caller (`BolusEntryView`) passes the unit through. Defaults to
     ///   `.mgdl` so every pre-existing call site (and this method's own mg/dL-mode wording) is

@@ -4,22 +4,20 @@ import Observation
 import WidgetKit
 @testable import faBolus
 
-/// Phase 3 (03-02, D-05, Wave 0) — TEST-ONLY phone-side `RemoteCommand` wire fixture. Deleting
-/// `Shared/RemoteClientModel.swift` from the iOS app module removed the type the ~17 wire tests
-/// instantiated directly (`RemoteClientModel(link: FakeLink())`) to exercise the encode/decode surface
-/// those tests pin. This is a byte-for-byte VERBATIM copy of that class (renamed only) — not a
-/// reimplementation — so every wire-format assertion the ~17 tests make keeps its exact prior meaning.
-/// It intentionally still needs `@testable import faBolus` for `WidgetStore`/`WidgetSnapshot`
-/// (app-internal, `Shared/WidgetShared.swift`) — every other type it touches is public `faBolusCore`.
+/// TEST-ONLY phone-side `RemoteCommand` wire fixture. The iOS app module no longer contains the
+/// `RemoteClientModel` type the ~17 wire tests instantiated directly
+/// (`RemoteClientModel(link: FakeLink())`) to exercise the encode/decode surface those tests pin. This
+/// is a byte-for-byte copy of that class (renamed only) — not a reimplementation — so every wire-format
+/// assertion the ~17 tests make keeps its exact prior meaning. It intentionally still needs
+/// `@testable import faBolus` for `WidgetStore`/`WidgetSnapshot` (app-internal,
+/// `Shared/WidgetShared.swift`) — every other type it touches is public `faBolusCore`.
 ///
-/// Not the production type: the real `RemoteClientModel` (moved to `watch/faBolusWatch/` in 03-02,
-/// see that plan's deviation note, since `WatchModel: RemoteClientModel` still needed it) is now gone
-/// from `main` entirely — the whole Watch target was removed in 03-03 (REMOTE-03, delete-on-main),
-/// preserved on `dev/watch-remote`. This fixture is never used by the shipped app.
+/// Not the production type: the real `RemoteClientModel` is gone from `main` entirely along with the
+/// whole Watch target, preserved on `dev/watch-remote`. This fixture is never used by the shipped app.
 ///
-/// Original doc (verbatim, describes the PRODUCTION type this fixture mirrors — the second paragraph's
+/// Original doc (verbatim — describes the PRODUCTION type this fixture mirrors — the second paragraph's
 /// "platform can subclass it" no longer applies to this fixture, which is never subclassed in test code;
-/// the Apple-Watch/`RemoteLink` transport it once described is itself retired — Phase 17.5, D1-01):
+/// the Apple-Watch/`RemoteLink` transport it once described is itself retired):
 /// Transport-agnostic remote-client state shared by every faBolus remote that mirrors the phone
 /// (formerly Apple Watch over a WatchConnectivity transport, still Mac/iPhone over `BLELink`). It is a
 /// *dumb remote*: it never touches the pump (TandemKit runs on the phone). It sends
@@ -38,7 +36,7 @@ final class RemoteCommandWireFixture {
     var iobUnits: Double = 0
     var reservoirUnits: Double = 0
     var batteryPercent: Int = 0
-    /// Phase 09.27-03 (D-04/D-05) — mirrors `RemoteCommand.batteryCharging`. Default false = fail-closed
+    /// Mirrors `RemoteCommand.batteryCharging`. Default false = fail-closed
     /// (a cold launch / legacy host shows plain battery, never a fabricated charging state). The on-wire
     /// `chargingStatus == 1` semantics remain an UNVERIFIED-GUESS (docs/UNVERIFIED-GUESSES.md).
     var batteryCharging: Bool = false
@@ -66,111 +64,108 @@ final class RemoteCommandWireFixture {
         "iob", "reservoir", "battery", "cgm", "lastBolus", "carbRatio", "isf", "target", "maxBolus"
     ]
     var chartRanges: [Int] = [3, 6, 12, 24]
-    /// Phase 09.13 (glucose plot height customization, D-06/D-07) — the SHARED/phone-scoped glucose-plot
-    /// Y-axis bounds, canonical mg/dL. **This is the channel the Mac reads** (the phone group). CRITICAL
-    /// D-07: never routed from `watchChartRanges`/`chartRanges` (the time-range mirror above) — that
-    /// would repeat the exact conflation this phase's threat model calls out (T-09.13-05). Defaults
-    /// preserve today's hardcoded view via `GlucosePlotScale`.
+    /// The SHARED/phone-scoped glucose-plot Y-axis bounds, canonical mg/dL. **This is the channel the
+    /// Mac reads** (the phone group). CRITICAL: never routed from `watchChartRanges`/`chartRanges` (the
+    /// time-range mirror above) — that would conflate the plot's Y-axis bounds with its time ranges.
+    /// Defaults preserve today's hardcoded view via `GlucosePlotScale`.
     var glucosePlotFloor: Int = GlucosePlotScale.defaultFloor
     var glucosePlotCeiling: Int = GlucosePlotScale.defaultCeiling
     /// The optional small-screen (Apple Watch + Garmin) OVERRIDE, canonical mg/dL. `nil` for either ⇒
     /// no override on the wire ⇒ `smallScreenFloor`/`smallScreenCeiling` below fall back to the shared
-    /// bounds above. Never read by the Mac (D-07) — only `smallScreenFloor`/`smallScreenCeiling` are.
+    /// bounds above. Never read by the Mac — only `smallScreenFloor`/`smallScreenCeiling` are.
     var glucosePlotFloorSmall: Int?
     var glucosePlotCeilingSmall: Int?
     /// The Watch/Garmin-facing resolved bound: the override when present, else the shared/phone bound.
-    /// D-07: this is a SEPARATE channel from `glucosePlotFloor`/`glucosePlotCeiling` — the Mac must keep
+    /// This is a SEPARATE channel from `glucosePlotFloor`/`glucosePlotCeiling` — the Mac must keep
     /// reading those directly, never these.
     var smallScreenFloor: Int { glucosePlotFloorSmall ?? glucosePlotFloor }
     var smallScreenCeiling: Int { glucosePlotCeilingSmall ?? glucosePlotCeiling }
     /// Read-only mode pushed from the phone (watch/Garmin view-only): hide the bolus affordance.
     var readOnly: Bool = false
-    /// P13 capability channel: whether the pump honors a REMOTE alert dismissal (Mobi yes, t:slim no).
+    /// Capability channel: whether the pump honors a REMOTE alert dismissal (Mobi yes, t:slim no).
     /// Drives the alert action label ("Clear" vs "Snooze"). Safe default false ⇒ "Snooze" (honest — a
     /// t:slim dismiss only snoozes locally); set by the first statusRead that carries any alert anyway.
     var canDismissAlertOnPump: Bool = false
-    /// P14 S4: the phone's active app mode, so this remote can HIDE an affordance the phone's mode would
+    /// The phone's active app mode, so this remote can HIDE an affordance the phone's mode would
     /// deny (e.g. an extended/combo bolus needs Advanced) instead of showing-then-failing. Default
     /// `.advanced` (most-permissive): an absent field means a LEGACY host that never mode-gates, so the
     /// remote must not over-hide. The host remains the enforcement point on every actual write.
     var activeMode: AppMode = .advanced
-    /// P15 §2.3: whether the phone has enabled bolusing from the Garmin watch. **Default false ⇒
-    /// fail-closed**: a cold launch / glance with no push yet keeps bolus hidden until a push arms it.
-    /// The host also refuses a deliver from a disabled surface (AccessPolicy). (The Apple-Watch sibling
-    /// `watchBolusEnabled` was retired end-to-end in Phase 17.5 Plan 01, D1-01/REMED-17.)
+    /// Whether the phone has enabled bolusing from the Garmin watch. **Default false ⇒ fail-closed**: a
+    /// cold launch / glance with no push yet keeps bolus hidden until a push arms it. The host also
+    /// refuses a deliver from a disabled surface (AccessPolicy). (The Apple-Watch sibling
+    /// `watchBolusEnabled` was retired end-to-end.)
     var garminBolusEnabled: Bool = false
-    /// P15 §2.3: whether the phone requires a 4-digit passcode to confirm a remote bolus.
+    /// Whether the phone requires a 4-digit passcode to confirm a remote bolus.
     var bolusPasscodeRequired: Bool = false
-    /// B2 (S1+O3): the pump's automated-controller identity, mirrored from the phone so this remote can
+    /// The pump's automated-controller identity, mirrored from the phone so this remote can
     /// reconstruct the `ControllerDescriptor` and render the auto-correction disclosure locally. Safe
     /// default `.none` ⇒ a legacy host (or none-controller pump) shows nothing controller-specific.
     var controllerVariant: ControllerVariant = .none
-    /// B2 (S1+O3): whether Control-IQ is ON at runtime, mirrored from the phone. The disclosure renders only
+    /// Whether Control-IQ is ON at runtime, mirrored from the phone. The disclosure renders only
     /// when the variant can auto-correct AND this is true. Safe default false ⇒ render no disclosure.
     var controlIQEnabled: Bool = false
-    /// Phase 09.15 T1-1 (D-01/D-08) — the pump's live Control-IQ action zone, a frozen wire token
-    /// (`ControlIQZone.rawValue`), mirrored from the phone. A remote renders Tandem's own zone word + icon
-    /// locally from this. `nil` ⇒ render the chip/row/field ABSENT — a legacy host, an unread zone, or CIQ
-    /// off, never a stale last-known word (D-06 guardrail #5/#6, SP-5 fail-closed).
+    /// The pump's live Control-IQ action zone, a frozen wire token (`ControlIQZone.rawValue`), mirrored
+    /// from the phone. A remote renders Tandem's own zone word + icon locally from this. `nil` ⇒ render
+    /// the chip/row/field ABSENT — a legacy host, an unread zone, or CIQ off, never a stale last-known
+    /// word (fail-closed).
     var ciqZone: String?
-    /// Phase 09.15 T1-2 (D-08, D-09.1) — whether the pump's OWN control-state currently attributes an
-    /// active basal suspend to Control-IQ, mirrored from the phone. Mirrors `ciqZone`'s unconditional
-    /// assign-or-clear parse (SP-5 fail-closed): `nil`/`false` ⇒ this remote's OWN generic-suspend
-    /// fallback applies — never a fabricated "Control-IQ paused" claim (D-09.1 BINDING).
+    /// Whether the pump's OWN control-state currently attributes an active basal suspend to Control-IQ,
+    /// mirrored from the phone. Mirrors `ciqZone`'s unconditional assign-or-clear parse (fail-closed):
+    /// `nil`/`false` ⇒ this remote's OWN generic-suspend fallback applies — never a fabricated
+    /// "Control-IQ paused" claim.
     var ciqSuspendedForLow: Bool?
     /// The immutable instant `ciqSuspendedForLow` first became true, mirrored from the phone's
     /// `ciqSuspendStartEpochSec` (epoch-not-age convention — elapsed is computed on draw).
     var ciqSuspendStartDate: Date?
-    /// Phase 09.15 T1-3 (D-01/D-08) — the immutable instant of the most-recent Control-IQ
-    /// auto-correction, mirrored from the phone's `lastAutoCorrectionEpochSec` (epoch-not-age
-    /// convention — age is computed on draw). `nil` ⇒ render the chip/row/marker ABSENT — a legacy
-    /// host or no auto-correction seen yet, never a synthesized "0 min ago" (SP-5 fail-closed).
-    /// Display-only, never a dose input (C3). A real historical fact never un-happens, so — unlike
-    /// `ciqZone`/`ciqSuspendedForLow` — this uses the STANDARD `if let` guard (SP-3): absent on a
-    /// later command means only "this reply didn't repeat it", never "it un-happened".
+    /// The immutable instant of the most-recent Control-IQ auto-correction, mirrored from the phone's
+    /// `lastAutoCorrectionEpochSec` (epoch-not-age convention — age is computed on draw). `nil` ⇒ render
+    /// the chip/row/marker ABSENT — a legacy host or no auto-correction seen yet, never a synthesized
+    /// "0 min ago" (fail-closed). Display-only, never a dose input. A real historical fact never
+    /// un-happens, so — unlike `ciqZone`/`ciqSuspendedForLow` — this uses the STANDARD `if let` guard:
+    /// absent on a later command means only "this reply didn't repeat it", never "it un-happened".
     var lastAutoCorrectionDate: Date?
-    /// Phase 09.15 T1-4 (D-01/D-08) — the immutable instant of the most-recent "Control-IQ tried and
-    /// couldn't deliver an automatic correction" event, mirrored from the phone's
-    /// `ciqLastCouldNotDeliverEpochSec`. Remote MARKER only (no remote-side timeline — remotes never
-    /// had the pump history to build one from). `nil` ⇒ render the marker ABSENT. Never surfaced on
-    /// widgets/LA (explicit scope, D-08).
+    /// The immutable instant of the most-recent "Control-IQ tried and couldn't deliver an automatic
+    /// correction" event, mirrored from the phone's `ciqLastCouldNotDeliverEpochSec`. Remote MARKER only
+    /// (no remote-side timeline — remotes never had the pump history to build one from). `nil` ⇒ render
+    /// the marker ABSENT. Never surfaced on widgets/LA (explicit scope).
     var ciqLastCouldNotDeliverDate: Date?
-    /// Phase 09.15 T1-5 (D-01/D-08) — the immutable instant Control-IQ's automatic correction becomes
-    /// available again, mirrored from the phone's `lockoutUntilEpochSec` (epoch-not-age convention).
+    /// The immutable instant Control-IQ's automatic correction becomes available again, mirrored from
+    /// the phone's `lockoutUntilEpochSec` (epoch-not-age convention).
     /// UNLIKE `lastAutoCorrectionDate`/`ciqLastCouldNotDeliverDate` above (monotonic historical markers
     /// that never un-happen), this is a DERIVED instant the host recomputes fresh on every statusRead —
     /// so it uses the SAME unconditional assign-or-clear parse as `iobDate`/`therapyDate` (map assign,
     /// clearing to `nil` the moment the host doesn't send one), never the "if let, keep last" guard.
-    /// `nil` ⇒ render the bar/ring ABSENT. Display-only, never a dose input (C3).
+    /// `nil` ⇒ render the bar/ring ABSENT. Display-only, never a dose input.
     var lockoutUntilDate: Date?
-    /// Phase 09.15 T1-8 (D-03, D-08) — the pump's configured max-basal delivery limit, mirrored from
-    /// the phone's `maxBasalUnitsPerHour`. Unconditional assign-or-clear (SP-5, mirrors `lockoutUntilDate`):
-    /// the host relays its current knowledge every statusRead, so a stale value must never survive past
-    /// the moment it clears. `nil` ⇒ the T1-8 readout renders ABSENT (D-03(v) fail-closed: hidden, not
-    /// zero/dash) — a legacy host, an unread max, or `<= 0` (the host only ever sends a positive value
-    /// or `nil`). Display-only, never a dose input (C3).
+    /// The pump's configured max-basal delivery limit, mirrored from the phone's `maxBasalUnitsPerHour`.
+    /// Unconditional assign-or-clear (mirrors `lockoutUntilDate`): the host relays its current knowledge
+    /// every statusRead, so a stale value must never survive past the moment it clears. `nil` ⇒ the
+    /// max-basal readout renders ABSENT (fail-closed: hidden, not zero/dash) — a legacy host, an unread
+    /// max, or `<= 0` (the host only ever sends a positive value or `nil`). Display-only, never a dose
+    /// input.
     var maxBasalUnitsPerHour: Double?
-    /// Phase 09.15 T1-9 (D-01/D-08) — the pump's live Sleep/Exercise activity mode, mirrored from the
-    /// phone (previously only `WidgetSnapshot`/`ContentState` carried this). Unconditional assign
-    /// (SP-5, mirrors `lockoutUntilDate`): the host relays its CURRENT knowledge every statusRead, so
+    /// The pump's live Sleep/Exercise activity mode, mirrored from the phone (previously only
+    /// `WidgetSnapshot`/`ContentState` carried this). Unconditional assign
+    /// (mirrors `lockoutUntilDate`): the host relays its CURRENT knowledge every statusRead, so
     /// `0` (normal) is a fully-known fact, not "absent" — never a stale Sleep/Exercise mode
     /// surviving past the moment the pump's own state changed. Safe default `0` ⇒ no card on a cold
     /// launch, before the first statusRead.
     var controlIQMode: Int = 0
     /// The already-decoded exercise countdown, raw remaining-seconds (NOT an epoch) — a receiver
     /// counts down locally against ITS OWN receipt time for animation only, re-anchored on every
-    /// statusRead (D-08 T1-9 note). `nil` ⇒ the timer fact renders ABSENT (SP-5 fail-closed).
+    /// statusRead. `nil` ⇒ the timer fact renders ABSENT (fail-closed).
     var exerciseTimeRemainingSec: Int?
     /// The pump's OWN configured sleep-schedule window, evaluated at the phone against `now` (pure
     /// window math, (b) pump-communicated) — iPhone/Mac render the verbose window text from these;
-    /// Watch does not render them (D-09.5 explicit scope) even though they ARE parsed here (one
-    /// shared parse point, SP-3).
+    /// Watch does not render them (explicit scope) even though they ARE parsed here (one
+    /// shared parse point).
     var inSleepWindow: Bool?
     var sleepWindowStartMinute: Int?
     var sleepWindowEndMinute: Int?
 
-    /// Phase 09.15 D-07 (plan 12) — the phone-owned Control-IQ-awareness Smart-Assist toggle states,
-    /// mirrored from the phone. Safe defaults mirror each flag's own `AppSettings` D-07 default exactly
+    /// The phone-owned Control-IQ-awareness Smart-Assist toggle states, mirrored from the phone. Safe
+    /// defaults mirror each flag's own `AppSettings` default exactly
     /// (state readouts/lockout countdown default true; the opt-in surfaces default false), so a legacy
     /// host (these keys absent) resolves to the SAME behavior the flag's own default already implies —
     /// non-suppressing for the always-on features, suppressing for the opt-in ones.
@@ -181,43 +176,41 @@ final class RemoteCommandWireFixture {
     var ciqPlusTempRateEnabled: Bool = false
     var ciqCeilingFlagsEnabled: Bool = false
 
-    /// Phase 09.15 T1-9 (D-01/D-08) — the controller's OWN activity preset (Sleep/Exercise)
-    /// currently selected by `controlIQMode`, or `nil` in normal mode. Pure UI wiring of
-    /// `controllerDescriptor.activityPresets` — no new clinical literal (D-06 guardrail #4).
+    /// The controller's OWN activity preset (Sleep/Exercise) currently selected by `controlIQMode`, or
+    /// `nil` in normal mode. Pure UI wiring of `controllerDescriptor.activityPresets` — no new clinical
+    /// literal.
     var ciqActivityPreset: ActivityPreset? {
         SleepExerciseAwareness.activePreset(
             mode: ControlIQActivity(rawMode: controlIQMode),
             descriptor: controllerDescriptor)
     }
-    /// T1-9 (D-01/D-08, D-09.5): the compact single-line fact EVERY remote surface (Watch/Garmin/
-    /// Mac's base line) shows — "Sleep — AutoBolus off" / "Exercise — ends 4:20". `nil` when normal
-    /// mode, no matching preset, or (Exercise only) the timer is unknown (SP-5 fail-closed).
+    /// The compact single-line fact EVERY remote surface (Watch/Garmin/Mac's base line) shows —
+    /// "Sleep — AutoBolus off" / "Exercise — ends 4:20". `nil` when normal mode, no matching preset, or
+    /// (Exercise only) the timer is unknown (fail-closed).
     var ciqActivityCompactLine: String? {
         SleepExerciseAwareness.compactLine(
             mode: ControlIQActivity(rawMode: controlIQMode),
             descriptor: controllerDescriptor,
             exerciseTimeRemainingSec: exerciseTimeRemainingSec)
     }
-    /// T1-9 (D-01/D-08, iPhone/Mac only) — "Current window: {start}–{end}" when a configured
-    /// Sleep-schedule slot is currently active, else `nil`. Watch never renders this (D-09.5
-    /// explicit scope) even though it's parsed on this shared base.
+    /// iPhone/Mac only — "Current window: {start}–{end}" when a configured Sleep-schedule slot is
+    /// currently active, else `nil`. Watch never renders this (explicit scope) even though it's parsed
+    /// on this shared base.
     var ciqSleepWindowLine: String? {
         guard inSleepWindow == true, let s = sleepWindowStartMinute, let e = sleepWindowEndMinute else { return nil }
         return
             "Current window: \(SleepExerciseAwareness.minuteOfDayString(s))–\(SleepExerciseAwareness.minuteOfDayString(e))"
     }
 
-    /// B2 — the pump's controller descriptor, reconstructed locally from the mirrored variant. Phase 23
-    /// (23-01, D-09): the two S1/O3 disclosure-string computed props that once lived here (`autoCorrectionAmbient`/
-    /// `autoCorrectionLockout`, mirroring the phone's now-removed `BolusEntryView` display fns) were removed;
-    /// `lockoutRemainingFraction` below survives (D-09) and documents the still-frozen `lockoutUntilEpochSec`
-    /// wire contract (D-01).
+    /// The pump's controller descriptor, reconstructed locally from the mirrored variant. There are no
+    /// disclosure-string computed props here; `lockoutRemainingFraction` below documents the
+    /// still-frozen `lockoutUntilEpochSec` wire contract.
     var controllerDescriptor: ControllerDescriptor { .for(controllerVariant) }
-    /// T1-5 (D-01, D-08): the 60-min lockout countdown FRACTION, or nil — computed LOCALLY from the
-    /// mirrored `lockoutUntilDate` (an immutable END epoch) by reversing the arithmetic to the START
-    /// instant the pure fn expects (`lockoutStart = lockoutUntilDate - window`). **This is a fraction,
-    /// NEVER a dose/units value** (D-06 guardrail #1); NEVER gates delivery. `nil` when `lockoutUntilDate`
-    /// is absent, the window is unknown, or the lockout has already expired (fail-closed — SP-5).
+    /// The 60-min lockout countdown FRACTION, or nil — computed LOCALLY from the mirrored
+    /// `lockoutUntilDate` (an immutable END epoch) by reversing the arithmetic to the START instant the
+    /// pure fn expects (`lockoutStart = lockoutUntilDate - window`). **This is a fraction, NEVER a
+    /// dose/units value**; NEVER gates delivery. `nil` when `lockoutUntilDate` is absent, the window is
+    /// unknown, or the lockout has already expired (fail-closed).
     var lockoutRemainingFraction: Double? {
         guard let untilDate = lockoutUntilDate,
             let windowMinutes = controllerDescriptor.automaticCorrection.blockedByRecentBolusMinutes
@@ -232,24 +225,23 @@ final class RemoteCommandWireFixture {
     /// `lockoutUntilDate` exposed under the UI-facing name, `nil` exactly when `lockoutRemainingFraction`
     /// is (so a caller never renders a bar without a time, or a time without a bar).
     var lockoutAvailableAt: Date? { lockoutRemainingFraction != nil ? lockoutUntilDate : nil }
-    /// T1-8 (D-03, D-08): the LOCKED "% of your configured max basal rate" headline + U/hr detail pair,
-    /// computed LOCALLY from the mirrored `basalRate` + `maxBasalUnitsPerHour` via
-    /// `MaxBasalFraction.label` — never a pre-rendered percentage string on the wire. `nil` when
-    /// `maxBasalUnitsPerHour` is absent/unknown/`<= 0` (D-03(v) fail-closed: hidden, not zero/dash).
+    /// The LOCKED "% of your configured max basal rate" headline + U/hr detail pair, computed LOCALLY
+    /// from the mirrored `basalRate` + `maxBasalUnitsPerHour` via `MaxBasalFraction.label` — never a
+    /// pre-rendered percentage string on the wire. `nil` when `maxBasalUnitsPerHour` is
+    /// absent/unknown/`<= 0` (fail-closed: hidden, not zero/dash).
     var maxBasalReadout: (headline: String, detail: String)? {
         guard let max = maxBasalUnitsPerHour else { return nil }
         return MaxBasalFraction.label(currentUnitsPerHour: basalRate, maxUnitsPerHour: max)
     }
-    /// P15 §2.3 (Garmin): the watch may show/permit its bolus affordance only when remotes aren't
-    /// read-only AND the phone has enabled Garmin bolusing. Fail-closed by default (`garminBolusEnabled`
-    /// starts false). The Mac has its own gating and does not use this. (The Apple-Watch sibling
-    /// `watchBolusAllowed`/`watchBolusEnabled` was retired end-to-end in Phase 17.5 Plan 01,
-    /// D1-01/REMED-17.)
+    /// Garmin: the watch may show/permit its bolus affordance only when remotes aren't read-only AND the
+    /// phone has enabled Garmin bolusing. Fail-closed by default (`garminBolusEnabled` starts false).
+    /// The Mac has its own gating and does not use this. (The Apple-Watch sibling
+    /// `watchBolusAllowed`/`watchBolusEnabled` was retired end-to-end.)
     var garminBolusAllowed: Bool { !readOnly && garminBolusEnabled }
     // Alerts + link
     var alerts: [RemoteCommand.RemoteAlert] = []
     /// Identities (kind+id) of the previous alert set, to detect a newly-arrived alert. `nil` until the
-    /// first status push arrives, so the priming load doesn't fire the interrupt (S8).
+    /// first status push arrives, so the priming load doesn't fire the interrupt.
     private var lastAlertIdentities: Set<String>?
     var reachable: Bool = false
     var lastStatus: RemoteCommand.Status?
@@ -299,13 +291,13 @@ final class RemoteCommandWireFixture {
     var pumpConnected: Bool { connection == "Connected" || connection == "Delivering…" }
 
     /// True when the host reports the pump mid-delivery — a dose is already in flight, so no remote may
-    /// start another (the `BolusGate` in-flight gate, v3 defect group D). This is the relayed twin of the
+    /// start another (the `BolusGate` in-flight gate). This is the relayed twin of the
     /// phone's `PumpSnapshot.bolusInFlight`: `.bolusing` is still "linked" (`pumpConnected` is true), so a
     /// caller reads link health and in-flight as separate axes and feeds both to `BolusGate.evaluate`.
     var bolusInFlight: Bool { connection == PumpConnectionState.bolusing.rawValue }
 
     /// The shared `BolusGate` decision for THIS remote, fed from the relayed pump state so every mirroring
-    /// remote agrees (v3 defect group D): reachability, link health (`pumpConnected`), a dose already in
+    /// remote agrees: reachability, link health (`pumpConnected`), a dose already in
     /// flight (`bolusInFlight`), and the phone-pushed read-only flag (→ `.deny(.remotesReadOnly)` — the
     /// remote judges read-only locally pre-wire; the semantic `canBolus` over the wire is a later
     /// increment). `amount`/`minimum` are in insulin units; the max is the relayed `maxBolusUnits`.
@@ -330,7 +322,7 @@ final class RemoteCommandWireFixture {
 
     /// Called when a status push carries an alert identity (kind+id) not present in the previous push — a
     /// newly-arrived pump alert. Base is a no-op; platform subclasses override to actively surface it
-    /// (watch haptic, Mac sound), since these surfaces otherwise render alerts as a silent list (S8).
+    /// (watch haptic, Mac sound), since these surfaces otherwise render alerts as a silent list.
     func didSurfaceNewAlerts(_ newAlerts: [RemoteCommand.RemoteAlert]) {}
 
     // MARK: Derived display
@@ -346,7 +338,7 @@ final class RemoteCommandWireFixture {
     /// says to hide it ("—") rather than show it greyed — mirrors the phone/watch presentation.
     var glucoseHidden: Bool { glucose != nil && GlucoseFreshness.presentation(of: glucoseDate) == .hidden }
     var cgmActive: Bool { glucose != nil && !isGlucoseStale }
-    /// P15 Addendum B: whether a carb bolus should present the three-way stale-CGM choice before it is
+    /// Whether a carb bolus should present the three-way stale-CGM choice before it is
     /// composed — i.e. a stale-but-REAL reading exists (there is something to include or drop). No reading
     /// at all is simply carbs-only (nothing to include); a fresh reading composes normally. Delegates to
     /// the shared `StaleBolusPrompt.shouldWarn` so every surface (iPhone/Watch/Mac/Garmin) agrees.
@@ -368,9 +360,8 @@ final class RemoteCommandWireFixture {
     /// source epoch (legacy host).
     var iobAgeLabel: String? { iobDate.map { CalcInputFreshness.ageLabel(for: $0) } }
     var therapyAgeLabel: String? { therapyDate.map { CalcInputFreshness.ageLabel(for: $0) } }
-    /// Phase 09.15 T1-3/T1-4 — the SAME age-formatting convention as `iobAgeLabel`/`therapyAgeLabel`
-    /// (UI-SPEC T1-4 explicitly says "same age-formatting convention as T1-3"), computed HERE at draw
-    /// time from the immutable mirrored date — nil when there's nothing to show (SP-5 fail-closed).
+    /// The SAME age-formatting convention as `iobAgeLabel`/`therapyAgeLabel`, computed HERE at draw
+    /// time from the immutable mirrored date — nil when there's nothing to show (fail-closed).
     var lastAutoCorrectionAgeLabel: String? { lastAutoCorrectionDate.map { CalcInputFreshness.ageLabel(for: $0) } }
     var ciqLastCouldNotDeliverAgeLabel: String? {
         ciqLastCouldNotDeliverDate.map { CalcInputFreshness.ageLabel(for: $0) }
@@ -407,7 +398,7 @@ final class RemoteCommandWireFixture {
             // Treat a non-positive relayed value as "no reading" (nil) so the UI shows "—" instead of
             // a literal 0; a missing bgMgdl leaves the current value untouched.
             if let g = cmd.bgMgdl { glucose = g > 0 ? Int(g) : nil }
-            // Group A: prefer the immutable source timestamp. Deriving the date from an age means
+            // Prefer the immutable source timestamp. Deriving the date from an age means
             // re-stamping relative to *our* clock at receive time, which silently discounts the time
             // the message spent in flight. Fall back to the age only for a host that doesn't send an
             // epoch yet. If neither is present the age stays unknown — `isGlucoseStale` then treats
@@ -421,17 +412,17 @@ final class RemoteCommandWireFixture {
             if let iob = cmd.units { iobUnits = iob }
             if let r = cmd.reservoirUnits { reservoirUnits = r }
             if let b = cmd.batteryPercent { batteryPercent = Int(b) }
-            // Review fix WR-01 (was: `if let c = cmd.batteryCharging { batteryCharging = c }`, which
-            // kept the last-known value on an absent key — a stale "Charging" claim, the exact
-            // false-positive badge D-03's fail-closed intent exists to prevent). Unlike most optional
+            // Deliberately NOT `if let c = cmd.batteryCharging { batteryCharging = c }`, which would
+            // keep the last-known value on an absent key — a stale "Charging" claim, the exact
+            // false-positive badge the fail-closed intent exists to prevent. Unlike most optional
             // fields in this handler, batteryCharging does NOT keep-last on an absent key — it
             // mirrors `faBolusGarmin/source/app/AppState.mc`'s `(bc instanceof Lang.Boolean) && bc`,
             // which re-evaluates unconditionally on every statusRead specifically "so a dropped key
             // or a legacy phone can never leave a stale 'charging' claim on screen." A stale
             // "Charging" claim is judged worse than a stale battery percent (which DOES legitimately
             // keep-last, same as every other field here), so this field alone is deliberately
-            // fail-closed rather than sticky. Harmless behavior change for a bare/legacy
-            // `RemoteCommand`: it now explicitly reports "not charging" instead of the last value.
+            // fail-closed rather than sticky. For a bare/legacy `RemoteCommand` this explicitly
+            // reports "not charging" rather than the last value.
             batteryCharging = (cmd.batteryCharging == true)
             if let cr = cmd.carbRatio { carbRatio = cr }
             if let i = cmd.isf { isf = Int(i) }
@@ -447,8 +438,8 @@ final class RemoteCommandWireFixture {
             if let m = cmd.bolusMode { defaultMode = m }
             if let d = cmd.detailsOrder, !d.isEmpty { detailsOrder = d }
             if let r = cmd.watchChartRanges, !r.isEmpty { chartRanges = r }
-            // Phase 09.13-02 (D-06/D-07, threat T-09.13-05): parse the SHARED/phone-scoped bounds when
-            // BOTH halves are present (sanitized via GlucosePlotScale.resolve — never assigned raw);
+            // Parse the SHARED/phone-scoped bounds when BOTH halves are present (sanitized via
+            // GlucosePlotScale.resolve — never assigned raw);
             // absent leaves the property at its `GlucosePlotScale.default*` value (legacy-safe). These
             // are a channel entirely separate from `watchChartRanges`/`chartRanges` above — the Mac
             // reads `glucosePlotFloor`/`glucosePlotCeiling` directly and must never see the override.
@@ -491,18 +482,18 @@ final class RemoteCommandWireFixture {
             if lastStatus != .delivering { lastBolusUnits = cmd.lastBolusUnits }
             if let b = cmd.basalRate { basalRate = b }
             if let ro = cmd.remotesReadOnly { readOnly = ro }
-            if let d = cmd.supportsRemoteAlertDismiss { canDismissAlertOnPump = d }  // P13 capability channel
-            // P14 S4: adopt the phone's active mode (absent ⇒ legacy host ⇒ stays the permissive default).
+            if let d = cmd.supportsRemoteAlertDismiss { canDismissAlertOnPump = d }  // capability channel
+            // Adopt the phone's active mode (absent ⇒ legacy host ⇒ stays the permissive default).
             if let m = cmd.activeMode { activeMode = AppMode(rawValue: m) ?? .advanced }
-            // P15 §2.3: adopt the per-surface bolus enables + passcode requirement. Absent ⇒ legacy host ⇒
+            // Adopt the per-surface bolus enables + passcode requirement. Absent ⇒ legacy host ⇒
             // stays the safe default (false = bolus hidden), so an old host can never leave a remote armed.
             if let g = cmd.garminBolusEnabled { garminBolusEnabled = g }
             if let p = cmd.bolusPasscodeRequired { bolusPasscodeRequired = p }
-            // B2 (S1+O3): adopt the pump's controller identity + runtime on/off. Absent ⇒ legacy host ⇒
+            // Adopt the pump's controller identity + runtime on/off. Absent ⇒ legacy host ⇒
             // stays the safe default (.none / false ⇒ no disclosure). Unknown token ⇒ .none (never crash).
             if let v = cmd.controllerVariant { controllerVariant = ControllerVariant(rawValue: v) ?? .none }
             if let e = cmd.controlIQEnabled { controlIQEnabled = e }
-            // Phase 09.15 T1-1 (D-01/D-08, SP-5 fail-closed): UNLIKE `controllerVariant`/`controlIQEnabled`
+            // Fail-closed: UNLIKE `controllerVariant`/`controlIQEnabled`
             // above (where absent only ever means "legacy host" and the stored default stays safe to
             // keep), `ciqZone` can legitimately clear on a MODERN host too — CIQ turns off, or the raw
             // zone becomes unmapped — and the wire's `Optional<String>` can't distinguish "never sent"
@@ -510,13 +501,13 @@ final class RemoteCommandWireFixture {
             // (unconditional assignment, not an `if let` guard): a stale zone word must never survive
             // past the moment it actually cleared.
             ciqZone = cmd.ciqZone
-            // Phase 09.15 T1-2 (D-08, D-09.1, SP-5 fail-closed): mirrors ciqZone's unconditional
+            // Fail-closed: mirrors ciqZone's unconditional
             // assign-or-clear exactly — same reasoning: a modern host legitimately clears this once the
             // suspend ends or its cause is no longer CIQ-attributed, so a stale "true" must never
             // survive past that moment. `nil` on the wire always wins over whatever was previously known.
             ciqSuspendedForLow = cmd.ciqSuspendedForLow
             ciqSuspendStartDate = cmd.ciqSuspendStartEpochSec.map { Date(timeIntervalSince1970: TimeInterval($0)) }
-            // Phase 09.15 T1-3/T1-4 (D-08, SP-3 standard guard): UNLIKE ciqZone/ciqSuspendedForLow
+            // Standard `if let` guard: UNLIKE ciqZone/ciqSuspendedForLow
             // above, these are monotonic historical markers — a real occurrence never un-happens, so
             // absent on a later command means only "this reply didn't repeat it", never "it
             // un-happened". Keep the last-known value rather than clearing it.
@@ -526,18 +517,18 @@ final class RemoteCommandWireFixture {
             if let e = cmd.ciqLastCouldNotDeliverEpochSec {
                 ciqLastCouldNotDeliverDate = Date(timeIntervalSince1970: TimeInterval(e))
             }
-            // Phase 09.15 T1-5 (D-08, SP-5 fail-closed): UNLIKE the two monotonic markers just above,
+            // Fail-closed: UNLIKE the two monotonic markers just above,
             // `lockoutUntilDate` is a DERIVED instant the host recomputes fresh every statusRead — so it
             // is always fully authoritative (unconditional map-assign, mirrors `iobDate`/`therapyDate`),
             // never "ignore if absent, keep last". Absent ⇒ nil ⇒ `lockoutRemainingFraction` renders the
             // bar/ring ABSENT.
             lockoutUntilDate = cmd.lockoutUntilEpochSec.map { Date(timeIntervalSince1970: TimeInterval($0)) }
-            // Phase 09.15 T1-8 (D-03, D-08, SP-5 fail-closed): mirrors `lockoutUntilDate`'s unconditional
+            // Fail-closed: mirrors `lockoutUntilDate`'s unconditional
             // assign-or-clear exactly — the host relays its CURRENT knowledge every statusRead (nil when
             // unread/`<= 0`), so a stale max-basal value must never survive past the moment it clears.
             // The % itself is computed LOCALLY (`maxBasalReadout` below) — never received pre-rendered.
             maxBasalUnitsPerHour = cmd.maxBasalUnitsPerHour
-            // Phase 09.15 T1-9 (D-08, SP-5 fail-closed): mirrors `lockoutUntilDate`'s unconditional
+            // Fail-closed: mirrors `lockoutUntilDate`'s unconditional
             // assign-or-clear exactly — the host relays its CURRENT knowledge every statusRead
             // (`nil` on the wire means "legacy host", which the safe `0` default already covers), so
             // a stale Sleep/Exercise mode/timer/window must never survive past the moment it clears.
@@ -546,11 +537,11 @@ final class RemoteCommandWireFixture {
             inSleepWindow = cmd.inSleepWindow
             sleepWindowStartMinute = cmd.sleepWindowStartMinute
             sleepWindowEndMinute = cmd.sleepWindowEndMinute
-            // Phase 09.15 D-07 (plan 12): adopt the phone's mirrored Control-IQ-awareness toggle states.
+            // Adopt the phone's mirrored Control-IQ-awareness toggle states.
             // Unconditional assign-with-fallback (not "if let, keep last"): a toggle flip must take
             // effect on the VERY NEXT statusRead, exactly like every other CIQ-awareness primitive
             // above — a stale "still on" must never survive past the moment the phone turned it off.
-            // Each fallback mirrors that flag's own `AppSettings` D-07 default (SP-5): non-suppressing
+            // Each fallback mirrors that flag's own `AppSettings` default: non-suppressing
             // for the always-on features, suppressing for the opt-in ones, on a legacy host.
             ciqStateReadoutsEnabled = cmd.ciqStateReadoutsEnabled ?? true
             ciqLockoutCountdownEnabled = cmd.ciqLockoutCountdownEnabled ?? true
@@ -558,7 +549,7 @@ final class RemoteCommandWireFixture {
             ciqSleepExerciseAwarenessEnabled = cmd.ciqSleepExerciseAwarenessEnabled ?? false
             ciqPlusTempRateEnabled = cmd.ciqPlusTempRateEnabled ?? false
             ciqCeilingFlagsEnabled = cmd.ciqCeilingFlagsEnabled ?? false
-            // Belt-and-suspenders (guardrail #13, D-08 parity): suppress each CIQ-awareness primitive
+            // Belt-and-suspenders: suppress each CIQ-awareness primitive
             // LOCALLY when its mirrored toggle is off, even though the host is ALSO expected to stop
             // emitting the underlying field once its own toggle is off. This remote must never depend
             // solely on the host's other gate — if a field leaked anyway, it is cleared right here,
@@ -584,7 +575,7 @@ final class RemoteCommandWireFixture {
                 sleepWindowEndMinute = nil
             }
             if let a = cmd.alerts {
-                // S8: watch/Mac otherwise render alerts as a silent list. Detect a newly-arrived alert by
+                // Watch/Mac otherwise render alerts as a silent list. Detect a newly-arrived alert by
                 // identity (so an equal-count replacement still counts) and actively surface it — but not
                 // on the priming first push (lastAlertIdentities == nil).
                 let fresh = RemoteCommand.newAlertIdentities(previous: lastAlertIdentities ?? [], current: a)
@@ -613,7 +604,7 @@ final class RemoteCommandWireFixture {
         guard let a = incomingApproval else { return }
         var cmd = RemoteCommand(kind: .bolusApprovalResponse, requestId: a.requestId)
         cmd.approved = approved
-        cmd.sentAt = Int(Date().timeIntervalSince1970)  // group B (P11): freshness-gated (a late approval could dose)
+        cmd.sentAt = Int(Date().timeIntervalSince1970)  // freshness-gated (a late approval could dose)
         link.send(cmd)
         incomingApproval = nil
     }
@@ -621,8 +612,8 @@ final class RemoteCommandWireFixture {
     /// Publish the latest glucose/pump state to the App Group so this device's widgets/complication
     /// can show it. Reuses `WidgetSnapshot`/`WidgetStore` (a device-local App Group container).
     func publishSnapshot() {
-        // Verifier gap closure (09.27-VERIFICATION.md Truth #11): forward `batteryCharging` into
-        // the App-Group snapshot here on the BASE class, same as `MacRemoteModel.publishSnapshot`'s
+        // Forward `batteryCharging` into the App-Group snapshot here on the BASE class, same as
+        // `MacRemoteModel.publishSnapshot`'s
         // override already does — this is what makes the Watch (which does not override
         // `publishSnapshot`) also carry the fail-closed charging state into its own `WidgetSnapshot`
         // instead of silently defaulting to `false` regardless of the real value.
@@ -647,7 +638,7 @@ final class RemoteCommandWireFixture {
     }
 
     /// The correction-term BG (mg/dL) a carb bolus should use, honoring the caller's per-attempt stale
-    /// choice (P15 Addendum B). A FRESH reading is always used; a STALE reading is included only when the
+    /// choice. A FRESH reading is always used; a STALE reading is included only when the
     /// user has explicitly chosen `includeStale` for THIS attempt (insulin-INCREASING), otherwise dropped
     /// (today's carbs-only behavior); no reading at all is always `nil`. With `includeStale == false` this
     /// reduces exactly to the prior rule (`isGlucoseStale ? nil : glucose`).
@@ -660,11 +651,11 @@ final class RemoteCommandWireFixture {
     /// Send a carbs bolus; the host (phone) is the single calculator — it recomputes the authoritative
     /// dose from these carbs and delivers. We also include THIS client's own estimate so the host can
     /// reject the bolus if the two diverge (a stale-settings guard). A stale CGM value is normally never
-    /// sent for the correction (matches the phone's rule) — but Addendum B lets the user explicitly
+    /// sent for the correction (matches the phone's rule) — but the user may explicitly
     /// include a stale-but-real reading for this one attempt (`includeStaleBG`, insulin-INCREASING). When
     /// it is a genuine stale-include we set the explicit `includeStaleBG` intent on the wire so the host
     /// can tell an acknowledged stale reading apart from a coincidentally-stale one. The host honors that
-    /// intent only once it recomputes from its OWN matching stale reading (PR-2); until then — and on any
+    /// intent only once it recomputes from its OWN matching stale reading; until then — and on any
     /// legacy host that ignores the field — it fails closed to a carbs-only dose, so an included-stale
     /// estimate carrying a correction diverges and the host's guard rejects it. Covers Watch + Mac +
     /// remote-iPhone (shared base).
@@ -672,7 +663,7 @@ final class RemoteCommandWireFixture {
         let bg: Double? = bgForBolus(includeStale: includeStaleBG).map(Double.init)
         var cmd = RemoteCommand(kind: .bolusRequest, carbsGrams: grams, bgMgdl: bg)
         cmd.remoteEstimateUnits = estimatedUnits(forCarbs: grams, includeStaleBG: includeStaleBG)
-        // Addendum B: carry the explicit per-attempt include-stale INTENT only when this genuinely IS a
+        // Carry the explicit per-attempt include-stale INTENT only when this genuinely IS a
         // stale-include — the user chose it AND the reading is stale-but-present. Never on a fresh reading,
         // never sticky; absent otherwise ⇒ the host fails closed to carbs-only.
         cmd.includeStaleBG = (includeStaleBG && isGlucoseStale && glucose != nil) ? true : nil
@@ -680,10 +671,10 @@ final class RemoteCommandWireFixture {
     }
 
     /// Preview of the units the phone would deliver for a carb amount — uses the single oracle-backed
-    /// `BolusMath` calculator (audit C-01), so this estimate matches the host's authoritative recompute
+    /// `BolusMath` calculator, so this estimate matches the host's authoritative recompute
     /// and the wrist-vs-host divergence guard rarely trips on identical inputs. Returns nil until the
     /// carb ratio is known. A stale CGM value isn't used for the correction (matches `deliverCarbs`)
-    /// unless the caller passes `includeStaleBG` (Addendum B) — then the same stale value the dose will
+    /// unless the caller passes `includeStaleBG` — then the same stale value the dose will
     /// be composed with is used here too, so the preview and the host's divergence guard stay consistent.
     func estimatedUnits(forCarbs grams: Double, includeStaleBG: Bool = false) -> Double? {
         guard carbRatio > 0, grams > 0 else { return carbRatio > 0 ? 0 : nil }
@@ -700,7 +691,7 @@ final class RemoteCommandWireFixture {
     /// Mac's widget quick-bolus, which must correlate the phone's echo to the widget request).
     func startPending(_ cmd: RemoteCommand) {
         var cmd = cmd
-        cmd.sentAt = Int(Date().timeIntervalSince1970)  // group B (P11): stamp send time so the host refuses a stale/late delivery command
+        cmd.sentAt = Int(Date().timeIntervalSince1970)  // stamp send time so the host refuses a stale/late delivery command
         pendingRequestId = cmd.requestId
         lastStatus = .delivering
         statusMessage = "Delivering…"
@@ -737,9 +728,9 @@ final class RemoteCommandWireFixture {
     }
 }
 
-// MARK: - Adapter (verbatim copy from the deleted ios/faBolus/Views/RemoteControlView.swift's
-// `extension RemoteClientModel` — RemoteClientBolusGateTests.asSnapshotUsesRelayedConnectionNotReachability
-// pins THIS exact mapping, not just the base class's stored properties).
+// MARK: - Adapter
+// `RemoteClientBolusGateTests.asSnapshotUsesRelayedConnectionNotReachability` pins THIS exact
+// mapping, not just the base class's stored properties.
 extension RemoteCommandWireFixture {
     var asSnapshot: PumpSnapshot {
         var s = PumpSnapshot()

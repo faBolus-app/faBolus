@@ -39,7 +39,7 @@ struct PumpStaticUnsupportedReadRegistryTests {
 
     // MARK: - (b) op20 is identity-gated: deferred out of the pre-version burst, then polled if supported
 
-    /// op20 must NOT be sent in the pre-version burst (owner req #2: identity-gated reads go out AFTER the
+    /// op20 must NOT be sent in the pre-version burst (identity-gated reads go out AFTER the
     /// bootstrap version responses are processed, never blindly before). Once a SUPPORTED identity is
     /// processed (t:slim X2 sw 3.0 — NOT the bad combo), op20 IS polled so the cartridge pre-guard stays
     /// live. The bootstrap trio is still sent first (unchanged) — only the identity-gated read is deferred.

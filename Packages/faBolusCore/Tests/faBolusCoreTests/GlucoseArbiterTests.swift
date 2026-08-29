@@ -6,7 +6,7 @@ import XCTest
 private final class MockGlucoseSource: GlucoseSource {
     let id = "mock"
     let priority = 100
-    let connectionKind: GlucoseConnectionKind = .localBLE  // D-06: conformers must classify
+    let connectionKind: GlucoseConnectionKind = .localBLE  // conformers must classify
     var latest: GlucoseSample?
     var history: [GlucoseReading]
     var status: GlucoseSourceStatus = .connected
@@ -29,7 +29,7 @@ final class GlucoseArbiterTests: XCTestCase {
         return s
     }
     private func sample(_ mgdl: Int, ageSec: TimeInterval, trend: GlucoseTrend = .up) -> GlucoseSample {
-        // The failable init (D-05) never fails here — every caller passes an in-range mgdl (e.g. 120).
+        // The failable init never fails here — every caller passes an in-range mgdl (e.g. 120).
         GlucoseSample(mgdl: mgdl, date: Date().addingTimeInterval(-ageSec), trend: trend, sourceID: "mock")!
     }
 
@@ -95,7 +95,7 @@ final class GlucoseArbiterTests: XCTestCase {
         XCTAssertTrue(merged[0].date <= merged[1].date)  // sorted oldest→newest
     }
 
-    // MARK: - C2-01: the app-owned urgent-low alarm's pure activation rule
+    // MARK: - The app-owned urgent-low alarm's pure activation rule
 
     func testProvenanceIsFailoverTrueOnlyForTheFailoverCase() {
         XCTAssertFalse(GlucoseProvenance.pump.isFailover)

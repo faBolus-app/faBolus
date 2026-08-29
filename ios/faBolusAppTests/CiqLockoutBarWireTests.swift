@@ -3,15 +3,14 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// Phase 09.15-07 (T1-5, D-01/D-08): the `lockoutUntilEpochSec` primitive-propagation spine for the
-/// 60-min auto-correction lockout COUNTDOWN bar — cloned from 09.15-01's `CiqZoneWireTests` /
-/// 09.15-06's `CiqHistoryEventWireTests`. UNLIKE the T1-3/T1-4 monotonic historical markers, this is a
-/// DERIVED instant the host recomputes fresh on every statusRead, so the client-side parse uses the
-/// SAME unconditional assign-or-clear idiom as `iobEpochSec`/`therapyEpochSec` — never the "if let,
-/// keep last" guard those two markers need.
+/// The `lockoutUntilEpochSec` primitive-propagation spine for the 60-min auto-correction lockout
+/// COUNTDOWN bar — the same pattern as `CiqZoneWireTests` / `CiqHistoryEventWireTests`. UNLIKE those
+/// monotonic historical markers, this is a DERIVED instant the host recomputes fresh on every
+/// statusRead, so the client-side parse uses the SAME unconditional assign-or-clear idiom as
+/// `iobEpochSec`/`therapyEpochSec` — never the "if let, keep last" guard those two markers need.
 @Suite struct CiqLockoutBarWireTests {
 
-    // MARK: - Task 1: PumpSnapshot.lockoutUntilDate (derived instant, no literal 60)
+    // MARK: - PumpSnapshot.lockoutUntilDate (derived instant, no literal 60)
 
     @Test func absentLastAutoCorrectionDateProducesNoLockoutUntilDate() {
         var snap = PumpSnapshot()
@@ -35,7 +34,7 @@ import faBolusCore
         #expect(snap.lockoutUntilDate == nil)
     }
 
-    // MARK: - Task 1: validate() epoch bound
+    // MARK: - validate() epoch bound
 
     @Test func validateRejectsAZeroOrNegativeOrOverflowLockoutEpoch() {
         for bad in [0, -1, Int(Int32.max) + 1] {
@@ -56,7 +55,7 @@ import faBolusCore
         try cmdAbsent.validate()
     }
 
-    // MARK: - Task 1: Codable round-trip
+    // MARK: - Codable round-trip
 
     @Test func lockoutUntilEpochSecRoundTripsThroughJSONUnchanged() throws {
         var cmd = RemoteCommand(kind: .statusRead)
@@ -81,7 +80,7 @@ import faBolusCore
         #expect(validated.lockoutUntilEpochSec == nil)
     }
 
-    // MARK: - Task 1: RemoteCommandWireFixture local fraction compute (fail-closed)
+    // MARK: - RemoteCommandWireFixture local fraction compute (fail-closed)
 
     private final class FakeLink: RemoteTransport {
         var onReceive: (@MainActor (RemoteCommand) -> Void)?
@@ -119,9 +118,9 @@ import faBolusCore
         #expect(m.lockoutAvailableAt != nil)
     }
 
-    /// Fail-closed (SP-5, D-06 guardrail #5): a `lockoutUntilEpochSec` already in the past produces NO
-    /// fraction — never a frozen 100% bar, never a negative countdown — even though the date itself is
-    /// present and controller-able/on.
+    /// Fail-closed: a `lockoutUntilEpochSec` already in the past produces NO fraction — never a frozen
+    /// 100% bar, never a negative countdown — even though the date itself is present and
+    /// controller-able/on.
     @MainActor
     @Test func aPastLockoutEpochProducesNoFraction() {
         let m = RemoteCommandWireFixture(link: FakeLink())
@@ -170,8 +169,8 @@ import faBolusCore
     // MARK: - Backstop: Garmin ≤~28-char budget at FONT_XTINY
 
     /// `CgmView.mc`'s new printed numeral is hand-mirrored here (Monkey C isn't runnable from this
-    /// Swift suite) — a literal backstop pinning the exact template against the plan's own ~28-char
-    /// budget, at both a common (2-digit) and a worst-case (3-digit minute) remaining value.
+    /// Swift suite) — a literal backstop pinning the exact template against the ~28-char budget, at
+    /// both a common (2-digit) and a worst-case (3-digit minute) remaining value.
     @Test func garminLockoutNumeralFitsTheCharBudget() {
         for mins in [1, 42, 999] {
             let row = "\(mins)m until next correction"

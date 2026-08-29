@@ -66,7 +66,7 @@ final class PumpBackendConformanceTests: XCTestCase {
         XCTAssertTrue(b.activeNotifications.isEmpty)
     }
 
-    /// CX-G-08 (14-09, MEDIUM-D) — a backend with NO typed override (StubBackend, mirroring a
+    /// A backend with NO typed override (StubBackend, mirroring a
     /// community backend) gets `dismissNotificationTyped` for free from the default extension: it calls
     /// the legacy void `dismissNotification(_:)` exactly ONCE (the alert is removed, proving the void
     /// path really ran) and returns `.notAuthenticated` — never `.authenticatedCleared` — so a
@@ -79,7 +79,7 @@ final class PumpBackendConformanceTests: XCTestCase {
         XCTAssertTrue(b.activeNotifications.isEmpty, "the default impl must still call the void method once")
     }
 
-    /// 14-10 — a conformer with NO `rawActiveNotifications` override (StubBackend, mirroring a
+    /// A conformer with NO `rawActiveNotifications` override (StubBackend, mirroring a
     /// community backend with no local-snooze concept) gets the default extension for free: it returns
     /// EXACTLY `activeNotifications`, non-nil, live-tracking any mutation (not a one-time snapshot).
     func testDefaultRawActiveNotificationsEqualsActiveNotifications() async {
@@ -99,9 +99,9 @@ final class PumpBackendConformanceTests: XCTestCase {
         _ = d.make()  // builds without throwing
     }
 
-    /// Phase 09.9 D-02: `.possiblyOutOfInsulin`'s message must be honest about being an INFERENCE
+    /// `.possiblyOutOfInsulin`'s message must be honest about being an INFERENCE
     /// from the app's own last-known reservoir reading — the wire protocol has no insulin-specific
-    /// nack code (RESEARCH Pitfall 2), so the copy must never claim the pump reported being out of
+    /// nack code, so the copy must never claim the pump reported being out of
     /// insulin. It must also remain a clean (non-indeterminate) failure.
     func testPossiblyOutOfInsulinErrorDescriptionIsHonestInference() {
         let error = BolusError.possiblyOutOfInsulin(reservoirUnits: 0.4, nackDetail: "nackReasonId=1")

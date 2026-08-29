@@ -3,8 +3,8 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// 09.22-01 Task 2 (D-06): pins the typed `connectionKind` classification on every registered
-/// `GlucoseSource`. Later waves (Test-flow copy/timeout, D-09) branch on this typed property instead
+/// Pins the typed `connectionKind` classification on every registered
+/// `GlucoseSource`. Consumers (Test-flow copy/timeout) branch on this typed property instead
 /// of scattered `id == "dexcom-g6-ble" || id == "dexcom-g7-ble"` string literals, so a new source
 /// cannot be silently forgotten — the protocol has no extension default, so a source that omits the
 /// property cannot compile. Builds each source via `GlucoseSourceRegistry` and reads the LIVE
@@ -12,16 +12,15 @@ import faBolusCore
 @MainActor
 struct CgmConnectionKindTests {
 
-    /// The expected classification for each registered failover source. HealthKit ("healthkit") was
-    /// removed from narrow `main` in Phase 5 (HEALTH-01, see dev/healthkit's REINTEGRATION.md);
-    /// Nightscout ("nightscout") was removed from narrow `main` in Phase 5 (HEALTH-02, see
-    /// dev/nightscout's REINTEGRATION.md) — narrow main's table is Share-only.
+    /// The expected classification for each registered failover source. HealthKit ("healthkit") is
+    /// not in narrow `main` (see dev/healthkit's REINTEGRATION.md); neither is Nightscout
+    /// ("nightscout") (see dev/nightscout's REINTEGRATION.md) — narrow main's table is Share-only.
     private static let expected: [String: GlucoseConnectionKind] = [
         "dexcom-share": .cloudPoll
-            // "xdrip-appgroup" removed from `main` in Phase 1, Plan 01 (CGM-05).
-            // "dexcom-g6-ble" / "librelinkup" removed from `main` in Phase 1, Plan 02 (CGM-03/CGM-04).
-            // "dexcom-g7-ble" removed from `main` in Phase 1, Plan 03 (CGM-01/CGM-02) — with it gone,
-            // narrow main has NO remaining `.localBLE` source (see the gated assertion below).
+            // "xdrip-appgroup" is not in `main`.
+            // "dexcom-g6-ble" / "librelinkup" are not in `main`.
+            // "dexcom-g7-ble" is not in `main` either, and without it
+            // narrow main has NO `.localBLE` source at all (see the gated assertion below).
     ]
 
     /// Every registered source classifies itself correctly (BLE / cloud / on-device). Iterates the
@@ -50,10 +49,10 @@ struct CgmConnectionKindTests {
 
     /// The cloud-poll category is always populated — proves the typed enum actually differentiates
     /// the physical connection classes (not everything collapsing into one case). `.localBLE` was
-    /// Dexcom G7's category; it was removed from `main` in Phase 1, Plan 03 (CGM-01/CGM-02), so
-    /// narrow `main` has NO remaining `.localBLE` source at all (D-03: zero direct-BLE CGM on any
-    /// surface). `.localOnDevice` was xDrip App Group's category; it was removed from `main` in
-    /// Phase 1, Plan 01 (CGM-05), so `.localOnDevice` is only expected when the last remaining
+    /// Dexcom G7's category and G7 is not in narrow `main`, so
+    /// narrow `main` has NO `.localBLE` source at all (zero direct-BLE CGM on any
+    /// surface). `.localOnDevice` was xDrip App Group's category, also absent from narrow `main`,
+    /// so `.localOnDevice` is only expected when the last remaining
     /// `.localOnDevice` source (HealthKit) is compiled in.
     @Test func allThreeConnectionKindsArePresentAcrossTheRegistry() {
         let kinds = GlucoseSourceRegistry.enabled.compactMap { GlucoseSourceRegistry.make(id: $0.id)?.connectionKind }

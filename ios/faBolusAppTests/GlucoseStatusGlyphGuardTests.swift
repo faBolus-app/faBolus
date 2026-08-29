@@ -60,7 +60,7 @@ struct GlucoseStatusGlyphGuardTests {
     }
 
     /// Balanced-brace forward slice starting at `startIdx` through its matching close — same
-    /// technique as `BandDriftGuardTests.balancedSlice`. IN-02 (09.29 review): exercised directly by
+    /// technique as `BandDriftGuardTests.balancedSlice`. Exercised directly by
     /// `balancedSliceExtractsExactlyOneBalancedBraceBlock` below (previously dead code with no caller
     /// and no test coverage); this guard's own scans use the simpler line-prefix `splitIntoRenderBlocks`
     /// below instead, since the pinned surfaces' switch-based family/region boundaries are more
@@ -104,7 +104,7 @@ struct GlucoseStatusGlyphGuardTests {
         return blocks.map { $0.joined(separator: "\n") }
     }
 
-    /// WR-01: counts trend-arrow RENDER lines in a block — a line must contain a rendering call
+    /// Counts trend-arrow RENDER lines in a block — a line must contain a rendering call
     /// (`Text(`/`Label(`) AND one of `trendArrowNeedles`, not just the bare token (which would also
     /// match the token's own non-rendering definition/composition, e.g. `private var arrow: String { … }`
     /// or an accessibility-label string builder).
@@ -159,7 +159,7 @@ struct GlucoseStatusGlyphGuardTests {
     /// (one of `.trend` / `snap.trendArrow` / `context.arrow`) AT LEAST ONCE somewhere in the file,
     /// proving the real CGM trend arrow was never deleted alongside the band glyph. This is a presence
     /// check ONLY — see `everyRenderBlockRendersItsTrendArrowAtMostOnce` below for the uniqueness prong
-    /// (WR-01: the two together give "exactly once per render occasion," which a single whole-file
+    /// (the two together give "exactly once per render occasion," which a single whole-file
     /// `contains` can't express since several pinned surfaces legitimately render the trend arrow once
     /// EACH across multiple independent regions/families). Loud-not-vacuous: scanned count == 3.
     @Test func everyPinnedSurfaceStillRendersItsTrendToken() throws {
@@ -189,7 +189,7 @@ struct GlucoseStatusGlyphGuardTests {
         )
     }
 
-    /// Prong 2b (trend-arrow survives — uniqueness, WR-01): every independent render block
+    /// Prong 2b (trend-arrow survives — uniqueness): every independent render block
     /// (`splitIntoRenderBlocks`) in every pinned surface renders its trend-arrow token AT MOST ONCE —
     /// catching a future regression where a surface accidentally renders the token TWICE within the
     /// SAME block (e.g. a stray duplicate `Text(context.arrow)`), which the presence-only prong above
@@ -197,9 +197,7 @@ struct GlucoseStatusGlyphGuardTests {
     /// per whole file, because several pinned surfaces legitimately render the trend arrow once EACH
     /// across multiple mutually-exclusive `WidgetFamily` `case`s or multiple independent region-backing
     /// `struct`s/`func`s (confirmed by inspection — a flat whole-file "exactly one" would false-positive
-    /// on today's correct `GlucoseWidget.swift` (and, before its Phase 7 removal, `GlucoseLiveActivity
-    /// .swift`). Loud-not-vacuous:
-    /// scanned == 3.
+    /// on today's correct `GlucoseWidget.swift`). Loud-not-vacuous: scanned == 3.
     @Test func everyRenderBlockRendersItsTrendArrowAtMostOnce() throws {
         let repoRoot = try #require(
             Self.repoRootURL(),
@@ -232,14 +230,13 @@ struct GlucoseStatusGlyphGuardTests {
         )
     }
 
-    /// CR-01 GUARD (09.29 review): every pinned surface's (comment-stripped) source contains BOTH the
+    /// GUARD: every pinned surface's (comment-stripped) source contains BOTH the
     /// VoiceOver zone-word token (`zoneWordNeedle`, `.shortLabel`) AND an `accessibilityLabel(`/
     /// `accessibilityValue(` call — a text-scan proxy proving the zone word feeds SOME spoken
-    /// accessibility annotation in the file, so a future deletion (like the one this review found,
-    /// where 5 of 8 surfaces lost their ONLY VoiceOver band cue when `BandIndicator` was removed) can't
-    /// silently drop it again without failing this test. NOT full UI-tree/snapshot verification — the
-    /// review's own words: "the existing text-scan guard can't verify accessibility wiring." Loud-not-
-    /// vacuous: scanned == 3.
+    /// accessibility annotation in the file, so a future deletion (like the past one where 5 of 8
+    /// surfaces lost their ONLY VoiceOver band cue when `BandIndicator` was removed) can't
+    /// silently drop it again without failing this test. NOT full UI-tree/snapshot verification — a
+    /// text-scan guard can't verify accessibility wiring. Loud-not-vacuous: scanned == 3.
     @Test func everyPinnedSurfaceSpeaksTheZoneWordToVoiceOver() throws {
         let repoRoot = try #require(
             Self.repoRootURL(),
@@ -298,7 +295,7 @@ struct GlucoseStatusGlyphGuardTests {
             "expected to actually read all 3 pinned glucose surfaces — plumbing broke (would otherwise pass vacuously)")
     }
 
-    /// IN-02 (09.29 review): direct unit coverage for `balancedSlice` — previously dead code with no
+    /// Direct unit coverage for `balancedSlice` — previously dead code with no
     /// caller and no test, kept only to mirror `BandDriftGuardTests`' shape for possible future reuse.
     /// Proves it extracts exactly the balanced-brace block starting at the given line, stopping at the
     /// FIRST matching close brace, and does not spill into a sibling block that follows.

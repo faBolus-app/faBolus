@@ -39,7 +39,7 @@ struct StackingGuardNoticeAckTests {
         #expect(s.stackingGuardNoticeAckAt == first)
     }
 
-    // MARK: - LOCK-06: the notice UI never presents — proven at the source level
+    // MARK: - The notice UI never presents — proven at the source level
 
     @Test func sourceCompiles() {
         #expect(

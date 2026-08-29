@@ -1,32 +1,31 @@
 import Foundation
 
-/// The widget island's mirror of `faBolusCore.GlucoseThresholds`. As of Phase 09.1 (D-01/D-02) the
-/// widget/complication extension targets DO transitively link `faBolusCore` via `faBolusDesign` (for
-/// the shared band-color tokens + `BandIndicator` primitive) — but this mirror is intentionally
-/// RETAINED rather than retired this phase, to keep the diff scoped to color/primitive routing (see
-/// the phase's scoped-out note). `WidgetGlucoseThresholdsMirrorTests` (app target, which links BOTH)
-/// asserts these equal the canonical `GlucoseThresholds`, so the two can't drift silently. See
-/// `GlucoseThresholds` for the clinical source (Battelino 2019 international TIR consensus, §13).
+/// The widget island's mirror of `faBolusCore.GlucoseThresholds`. The widget/complication extension
+/// targets DO transitively link `faBolusCore` via `faBolusDesign` (for the shared band-color tokens
+/// + `BandIndicator` primitive) — but this mirror is intentionally RETAINED rather than retired:
+/// retiring the two widget mirrors was deliberately left out of scope when that transitive link
+/// landed, and the drift-guard tests below make the duplication safe.
+/// `WidgetGlucoseThresholdsMirrorTests` (app target, which links BOTH) asserts these equal the
+/// canonical `GlucoseThresholds`, so the two can't drift silently. See `GlucoseThresholds` for the
+/// clinical source (Battelino 2019 international TIR consensus, §13).
 public enum WidgetGlucoseThresholds {
     public static let low = 70  // == GlucoseThresholds.low
     public static let high = 180  // == GlucoseThresholds.high
     public static let veryHigh = 250  // == GlucoseThresholds.veryHigh
 }
 
-/// The widget island's mirror of `faBolusCore.GlucoseUnit` (Phase 04-03, mmol/L display-unit
-/// support). RETAINED as-is post-Phase-09.1 for the same reason as `WidgetGlucoseThresholds` above
-/// (the extensions now link faBolusCore transitively via faBolusDesign, but retiring this mirror is
-/// out of scope this phase), so this carries the same two-case shape, the same 18.0182
-/// factor, and the same 1-decimal mmol format. The unit rides the App Group as a plain `String?`
-/// wire token ("mgdl"|"mmol") on `WidgetSnapshot.displayUnit` — never this enum directly (Pitfall
-/// 6: a raw enum on the wire risks a silent encoding drift if a case is ever added); a nil or
-/// unrecognized token resolves to `.mgdl` (legacy-safe, matches D-03's mg/dL default).
+/// The widget island's mirror of `faBolusCore.GlucoseUnit` (mmol/L display-unit support). RETAINED
+/// as-is for the same reason as `WidgetGlucoseThresholds` above, so this carries the same two-case
+/// shape, the same 18.0182 factor, and the same 1-decimal mmol format. The unit rides the App Group
+/// as a plain `String?` wire token ("mgdl"|"mmol") on `WidgetSnapshot.displayUnit` — never this enum
+/// directly (a raw enum on the wire risks a silent encoding drift if a case is ever added); a nil or
+/// unrecognized token resolves to `.mgdl` (legacy-safe, matches the mg/dL default).
 /// `WidgetGlucoseUnitMirrorTests` (app target, which links BOTH) pins this to the canonical
-/// `faBolusCore.GlucoseUnit` so the two can't drift silently (T-04-06).
+/// `faBolusCore.GlucoseUnit` so the two can't drift silently.
 public enum WidgetGlucoseUnit: String {
     case mgdl, mmol
 
-    /// mg/dL per mmol/L (D-05, locked) — mirrors `faBolusCore.GlucoseUnit.mgdlPerMmol` exactly;
+    /// mg/dL per mmol/L (locked) — mirrors `faBolusCore.GlucoseUnit.mgdlPerMmol` exactly;
     /// pinned equal by the drift-guard test, not re-derived independently.
     public static let mgdlPerMmol = 18.0182
 
@@ -56,10 +55,10 @@ public enum WidgetGlucoseUnit: String {
 /// `WidgetSnapshot` on every pump update; Lock Screen / Home Screen widgets read the latest one.
 /// Widgets can't drive Bluetooth themselves, so they show the last-published values plus an age.
 public struct WidgetSnapshot: Codable, Sendable, Equatable {
-    // Hashable (Phase 5, D-06): originally required by the Live Activity `ContentState`
-    // (`ActivityAttributes.ContentState` protocol constraint), which carried `[Point]` verbatim
-    // (removed Phase 7, 07-01, FEAT-01). Kept — harmless and still additive; `Date`/`Int` are both
-    // Hashable, so this doesn't change `Point`'s existing Equatable/Codable behavior.
+    // Hashable: originally required by the Live Activity `ContentState`
+    // (`ActivityAttributes.ContentState` protocol constraint), which carried `[Point]` verbatim (since
+    // removed). Kept — harmless and still additive; `Date`/`Int` are both Hashable, so this doesn't
+    // change `Point`'s existing Equatable/Codable behavior.
     public struct Point: Codable, Sendable, Equatable, Hashable {
         public var t: Date
         public var mgdl: Int
@@ -75,11 +74,11 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     public var iobUnits: Double
     public var reservoirUnits: Double
     public var batteryPercent: Int
-    /// Phase 09.27-02 (D-04/D-05) — whether the pump is currently charging (op-145
-    /// `chargingStatus == 1`, mirrored verbatim from `PumpSnapshot.batteryCharging`). Additive,
-    /// fail-closed default `false` (matches `deliverySuspended`'s own non-optional shape):
-    /// absent/legacy key ⇒ never a fabricated charging badge on an old widget/complication snapshot
-    /// (D-05). Routed through `BatteryChargingPresentation` at render — never re-derived inline.
+    /// Whether the pump is currently charging (op-145 `chargingStatus == 1`, mirrored verbatim from
+    /// `PumpSnapshot.batteryCharging`). Additive, fail-closed default `false` (matches
+    /// `deliverySuspended`'s own non-optional shape): absent/legacy key ⇒ never a fabricated charging
+    /// badge on an old widget/complication snapshot. Routed through `BatteryChargingPresentation` at
+    /// render — never re-derived inline.
     public var batteryCharging: Bool
     public var lastBolusUnits: Double?
     public var lastBolusDate: Date?
@@ -99,10 +98,10 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     // exactly like the app instead of assuming the 6-min default. Optional for back-compat / iOS.
     public var staleAfterSec: TimeInterval?  // grey after this age
     public var hideAfterSec: TimeInterval?  // hide ("--") after this age; nil = never hide
-    /// The active glucose display unit, mirrored from `AppSettings.glucoseDisplayUnit` (Phase
-    /// 04-03). A wire token ("mgdl"|"mmol"), never `WidgetGlucoseUnit` itself (Pitfall 6). `nil` ⇒
-    /// mgdl — an older app version's snapshot (before this field existed) decodes fine via
-    /// `Codable`'s default-on-missing-key behavior and renders mg/dL, matching D-03's default.
+    /// The active glucose display unit, mirrored from `AppSettings.glucoseDisplayUnit`. A wire token
+    /// ("mgdl"|"mmol"), never `WidgetGlucoseUnit` itself. `nil` ⇒ mgdl — an older app version's snapshot
+    /// (before this field existed) decodes fine via `Codable`'s default-on-missing-key behavior and
+    /// renders mg/dL, matching the default.
     public var displayUnit: String?
 
     /// Owner-requested "Show unit labels" toggle, mirrored from `AppSettings.showGlucoseUnitLabels`.
@@ -112,13 +111,11 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     /// widget/complication ambient surfaces; the glucose number itself is unaffected.
     public var showUnitLabel: Bool
 
-    // Phase 5 pump surfaces (D-17, 05-02) — the five faBolus-differentiator fields originally
-    // projected alongside glucose by the Live Activity (removed Phase 7, 07-01, FEAT-01); kept
-    // compiled as general PumpSnapshot mirrors (AppModel.swift's write path is byte-identity
-    // protected). All additive-optional, defaulted below AND in the custom `init(from:)` decoder
-    // (see Codable conformance) so an old JSON snapshot missing every one of these still decodes.
-    // `iobDate` is the op-109 stamp IOB greys/ages off (mirrors `PumpSnapshot.iobDate`); the other
-    // four are dateless.
+    // Pump surfaces — the five faBolus-differentiator fields originally projected alongside glucose by
+    // the Live Activity (since removed); kept compiled as general PumpSnapshot mirrors. All
+    // additive-optional, defaulted below AND in the custom `init(from:)` decoder (see Codable
+    // conformance) so an old JSON snapshot missing every one of these still decodes. `iobDate` is the
+    // op-109 stamp IOB greys/ages off (mirrors `PumpSnapshot.iobDate`); the other four are dateless.
     /// When `iobUnits` was last received from the pump (op-109). `nil` ⇒ unknown age ⇒ always stale.
     public var iobDate: Date?
     /// Effective basal delivery rate (U/hr) — never an invented temp-rate percent.
@@ -129,22 +126,21 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     public var controlIQMode: Int
     /// Whether Control-IQ automation is enabled.
     public var controlIQEnabled: Bool
-    /// Phase 5 (D-18, 05-05) — true when at least one currently-active pump alert is snooze-eligible
+    /// True when at least one currently-active pump alert is snooze-eligible
     /// (`PumpAlertKind.isAutoRuleEligible`, i.e. NOT `.alarm`). Computed app-side from
     /// `AppModel.activeNotifications` (which carries the per-alert `kind` this wire type doesn't) —
     /// the same "app computes the gate, the extension/intent only reads it" pattern as
-    /// `iobStale`/`pumpLinkStale` (D-17, §13 Rule 1). Originally gated the Live Activity's "Snooze"
+    /// `iobStale`/`pumpLinkStale` (§13 Rule 1). Originally gated the Live Activity's "Snooze"
     /// button visibility + its `LiveActivityIntentBridge.snoozeAlertIfSafe` action re-check (both
-    /// removed Phase 7, 07-01, FEAT-01) — kept compiled as a general PumpSnapshot mirror
-    /// (AppModel.swift's write path is byte-identity protected).
+    /// since removed) — kept compiled as a general PumpSnapshot mirror.
     public var hasSnoozeEligibleAlert: Bool
 
-    /// Phase 09.9-04 (D-05) — the pump's cartridge-ready DISPLAY signal. Additive, mirroring
+    /// The pump's cartridge-ready DISPLAY signal. Additive, mirroring
     /// `deliverySuspended`: default **true** ("ready") is the SAFE decode default for a legacy
     /// widget-extension binary that predates this field — an ABSENT key must never render as a false
     /// "cartridge not ready" scare, matching the RemoteCommand.cartridgeReady precedent.
-    /// WR-04 (debug pump-pairing-loop-api25, deep review): `WidgetPublisher.makeSnapshot` now sets this
-    /// from `PumpSnapshot.cartridgeReadiness == .ready` (a CONFIRMED reply), not the fail-open
+    /// `WidgetPublisher.makeSnapshot` sets this from `PumpSnapshot.cartridgeReadiness == .ready`
+    /// (a CONFIRMED reply), not the fail-open
     /// `cartridgeReadyForBolus`, so a `.unknown` state (op-20 auto-excluded / never read) maps to the
     /// non-positive `false` — the widget never presents a fail-open "ready" from a state that was never
     /// read. The Bool can only carry two states (not a third "unknown"), so `false` here means "omit the
@@ -209,7 +205,7 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     /// synthesized `Decodable` only auto-tolerates a missing key for `Optional`-typed properties; a
     /// non-optional stored property (e.g. `basalRateUnitsPerHour: Double`) throws `keyNotFound` on a
     /// legacy payload despite having a default in the memberwise `init` above. This keeps the additive-
-    /// optional wire contract for the Phase 5 pump fields (and every earlier field) actually true.
+    /// optional wire contract for the pump fields (and every earlier field) actually true.
     /// `encode(to:)` stays compiler-synthesized (unaffected by a custom `init(from:)`).
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -219,7 +215,7 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         iobUnits = try c.decodeIfPresent(Double.self, forKey: .iobUnits) ?? 0
         reservoirUnits = try c.decodeIfPresent(Double.self, forKey: .reservoirUnits) ?? 0
         batteryPercent = try c.decodeIfPresent(Int.self, forKey: .batteryPercent) ?? 0
-        // Phase 09.27-02 (D-05): a legacy/missing key falls back to `false` (not charging) — mirrors
+        // A legacy/missing key falls back to `false` (not charging) — mirrors
         // `deliverySuspended`'s own fail-closed default; an older widget-extension binary never shows
         // a fabricated charging badge from a missing key.
         batteryCharging = try c.decodeIfPresent(Bool.self, forKey: .batteryCharging) ?? false
@@ -246,12 +242,12 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         // Owner-requested toggle: a legacy snapshot missing the key ⇒ false (labels hidden), matching
         // the setting's own default-OFF — mirrors every other additive-optional field's fallback above.
         showUnitLabel = try c.decodeIfPresent(Bool.self, forKey: .showUnitLabel) ?? false
-        // Phase 09.9-04 (D-05): a legacy snapshot missing the key ⇒ true (safe "ready" default) — an
+        // A legacy snapshot missing the key ⇒ true (safe "ready" default) — an
         // older widget extension binary never shows a false cartridge-not-ready scare.
         cartridgeReady = try c.decodeIfPresent(Bool.self, forKey: .cartridgeReady) ?? true
     }
 
-    /// modern glucose bands. 0 = low, 1 = in-range, 2 = high, 3 = urgent-high, -1 = unknown.
+    /// Modern glucose bands. 0 = low, 1 = in-range, 2 = high, 3 = urgent-high, -1 = unknown.
     /// Uses the same **closed clinical convention** as `faBolusCore.GlucoseRange` (70…180 in-range,
     /// 181…250 high, > 250 urgent); the boundaries come from `WidgetGlucoseThresholds` (the widget
     /// island's mirror of the canonical constants). Kept in lockstep with the core classifier by
@@ -272,8 +268,8 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     /// faBolusCore (see the note on `WidgetGlucoseThresholds`), so the value is carried here; the app
     /// test target links both and pins this equal to the canonical one so they can't drift silently. A
     /// reading dated more than this far in the FUTURE came from a source with a fast clock — its true
-    /// age is unknowable, so it is treated as stale and never shown as the live value (loop-comms audit
-    /// fix #1). Without the guard a future-dated reading has negative elapsed time and reads "fresh"
+    /// age is unknowable, so it is treated as stale and never shown as the live value.
+    /// Without the guard a future-dated reading has negative elapsed time and reads "fresh"
     /// forever, so the widget/complication would render it as the current value.
     public static let futureSkewTolerance: TimeInterval = 5 * 60
 
@@ -305,7 +301,7 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         if elapsed < -Self.futureSkewTolerance { return false }  // future-dated → stale, not hidden
         return elapsed >= Swift.max(hide, staleLimit)
     }
-    /// WR-02 (R2-09) TTL for the `connected` flag + the dateless pump metrics (iob/reservoir/battery/
+    /// TTL for the `connected` flag + the dateless pump metrics (iob/reservoir/battery/
     /// basal). Unlike glucose (keyed off `glucoseDate`, the sample time), those values carry no intrinsic
     /// timestamp — they age ONLY against `updatedAt` (publish time). If the host is killed, no publish
     /// re-stamps `updatedAt`, so past this TTL the persisted snapshot's connection state is no longer
@@ -353,13 +349,11 @@ public enum WidgetStore {
         defaults?.set(data, forKey: key)
     }
 
-    // Phase 7 (07-03, FEAT-05, D-08): `requestOpenBolus()`/`takeOpenBolusRequest()` are removed —
-    // their entire reason to exist was a Shortcuts "Open Bolus Screen" action (the deleted
-    // `OpenBolusScreenIntent` in the now-git-rm'd Intents surface), which was `requestOpenBolus()`'s
-    // ONLY caller anywhere in the app (confirmed via repo-wide grep — a Rule 1/2 dangling-round-trip
-    // finding, not in RESEARCH's file list). `AppModel.swift`'s `openBolusRequested` flag and
-    // `RootTabView.swift`'s consumer of it are UNTOUCHED — they stay legitimately live, fed by the
-    // separate, still-present `fabolus://bolus` URL-scheme trigger (`App.swift`).
+    // There is deliberately no `requestOpenBolus()`/`takeOpenBolusRequest()` pair here: their entire
+    // reason to exist was a Shortcuts "Open Bolus Screen" action (`OpenBolusScreenIntent`), which was
+    // `requestOpenBolus()`'s ONLY caller anywhere in the app and no longer exists.
+    // `AppModel.swift`'s `openBolusRequested` flag and `RootTabView.swift`'s consumer of it stay
+    // legitimately live, fed by the separate `fabolus://bolus` URL-scheme trigger (`App.swift`).
     public static func load() -> WidgetSnapshot? {
         guard let data = defaults?.data(forKey: key) else { return nil }
         return try? JSONDecoder().decode(WidgetSnapshot.self, from: data)
@@ -387,7 +381,7 @@ public struct WidgetBolusRequest: Codable, Sendable, Equatable {
 /// Live delivery status the app writes back so the widget can show progress + a cancel button in
 /// place (without opening the app).
 ///
-/// CX-F-09: `.expired` is an explicit "the host never finalized this" outcome, distinct from `.idle`. A
+/// `.expired` is an explicit "the host never finalized this" outcome, distinct from `.idle`. A
 /// `.delivering` status the host process never got to finalize (killed mid-delivery, before
 /// `WidgetBolusReceiver` writes `.delivered`/`.cancelled`/`.failed`) is stuck forever from the widget's
 /// point of view. Silently reverting that to `.idle` erases the request identity/units and re-presents the
@@ -427,7 +421,7 @@ public enum WidgetBolusStore {
     public static let confirmTTL: TimeInterval = 20
     /// The app must consume a completed request within this window (else it's ignored as stale).
     public static let pendingTTL: TimeInterval = 120
-    /// VA-26: only DELIVER a units-mode widget bolus in place when it's this fresh (a live Darwin
+    /// Only DELIVER a units-mode widget bolus in place when it's this fresh (a live Darwin
     /// handoff, age ~0). Older-but-still-within-`pendingTTL` requests (a suspended-app foreground
     /// fallback) are converted to an in-app re-confirm rather than auto-dosing up to ~2 min late.
     public static let promptTTL: TimeInterval = 15
@@ -468,7 +462,7 @@ public enum WidgetBolusStore {
         set { d?.set(newValue, forKey: "wbDefaultMode") }
     }
 
-    // --- Bolus lock (A-05) — mirrored from the app's single AccessPolicy evaluator ---
+    // --- Bolus lock — mirrored from the app's single AccessPolicy evaluator ---
     /// Whether bolusing from the Quick-Bolus widget is currently refused (phone read-only, or child mode
     /// with `.bolus` disallowed). The app computes this from `AppModel.accessDecision(.deliverBolus,
     /// from: .quickBolusWidget)` — the evaluator is the single source of truth — and publishes it here so
@@ -538,7 +532,7 @@ public enum WidgetBolusStore {
         return Date().timeIntervalSince(r.createdAt) > pendingTTL ? nil : r
     }
 
-    // --- Cancel authentication (VA-28) — give the cancel path the same App-Group corroboration the
+    // --- Cancel authentication — give the cancel path the same App-Group corroboration the
     // deliver path already has via setPending/takePending. A Darwin post is system-wide, unauthenticated,
     // and payload-less, so a co-resident app could otherwise fire cancelBolus with a bare post. The
     // widget's own cancel button writes this single-use, TTL-bounded token BEFORE posting; the receiver
@@ -561,7 +555,7 @@ public enum WidgetBolusStore {
         guard let data = try? JSONEncoder().encode(s) else { return }
         d?.set(data, forKey: "wbStatus")
     }
-    /// CX-F-09: how long a `.delivering` status can go unfinalized before `status()` surfaces it as
+    /// How long a `.delivering` status can go unfinalized before `status()` surfaces it as
     /// `.expired` instead of silently reverting to `.idle`. Kept at the same 90 s window this file already
     /// used for the (previously silent) "delivering" freshness cutoff — a host mid-delivery legitimately
     /// takes a few seconds, so this stays generous, but a host process killed outright never comes back to
@@ -573,7 +567,7 @@ public enum WidgetBolusStore {
         else { return .idle }
         let age = Date().timeIntervalSince(s.updatedAt)
         if s.phase == .delivering {
-            // CX-F-09: past the expiry window, surface an EXPLICIT `.expired` status — same requestId/units
+            // Past the expiry window, surface an EXPLICIT `.expired` status — same requestId/units
             // as the stuck `.delivering` one — instead of collapsing to `.idle` (which erased identity and
             // invited a fresh re-bolus while the original outcome was still unknown). Nothing is persisted
             // here; this is computed fresh on every read, so a later app-side finalize (a relaunch that

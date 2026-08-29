@@ -4,11 +4,10 @@ import SwiftUI
 import faBolusCore
 @testable import faBolus
 
-/// RED-first (task 04-01/3, D-07/D-09). The single highest-risk seam in this phase: a typed mmol
+/// The single highest-risk unit-parsing seam: a typed mmol
 /// decimal in `BolusEntryView`'s `bg` field must reach `recommendBolus` as the NEAREST mg/dL `Int`,
 /// and MUST NEVER become `0` (the hazard a bare `Int(bg)` on a decimal string previously risked via
-/// `Int(bg) ?? 0`). Written before the parse-site replacements land, so it fails against the
-/// pre-existing bare-`Int(bg)` call sites.
+/// `Int(bg) ?? 0`).
 @MainActor
 struct BolusEntryUnitParseTests {
 
@@ -18,7 +17,7 @@ struct BolusEntryUnitParseTests {
         return (AppModel(source: backend, ledgerStoreURL: url), backend)
     }
 
-    // MARK: - The dose-math boundary (SC3 / D-07 / D-09)
+    // MARK: - The dose-math boundary
 
     /// "7.1" typed in mmol mode → nearest mg/dL Int (127.9… → 128), and that exact value is what
     /// reaches `recommendBolus` — never `nil`-coerced-to-`0`, which would be a fabricated glucose
@@ -76,7 +75,7 @@ struct BolusEntryUnitParseTests {
         #expect(BolusEntryView.bgAccessibilityLabel(for: .mgdl).contains("mg/dL"))
     }
 
-    // MARK: - No bare Int(bg) remains (structural — mirrors the plan's grep acceptance criterion)
+    // MARK: - No bare Int(bg) remains (structural)
 
     /// Defense in depth: a mismatched round value never masquerades as a valid parse. Kept as a
     /// belt-and-suspenders unit-scale sanity check alongside `GlucoseUnitTests`' own coverage.

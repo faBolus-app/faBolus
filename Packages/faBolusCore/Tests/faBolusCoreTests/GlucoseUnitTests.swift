@@ -2,12 +2,11 @@ import Testing
 import Foundation
 @testable import faBolusCore
 
-/// RED-first (task 04-01/1): written before `GlucoseUnit` exists, so this fails to compile/build
-/// until the type + its funnel land. Covers D-05 (1-decimal mmol format), D-07 (nearest-mg/dL-Int
-/// parse, never truncated), the round-trip bound, and D-08 (clinically-rounded threshold labels).
+/// Covers `GlucoseUnit`'s 1-decimal mmol format, its nearest-mg/dL-Int parse (never truncated),
+/// the round-trip bound, and the clinically-rounded threshold labels.
 struct GlucoseUnitTests {
 
-    // MARK: - format(mgdl:) — D-05
+    // MARK: - format(mgdl:)
 
     @Test func formatMgdlIsPlainInteger() {
         #expect(GlucoseUnit.mgdl.format(mgdl: 124) == "124")
@@ -21,7 +20,7 @@ struct GlucoseUnitTests {
         #expect(GlucoseUnit.mmol.format(mgdl: 70) == "3.9")
     }
 
-    // MARK: - parse(_:) — D-07
+    // MARK: - parse(_:)
 
     @Test func parseMgdlStrictInteger() {
         #expect(GlucoseUnit.mgdl.parse("128") == 128)
@@ -34,7 +33,7 @@ struct GlucoseUnitTests {
     }
 
     @Test func parseMmolAcceptsCommaDecimalSeparator() {
-        // Gap closure (04-07/CR-04): `.decimalPad` presents a locale decimal separator (comma in
+        // `.decimalPad` presents a locale decimal separator (comma in
         // most mainland-Europe mmol/L locales). "7,1" must parse identically to "7.1" — same
         // nearest-mg/dL rounding, never a silent nil-drop of a correctly-typed correction.
         #expect(GlucoseUnit.mmol.parse("7,1") == GlucoseUnit.mmol.parse("7.1"))
@@ -46,11 +45,11 @@ struct GlucoseUnitTests {
         #expect(GlucoseUnit.mgdl.parse("abc") == nil)
         #expect(GlucoseUnit.mmol.parse("") == nil)
         #expect(GlucoseUnit.mmol.parse("abc") == nil)
-        // Explicitly: nil, never 0 — the hazard this phase exists to prevent.
+        // Explicitly: nil, never 0 — the hazard this parse funnel exists to prevent.
         #expect(GlucoseUnit.mmol.parse("abc") != 0)
     }
 
-    // MARK: - Round-trip — SC2
+    // MARK: - Round-trip
 
     @Test func roundTripWithinOneMgdl() {
         for x in [54, 70, 100, 124, 180, 250, 400] {
@@ -61,7 +60,7 @@ struct GlucoseUnitTests {
         }
     }
 
-    // MARK: - thresholdLabel — D-08
+    // MARK: - thresholdLabel
 
     @Test func thresholdLabelMmolUsesClinicalRounding() {
         #expect(GlucoseUnit.thresholdLabel(GlucoseThresholds.veryLow, unit: .mmol) == "3.0")
@@ -77,7 +76,7 @@ struct GlucoseUnitTests {
         #expect(GlucoseUnit.thresholdLabel(GlucoseThresholds.veryHigh, unit: .mgdl) == "250")
     }
 
-    // MARK: - wireToken (D-04/Pitfall 6)
+    // MARK: - wireToken
 
     @Test func wireTokenEqualsRawValue() {
         #expect(GlucoseUnit.mgdl.wireToken == "mgdl")

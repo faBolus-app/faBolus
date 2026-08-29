@@ -3,10 +3,10 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// Phase 09.24-01 (D-01/D-02/D-03): pins the unified `CgmSettingsView` "1. Choose a source →
-/// 2. Configure & test → 3. Status" guided progression (Task 1), the honest ordering that moves
+/// Pins the unified `CgmSettingsView` "1. Choose a source →
+/// 2. Configure & test → 3. Status" guided progression, the honest ordering that moves
 /// "Nightscout upload" / "Glucose staleness" below the three numbered steps, and the read-only
-/// "Last test result" echo added to `CgmStatusView` (Task 3). Mirrors the `#filePath`-rooted
+/// "Last test result" echo in `CgmStatusView`. Mirrors the `#filePath`-rooted
 /// `repoRootURL()` / `readSource` source-scan idiom already used by `DexcomG6CopyGuardTests` /
 /// `CgmConfigSectionCopyGuardTests` — no simulator, no live view, pure text-content + source-position
 /// guard.
@@ -43,7 +43,7 @@ struct CgmFailoverUiRefactorGuardTests {
         }
     }
 
-    // MARK: - Task 1: numbered section headers + footers
+    // MARK: - Numbered section headers + footers
 
     @Test func numberedSectionHeadersArePresent() throws {
         let source = try #require(Self.readSource(Self.settingsViewPath))
@@ -64,7 +64,7 @@ struct CgmFailoverUiRefactorGuardTests {
         #expect(source.contains("See live status, freshness, and the last test result for every configured source."))
     }
 
-    // MARK: - Task 1: Section-2 / Section-3 subtitle strings
+    // MARK: - Section-2 / Section-3 subtitle strings
 
     @Test func section2SubtitleStringsArePresent() throws {
         let source = try #require(Self.readSource(Self.settingsViewPath))
@@ -72,7 +72,7 @@ struct CgmFailoverUiRefactorGuardTests {
         #expect(source.contains("Selected: "))
     }
 
-    /// WR-01/IN-02 fix (09.24 review): the "no selection" copy now lives at its single source of
+    /// The "no selection" copy lives at its single source of
     /// truth — the shared `CgmStatusView.selectionStatusSubtitle` pure helper — rather than being
     /// duplicated as a literal in `SettingsView.swift`'s Section-3 subtitle. Pin it there instead.
     @Test func section3NoSelectionSubtitleIsPresent() throws {
@@ -80,10 +80,10 @@ struct CgmFailoverUiRefactorGuardTests {
         #expect(source.contains("Pump only — no failover source selected"))
     }
 
-    /// WR-01/IN-02 fix (09.24 review): Section 3 now calls ONE shared helper
+    /// Section 3 calls ONE shared helper
     /// (`CgmStatusView.selectionStatusSubtitle`) instead of calling `classify`/`classificationLabel`
-    /// directly and independently from `statusSubtitleColor` (the IN-02 duplication that let WR-01's
-    /// divergence go unnoticed). Assert `SettingsView.swift` reuses that single helper, and that the
+    /// directly and independently from `statusSubtitleColor` (the duplication that let the two
+    /// subtitles diverge unnoticed). Assert `SettingsView.swift` reuses that single helper, and that the
     /// helper itself is still built on the pure `classify`/`classificationLabel` primitives rather
     /// than reimplementing the classification logic inline.
     @Test func section3SubtitleReusesThePureStatusHelpers() throws {
@@ -94,7 +94,7 @@ struct CgmFailoverUiRefactorGuardTests {
         #expect(statusSource.contains("classificationLabel(cls)"))
     }
 
-    // MARK: - Task 1: row labels stay byte-identical
+    // MARK: - Row labels stay byte-identical
 
     @Test func rowLabelsAreUnchanged() throws {
         let source = try #require(Self.readSource(Self.settingsViewPath))
@@ -102,11 +102,11 @@ struct CgmFailoverUiRefactorGuardTests {
         #expect(source.contains("CGM source status"))
     }
 
-    // MARK: - Task 1: ordering — "3. Status" before "Glucose staleness"
+    // MARK: - Ordering — "3. Status" before "Glucose staleness"
     //
-    // The "Nightscout upload" section this test originally also ordered was removed from narrow
-    // `main` in Phase 5 (HEALTH-02) — see dev/nightscout's REINTEGRATION.md. The remaining
-    // "3. Status" → "Glucose staleness" ordering guard still applies and is preserved (renamed).
+    // The "Nightscout upload" section this test also ordered is not in narrow
+    // `main` — see dev/nightscout's REINTEGRATION.md. The remaining
+    // "3. Status" → "Glucose staleness" ordering guard still applies.
 
     @Test func statusSectionComesBeforeStaleness() throws {
         let source = try #require(Self.readSource(Self.settingsViewPath))
@@ -123,7 +123,7 @@ struct CgmFailoverUiRefactorGuardTests {
             "\"3. Status\" must come before \"Glucose staleness\" in CgmSettingsView's body")
     }
 
-    // MARK: - Task 3: status-page "Last test result" echo
+    // MARK: - Status-page "Last test result" echo
 
     @Test func lastTestResultSectionHeaderAndFooterArePresent() throws {
         let source = try #require(Self.readSource(Self.statusViewPath))
@@ -154,7 +154,7 @@ struct CgmFailoverUiRefactorGuardTests {
         #expect(source.contains("last test found no reading"))
     }
 
-    /// D-03: the status page is a deliberately passive read — it must never trigger the Test flow.
+    /// The status page is a deliberately passive read — it must never trigger the Test flow.
     @Test func statusViewNeverTriggersStartCgmTest() throws {
         let source = try #require(Self.readSource(Self.statusViewPath))
         #expect(

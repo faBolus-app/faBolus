@@ -5,7 +5,7 @@ import Foundation
 /// is enabled: **block anything that dispenses insulin, allow benign actions** (the parent can then
 /// re-enable specific items).
 ///
-/// Lives in faBolusCore (moved from the app in P8) so the single `AccessPolicy` evaluator can map a
+/// Lives in faBolusCore so the single `AccessPolicy` evaluator can map a
 /// `GatedPumpWrite` to the child-feature it requires. `rawValue`s are unchanged, so the persisted
 /// `childAllowed` set and backups keep decoding. The Keychain-backed PIN store (`ChildModeStore`) stays
 /// in the app target.

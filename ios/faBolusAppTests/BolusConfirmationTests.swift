@@ -2,7 +2,7 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// **Phase 09.4 D-04/D-05/D-07** — pure outcome-decision tests for the transient bolus-success
+/// Pure outcome-decision tests for the transient bolus-success
 /// confirmation on the embedded `BolusEntryView`. `BolusConfirmation.banner(for:units:extended:)` is a
 /// dependency-free mapping from an ALREADY-RESOLVED delivery outcome to display text — it must NEVER
 /// synthesize a "delivered" banner for a pending or failed outcome (the core safety property).
@@ -12,7 +12,7 @@ import Foundation
 @Suite
 struct BolusConfirmationTests {
 
-    // MARK: - Never-false-positive cases (D-04/D-05 core safety property)
+    // MARK: - Never-false-positive cases (core safety property)
 
     @Test func stagedSignalProducesNoBanner() {
         let banner = BolusConfirmation.banner(for: .staged, units: 2.50)

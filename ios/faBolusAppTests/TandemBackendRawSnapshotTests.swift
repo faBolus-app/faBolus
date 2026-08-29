@@ -5,10 +5,9 @@ import TandemMessages
 import TandemBLE
 @testable import faBolus
 
-/// Plan 14-10 (owner-authorized follow-up to 14-09 checkpoint #3, D1/D2) — pins TandemBackend's
-/// `rawActiveNotifications` exposure: the TRUE pre-`acknowledged`-filter raw pump alert bitmap, published
-/// atomically alongside the existing filtered `activeNotifications` in `mergeNotifications`, and the
-/// nil-until-first-read invariant (T-14-41 mitigation) that distinguishes "not yet polled this
+/// Pins TandemBackend's `rawActiveNotifications` exposure: the TRUE pre-`acknowledged`-filter raw pump
+/// alert bitmap, published atomically alongside the existing filtered `activeNotifications` in
+/// `mergeNotifications`, and the nil-until-first-read invariant that distinguishes "not yet polled this
 /// connection" from "the pump genuinely reports zero active alerts."
 @Suite(.serialized) @MainActor
 struct TandemBackendRawSnapshotTests {
@@ -16,7 +15,7 @@ struct TandemBackendRawSnapshotTests {
     // MARK: - Nil-until-first-read
 
     /// A freshly-built backend (before any status read) has `rawActiveNotifications == nil` — the
-    /// underlying source lists initialize to `[]` (TandemBackend.swift:171-175) but the raw OPTIONAL
+    /// underlying source lists initialize to `[]` (in `TandemBackend.swift`) but the raw OPTIONAL
     /// stays nil until a real read completes, so a bare `[]` is never emitted as authoritative.
     @Test func freshBackendHasNilRawActiveNotifications() {
         let b = TandemBackend(testTransport: FakePumpTransport())

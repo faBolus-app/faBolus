@@ -389,7 +389,7 @@ import Testing
         }
     }
 
-    // MARK: - insufficientReservoir (09.9-02, D-01): non-blocking over-request disclosure, anchored
+    // MARK: - insufficientReservoir: non-blocking over-request disclosure, anchored
     // solely on the pump's OWN reservoirUnits read — never a hardcoded threshold.
 
     @Test func insufficientReservoirFiresWhenEnteredExceedsAValidReservoirReading() {

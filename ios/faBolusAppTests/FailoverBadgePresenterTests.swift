@@ -3,8 +3,8 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// Phase 16 GO-1 Step 2 (REMED-16, GO-1 §4.2, R4/R15/R33) — behavior-preserving equivalence proof
-/// for the pure mappers relocated from `AppModel` into `FailoverBadgePresenter`:
+/// Behavior-preserving equivalence proof for the pure mappers relocated from `AppModel` into
+/// `FailoverBadgePresenter`:
 /// `failoverBadge`/`shortSourceName` (the failover badge shown to the user) and
 /// `snoozeGateAllows`/`shouldPushStatus` (the two already-pure gate predicates). Every expected
 /// value pinned here is the value the ORIGINAL `AppModel` body returned before the move — a
@@ -84,7 +84,7 @@ struct FailoverBadgePresenterTests {
 
     // MARK: - shouldPushStatus (table-driven — pre/post-move identical booleans; the exhaustive
     // fixture also lives in StatusPushCadenceTests.swift, which now calls the SAME relocated
-    // function — kept here too as the plan's own required equivalence table for this mapper.)
+    // function — kept here too as the equivalence table for this mapper.)
 
     private static let t0 = Date(timeIntervalSince1970: 2_000_000)
 

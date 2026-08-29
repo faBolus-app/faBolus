@@ -4,11 +4,11 @@ import Foundation
 import faBolusCore
 import ShareClient
 
-/// D-07 (HIGH, B3): `DexcomShareSource` used to build a fresh unauthenticated `ShareClient` inside
+/// `DexcomShareSource` used to build a fresh unauthenticated `ShareClient` inside
 /// `poll()` every cycle (token nil), forcing a full 2-request re-auth handshake as often as every 60s
 /// during failover — the `SSO_Authenticate MaxAttemptsExceeed` lockout risk. These pin the fix: the
 /// client/token is cached across polls, rebuilt only on a credential change, backs off on repeated
-/// failure and resets on success, and `"apac"` maps to the APAC server (D-13). Driven via the injected
+/// failure and resets on success, and `"apac"` maps to the APAC server. Driven via the injected
 /// client factory + the testable `fetch(user:pass:server:)` core — no Keychain, no network.
 @MainActor
 struct DexcomShareSourceTests {
@@ -97,7 +97,7 @@ struct DexcomShareSourceTests {
         #expect(source.consecutiveFailures == 0, "a success must reset the backoff")
     }
 
-    // MARK: - APAC region mapping (D-13)
+    // MARK: - APAC region mapping
 
     /// `"apac"` maps to the APAC server (`share.dexcom.jp`); `"ous"` still maps to Worldwide; anything
     /// else (including nil) maps to US.
@@ -110,9 +110,9 @@ struct DexcomShareSourceTests {
         #expect(DexcomShareSource.server(for: "garbage") == .US)
     }
 
-    // MARK: - C2-01 depth (13-03 wiring completion): `partition`'s pure gate over plain tuples —
-    // `ShareGlucose`'s memberwise init is internal to the vendored module (see the class doc comment
-    // above), so this is what actually exercises the gating decision `fetch()` makes per reading.
+    // MARK: - `partition`'s pure gate over plain tuples — `ShareGlucose`'s memberwise init is internal
+    // to the vendored module (see the class doc comment above), so this is what actually exercises the
+    // gating decision `fetch()` makes per reading.
 
     @Test func partitionRoutesInRangeReadingsToSamplesAndBelowRangeSeparately() {
         let now = Date()
@@ -130,7 +130,7 @@ struct DexcomShareSourceTests {
     }
 
     @Test func partitionNeverProducesASampleForABelowRangeReading() {
-        // D-05 invariant, re-confirmed at THIS boundary: a below-range raw reading must never become a
+        // Invariant re-confirmed at THIS boundary: a below-range raw reading must never become a
         // `GlucoseSample` (a potential dose input) — only the separate `belowRange` bucket.
         let (samples, belowRange) = DexcomShareSource.partition(
             readings: [(mgdl: 10, date: Date(), trend: 0)], sourceID: "dexcom-share")

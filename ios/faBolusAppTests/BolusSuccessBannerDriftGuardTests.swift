@@ -2,9 +2,9 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// **Phase 09.4 T-09.4-01/§13 collision guard.** `BolusSuccessBanner.swift`'s success checkmark must use
+/// **§13 collision guard.** `BolusSuccessBanner.swift`'s success checkmark must use
 /// plain `Color.green`, NEVER `AppTheme.inRange` — that token is the §13-locked clinical "in range"
-/// glucose-band color (`Packages/faBolusDesign/Sources/faBolusDesign/AppTheme.swift:15`); reusing it for
+/// glucose-band color (`Packages/faBolusDesign/Sources/faBolusDesign/AppTheme.swift`); reusing it for
 /// an unrelated bolus-success affordance would create a semantic collision the band drift-guard
 /// (`BandDriftGuardTests`) does not (and should not) catch, since this isn't a band-classification call
 /// site. Modeled on `BandDriftGuardTests`'s repo-root-walk + source-scan idiom.

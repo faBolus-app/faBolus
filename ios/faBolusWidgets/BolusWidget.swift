@@ -21,8 +21,8 @@ struct BolusWidgetView: View {
     let snap: WidgetSnapshot
     var now: Date = Date()
 
-    /// Gap closure (04-07 / 04-VERIFICATION Gap #1): mirrors the exact pattern already used in
-    /// `GlucoseWidgetView`/`StatusWidgetView` — this contextual glucose number was the one widget
+    /// Mirrors the exact pattern already used in `GlucoseWidgetView`/`StatusWidgetView` — this
+    /// contextual glucose number was the one widget
     /// in the bundle still rendering `snap.glucose` raw, regardless of the display-unit setting.
     private var unit: WidgetGlucoseUnit { WidgetGlucoseUnit(wireToken: snap.displayUnit) }
 

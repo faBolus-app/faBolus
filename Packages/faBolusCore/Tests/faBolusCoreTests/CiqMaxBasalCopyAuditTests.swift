@@ -2,16 +2,16 @@ import Testing
 import Foundation
 @testable import faBolusCore
 
-/// Phase 09.15-08 (T1-8, D-03): pins the pure `MaxBasalFraction` fraction fn + its LOCKED label pair
-/// against the D-03 anti-misconstrual guardrails BEFORE any UI consumes it. This is faBolus's OWN
+/// Pins the pure `MaxBasalFraction` fraction fn + its LOCKED label pair
+/// against the anti-misconstrual guardrails BEFORE any UI consumes it. This is faBolus's OWN
 /// construct (Tandem ships no such gauge) — `basalRateUnitsPerHour ÷ maxBasalUnitsPerHour`, both already
 /// decoded from the pump (`BasalLimitSettingsResponse`/`CurrentBasalStatusResponse`), computed and
 /// LABELED honestly as the pump's CONFIGURED max-basal delivery limit (a cap on ALL basal delivery) —
-/// NEVER a Control-IQ/auto-bolus figure. D-03(iv) is the load-bearing rule: this suite FAILS the build
+/// NEVER a Control-IQ/auto-bolus figure. The load-bearing rule: this suite FAILS the build
 /// if the label ever contains a bolus/correction/ceiling/maxed word, case-insensitive.
 struct CiqMaxBasalCopyAuditTests {
 
-    // MARK: fraction — D-06 guardrail #1 (a fraction, NEVER a dose/units value)
+    // MARK: fraction — a fraction, NEVER a dose/units value
 
     @Test func typicalReadingComputesTheExpectedFraction() {
         let fraction = MaxBasalFraction.fraction(currentUnitsPerHour: 0.85, maxUnitsPerHour: 1.60)
@@ -21,7 +21,7 @@ struct CiqMaxBasalCopyAuditTests {
 
     @Test func zeroMaxIsFailClosedNil() {
         // maxBasalUnitsPerHour == 0 means "unknown / not read" — never render a 0/0 or divide-by-zero
-        // artifact; the readout must be HIDDEN, not zero/dash (D-03 explicit).
+        // artifact; the readout must be HIDDEN, not zero/dash.
         let fraction = MaxBasalFraction.fraction(currentUnitsPerHour: 0.85, maxUnitsPerHour: 0)
         #expect(fraction == nil)
     }
@@ -54,7 +54,7 @@ struct CiqMaxBasalCopyAuditTests {
         #expect(fraction! >= 0.0 && fraction! <= 1.0)
     }
 
-    // MARK: label — D-03(i)/(ii) LOCKED wording (always "basal", always the U/hr pair together)
+    // MARK: label — LOCKED wording (always "basal", always the U/hr pair together)
 
     @Test func labelAlwaysContainsTheWordBasal() {
         let label = MaxBasalFraction.label(currentUnitsPerHour: 0.85, maxUnitsPerHour: 1.60)
@@ -69,7 +69,7 @@ struct CiqMaxBasalCopyAuditTests {
     }
 
     @Test func labelDetailAlwaysShowsBothCurrentAndMaxUnitsPerHourTogether() {
-        // D-03(ii): the absolute U/hr must ALWAYS accompany the %, never the % alone.
+        // The absolute U/hr must ALWAYS accompany the %, never the % alone.
         let label = MaxBasalFraction.label(currentUnitsPerHour: 0.85, maxUnitsPerHour: 1.60)
         #expect(label != nil)
         #expect(label!.detail.contains("0.85"))
@@ -84,7 +84,7 @@ struct CiqMaxBasalCopyAuditTests {
         #expect(label == nil)
     }
 
-    // MARK: D-03(iv) copy-audit — the load-bearing guardrail. FAILS the build if a forbidden word ever
+    // MARK: copy-audit — the load-bearing guardrail. FAILS the build if a forbidden word ever
     // appears in the label, case-insensitive. The four words below are figures/framings that would
     // misconstrue this faBolus-computed configured-basal-cap readout as a bolus, an automatic
     // correction, a hard ceiling override, or "maxed out" delivery — none of which this feature is.
@@ -103,7 +103,7 @@ struct CiqMaxBasalCopyAuditTests {
     }
 
     @Test func forbiddenWordListIsExactlyTheFourD03Words() {
-        // Pins the exact D-03(iv) vocabulary so a future edit can't silently narrow the audit.
+        // Pins the exact forbidden-word vocabulary so a future edit can't silently narrow the audit.
         let expected: Set<String> = ["bolus", "correction", "ceiling", "maxed"]  // <!-- planner-discipline-allow: bolus correction ceiling maxed -->
         #expect(Set(MaxBasalFraction.forbiddenMisconstrualWords.map { $0.lowercased() }) == expected)
     }

@@ -1,8 +1,8 @@
 import Testing
 @testable import faBolus
 
-/// Phase 09.14 (D-01/WR-04) — `CustomizeListView.canDelete(currentCount:removingCount:allowEmpty:)`,
-/// the extracted delete-guard arithmetic behind the "Shown" list's `.onDelete`. Pins the truth table:
+/// `CustomizeListView.canDelete(currentCount:removingCount:allowEmpty:)`, the extracted delete-guard
+/// arithmetic behind the "Shown" list's `.onDelete`. Pins the truth table:
 /// the default floor (`allowEmpty == false`) still blocks a delete that would empty the list, while
 /// `allowEmpty == true` (the Live Activity fields list only) permits reaching zero, including a
 /// multi-row swipe-delete that removes everything at once.
@@ -13,7 +13,7 @@ struct CustomizeListViewGuardTests {
         #expect(CustomizeListView.canDelete(currentCount: 1, removingCount: 1, allowEmpty: false) == false)
     }
 
-    /// Default floor: a delete that leaves at least one item is ALLOWED (unaffected by this plan).
+    /// Default floor: a delete that leaves at least one item is ALLOWED.
     @Test func allowDownToOneWhenAllowEmptyIsFalse() {
         #expect(CustomizeListView.canDelete(currentCount: 2, removingCount: 1, allowEmpty: false) == true)
     }

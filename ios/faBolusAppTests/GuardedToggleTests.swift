@@ -1,7 +1,7 @@
 import Testing
 @testable import faBolus
 
-/// 09.3-01 (D-05/SC3): behavior contract for the reusable `guardedToggle(get:set:skipConfirmIf:
+/// Behavior contract for the reusable `guardedToggle(get:set:skipConfirmIf:
 /// requestConfirm:)` factory — the ONE guarded-enable idiom every confirm-gated Bool toggle in the
 /// settings surface routes through. Spy closures pin exactly which callback fires (and how many times)
 /// for each row of the contract; this is what proves the "snap-back on cancel" behavior without a live

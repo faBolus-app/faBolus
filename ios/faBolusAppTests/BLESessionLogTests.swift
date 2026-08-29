@@ -67,7 +67,7 @@ struct BLESessionLogTests {
         #expect(log.entries.last?.kind == .disconnect)
     }
 
-    // MARK: - D-04 connectDurations(from:)
+    // MARK: - connectDurations(from:)
 
     /// Each `.connect`/`.reconnect`/`.restore` opens a span; the NEXT `.disconnect` closes it, pairing
     /// purely off the existing `Entry.at` timestamps — no new `Kind` case, no new stored field.
@@ -114,7 +114,7 @@ struct BLESessionLogTests {
         #expect(spans[0].end.timeIntervalSince(spans[0].start) == 10)
     }
 
-    // MARK: - D-02b (09.6-02): ring buffer's presence in the export projection
+    // MARK: - Ring buffer's presence in the export projection
 
     /// `DebugMenuView.bleSessionLogExportLines` — the exact `[BLE session log]` line-builder that feeds
     /// `diagnosticsText` (extracted to a pure, testable static so the export contents can be asserted
