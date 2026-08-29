@@ -5,7 +5,7 @@ import Foundation
 /// and that no dose/gate member was widened. Opening `deliveryLedgerCoordinator` would put the delivery ledger on an extension-visible surface.
 struct AppModelAccessWideningGuardTests {
 
-    // MARK: - Repo/file resolution (mirrors AppModelReferenceAuditTests' idiom)
+    // MARK: - Repo/file resolution
 
     private static func repoRootURL() -> URL? {
         let fm = FileManager.default
@@ -119,8 +119,7 @@ struct AppModelAccessWideningGuardTests {
                 "lastPersistedBolusKeys must stay `private` in HistoryPersistenceCoordinator.swift — no method outside the coordinator touches it")
     }
 
-    /// Fault-injection proof for the line-scan helper itself (mirrors `AppModelReferenceAuditTests`'
-    /// `markerCheckerDiscriminatesActiveFromCommentOnly` idiom): a synthetic source string containing
+    /// Fault-injection proof for the line-scan helper itself: a synthetic source string containing
     /// an explicit-`internal` stored-property line must be detected, and one that only NAMES a
     /// property in a doc comment (no `internal var`/`internal let` keyword) must not — proving the
     /// checker discriminates a real declaration from mere prose.
