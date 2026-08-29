@@ -97,7 +97,7 @@ import faBolusCore
     @MainActor
     @Test func absentCiqZoneOnTheWireKeepsTheSafeNilDefault() {
         let m = RemoteCommandWireFixture(link: FakeLink())
-        let cmd = RemoteCommand(kind: .statusRead)   // ciqZone never set ⇒ nil
+        let cmd = RemoteCommand(kind: .statusRead)  // ciqZone never set ⇒ nil
         m.handle(cmd)
         #expect(m.ciqZone == nil)
     }
@@ -111,7 +111,7 @@ import faBolusCore
         m.handle(cmdWithZone)
         #expect(m.ciqZone == ControlIQZone.increases.rawValue)
 
-        let cmdCleared = RemoteCommand(kind: .statusRead)   // ciqZone absent ⇒ current zone cleared
+        let cmdCleared = RemoteCommand(kind: .statusRead)  // ciqZone absent ⇒ current zone cleared
         m.handle(cmdCleared)
         #expect(m.ciqZone == nil)
     }

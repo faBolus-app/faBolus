@@ -30,8 +30,9 @@ import Foundation
 
     @Test func everyBodyCarriesThePumpButtonsInstruction() {
         for step in DisconnectEscalation.steps {
-            #expect(step.body.contains(DisconnectEscalation.pumpButtonsInstruction),
-                    "step \(step.id) must tell the user to use the pump's own buttons")
+            #expect(
+                step.body.contains(DisconnectEscalation.pumpButtonsInstruction),
+                "step \(step.id) must tell the user to use the pump's own buttons")
             #expect(!step.title.isEmpty)
         }
         // The shared instruction actually names the pump's buttons (guards against a copy edit that

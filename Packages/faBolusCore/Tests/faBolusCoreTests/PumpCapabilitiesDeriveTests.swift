@@ -17,20 +17,21 @@ struct PumpCapabilitiesDeriveTests {
         #expect(PumpCapabilities.derive(isMobi: true, features: nil) == mobi)
 
         var tslim = PumpCapabilities.full
-        tslim.supportsRemoteAlertDismiss = false   // t:slim silently rejects remote dismissal
+        tslim.supportsRemoteAlertDismiss = false  // t:slim silently rejects remote dismissal
         #expect(PumpCapabilities.derive(isMobi: false, features: nil) == tslim)
     }
 
     // MARK: - Present features agree with the preset ⇒ no change
 
     @Test func fullyCapableMobiKeepsAllAdvancedControl() {
-        let f = PumpFeatureBits(controlIQSupported: true, basalLimitSupported: true,
-                                blePumpControlSupported: true)
+        let f = PumpFeatureBits(
+            controlIQSupported: true, basalLimitSupported: true,
+            blePumpControlSupported: true)
         let caps = PumpCapabilities.derive(isMobi: true, features: f)
         #expect(caps.supportsAnyAdvancedControl)
         #expect(caps.supportsControlIQSettings)
         #expect(caps.supportsLimits)
-        #expect(caps.supportsModes)         // preserved from the .mobiAdvanced floor
+        #expect(caps.supportsModes)  // preserved from the .mobiAdvanced floor
         #expect(caps.supportsRemoteAlertDismiss)
     }
 
@@ -38,8 +39,9 @@ struct PumpCapabilitiesDeriveTests {
 
     @Test func noBlePumpControlDisablesAllAdvancedControl() {
         // A pump that can't be BLE-controlled: even a Mobi preset collapses to no advanced control.
-        let f = PumpFeatureBits(controlIQSupported: true, basalLimitSupported: true,
-                                blePumpControlSupported: false)
+        let f = PumpFeatureBits(
+            controlIQSupported: true, basalLimitSupported: true,
+            blePumpControlSupported: false)
         let caps = PumpCapabilities.derive(isMobi: true, features: f)
         #expect(!caps.supportsAnyAdvancedControl)
         #expect(!caps.supportsModes)
@@ -51,20 +53,22 @@ struct PumpCapabilitiesDeriveTests {
     }
 
     @Test func noControlIQNarrowsOnlyControlIQSettings() {
-        let f = PumpFeatureBits(controlIQSupported: false, basalLimitSupported: true,
-                                blePumpControlSupported: true)
+        let f = PumpFeatureBits(
+            controlIQSupported: false, basalLimitSupported: true,
+            blePumpControlSupported: true)
         let caps = PumpCapabilities.derive(isMobi: true, features: f)
-        #expect(!caps.supportsControlIQSettings)   // narrowed off
-        #expect(caps.supportsLimits)               // untouched
-        #expect(caps.supportsModes)                // untouched
+        #expect(!caps.supportsControlIQSettings)  // narrowed off
+        #expect(caps.supportsLimits)  // untouched
+        #expect(caps.supportsModes)  // untouched
     }
 
     @Test func noBasalLimitNarrowsOnlyLimits() {
-        let f = PumpFeatureBits(controlIQSupported: true, basalLimitSupported: false,
-                                blePumpControlSupported: true)
+        let f = PumpFeatureBits(
+            controlIQSupported: true, basalLimitSupported: false,
+            blePumpControlSupported: true)
         let caps = PumpCapabilities.derive(isMobi: true, features: f)
-        #expect(!caps.supportsLimits)              // narrowed off
-        #expect(caps.supportsControlIQSettings)    // untouched
+        #expect(!caps.supportsLimits)  // narrowed off
+        #expect(caps.supportsControlIQSettings)  // untouched
     }
 
     // MARK: - Temp-rate gate: capability, never a pump-model check (Phase 09.5 D-01/D-04)
@@ -75,8 +79,8 @@ struct PumpCapabilitiesDeriveTests {
     /// the t:slim-style floor) reports the gate CLOSED, while one with `supportsTempBasal == true`
     /// (`.mobiAdvanced`, the connected MockBackend's preset) reports it OPEN.
     @Test func tempRateGateKeysOnCapabilityNotPumpModel() {
-        #expect(!PumpCapabilities.full.supportsTempBasal)          // gate closed: no temp-rate capability
-        #expect(PumpCapabilities.mobiAdvanced.supportsTempBasal)   // gate open: capability present
+        #expect(!PumpCapabilities.full.supportsTempBasal)  // gate closed: no temp-rate capability
+        #expect(PumpCapabilities.mobiAdvanced.supportsTempBasal)  // gate open: capability present
     }
 
     // MARK: - supportsSleepScheduleWrite: a NEW dedicated Mobi-only write-gate capability
@@ -93,35 +97,41 @@ struct PumpCapabilitiesDeriveTests {
     }
 
     @Test func deriveMobiWithBleControlSupportsSleepScheduleWrite() {
-        let f = PumpFeatureBits(controlIQSupported: true, basalLimitSupported: true,
-                                blePumpControlSupported: true)
+        let f = PumpFeatureBits(
+            controlIQSupported: true, basalLimitSupported: true,
+            blePumpControlSupported: true)
         #expect(PumpCapabilities.derive(isMobi: true, features: f).supportsSleepScheduleWrite)
     }
 
     @Test func deriveTslimNeverSupportsSleepScheduleWrite() {
         // t:slim: no schedule write, even with the identical (rich) feature bitmask a Mobi would have.
-        let f = PumpFeatureBits(controlIQSupported: true, basalLimitSupported: true,
-                                blePumpControlSupported: true)
+        let f = PumpFeatureBits(
+            controlIQSupported: true, basalLimitSupported: true,
+            blePumpControlSupported: true)
         #expect(!PumpCapabilities.derive(isMobi: false, features: f).supportsSleepScheduleWrite)
     }
 
     @Test func deriveNoBleControlNarrowsOffSleepScheduleWrite() {
         // Narrowed off with the rest of advanced control when the pump can't be BLE-controlled at all.
-        let f = PumpFeatureBits(controlIQSupported: true, basalLimitSupported: true,
-                                blePumpControlSupported: false)
+        let f = PumpFeatureBits(
+            controlIQSupported: true, basalLimitSupported: true,
+            blePumpControlSupported: false)
         #expect(!PumpCapabilities.derive(isMobi: true, features: f).supportsSleepScheduleWrite)
     }
 
     // MARK: - PumpSleepScheduleSlot: neutral 5-field projection (decode-boundary discipline)
 
     @Test func pumpSleepScheduleSlotRoundTripsAndIdMatchesSlot() {
-        let a = PumpSleepScheduleSlot(slot: 2, enabled: true, activeDays: 0x1F,
-                                       startMinute: 1320, endMinute: 360)
-        let b = PumpSleepScheduleSlot(slot: 2, enabled: true, activeDays: 0x1F,
-                                       startMinute: 1320, endMinute: 360)
+        let a = PumpSleepScheduleSlot(
+            slot: 2, enabled: true, activeDays: 0x1F,
+            startMinute: 1320, endMinute: 360)
+        let b = PumpSleepScheduleSlot(
+            slot: 2, enabled: true, activeDays: 0x1F,
+            startMinute: 1320, endMinute: 360)
         #expect(a == b)
         #expect(a.id == a.slot)
-        #expect(a.slot == 2 && a.enabled && a.activeDays == 0x1F
+        #expect(
+            a.slot == 2 && a.enabled && a.activeDays == 0x1F
                 && a.startMinute == 1320 && a.endMinute == 360)
     }
 
@@ -131,8 +141,9 @@ struct PumpCapabilitiesDeriveTests {
         // A t:slim (.full floor: all advanced OFF) that reports every feature bit set must STILL have
         // no advanced control — faBolus offers BLE pump control only on the Mobi surface, so a rich
         // bitmask can never conjure an affordance the model preset withheld.
-        let allBits = PumpFeatureBits(controlIQSupported: true, basalLimitSupported: true,
-                                      blePumpControlSupported: true)
+        let allBits = PumpFeatureBits(
+            controlIQSupported: true, basalLimitSupported: true,
+            blePumpControlSupported: true)
         let tslim = PumpCapabilities.derive(isMobi: false, features: allBits)
         #expect(!tslim.supportsAnyAdvancedControl)
         #expect(!tslim.supportsControlIQSettings)
@@ -147,8 +158,9 @@ struct PumpCapabilitiesDeriveTests {
                     for ble in [true, false] {
                         let caps = PumpCapabilities.derive(
                             isMobi: isMobi,
-                            features: PumpFeatureBits(controlIQSupported: ciq, basalLimitSupported: lim,
-                                                      blePumpControlSupported: ble))
+                            features: PumpFeatureBits(
+                                controlIQSupported: ciq, basalLimitSupported: lim,
+                                blePumpControlSupported: ble))
                         #expect(!(caps.supportsControlIQSettings && !preset.supportsControlIQSettings))
                         #expect(!(caps.supportsLimits && !preset.supportsLimits))
                         #expect(!(caps.supportsModes && !preset.supportsModes))

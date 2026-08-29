@@ -18,10 +18,10 @@ struct ModeStoreTests {
     @Test func freshInstallStartsAtAdvancedWithOnboardingAlreadyComplete() {
         let saved = AppSettings.shared.appMode
         defer { AppSettings.shared.appMode = saved }
-        AppSettings.shared.appMode = .simple            // even a poisoned/legacy "simple" value…
+        AppSettings.shared.appMode = .simple  // even a poisoned/legacy "simple" value…
         let s = store(freshDefaults())
-        #expect(s.activeMode == .advanced)               // …is force-set to Advanced on first run.
-        #expect(s.hasCompletedOnboarding)                // no first-run overlay left to gate on
+        #expect(s.activeMode == .advanced)  // …is force-set to Advanced on first run.
+        #expect(s.hasCompletedOnboarding)  // no first-run overlay left to gate on
     }
 
     @Test func staleSubAdvancedModeEarnedCanNoLongerStrandAReturningUser() {
@@ -31,10 +31,10 @@ struct ModeStoreTests {
         let saved = AppSettings.shared.appMode
         defer { AppSettings.shared.appMode = saved }
         let d = freshDefaults()
-        d.set(AppMode.standard.rawValue, forKey: "modeEarned")   // stale key; no longer read
+        d.set(AppMode.standard.rawValue, forKey: "modeEarned")  // stale key; no longer read
         AppSettings.shared.appMode = .standard
         let s = store(d)
-        #expect(s.activeMode == .advanced)               // active mode forced to Advanced regardless
+        #expect(s.activeMode == .advanced)  // active mode forced to Advanced regardless
     }
 
     @Test func evenAPoisonedSimpleModeEarnedIsForcedToAdvancedOnRelaunch() {
@@ -42,7 +42,7 @@ struct ModeStoreTests {
         let saved = AppSettings.shared.appMode
         defer { AppSettings.shared.appMode = saved }
         let d = freshDefaults()
-        d.set(AppMode.simple.rawValue, forKey: "modeEarned")     // stale key; no longer read
+        d.set(AppMode.simple.rawValue, forKey: "modeEarned")  // stale key; no longer read
         AppSettings.shared.appMode = .simple
         let s = store(d)
         #expect(s.activeMode == .advanced)
@@ -53,9 +53,9 @@ struct ModeStoreTests {
         let saved = AppSettings.shared.appMode
         defer { AppSettings.shared.appMode = saved }
         let s = store(d)
-        #expect(s.hasCompletedOnboarding)               // already true at init — no overlay to dismiss
-        s.completeOnboarding()                          // the now-dead setter stays callable, harmlessly
+        #expect(s.hasCompletedOnboarding)  // already true at init — no overlay to dismiss
+        s.completeOnboarding()  // the now-dead setter stays callable, harmlessly
         #expect(s.hasCompletedOnboarding)
-        #expect(store(d).hasCompletedOnboarding)        // persisted across relaunch
+        #expect(store(d).hasCompletedOnboarding)  // persisted across relaunch
     }
 }

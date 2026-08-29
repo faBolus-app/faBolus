@@ -16,11 +16,13 @@ enum RegulatoryCopy {
     /// First-run overlay footnote (`ModeOnboardingView`). Concise and non-alarming; keeps the
     /// experimental / not-FDA-cleared / check-every-value intent and adds the not-a-medical-device,
     /// experimental / demonstration-use, no-real-insulin framing.
-    static let firstRun = "faBolus is experimental, in-development software — not a medical device and not FDA-cleared. It is for experimental and demonstration use, and is not for delivering real insulin or making real therapy decisions. Not medical advice — check every value against your pump and your clinician."
+    static let firstRun =
+        "faBolus is experimental, in-development software — not a medical device and not FDA-cleared. It is for experimental and demonstration use, and is not for delivering real insulin or making real therapy decisions. Not medical advice — check every value against your pump and your clinician."
 
     /// About & help footer (`AboutSettingsView`), so the same status is findable after onboarding.
     /// Keeps the trademark and non-affiliation lines.
-    static let about = "faBolus™ is an independent, open-source project in development for experimental use. It is not a medical device and is not FDA-cleared; it is for experimental and demonstration use, and is not for delivering real insulin or making real therapy decisions. Not affiliated with Tandem Diabetes Care or Dexcom. faBolus™ is a trademark of Zev Granowitz."
+    static let about =
+        "faBolus™ is an independent, open-source project in development for experimental use. It is not a medical device and is not FDA-cleared; it is for experimental and demonstration use, and is not for delivering real insulin or making real therapy decisions. Not affiliated with Tandem Diabetes Care or Dexcom. faBolus™ is a trademark of Zev Granowitz."
 
     /// Terms a guard test requires remain present (case-insensitively) in BOTH strings above, so the
     /// wording can be strengthened but not silently weakened. ("saline" was dropped from this set at the

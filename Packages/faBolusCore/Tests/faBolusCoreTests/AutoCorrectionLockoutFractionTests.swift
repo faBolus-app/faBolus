@@ -67,7 +67,7 @@ struct AutoCorrectionLockoutFractionTests {
 
     @Test func futureLockoutStartClampsToZeroNeverNegative() {
         let now = Date()
-        let started = now.addingTimeInterval(5 * 60)   // starts 5 min from now: negative elapsed
+        let started = now.addingTimeInterval(5 * 60)  // starts 5 min from now: negative elapsed
         let fraction = AutoCorrectionDisclosure.lockoutRemainingFraction(
             descriptor: .controlIQ, controllerEnabled: true, lockoutStartDate: started, now: now)
         #expect(fraction != nil)

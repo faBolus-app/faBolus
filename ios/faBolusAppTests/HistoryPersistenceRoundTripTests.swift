@@ -34,7 +34,8 @@ struct HistoryPersistenceRoundTripTests {
     /// Mirrors `HistoryLogSyncTests.injectHistoryStreamChunked` — a `HistoryLogStreamResponse`
     /// frame's one-byte cargo length caps it at ≤9 26-byte records per frame.
     private func injectHistoryStreamChunked(
-        _ backend: TandemBackend, _ readings: [(seq: UInt32, pumpTimeSec: UInt32, mgdl: Int)]) {
+        _ backend: TandemBackend, _ readings: [(seq: UInt32, pumpTimeSec: UInt32, mgdl: Int)]
+    ) {
         var idx = 0
         while idx < readings.count {
             let chunk = Array(readings[idx..<min(idx + 9, readings.count)])
@@ -60,13 +61,17 @@ struct HistoryPersistenceRoundTripTests {
             backend.injectStatusFrameForTesting(
                 FakePumpTransport.historyLogStatus(numEntries: 100, firstSequenceNum: 1, lastSequenceNum: 100))
             // WR-03: receive the whole 1...100 window so held coverage is [1...100].
-            injectHistoryStreamChunked(backend, stride(from: UInt32(100), through: UInt32(1), by: -1).map {
-                (seq: $0, pumpTimeSec: UInt32(5_000) * $0, mgdl: 111) })
+            injectHistoryStreamChunked(
+                backend,
+                stride(from: UInt32(100), through: UInt32(1), by: -1).map {
+                    (seq: $0, pumpTimeSec: UInt32(5_000) * $0, mgdl: 111)
+                })
             backend.fireHistorySyncTickForTesting()
 
             let afterFirstSync = model.storedGlucoseForTesting(in: Date(timeIntervalSince1970: 0)...Date())
             let countAfterFirst = afterFirstSync.count
-            #expect(countAfterFirst > 0, "the first sync must persist something before the gap-record case is meaningful")
+            #expect(
+                countAfterFirst > 0, "the first sync must persist something before the gap-record case is meaningful")
 
             // Second sync: the pump's range grew to 1...130; the interior window 101...130 holds a
             // record with pumpTimeSec 50 -- far OLDER than every pumpTimeSec (5,000...500,000) the
@@ -75,14 +80,16 @@ struct HistoryPersistenceRoundTripTests {
                 FakePumpTransport.historyLogStatus(numEntries: 130, firstSequenceNum: 1, lastSequenceNum: 130))
             backend.injectHistoryLogFrameForTesting(
                 FakePumpTransport.historyLogStream(cgmReadings: [(seq: 105, pumpTimeSec: 50, mgdl: 77)]))
-            backend.fireHistorySyncTickForTesting()   // finishBackfill -> onChange -> AppModel.refresh() -> persist
+            backend.fireHistorySyncTickForTesting()  // finishBackfill -> onChange -> AppModel.refresh() -> persist
 
-            _ = fake   // keep the fake alive for the duration of the assertions
+            _ = fake  // keep the fake alive for the duration of the assertions
             let afterSecondSync = model.storedGlucoseForTesting(in: Date(timeIntervalSince1970: 0)...Date())
-            #expect(afterSecondSync.contains { $0.mgdl == 77 },
-                    "a gap-sync record dated older than the last persisted snapshot must still reach the store")
-            #expect(afterSecondSync.count == countAfterFirst + 1,
-                    "exactly one NEW reading is added -- the identity-diff must not re-ingest everything already held")
+            #expect(
+                afterSecondSync.contains { $0.mgdl == 77 },
+                "a gap-sync record dated older than the last persisted snapshot must still reach the store")
+            #expect(
+                afterSecondSync.count == countAfterFirst + 1,
+                "exactly one NEW reading is added -- the identity-diff must not re-ingest everything already held")
         }
     }
 
@@ -117,12 +124,14 @@ struct HistoryPersistenceRoundTripTests {
         backend.setLiveIob(1.9)
 
         let glucoseAfterSecond = model.storedGlucoseForTesting(in: wideRange)
-        #expect(glucoseAfterSecond.count == 37,
-                "an unchanged reading must never re-insert (identity-diff, Pitfall-3)")
+        #expect(
+            glucoseAfterSecond.count == 37,
+            "an unchanged reading must never re-insert (identity-diff, Pitfall-3)")
         let bolusesAfterSecond = model.sharedHistoryStore?.boluses(in: wideRange) ?? []
         #expect(bolusesAfterSecond.count == 2, "an unchanged bolus marker must never re-insert")
-        #expect(model.storedHistoryApproxBytes() == bytesAfterFirst,
-                "approxBytes (raw row count) must not grow across a refresh with unchanged content")
+        #expect(
+            model.storedHistoryApproxBytes() == bytesAfterFirst,
+            "approxBytes (raw row count) must not grow across a refresh with unchanged content")
     }
 
     // MARK: - Retention / statistics / approxBytes forwarding stays byte-identical
@@ -137,14 +146,15 @@ struct HistoryPersistenceRoundTripTests {
         let stale = now.addingTimeInterval(-48 * 3600)
         let fresh = now.addingTimeInterval(-1 * 3600)
         let seeded = try! GlucoseHistoryStore(inMemory: true)
-        seeded.ingestGlucose([GlucoseReading(date: stale, mgdl: 90), GlucoseReading(date: fresh, mgdl: 130)],
-                             sourceID: "round-trip-test", priority: 0)
+        seeded.ingestGlucose(
+            [GlucoseReading(date: stale, mgdl: 90), GlucoseReading(date: fresh, mgdl: 130)],
+            sourceID: "round-trip-test", priority: 0)
         model.setHistoryStoreForTesting(seeded)
 
         #expect(model.storedHistoryApproxBytes() == 200, "2 readings * 100 approx bytes/reading")
         #expect(model.storedStatistics(days: 90) != nil)
 
-        model.applyRetention(days: 1)   // 24h window: prunes the 48h-old sample, keeps the 1h-old one
+        model.applyRetention(days: 1)  // 24h window: prunes the 48h-old sample, keeps the 1h-old one
         #expect(model.storedHistoryApproxBytes() == 100, "the stale sample must be pruned; the fresh one survives")
         let after = model.storedGlucoseForTesting(in: (now.addingTimeInterval(-72 * 3600))...now)
         #expect(after.count == 1)

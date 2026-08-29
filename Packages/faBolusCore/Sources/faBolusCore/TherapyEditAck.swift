@@ -18,21 +18,21 @@ public enum TherapyEditAck {
     /// insulin delivery around the clock (carb ratio + target size only the boluses entered by hand) — not
     /// just the next manual bolus. Non-blocking; shown once at the first therapy edit. §13-cleared 2026-08-23.
     public static let firstUseDisclosure = """
-    These settings don't only affect the boluses you enter by hand. On a pump running automated \
-    insulin delivery (Control-IQ), your basal rates and correction factor continuously drive its \
-    automatic basal and correction adjustments — so changing either can affect your insulin around \
-    the clock, not just your next bolus. Carb ratios and targets size the doses you enter yourself. \
-    Change any of these with care and confirm with your care team. This is not medical advice.
-    """
+        These settings don't only affect the boluses you enter by hand. On a pump running automated \
+        insulin delivery (Control-IQ), your basal rates and correction factor continuously drive its \
+        automatic basal and correction adjustments — so changing either can affect your insulin around \
+        the clock, not just your next bolus. Carb ratios and targets size the doses you enter yourself. \
+        Change any of these with care and confirm with your care team. This is not medical advice.
+        """
 
     /// Point-of-editing titration guidance: one parameter at a time, evaluate over ≥7 days, small (10–20%)
     /// steps — with an acute-danger carve-out (repeated lows / severe highs / ketones need prompt action,
     /// don't wait). Shown passively in the segment editor while editing. §13-cleared 2026-08-23.
     public static let titrationGuidance = """
-    Adjust one setting at a time, give it at least 7 days before judging the effect, and change in \
-    small steps (about 10–20%). Changing several settings at once, or by a lot, makes it hard to \
-    tell what actually helped. The 7 days is only for judging whether a change helped — repeated \
-    lows, severe or persistent highs, or any ketones need prompt action now: treat them and \
-    contact your care team right away.
-    """
+        Adjust one setting at a time, give it at least 7 days before judging the effect, and change in \
+        small steps (about 10–20%). Changing several settings at once, or by a lot, makes it hard to \
+        tell what actually helped. The 7 days is only for judging whether a change helped — repeated \
+        lows, severe or persistent highs, or any ketones need prompt action now: treat them and \
+        contact your care team right away.
+        """
 }

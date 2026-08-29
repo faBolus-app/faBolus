@@ -38,12 +38,16 @@ public struct HistoryEvent: Identifiable, Sendable, Equatable {
         }
     }
 
-    public let id: UInt32          // pump sequence number (stable, monotonic)
+    public let id: UInt32  // pump sequence number (stable, monotonic)
     public let date: Date
     public let category: Category
     public let title: String
     public let detail: String
     public init(id: UInt32, date: Date, category: Category, title: String, detail: String = "") {
-        self.id = id; self.date = date; self.category = category; self.title = title; self.detail = detail
+        self.id = id
+        self.date = date
+        self.category = category
+        self.title = title
+        self.detail = detail
     }
 }

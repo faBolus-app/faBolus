@@ -49,11 +49,15 @@ struct HistoryLogSyncDeliveryBoundaryTests {
                 backend.fireHistorySyncTickForTesting()
             }
 
-            let deliverySeamOpcodes: Set<UInt8> = [BolusPermissionRequest.props.opCode, InitiateBolusRequest.props.opCode]
-            #expect(!fake.sent.contains { deliverySeamOpcodes.contains($0.opCode) },
-                    "the gap-sync path must never send a bolus-permission or initiate-bolus request")
-            #expect(!fake.sent.contains { $0.allowDelivery },
-                    "no message the gap-sync path sends may carry the delivery-elevation flag")
+            let deliverySeamOpcodes: Set<UInt8> = [
+                BolusPermissionRequest.props.opCode, InitiateBolusRequest.props.opCode
+            ]
+            #expect(
+                !fake.sent.contains { deliverySeamOpcodes.contains($0.opCode) },
+                "the gap-sync path must never send a bolus-permission or initiate-bolus request")
+            #expect(
+                !fake.sent.contains { $0.allowDelivery },
+                "no message the gap-sync path sends may carry the delivery-elevation flag")
             #expect(!fake.sent.isEmpty, "sanity: the sync must have actually sent history-log requests")
         }
     }
@@ -63,14 +67,17 @@ struct HistoryLogSyncDeliveryBoundaryTests {
     /// Signature-scoped scan of every gap-sync function in PumpHistorySyncCoordinator.swift, asserting
     /// none of their bodies reference a delivery-seam identifier. The forbidden symbols are untouched.
     @Test func historySyncSourceHasNoDeliverySeamSymbols() throws {
-        let forbidden = ["deliverBolus(", "deliverExtendedBolus(", "InitiateBolusRequest(",
-                         "BolusPermissionRequest(", ".allowDelivery", "allowInsulinDelivery: true"]
+        let forbidden = [
+            "deliverBolus(", "deliverExtendedBolus(", "InitiateBolusRequest(",
+            "BolusPermissionRequest(", ".allowDelivery", "allowInsulinDelivery: true"
+        ]
 
         let testFileURL = URL(fileURLWithPath: #filePath)
-        let repoRoot = testFileURL
-            .deletingLastPathComponent()   // drop the filename → .../ios/faBolusAppTests
-            .deletingLastPathComponent()   // → .../ios
-            .deletingLastPathComponent()   // → repo root
+        let repoRoot =
+            testFileURL
+            .deletingLastPathComponent()  // drop the filename → .../ios/faBolusAppTests
+            .deletingLastPathComponent()  // → .../ios
+            .deletingLastPathComponent()  // → repo root
         let backendURL = repoRoot.appendingPathComponent("ios/faBolus/Data/App/PumpHistorySyncCoordinator.swift")
         let source = try String(contentsOf: backendURL, encoding: .utf8)
 
@@ -81,12 +88,15 @@ struct HistoryLogSyncDeliveryBoundaryTests {
             "private func advanceToNextGapWindow(",
             "private func requestBackfillPage(",
             "func backfillPageDone(",
-            "private func creditCurrentWindowAndAdvance(",
+            "private func creditCurrentWindowAndAdvance("
         ]
         for signature in gapSyncFunctionSignatures {
             let slice = try Self.balancedFunctionBody(signaturePrefix: signature, in: source)
             for symbol in forbidden {
-                #expect(!slice.contains(symbol), "Forbidden delivery-seam symbol '\(symbol)' found in PumpHistorySyncCoordinator.swift's \(signature) body")
+                #expect(
+                    !slice.contains(symbol),
+                    "Forbidden delivery-seam symbol '\(symbol)' found in PumpHistorySyncCoordinator.swift's \(signature) body"
+                )
             }
         }
     }
@@ -108,8 +118,12 @@ struct HistoryLogSyncDeliveryBoundaryTests {
             // `//` comment in a scanned body. Make that trust loud — a violation fails here.
             try Self.assertBracesAreRealCode(in: line, signaturePrefix: signaturePrefix)
             for ch in line {
-                if ch == "{" { depth += 1; opened = true }
-                else if ch == "}" { depth -= 1 }
+                if ch == "{" {
+                    depth += 1
+                    opened = true
+                } else if ch == "}" {
+                    depth -= 1
+                }
             }
             if opened && depth <= 0 { break }
         }
@@ -128,13 +142,19 @@ struct HistoryLogSyncDeliveryBoundaryTests {
         while i < chars.count {
             let ch = chars[i]
             if inString {
-                if escaped { escaped = false }
-                else if ch == "\\" { escaped = true }
-                else if ch == "\"" { inString = false }
-                else if ch == "{" || ch == "}" { throw SliceError.braceInStringOrComment(signaturePrefix) }
+                if escaped {
+                    escaped = false
+                } else if ch == "\\" {
+                    escaped = true
+                } else if ch == "\"" {
+                    inString = false
+                } else if ch == "{" || ch == "}" {
+                    throw SliceError.braceInStringOrComment(signaturePrefix)
+                }
             } else {
-                if ch == "\"" { inString = true }
-                else if ch == "/" && i + 1 < chars.count && chars[i + 1] == "/" {
+                if ch == "\"" {
+                    inString = true
+                } else if ch == "/" && i + 1 < chars.count && chars[i + 1] == "/" {
                     let comment = String(chars[i...])
                     if comment.contains("{") || comment.contains("}") {
                         throw SliceError.braceInStringOrComment(signaturePrefix)
@@ -154,7 +174,9 @@ struct HistoryLogSyncDeliveryBoundaryTests {
             switch self {
             case .signatureNotFound(let sig): return "Function signature not found while scanning: \(sig)"
             case .unbalancedBraces(let sig): return "Could not find a balanced closing brace for: \(sig)"
-            case .braceInStringOrComment(let sig): return "A `{`/`}` inside a string literal or `//` comment was found while scanning \(sig) — the naive brace counter can no longer be trusted for this body; rework the literal/comment or make the scanner a real parser"
+            case .braceInStringOrComment(let sig):
+                return
+                    "A `{`/`}` inside a string literal or `//` comment was found while scanning \(sig) — the naive brace counter can no longer be trusted for this body; rework the literal/comment or make the scanner a real parser"
             }
         }
     }

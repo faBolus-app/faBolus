@@ -65,9 +65,16 @@ struct AppModelControlErrorMappingTests {
         let s = AppSettings.shared
         let ro = s.phoneReadOnly, child = s.childModeEnabled, adv = s.advancedControlEnabled
         let mode = s.appMode
-        s.phoneReadOnly = false; s.childModeEnabled = false; s.advancedControlEnabled = true
+        s.phoneReadOnly = false
+        s.childModeEnabled = false
+        s.advancedControlEnabled = true
         s.appMode = .advanced
-        defer { s.phoneReadOnly = ro; s.childModeEnabled = child; s.advancedControlEnabled = adv; s.appMode = mode }
+        defer {
+            s.phoneReadOnly = ro
+            s.childModeEnabled = child
+            s.advancedControlEnabled = adv
+            s.appMode = mode
+        }
         await body()
     }
 
@@ -80,8 +87,9 @@ struct AppModelControlErrorMappingTests {
 
             await model.suspendDelivery()
 
-            #expect(model.lastError == "Pump identity is still being confirmed — try again shortly.",
-                    "the identity-gate refusal must map to the distinct actionable message, not the generic fallback")
+            #expect(
+                model.lastError == "Pump identity is still being confirmed — try again shortly.",
+                "the identity-gate refusal must map to the distinct actionable message, not the generic fallback")
         }
     }
 
@@ -94,8 +102,9 @@ struct AppModelControlErrorMappingTests {
 
             await model.suspendDelivery()
 
-            #expect(backend.suspendDeliveryInvocationCount == 1,
-                    "performControl must invoke the throwing op exactly once — no automatic retry")
+            #expect(
+                backend.suspendDeliveryInvocationCount == 1,
+                "performControl must invoke the throwing op exactly once — no automatic retry")
         }
     }
 }

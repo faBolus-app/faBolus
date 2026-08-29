@@ -14,7 +14,7 @@ struct RescueCarbGuardTests {
         #"treat(ing)?[\s_\-]*(a[\s_\-]*)?(low|hypo)[\s_\-]*with[\s_\-]*carb"#,
         #"(low|hypo)[\s_\-]*treatment[\s_\-]*carb"#,
         #"carb[\s_\-]*(for|to)[\s_\-]*(treat[\s_\-]*)?(a[\s_\-]*)?(low|hypo)"#,
-        #"grams?[\s_\-]*(of[\s_\-]*carbs?[\s_\-]*)?to[\s_\-]*treat"#,
+        #"grams?[\s_\-]*(of[\s_\-]*carbs?[\s_\-]*)?to[\s_\-]*treat"#
     ]
 
     /// Resolve the directories to scan from `#filePath`
@@ -25,7 +25,7 @@ struct RescueCarbGuardTests {
         let here = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         var probe = here
         for _ in 0..<8 {
-            let ios = probe.appendingPathComponent("ios")   // all app targets, not just ios/faBolus
+            let ios = probe.appendingPathComponent("ios")  // all app targets, not just ios/faBolus
             let core = probe.appendingPathComponent("Packages/faBolusCore/Sources")
             if fm.fileExists(atPath: ios.path), fm.fileExists(atPath: core.path) {
                 var dirs = [ios, core]
@@ -55,7 +55,7 @@ struct RescueCarbGuardTests {
             for case let url as URL in walker where url.pathExtension == "swift" {
                 // This guard file necessarily contains the banned patterns — don't flag itself.
                 if url.lastPathComponent == "RescueCarbGuardTests.swift" { continue }
-                if url.path.contains("Tests") { continue }   // shipping surfaces only — a test mentioning the banned concept is not a surfaced suggestion
+                if url.path.contains("Tests") { continue }  // shipping surfaces only — a test mentioning the banned concept is not a surfaced suggestion
                 guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
                 scanned += 1
                 let range = NSRange(text.startIndex..., in: text)
@@ -66,9 +66,13 @@ struct RescueCarbGuardTests {
         }
         // A path-resolution bug must fail loudly, not pass vacuously.
         #expect(scanned > 0, "rescue-carb guard scanned no files — path resolution broke (#filePath=\(#filePath))")
-        #expect(sawApp, "rescue-carb guard could not locate ios/faBolus — it must scan the shipping app, not only faBolusCore")
+        #expect(
+            sawApp,
+            "rescue-carb guard could not locate ios/faBolus — it must scan the shipping app, not only faBolusCore")
         let joined = violations.joined(separator: "; ")
-        #expect(violations.isEmpty,
-                "P16 §8-H: a rescue-carb-amount API/string was reintroduced (do NOT implement, do NOT reintroduce): \(joined)")
+        #expect(
+            violations.isEmpty,
+            "P16 §8-H: a rescue-carb-amount API/string was reintroduced (do NOT implement, do NOT reintroduce): \(joined)"
+        )
     }
 }

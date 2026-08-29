@@ -48,7 +48,8 @@ enum GarminDiagnostics {
             switch self {
             case .installed: return "ready"
             case .notInstalled:
-                return "Garmin app not installed on the watch (or a beta/official app-id mismatch) — open the Connect IQ Store to install/verify it."
+                return
+                    "Garmin app not installed on the watch (or a beta/official app-id mismatch) — open the Connect IQ Store to install/verify it."
             case .unknown: return "install status unknown"
             }
         }

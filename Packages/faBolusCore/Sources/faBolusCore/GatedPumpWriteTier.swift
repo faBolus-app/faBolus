@@ -26,9 +26,9 @@ extension GatedPumpWrite {
         switch self {
         // Redefine/select the clinical dosing parameters → normally set with a clinician.
         case .setControlIQ, .setMaxBolus, .setMaxBasal,
-             .createProfile, .setActiveProfile, .deleteProfile,
-             .addProfileSegment, .modifyProfileSegment, .deleteProfileSegment,
-             .setCgmHighLowAlert:
+            .createProfile, .setActiveProfile, .deleteProfile,
+            .addProfileSegment, .modifyProfileSegment, .deleteProfileSegment,
+            .setCgmHighLowAlert:
             return .clinician
         // Operational / cosmetic — the user owns these day to day (incl. the cosmetic `renameProfile`).
         default:

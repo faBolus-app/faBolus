@@ -42,7 +42,10 @@ struct TandemDeliveryOutcomeTests {
     }
     private func indeterminate(_ e: Error?) -> Bool { (e as? BolusError)?.isIndeterminate ?? false }
     private func capture(_ op: () async throws -> Double) async -> Error? {
-        do { _ = try await op(); return nil } catch { return error }
+        do {
+            _ = try await op()
+            return nil
+        } catch { return error }
     }
     /// Mirrors `R3CLedgerFaultTests.withCleanSettings` — clear the global gates so the AppModel-driven
     /// ledger path can actually deliver, and restore them after (this suite is `.serialized`). Only the
@@ -50,8 +53,12 @@ struct TandemDeliveryOutcomeTests {
     private func withCleanSettings(_ body: () async throws -> Void) async rethrows {
         let s = AppSettings.shared
         let ro = s.phoneReadOnly, child = s.childModeEnabled
-        s.phoneReadOnly = false; s.childModeEnabled = false
-        defer { s.phoneReadOnly = ro; s.childModeEnabled = child }
+        s.phoneReadOnly = false
+        s.childModeEnabled = false
+        defer {
+            s.phoneReadOnly = ro
+            s.childModeEnabled = child
+        }
         try await body()
     }
 
@@ -61,9 +68,9 @@ struct TandemDeliveryOutcomeTests {
         let (b, fake) = make()
         fake.preWriteError[InitiateBolusRequest.props.opCode] = BolusError.pumpRejected("blocked pre-write")
         let e = await capture { try await deliver(b) }
-        #expect(e != nil && !indeterminate(e))            // clean, retryable — NOT indeterminate
-        #expect(fake.initiateWriteCount == 0)             // nothing went out
-        #expect(!b.deliveryOutcomeUnknown)                // no block
+        #expect(e != nil && !indeterminate(e))  // clean, retryable — NOT indeterminate
+        #expect(fake.initiateWriteCount == 0)  // nothing went out
+        #expect(!b.deliveryOutcomeUnknown)  // no block
     }
 
     @Test func droppedInitiateResponseIsIndeterminate() async {
@@ -71,8 +78,8 @@ struct TandemDeliveryOutcomeTests {
         fake.script(initiateOp, .tx(.timedOut(characteristic: .control, opCode: initiateOp)))
         let e = await capture { try await deliver(b) }
         #expect(indeterminate(e))
-        #expect(fake.initiateWriteCount == 1)             // the write went out
-        #expect(b.deliveryOutcomeUnknown)                 // globally blocked
+        #expect(fake.initiateWriteCount == 1)  // the write went out
+        #expect(b.deliveryOutcomeUnknown)  // globally blocked
     }
 
     @Test func malformedInitiateResponseIsIndeterminate() async {
@@ -94,9 +101,9 @@ struct TandemDeliveryOutcomeTests {
         let (b, fake) = make()
         fake.script(initiateOp, .frame(FakePumpTransport.initiateNack(bolusId: bolusId)))
         let e = await capture { try await deliver(b) }
-        #expect(indeterminate(e))                 // unauthenticable NACK → INDETERMINATE (was: clean failed)
-        #expect(b.deliveryOutcomeUnknown)         // …and the delivery lock is HELD (was: not blocked)
-        #expect(fake.initiateWriteCount == 1)     // the initiate DID go out — the NACK is post-write
+        #expect(indeterminate(e))  // unauthenticable NACK → INDETERMINATE (was: clean failed)
+        #expect(b.deliveryOutcomeUnknown)  // …and the delivery lock is HELD (was: not blocked)
+        #expect(fake.initiateWriteCount == 1)  // the initiate DID go out — the NACK is post-write
     }
 
     /// CR-03 (VA-04) ledger half — end-to-end through the durable ledger (`AppModel` over the REAL
@@ -113,7 +120,8 @@ struct TandemDeliveryOutcomeTests {
             let fake = FakePumpTransport()
             let backend = TandemBackend(testTransport: fake)
             fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
-            fake.script(BolusPermissionResponse.props.opCode, .frame(FakePumpTransport.permissionGranted(bolusId: bolusId)))
+            fake.script(
+                BolusPermissionResponse.props.opCode, .frame(FakePumpTransport.permissionGranted(bolusId: bolusId)))
             fake.script(initiateOp, .frame(FakePumpTransport.initiateNack(bolusId: bolusId)))
             let store = R3CLedgerFaultTests.FakeLedgerStore()
             let model = AppModel(source: backend, ledgerStore: store)
@@ -149,8 +157,9 @@ struct TandemDeliveryOutcomeTests {
     @Test func acceptedThenDisconnectMidDeliveryIsIndeterminate() async {
         let (b, fake) = make()
         fake.script(initiateOp, .frame(FakePumpTransport.initiateAccepted(bolusId: bolusId)))
-        fake.script(statusOp, .frame(FakePumpTransport.currentBolusStatus(statusId: 1, bolusId: bolusId)),   // active
-                              .frame(FakePumpTransport.currentBolusStatus(statusId: 1, bolusId: bolusId)))
+        fake.script(
+            statusOp, .frame(FakePumpTransport.currentBolusStatus(statusId: 1, bolusId: bolusId)),  // active
+            .frame(FakePumpTransport.currentBolusStatus(statusId: 1, bolusId: bolusId)))
         fake.willAwait = { [weak b] op in if op == self.statusOp { b?.setConnectionForTesting(.disconnected) } }
         let e = await capture { try await deliver(b) }
         #expect(indeterminate(e))
@@ -186,8 +195,8 @@ struct TandemDeliveryOutcomeTests {
         fake.script(statusOp, .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: bolusId)))
         fake.script(lastOp, .frame(FakePumpTransport.lastBolus(bolusId: bolusId, deliveredMilliunits: 1000)))
         let delivered = try await deliver(b, 2.0)
-        #expect(delivered == 1.0)                 // authoritative, not the requested 2.0
-        #expect(b.lastBolusCancelled == false)    // never invents a cancellation
+        #expect(delivered == 1.0)  // authoritative, not the requested 2.0
+        #expect(b.lastBolusCancelled == false)  // never invents a cancellation
     }
 
     @Test func finalStatusIdMismatchIsIndeterminate() async {
@@ -216,7 +225,7 @@ struct TandemDeliveryOutcomeTests {
         // The bytes that went out must equal what the approved inputs canonically encode to: whole 2.0 U in
         // foodVolume, FOOD1 (carbs present), frozen IOB 0.5 U → 500 mu, carbs 45, BG 180.
         let sent = try #require(fake.lastSent(InitiateBolusRequest.props.opCode))
-        #expect(sent.allowDelivery)   // the initiate is the one delivery-authorized write
+        #expect(sent.allowDelivery)  // the initiate is the one delivery-authorized write
         let expected = try InitiateBolusRequest(
             validating: 2000, bolusID: bolusId, bolusTypeBitmask: InitiateBolusRequest.bitFood1,
             foodVolume: 2000, correctionVolume: 0, bolusCarbs: 45, bolusBG: 180, bolusIOB: 500)
@@ -245,14 +254,15 @@ struct TandemDeliveryOutcomeTests {
     @Test func cancelRacingFullCompletionReportsDeliveredNotCancelled() async throws {
         let (b, fake) = make()
         fake.script(initiateOp, .frame(FakePumpTransport.initiateAccepted(bolusId: bolusId)))
-        fake.script(statusOp, .frame(FakePumpTransport.currentBolusStatus(statusId: 1, bolusId: bolusId)),   // active — cancel fires here
-                              .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: bolusId)))   // done
+        fake.script(
+            statusOp, .frame(FakePumpTransport.currentBolusStatus(statusId: 1, bolusId: bolusId)),  // active — cancel fires here
+            .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: bolusId)))  // done
         fake.script(lastOp, .frame(FakePumpTransport.lastBolus(bolusId: bolusId, deliveredMilliunits: 2000)))
         cancelOnFirstPoll(b, fake)
         let delivered = try await deliver(b, 2.0)
-        #expect(delivered == 2.0)                               // authoritative full amount
-        #expect(b.lastBolusCancelled == false)                 // never a fabricated cancellation label
-        #expect(fake.lastSent(cancelOp) != nil)                // the cancel WAS written to the pump
+        #expect(delivered == 2.0)  // authoritative full amount
+        #expect(b.lastBolusCancelled == false)  // never a fabricated cancellation label
+        #expect(fake.lastSent(cancelOp) != nil)  // the cancel WAS written to the pump
         #expect(!b.deliveryOutcomeUnknown)
     }
 
@@ -261,13 +271,14 @@ struct TandemDeliveryOutcomeTests {
     @Test func cancelThenPartialCompletionReportsAuthoritativeAmount() async throws {
         let (b, fake) = make()
         fake.script(initiateOp, .frame(FakePumpTransport.initiateAccepted(bolusId: bolusId)))
-        fake.script(statusOp, .frame(FakePumpTransport.currentBolusStatus(statusId: 1, bolusId: bolusId)),
-                              .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: bolusId)))
+        fake.script(
+            statusOp, .frame(FakePumpTransport.currentBolusStatus(statusId: 1, bolusId: bolusId)),
+            .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: bolusId)))
         fake.script(lastOp, .frame(FakePumpTransport.lastBolus(bolusId: bolusId, deliveredMilliunits: 1000)))  // partial
         cancelOnFirstPoll(b, fake)
         let delivered = try await deliver(b, 2.0)
-        #expect(delivered == 1.0)                              // authoritative partial, not the requested 2.0
-        #expect(b.lastBolusCancelled == false)                // no invented cancellation
+        #expect(delivered == 1.0)  // authoritative partial, not the requested 2.0
+        #expect(b.lastBolusCancelled == false)  // no invented cancellation
         #expect(fake.lastSent(cancelOp) != nil)
     }
 
@@ -289,12 +300,13 @@ struct TandemDeliveryOutcomeTests {
         let (b, fake) = make()
         fake.preWriteError[cancelOp] = BolusError.pumpRejected("cancel write failed")
         fake.script(initiateOp, .frame(FakePumpTransport.initiateAccepted(bolusId: bolusId)))
-        fake.script(statusOp, .frame(FakePumpTransport.currentBolusStatus(statusId: 1, bolusId: bolusId)),
-                              .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: bolusId)))
+        fake.script(
+            statusOp, .frame(FakePumpTransport.currentBolusStatus(statusId: 1, bolusId: bolusId)),
+            .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: bolusId)))
         fake.script(lastOp, .frame(FakePumpTransport.lastBolus(bolusId: bolusId, deliveredMilliunits: 2000)))
         cancelOnFirstPoll(b, fake)
         let delivered = try await deliver(b, 2.0)
-        #expect(delivered == 2.0)                 // cancel write failed → dose proceeded → authoritative full
+        #expect(delivered == 2.0)  // cancel write failed → dose proceeded → authoritative full
         #expect(b.lastBolusCancelled == false)
     }
 
@@ -304,16 +316,17 @@ struct TandemDeliveryOutcomeTests {
     /// ever requested — so a no-cartridge refusal must write ZERO frames (not even the permission ask).
     @Test func noCartridgeRefusesBeforeAnySignedFrameIsWritten() async {
         let (b, fake) = make()
-        b.setCartridgeLoadStateForTesting(0)   // CHANGE_CARTRIDGE — mid loading-state triad
+        b.setCartridgeLoadStateForTesting(0)  // CHANGE_CARTRIDGE — mid loading-state triad
         let e = await capture { try await deliver(b) }
         guard case .noCartridge? = e as? BolusError else {
             Issue.record("expected BolusError.noCartridge, got \(String(describing: e))")
             return
         }
-        #expect(fake.sent.filter { $0.opCode == BolusPermissionRequest.props.opCode }.isEmpty,
-                "no permission request may be sent for a refused no-cartridge attempt")
+        #expect(
+            fake.sent.filter { $0.opCode == BolusPermissionRequest.props.opCode }.isEmpty,
+            "no permission request may be sent for a refused no-cartridge attempt")
         #expect(fake.initiateWriteCount == 0, "no initiate request may be sent for a refused no-cartridge attempt")
-        #expect(!b.deliveryOutcomeUnknown)     // a clean refusal, never an indeterminate block
+        #expect(!b.deliveryOutcomeUnknown)  // a clean refusal, never an indeterminate block
     }
 
     /// Each of the three loading states in the {0,1,2} gate set refuses; the idle/unknown default (6)
@@ -343,7 +356,7 @@ struct TandemDeliveryOutcomeTests {
     /// it must leave delivery state byte-unchanged (no delivered value ever recorded).
     @Test func noCartridgeRefusalRecordsNothingAsDelivered() async {
         let (b, fake) = make()
-        b.setCartridgeLoadStateForTesting(1)   // LOAD_CARTRIDGE
+        b.setCartridgeLoadStateForTesting(1)  // LOAD_CARTRIDGE
         let before = (lastBolusUnits: b.snapshot.lastBolusUnits, iobUnits: b.snapshot.iobUnits)
         _ = await capture { try await deliver(b) }
         #expect(b.snapshot.lastBolusUnits == before.lastBolusUnits)
@@ -363,8 +376,10 @@ struct TandemDeliveryOutcomeTests {
         var dispatchedTypeNames: [String] = []
         b.onReadDispatchedForTesting = { typeName, _ in dispatchedTypeNames.append(typeName) }
         b.simulateRecurringFastAndStaticReadTickForTesting()
-        #expect(dispatchedTypeNames.contains("LoadStatusRequest"),
-                "op20 LoadStatusRequest must ride the routine fast tier (api25 refinement) so cartridgeLoadState — and the 09.9 cartridgeReadyForBolus pre-guard — stays live on pumps that support it")
+        #expect(
+            dispatchedTypeNames.contains("LoadStatusRequest"),
+            "op20 LoadStatusRequest must ride the routine fast tier (api25 refinement) so cartridgeLoadState — and the 09.9 cartridgeReadyForBolus pre-guard — stays live on pumps that support it"
+        )
     }
 
     // MARK: - Phase 09.9 D-02 — out-of-insulin nack enrichment (honest inference, never over-claimed)
@@ -383,7 +398,7 @@ struct TandemDeliveryOutcomeTests {
         }
         #expect(reservoirUnits == 0.4)
         #expect(fake.initiateWriteCount == 0, "a permission nack must never reach the initiate write")
-        #expect(!indeterminate(e))          // clean pre-initiate failure, not FB-02 indeterminate
+        #expect(!indeterminate(e))  // clean pre-initiate failure, not FB-02 indeterminate
         #expect(!b.deliveryOutcomeUnknown)  // never blocked
     }
 
@@ -399,13 +414,14 @@ struct TandemDeliveryOutcomeTests {
         fake.script(initiateOp, .frame(FakePumpTransport.initiateNack(bolusId: bolusId)))
         let e = await capture { try await deliver(b, 2.0) }
         guard case .indeterminate(let reason)? = e as? BolusError else {
-            Issue.record("expected BolusError.indeterminate (unauthenticable initiate NACK), got \(String(describing: e))")
+            Issue.record(
+                "expected BolusError.indeterminate (unauthenticable initiate NACK), got \(String(describing: e))")
             return
         }
         #expect(reason.contains("possibly out of insulin (reservoir 0.4 u)"))  // hint preserved in the reason
         #expect(indeterminate(e))
-        #expect(b.deliveryOutcomeUnknown)       // lock HELD (was: not blocked)
-        #expect(fake.initiateWriteCount == 1)   // the initiate DID go out — the NACK is post-write
+        #expect(b.deliveryOutcomeUnknown)  // lock HELD (was: not blocked)
+        #expect(fake.initiateWriteCount == 1)  // the initiate DID go out — the NACK is post-write
     }
 
     /// Control (no over-claim): the SAME nack reason fires while the reservoir reading was ample — the
@@ -416,7 +432,8 @@ struct TandemDeliveryOutcomeTests {
         fake.script(BolusPermissionResponse.props.opCode, .frame(FakePumpTransport.permissionDenied(nack: 1)))
         let e = await capture { try await deliver(b, 2.0) }
         guard case .pumpRejected? = e as? BolusError else {
-            Issue.record("expected generic BolusError.pumpRejected when reservoir is ample, got \(String(describing: e))")
+            Issue.record(
+                "expected generic BolusError.pumpRejected when reservoir is ample, got \(String(describing: e))")
             return
         }
         #expect(!indeterminate(e))

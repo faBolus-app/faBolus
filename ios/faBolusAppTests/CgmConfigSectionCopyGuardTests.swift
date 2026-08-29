@@ -44,17 +44,21 @@ struct CgmConfigSectionCopyGuardTests {
     /// Adding a registry source without a section — or dropping a section — turns this red.
     @Test func everyRegistrySourceHasAConfigSection() {
         let registryIds = Set(GlucoseSourceRegistry.enabled.map(\.id))
-        #expect(CgmCredentialsView.configuredSectionSourceIds == registryIds,
-                "configuredSectionSourceIds must cover exactly the registry sources; diff: \(CgmCredentialsView.configuredSectionSourceIds.symmetricDifference(registryIds))")
+        #expect(
+            CgmCredentialsView.configuredSectionSourceIds == registryIds,
+            "configuredSectionSourceIds must cover exactly the registry sources; diff: \(CgmCredentialsView.configuredSectionSourceIds.symmetricDifference(registryIds))"
+        )
     }
 
     // MARK: - Vacuous-pass file-resolution guard
 
     @Test func credentialsViewSourceResolvesAndIsNonTrivial() throws {
-        let source = try #require(Self.readSource(Self.credentialsViewPath),
-                                  "could not resolve \(Self.credentialsViewPath) from #filePath=\(#filePath)")
-        #expect(source.contains("struct CgmCredentialsView"),
-                "resolved file does not look like CgmCredentialsView.swift — path resolution likely broke")
+        let source = try #require(
+            Self.readSource(Self.credentialsViewPath),
+            "could not resolve \(Self.credentialsViewPath) from #filePath=\(#filePath)")
+        #expect(
+            source.contains("struct CgmCredentialsView"),
+            "resolved file does not look like CgmCredentialsView.swift — path resolution likely broke")
         #expect(source.count > 2000, "resolved source is implausibly short — path resolution likely broke")
     }
 }

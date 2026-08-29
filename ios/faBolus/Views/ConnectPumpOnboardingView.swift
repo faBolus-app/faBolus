@@ -24,10 +24,12 @@ struct ConnectPumpOnboardingView: View {
                         .font(.system(size: 56)).foregroundStyle(.tint)
                         .accessibilityHidden(true)
                     Text("Connect your pump").font(.title.bold())
-                    Text("faBolus needs a pump connection to show your glucose and let you give a bolus. Connect now, explore with a demo pump, or skip and connect later from the dashboard.")
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal)
+                    Text(
+                        "faBolus needs a pump connection to show your glucose and let you give a bolus. Connect now, explore with a demo pump, or skip and connect later from the dashboard."
+                    )
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal)
 
                     // Owner-signed-off experimental / not-FDA-cleared framing — reuse, don't redraft.
                     Text(RegulatoryCopy.firstRun)
@@ -69,11 +71,13 @@ struct ConnectPumpOnboardingView: View {
                     // Optional backup-CGM guidance — leaving via any of the three actions above skips it.
                     VStack(spacing: 8) {
                         Text("Optional: add a backup glucose feed").font(.headline)
-                        Text("faBolus can use an independent glucose feed — such as Dexcom Share — as a backup. It's only shown if the pump's own reading goes stale. This is optional and you can skip it.")
-                            .font(.subheadline)
-                            .multilineTextAlignment(.center)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal)
+                        Text(
+                            "faBolus can use an independent glucose feed — such as Dexcom Share — as a backup. It's only shown if the pump's own reading goes stale. This is optional and you can skip it."
+                        )
+                        .font(.subheadline)
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal)
                         NavigationLink {
                             CgmSettingsView(model: model, settings: AppSettings.shared)
                         } label: {

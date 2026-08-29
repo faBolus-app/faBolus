@@ -32,10 +32,14 @@ struct NotificationSettingsView: View {
 
     private var trioCategories: [NotificationBroker.Category] {
         // `pumpConnectionUnstable` is never-suppressible and has no user toggle.
-        NotificationBroker.Category.allCases.filter { !$0.isPumpSourced && $0.neverSuppressible && $0.isUserConfigurable }
+        NotificationBroker.Category.allCases.filter {
+            !$0.isPumpSourced && $0.neverSuppressible && $0.isUserConfigurable
+        }
     }
     private var tunableAppCategories: [NotificationBroker.Category] {
-        NotificationBroker.Category.allCases.filter { !$0.isPumpSourced && !$0.neverSuppressible && $0.isUserConfigurable }
+        NotificationBroker.Category.allCases.filter {
+            !$0.isPumpSourced && !$0.neverSuppressible && $0.isUserConfigurable
+        }
     }
 
     // MARK: - Relocated bindings
@@ -72,10 +76,11 @@ struct NotificationSettingsView: View {
         // desync `decide()`'s AND-gate (toggle "Off" while delivery still happens). Trio categories
         // must use `safetyEnabledBinding`, which writes both. Fail loudly (`precondition`, not
         // `assert`) so a future call site cannot reintroduce that desync.
-        precondition(!category.neverSuppressible,
-                     "enabledBinding(for:) must never be used for a never-suppressible trio category "
-                     + "(\(category.rawValue)) — use safetyEnabledBinding(for:) instead, which keeps "
-                     + "`enabled` and `userAcknowledgedSafetyDisable` paired (09.25 WR-02).")
+        precondition(
+            !category.neverSuppressible,
+            "enabledBinding(for:) must never be used for a never-suppressible trio category "
+                + "(\(category.rawValue)) — use safetyEnabledBinding(for:) instead, which keeps "
+                + "`enabled` and `userAcknowledgedSafetyDisable` paired (09.25 WR-02).")
         return Binding(
             get: { categorySettings[category]?.enabled ?? category.defaultEnabled },
             set: { on in
@@ -206,11 +211,11 @@ struct NotificationSettingsView: View {
     /// Per-category disable title — each trio warning is specific, not one generic sentence.
     private func safetyDisableDialogTitle(for category: NotificationBroker.Category?) -> Text {
         switch category {
-        case .pumpDisconnect:      return Text("Turn off pump-disconnect alerts?")
-        case .cgmDataLoss:         return Text("Turn off CGM-data-loss alerts?")
+        case .pumpDisconnect: return Text("Turn off pump-disconnect alerts?")
+        case .cgmDataLoss: return Text("Turn off CGM-data-loss alerts?")
         case .bolusReconciliation: return Text("Turn off bolus-result alerts?")
-        case .urgentLowGlucose:    return Text("Turn off urgent-low backup alarm?")
-        default:                  return Text("")
+        case .urgentLowGlucose: return Text("Turn off urgent-low backup alarm?")
+        default: return Text("")
         }
     }
 
@@ -245,8 +250,10 @@ struct NotificationSettingsView: View {
     }
 
     /// One write-through: local mirror for UI, then `runtime.updateSettings` for out-of-process posters.
-    private func updateCategorySettings(_ cfg: NotificationBroker.CategorySettings,
-                                        for category: NotificationBroker.Category) {
+    private func updateCategorySettings(
+        _ cfg: NotificationBroker.CategorySettings,
+        for category: NotificationBroker.Category
+    ) {
         categorySettings[category] = cfg
         runtime.updateSettings(cfg, for: category)
     }
@@ -263,17 +270,24 @@ struct NotificationSettingsView: View {
             }
         }
         .navigationTitle("Notifications")
-        .confirmationDialog("Silence pump alarms in the app?", isPresented: $showSuppressWarning,
-                             titleVisibility: .visible) {
+        .confirmationDialog(
+            "Silence pump alarms in the app?", isPresented: $showSuppressWarning,
+            titleVisibility: .visible
+        ) {
             Button("Silence in the app", role: .destructive) { settings.suppressMirroredPumpAlarms = true }
-            Button("Cancel", role: .cancel) { }
+            Button("Cancel", role: .cancel) {}
         } message: {
-            Text("faBolus will stop showing a phone notification for pump alarms (like occlusion or low insulin) that your pump already alarms for. Make sure you'll notice the pump's own alarm. faBolus's own safety alerts — pump disconnected, CGM data lost, and unresolved bolus — are not affected.")
+            Text(
+                "faBolus will stop showing a phone notification for pump alarms (like occlusion or low insulin) that your pump already alarms for. Make sure you'll notice the pump's own alarm. faBolus's own safety alerts — pump disconnected, CGM data lost, and unresolved bolus — are not affected."
+            )
         }
-        .confirmationDialog("Turn off critical break-through?",
-                             isPresented: Binding(get: { breakThroughOffCategory != nil },
-                                                  set: { if !$0 { breakThroughOffCategory = nil } }),
-                             titleVisibility: .visible) {
+        .confirmationDialog(
+            "Turn off critical break-through?",
+            isPresented: Binding(
+                get: { breakThroughOffCategory != nil },
+                set: { if !$0 { breakThroughOffCategory = nil } }),
+            titleVisibility: .visible
+        ) {
             if let category = breakThroughOffCategory {
                 Button("Turn off", role: .destructive) {
                     setBreakThrough(false, for: category)
@@ -283,14 +297,19 @@ struct NotificationSettingsView: View {
             Button("Cancel", role: .cancel) { breakThroughOffCategory = nil }
         } message: {
             if let category = breakThroughOffCategory {
-                Text("\(category.label)'s urgent/critical alerts will follow your normal enabled/quiet-hours/rate-limit settings instead of always breaking through. You can turn this back on anytime.")
+                Text(
+                    "\(category.label)'s urgent/critical alerts will follow your normal enabled/quiet-hours/rate-limit settings instead of always breaking through. You can turn this back on anytime."
+                )
             }
         }
         // Trio confirm-on-disable: category-specific title and body.
-        .confirmationDialog(safetyDisableDialogTitle(for: safetyDisableOffCategory),
-                             isPresented: Binding(get: { safetyDisableOffCategory != nil },
-                                                  set: { if !$0 { safetyDisableOffCategory = nil } }),
-                             titleVisibility: .visible) {
+        .confirmationDialog(
+            safetyDisableDialogTitle(for: safetyDisableOffCategory),
+            isPresented: Binding(
+                get: { safetyDisableOffCategory != nil },
+                set: { if !$0 { safetyDisableOffCategory = nil } }),
+            titleVisibility: .visible
+        ) {
             if let category = safetyDisableOffCategory {
                 Button("Turn off protection", role: .destructive) {
                     setSafetyEnabled(false, for: category)
@@ -301,13 +320,21 @@ struct NotificationSettingsView: View {
         } message: {
             switch safetyDisableOffCategory {
             case .pumpDisconnect:
-                Text("If your pump disconnects, faBolus will no longer alert you — including during quiet hours or Do Not Disturb. You may not notice a lost connection until you check the app yourself. You can turn this back on anytime.")
+                Text(
+                    "If your pump disconnects, faBolus will no longer alert you — including during quiet hours or Do Not Disturb. You may not notice a lost connection until you check the app yourself. You can turn this back on anytime."
+                )
             case .cgmDataLoss:
-                Text("If faBolus stops receiving CGM data, you will no longer be alerted — including during quiet hours or Do Not Disturb. You could miss a sensor failure or an extended gap in your glucose readings. You can turn this back on anytime.")
+                Text(
+                    "If faBolus stops receiving CGM data, you will no longer be alerted — including during quiet hours or Do Not Disturb. You could miss a sensor failure or an extended gap in your glucose readings. You can turn this back on anytime."
+                )
             case .bolusReconciliation:
-                Text("faBolus will no longer alert you with the final, authoritative result of a bolus (including an indeterminate delivery that resolves later) — including during quiet hours or Do Not Disturb. You may not learn whether insulin was actually delivered until you check the app yourself. You can turn this back on anytime.")
+                Text(
+                    "faBolus will no longer alert you with the final, authoritative result of a bolus (including an indeterminate delivery that resolves later) — including during quiet hours or Do Not Disturb. You may not learn whether insulin was actually delivered until you check the app yourself. You can turn this back on anytime."
+                )
             case .urgentLowGlucose:
-                Text("faBolus will no longer sound its backup urgent-low-glucose alarm — the safety net that fires when your pump's CGM feed goes stale and a backup source (e.g. Dexcom Share) reports a dangerously low reading — including during quiet hours or Do Not Disturb. This is separate from the \"CGM data loss\" alert; turning it off means a low caught only by the backup feed may reach you silently or not at all. You can turn this back on anytime.")
+                Text(
+                    "faBolus will no longer sound its backup urgent-low-glucose alarm — the safety net that fires when your pump's CGM feed goes stale and a backup source (e.g. Dexcom Share) reports a dangerously low reading — including during quiet hours or Do Not Disturb. This is separate from the \"CGM data loss\" alert; turning it off means a low caught only by the backup feed may reach you silently or not at all. You can turn this back on anytime."
+                )
             default:
                 EmptyView()
             }
@@ -346,8 +373,12 @@ struct NotificationSettingsView: View {
                     Text(silenceCaption).font(.caption).foregroundStyle(.secondary)
                 }
             }
-        } header: { Text("Pump alerts") } footer: {
-            Text("Alerts and alarms relayed from your pump. Pump alarms (occlusion, low insulin, etc.) are always critical-severity and — like faBolus's own safety alerts — break through Focus/Do Not Disturb, where your phone and this build support it; an urgent protected alert (e.g. a CGM-loss alert) gets the same treatment even before it rises to alarm-level. \"Silence pump alarms in the app\" stops faBolus re-notifying you for pump alarms the pump already sounds itself — the pump keeps alarming, and faBolus's own safety alerts are unaffected.")
+        } header: {
+            Text("Pump alerts")
+        } footer: {
+            Text(
+                "Alerts and alarms relayed from your pump. Pump alarms (occlusion, low insulin, etc.) are always critical-severity and — like faBolus's own safety alerts — break through Focus/Do Not Disturb, where your phone and this build support it; an urgent protected alert (e.g. a CGM-loss alert) gets the same treatment even before it rises to alarm-level. \"Silence pump alarms in the app\" stops faBolus re-notifying you for pump alarms the pump already sounds itself — the pump keeps alarming, and faBolus's own safety alerts are unaffected."
+            )
         }
     }
 
@@ -356,19 +387,29 @@ struct NotificationSettingsView: View {
     private var criticalAlertsSection: some View {
         Section {
             Toggle("Use Critical Alerts", isOn: $settings.criticalAlertsEnabled)
-            Text("Makes safety alerts break through Silence and Do Not Disturb. Does not turn any alert "
-                + "on or off — use Safety Alerts and the category sections above to control what's "
-                + "delivered.")
+            Text(
+                "Makes safety alerts break through Silence and Do Not Disturb. Does not turn any alert "
+                    + "on or off — use Safety Alerts and the category sections above to control what's "
+                    + "delivered."
+            )
+            .font(.caption).foregroundStyle(.secondary)
+            if Self.shouldShowHonestStatus(
+                enabled: settings.criticalAlertsEnabled,
+                grantActive: settings.criticalAlertGrantActive)
+            {
+                Text(
+                    "Critical Alerts aren't active yet — pending Apple approval. Your safety alerts "
+                        + "(pump disconnected, CGM data lost, unresolved bolus) currently use "
+                        + "time-sensitive delivery."
+                )
                 .font(.caption).foregroundStyle(.secondary)
-            if Self.shouldShowHonestStatus(enabled: settings.criticalAlertsEnabled,
-                                           grantActive: settings.criticalAlertGrantActive) {
-                Text("Critical Alerts aren't active yet — pending Apple approval. Your safety alerts "
-                    + "(pump disconnected, CGM data lost, unresolved bolus) currently use "
-                    + "time-sensitive delivery.")
-                    .font(.caption).foregroundStyle(.secondary)
             }
-        } header: { Text("Interruption Strength") } footer: {
-            Text("Lets faBolus's safety alerts (pump disconnected, CGM data lost, unresolved bolus) alert even when your phone is on silent or Do Not Disturb, where your phone and this build support it. The per-category \"Allow critical break-through\" toggles below control whether an OTHER category's urgent/critical alerts also bypass your quiet hours and limits — the safety alerts above are never affected by those toggles.")
+        } header: {
+            Text("Interruption Strength")
+        } footer: {
+            Text(
+                "Lets faBolus's safety alerts (pump disconnected, CGM data lost, unresolved bolus) alert even when your phone is on silent or Do Not Disturb, where your phone and this build support it. The per-category \"Allow critical break-through\" toggles below control whether an OTHER category's urgent/critical alerts also bypass your quiet hours and limits — the safety alerts above are never affected by those toggles."
+            )
         }
     }
 
@@ -383,8 +424,12 @@ struct NotificationSettingsView: View {
                     safetyEffectiveStateCaption(for: category)
                 }
             }
-        } header: { Text("Safety alerts") } footer: {
-            Text("Pump disconnected, CGM data loss, and bolus result reach you even during quiet hours, Do Not Disturb, or a full daily budget — unless you explicitly turn one off above.")
+        } header: {
+            Text("Safety alerts")
+        } footer: {
+            Text(
+                "Pump disconnected, CGM data loss, and bolus result reach you even during quiet hours, Do Not Disturb, or a full daily budget — unless you explicitly turn one off above."
+            )
         }
     }
 
@@ -415,7 +460,9 @@ struct NotificationSettingsView: View {
         } header: {
             Text(category.label)
         } footer: {
-            Text("Turning off critical break-through means this category's urgent/critical alerts follow your normal enabled/quiet-hours/rate-limit settings instead of always breaking through.")
+            Text(
+                "Turning off critical break-through means this category's urgent/critical alerts follow your normal enabled/quiet-hours/rate-limit settings instead of always breaking through."
+            )
         }
     }
 }

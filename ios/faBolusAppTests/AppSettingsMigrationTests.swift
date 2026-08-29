@@ -32,8 +32,9 @@ struct AppSettingsMigrationTests {
             PumpModelStore.set(isMobi: isMobi)
             let defaults = freshSuite()
             let settings = AppSettings(defaults: defaults)
-            #expect(settings.criticalAlertsEnabled == false,
-                    "criticalAlertsEnabled must default to false for isMobi == \(isMobi) — decoupled from PumpModelStore")
+            #expect(
+                settings.criticalAlertsEnabled == false,
+                "criticalAlertsEnabled must default to false for isMobi == \(isMobi) — decoupled from PumpModelStore")
         }
     }
 
@@ -47,12 +48,15 @@ struct AppSettingsMigrationTests {
 
         let settings = AppSettings(defaults: defaults)
 
-        #expect(settings.criticalAlertsEnabled == false,
-                "a persisted true from a pre-Phase-9 install must be force-reset to false on the first post-upgrade launch")
-        #expect(defaults.bool(forKey: Self.forceResetKey) == true,
-                "the guard key must be set after the one-time force-reset fires")
-        #expect(defaults.object(forKey: Self.enabledKey) as? Bool == false,
-                "the persisted UserDefaults value itself must be overwritten to false, not just the in-memory property")
+        #expect(
+            settings.criticalAlertsEnabled == false,
+            "a persisted true from a pre-Phase-9 install must be force-reset to false on the first post-upgrade launch")
+        #expect(
+            defaults.bool(forKey: Self.forceResetKey) == true,
+            "the guard key must be set after the one-time force-reset fires")
+        #expect(
+            defaults.object(forKey: Self.enabledKey) as? Bool == false,
+            "the persisted UserDefaults value itself must be overwritten to false, not just the in-memory property")
     }
 
     /// With the guard key already set (the one-time migration has already fired on a prior launch), a
@@ -60,31 +64,33 @@ struct AppSettingsMigrationTests {
     /// a subsequent launch — the force-reset must not re-fire.
     @Test func laterUserOptInIsNotReReset() {
         let defaults = freshSuite()
-        defaults.set(true, forKey: Self.forceResetKey)   // migration already ran once, previously
-        defaults.set(true, forKey: Self.enabledKey)       // user opted back in after that migration
+        defaults.set(true, forKey: Self.forceResetKey)  // migration already ran once, previously
+        defaults.set(true, forKey: Self.enabledKey)  // user opted back in after that migration
 
         let settings = AppSettings(defaults: defaults)
 
-        #expect(settings.criticalAlertsEnabled == true,
-                "a later user opt-in must survive — the one-time migration must not re-fire once its guard key is set")
-        #expect(defaults.object(forKey: Self.enabledKey) as? Bool == true,
-                "the persisted value itself must remain true — not overwritten by a re-fired migration")
+        #expect(
+            settings.criticalAlertsEnabled == true,
+            "a later user opt-in must survive — the one-time migration must not re-fire once its guard key is set")
+        #expect(
+            defaults.object(forKey: Self.enabledKey) as? Bool == true,
+            "the persisted value itself must remain true — not overwritten by a re-fired migration")
     }
 
     /// Sanity: repeated `AppSettings` construction over the SAME suite after the migration has fired once
     /// stays idempotent — a second and third `init` neither re-reset nor otherwise perturb the value.
     @Test func migrationIsIdempotentAcrossRepeatedInit() {
         let defaults = freshSuite()
-        defaults.set(true, forKey: Self.enabledKey)   // leftover persisted true, guard unset
+        defaults.set(true, forKey: Self.enabledKey)  // leftover persisted true, guard unset
 
-        _ = AppSettings(defaults: defaults)   // first post-upgrade launch: force-resets to false
+        _ = AppSettings(defaults: defaults)  // first post-upgrade launch: force-resets to false
         #expect(defaults.object(forKey: Self.enabledKey) as? Bool == false)
 
-        defaults.set(true, forKey: Self.enabledKey)   // user opts back in
-        _ = AppSettings(defaults: defaults)   // second launch: guard already set, must not re-reset
+        defaults.set(true, forKey: Self.enabledKey)  // user opts back in
+        _ = AppSettings(defaults: defaults)  // second launch: guard already set, must not re-reset
         #expect(defaults.object(forKey: Self.enabledKey) as? Bool == true)
 
-        let third = AppSettings(defaults: defaults)   // third launch: still must not re-reset
+        let third = AppSettings(defaults: defaults)  // third launch: still must not re-reset
         #expect(third.criticalAlertsEnabled == true)
     }
 }

@@ -27,8 +27,10 @@ struct KeyboardShortcutDoseGuardTests {
             return
         }
         let source = try String(contentsOf: url, encoding: .utf8)
-        #expect(!source.contains("keyboardShortcut"),
-                "D-08 violated — BolusEntryView.swift must never contain .keyboardShortcut (a hardware key must never reach a dose action)")
+        #expect(
+            !source.contains("keyboardShortcut"),
+            "D-08 violated — BolusEntryView.swift must never contain .keyboardShortcut (a hardware key must never reach a dose action)"
+        )
     }
 
     // MARK: - A path-resolution bug must fail loudly, not pass vacuously

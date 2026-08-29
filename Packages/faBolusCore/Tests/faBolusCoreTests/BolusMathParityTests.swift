@@ -18,7 +18,8 @@ final class BolusMathParityTests: XCTestCase {
 
     private func loadFixtures() throws -> [Fixture] {
         guard let url = Bundle.module.url(forResource: "bolus_oracle_fixtures", withExtension: "jsonl") else {
-            XCTFail("bolus_oracle_fixtures.jsonl missing from test bundle resources"); return []
+            XCTFail("bolus_oracle_fixtures.jsonl missing from test bundle resources")
+            return []
         }
         let text = try String(contentsOf: url, encoding: .utf8)
         let dec = JSONDecoder()
@@ -38,7 +39,8 @@ final class BolusMathParityTests: XCTestCase {
 
     func testFixtureGridIsByteLocked() throws {
         guard let url = Bundle.module.url(forResource: "bolus_oracle_fixtures", withExtension: "jsonl") else {
-            XCTFail("bolus_oracle_fixtures.jsonl missing from test bundle resources"); return
+            XCTFail("bolus_oracle_fixtures.jsonl missing from test bundle resources")
+            return
         }
         let data = try Data(contentsOf: url)
         let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
@@ -51,17 +53,20 @@ final class BolusMathParityTests: XCTestCase {
         XCTAssertEqual(fixtures.count, Self.expectedFixtureCount, "expected the full oracle fixture grid")
         var mismatches: [String] = []
         for f in fixtures {
-            let profile = BolusMath.Profile(carbRatioGramsPerUnit: f.cr, isfMgdlPerUnit: f.isf,
-                                            targetBgMgdl: f.tgt, iobUnits: f.iob)
+            let profile = BolusMath.Profile(
+                carbRatioGramsPerUnit: f.cr, isfMgdlPerUnit: f.isf,
+                targetBgMgdl: f.tgt, iobUnits: f.iob)
             let got = BolusMath.recommendedUnits(carbsGrams: f.carbs, bgMgdl: f.bg, profile: profile)
             if abs(got - f.u) > 0.00001 {
-                mismatches.append("carbs=\(String(describing: f.carbs)) bg=\(String(describing: f.bg)) "
-                    + "cr=\(f.cr) isf=\(f.isf) tgt=\(f.tgt) iob=\(f.iob): oracle=\(f.u) got=\(got)")
+                mismatches.append(
+                    "carbs=\(String(describing: f.carbs)) bg=\(String(describing: f.bg)) "
+                        + "cr=\(f.cr) isf=\(f.isf) tgt=\(f.tgt) iob=\(f.iob): oracle=\(f.u) got=\(got)")
             }
         }
-        XCTAssertTrue(mismatches.isEmpty,
-                      "\(mismatches.count)/\(fixtures.count) diverged from the oracle:\n"
-                      + mismatches.prefix(20).joined(separator: "\n"))
+        XCTAssertTrue(
+            mismatches.isEmpty,
+            "\(mismatches.count)/\(fixtures.count) diverged from the oracle:\n"
+                + mismatches.prefix(20).joined(separator: "\n"))
     }
 
     /// The headline below-target case, asserted explicitly so a regression names itself.
@@ -85,8 +90,8 @@ final class BolusMathParityTests: XCTestCase {
     func testImplausibleBgIsRejectedNotCorrected() {
         let p = BolusMath.Profile(carbRatioGramsPerUnit: 10, isfMgdlPerUnit: 40, targetBgMgdl: 110, iobUnits: 0)
         let r = BolusMath.estimate(carbsGrams: 30, bgMgdl: 900, profile: p)
-        XCTAssertEqual(r.totalUnits, 3.0, accuracy: 0.0001)   // carbs-only; the 900 contributes nothing
-        XCTAssertFalse(r.sanityFailed)                        // NOT a sanity failure — carbs still computed
-        XCTAssertEqual(r.fromBG, 0.0, accuracy: 0.0001)       // implausible reading → no BG correction
+        XCTAssertEqual(r.totalUnits, 3.0, accuracy: 0.0001)  // carbs-only; the 900 contributes nothing
+        XCTAssertFalse(r.sanityFailed)  // NOT a sanity failure — carbs still computed
+        XCTAssertEqual(r.fromBG, 0.0, accuracy: 0.0001)  // implausible reading → no BG correction
     }
 }

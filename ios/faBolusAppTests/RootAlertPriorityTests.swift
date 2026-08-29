@@ -10,58 +10,74 @@ import Foundation
     // MARK: - Single-flag / no-flag base cases
 
     @Test func noneActiveReturnsNil() {
-        #expect(RootTabView.activeAlert(hasRemoteBolus: false,
-                                        hasRemoteControl: false,
-                                        pumpSwitch: false) == nil)
+        #expect(
+            RootTabView.activeAlert(
+                hasRemoteBolus: false,
+                hasRemoteControl: false,
+                pumpSwitch: false) == nil)
     }
 
     @Test func onlyPumpSwitchReturnsPumpSwitch() {
-        #expect(RootTabView.activeAlert(hasRemoteBolus: false,
-                                        hasRemoteControl: false,
-                                        pumpSwitch: true) == RootTabView.RootAlert.pumpSwitch)
+        #expect(
+            RootTabView.activeAlert(
+                hasRemoteBolus: false,
+                hasRemoteControl: false,
+                pumpSwitch: true) == RootTabView.RootAlert.pumpSwitch)
     }
 
     @Test func onlyRemoteControlReturnsRemoteControl() {
-        #expect(RootTabView.activeAlert(hasRemoteBolus: false,
-                                        hasRemoteControl: true,
-                                        pumpSwitch: false) == RootTabView.RootAlert.remoteControl)
+        #expect(
+            RootTabView.activeAlert(
+                hasRemoteBolus: false,
+                hasRemoteControl: true,
+                pumpSwitch: false) == RootTabView.RootAlert.remoteControl)
     }
 
     @Test func onlyRemoteBolusReturnsRemoteBolus() {
-        #expect(RootTabView.activeAlert(hasRemoteBolus: true,
-                                        hasRemoteControl: false,
-                                        pumpSwitch: false) == RootTabView.RootAlert.remoteBolus)
+        #expect(
+            RootTabView.activeAlert(
+                hasRemoteBolus: true,
+                hasRemoteControl: false,
+                pumpSwitch: false) == RootTabView.RootAlert.remoteBolus)
     }
 
     // MARK: - Two-flag priority combinations
 
     @Test func remoteBolusWinsOverRemoteControl() {
         // Bolus outranks remote-control.
-        #expect(RootTabView.activeAlert(hasRemoteBolus: true,
-                                        hasRemoteControl: true,
-                                        pumpSwitch: false) == RootTabView.RootAlert.remoteBolus)
+        #expect(
+            RootTabView.activeAlert(
+                hasRemoteBolus: true,
+                hasRemoteControl: true,
+                pumpSwitch: false) == RootTabView.RootAlert.remoteBolus)
     }
 
     @Test func remoteBolusWinsOverPumpSwitch() {
         // KEY SAFETY PROPERTY: a remote-bolus confirm is never suppressed by a pump-switch alert.
-        #expect(RootTabView.activeAlert(hasRemoteBolus: true,
-                                        hasRemoteControl: false,
-                                        pumpSwitch: true) == RootTabView.RootAlert.remoteBolus)
+        #expect(
+            RootTabView.activeAlert(
+                hasRemoteBolus: true,
+                hasRemoteControl: false,
+                pumpSwitch: true) == RootTabView.RootAlert.remoteBolus)
     }
 
     @Test func remoteControlWinsOverPumpSwitch() {
-        #expect(RootTabView.activeAlert(hasRemoteBolus: false,
-                                        hasRemoteControl: true,
-                                        pumpSwitch: true) == RootTabView.RootAlert.remoteControl)
+        #expect(
+            RootTabView.activeAlert(
+                hasRemoteBolus: false,
+                hasRemoteControl: true,
+                pumpSwitch: true) == RootTabView.RootAlert.remoteControl)
     }
 
     // MARK: - All three active
 
     @Test func allActiveReturnsRemoteBolus() {
         // With every alert pending, the remote-bolus confirm still wins.
-        #expect(RootTabView.activeAlert(hasRemoteBolus: true,
-                                        hasRemoteControl: true,
-                                        pumpSwitch: true) == RootTabView.RootAlert.remoteBolus)
+        #expect(
+            RootTabView.activeAlert(
+                hasRemoteBolus: true,
+                hasRemoteControl: true,
+                pumpSwitch: true) == RootTabView.RootAlert.remoteBolus)
     }
 
     // MARK: - Invariant sweep
@@ -71,9 +87,11 @@ import Foundation
     @Test func remoteBolusAlwaysWinsWhenPresent() {
         for control in [false, true] {
             for pump in [false, true] {
-                #expect(RootTabView.activeAlert(hasRemoteBolus: true,
-                                                hasRemoteControl: control,
-                                                pumpSwitch: pump) == RootTabView.RootAlert.remoteBolus)
+                #expect(
+                    RootTabView.activeAlert(
+                        hasRemoteBolus: true,
+                        hasRemoteControl: control,
+                        pumpSwitch: pump) == RootTabView.RootAlert.remoteBolus)
             }
         }
     }

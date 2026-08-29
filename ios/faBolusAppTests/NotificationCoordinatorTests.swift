@@ -12,7 +12,8 @@ import UserNotifications
     typealias C = NotificationBroker.Category
 
     private func at(_ h: Int, _ m: Int) -> Date {
-        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
         return cal.date(from: DateComponents(year: 2026, month: 1, day: 1, hour: h, minute: m))!
     }
     /// A throwaway, empty defaults suite (unique per test) so runtime state never leaks.
@@ -27,12 +28,18 @@ import UserNotifications
     }
 
     @Test func safetyCategoriesPostEvenWhenEverythingIsLocked() {
-        let hostile = Dictionary(uniqueKeysWithValues: C.allCases.map {
-            ($0, B.CategorySettings(enabled: false, quietStartMinuteOfDay: 0, quietEndMinuteOfDay: 1,
-                                    minIntervalSeconds: 99_999))
-        })
-        let rt = NotificationRuntime(store: isolatedStore(#function), settings: hostile,
-                                     budget: B.Budget(dailyTotal: 0, dailyMeal: 0))
+        let hostile = Dictionary(
+            uniqueKeysWithValues: C.allCases.map {
+                (
+                    $0,
+                    B.CategorySettings(
+                        enabled: false, quietStartMinuteOfDay: 0, quietEndMinuteOfDay: 1,
+                        minIntervalSeconds: 99_999)
+                )
+            })
+        let rt = NotificationRuntime(
+            store: isolatedStore(#function), settings: hostile,
+            budget: B.Budget(dailyTotal: 0, dailyMeal: 0))
         var posted: [String] = []
         for c in C.allCases where c.neverSuppressible {
             let d = NotificationPoster.post(msg(c, key: c.rawValue), runtime: rt, now: at(3, 0)) {
@@ -41,7 +48,10 @@ import UserNotifications
             #expect(d.deliver, "\(c.rawValue) must always post")
         }
         // `pumpConnectionUnstable` and `urgentLowGlucose` are never-suppressible too — they post under the hostile config.
-        #expect(Set(posted) == ["pumpDisconnect", "bolusReconciliation", "cgmDataLoss", "pumpConnectionUnstable", "urgentLowGlucose"])
+        #expect(
+            Set(posted) == [
+                "pumpDisconnect", "bolusReconciliation", "cgmDataLoss", "pumpConnectionUnstable", "urgentLowGlucose"
+            ])
         // A governed category under the SAME hostile config does not post (proves the config is hostile).
         let g = NotificationPoster.post(msg(.pumpAlert), runtime: rt, now: at(3, 0)) { posted.append($0.identifier) }
         #expect(!g.deliver && g.reason == .categoryDisabled)
@@ -82,11 +92,13 @@ import UserNotifications
         cfg.allowCriticalBreakthrough = false
         rt1.updateSettings(cfg, for: .pumpAlert)
         let rt2 = NotificationRuntime(store: store)
-        let critical = B.Message(category: .pumpAlert, severity: .critical, title: "Occlusion", body: "b",
-                                 dedupeKey: "occ2")
+        let critical = B.Message(
+            category: .pumpAlert, severity: .critical, title: "Occlusion", body: "b",
+            dedupeKey: "occ2")
         let d = NotificationPoster.post(critical, runtime: rt2, now: at(9, 0)) { _ in }
-        #expect(!d.deliver && d.reason == .quietHours,
-               "persisted break-through OFF is honored by a fresh runtime + the real poster")
+        #expect(
+            !d.deliver && d.reason == .quietHours,
+            "persisted break-through OFF is honored by a fresh runtime + the real poster")
         // A trio post on rt2 still delivers, unaffected by the pumpAlert-only settings mutation.
         let trio = NotificationPoster.post(msg(.pumpDisconnect, key: "trio1"), runtime: rt2, now: at(9, 0)) { _ in }
         #expect(trio.deliver)
@@ -128,8 +140,9 @@ import UserNotifications
         let d = NotificationPoster.post(msg(.pumpAlert, key: "b"), runtime: rt, now: at(9, 1)) { _ in }
         #expect(d.deliver)
         rt.recordResponse(categoryRawValue: "pumpAlert", actionIdentifier: UNNotificationDismissActionIdentifier)  // dismissed
-        rt.recordResponse(categoryRawValue: "pumpAlert", actionIdentifier: "SNOOZE")                                // acted-upon
-        #expect(rt.telemetry["pumpAlert"] == NotificationBroker.CategoryTelemetry(delivered: 1, dismissed: 1, actedUpon: 1))
+        rt.recordResponse(categoryRawValue: "pumpAlert", actionIdentifier: "SNOOZE")  // acted-upon
+        #expect(
+            rt.telemetry["pumpAlert"] == NotificationBroker.CategoryTelemetry(delivered: 1, dismissed: 1, actedUpon: 1))
         // Persists across a runtime restart on the same App-Group store.
         let rt2 = NotificationRuntime(store: store)
         #expect(rt2.telemetry["pumpAlert"]?.delivered == 1)
@@ -143,16 +156,19 @@ import UserNotifications
         let d = NotificationPoster.post(
             msg(.pumpDisconnect, key: step.id), runtime: rt,
             trigger: UNTimeIntervalNotificationTrigger(timeInterval: step.afterSeconds, repeats: false),
-            now: at(9, 0)) { scheduled.append($0) }
-        #expect(d.deliver)                                            // never-suppressible → always posts
-        #expect(scheduled.first?.identifier == step.id)              // step's own stable id
+            now: at(9, 0)
+        ) { scheduled.append($0) }
+        #expect(d.deliver)  // never-suppressible → always posts
+        #expect(scheduled.first?.identifier == step.id)  // step's own stable id
         let trig = scheduled.first?.trigger as? UNTimeIntervalNotificationTrigger
         #expect(trig?.timeInterval == step.afterSeconds)
         #expect(trig?.repeats == false)
         // A default post (no trigger arg) is still immediate — existing callers are unchanged.
         var immediate: [UNNotificationRequest] = []
-        NotificationPoster.post(msg(.pumpDisconnect, key: "safety.pumpDisconnect"),
-                                runtime: rt, now: at(9, 0)) { immediate.append($0) }
+        NotificationPoster.post(
+            msg(.pumpDisconnect, key: "safety.pumpDisconnect"),
+            runtime: rt, now: at(9, 0)
+        ) { immediate.append($0) }
         #expect(immediate.first?.trigger == nil)
     }
 
@@ -162,22 +178,30 @@ import UserNotifications
         let rt = NotificationRuntime(store: isolatedStore(#function))
         var reqs: [UNNotificationRequest] = []
         // Safety category + allowed → .critical / .defaultCritical.
-        NotificationPoster.post(msg(.pumpDisconnect, key: "s1"), runtime: rt, allowCritical: true, now: at(9, 0)) { reqs.append($0) }
+        NotificationPoster.post(msg(.pumpDisconnect, key: "s1"), runtime: rt, allowCritical: true, now: at(9, 0)) {
+            reqs.append($0)
+        }
         #expect(reqs.first?.content.interruptionLevel == .critical)
         #expect(reqs.first?.content.sound == .defaultCritical)
         // Safety category but NOT allowed → degrades to .timeSensitive, which still breaks through Focus/DND.
         reqs.removeAll()
-        NotificationPoster.post(msg(.cgmDataLoss, key: "s2"), runtime: rt, allowCritical: false, now: at(9, 0)) { reqs.append($0) }
+        NotificationPoster.post(msg(.cgmDataLoss, key: "s2"), runtime: rt, allowCritical: false, now: at(9, 0)) {
+            reqs.append($0)
+        }
         #expect(reqs.first?.content.interruptionLevel == .timeSensitive)
         #expect(reqs.first?.content.sound == .default)
         // A governed (suppressible) category never gets .critical, even when allowed.
         reqs.removeAll()
-        NotificationPoster.post(msg(.pumpAlert, key: "g1"), runtime: rt, allowCritical: true, now: at(9, 0)) { reqs.append($0) }
+        NotificationPoster.post(msg(.pumpAlert, key: "g1"), runtime: rt, allowCritical: true, now: at(9, 0)) {
+            reqs.append($0)
+        }
         #expect(reqs.first?.content.interruptionLevel == .active)
         #expect(reqs.first?.content.sound == .default)
         // A governed category with allowCritical:false stays at the plain default — it must not pick up .timeSensitive.
         reqs.removeAll()
-        NotificationPoster.post(msg(.pumpAlert, key: "g2"), runtime: rt, allowCritical: false, now: at(9, 0)) { reqs.append($0) }
+        NotificationPoster.post(msg(.pumpAlert, key: "g2"), runtime: rt, allowCritical: false, now: at(9, 0)) {
+            reqs.append($0)
+        }
         #expect(reqs.first?.content.interruptionLevel == .active)
         #expect(reqs.first?.content.sound == .default)
     }
@@ -187,19 +211,25 @@ import UserNotifications
     @Test func pumpAlarmAndProtectedSafetyClassBreakThroughLikeTheSafetyTrio() {
         let rt = NotificationRuntime(store: isolatedStore(#function))
         var reqs: [UNNotificationRequest] = []
-        let alarm = B.Message(category: .pumpAlert, severity: .critical, title: "Occlusion", body: "b", dedupeKey: "alarm1")
+        let alarm = B.Message(
+            category: .pumpAlert, severity: .critical, title: "Occlusion", body: "b", dedupeKey: "alarm1")
         NotificationPoster.post(alarm, runtime: rt, allowCritical: true, now: at(9, 0)) { reqs.append($0) }
-        #expect(reqs.first?.content.interruptionLevel == .critical,
-               "a pump ALARM must break through exactly like a safety-trio category")
+        #expect(
+            reqs.first?.content.interruptionLevel == .critical,
+            "a pump ALARM must break through exactly like a safety-trio category")
         reqs.removeAll()
-        let protectedWarning = B.Message(category: .pumpAlert, severity: .warning, title: "Fixed low",
-                                         body: "b", dedupeKey: "fixedlow1", safetyClass: .cgmDataLoss)
+        let protectedWarning = B.Message(
+            category: .pumpAlert, severity: .warning, title: "Fixed low",
+            body: "b", dedupeKey: "fixedlow1", safetyClass: .cgmDataLoss)
         NotificationPoster.post(protectedWarning, runtime: rt, allowCritical: false, now: at(9, 0)) { reqs.append($0) }
-        #expect(reqs.first?.content.interruptionLevel == .timeSensitive,
-               "CX-F-08: a protected alert ID must break through even at plain .warning severity")
+        #expect(
+            reqs.first?.content.interruptionLevel == .timeSensitive,
+            "CX-F-08: a protected alert ID must break through even at plain .warning severity")
         // An ordinary pump alert (no safetyClass, non-critical severity) is unaffected — still `.active`.
         reqs.removeAll()
-        NotificationPoster.post(msg(.pumpAlert, key: "ordinary1"), runtime: rt, allowCritical: true, now: at(9, 0)) { reqs.append($0) }
+        NotificationPoster.post(msg(.pumpAlert, key: "ordinary1"), runtime: rt, allowCritical: true, now: at(9, 0)) {
+            reqs.append($0)
+        }
         #expect(reqs.first?.content.interruptionLevel == .active)
     }
 
@@ -230,8 +260,9 @@ import UserNotifications
         // A FRESH runtime on the same App-Group store (a relaunch, or an out-of-process poster).
         let rt2 = NotificationRuntime(store: store)
         let disabled = NotificationPoster.post(msg(.pumpDisconnect, key: "pd1"), runtime: rt2, now: at(9, 0)) { _ in }
-        #expect(!disabled.deliver && disabled.reason == .categoryDisabled,
-               "an acknowledged safety-disable is honored by a fresh runtime + the real poster")
+        #expect(
+            !disabled.deliver && disabled.reason == .categoryDisabled,
+            "an acknowledged safety-disable is honored by a fresh runtime + the real poster")
         // cgmDataLoss (untouched) still delivers on the same runtime.
         let untouched = NotificationPoster.post(msg(.cgmDataLoss, key: "cgm1"), runtime: rt2, now: at(9, 0)) { _ in }
         #expect(untouched.deliver, "an untouched trio category is unaffected by another category's disable")
@@ -241,34 +272,41 @@ import UserNotifications
     @Test func decideRequiresBothEnabledFalseAndAcknowledgedTrueToSuppressATrioCategory() {
         typealias B = NotificationBroker
         // enabled==false, ack unset (nil) → still delivers.
-        let notAcked = B.decide(msg(.pumpDisconnect),
-                                settings: [.pumpDisconnect: B.CategorySettings(enabled: false)],
-                                state: B.State(), now: at(9, 0))
+        let notAcked = B.decide(
+            msg(.pumpDisconnect),
+            settings: [.pumpDisconnect: B.CategorySettings(enabled: false)],
+            state: B.State(), now: at(9, 0))
         #expect(notAcked.deliver, "the ack flag is the mandatory gate — !enabled alone must never suppress a trio")
         // enabled==false, ack==true → suppressed.
         var ackedCfg = B.CategorySettings(enabled: false)
         ackedCfg.userAcknowledgedSafetyDisable = true
-        let acked = B.decide(msg(.pumpDisconnect), settings: [.pumpDisconnect: ackedCfg],
-                             state: B.State(), now: at(9, 0))
+        let acked = B.decide(
+            msg(.pumpDisconnect), settings: [.pumpDisconnect: ackedCfg],
+            state: B.State(), now: at(9, 0))
         #expect(!acked.deliver && acked.reason == .categoryDisabled)
     }
 
     /// A disabled category's break-through row must read as moot, not silently ignored.
     @Test func breakThroughCaptionCoversAllThreeEffectiveStateBranches() {
-        #expect(NotificationSettingsView.breakThroughCaption(enabled: true, allow: true)
+        #expect(
+            NotificationSettingsView.breakThroughCaption(enabled: true, allow: true)
                 == "On — this category's urgent/critical alerts always break through quiet hours and limits.")
-        #expect(NotificationSettingsView.breakThroughCaption(enabled: true, allow: false)
+        #expect(
+            NotificationSettingsView.breakThroughCaption(enabled: true, allow: false)
                 == "Off — this category's urgent/critical alerts follow the normal quiet-hours/limit rules below.")
-        #expect(NotificationSettingsView.breakThroughCaption(enabled: false, allow: true)
+        #expect(
+            NotificationSettingsView.breakThroughCaption(enabled: false, allow: true)
                 == "Off — category is disabled, so break-through has no effect.")
         // `allow` is moot once the master is off — same string regardless of its value.
-        #expect(NotificationSettingsView.breakThroughCaption(enabled: false, allow: false)
+        #expect(
+            NotificationSettingsView.breakThroughCaption(enabled: false, allow: false)
                 == "Off — category is disabled, so break-through has no effect.")
     }
 
     /// The silence-pump-alarms caption is non-nil only when the pump section's master is off.
     @Test func silenceMirrorCaptionOnlyWhenPumpDisabled() {
-        #expect(NotificationSettingsView.silenceMirrorCaption(pumpEnabled: false)
+        #expect(
+            NotificationSettingsView.silenceMirrorCaption(pumpEnabled: false)
                 == "No effect — pump alerts are disabled.")
         #expect(NotificationSettingsView.silenceMirrorCaption(pumpEnabled: true) == nil)
     }
@@ -289,7 +327,8 @@ import UserNotifications
     /// read `criticalAlertsEnabled`. The toggle binding and `shouldShowHonestStatus` are not `.disabled` calls.
     @Test func interruptionStrengthSectionGatesNoOtherRow() throws {
         guard let url = Self.notificationSettingsViewFileURL(),
-              let source = try? String(contentsOf: url, encoding: .utf8) else {
+            let source = try? String(contentsOf: url, encoding: .utf8)
+        else {
             Issue.record("could not resolve/read NotificationSettingsView.swift from #filePath=\(#filePath)")
             return
         }
@@ -309,45 +348,58 @@ import UserNotifications
                 let ch = source[i]
                 if ch == "(" { depth += 1 }
                 if ch == ")" {
-                    if depth == 0 { argEnd = i; break }
+                    if depth == 0 {
+                        argEnd = i
+                        break
+                    }
                     depth -= 1
                 }
                 i = source.index(after: i)
             }
             let arg = String(source[range.upperBound..<argEnd])
-            #expect(!arg.contains("criticalAlertsEnabled"),
-                    "found .disabled(...) reading criticalAlertsEnabled: \(arg)")
+            #expect(
+                !arg.contains("criticalAlertsEnabled"),
+                "found .disabled(...) reading criticalAlertsEnabled: \(arg)")
             searchStart = source.index(after: range.lowerBound)
         }
-        #expect(disabledSitesFound > 0,
-                "found zero .disabled( occurrences in NotificationSettingsView.swift — parent-master greying may have regressed")
+        #expect(
+            disabledSitesFound > 0,
+            "found zero .disabled( occurrences in NotificationSettingsView.swift — parent-master greying may have regressed"
+        )
     }
 
     @Test func posterUsesTheMessageDedupeKeyAsIdentifierSoRejectionsAreDistinct() {
         let rt = NotificationRuntime(store: isolatedStore(#function))
         var ids: [String] = []
         // Two rejections with the distinct ids AppModel now assigns (rejectionSeq).
-        NotificationPoster.post(msg(.remoteBolusRejected, key: "remoteBolusRejected-1"),
-                                runtime: rt, now: at(9, 0)) { ids.append($0.identifier) }
-        NotificationPoster.post(msg(.remoteBolusRejected, key: "remoteBolusRejected-2"),
-                                runtime: rt, now: at(9, 0)) { ids.append($0.identifier) }
-        #expect(ids == ["remoteBolusRejected-1", "remoteBolusRejected-2"])   // old fixed id collapsed both
+        NotificationPoster.post(
+            msg(.remoteBolusRejected, key: "remoteBolusRejected-1"),
+            runtime: rt, now: at(9, 0)
+        ) { ids.append($0.identifier) }
+        NotificationPoster.post(
+            msg(.remoteBolusRejected, key: "remoteBolusRejected-2"),
+            runtime: rt, now: at(9, 0)
+        ) { ids.append($0.identifier) }
+        #expect(ids == ["remoteBolusRejected-1", "remoteBolusRejected-2"])  // old fixed id collapsed both
     }
 
     // MARK: - Safety-trio toggle cancel/snap-back and trioIsSuppressed AND-gate
 
     /// Turning a safety-trio toggle OFF must request confirm and must not write `enabled` until confirm fires.
     @Test func safetyTrioToggleCancelSnapsBackWithoutWritingEnabled() {
-        var backing = true   // currently ON (protection active)
+        var backing = true  // currently ON (protection active)
         var setCalls: [Bool] = []
         var confirmRequested = 0
         let binding = NotificationSettingsView.safetyTrioToggleBinding(
             enabled: { backing },
-            setEnabled: { on in setCalls.append(on); backing = on },
+            setEnabled: { on in
+                setCalls.append(on)
+                backing = on
+            },
             requestConfirmDisable: { confirmRequested += 1 }
         )
         #expect(binding.wrappedValue == true)
-        binding.wrappedValue = false   // user taps the toggle OFF
+        binding.wrappedValue = false  // user taps the toggle OFF
         #expect(confirmRequested == 1, "turning off must request confirm before writing anything")
         #expect(setCalls.isEmpty, "must not write `enabled` until the confirm button explicitly fires")
         // Simulate Cancel: no dialog action ever calls setEnabled. A re-read must snap back to ON.
@@ -360,11 +412,16 @@ import UserNotifications
         var backing = true
         var setCalls: [Bool] = []
         let binding = NotificationSettingsView.safetyTrioToggleBinding(
-            enabled: { backing }, setEnabled: { on in setCalls.append(on); backing = on },
-            requestConfirmDisable: { }
+            enabled: { backing },
+            setEnabled: { on in
+                setCalls.append(on)
+                backing = on
+            },
+            requestConfirmDisable: {}
         )
-        binding.wrappedValue = false             // requests confirm, no write yet
-        setCalls.append(false); backing = false  // simulate the confirm button's own explicit action
+        binding.wrappedValue = false  // requests confirm, no write yet
+        setCalls.append(false)
+        backing = false  // simulate the confirm button's own explicit action
         #expect(binding.wrappedValue == false)
         #expect(setCalls == [false])
     }
@@ -400,13 +457,15 @@ import UserNotifications
         let requests = [
             request("safety.pumpDisconnect", category: .pumpDisconnect),
             request("pumpDisconnect-escalation-1", category: .pumpDisconnect),
-            request("reconcile-peerA-req1", category: .bolusReconciliation),   // dynamic key, no static list
+            request("reconcile-peerA-req1", category: .bolusReconciliation),  // dynamic key, no static list
             request("safety.cgmDataLoss", category: .cgmDataLoss),
-            request("some-pump-alert", category: .pumpAlert),                  // must NOT match any trio
+            request("some-pump-alert", category: .pumpAlert)  // must NOT match any trio
         ]
-        #expect(Set(NotificationCoordinator.identifiers(for: .pumpDisconnect, in: requests))
+        #expect(
+            Set(NotificationCoordinator.identifiers(for: .pumpDisconnect, in: requests))
                 == ["safety.pumpDisconnect", "pumpDisconnect-escalation-1"])
-        #expect(NotificationCoordinator.identifiers(for: .bolusReconciliation, in: requests)
+        #expect(
+            NotificationCoordinator.identifiers(for: .bolusReconciliation, in: requests)
                 == ["reconcile-peerA-req1"])
         #expect(NotificationCoordinator.identifiers(for: .cgmDataLoss, in: requests) == ["safety.cgmDataLoss"])
         // The unrelated pump-alert request matches ONLY its own category — never a trio query, and no
@@ -416,7 +475,7 @@ import UserNotifications
 
     /// A request with no `brokerCategory` stamp never matches any category.
     @Test func withdrawAllNeverMatchesARequestMissingTheBrokerCategoryStamp() {
-        let content = UNMutableNotificationContent()   // no userInfo set
+        let content = UNMutableNotificationContent()  // no userInfo set
         let bare = UNNotificationRequest(identifier: "bare", content: content, trigger: nil)
         #expect(NotificationCoordinator.identifiers(for: .pumpDisconnect, in: [bare]) == [])
     }
@@ -434,9 +493,11 @@ import UserNotifications
             deadline: at(9, 15), kind: .delayed, lifecycleState: .issued)
         store1.record(entry)
 
-        let store2 = SafetyAlertStore(store: defaults)   // fresh instance, same store
-        #expect(store2.entries["safety.pumpDisconnect"] == entry,
-                "the full replay contract must round-trip byte-for-byte, not a reduced {dedupeKey,issuedDate,escalationStep} shape")
+        let store2 = SafetyAlertStore(store: defaults)  // fresh instance, same store
+        #expect(
+            store2.entries["safety.pumpDisconnect"] == entry,
+            "the full replay contract must round-trip byte-for-byte, not a reduced {dedupeKey,issuedDate,escalationStep} shape"
+        )
     }
 
     /// Overdue or nil-deadline entries replay immediately; a not-yet-due delayed entry uses a strictly-positive interval.
@@ -461,8 +522,10 @@ import UserNotifications
         var sawPersistedBeforeAdd = false
         var addCallCount = 0
 
-        let decision = SafetyAlertPoster.post(msg(.pumpDisconnect, key: "ord1"), store: store, runtime: rt,
-                                              now: at(9, 0)) { _ in
+        let decision = SafetyAlertPoster.post(
+            msg(.pumpDisconnect, key: "ord1"), store: store, runtime: rt,
+            now: at(9, 0)
+        ) { _ in
             addCallCount += 1
             sawPersistedBeforeAdd = store.entries["ord1"] != nil
         }
@@ -482,12 +545,16 @@ import UserNotifications
         let model = AppModel(source: MockBackend(), ledgerStoreURL: url)
         let coordinator = NotificationCoordinator(model: model, runtime: rt, safetyAlertStore: store)
 
-        store.record(.init(category: .pumpDisconnect, severity: .error, title: "t", body: "b",
-                           dedupeKey: "safety.pumpDisconnect", userInfo: [:], categoryIdentifier: "",
-                           issuedDate: at(9, 0), deadline: nil, kind: .immediate, lifecycleState: .issued))
-        store.record(.init(category: .bolusReconciliation, severity: .error, title: "t2", body: "b2",
-                           dedupeKey: "reconcile-watch-r1", userInfo: [:], categoryIdentifier: "",
-                           issuedDate: at(9, 0), deadline: nil, kind: .immediate, lifecycleState: .issued))
+        store.record(
+            .init(
+                category: .pumpDisconnect, severity: .error, title: "t", body: "b",
+                dedupeKey: "safety.pumpDisconnect", userInfo: [:], categoryIdentifier: "",
+                issuedDate: at(9, 0), deadline: nil, kind: .immediate, lifecycleState: .issued))
+        store.record(
+            .init(
+                category: .bolusReconciliation, severity: .error, title: "t2", body: "b2",
+                dedupeKey: "reconcile-watch-r1", userInfo: [:], categoryIdentifier: "",
+                issuedDate: at(9, 0), deadline: nil, kind: .immediate, lifecycleState: .issued))
 
         coordinator.withdraw(["safety.pumpDisconnect"])
         #expect(store.entries["safety.pumpDisconnect"] == nil, "withdraw(_:) must prune the durable entry")
@@ -508,21 +575,27 @@ import UserNotifications
         let store = SafetyAlertStore(store: defaults)
         // A durable entry for that now-disabled category (will decide `.categoryDisabled` on replay) plus
         // one for an unconfigured category that still delivers (default-enabled) and must be kept.
-        store.record(.init(category: .cgmDataLoss, severity: .warning, title: "t", body: "b",
-                           dedupeKey: "safety.cgmDataLoss", userInfo: [:], categoryIdentifier: "",
-                           issuedDate: Date(), deadline: nil, kind: .immediate, lifecycleState: .issued))
-        store.record(.init(category: .pumpDisconnect, severity: .error, title: "t2", body: "b2",
-                           dedupeKey: "safety.pumpDisconnect", userInfo: [:], categoryIdentifier: "",
-                           issuedDate: Date(), deadline: nil, kind: .immediate, lifecycleState: .issued))
+        store.record(
+            .init(
+                category: .cgmDataLoss, severity: .warning, title: "t", body: "b",
+                dedupeKey: "safety.cgmDataLoss", userInfo: [:], categoryIdentifier: "",
+                issuedDate: Date(), deadline: nil, kind: .immediate, lifecycleState: .issued))
+        store.record(
+            .init(
+                category: .pumpDisconnect, severity: .error, title: "t2", body: "b2",
+                dedupeKey: "safety.pumpDisconnect", userInfo: [:], categoryIdentifier: "",
+                issuedDate: Date(), deadline: nil, kind: .immediate, lifecycleState: .issued))
         let url = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("safety-store-\(UUID().uuidString).json")
         let model = AppModel(source: MockBackend(), ledgerStoreURL: url)
         // Constructing the coordinator runs `replayPersistedSafetyAlerts()` in its init.
         let coordinator = NotificationCoordinator(model: model, runtime: rt, safetyAlertStore: store)
-        #expect(store.entries["safety.cgmDataLoss"] == nil,
-                "a replay decision of .categoryDisabled must prune the dead durable entry (MD-02)")
-        #expect(store.entries["safety.pumpDisconnect"] != nil,
-                "an entry that still delivers on replay must NOT be pruned")
+        #expect(
+            store.entries["safety.cgmDataLoss"] == nil,
+            "a replay decision of .categoryDisabled must prune the dead durable entry (MD-02)")
+        #expect(
+            store.entries["safety.pumpDisconnect"] != nil,
+            "an entry that still delivers on replay must NOT be pruned")
         _ = coordinator
     }
 

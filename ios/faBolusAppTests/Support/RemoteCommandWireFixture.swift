@@ -30,10 +30,10 @@ import WidgetKit
 final class RemoteCommandWireFixture {
     // Glucose
     var glucose: Int?
-    var glucoseDate: Date?             // for staleness
-    var trend: String = "→"           // Unicode arrow
-    var history: [Int] = []            // recent mg/dL, oldest→newest (for the chart)
-    var historyDates: [Date] = []      // real timestamp per history point (same length), when the host sends them
+    var glucoseDate: Date?  // for staleness
+    var trend: String = "→"  // Unicode arrow
+    var history: [Int] = []  // recent mg/dL, oldest→newest (for the chart)
+    var historyDates: [Date] = []  // real timestamp per history point (same length), when the host sends them
     // Pump status
     var iobUnits: Double = 0
     var reservoirUnits: Double = 0
@@ -43,7 +43,7 @@ final class RemoteCommandWireFixture {
     /// `chargingStatus == 1` semantics remain an UNVERIFIED-GUESS (docs/UNVERIFIED-GUESSES.md).
     var batteryCharging: Bool = false
     var lastBolusUnits: Double?
-    var basalRate: Double = 0          // units/hr, mirrored from the host
+    var basalRate: Double = 0  // units/hr, mirrored from the host
     var connection: String = ""
     // Calculator settings (mirrored from the phone)
     var carbRatio: Double = 0
@@ -62,7 +62,9 @@ final class RemoteCommandWireFixture {
     var carbIncrement: Double = 5
     var defaultMode: String = "carbs"
     // Customization mirrored from the phone.
-    var detailsOrder: [String] = ["iob", "reservoir", "battery", "cgm", "lastBolus", "carbRatio", "isf", "target", "maxBolus"]
+    var detailsOrder: [String] = [
+        "iob", "reservoir", "battery", "cgm", "lastBolus", "carbRatio", "isf", "target", "maxBolus"
+    ]
     var chartRanges: [Int] = [3, 6, 12, 24]
     /// Phase 09.13 (glucose plot height customization, D-06/D-07) — the SHARED/phone-scoped glucose-plot
     /// Y-axis bounds, canonical mg/dL. **This is the channel the Mac reads** (the phone group). CRITICAL
@@ -110,15 +112,15 @@ final class RemoteCommandWireFixture {
     /// (`ControlIQZone.rawValue`), mirrored from the phone. A remote renders Tandem's own zone word + icon
     /// locally from this. `nil` ⇒ render the chip/row/field ABSENT — a legacy host, an unread zone, or CIQ
     /// off, never a stale last-known word (D-06 guardrail #5/#6, SP-5 fail-closed).
-    var ciqZone: String? = nil
+    var ciqZone: String?
     /// Phase 09.15 T1-2 (D-08, D-09.1) — whether the pump's OWN control-state currently attributes an
     /// active basal suspend to Control-IQ, mirrored from the phone. Mirrors `ciqZone`'s unconditional
     /// assign-or-clear parse (SP-5 fail-closed): `nil`/`false` ⇒ this remote's OWN generic-suspend
     /// fallback applies — never a fabricated "Control-IQ paused" claim (D-09.1 BINDING).
-    var ciqSuspendedForLow: Bool? = nil
+    var ciqSuspendedForLow: Bool?
     /// The immutable instant `ciqSuspendedForLow` first became true, mirrored from the phone's
     /// `ciqSuspendStartEpochSec` (epoch-not-age convention — elapsed is computed on draw).
-    var ciqSuspendStartDate: Date? = nil
+    var ciqSuspendStartDate: Date?
     /// Phase 09.15 T1-3 (D-01/D-08) — the immutable instant of the most-recent Control-IQ
     /// auto-correction, mirrored from the phone's `lastAutoCorrectionEpochSec` (epoch-not-age
     /// convention — age is computed on draw). `nil` ⇒ render the chip/row/marker ABSENT — a legacy
@@ -126,13 +128,13 @@ final class RemoteCommandWireFixture {
     /// Display-only, never a dose input (C3). A real historical fact never un-happens, so — unlike
     /// `ciqZone`/`ciqSuspendedForLow` — this uses the STANDARD `if let` guard (SP-3): absent on a
     /// later command means only "this reply didn't repeat it", never "it un-happened".
-    var lastAutoCorrectionDate: Date? = nil
+    var lastAutoCorrectionDate: Date?
     /// Phase 09.15 T1-4 (D-01/D-08) — the immutable instant of the most-recent "Control-IQ tried and
     /// couldn't deliver an automatic correction" event, mirrored from the phone's
     /// `ciqLastCouldNotDeliverEpochSec`. Remote MARKER only (no remote-side timeline — remotes never
     /// had the pump history to build one from). `nil` ⇒ render the marker ABSENT. Never surfaced on
     /// widgets/LA (explicit scope, D-08).
-    var ciqLastCouldNotDeliverDate: Date? = nil
+    var ciqLastCouldNotDeliverDate: Date?
     /// Phase 09.15 T1-5 (D-01/D-08) — the immutable instant Control-IQ's automatic correction becomes
     /// available again, mirrored from the phone's `lockoutUntilEpochSec` (epoch-not-age convention).
     /// UNLIKE `lastAutoCorrectionDate`/`ciqLastCouldNotDeliverDate` above (monotonic historical markers
@@ -140,14 +142,14 @@ final class RemoteCommandWireFixture {
     /// so it uses the SAME unconditional assign-or-clear parse as `iobDate`/`therapyDate` (map assign,
     /// clearing to `nil` the moment the host doesn't send one), never the "if let, keep last" guard.
     /// `nil` ⇒ render the bar/ring ABSENT. Display-only, never a dose input (C3).
-    var lockoutUntilDate: Date? = nil
+    var lockoutUntilDate: Date?
     /// Phase 09.15 T1-8 (D-03, D-08) — the pump's configured max-basal delivery limit, mirrored from
     /// the phone's `maxBasalUnitsPerHour`. Unconditional assign-or-clear (SP-5, mirrors `lockoutUntilDate`):
     /// the host relays its current knowledge every statusRead, so a stale value must never survive past
     /// the moment it clears. `nil` ⇒ the T1-8 readout renders ABSENT (D-03(v) fail-closed: hidden, not
     /// zero/dash) — a legacy host, an unread max, or `<= 0` (the host only ever sends a positive value
     /// or `nil`). Display-only, never a dose input (C3).
-    var maxBasalUnitsPerHour: Double? = nil
+    var maxBasalUnitsPerHour: Double?
     /// Phase 09.15 T1-9 (D-01/D-08) — the pump's live Sleep/Exercise activity mode, mirrored from the
     /// phone (previously only `WidgetSnapshot`/`ContentState` carried this). Unconditional assign
     /// (SP-5, mirrors `lockoutUntilDate`): the host relays its CURRENT knowledge every statusRead, so
@@ -158,14 +160,14 @@ final class RemoteCommandWireFixture {
     /// The already-decoded exercise countdown, raw remaining-seconds (NOT an epoch) — a receiver
     /// counts down locally against ITS OWN receipt time for animation only, re-anchored on every
     /// statusRead (D-08 T1-9 note). `nil` ⇒ the timer fact renders ABSENT (SP-5 fail-closed).
-    var exerciseTimeRemainingSec: Int? = nil
+    var exerciseTimeRemainingSec: Int?
     /// The pump's OWN configured sleep-schedule window, evaluated at the phone against `now` (pure
     /// window math, (b) pump-communicated) — iPhone/Mac render the verbose window text from these;
     /// Watch does not render them (D-09.5 explicit scope) even though they ARE parsed here (one
     /// shared parse point, SP-3).
-    var inSleepWindow: Bool? = nil
-    var sleepWindowStartMinute: Int? = nil
-    var sleepWindowEndMinute: Int? = nil
+    var inSleepWindow: Bool?
+    var sleepWindowStartMinute: Int?
+    var sleepWindowEndMinute: Int?
 
     /// Phase 09.15 D-07 (plan 12) — the phone-owned Control-IQ-awareness Smart-Assist toggle states,
     /// mirrored from the phone. Safe defaults mirror each flag's own `AppSettings` D-07 default exactly
@@ -183,23 +185,26 @@ final class RemoteCommandWireFixture {
     /// currently selected by `controlIQMode`, or `nil` in normal mode. Pure UI wiring of
     /// `controllerDescriptor.activityPresets` — no new clinical literal (D-06 guardrail #4).
     var ciqActivityPreset: ActivityPreset? {
-        SleepExerciseAwareness.activePreset(mode: ControlIQActivity(rawMode: controlIQMode),
-                                            descriptor: controllerDescriptor)
+        SleepExerciseAwareness.activePreset(
+            mode: ControlIQActivity(rawMode: controlIQMode),
+            descriptor: controllerDescriptor)
     }
     /// T1-9 (D-01/D-08, D-09.5): the compact single-line fact EVERY remote surface (Watch/Garmin/
     /// Mac's base line) shows — "Sleep — AutoBolus off" / "Exercise — ends 4:20". `nil` when normal
     /// mode, no matching preset, or (Exercise only) the timer is unknown (SP-5 fail-closed).
     var ciqActivityCompactLine: String? {
-        SleepExerciseAwareness.compactLine(mode: ControlIQActivity(rawMode: controlIQMode),
-                                           descriptor: controllerDescriptor,
-                                           exerciseTimeRemainingSec: exerciseTimeRemainingSec)
+        SleepExerciseAwareness.compactLine(
+            mode: ControlIQActivity(rawMode: controlIQMode),
+            descriptor: controllerDescriptor,
+            exerciseTimeRemainingSec: exerciseTimeRemainingSec)
     }
     /// T1-9 (D-01/D-08, iPhone/Mac only) — "Current window: {start}–{end}" when a configured
     /// Sleep-schedule slot is currently active, else `nil`. Watch never renders this (D-09.5
     /// explicit scope) even though it's parsed on this shared base.
     var ciqSleepWindowLine: String? {
         guard inSleepWindow == true, let s = sleepWindowStartMinute, let e = sleepWindowEndMinute else { return nil }
-        return "Current window: \(SleepExerciseAwareness.minuteOfDayString(s))–\(SleepExerciseAwareness.minuteOfDayString(e))"
+        return
+            "Current window: \(SleepExerciseAwareness.minuteOfDayString(s))–\(SleepExerciseAwareness.minuteOfDayString(e))"
     }
 
     /// B2 — the pump's controller descriptor, reconstructed locally from the mirrored variant. Phase 23
@@ -215,12 +220,13 @@ final class RemoteCommandWireFixture {
     /// is absent, the window is unknown, or the lockout has already expired (fail-closed — SP-5).
     var lockoutRemainingFraction: Double? {
         guard let untilDate = lockoutUntilDate,
-              let windowMinutes = controllerDescriptor.automaticCorrection.blockedByRecentBolusMinutes
+            let windowMinutes = controllerDescriptor.automaticCorrection.blockedByRecentBolusMinutes
         else { return nil }
         let startDate = untilDate.addingTimeInterval(-Double(windowMinutes) * 60)
-        return AutoCorrectionDisclosure.lockoutRemainingFraction(descriptor: controllerDescriptor,
-                                                                 controllerEnabled: controlIQEnabled,
-                                                                 lockoutStartDate: startDate, now: Date())
+        return AutoCorrectionDisclosure.lockoutRemainingFraction(
+            descriptor: controllerDescriptor,
+            controllerEnabled: controlIQEnabled,
+            lockoutStartDate: startDate, now: Date())
     }
     /// The "available at {time}" instant the countdown bar's trailing label + VoiceOver read — simply
     /// `lockoutUntilDate` exposed under the UI-facing name, `nil` exactly when `lockoutRemainingFraction`
@@ -306,9 +312,10 @@ final class RemoteCommandWireFixture {
     /// (The Mac feeds `BolusGate` inline instead, because its single control spans carbs grams + units.)
     func bolusGate(amount: Double, minimum: Double) -> (canBolus: Bool, reason: BolusBlockReason?) {
         let access: AccessPolicy.AccessDecision = readOnly ? .deny(.remotesReadOnly) : .allow
-        return BolusGate.evaluate(reachable: reachable, linked: pumpConnected, bolusInFlight: bolusInFlight,
-                                  amount: amount, minimum: minimum,
-                                  maximum: maxBolusUnits > 0 ? maxBolusUnits : 25, access: access)
+        return BolusGate.evaluate(
+            reachable: reachable, linked: pumpConnected, bolusInFlight: bolusInFlight,
+            amount: amount, minimum: minimum,
+            maximum: maxBolusUnits > 0 ? maxBolusUnits : 25, access: access)
     }
 
     /// Whether this remote may start a bolus AT ALL right now — reachability + pump link + not-in-flight +
@@ -365,12 +372,18 @@ final class RemoteCommandWireFixture {
     /// (UI-SPEC T1-4 explicitly says "same age-formatting convention as T1-3"), computed HERE at draw
     /// time from the immutable mirrored date — nil when there's nothing to show (SP-5 fail-closed).
     var lastAutoCorrectionAgeLabel: String? { lastAutoCorrectionDate.map { CalcInputFreshness.ageLabel(for: $0) } }
-    var ciqLastCouldNotDeliverAgeLabel: String? { ciqLastCouldNotDeliverDate.map { CalcInputFreshness.ageLabel(for: $0) } }
+    var ciqLastCouldNotDeliverAgeLabel: String? {
+        ciqLastCouldNotDeliverDate.map { CalcInputFreshness.ageLabel(for: $0) }
+    }
 
     static func arrow(fromToken t: String?) -> String {
         switch t {
-        case "up": return "↑"; case "upup": return "⇈"; case "up45": return "↗"
-        case "down": return "↓"; case "downdown": return "⇊"; case "down45": return "↘"
+        case "up": return "↑"
+        case "upup": return "⇈"
+        case "up45": return "↗"
+        case "down": return "↓"
+        case "downdown": return "⇊"
+        case "down45": return "↘"
         default: return "→"
         }
     }
@@ -386,7 +399,7 @@ final class RemoteCommandWireFixture {
                 // Reflect the actual delivered amount from the outcome echo immediately, so the
                 // Details "Last bolus" shows the just-delivered value (e.g. 0.05 U) right away
                 // instead of the previous bolus until the next status push arrives.
-                if (cmd.status == .delivered || cmd.status == .cancelled), let d = cmd.deliveredUnits {
+                if cmd.status == .delivered || cmd.status == .cancelled, let d = cmd.deliveredUnits {
                     lastBolusUnits = d
                 }
             }
@@ -478,7 +491,7 @@ final class RemoteCommandWireFixture {
             if lastStatus != .delivering { lastBolusUnits = cmd.lastBolusUnits }
             if let b = cmd.basalRate { basalRate = b }
             if let ro = cmd.remotesReadOnly { readOnly = ro }
-            if let d = cmd.supportsRemoteAlertDismiss { canDismissAlertOnPump = d }   // P13 capability channel
+            if let d = cmd.supportsRemoteAlertDismiss { canDismissAlertOnPump = d }  // P13 capability channel
             // P14 S4: adopt the phone's active mode (absent ⇒ legacy host ⇒ stays the permissive default).
             if let m = cmd.activeMode { activeMode = AppMode(rawValue: m) ?? .advanced }
             // P15 §2.3: adopt the per-surface bolus enables + passcode requirement. Absent ⇒ legacy host ⇒
@@ -584,7 +597,9 @@ final class RemoteCommandWireFixture {
             // Mirror the phone's staleness policy so the remote marks/hides + stops using stale
             // readings for carb→unit exactly like the phone.
             if let s = cmd.glucoseStaleMinutes { GlucoseFreshness.staleAfter = TimeInterval(s) * 60 }
-            GlucoseFreshness.hideAfter = cmd.glucoseHideDelayMinutes.map { GlucoseFreshness.staleAfter + TimeInterval($0) * 60 }
+            GlucoseFreshness.hideAfter = cmd.glucoseHideDelayMinutes.map {
+                GlucoseFreshness.staleAfter + TimeInterval($0) * 60
+            }
             publishSnapshot()
         case .bolusApprovalRequest:
             incomingApproval = (cmd.requestId, cmd.units ?? 0)
@@ -598,7 +613,7 @@ final class RemoteCommandWireFixture {
         guard let a = incomingApproval else { return }
         var cmd = RemoteCommand(kind: .bolusApprovalResponse, requestId: a.requestId)
         cmd.approved = approved
-        cmd.sentAt = Int(Date().timeIntervalSince1970)   // group B (P11): freshness-gated (a late approval could dose)
+        cmd.sentAt = Int(Date().timeIntervalSince1970)  // group B (P11): freshness-gated (a late approval could dose)
         link.send(cmd)
         incomingApproval = nil
     }
@@ -611,13 +626,14 @@ final class RemoteCommandWireFixture {
         // override already does — this is what makes the Watch (which does not override
         // `publishSnapshot`) also carry the fail-closed charging state into its own `WidgetSnapshot`
         // instead of silently defaulting to `false` regardless of the real value.
-        let snap = WidgetSnapshot(glucose: glucose, glucoseDate: glucoseDate, trendArrow: trend,
-                                  iobUnits: iobUnits, reservoirUnits: reservoirUnits,
-                                  batteryPercent: batteryPercent, batteryCharging: batteryCharging,
-                                  lastBolusUnits: lastBolusUnits,
-                                  connected: reachable, updatedAt: Date(),
-                                  cgmActive: cgmActive, carbRatio: carbRatio, isf: isf,
-                                  targetBg: targetBg, maxBolusUnits: maxBolusUnits)
+        let snap = WidgetSnapshot(
+            glucose: glucose, glucoseDate: glucoseDate, trendArrow: trend,
+            iobUnits: iobUnits, reservoirUnits: reservoirUnits,
+            batteryPercent: batteryPercent, batteryCharging: batteryCharging,
+            lastBolusUnits: lastBolusUnits,
+            connected: reachable, updatedAt: Date(),
+            cgmActive: cgmActive, carbRatio: carbRatio, isf: isf,
+            targetBg: targetBg, maxBolusUnits: maxBolusUnits)
         WidgetStore.save(snap)
         WidgetCenter.shared.reloadAllTimelines()
     }
@@ -637,8 +653,8 @@ final class RemoteCommandWireFixture {
     /// reduces exactly to the prior rule (`isGlucoseStale ? nil : glucose`).
     private func bgForBolus(includeStale: Bool) -> Int? {
         guard let g = glucose else { return nil }
-        if !isGlucoseStale { return g }          // fresh: always used
-        return includeStale ? g : nil            // stale: only on the explicit per-attempt choice
+        if !isGlucoseStale { return g }  // fresh: always used
+        return includeStale ? g : nil  // stale: only on the explicit per-attempt choice
     }
 
     /// Send a carbs bolus; the host (phone) is the single calculator — it recomputes the authoritative
@@ -672,10 +688,11 @@ final class RemoteCommandWireFixture {
     func estimatedUnits(forCarbs grams: Double, includeStaleBG: Bool = false) -> Double? {
         guard carbRatio > 0, grams > 0 else { return carbRatio > 0 ? 0 : nil }
         let bg: Int? = bgForBolus(includeStale: includeStaleBG)
-        let profile = BolusMath.Profile(carbRatioGramsPerUnit: carbRatio, isfMgdlPerUnit: isf,
-                                        targetBgMgdl: targetBg, iobUnits: iobUnits)
+        let profile = BolusMath.Profile(
+            carbRatioGramsPerUnit: carbRatio, isfMgdlPerUnit: isf,
+            targetBgMgdl: targetBg, iobUnits: iobUnits)
         let units = BolusMath.recommendedUnits(carbsGrams: grams, bgMgdl: bg, profile: profile)
-        return (units * 20).rounded() / 20   // snap to 0.05 u for display/divergence parity
+        return (units * 20).rounded() / 20  // snap to 0.05 u for display/divergence parity
     }
 
     /// Send a bolus command and enter the pending/delivering state, correlating future echoes by its
@@ -683,7 +700,7 @@ final class RemoteCommandWireFixture {
     /// Mac's widget quick-bolus, which must correlate the phone's echo to the widget request).
     func startPending(_ cmd: RemoteCommand) {
         var cmd = cmd
-        cmd.sentAt = Int(Date().timeIntervalSince1970)   // group B (P11): stamp send time so the host refuses a stale/late delivery command
+        cmd.sentAt = Int(Date().timeIntervalSince1970)  // group B (P11): stamp send time so the host refuses a stale/late delivery command
         pendingRequestId = cmd.requestId
         lastStatus = .delivering
         statusMessage = "Delivering…"
@@ -714,7 +731,9 @@ final class RemoteCommandWireFixture {
     /// Request status and (optionally) ask the host to force a fresh CGM read first — used when opening
     /// the bolus screen so the estimate is off the newest value.
     func requestStatus(forceGlucose: Bool) {
-        var c = RemoteCommand(kind: .statusRead); c.forceGlucose = forceGlucose; link.send(c)
+        var c = RemoteCommand(kind: .statusRead)
+        c.forceGlucose = forceGlucose
+        link.send(c)
     }
 }
 

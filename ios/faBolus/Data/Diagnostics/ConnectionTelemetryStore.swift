@@ -110,19 +110,19 @@ final class ConnectionTelemetryStore {
         13: "Operation not supported", 14: "Peer removed pairing information",
         15: "Encryption timed out", 16: "Too many LE paired devices",
         17: "LE GATT exceeded background notification limit",
-        18: "LE GATT near background notification limit",
+        18: "LE GATT near background notification limit"
     ]
 
     private func bump(_ mutate: (inout ConnectionTelemetry) -> Void) {
         guard enabled else { return }
-        var t = Self.load(store, key)   // read-modify-write (sibling processes)
+        var t = Self.load(store, key)  // read-modify-write (sibling processes)
         mutate(&t)
         if let data = try? JSONEncoder().encode(t) { store.set(data, forKey: key) }
     }
 
     private static func load(_ store: UserDefaults, _ key: String) -> ConnectionTelemetry {
         guard let data = store.data(forKey: key),
-              let decoded = try? JSONDecoder().decode(ConnectionTelemetry.self, from: data)
+            let decoded = try? JSONDecoder().decode(ConnectionTelemetry.self, from: data)
         else { return .init() }
         return decoded
     }

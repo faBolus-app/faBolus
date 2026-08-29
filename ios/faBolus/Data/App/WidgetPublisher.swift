@@ -15,16 +15,18 @@ enum WidgetPublisher {
     /// racing sibling test. `staleAfterSec`/`hideAfterSec` are passed in (from `GlucoseFreshness` at the
     /// call site) so the test can pin them deterministically.
     @MainActor
-    static func makeSnapshot(_ s: PumpSnapshot, history: [GlucoseReading], alerts: [String],
-                             staleAfterSec: TimeInterval, hideAfterSec: TimeInterval?,
-                             hasSnoozeEligibleAlert: Bool = false) -> WidgetSnapshot {
+    static func makeSnapshot(
+        _ s: PumpSnapshot, history: [GlucoseReading], alerts: [String],
+        staleAfterSec: TimeInterval, hideAfterSec: TimeInterval?,
+        hasSnoozeEligibleAlert: Bool = false
+    ) -> WidgetSnapshot {
         // ~8h of 5-min-cadence points so the App-Group snapshot carries enough raw history for a
         // denser series. The Home Screen widget's own `Sparkline` renders whatever density it's given.
         let points = history.suffix(96).map { WidgetSnapshot.Point(t: $0.date, mgdl: $0.mgdl) }
         return WidgetSnapshot(
             glucose: s.glucose,
             glucoseDate: s.glucoseDate,
-            trendArrow: s.trend,          // Unicode arrow, same as the HUD
+            trendArrow: s.trend,  // Unicode arrow, same as the HUD
             iobUnits: s.iobUnits,
             reservoirUnits: s.reservoirUnits,
             batteryPercent: s.batteryPercent,
@@ -73,12 +75,15 @@ enum WidgetPublisher {
     }
 
     @MainActor
-    static func publish(_ s: PumpSnapshot, history: [GlucoseReading], alerts: [String] = [],
-                        bolusLocked: Bool = false, bolusLockReason: String = "",
-                        hasSnoozeEligibleAlert: Bool = false) {
-        let snap = makeSnapshot(s, history: history, alerts: alerts,
-                                staleAfterSec: GlucoseFreshness.staleAfter, hideAfterSec: GlucoseFreshness.hideAfter,
-                                hasSnoozeEligibleAlert: hasSnoozeEligibleAlert)
+    static func publish(
+        _ s: PumpSnapshot, history: [GlucoseReading], alerts: [String] = [],
+        bolusLocked: Bool = false, bolusLockReason: String = "",
+        hasSnoozeEligibleAlert: Bool = false
+    ) {
+        let snap = makeSnapshot(
+            s, history: history, alerts: alerts,
+            staleAfterSec: GlucoseFreshness.staleAfter, hideAfterSec: GlucoseFreshness.hideAfter,
+            hasSnoozeEligibleAlert: hasSnoozeEligibleAlert)
         WidgetStore.save(snap)
         // Same choke point drives the opt-in app-icon badge. The opt-in gate + freshness live
         // inside GlucoseBadge (currently an inert stub). The arbiter timer re-runs

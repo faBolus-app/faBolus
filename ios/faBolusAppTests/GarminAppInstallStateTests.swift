@@ -33,7 +33,9 @@ struct GarminAppInstallStateTests {
     @Test func notInstalledOffersStoreLinkWithExplicitStatusText() {
         let state = GarminDiagnostics.AppInstallState.notInstalled
         #expect(state.offerStoreLink == true)
-        #expect(state.statusText.lowercased().contains("not installed") || state.statusText.lowercased().contains("app-id mismatch"))
+        #expect(
+            state.statusText.lowercased().contains("not installed")
+                || state.statusText.lowercased().contains("app-id mismatch"))
     }
 
     @Test func unknownOffersNoStoreLink() {

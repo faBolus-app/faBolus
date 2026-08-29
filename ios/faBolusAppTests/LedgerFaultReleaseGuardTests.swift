@@ -19,8 +19,12 @@ struct LedgerFaultReleaseGuardTests {
     private func withCleanSettings(_ body: () async throws -> Void) async rethrows {
         let s = AppSettings.shared
         let ro = s.phoneReadOnly, child = s.childModeEnabled
-        s.phoneReadOnly = false; s.childModeEnabled = false
-        defer { s.phoneReadOnly = ro; s.childModeEnabled = child }
+        s.phoneReadOnly = false
+        s.childModeEnabled = false
+        defer {
+            s.phoneReadOnly = ro
+            s.childModeEnabled = child
+        }
         try await body()
     }
 
@@ -33,14 +37,15 @@ struct LedgerFaultReleaseGuardTests {
     @Test func retryTerminalPersistSuccessReleasesTheGlobalBlock() async {
         await withCleanSettings {
             let store = R3CLedgerFaultTests.FakeLedgerStore()
-            store.failSaveOnCall = 3   // #1 markDelivering, #2 markSent, #3 the terminal settle-delivered save
-            let backend = MockBackend(); await backend.connect()
+            store.failSaveOnCall = 3  // #1 markDelivering, #2 markSent, #3 the terminal settle-delivered save
+            let backend = MockBackend()
+            await backend.connect()
             let model = AppModel(source: backend, ledgerStore: store)
             await model.remoteDeliver(requestId: "a3", units: 2.0, peerId: "watch")
-            #expect(model.deliveryGloballyBlocked)             // terminalSaveFailed set (R3C precondition)
+            #expect(model.deliveryGloballyBlocked)  // terminalSaveFailed set (R3C precondition)
             #expect(model.deliveryBlockedReason == Self.terminalSaveFailedMessage)
 
-            store.failSaveOnCall = nil   // the retry's save now succeeds
+            store.failSaveOnCall = nil  // the retry's save now succeeds
             model.retryTerminalPersistForTesting()
             #expect(!model.deliveryGloballyBlocked)
             #expect(model.deliveryBlockedReason == nil)
@@ -54,12 +59,13 @@ struct LedgerFaultReleaseGuardTests {
         await withCleanSettings {
             let store = R3CLedgerFaultTests.FakeLedgerStore()
             store.failSaveOnCall = 3
-            let backend = MockBackend(); await backend.connect()
+            let backend = MockBackend()
+            await backend.connect()
             let model = AppModel(source: backend, ledgerStore: store)
             await model.remoteDeliver(requestId: "a3-still-failing", units: 2.0, peerId: "watch")
             #expect(model.deliveryGloballyBlocked)
 
-            store.failAllSaves = true   // the retry's save throws again
+            store.failAllSaves = true  // the retry's save throws again
             model.retryTerminalPersistForTesting()
             #expect(model.deliveryGloballyBlocked)
             #expect(model.deliveryBlockedReason == Self.terminalSaveFailedMessage)
@@ -76,15 +82,16 @@ struct LedgerFaultReleaseGuardTests {
             var ledger = RemoteBolusLedger()
             _ = ledger.begin(peerId: "watch", requestId: "a4-stuck", doseKey: "u:9")
             ledger.markDelivering(peerId: "watch", requestId: "a4-stuck", bolusId: 4242)
-            try store.save(ledger)        // seed the unresolved entry — succeeds
-            store.failAllSaves = true     // the verification-clear save now throws
+            try store.save(ledger)  // seed the unresolved entry — succeeds
+            store.failAllSaves = true  // the verification-clear save now throws
 
-            let backend = MockBackend(); await backend.connect()   // no reconcileResultsById[4242] ⇒ .unavailable
+            let backend = MockBackend()
+            await backend.connect()  // no reconcileResultsById[4242] ⇒ .unavailable
             let model = AppModel(source: backend, ledgerStore: store)
-            #expect(model.deliveryGloballyBlocked)   // blocked on load by the still-unresolved entry
+            #expect(model.deliveryGloballyBlocked)  // blocked on load by the still-unresolved entry
 
             model.clearDeliveryBlockAfterVerification()
-            #expect(model.deliveryGloballyBlocked)                     // retained, not released
+            #expect(model.deliveryGloballyBlocked)  // retained, not released
             #expect(model.deliveryBlockedReason == Self.terminalSaveFailedMessage)
         }
     }
@@ -99,7 +106,8 @@ struct LedgerFaultReleaseGuardTests {
             ledger.markDelivering(peerId: "watch", requestId: "a4-clean", bolusId: 4343)
             try store.save(ledger)
 
-            let backend = MockBackend(); await backend.connect()
+            let backend = MockBackend()
+            await backend.connect()
             let model = AppModel(source: backend, ledgerStore: store)
             #expect(model.deliveryGloballyBlocked)
 

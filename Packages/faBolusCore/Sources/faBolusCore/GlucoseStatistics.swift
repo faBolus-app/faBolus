@@ -9,34 +9,47 @@ import Foundation
 /// card, never to special-case the math.
 public struct GlucoseStatistics: Equatable, Sendable {
     public let count: Int
-    public let mean: Double            // mg/dL
-    public let gmi: Double             // % — ADA Glucose Management Indicator
-    public let cv: Double              // % — coefficient of variation (variability)
+    public let mean: Double  // mg/dL
+    public let gmi: Double  // % — ADA Glucose Management Indicator
+    public let cv: Double  // % — coefficient of variation (variability)
     public let timeInRangePct: Double  // % in 70–180 (the headline TIR number)
     // Standard AGP breakdown (% of readings), most-severe-low → most-severe-high.
-    public let veryLowPct: Double      // < 54
-    public let lowPct: Double          // 54–69
-    public let inRangePct: Double      // 70–180
-    public let highPct: Double         // 181–250
-    public let veryHighPct: Double     // > 250
-    public let spanHours: Double       // span from first→last reading
+    public let veryLowPct: Double  // < 54
+    public let lowPct: Double  // 54–69
+    public let inRangePct: Double  // 70–180
+    public let highPct: Double  // 181–250
+    public let veryHighPct: Double  // > 250
+    public let spanHours: Double  // span from first→last reading
 
-    public init(count: Int, mean: Double, gmi: Double, cv: Double, timeInRangePct: Double,
-                veryLowPct: Double, lowPct: Double, inRangePct: Double, highPct: Double,
-                veryHighPct: Double, spanHours: Double) {
-        self.count = count; self.mean = mean; self.gmi = gmi; self.cv = cv
+    public init(
+        count: Int, mean: Double, gmi: Double, cv: Double, timeInRangePct: Double,
+        veryLowPct: Double, lowPct: Double, inRangePct: Double, highPct: Double,
+        veryHighPct: Double, spanHours: Double
+    ) {
+        self.count = count
+        self.mean = mean
+        self.gmi = gmi
+        self.cv = cv
         self.timeInRangePct = timeInRangePct
-        self.veryLowPct = veryLowPct; self.lowPct = lowPct; self.inRangePct = inRangePct
-        self.highPct = highPct; self.veryHighPct = veryHighPct; self.spanHours = spanHours
+        self.veryLowPct = veryLowPct
+        self.lowPct = lowPct
+        self.inRangePct = inRangePct
+        self.highPct = highPct
+        self.veryHighPct = veryHighPct
+        self.spanHours = spanHours
     }
 
-    public static let empty = GlucoseStatistics(count: 0, mean: 0, gmi: 0, cv: 0, timeInRangePct: 0,
-                                                veryLowPct: 0, lowPct: 0, inRangePct: 0, highPct: 0,
-                                                veryHighPct: 0, spanHours: 0)
+    public static let empty = GlucoseStatistics(
+        count: 0, mean: 0, gmi: 0, cv: 0, timeInRangePct: 0,
+        veryLowPct: 0, lowPct: 0, inRangePct: 0, highPct: 0,
+        veryHighPct: 0, spanHours: 0)
 
     /// Compute all statistics over the given readings (order-independent).
     public init(readings: [GlucoseReading]) {
-        guard !readings.isEmpty else { self = .empty; return }
+        guard !readings.isEmpty else {
+            self = .empty
+            return
+        }
         let values = readings.map { Double($0.mgdl) }
         let n = Double(values.count)
         let mean = values.reduce(0, +) / n
@@ -52,7 +65,7 @@ public struct GlucoseStatistics: Equatable, Sendable {
         self.init(
             count: readings.count,
             mean: mean,
-            gmi: 3.31 + 0.02392 * mean,                 // ADA GMI (mg/dL) formula
+            gmi: 3.31 + 0.02392 * mean,  // ADA GMI (mg/dL) formula
             cv: mean > 0 ? std / mean * 100 : 0,
             // Closed clinical convention (see GlucoseThresholds): 70 ≤ g ≤ 180 is in-range, g > 250 is
             // very-high — so the reported Time-in-Range matches the Battelino 2019 consensus definition.

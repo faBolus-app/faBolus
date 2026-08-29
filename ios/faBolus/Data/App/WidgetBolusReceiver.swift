@@ -45,17 +45,23 @@ final class WidgetBolusReceiver {
         let observer = Unmanaged.passUnretained(self).toOpaque()
         darwinObserver = observer
         // The C callbacks capture nothing; they re-post as Foundation notifications handled below.
-        CFNotificationCenterAddObserver(center, observer, { _, _, _, _, _ in
-            NotificationCenter.default.post(name: .widgetBolusPending, object: nil)
-        }, WidgetBolusStore.darwinPending as CFString, nil, .deliverImmediately)
-        CFNotificationCenterAddObserver(center, observer, { _, _, _, _, _ in
-            NotificationCenter.default.post(name: .widgetBolusCancel, object: nil)
-        }, WidgetBolusStore.darwinCancel as CFString, nil, .deliverImmediately)
+        CFNotificationCenterAddObserver(
+            center, observer,
+            { _, _, _, _, _ in
+                NotificationCenter.default.post(name: .widgetBolusPending, object: nil)
+            }, WidgetBolusStore.darwinPending as CFString, nil, .deliverImmediately)
+        CFNotificationCenterAddObserver(
+            center, observer,
+            { _, _, _, _, _ in
+                NotificationCenter.default.post(name: .widgetBolusCancel, object: nil)
+            }, WidgetBolusStore.darwinCancel as CFString, nil, .deliverImmediately)
 
-        pendingToken = NotificationCenter.default.addObserver(forName: .widgetBolusPending, object: nil, queue: .main) { [weak self] _ in
+        pendingToken = NotificationCenter.default.addObserver(forName: .widgetBolusPending, object: nil, queue: .main) {
+            [weak self] _ in
             MainActor.assumeIsolated { self?.handlePending() }
         }
-        cancelToken = NotificationCenter.default.addObserver(forName: .widgetBolusCancel, object: nil, queue: .main) { [weak self] _ in
+        cancelToken = NotificationCenter.default.addObserver(forName: .widgetBolusCancel, object: nil, queue: .main) {
+            [weak self] _ in
             MainActor.assumeIsolated {
                 // Only act on a cancel corroborated by the App-Group token the widget's own
                 // cancel intent wrote (single-use + TTL-bounded). A bare/replayed Darwin post from a
@@ -69,10 +75,12 @@ final class WidgetBolusReceiver {
     /// Tear down BOTH observer systems so a deallocated instance leaves nothing behind — no stale
     /// Darwin registration re-posting into a dead receiver, and no leaked block observer.
     deinit {
-        CFNotificationCenterRemoveObserver(darwinCenter, darwinObserver,
-                                           CFNotificationName(WidgetBolusStore.darwinPending as CFString), nil)
-        CFNotificationCenterRemoveObserver(darwinCenter, darwinObserver,
-                                           CFNotificationName(WidgetBolusStore.darwinCancel as CFString), nil)
+        CFNotificationCenterRemoveObserver(
+            darwinCenter, darwinObserver,
+            CFNotificationName(WidgetBolusStore.darwinPending as CFString), nil)
+        CFNotificationCenterRemoveObserver(
+            darwinCenter, darwinObserver,
+            CFNotificationName(WidgetBolusStore.darwinCancel as CFString), nil)
         if let pendingToken { NotificationCenter.default.removeObserver(pendingToken) }
         if let cancelToken { NotificationCenter.default.removeObserver(cancelToken) }
     }
@@ -86,9 +94,12 @@ final class WidgetBolusReceiver {
         Task {
             // Read-only is a local gate the widget must respect too.
             if AppSettings.shared.phoneReadOnly {
-                WidgetBolusStore.setStatus(WidgetBolusStatus(phase: .failed, requestId: r.requestId,
-                                                             message: "faBolus is read-only"))
-                reload(); return
+                WidgetBolusStore.setStatus(
+                    WidgetBolusStatus(
+                        phase: .failed, requestId: r.requestId,
+                        message: "faBolus is read-only"))
+                reload()
+                return
             }
             if r.mode == "carbs" {
                 // The widget confirmed GRAMS, not units, and would dose off possibly-stale
@@ -100,19 +111,27 @@ final class WidgetBolusReceiver {
                 // (off raw, possibly-stale `snapshot.glucose`) and the authoritative dose diverge
                 // and the guard rejects with a confusing "dose changed" and no review to act on.
                 await model.refreshGlucoseNow()
-                let est = await model.recommendBolus(carbsGrams: r.amount, bgMgdl: model.freshCorrectionBG).recommendedUnits
-                await model.presentRemoteBolus(requestId: r.requestId, units: 0, carbsGrams: r.amount,
-                                               bgMgdl: nil, remoteEstimate: est, from: .quickBolusWidget, peerId: "widget")
-                WidgetBolusStore.setStatus(WidgetBolusStatus(phase: .failed, requestId: r.requestId,
-                                                             message: "Open faBolus to confirm the dose"))
-                reload(); return
+                let est = await model.recommendBolus(carbsGrams: r.amount, bgMgdl: model.freshCorrectionBG)
+                    .recommendedUnits
+                await model.presentRemoteBolus(
+                    requestId: r.requestId, units: 0, carbsGrams: r.amount,
+                    bgMgdl: nil, remoteEstimate: est, from: .quickBolusWidget, peerId: "widget")
+                WidgetBolusStore.setStatus(
+                    WidgetBolusStatus(
+                        phase: .failed, requestId: r.requestId,
+                        message: "Open faBolus to confirm the dose"))
+                reload()
+                return
             }
             // Units mode: an explicit unit amount the user set on the widget — deliver in place.
             let units = r.amount
             guard units > 0 else {
-                WidgetBolusStore.setStatus(WidgetBolusStatus(phase: .failed, requestId: r.requestId,
-                                                             message: "No insulin needed"))
-                reload(); return
+                WidgetBolusStore.setStatus(
+                    WidgetBolusStatus(
+                        phase: .failed, requestId: r.requestId,
+                        message: "No insulin needed"))
+                reload()
+                return
             }
             // Only deliver in place for a live handoff (age ~0, the Darwin-woke path). A request
             // that only surfaced via a foreground fallback (app was suspended when confirmed) could be up
@@ -120,19 +139,25 @@ final class WidgetBolusReceiver {
             // re-confirm, exactly like the carbs branch above.
             let age = Date().timeIntervalSince(r.createdAt)
             if age > WidgetBolusStore.promptTTL {
-                await model.presentRemoteBolus(requestId: r.requestId, units: units, carbsGrams: nil,
-                                               bgMgdl: nil, remoteEstimate: units, from: .quickBolusWidget, peerId: "widget")
-                WidgetBolusStore.setStatus(WidgetBolusStatus(phase: .failed, requestId: r.requestId,
-                                                             message: "Open faBolus to confirm the dose"))
-                reload(); return
+                await model.presentRemoteBolus(
+                    requestId: r.requestId, units: units, carbsGrams: nil,
+                    bgMgdl: nil, remoteEstimate: units, from: .quickBolusWidget, peerId: "widget")
+                WidgetBolusStore.setStatus(
+                    WidgetBolusStatus(
+                        phase: .failed, requestId: r.requestId,
+                        message: "Open faBolus to confirm the dose"))
+                reload()
+                return
             }
             WidgetBolusStore.setStatus(WidgetBolusStatus(phase: .delivering, units: units, requestId: r.requestId))
             reload()
             let out = await model.deliverWidgetBolus(requestId: r.requestId, units: units, carbsGrams: nil, bgMgdl: nil)
             let phase: WidgetBolusPhase = out.error != nil ? .failed : (out.cancelled ? .cancelled : .delivered)
-            WidgetBolusStore.setStatus(WidgetBolusStatus(phase: phase, units: units,
-                                                         deliveredUnits: out.delivered, requestId: r.requestId,
-                                                         message: out.error ?? ""))
+            WidgetBolusStore.setStatus(
+                WidgetBolusStatus(
+                    phase: phase, units: units,
+                    deliveredUnits: out.delivered, requestId: r.requestId,
+                    message: out.error ?? ""))
             reload()
         }
     }

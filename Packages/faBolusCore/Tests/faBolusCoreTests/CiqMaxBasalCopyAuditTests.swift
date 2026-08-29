@@ -93,10 +93,12 @@ struct CiqMaxBasalCopyAuditTests {
         let label = MaxBasalFraction.label(currentUnitsPerHour: 0.85, maxUnitsPerHour: 1.60)
         #expect(label != nil)
         for forbidden in MaxBasalFraction.forbiddenMisconstrualWords {
-            #expect(!label!.headline.localizedCaseInsensitiveContains(forbidden),
-                    "headline must never contain '\(forbidden)'")
-            #expect(!label!.detail.localizedCaseInsensitiveContains(forbidden),
-                    "detail must never contain '\(forbidden)'")
+            #expect(
+                !label!.headline.localizedCaseInsensitiveContains(forbidden),
+                "headline must never contain '\(forbidden)'")
+            #expect(
+                !label!.detail.localizedCaseInsensitiveContains(forbidden),
+                "detail must never contain '\(forbidden)'")
         }
     }
 

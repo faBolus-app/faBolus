@@ -84,20 +84,23 @@ struct ConnectionFlapEscalationTests {
         b.onReliabilityEvent = { events.append($0) }
 
         func flap() {
-            b.setConnectionForTesting(.connected)   // link is live…
-            b.applyClientState(.connecting)          // …then drops to reconnecting = one flap cycle
+            b.setConnectionForTesting(.connected)  // link is live…
+            b.applyClientState(.connecting)  // …then drops to reconnecting = one flap cycle
         }
 
         for _ in 0..<4 { flap() }
         #expect(!events.contains(.connectionUnstable), "four flap cycles within the window must stay silent")
 
-        flap()   // the 5th
-        #expect(events.filter { $0 == .connectionUnstable }.count == 1,
-                "the 5th flap cycle crosses the threshold → emit .connectionUnstable exactly once")
+        flap()  // the 5th
+        #expect(
+            events.filter { $0 == .connectionUnstable }.count == 1,
+            "the 5th flap cycle crosses the threshold → emit .connectionUnstable exactly once")
 
-        flap(); flap()   // storm continues
-        #expect(events.filter { $0 == .connectionUnstable }.count == 1,
-                "the edge is latched — a continuing storm does not re-emit it")
+        flap()
+        flap()  // storm continues
+        #expect(
+            events.filter { $0 == .connectionUnstable }.count == 1,
+            "the edge is latched — a continuing storm does not re-emit it")
     }
 
     /// A NON-live transition (e.g. `.scanning → .connecting` on a cold first connect) is NOT a flap and must
@@ -107,10 +110,11 @@ struct ConnectionFlapEscalationTests {
         var events: [ReliabilityEvent] = []
         b.onReliabilityEvent = { events.append($0) }
         for _ in 0..<10 {
-            b.setConnectionForTesting(.scanning)     // NOT a live link
+            b.setConnectionForTesting(.scanning)  // NOT a live link
             b.applyClientState(.connecting)
         }
-        #expect(!events.contains(.connectionUnstable),
-                "a .scanning → .connecting climb is a normal connect, never a flap — must not escalate")
+        #expect(
+            !events.contains(.connectionUnstable),
+            "a .scanning → .connecting climb is a normal connect, never a flap — must not escalate")
     }
 }

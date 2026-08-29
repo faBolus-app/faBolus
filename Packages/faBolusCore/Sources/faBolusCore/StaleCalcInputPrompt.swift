@@ -53,9 +53,10 @@ public enum StaleIobPrompt {
         // cross-check-divergence case, e.g. just after a bolus), the dose subtracts the LARGER of them, so
         // the shown last-known value can only understate — never overstate — what is subtracted (the safe
         // direction). The copy stays honest about that without over-committing to a single number.
-        return String(format: "faBolus couldn't confirm your active insulin is current "
-            + "(last known %.2f U, %@). It will keep SUBTRACTING that active insulin — the higher reading if "
-            + "the pump's two readings disagree — never dropping it. Use it, or cancel.", iobUnits, age)
+        return String(
+            format: "faBolus couldn't confirm your active insulin is current "
+                + "(last known %.2f U, %@). It will keep SUBTRACTING that active insulin — the higher reading if "
+                + "the pump's two readings disagree — never dropping it. Use it, or cancel.", iobUnits, age)
     }
 }
 
@@ -82,14 +83,17 @@ public enum StaleTherapyPrompt {
     ///   byte-identical to before this parameter was added. `p.isfMgdlPerUnit`/`p.targetBgMgdl` stay
     ///   mg/dL `Int` on `BolusMath.Profile` — only the rendered text changes. Carb ratio is
     ///   unit-agnostic (g/U) and is never touched by this parameter.
-    public static func warningMessage(profile: BolusMath.Profile?, therapyDate: Date?, now: Date = Date(), unit: GlucoseUnit = .mgdl) -> String {
+    public static func warningMessage(
+        profile: BolusMath.Profile?, therapyDate: Date?, now: Date = Date(), unit: GlucoseUnit = .mgdl
+    ) -> String {
         let age = therapyDate.map { CalcInputFreshness.ageLabel(for: $0, now: now) } ?? "of unknown age"
         if let p = profile {
             switch unit {
             case .mgdl:
-                return String(format: "faBolus couldn't confirm this pump's bolus settings are current "
-                    + "(last known carb ratio %.0f g/U, ISF %d, target %d mg/dL, %@). "
-                    + "Use those settings, or cancel.",
+                return String(
+                    format: "faBolus couldn't confirm this pump's bolus settings are current "
+                        + "(last known carb ratio %.0f g/U, ISF %d, target %d mg/dL, %@). "
+                        + "Use those settings, or cancel.",
                     p.carbRatioGramsPerUnit, p.isfMgdlPerUnit, p.targetBgMgdl, age)
             case .mmol:
                 let carbRatioStr = String(format: "%.0f", p.carbRatioGramsPerUnit)

@@ -23,11 +23,13 @@ func guardedToggle(
     skipConfirmIf: @escaping () -> Bool = { false },
     requestConfirm: @escaping () -> Void
 ) -> Binding<Bool> {
-    Binding(get: get, set: { on in
-        if on {
-            if skipConfirmIf() { set(true) } else { requestConfirm() }
-        } else {
-            set(false)
-        }
-    })
+    Binding(
+        get: get,
+        set: { on in
+            if on {
+                if skipConfirmIf() { set(true) } else { requestConfirm() }
+            } else {
+                set(false)
+            }
+        })
 }

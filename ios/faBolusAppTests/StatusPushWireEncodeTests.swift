@@ -20,7 +20,7 @@ import faBolusCore
         let cases: [(String, RemoteCommand)] = [
             ("bolusRequest", RemoteCommand(kind: .bolusRequest, units: 1.0)),
             ("cancelBolus", RemoteCommand(kind: .cancelBolus)),
-            ("dismissAlert", RemoteCommand(kind: .dismissAlert)),
+            ("dismissAlert", RemoteCommand(kind: .dismissAlert))
         ]
         for (name, cmd) in cases {
             let json = String(data: try cmd.encoded(), encoding: .utf8) ?? ""
@@ -36,17 +36,25 @@ import faBolusCore
         let cmd = model.statusCommand(includeHistory: false)
         let json = String(data: try cmd.encoded(), encoding: .utf8) ?? ""
 
-        #expect(!json.contains("watchBolusEnabled"),
-                "the real status push must no longer emit watchBolusEnabled (D1-01) — this is the RED assertion Task 2 turns GREEN")
+        #expect(
+            !json.contains("watchBolusEnabled"),
+            "the real status push must no longer emit watchBolusEnabled (D1-01) — this is the RED assertion Task 2 turns GREEN"
+        )
 
-        #expect(!json.contains("eatingSensingOn"),
-                "the real status push must no longer emit eatingSensingOn (D1-01) — this is the RED assertion Task 2 turns GREEN")
-        #expect(!json.contains("eatingProb"),
-                "the real status push must no longer emit eatingProb (D1-01) — eatingProb is only ever set on an eatingEvent, not statusRead, but this pins its absence explicitly alongside eatingSensingOn")
+        #expect(
+            !json.contains("eatingSensingOn"),
+            "the real status push must no longer emit eatingSensingOn (D1-01) — this is the RED assertion Task 2 turns GREEN"
+        )
+        #expect(
+            !json.contains("eatingProb"),
+            "the real status push must no longer emit eatingProb (D1-01) — eatingProb is only ever set on an eatingEvent, not statusRead, but this pins its absence explicitly alongside eatingSensingOn"
+        )
 
         for keepKey in ["garminBolusEnabled", "activeMode", "watchChartRanges"] {
-            #expect(json.contains(keepKey),
-                    "KEEP sibling \(keepKey) must remain present on the status push — the deletion must be surgical, not broad")
+            #expect(
+                json.contains(keepKey),
+                "KEEP sibling \(keepKey) must remain present on the status push — the deletion must be surgical, not broad"
+            )
         }
     }
 }

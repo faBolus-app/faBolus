@@ -36,7 +36,7 @@ enum CapabilityDiagnostics {
             ("supportsTimeSync", c.supportsTimeSync),
             ("supportsSounds", c.supportsSounds),
             ("supportsReminders", c.supportsReminders),
-            ("supportsSleepScheduleWrite", c.supportsSleepScheduleWrite),
+            ("supportsSleepScheduleWrite", c.supportsSleepScheduleWrite)
         ]
         return flags.map { "\($0.0): \($0.1 ? "yes" : "no")" }
     }
@@ -65,8 +65,9 @@ enum CapabilityDiagnostics {
             // Render each auto-excluded read with its human-readable name via the shared
             // `PumpReadCatalog` (op77 correlation records the TRUE opcode, not 0), e.g.
             // "Cartridge/load status (op-20)".
-            lines.append("Rejected opcodes: "
-                + badOpcodes.sorted().map(PumpReadCatalog.rejectedOpcodeLabel(for:)).joined(separator: ", "))
+            lines.append(
+                "Rejected opcodes: "
+                    + badOpcodes.sorted().map(PumpReadCatalog.rejectedOpcodeLabel(for:)).joined(separator: ", "))
         }
         // When a SAFETY-relevant read (e.g. the op-20 cartridge pre-check) is auto-excluded,
         // disclose that the app is relying on the pump's own protection for that capability — a degraded

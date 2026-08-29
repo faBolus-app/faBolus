@@ -20,8 +20,8 @@ public enum CalcInputFreshness {
     // Thread-safe backing (audit A-09), mirroring `GlucoseFreshness`: set at launch and read from many
     // isolation domains, so an `OSAllocatedUnfairLock` gives a genuinely-safe shared store rather than a
     // `nonisolated(unsafe) static var` (which only silences the checker).
-    private static let _staleAfterIob = OSAllocatedUnfairLock<TimeInterval>(initialState: 300)        // 5 min
-    private static let _staleAfterTherapy = OSAllocatedUnfairLock<TimeInterval>(initialState: 900)    // 15 min
+    private static let _staleAfterIob = OSAllocatedUnfairLock<TimeInterval>(initialState: 300)  // 5 min
+    private static let _staleAfterTherapy = OSAllocatedUnfairLock<TimeInterval>(initialState: 900)  // 15 min
 
     /// Active-insulin (IOB) readings older than this are **stale**: shown de-emphasized and never used to
     /// size an authoritative dose without an explicit warned override. Owner-confirmable default: 300 s.
@@ -54,7 +54,7 @@ public enum CalcInputFreshness {
     public static func isStale(_ date: Date?, staleAfter: TimeInterval, now: Date = Date()) -> Bool {
         guard let date else { return true }
         let elapsed = now.timeIntervalSince(date)
-        if elapsed < -futureSkewTolerance { return true }   // dated in the future beyond clock skew
+        if elapsed < -futureSkewTolerance { return true }  // dated in the future beyond clock skew
         return elapsed > staleAfter
     }
 
@@ -72,10 +72,12 @@ public enum CalcInputFreshness {
     /// `nil` date → `.stale` (unknown age is conservative). There is no separate "hide" age for calc
     /// inputs — an absent/stale input is surfaced (and, on the dose path, blocks), never silently dropped —
     /// so this is fresh/stale, with `.hidden` reserved for a caller that has literally no value to show.
-    public static func presentation(of date: Date?, staleAfter: TimeInterval, now: Date = Date()) -> CalcInputPresentation {
+    public static func presentation(of date: Date?, staleAfter: TimeInterval, now: Date = Date())
+        -> CalcInputPresentation
+    {
         guard let date else { return .stale }
         let age = now.timeIntervalSince(date)
-        if age < -futureSkewTolerance { return .stale }     // future-dated beyond clock skew → stale, never fresh
+        if age < -futureSkewTolerance { return .stale }  // future-dated beyond clock skew → stale, never fresh
         return age <= staleAfter ? .fresh : .stale
     }
 
@@ -102,7 +104,7 @@ public enum CalcInputFreshness {
 
 /// How a calc-input read should be shown, by age (see `CalcInputFreshness`). Mirrors `GlucosePresentation`.
 public enum CalcInputPresentation: Sendable, Equatable {
-    case fresh      // within the threshold — normal styling, live value
-    case stale      // past the threshold — shown de-emphasized (grey) with its age
-    case hidden     // no value at all to show ("--")
+    case fresh  // within the threshold — normal styling, live value
+    case stale  // past the threshold — shown de-emphasized (grey) with its age
+    case hidden  // no value at all to show ("--")
 }

@@ -62,7 +62,7 @@ public enum GlucoseFreshness {
     public static func isStale(_ date: Date?, now: Date = Date()) -> Bool {
         guard let date else { return true }
         let elapsed = now.timeIntervalSince(date)
-        if elapsed < -futureSkewTolerance { return true }   // dated in the future beyond clock skew
+        if elapsed < -futureSkewTolerance { return true }  // dated in the future beyond clock skew
         return elapsed > staleAfter
     }
 
@@ -83,7 +83,7 @@ public enum GlucoseFreshness {
 
     /// How a reading of a given age should be presented on screen.
     public static func presentation(of date: Date?, now: Date = Date()) -> GlucosePresentation {
-        guard let date else { return .stale }          // unknown age → conservative (marked, shown)
+        guard let date else { return .stale }  // unknown age → conservative (marked, shown)
         let age = now.timeIntervalSince(date)
         if age < -futureSkewTolerance { return .stale }  // future-dated beyond clock skew → stale, never fresh
         if age <= staleAfter { return .fresh }
@@ -113,9 +113,9 @@ public enum GlucoseFreshness {
 
 /// How a glucose reading should be shown, by age (see `GlucoseFreshness.presentation`).
 public enum GlucosePresentation: Sendable, Equatable {
-    case fresh      // within staleAfter — normal styling, live value
-    case stale      // past staleAfter — shown de-emphasized (grey) with its age
-    case hidden     // past hideAfter — not shown ("--")
+    case fresh  // within staleAfter — normal styling, live value
+    case stale  // past staleAfter — shown de-emphasized (grey) with its age
+    case hidden  // past hideAfter — not shown ("--")
 }
 
 /// One glucose reading from an independent CGM source (i.e. not relayed by the pump). mg/dL.
@@ -139,7 +139,10 @@ public struct GlucoseSample: Sendable, Equatable {
     /// is deliberately not gated — only `GlucoseSample`, the failover-only type.
     public init?(mgdl: Int, date: Date, trend: GlucoseTrend? = nil, sourceID: String) {
         guard GlucosePlausibility.isPlausible(mgdl: mgdl) else { return nil }
-        self.mgdl = mgdl; self.date = date; self.trend = trend; self.sourceID = sourceID
+        self.mgdl = mgdl
+        self.date = date
+        self.trend = trend
+        self.sourceID = sourceID
     }
     public var reading: GlucoseReading { GlucoseReading(date: date, mgdl: mgdl) }
     /// Stale per the shared `GlucoseFreshness` policy.
@@ -151,18 +154,18 @@ public struct GlucoseSample: Sendable, Equatable {
 /// protocol only (mirroring `priority`'s placement), so a new source is forced to classify itself —
 /// there is deliberately no protocol extension default a new BLE source could silently inherit.
 public enum GlucoseConnectionKind: Sendable, Equatable {
-    case localBLE        // Dexcom G6 / G7 — CoreBluetooth passive read
-    case cloudPoll       // Dexcom Share / Nightscout / LibreLinkUp — polled over the network
-    case localOnDevice   // HealthKit / xDrip App Group — on-device, no BLE, no network
+    case localBLE  // Dexcom G6 / G7 — CoreBluetooth passive read
+    case cloudPoll  // Dexcom Share / Nightscout / LibreLinkUp — polled over the network
+    case localOnDevice  // HealthKit / xDrip App Group — on-device, no BLE, no network
 }
 
 /// Health of a `GlucoseSource`, so the UI can show what the failover feed is doing.
 public enum GlucoseSourceStatus: Sendable, Equatable {
-    case idle            // not started
-    case needsSetup      // missing credentials / not paired
-    case searching       // starting / scanning / logging in
-    case connected       // receiving fresh data
-    case stale           // connected but the latest reading is old
+    case idle  // not started
+    case needsSetup  // missing credentials / not paired
+    case searching  // starting / scanning / logging in
+    case connected  // receiving fresh data
+    case stale  // connected but the latest reading is old
     case error(String)
 }
 

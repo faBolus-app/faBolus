@@ -9,7 +9,7 @@ struct StatusRingView: View {
     /// Set only when the live glucose is coming from a failover source (not the pump) — shows a
     /// small "via <source>" badge so the user knows where the number is from and why. `nil` = pump
     /// feed is live, so nothing extra is drawn (keeps the ring clean in the common case).
-    var failover: (name: String, reason: String)? = nil
+    var failover: (name: String, reason: String)?
 
     // Dynamic Type: the big glucose number and the ring frame scale with the user's text-size
     // setting (up to the accessibility sizes), instead of a fixed 44 pt / 180 pt that clips or looks
@@ -29,8 +29,10 @@ struct StatusRingView: View {
                 .stroke(AppTheme.ringColor(snapshot.connection).opacity(0.25), lineWidth: 10)
             Circle()
                 .trim(from: 0, to: snapshot.connection == .disconnected ? 0.05 : 1)
-                .stroke(AppTheme.ringColor(snapshot.connection),
-                        style: StrokeStyle(lineWidth: 10, lineCap: .round))
+                .stroke(
+                    AppTheme.ringColor(snapshot.connection),
+                    style: StrokeStyle(lineWidth: 10, lineCap: .round)
+                )
                 .rotationEffect(.degrees(-90))
                 .animation(.easeInOut, value: snapshot.connection)
 

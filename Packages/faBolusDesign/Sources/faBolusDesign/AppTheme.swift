@@ -13,10 +13,10 @@ import faBolusCore
 /// audit-before-lock discipline: measured + pinned by `AppThemeContrastAuditTests` before being
 /// wired into a View.
 public enum AppTheme {
-    public static let inRange = Color(red: 0.30, green: 0.78, blue: 0.36)   // green
-    public static let high = Color(red: 0.98, green: 0.76, blue: 0.18)      // yellow
-    public static let urgentHigh = Color(red: 0.95, green: 0.55, blue: 0.15) // orange
-    public static let low = Color(red: 0.90, green: 0.25, blue: 0.22)       // red
+    public static let inRange = Color(red: 0.30, green: 0.78, blue: 0.36)  // green
+    public static let high = Color(red: 0.98, green: 0.76, blue: 0.18)  // yellow
+    public static let urgentHigh = Color(red: 0.95, green: 0.55, blue: 0.15)  // orange
+    public static let low = Color(red: 0.90, green: 0.25, blue: 0.22)  // red
 
     /// Severe-hypo (< 54 mg/dL, `GlucoseThresholds.veryLow`). Distinct from `low`: a deeper/more
     /// saturated red so the AGP Time-in-Range bar (`StatsCardView.tirBar`) can show severe hypo as
@@ -29,12 +29,12 @@ public enum AppTheme {
     /// and `urgentHigh` (orange): a deeper burnt-orange/rust so the AGP Time-in-Range bar's 5th
     /// segment doesn't collapse onto either existing hue. Audited for WCAG contrast in
     /// `docs/accessibility-contrast-audit.md`, pinned by `AppThemeContrastAuditTests`.
-    public static let veryHigh = Color(red: 0.80, green: 0.35, blue: 0.05) // burnt orange / rust
+    public static let veryHigh = Color(red: 0.80, green: 0.35, blue: 0.05)  // burnt orange / rust
 
-    public static let insulin = Color(red: 0.36, green: 0.42, blue: 0.90)   // indigo
-    public static let carbs = Color(red: 0.95, green: 0.62, blue: 0.20)     // carb orange
+    public static let insulin = Color(red: 0.36, green: 0.42, blue: 0.90)  // indigo
+    public static let carbs = Color(red: 0.95, green: 0.62, blue: 0.20)  // carb orange
     public static let disconnected = Color.gray
-    public static let stale = Color.gray                                    // de-emphasized old reading
+    public static let stale = Color.gray  // de-emphasized old reading
 
     /// Shared iPad regular-width layout-width constants. Not color/type tokens; consumed so
     /// Dashboard two-column and Bolus/Pump readable-width surfaces cap at the same values.

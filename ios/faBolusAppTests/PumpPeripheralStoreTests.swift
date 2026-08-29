@@ -13,7 +13,7 @@ struct PumpPeripheralStoreTests {
 
         let id = UUID()
         PumpPeripheralStore.set(id)
-        #expect(PumpPeripheralStore.id() == id)   // round-trips (and parses the stored string back to UUID)
+        #expect(PumpPeripheralStore.id() == id)  // round-trips (and parses the stored string back to UUID)
         PumpPeripheralStore.clear()
         #expect(PumpPeripheralStore.id() == nil)  // cleared on unpair → next launch scans, doesn't retry a stale id
     }

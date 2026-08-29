@@ -41,7 +41,7 @@ public final class AppModel {
     /// Latest accel p(eating) from the Garmin/watch path (nil if no wrist signal available).
     @ObservationIgnored public var latestAccelProb: Double?
     @ObservationIgnored internal var lastAccelWindowAt = Date.distantPast
-    @ObservationIgnored internal var lastAccelWindowRaw: [Float]?   // last window (to label from feedback)
+    @ObservationIgnored internal var lastAccelWindowRaw: [Float]?  // last window (to label from feedback)
     #if FABOLUS_NUDGE
     @ObservationIgnored internal let accelPipeline = EatingAccelPipeline()
     @ObservationIgnored internal let eatingPersonalization = EatingPersonalization()
@@ -87,7 +87,9 @@ public final class AppModel {
     /// Opcodes the connected pump has rejected this connection-lifetime, for the `[Capability/opcode]`
     /// diagnostics section. Concrete-Tandem-only via `PumpDiagnosticsProviding` — a non-Tandem backend
     /// (mocks, tests) reports no rejected opcodes rather than crashing the diagnostics read-out.
-    public var badOpcodesForDiagnostics: Set<UInt8> { (source as? PumpDiagnosticsProviding)?.badOpcodesForDiagnostics ?? [] }
+    public var badOpcodesForDiagnostics: Set<UInt8> {
+        (source as? PumpDiagnosticsProviding)?.badOpcodesForDiagnostics ?? []
+    }
 
     /// Subscribers fired whenever the active pump-alert set changes, so a notifier can post/clear iOS
     /// notifications the user can act on. Multi-subscriber (mirrors `remoteEchoes`/`statusListeners`) —
@@ -95,7 +97,7 @@ public final class AppModel {
     private var notificationsSubscribers: [@MainActor ([PumpAlert]) -> Void] = []
     public func addNotificationsSubscriber(_ cb: @escaping @MainActor ([PumpAlert]) -> Void) {
         notificationsSubscribers.append(cb)
-        cb(activeNotifications)   // prime with the current set so a late subscriber isn't blind
+        cb(activeNotifications)  // prime with the current set so a late subscriber isn't blind
     }
 
     /// The one channel through which non-pump-alert notifications reach the broker-owned poster
@@ -179,10 +181,13 @@ public final class AppModel {
     /// before `NotificationCoordinator` wires up), the message is buffered in `pendingSafety` instead of
     /// being dropped — `flushPendingSafety` replays it once a sink attaches. Not `private` so tests can
     /// drive it directly without a real coordinator for every case.
-    func postSafety(_ category: NotificationBroker.Category, severity: NotificationBroker.Severity,
-                    title: String, body: String, dedupeKey: String) {
-        let msg = NotificationBroker.Message(category: category, severity: severity,
-                                             title: title, body: body, dedupeKey: dedupeKey)
+    func postSafety(
+        _ category: NotificationBroker.Category, severity: NotificationBroker.Severity,
+        title: String, body: String, dedupeKey: String
+    ) {
+        let msg = NotificationBroker.Message(
+            category: category, severity: severity,
+            title: title, body: body, dedupeKey: dedupeKey)
         guard let sink = notificationSink else {
             pendingSafety.append(msg)
             return
@@ -218,9 +223,10 @@ public final class AppModel {
     private func handleReliabilityEvent(_ event: ReliabilityEvent) {
         switch event {
         case .resumeRetryFailed:
-            postSafety(.pumpDisconnect, severity: .error, title: "Pump disconnected",
-                       body: "faBolus lost the connection to your pump. \(DisconnectEscalation.pumpButtonsInstruction)",
-                       dedupeKey: Self.pumpDisconnectKey)
+            postSafety(
+                .pumpDisconnect, severity: .error, title: "Pump disconnected",
+                body: "faBolus lost the connection to your pump. \(DisconnectEscalation.pumpButtonsInstruction)",
+                dedupeKey: Self.pumpDisconnectKey)
             scheduleDisconnectEscalation()
         case .connectionUnstable:
             // A flap STORM (≥5 live→.connecting re-pair/re-drop cycles within 2 min) that
@@ -229,9 +235,11 @@ public final class AppModel {
             // when the user has muted pump-disconnect alerts, and it has no acknowledged-disable path
             // (it is never shown in settings). Withdrawn on the same `.clear` reconnect edge as
             // `pumpDisconnect`. One post per storm (the detector latches; the dedupeKey coalesces any repeat).
-            postSafety(.pumpConnectionUnstable, severity: .error, title: "Can’t hold a connection to this pump",
-                       body: "faBolus keeps losing and re-establishing the link to your pump and can’t hold a stable connection. \(DisconnectEscalation.pumpButtonsInstruction)",
-                       dedupeKey: Self.pumpConnectionUnstableKey)
+            postSafety(
+                .pumpConnectionUnstable, severity: .error, title: "Can’t hold a connection to this pump",
+                body:
+                    "faBolus keeps losing and re-establishing the link to your pump and can’t hold a stable connection. \(DisconnectEscalation.pumpButtonsInstruction)",
+                dedupeKey: Self.pumpConnectionUnstableKey)
         }
     }
 
@@ -263,7 +271,7 @@ public final class AppModel {
     /// cadence, no dose, no gate.
     private func refreshLowPowerMode() {
         let now = ProcessInfo.processInfo.isLowPowerModeEnabled
-        if now && !lowPowerModeActive { lowPowerAdvisoryDismissed = false }   // new episode → allow re-show
+        if now && !lowPowerModeActive { lowPowerAdvisoryDismissed = false }  // new episode → allow re-show
         lowPowerModeActive = now
     }
 
@@ -273,9 +281,10 @@ public final class AppModel {
     /// delay), so it isn't noise when idle, and not once dismissed this episode. ADVISORY ONLY — reading
     /// this never changes cadence and never gates anything.
     public var shouldShowLowPowerAdvisory: Bool {
-        LowPowerAdvisory.shouldWarn(lpmActive: lowPowerModeActive,
-                                    sourceConnected: snapshot.isLinked,
-                                    dismissedEpisode: lowPowerAdvisoryDismissed)
+        LowPowerAdvisory.shouldWarn(
+            lpmActive: lowPowerModeActive,
+            sourceConnected: snapshot.isLinked,
+            dismissedEpisode: lowPowerAdvisoryDismissed)
     }
 
     /// Dismiss the Low Power Mode advisory for the current episode (like the eating nudge). It reappears
@@ -293,16 +302,19 @@ public final class AppModel {
     /// skipped). `advancedControlOptIn` is the raw opt-in (`advancedControlEnabled`); the evaluator
     /// composes it with the pump-derived `capabilities` (not a raw `isMobi` gate), matching
     /// the UI's `advancedControlAllowed`.
-    func accessDecision(_ action: GatedPumpWrite,
-                        from surface: AccessPolicy.Surface,
-                        peerId: String? = nil,
-                        // The OPTIONAL Garmin bolus passcode, computed by the caller (`remoteDeliver`)
-                        // which does the single stateful `BolusPasscodeStore.verify()`. Defaults are
-                        // fail-closed / no-op: `required=false` ⇒ no passcode gate (every caller that
-                        // isn't a Garmin deliver leaves these untouched).
-                        bolusPasscodeRequired: Bool = false,
-                        bolusPasscodeSatisfied: Bool = false) -> AccessPolicy.AccessDecision {
-        let peerPolicy: RemotePeerPolicy? = surface.isAuthenticatedPeer
+    func accessDecision(
+        _ action: GatedPumpWrite,
+        from surface: AccessPolicy.Surface,
+        peerId: String? = nil,
+        // The OPTIONAL Garmin bolus passcode, computed by the caller (`remoteDeliver`)
+        // which does the single stateful `BolusPasscodeStore.verify()`. Defaults are
+        // fail-closed / no-op: `required=false` ⇒ no passcode gate (every caller that
+        // isn't a Garmin deliver leaves these untouched).
+        bolusPasscodeRequired: Bool = false,
+        bolusPasscodeSatisfied: Bool = false
+    ) -> AccessPolicy.AccessDecision {
+        let peerPolicy: RemotePeerPolicy? =
+            surface.isAuthenticatedPeer
             ? RemotePeerPolicyStore.effectivePolicy(for: peerId ?? "")
             : nil
         let ctx = AccessPolicy.AccessContext(
@@ -334,10 +346,11 @@ public final class AppModel {
     /// disabled. The view ANDs its own transient `preparingDeliver` (a CGM-fetch spinner, not a pump gate)
     /// on top. Staleness is intentionally not a factor here (it only nils the correction auto-fill).
     func bolusGate(amount: Double, minimum: Double) -> (canBolus: Bool, reason: BolusBlockReason?) {
-        BolusGate.evaluate(reachable: true, linked: snapshot.isLinked, bolusInFlight: snapshot.bolusInFlight,
-                           cartridgeReady: snapshot.cartridgeReadyForBolus,
-                           amount: amount, minimum: minimum, maximum: snapshot.maxBolusUnits,
-                           access: accessDecision(.deliverBolus, from: .phoneUI))
+        BolusGate.evaluate(
+            reachable: true, linked: snapshot.isLinked, bolusInFlight: snapshot.bolusInFlight,
+            cartridgeReady: snapshot.cartridgeReadyForBolus,
+            amount: amount, minimum: minimum, maximum: snapshot.maxBolusUnits,
+            access: accessDecision(.deliverBolus, from: .phoneUI))
     }
 
     /// Evaluate `action` from `surface`; on denial surface the reason in `lastError` and return false.
@@ -359,8 +372,8 @@ public final class AppModel {
         guard !d.allowed else { return (false, "") }
         switch d.reason {
         case .phoneReadOnly?: return (true, "Read-only mode")
-        case .childLocked?:   return (true, "Child mode")
-        default:              return (true, "Unavailable")
+        case .childLocked?: return (true, "Child mode")
+        default: return (true, "Unavailable")
         }
     }
 
@@ -381,8 +394,10 @@ public final class AppModel {
     /// An access-denied guard returns `.notAuthenticated` — a non-success outcome, but distinct from a
     /// real pump interaction.
     @discardableResult
-    public func dismissNotification(_ n: PumpAlert, from surface: AccessPolicy.Surface = .phoneUI,
-                                    peerId: String = "local") async -> DismissOutcome {
+    public func dismissNotification(
+        _ n: PumpAlert, from surface: AccessPolicy.Surface = .phoneUI,
+        peerId: String = "local"
+    ) async -> DismissOutcome {
         guard allow(.dismissNotification, from: surface, peerId: peerId) else { return .notAuthenticated }
         let outcome = await source.dismissNotificationTyped(n)
         refresh()
@@ -410,8 +425,10 @@ public final class AppModel {
     /// `RemoteStatusSettings` before handing off to the pure `RemoteStatusComposer.compose`. `now` is
     /// a parameter (default `Date()`) so a test can inject a fixed clock without changing production
     /// call sites.
-    public func statusCommand(includeHistory: Bool, replyingTo requestId: String? = nil,
-                              now: Date = Date()) -> RemoteCommand {
+    public func statusCommand(
+        includeHistory: Bool, replyingTo requestId: String? = nil,
+        now: Date = Date()
+    ) -> RemoteCommand {
         let s = snapshot
         let remoteMax = remoteBolusMaximum(pumpMax: s.maxBolusUnits)
         // The host's authoritative bolus availability on the broadcast-safe axes (pump link,
@@ -420,10 +437,11 @@ public final class AppModel {
         // `message`. Reachability + amount bounds stay judged by each remote; per-peer/capability/child
         // gates stay host-enforced on the actual deliver. A remote with no `canBolus` field falls back to
         // the string, so this is additive.
-        let avail = BolusGate.evaluate(reachable: true, linked: s.isLinked, bolusInFlight: s.bolusInFlight,
-                                       cartridgeReady: s.cartridgeReadyForBolus,
-                                       amount: 0, minimum: 0, maximum: remoteMax > 0 ? remoteMax : 25,
-                                       access: AppSettings.shared.remotesReadOnly ? .deny(.remotesReadOnly) : .allow)
+        let avail = BolusGate.evaluate(
+            reachable: true, linked: s.isLinked, bolusInFlight: s.bolusInFlight,
+            cartridgeReady: s.cartridgeReadyForBolus,
+            amount: 0, minimum: 0, maximum: remoteMax > 0 ? remoteMax : 25,
+            access: AppSettings.shared.remotesReadOnly ? .deny(.remotesReadOnly) : .allow)
         let settings = RemoteStatusSettings(
             bolusMode: AppSettings.shared.watchDefaultBolusMode.rawValue,
             bolusIncrement: AppSettings.shared.watchBolusIncrement,
@@ -483,8 +501,10 @@ public final class AppModel {
     /// outcome from the pump — the bridge must replay the stored receipt BEFORE calling this method
     /// again for the same requestId.
     @discardableResult
-    public func dismissAlert(id: Int, kind: Int, from surface: AccessPolicy.Surface = .phoneUI,
-                             peerId: String = "local") async -> DismissOutcome {
+    public func dismissAlert(
+        id: Int, kind: Int, from surface: AccessPolicy.Surface = .phoneUI,
+        peerId: String = "local"
+    ) async -> DismissOutcome {
         // Dismiss is a `.childOnly` action, so the evaluator never read-only-blocks it (clearing an
         // alert is low-risk and a viewer may need to). But the phone keeps its shipped
         // `readOnlyAllowAlertClear` sub-option — on a LOCAL read-only phone, clearing stays off unless
@@ -517,20 +537,20 @@ public final class AppModel {
         /// delivers, with no recompute at confirm time. For a units request it equals the
         /// requested units; for a carb request it is the host-computed dose.
         public let units: Double
-        public var carbsGrams: Double? = nil
+        public var carbsGrams: Double?
         /// The glucose the frozen dose was computed from (fresh host reading, or nil for carbs-only).
-        public var bgMgdl: Int? = nil
-        public var bgDate: Date? = nil          // provenance/age of that glucose (shown to approver)
-        public var iobUnits: Double? = nil       // IOB the calc used (shown to approver)
-        public var remoteEstimate: Double? = nil
-        public var requestedUnits: Double? = nil // original request units, for the idempotency doseKey
+        public var bgMgdl: Int?
+        public var bgDate: Date?  // provenance/age of that glucose (shown to approver)
+        public var iobUnits: Double?  // IOB the calc used (shown to approver)
+        public var remoteEstimate: Double?
+        public var requestedUnits: Double?  // original request units, for the idempotency doseKey
         /// The ORIGINAL wire request carbs/bg, for the idempotency doseKey. These are the raw values
         /// the remote sent — NOT the resolved/frozen `carbsGrams`/`bgMgdl` above (which drive the delivered
         /// dose) — so present→confirm derives the SAME doseKey `remoteDeliver` computes for the same wire
         /// request. Defaults keep the memberwise init back-compatible.
-        public var requestedCarbsGrams: Double? = nil
-        public var requestedBgMgdl: Int? = nil
-        public var createdAt: Date = Date()      // freeze time → approval expiry
+        public var requestedCarbsGrams: Double?
+        public var requestedBgMgdl: Int?
+        public var createdAt: Date = Date()  // freeze time → approval expiry
         /// Authenticated originator, for idempotency.
         public var peerId: String = "local"
         /// The surface `presentRemoteBolus` froze this approval FROM, carried through so
@@ -577,12 +597,15 @@ public final class AppModel {
 
     /// Escape hatch: the user has checked the pump/t:connect and confirms there is no unconfirmed
     /// delivery. Forwards to `DeliveryLedgerCoordinator.clearDeliveryBlockAfterVerification()`.
-    public func clearDeliveryBlockAfterVerification() { deliveryLedgerCoordinator.clearDeliveryBlockAfterVerification() }
+    public func clearDeliveryBlockAfterVerification() {
+        deliveryLedgerCoordinator.clearDeliveryBlockAfterVerification()
+    }
 
     /// A suspend/resume requested by a remote, awaiting the phone's on-device confirmation.
     public struct PendingRemoteControl: Equatable, Sendable {
         public enum Action: String, Sendable { case suspend, resume }
-        public let requestId: String; public let action: Action
+        public let requestId: String
+        public let action: Action
     }
     public var pendingRemoteControl: PendingRemoteControl?
 
@@ -591,8 +614,10 @@ public final class AppModel {
     /// directly — it stages a phone-side confirmation (RootTabView presents the alert).
     public func requestRemoteControl(requestId: String, action: PendingRemoteControl.Action) {
         guard advancedControlAllowed else {
-            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed,
-                                          message: "Advanced control is off"))
+            echo(
+                RemoteCommand(
+                    kind: .bolusStatus, requestId: requestId, status: .failed,
+                    message: "Advanced control is off"))
             return
         }
         pendingRemoteControl = PendingRemoteControl(requestId: requestId, action: action)
@@ -605,13 +630,17 @@ public final class AppModel {
         case .resume: await resumeDelivery()
         }
         let ok = lastError == nil
-        echo(RemoteCommand(kind: .bolusStatus, requestId: p.requestId,
-                                      status: ok ? .delivered : .failed,
-                                      message: ok ? (p.action == .suspend ? "Suspended" : "Resumed") : (lastError ?? "Failed")))
+        echo(
+            RemoteCommand(
+                kind: .bolusStatus, requestId: p.requestId,
+                status: ok ? .delivered : .failed,
+                message: ok ? (p.action == .suspend ? "Suspended" : "Resumed") : (lastError ?? "Failed")))
     }
     public func rejectRemoteControl() {
         if let p = pendingRemoteControl {
-            echo(RemoteCommand(kind: .bolusStatus, requestId: p.requestId, status: .cancelled, message: "Rejected on phone"))
+            echo(
+                RemoteCommand(
+                    kind: .bolusStatus, requestId: p.requestId, status: .cancelled, message: "Rejected on phone"))
         }
         pendingRemoteControl = nil
     }
@@ -636,7 +665,9 @@ public final class AppModel {
     /// Push status to remotes right now, ignoring the throttle (used for alert changes + right after
     /// a control action so the watch reflects it instantly).
     func forceStatusPush() {
-        lastStatusPush = Date(); lastPushedGlucose = snapshot.glucose; lastPushedConnection = snapshot.connection
+        lastStatusPush = Date()
+        lastPushedGlucose = snapshot.glucose
+        lastPushedConnection = snapshot.connection
         lastPushedGlucoseDate = snapshot.glucoseDate
         for h in statusListeners { h(snapshot) }
     }
@@ -645,12 +676,16 @@ public final class AppModel {
     /// (pure cadence rules — see that type).
     private func pushStatusIfNeeded() {
         guard !statusListeners.isEmpty else { return }
-        guard FailoverBadgePresenter.shouldPushStatus(
-                                    newGlucose: snapshot.glucose, newGlucoseDate: snapshot.glucoseDate,
-                                    lastGlucose: lastPushedGlucose, lastGlucoseDate: lastPushedGlucoseDate,
-                                    newConnection: snapshot.connection, lastConnection: lastPushedConnection,
-                                    secondsSinceLastPush: Date().timeIntervalSince(lastStatusPush)) else { return }
-        lastStatusPush = Date(); lastPushedGlucose = snapshot.glucose; lastPushedConnection = snapshot.connection
+        guard
+            FailoverBadgePresenter.shouldPushStatus(
+                newGlucose: snapshot.glucose, newGlucoseDate: snapshot.glucoseDate,
+                lastGlucose: lastPushedGlucose, lastGlucoseDate: lastPushedGlucoseDate,
+                newConnection: snapshot.connection, lastConnection: lastPushedConnection,
+                secondsSinceLastPush: Date().timeIntervalSince(lastStatusPush))
+        else { return }
+        lastStatusPush = Date()
+        lastPushedGlucose = snapshot.glucose
+        lastPushedConnection = snapshot.connection
         lastPushedGlucoseDate = snapshot.glucoseDate
         for h in statusListeners { h(snapshot) }
     }
@@ -673,7 +708,8 @@ public final class AppModel {
 
     /// 6-digit JPAKE pairing code, entered before connecting to a real pump.
     public var pairingCode: String {
-        get { source.pairingCode } set { source.pairingCode = newValue }
+        get { source.pairingCode }
+        set { source.pairingCode = newValue }
     }
     /// True when a saved pairing exists — Connect can resume without a code.
     public var hasStoredPairing: Bool { source.hasStoredPairing }
@@ -702,7 +738,10 @@ public final class AppModel {
     /// Non-nil ⇒ the app should ask the user whether to save this just-used PIN (a Mobi was
     /// recognized). Holds the PIN to save.
     public var savePinPrompt: String?
-    public func saveOfferedPin() { if let c = savePinPrompt { PairingStore.savePin(c) }; savePinPrompt = nil }
+    public func saveOfferedPin() {
+        if let c = savePinPrompt { PairingStore.savePin(c) }
+        savePinPrompt = nil
+    }
     public func dismissSavePinPrompt() { savePinPrompt = nil }
 
     /// The code the user just typed for a full pairing (nil once consumed / on a resume connect),
@@ -731,7 +770,7 @@ public final class AppModel {
             // the typed `PumpModel` identity rather than a raw `isMobi` check — not a capability gate.
             if snapshot.pumpModel.hasSavablePairingPin, code != PairingStore.loadPin() { savePinPrompt = code }
         case .disconnected, .error:
-            enteredPairCode = nil   // pairing didn't complete — drop the pending offer
+            enteredPairCode = nil  // pairing didn't complete — drop the pending offer
         default:
             break
         }
@@ -753,9 +792,11 @@ public final class AppModel {
     ///   a store that throws on a chosen save, or reports a corrupt load). Takes precedence over
     ///   `ledgerStoreURL`. Production leaves it nil. `forceNoDurableStore` exercises the
     ///   no-storage-location block, which the filesystem path can't reproduce on a normal test host.
-    public init(source: PumpBackend, ledgerStoreURL: URL? = nil,
-                ledgerStore: (any RemoteBolusLedgerPersisting)? = nil,
-                forceNoDurableStore: Bool = false) {
+    public init(
+        source: PumpBackend, ledgerStoreURL: URL? = nil,
+        ledgerStore: (any RemoteBolusLedgerPersisting)? = nil,
+        forceNoDurableStore: Bool = false
+    ) {
         self.source = source
         self.snapshot = source.snapshot
         self.glucoseHistory = source.glucoseHistory
@@ -770,12 +811,15 @@ public final class AppModel {
         // side-effect hooks bound to `self` — never a whole-`AppModel` back-pointer.
         deliveryLedgerCoordinator.reconcile = { bolusId in await source.reconcile(bolusId: bolusId) }
         deliveryLedgerCoordinator.lastBolusCancelled = { source.lastBolusCancelled }
-        deliveryLedgerCoordinator.recordReconciliation = { [weak self] outcome in self?.connectionTelemetry.recordReconciliation(outcome) }
+        deliveryLedgerCoordinator.recordReconciliation = { [weak self] outcome in
+            self?.connectionTelemetry.recordReconciliation(outcome)
+        }
         deliveryLedgerCoordinator.postSafety = { [weak self] category, severity, title, body, dedupeKey in
             self?.postSafety(category, severity: severity, title: title, body: body, dedupeKey: dedupeKey)
         }
         deliveryLedgerCoordinator.refresh = { [weak self] in self?.refresh() }
-        deliveryLedgerCoordinator.onDeliveryBlockChanged = { [weak self] reason in self?.deliveryBlockedReason = reason }
+        deliveryLedgerCoordinator.onDeliveryBlockChanged = { [weak self] reason in self?.deliveryBlockedReason = reason
+        }
         // The CGM Test-flow coordinator depends ONLY on closures bound to `self` — never a whole-
         // AppModel back-pointer. `probe` reads `glucoseSourceProbe` (itself already the private-
         // `glucoseSource`-guarded read), so the coordinator never touches `glucoseSource` directly.
@@ -800,11 +844,11 @@ public final class AppModel {
             // Bucket WHY the link dropped (off the app-boundary `connectionDetail`) + accrue uptime.
             let reason = ConnectionTelemetryStore.reasonToken(from: detail)
             self?.connectionTelemetry.recordDisconnected(reason: reason)
-            self?.bleSessionLog.record(.disconnect, detail: reason)   // opt-in, in-memory only
+            self?.bleSessionLog.record(.disconnect, detail: reason)  // opt-in, in-memory only
         }
         refreshEffectsCoordinator.onConnectionRestored = { [weak self] in
-            self?.connectionTelemetry.recordConnected()   // connect count + start the uptime clock
-            self?.bleSessionLog.record(.reconnect)        // link returned to connected (prev was not)
+            self?.connectionTelemetry.recordConnected()  // connect count + start the uptime clock
+            self?.bleSessionLog.record(.reconnect)  // link returned to connected (prev was not)
         }
         refreshEffectsCoordinator.onGlucoseBadgeClear = { GlucoseBadge.clear() }
         // Fused write+dispatch: the ONE bookkeeping field whose new value exists only inside the
@@ -821,9 +865,10 @@ public final class AppModel {
             // The Live Activity's Snooze gate is computed HERE (the only place `PumpAlertKind` is
             // available alongside the wire snapshot) via `FailoverBadgePresenter.snoozeGateAllows` —
             // the SAME predicate App.swift's action gate uses.
-            WidgetPublisher.publish(snap, history: hist, alerts: alerts.map { $0.title },
-                                    bolusLocked: locked, bolusLockReason: reason,
-                                    hasSnoozeEligibleAlert: FailoverBadgePresenter.snoozeGateAllows(alerts))
+            WidgetPublisher.publish(
+                snap, history: hist, alerts: alerts.map { $0.title },
+                bolusLocked: locked, bolusLockReason: reason,
+                hasSnoozeEligibleAlert: FailoverBadgePresenter.snoozeGateAllows(alerts))
         }
         refreshEffectsCoordinator.onNightscoutSync = { snap, hist, boluses in
             // The `main`-only Nightscout stub — a proven-inert no-op, never a network call or a write
@@ -842,20 +887,22 @@ public final class AppModel {
         refreshEffectsCoordinator.onAutoSyncPumpTime = { [weak self] in self?.maybeAutoSyncPumpTime() }
         refreshEffectsCoordinator.onApplyModeAutomation = { [weak self] in
             guard let self else { return }
-            ModeAutomation.applyPendingIfDue(using: self)   // takes the concrete AppModel — sink, not back-pointer
+            ModeAutomation.applyPendingIfDue(using: self)  // takes the concrete AppModel — sink, not back-pointer
         }
         refreshEffectsCoordinator.onPushStatusIfNeeded = { [weak self] in self?.pushStatusIfNeeded() }
         refreshEffectsCoordinator.onAlertsChangedFanout = { [weak self] alerts in
             guard let self else { return }
             for cb in self.notificationsSubscribers { cb(alerts) }
-            self.forceStatusPush()   // get alert changes to the watch immediately (bypass throttle)
+            self.forceStatusPush()  // get alert changes to the watch immediately (bypass throttle)
         }
         source.onChange = { [weak self] in self?.refresh() }
         // Acknowledged bolus-id handshake — durably record the pump id (+ its "sent" phase)
         // BEFORE the backend writes metadata/initiate. Returns false if the save failed, so the backend
         // aborts before initiate (nothing delivered, no id-less record to misread later). Forwarded
         // straight to the coordinator — AppModel no longer owns this state.
-        source.commitBolusId = { [weak self] bolusId in await self?.deliveryLedgerCoordinator.commitInFlightBolusId(bolusId) ?? false }
+        source.commitBolusId = { [weak self] bolusId in
+            await self?.deliveryLedgerCoordinator.commitInFlightBolusId(bolusId) ?? false
+        }
         // Route the concrete Tandem backend's command round-trip latency into the opt-in
         // telemetry store (the 4th dimension). Concrete-Tandem-only via `PumpDiagnosticsProviding`
         // (re-narrowed off `TandemOnlyOps`; the `PumpBackend` protocol stays clean); the sink is
@@ -886,8 +933,10 @@ public final class AppModel {
         // Dashboard advisory appears/clears live. Mirrors the clock observers above (a `[weak self]`
         // block that hops to the main actor); like them it is left registered for the model's lifetime.
         // This is purely advisory — it never changes any poll/scan/timer cadence and never gates a dose.
-        NotificationCenter.default.addObserver(forName: Notification.Name.NSProcessInfoPowerStateDidChange,
-                                               object: nil, queue: .main) { [weak self] _ in
+        NotificationCenter.default.addObserver(
+            forName: Notification.Name.NSProcessInfoPowerStateDidChange,
+            object: nil, queue: .main
+        ) { [weak self] _ in
             Task { @MainActor in self?.refreshLowPowerMode() }
         }
         // Optional glucose failover source, guarded by a BOUNDED crash-loop recovery policy —
@@ -904,7 +953,7 @@ public final class AppModel {
         if let selId {
             let now = Date()
             let wasClean = UserDefaults.standard.bool(forKey: Self.sourceCleanShutdownKey)
-            UserDefaults.standard.removeObject(forKey: Self.sourceCleanShutdownKey)   // cleared for THIS
+            UserDefaults.standard.removeObject(forKey: Self.sourceCleanShutdownKey)  // cleared for THIS
             // run; set again only on the NEXT observed orderly teardown.
             let (nextState, shouldStart) = GlucoseSourceRecoveryPolicy.decide(
                 GlucoseSourceRegistry.loadRecoveryState(), wasClean: wasClean, now: now)
@@ -924,7 +973,9 @@ public final class AppModel {
         // "crash" (see `GlucoseSourceRecoveryPolicy`). `willTerminateNotification` is the best-effort
         // signal iOS gives for an orderly exit; it is simply never posted for a jetsam/watchdog/OOM
         // kill, which is exactly the case this design treats as UNKNOWN rather than "clean".
-        NotificationCenter.default.addObserver(forName: UIApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.willTerminateNotification, object: nil, queue: .main
+        ) { [weak self] _ in
             Task { @MainActor in
                 self?.glucoseSource?.stop()
                 UserDefaults.standard.set(true, forKey: Self.sourceCleanShutdownKey)
@@ -935,7 +986,9 @@ public final class AppModel {
         // `PumpBackgroundSession.enteredBackground`). Self-registered here (not from App.swift's
         // scenePhase handler) to match this file's own existing app-lifecycle-observer idiom (the
         // clock-change / Low-Power-Mode observers above).
-        NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in
             Task { @MainActor in (self?.source as? TandemBackend)?.appDidEnterBackground() }
         }
         #endif
@@ -996,7 +1049,9 @@ public final class AppModel {
     /// status — mirroring `glucoseSourceDiagnosticsInfo`'s pattern (`glucoseSource` stays private,
     /// never widened). nil when no failover source is selected, or the bounded-recovery policy
     /// currently has it disabled.
-    public var glucoseSourceProbe: (id: String, connectionKind: GlucoseConnectionKind, latest: GlucoseSample?, status: GlucoseSourceStatus)? {
+    public var glucoseSourceProbe:
+        (id: String, connectionKind: GlucoseConnectionKind, latest: GlucoseSample?, status: GlucoseSourceStatus)?
+    {
         guard let glucoseSource else { return nil }
         return (glucoseSource.id, glucoseSource.connectionKind, glucoseSource.latest, glucoseSource.status)
     }
@@ -1112,7 +1167,7 @@ public final class AppModel {
         // 4) Local telemetry / runtime blobs in the App Group (diagnostics DATA; NOT the opt-in flag/prefs).
         connectionTelemetry.clearStoredData()
         NotificationRuntime.eraseStoredBlobs()
-        bleSessionLog.clear()   // in-memory only, but erase it here too for "Delete all on-device data"
+        bleSessionLog.clear()  // in-memory only, but erase it here too for "Delete all on-device data"
 
         deliveryLedgerCoordinator.refreshDeliveryBlock()
         return .erased
@@ -1139,10 +1194,10 @@ public final class AppModel {
         // Clear the pairing Keychain + persisted peripheral EXPLICITLY (backend-agnostic): a backend's own
         // `forgetPairing` may be a no-op (e.g. the simulator), and the pairing secret lives in the global
         // Keychain regardless of which backend is active, so we must clear it here, not only via the backend.
-        PairingStore.clear()          // pump JPAKE derived secret + legacy V1 code
-        clearSavedPin()               // fixed PIN (PairingStore.clearPin)
-        PumpPeripheralStore.clear()   // persisted peripheral id (the cold-launch retrieve target)
-        for account in CredentialStore.cgmSecretAccounts { CredentialStore.set(nil, account: account) }   // CGM logins
+        PairingStore.clear()  // pump JPAKE derived secret + legacy V1 code
+        clearSavedPin()  // fixed PIN (PairingStore.clearPin)
+        PumpPeripheralStore.clear()  // persisted peripheral id (the cold-launch retrieve target)
+        for account in CredentialStore.cgmSecretAccounts { CredentialStore.set(nil, account: account) }  // CGM logins
         // Also tell the active backend to drop its in-memory pairing/auth state + run its own cleanup.
         forgetPairing()
         return .erased
@@ -1177,14 +1232,14 @@ public final class AppModel {
         let current = currentPumpIdentity()
         switch PumpSwitchStore.decide(current: current, lastHandled: PumpSwitchStore.lastHandled()) {
         case .firstConnect:
-            PumpSwitchStore.setHandled(current)      // baseline; nothing to reset on the very first pump
+            PumpSwitchStore.setHandled(current)  // baseline; nothing to reset on the very first pump
         case .samePump:
             break
         case .switched:
-            if deliveryLedgerCoordinator.hasInFlightOrUnresolvedDelivery { return }   // defer
-            source.resetSnapshotForPumpSwitch()      // auto-clear the old pump's config (re-read on connect)
-            PumpSwitchStore.setHandled(current)      // handled ⇒ don't re-fire every refresh
-            pendingPumpSwitch = true                 // offer to reset pump-specific app prefs too
+            if deliveryLedgerCoordinator.hasInFlightOrUnresolvedDelivery { return }  // defer
+            source.resetSnapshotForPumpSwitch()  // auto-clear the old pump's config (re-read on connect)
+            PumpSwitchStore.setHandled(current)  // handled ⇒ don't re-fire every refresh
+            pendingPumpSwitch = true  // offer to reset pump-specific app prefs too
         }
     }
 
@@ -1250,7 +1305,10 @@ public final class AppModel {
     @ObservationIgnored internal var alertIntel = AppModel.loadAlertIntel()
     private static func loadAlertIntel() -> AlertIntelligence {
         if let d = UserDefaults.standard.data(forKey: "alertIntel"),
-           let a = try? JSONDecoder().decode(AlertIntelligence.self, from: d) { return a }
+            let a = try? JSONDecoder().decode(AlertIntelligence.self, from: d)
+        {
+            return a
+        }
         return AlertIntelligence()
     }
     #endif
@@ -1278,9 +1336,10 @@ public final class AppModel {
         // Tell the source whether the primary is healthy so cloud pollers throttle (battery-aware).
         let pumpFresh = source.snapshot.glucose != nil && !GlucoseFreshness.isStale(source.snapshot.glucoseDate)
         glucoseSource?.setPrimaryHealthy(pumpFresh)
-        let (snap, hist, provenance) = GlucoseArbiter.merge(pumpSnapshot: source.snapshot,
-                                                            pumpHistory: source.glucoseHistory,
-                                                            source: glucoseSource)
+        let (snap, hist, provenance) = GlucoseArbiter.merge(
+            pumpSnapshot: source.snapshot,
+            pumpHistory: source.glucoseHistory,
+            source: glucoseSource)
         refreshEffectOrderRecorderForTesting?("merge")
         snapshot = snap
         // Fire the SINGLE `facadeAssign` tag HERE, at the first façade write (`snapshot = snap`),
@@ -1309,7 +1368,8 @@ public final class AppModel {
         // never sees a sample to fail over TO and reports plain `.pump` provenance even though the pump
         // itself has nothing — gating on `!pumpFresh` (not provenance) is what catches "pump has no reading
         // AND the only backup signal is a below-range LOW".
-        let sentinelFresh = !pumpFresh
+        let sentinelFresh =
+            !pumpFresh
             && ((glucoseSource as? PollingGlucoseSource)?.urgentLowSentinel)
                 .map { !GlucoseFreshness.isStale($0.date) } == true
         let urgentLowNow = UrgentLowAlarm.isActive(mgdl: snapshot.glucose, provenance: provenance) || sentinelFresh
@@ -1327,7 +1387,7 @@ public final class AppModel {
         // never a live `source.` read at compose time.
         rawActiveNotifications = source.rawActiveNotifications
         alertDebug = source.alertDebug
-        let widgetLock = widgetBolusLock   // same evaluator delivery routes through
+        let widgetLock = widgetBolusLock  // same evaluator delivery routes through
         // Delegate the effects tail. Single call ⇒ the coordinator-internal order is structurally
         // un-reorderable from this call site. The four `prev*` values are the pre-assignment bookkeeping;
         // the private dedupe keys are passed so their single source of truth stays here.
@@ -1360,9 +1420,14 @@ public final class AppModel {
         urgentLowActive = urgentLowNow
     }
 
-
-    public func connect() async { await source.connect(); refresh() }
-    public func disconnect() { source.disconnect(); refresh() }
+    public func connect() async {
+        await source.connect()
+        refresh()
+    }
+    public func disconnect() {
+        source.disconnect()
+        refresh()
+    }
 
     /// Reconnect the pump link if a pairing exists and it's currently disconnected — pure link
     /// maintenance, never a dose. Promoted here (from a private `RootTabView` helper of the exact
@@ -1378,10 +1443,13 @@ public final class AppModel {
     /// every existing caller — and, critically, `resolveRemoteDose` (remotes) — keeps recomputing with NO
     /// override and stays fail-closed. ONLY `BolusEntryView` (the iPhone host compose flow) ever passes
     /// `true`, and only after an explicit `StaleIobPrompt` / `StaleTherapyPrompt` warning.
-    public func recommendBolus(carbsGrams: Double, bgMgdl: Int?,
-                               allowStaleIob: Bool = false, allowStaleTherapy: Bool = false) async -> BolusRecommendation {
-        await source.recommendBolus(carbsGrams: carbsGrams, bgMgdl: bgMgdl,
-                                    allowStaleIob: allowStaleIob, allowStaleTherapy: allowStaleTherapy)
+    public func recommendBolus(
+        carbsGrams: Double, bgMgdl: Int?,
+        allowStaleIob: Bool = false, allowStaleTherapy: Bool = false
+    ) async -> BolusRecommendation {
+        await source.recommendBolus(
+            carbsGrams: carbsGrams, bgMgdl: bgMgdl,
+            allowStaleIob: allowStaleIob, allowStaleTherapy: allowStaleTherapy)
     }
 
     /// Public entry point to the always-safe `refresh()` (re-publish + staleness re-eval;
@@ -1392,20 +1460,28 @@ public final class AppModel {
 
     /// Force the pump to report its newest CGM reading and wait briefly for it (bolus screen uses this
     /// on open and again right before delivery so a correction is off the freshest value).
-    public func refreshGlucoseNow() async { await source.refreshGlucoseNow(); refresh() }
+    public func refreshGlucoseNow() async {
+        await source.refreshGlucoseNow()
+        refresh()
+    }
 
     /// DIF-core: force the pump to report its newest bolus-calculator INPUTS (op-115 CR/ISF/target/max +
     /// op-109 IOB) and wait briefly (bounded). The bolus screen and the authoritative deliver-time
     /// recompute call this alongside `refreshGlucoseNow()` so the delivered dose is always built from fresh,
     /// self-consistent pump inputs. `recommendBolus` also forces this internally; calling it here keeps the
     /// displayed IOB/therapy rows fresh (and the single-flight coalesces the two into one pump read).
-    public func refreshCalcInputsNow() async { await source.refreshCalcInputsNow(); refresh() }
+    public func refreshCalcInputsNow() async {
+        await source.refreshCalcInputsNow()
+        refresh()
+    }
 
     /// The correction BG a remote/host carb dose is computed from: the freshest CGM if it's non-stale,
     /// else `nil` (carbs-only). Call `refreshGlucoseNow()` first. Exposed so a remote's *estimate*
     /// and the host's *authoritative* resolve bind to the SAME staleness-gated basis and don't diverge
     /// spuriously (which would reject with a confusing "dose changed" and no actionable review).
-    public var freshCorrectionBG: Int? { (snapshot.glucose != nil && !snapshot.isGlucoseStale) ? snapshot.glucose : nil }
+    public var freshCorrectionBG: Int? {
+        (snapshot.glucose != nil && !snapshot.isGlucoseStale) ? snapshot.glucose : nil
+    }
 
     /// Conservative safety limit for the wrist/Mac-vs-host dose comparison. If a remote's own carb→unit
     /// estimate and the host's authoritative recompute differ by more than this, the bolus is rejected
@@ -1424,7 +1500,9 @@ public final class AppModel {
     /// Wall-clock (not the pump-clock `snapshot.lastBolusDate`) so it is comparable to a remote's `sentAt`.
     private(set) var lastHostDeliveryAt: Date?
 
-    public func deliverBolus(units: Double, carbsGrams: Double? = nil, bgMgdl: Int? = nil, iobUnits: Double? = nil) async {
+    public func deliverBolus(units: Double, carbsGrams: Double? = nil, bgMgdl: Int? = nil, iobUnits: Double? = nil)
+        async
+    {
         // The phone's own standard bolus, gated through the single evaluator (child mode + phone
         // read-only). Reachable only from the phone UI, so the surface is always `.phoneUI`.
         guard allow(.deliverBolus, from: .phoneUI) else { return }
@@ -1437,7 +1515,9 @@ public final class AppModel {
         await performLocalBolus(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl, iobUnits: iobUnits)
     }
 
-    private func performLocalBolus(units: Double, carbsGrams: Double? = nil, bgMgdl: Int? = nil, iobUnits: Double? = nil) async {
+    private func performLocalBolus(
+        units: Double, carbsGrams: Double? = nil, bgMgdl: Int? = nil, iobUnits: Double? = nil
+    ) async {
         // Re-checked here (not just in `deliverBolus`) so the reverse-approval-approved path
         // (`resolveRemoteApproval`) is gated too. `.deliverBolus` is `.ledgeredDelivery` — the evaluator
         // applies child + phone read-only; delivery never requires advanced control.
@@ -1447,31 +1527,34 @@ public final class AppModel {
         // block refuses this delivery too. A fresh id per tap (the phone's own dose isn't retried by id).
         let requestId = "local:" + UUID().uuidString
         let doseKey = RemoteBolusLedger.doseKey(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
-        lastDeliveredUnits = nil   // clear any prior value so a stale amount can't leak into this banner
-        let outcome = await deliveryLedgerCoordinator.runLedgeredDelivery(peerId: "local", requestId: requestId, doseKey: doseKey) {
+        lastDeliveredUnits = nil  // clear any prior value so a stale amount can't leak into this banner
+        let outcome = await deliveryLedgerCoordinator.runLedgeredDelivery(
+            peerId: "local", requestId: requestId, doseKey: doseKey
+        ) {
             try await self.source.deliverBolus(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl, iobUnits: iobUnits)
         }
         switch outcome {
         case .delivered(let delivered, let cancelled):
-            if let c = carbsGrams, c > 0 { recordCarbs(grams: c) }   // log carbs for the smart features
+            if let c = carbsGrams, c > 0 { recordCarbs(grams: c) }  // log carbs for the smart features
             lastDeliveredUnits = delivered
             lastDeliveredWasCancelled = cancelled
-            lastHostDeliveryAt = Date()   // stamp a completed host delivery (double-dose backstop)
+            lastHostDeliveryAt = Date()  // stamp a completed host delivery (double-dose backstop)
             lastError = nil
         case .indeterminate:
             lastError = Self.indeterminateOutcomeLockedCopy
-            lastHostDeliveryAt = Date()   // an indeterminate outcome MAY have delivered — stamp supersession too (defense-in-depth)
+            lastHostDeliveryAt = Date()  // an indeterminate outcome MAY have delivered — stamp supersession too (defense-in-depth)
             // An immediate GOVERNED heads-up (.warning) — alongside, never replacing, the
             // AUTHORITATIVE `.bolusReconciliation` post `reconcileUnresolvedDeliveries` issues later for
             // this same durable ledger entry. Distinct dedupe namespace so neither coalesces the other.
-            postSafety(.bolusIndeterminate, severity: .warning,
-                       title: Self.indeterminateOutcomeLockedCopy, body: Self.indeterminateOutcomeLockedCopy,
-                       dedupeKey: "indeterminate-local-\(requestId)")
+            postSafety(
+                .bolusIndeterminate, severity: .warning,
+                title: Self.indeterminateOutcomeLockedCopy, body: Self.indeterminateOutcomeLockedCopy,
+                dedupeKey: "indeterminate-local-\(requestId)")
         case .blocked(let msg), .failed(let msg):
             lastError = msg
             notifyDeliveryFailed(msg)
         case .duplicateInFlight, .replay:
-            break   // a fresh UUID means these don't occur for the local path
+            break  // a fresh UUID means these don't occur for the local path
         }
         refresh()
     }
@@ -1480,8 +1563,10 @@ public final class AppModel {
 
     /// A bolus this phone started that's awaiting a paired remote's approval.
     public struct PendingApproval: Equatable, Sendable {
-        public let requestId: String; public let units: Double
-        public var carbsGrams: Double? = nil; public var bgMgdl: Int? = nil
+        public let requestId: String
+        public let units: Double
+        public var carbsGrams: Double?
+        public var bgMgdl: Int?
     }
     public private(set) var pendingApproval: PendingApproval?
     private var hasPairedRemote: Bool { !MacPairingCoordinator.shared.pairedMacs.isEmpty }
@@ -1525,39 +1610,48 @@ public final class AppModel {
     /// the `.extendedBolus` peer permission and `remotesReadOnly` while
     /// bypassing child mode. The idempotency ledger keeps its own `local-ext:` keying, independent of the
     /// gating `peerId`.
-    public func deliverExtendedBolus(totalUnits: Double, nowUnits: Double, durationMinutes: Int,
-                                     carbsGrams: Double? = nil, bgMgdl: Int? = nil,
-                                     iobUnits: Double? = nil,
-                                     from surface: AccessPolicy.Surface = .phoneUI, peerId: String = "local") async {
+    public func deliverExtendedBolus(
+        totalUnits: Double, nowUnits: Double, durationMinutes: Int,
+        carbsGrams: Double? = nil, bgMgdl: Int? = nil,
+        iobUnits: Double? = nil,
+        from surface: AccessPolicy.Surface = .phoneUI, peerId: String = "local"
+    ) async {
         // Extended bolus is a pump *capability* — refuse pre-flight on a pump that doesn't support
         // it (fail closed) rather than let the affordance reach a pump that would reject the combo bolus.
-        guard capabilities.supportsExtendedBolus else { lastError = "This pump doesn't support an extended bolus."; return }
+        guard capabilities.supportsExtendedBolus else {
+            lastError = "This pump doesn't support an extended bolus."
+            return
+        }
         guard allow(.deliverExtendedBolus, from: surface, peerId: peerId) else { return }
         // Route extended boluses through the durable ledger too, so the global unresolved-delivery
         // block covers them and an indeterminate extended outcome is reconcilable across a restart.
         let requestId = "local-ext:" + UUID().uuidString
         let doseKey = RemoteBolusLedger.doseKey(units: totalUnits, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
-        lastDeliveredUnits = nil   // clear any prior value so a stale amount can't leak into this banner
-        let outcome = await deliveryLedgerCoordinator.runLedgeredDelivery(peerId: "local", requestId: requestId, doseKey: doseKey) {
-            try await self.source.deliverExtendedBolus(totalUnits: totalUnits, nowUnits: nowUnits,
-                                                       durationMinutes: durationMinutes,
-                                                       carbsGrams: carbsGrams, bgMgdl: bgMgdl, iobUnits: iobUnits)
+        lastDeliveredUnits = nil  // clear any prior value so a stale amount can't leak into this banner
+        let outcome = await deliveryLedgerCoordinator.runLedgeredDelivery(
+            peerId: "local", requestId: requestId, doseKey: doseKey
+        ) {
+            try await self.source.deliverExtendedBolus(
+                totalUnits: totalUnits, nowUnits: nowUnits,
+                durationMinutes: durationMinutes,
+                carbsGrams: carbsGrams, bgMgdl: bgMgdl, iobUnits: iobUnits)
         }
         switch outcome {
         case .delivered(let delivered, let cancelled):
             if let c = carbsGrams, c > 0 { recordCarbs(grams: c) }
             lastDeliveredUnits = delivered
             lastDeliveredWasCancelled = cancelled
-            lastHostDeliveryAt = Date()   // stamp a completed host delivery (double-dose backstop)
+            lastHostDeliveryAt = Date()  // stamp a completed host delivery (double-dose backstop)
             lastError = nil
         case .indeterminate:
             lastError = Self.indeterminateOutcomeLockedCopy
-            lastHostDeliveryAt = Date()   // an indeterminate outcome MAY have delivered — stamp supersession too (defense-in-depth)
+            lastHostDeliveryAt = Date()  // an indeterminate outcome MAY have delivered — stamp supersession too (defense-in-depth)
             // An immediate GOVERNED heads-up (.warning), alongside — never replacing — the
             // AUTHORITATIVE `.bolusReconciliation` post issued later for this same ledger entry.
-            postSafety(.bolusIndeterminate, severity: .warning,
-                       title: Self.indeterminateOutcomeLockedCopy, body: Self.indeterminateOutcomeLockedCopy,
-                       dedupeKey: "indeterminate-local-\(requestId)")
+            postSafety(
+                .bolusIndeterminate, severity: .warning,
+                title: Self.indeterminateOutcomeLockedCopy, body: Self.indeterminateOutcomeLockedCopy,
+                dedupeKey: "indeterminate-local-\(requestId)")
         case .blocked(let msg), .failed(let msg):
             lastError = msg
             notifyDeliveryFailed(msg)
@@ -1572,7 +1666,8 @@ public final class AppModel {
     /// safety STOP that must stay available to a read-only viewer on every surface.
     public func cancelBolus(from surface: AccessPolicy.Surface = .phoneUI, peerId: String = "local") async {
         guard allow(.cancelBolus, from: surface, peerId: peerId) else { return }
-        await source.cancelBolus(); refresh()
+        await source.cancelBolus()
+        refresh()
     }
 
     // MARK: Advanced control — gated in the UI by `advancedControlAllowed`.
@@ -1581,7 +1676,7 @@ public final class AppModel {
     /// advanced-control capability (pump-derived capabilities, not the raw `isMobi` model check).
     public var advancedControlAllowed: Bool {
         AppSettings.shared.advancedControlAllowed(capabilities: capabilities)
-            && !AppSettings.shared.phoneReadOnly   // read-only hides the Pump Control entry entirely
+            && !AppSettings.shared.phoneReadOnly  // read-only hides the Pump Control entry entirely
     }
 
     /// True only while the pump is actively connected — the gate every pump-touching action + control
@@ -1619,9 +1714,14 @@ public final class AppModel {
     /// (defense-in-depth) — matching what the UI's `advancedControlAllowed`
     /// already composes, so no shipped t:slim/Mobi behavior changes for reachable actions. `surface`
     /// defaults to `.phoneUI` (the phone's own control screens); remotes pass their own surface.
-    private func runControl(_ action: GatedPumpWrite, from surface: AccessPolicy.Surface = .phoneUI,
-                            peerId: String? = nil, _ op: () async throws -> Void) async {
-        guard allow(action, from: surface, peerId: peerId) else { refresh(); return }
+    private func runControl(
+        _ action: GatedPumpWrite, from surface: AccessPolicy.Surface = .phoneUI,
+        peerId: String? = nil, _ op: () async throws -> Void
+    ) async {
+        guard allow(action, from: surface, peerId: peerId) else {
+            refresh()
+            return
+        }
         await performControl(op)
     }
 
@@ -1657,8 +1757,11 @@ public final class AppModel {
     /// backend write — gating is entirely in the evaluator, so it must NOT re-enter `runControl` (that
     /// would re-check the just-consumed ack and deny).
     private func runGatedTherapy(_ action: GatedPumpWrite, _ op: () async throws -> Void) async {
-        guard allow(action, from: .phoneUI) else { refresh(); return }
-        unverifiedTherapyAckAt = nil   // consume — one ack authorizes one gated gesture
+        guard allow(action, from: .phoneUI) else {
+            refresh()
+            return
+        }
+        unverifiedTherapyAckAt = nil  // consume — one ack authorizes one gated gesture
         await performControl(op)
     }
 
@@ -1674,10 +1777,13 @@ public final class AppModel {
         // precondition unchanged (HARD INVARIANT).
         #if !FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL
         if let reason = ControlIQPrecondition.tempRateBlockReason(controlIQEnabled: snapshot.controlIQEnabled) {
-            lastError = reason; return
+            lastError = reason
+            return
         }
         #endif
-        await runControl(.setTempBasal) { try await source.setTempBasal(percent: percent, durationMinutes: durationMinutes) }
+        await runControl(.setTempBasal) {
+            try await source.setTempBasal(percent: percent, durationMinutes: durationMinutes)
+        }
     }
     public func stopTempBasal() async { await runControl(.stopTempBasal) { try await source.stopTempBasal() } }
     /// Set a pump user mode. Takes the typed `ModeCommand` (wire `sleepOn=1…exerciseOff=4`) so a caller
@@ -1686,7 +1792,8 @@ public final class AppModel {
     /// gated in the UI by `advancedControlAllowed`.
     public func setMode(_ command: ModeCommand) async {
         if let reason = ControlIQPrecondition.modeBlockReason(controlIQEnabled: snapshot.controlIQEnabled) {
-            lastError = reason; return
+            lastError = reason
+            return
         }
         await runControl(.setMode) { try await source.setMode(command) }
     }
@@ -1711,18 +1818,40 @@ public final class AppModel {
 
     // MARK: Mobi workflows
     public func startG6Session(transmitterId: String, sensorCode: Int) async {
-        await runControl(.startG6Session) { try await source.startG6Session(transmitterId: transmitterId, sensorCode: sensorCode) }
+        await runControl(.startG6Session) {
+            try await source.startG6Session(transmitterId: transmitterId, sensorCode: sensorCode)
+        }
     }
-    public func startG7Session(pairingCode: Int) async { await runControl(.startG7Session) { try await source.startG7Session(pairingCode: pairingCode) } }
-    public func setSensorType(_ typeId: Int) async { await runControl(.setSensorType) { try await source.setSensorType(typeId) } }
+    public func startG7Session(pairingCode: Int) async {
+        await runControl(.startG7Session) { try await source.startG7Session(pairingCode: pairingCode) }
+    }
+    public func setSensorType(_ typeId: Int) async {
+        await runControl(.setSensorType) { try await source.setSensorType(typeId) }
+    }
     public func stopCgmSession() async { await runControl(.stopCgmSession) { try await source.stopCgmSession() } }
-    public func refreshCgmSession() async { await source.refreshCgmSession(); refresh() }
-    public func enterChangeCartridgeMode() async { await runControl(.enterChangeCartridgeMode) { try await source.enterChangeCartridgeMode() } }
-    public func exitChangeCartridgeMode() async { await runControl(.exitChangeCartridgeMode) { try await source.exitChangeCartridgeMode() } }
-    public func enterFillTubingMode() async { await runControl(.enterFillTubingMode) { try await source.enterFillTubingMode() } }
-    public func exitFillTubingMode() async { await runControl(.exitFillTubingMode) { try await source.exitFillTubingMode() } }
-    public func fillCannula(milliunits: Int) async { await runControl(.fillCannula) { try await source.fillCannula(milliunits: milliunits) } }
-    public func refreshLoadStatus() async { await source.refreshLoadStatus(); refresh() }
+    public func refreshCgmSession() async {
+        await source.refreshCgmSession()
+        refresh()
+    }
+    public func enterChangeCartridgeMode() async {
+        await runControl(.enterChangeCartridgeMode) { try await source.enterChangeCartridgeMode() }
+    }
+    public func exitChangeCartridgeMode() async {
+        await runControl(.exitChangeCartridgeMode) { try await source.exitChangeCartridgeMode() }
+    }
+    public func enterFillTubingMode() async {
+        await runControl(.enterFillTubingMode) { try await source.enterFillTubingMode() }
+    }
+    public func exitFillTubingMode() async {
+        await runControl(.exitFillTubingMode) { try await source.exitFillTubingMode() }
+    }
+    public func fillCannula(milliunits: Int) async {
+        await runControl(.fillCannula) { try await source.fillCannula(milliunits: milliunits) }
+    }
+    public func refreshLoadStatus() async {
+        await source.refreshLoadStatus()
+        refresh()
+    }
     /// Set the pump's max-bolus limit. The absolute 25 U ceiling is a HARD cap: clamp at the funnel so
     /// the invariant holds regardless of backend (the backends clamp too, as defense-in-depth). Never a
     /// confirmation — a request above 25 U is capped, not offered. Routes through the ACK funnel
@@ -1732,8 +1861,9 @@ public final class AppModel {
         let clamped = Interlocks.clampMaxBolusLimit(units)
         let before = snapshot.maxBolusUnits
         await runGatedTherapy(.setMaxBolus) { try await self.source.setMaxBolus(units: clamped) }
-        provenanceRecorder.recordClinicianEditIfChanged(.global("maxBolus"), before: .double(before),
-                                                         afterOnSuccess: .double(clamped), succeeded: lastError == nil)
+        provenanceRecorder.recordClinicianEditIfChanged(
+            .global("maxBolus"), before: .double(before),
+            afterOnSuccess: .double(clamped), succeeded: lastError == nil)
     }
     public func setMaxBasal(unitsPerHour: Double) async {
         // Clamp at the funnel (floor 1.0 / ceiling 15.0 U/hr, the kit's byte-verified bounds) so the
@@ -1742,8 +1872,9 @@ public final class AppModel {
         let clamped = Interlocks.clampMaxBasalLimit(unitsPerHour)
         let before = snapshot.maxBasalUnitsPerHour
         await runGatedTherapy(.setMaxBasal) { try await self.source.setMaxBasal(unitsPerHour: clamped) }
-        provenanceRecorder.recordClinicianEditIfChanged(.global("maxBasal"), before: .double(before),
-                                                         afterOnSuccess: .double(clamped), succeeded: lastError == nil)
+        provenanceRecorder.recordClinicianEditIfChanged(
+            .global("maxBasal"), before: .double(before),
+            afterOnSuccess: .double(clamped), succeeded: lastError == nil)
     }
     public func syncTimeToNow() async { await runControl(.syncTimeToNow) { try await source.syncTimeToNow() } }
 
@@ -1756,14 +1887,17 @@ public final class AppModel {
         guard AppSettings.shared.autoSyncPumpTime, capabilities.supportsTimeSync else { return }
         guard snapshot.connection == .connected, !timeSyncInFlight else { return }
         let lastEpoch = UserDefaults.standard.double(forKey: Self.lastTimeSyncKey)
-        let due = force || lastEpoch == 0
+        let due =
+            force || lastEpoch == 0
             || Date().timeIntervalSince1970 - lastEpoch > 24 * 60 * 60
         guard due else { return }
         timeSyncInFlight = true
         Task { @MainActor in
             defer { timeSyncInFlight = false }
             await runControl(.syncTimeToNow) { try await source.syncTimeToNow() }
-            if lastError == nil { UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Self.lastTimeSyncKey) }
+            if lastError == nil {
+                UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Self.lastTimeSyncKey)
+            }
         }
     }
     /// Whether clearing active notifications is required before entering cartridge mode (controlX2
@@ -1807,11 +1941,17 @@ public final class AppModel {
         }
         switch (key.idpId, key.segmentStartMinutes, key.field) {
         case (nil, nil, "maxBolus"):
-            if case .double(let v) = target { await setMaxBolus(units: v) }
-            else { lastError = "Couldn't read the previous value to revert to." }
+            if case .double(let v) = target {
+                await setMaxBolus(units: v)
+            } else {
+                lastError = "Couldn't read the previous value to revert to."
+            }
         case (nil, nil, "maxBasal"):
-            if case .double(let v) = target { await setMaxBasal(unitsPerHour: v) }
-            else { lastError = "Couldn't read the previous value to revert to." }
+            if case .double(let v) = target {
+                await setMaxBasal(unitsPerHour: v)
+            } else {
+                lastError = "Couldn't read the previous value to revert to."
+            }
         case let (idpId?, start?, field) where ["basalRate", "carbRatio", "isf", "targetBg"].contains(field):
             await revertSegmentField(idpId: idpId, startMinutes: start, field: field, to: target)
         default:
@@ -1827,9 +1967,11 @@ public final class AppModel {
     /// reason) if the segment is no longer on the pump.
     private func revertSegmentField(idpId: Int, startMinutes: Int, field: String, to target: BackupValue) async {
         await refreshProfileSegments(idpId: idpId)
-        guard let seg = snapshot.viewedProfileSegments.first(where: {
-            $0.idpId == idpId && $0.startTimeMinutes == startMinutes
-        }) else {
+        guard
+            let seg = snapshot.viewedProfileSegments.first(where: {
+                $0.idpId == idpId && $0.startTimeMinutes == startMinutes
+            })
+        else {
             lastError = "The time segment for this setting is no longer on the pump — it can't be reverted."
             return
         }
@@ -1837,14 +1979,17 @@ public final class AppModel {
         switch (field, target) {
         case ("basalRate", .double(let v)): basal = v
         case ("carbRatio", .double(let v)): cr = v
-        case ("isf", .int(let v)):          isf = v
-        case ("targetBg", .int(let v)):     tgt = v
-        default: lastError = "Couldn't read the previous value to revert to."; return
+        case ("isf", .int(let v)): isf = v
+        case ("targetBg", .int(let v)): tgt = v
+        default:
+            lastError = "Couldn't read the previous value to revert to."
+            return
         }
-        await modifyProfileSegment(idpId: idpId, segmentIndex: seg.segmentIndex,
-                                   startTimeMinutes: seg.startTimeMinutes,
-                                   basalRateUnitsPerHour: basal, carbRatioGramsPerUnit: cr,
-                                   isf: isf, targetBg: tgt)
+        await modifyProfileSegment(
+            idpId: idpId, segmentIndex: seg.segmentIndex,
+            startTimeMinutes: seg.startTimeMinutes,
+            basalRateUnitsPerHour: basal, carbRatioGramsPerUnit: cr,
+            isf: isf, targetBg: tgt)
     }
 
     // MARK: - Manual precedence for scheduled mode automation
@@ -1887,20 +2032,32 @@ public final class AppModel {
         // real-insulin distribution is ever pursued.
         if let reason = ControlIQPrecondition.configBlockReason(
             supportsControlIQConfig: capabilities.supportsControlIQSettings,
-            controllerVariant: snapshot.controllerVariant) {
-            lastError = reason; return
+            controllerVariant: snapshot.controllerVariant)
+        {
+            lastError = reason
+            return
         }
         // Therapy-defining → ACK funnel `runGatedTherapy`. Record `.selfSet` provenance on a successful,
         // value-changing edit.
         let before = snapshot.controlIQEnabled
-        await runGatedTherapy(.setControlIQ) { try await self.source.setControlIQ(enabled: enabled, weightLbs: weightLbs, totalDailyInsulinUnits: totalDailyInsulinUnits) }
-        provenanceRecorder.recordClinicianEditIfChanged(.global("controlIQEnabled"), before: .bool(before),
-                                                         afterOnSuccess: .bool(enabled), succeeded: lastError == nil)
+        await runGatedTherapy(.setControlIQ) {
+            try await self.source.setControlIQ(
+                enabled: enabled, weightLbs: weightLbs, totalDailyInsulinUnits: totalDailyInsulinUnits)
+        }
+        provenanceRecorder.recordClinicianEditIfChanged(
+            .global("controlIQEnabled"), before: .bool(before),
+            afterOnSuccess: .bool(enabled), succeeded: lastError == nil)
     }
-    public func refreshControlIQSettings() async { await source.refreshControlIQSettings(); refresh() }
+    public func refreshControlIQSettings() async {
+        await source.refreshControlIQSettings()
+        refresh()
+    }
     // Sleep schedule — universal/unsigned read: ungated passthrough, no runControl/runGatedTherapy
     // wrapper. The write routes through runGatedTherapy.
-    public func refreshSleepSchedule() async { await source.refreshSleepSchedule(); refresh() }
+    public func refreshSleepSchedule() async {
+        await source.refreshSleepSchedule()
+        refresh()
+    }
     /// Write one native Sleep-schedule slot — the Mobi editor for a pump with no on-pump way to set
     /// this. Therapy-defining-adjacent unverified write → ACK funnel `runGatedTherapy` (child-mode +
     /// phone read-only + advanced opt-in + the one-shot unverified ack + the dedicated
@@ -1914,14 +2071,18 @@ public final class AppModel {
     /// via `lastError`.
     public func setSleepSchedule(slot: Int, enabled: Bool, activeDays: Int, startMinute: Int, endMinute: Int) async {
         await runGatedTherapy(.setSleepSchedule) {
-            try await self.source.setSleepSchedule(slot: slot, enabled: enabled, activeDays: activeDays,
-                                                    startMinute: startMinute, endMinute: endMinute)
+            try await self.source.setSleepSchedule(
+                slot: slot, enabled: enabled, activeDays: activeDays,
+                startMinute: startMinute, endMinute: endMinute)
         }
         if let ops = source as? TandemOnlyOps, let err = ops.consumeSleepScheduleWriteError() {
             lastError = err
         }
     }
-    public func refreshProfiles() async { await source.refreshProfiles(); refresh() }
+    public func refreshProfiles() async {
+        await source.refreshProfiles()
+        refresh()
+    }
     // Switching the active profile, renaming, and deleting a profile are therapy-defining
     // (they change the active basal / carb-ratio / ISF the pump doses from), so they route through the
     // SAME single evaluator as the rest of IDP CRUD — `runGatedTherapy(action)` folds the unverified
@@ -1937,61 +2098,95 @@ public final class AppModel {
     public func deleteProfile(idpId: Int) async {
         await runGatedTherapy(.deleteProfile) { try await self.source.deleteProfile(idpId: idpId) }
     }
-    public func createProfile(name: String, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int, insulinDurationMinutes: Int) async {
+    public func createProfile(
+        name: String, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int,
+        insulinDurationMinutes: Int
+    ) async {
         await runGatedTherapy(.createProfile) {
-            try await self.source.createProfile(name: name, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg, insulinDurationMinutes: insulinDurationMinutes)
+            try await self.source.createProfile(
+                name: name, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit,
+                isf: isf, targetBg: targetBg, insulinDurationMinutes: insulinDurationMinutes)
         }
     }
-#if FABOLUS_BACKUP
+    #if FABOLUS_BACKUP
     /// Ungated create — used ONLY by the batch reconfigure in `applyPumpSettings`, which gates the whole
     /// batch once (one ack + one capability/child/read-only check) then drives these raw helpers, so a
     /// single confirmation authorizes the entire reconfigure rather than one profile.
-    private func createProfileRaw(name: String, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int, insulinDurationMinutes: Int) async {
-        await performControl { try await source.createProfile(name: name, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg, insulinDurationMinutes: insulinDurationMinutes) }
+    private func createProfileRaw(
+        name: String, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int,
+        insulinDurationMinutes: Int
+    ) async {
+        await performControl {
+            try await source.createProfile(
+                name: name, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit,
+                isf: isf, targetBg: targetBg, insulinDurationMinutes: insulinDurationMinutes)
+        }
     }
-#endif
+    #endif
     public func refreshProfileSegments(idpId: Int) async {
-        await source.refreshProfileSegments(idpId: idpId); refresh()
+        await source.refreshProfileSegments(idpId: idpId)
+        refresh()
         // Capture a consensus-default baseline for any not-yet-recorded field of this
         // profile's segments, so every therapy value has an explicit origin + a revert anchor. Idempotent
         // (skips fields with any existing record) and fail-open, so it never affects the read it rides on.
         for seg in snapshot.viewedProfileSegments where seg.idpId == idpId {
-            provenanceRecorder.recordConsensusBaselineIfAbsent(idpId: idpId, startMinutes: seg.startTimeMinutes,
-                                                                basalRate: seg.basalRateUnitsPerHour,
-                                                                carbRatio: seg.carbRatioGramsPerUnit,
-                                                                isf: seg.isf, targetBg: seg.targetBg)
+            provenanceRecorder.recordConsensusBaselineIfAbsent(
+                idpId: idpId, startMinutes: seg.startTimeMinutes,
+                basalRate: seg.basalRateUnitsPerHour,
+                carbRatio: seg.carbRatioGramsPerUnit,
+                isf: seg.isf, targetBg: seg.targetBg)
         }
     }
-    public func addProfileSegment(idpId: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async {
+    public func addProfileSegment(
+        idpId: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int,
+        targetBg: Int
+    ) async {
         await runGatedTherapy(.addProfileSegment) {
-            try await self.source.addProfileSegment(idpId: idpId, startTimeMinutes: startTimeMinutes, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg)
+            try await self.source.addProfileSegment(
+                idpId: idpId, startTimeMinutes: startTimeMinutes, basalRateUnitsPerHour: basalRateUnitsPerHour,
+                carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg)
         }
         // A new segment sets all four therapy fields (before = nil), recorded as .selfSet on success.
-        provenanceRecorder.recordSegmentEditIfChanged(idpId: idpId, startMinutes: startTimeMinutes,
-                                                       beforeBasal: nil, afterBasal: basalRateUnitsPerHour,
-                                                       beforeCR: nil, afterCR: carbRatioGramsPerUnit,
-                                                       beforeISF: nil, afterISF: isf,
-                                                       beforeTarget: nil, afterTarget: targetBg,
-                                                       succeeded: lastError == nil)
+        provenanceRecorder.recordSegmentEditIfChanged(
+            idpId: idpId, startMinutes: startTimeMinutes,
+            beforeBasal: nil, afterBasal: basalRateUnitsPerHour,
+            beforeCR: nil, afterCR: carbRatioGramsPerUnit,
+            beforeISF: nil, afterISF: isf,
+            beforeTarget: nil, afterTarget: targetBg,
+            succeeded: lastError == nil)
     }
-#if FABOLUS_BACKUP
+    #if FABOLUS_BACKUP
     /// Ungated add — used ONLY by the batch reconfigure (see `createProfileRaw`).
-    private func addProfileSegmentRaw(idpId: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async {
-        await performControl { try await source.addProfileSegment(idpId: idpId, startTimeMinutes: startTimeMinutes, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg) }
+    private func addProfileSegmentRaw(
+        idpId: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int,
+        targetBg: Int
+    ) async {
+        await performControl {
+            try await source.addProfileSegment(
+                idpId: idpId, startTimeMinutes: startTimeMinutes, basalRateUnitsPerHour: basalRateUnitsPerHour,
+                carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg)
+        }
     }
-#endif
-    public func modifyProfileSegment(idpId: Int, segmentIndex: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async {
+    #endif
+    public func modifyProfileSegment(
+        idpId: Int, segmentIndex: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double,
+        carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int
+    ) async {
         // Capture the pre-edit values BEFORE the write (the write then refreshes the segment array).
         let before = snapshot.viewedProfileSegments.first { $0.segmentIndex == segmentIndex }
         await runGatedTherapy(.modifyProfileSegment) {
-            try await self.source.modifyProfileSegment(idpId: idpId, segmentIndex: segmentIndex, startTimeMinutes: startTimeMinutes, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg)
+            try await self.source.modifyProfileSegment(
+                idpId: idpId, segmentIndex: segmentIndex, startTimeMinutes: startTimeMinutes,
+                basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf,
+                targetBg: targetBg)
         }
-        provenanceRecorder.recordSegmentEditIfChanged(idpId: idpId, startMinutes: startTimeMinutes,
-                                                       beforeBasal: before?.basalRateUnitsPerHour, afterBasal: basalRateUnitsPerHour,
-                                                       beforeCR: before?.carbRatioGramsPerUnit, afterCR: carbRatioGramsPerUnit,
-                                                       beforeISF: before?.isf, afterISF: isf,
-                                                       beforeTarget: before?.targetBg, afterTarget: targetBg,
-                                                       succeeded: lastError == nil)
+        provenanceRecorder.recordSegmentEditIfChanged(
+            idpId: idpId, startMinutes: startTimeMinutes,
+            beforeBasal: before?.basalRateUnitsPerHour, afterBasal: basalRateUnitsPerHour,
+            beforeCR: before?.carbRatioGramsPerUnit, afterCR: carbRatioGramsPerUnit,
+            beforeISF: before?.isf, afterISF: isf,
+            beforeTarget: before?.targetBg, afterTarget: targetBg,
+            succeeded: lastError == nil)
     }
     public func deleteProfileSegment(idpId: Int, segmentIndex: Int) async {
         await runGatedTherapy(.deleteProfileSegment) {
@@ -1999,7 +2194,7 @@ public final class AppModel {
         }
     }
     // MARK: Backup / reconfigure
-#if FABOLUS_BACKUP
+    #if FABOLUS_BACKUP
 
     /// Read the pump's therapy settings for a backup. Works on **t:slim X2 and Mobi** (all reads are
     /// `SupportedDevices.ALL`). Reads each profile's segments sequentially.
@@ -2011,20 +2206,26 @@ public final class AppModel {
             let segs = snapshot.viewedProfileSegments
                 .filter { $0.idpId == p.idpId }
                 .sorted { $0.startTimeMinutes < $1.startTimeMinutes }
-                .map { PumpSettingsBackup.SegmentBackup(startTimeMinutes: $0.startTimeMinutes,
+                .map {
+                    PumpSettingsBackup.SegmentBackup(
+                        startTimeMinutes: $0.startTimeMinutes,
                         basalRateUnitsPerHour: $0.basalRateUnitsPerHour,
-                        carbRatioGramsPerUnit: $0.carbRatioGramsPerUnit, isf: $0.isf, targetBg: $0.targetBg) }
-            profs.append(.init(name: p.name, active: p.active,
-                               insulinDurationMinutes: p.insulinDurationMinutes, segments: segs))
+                        carbRatioGramsPerUnit: $0.carbRatioGramsPerUnit, isf: $0.isf, targetBg: $0.targetBg)
+                }
+            profs.append(
+                .init(
+                    name: p.name, active: p.active,
+                    insulinDurationMinutes: p.insulinDurationMinutes, segments: segs))
         }
         await refreshControlIQSettings()
         let s = snapshot
-        return PumpSettingsBackup(profiles: profs,
-                                  maxBolusUnits: s.maxBolusUnits > 0 ? s.maxBolusUnits : nil,
-                                  maxBasalUnitsPerHour: s.maxBasalUnitsPerHour > 0 ? s.maxBasalUnitsPerHour : nil,
-                                  controlIQEnabled: s.controlIQEnabled,
-                                  controlIQWeightLbs: s.controlIQWeightLbs > 0 ? s.controlIQWeightLbs : nil,
-                                  controlIQTotalDailyInsulin: s.controlIQTotalDailyInsulin > 0 ? s.controlIQTotalDailyInsulin : nil)
+        return PumpSettingsBackup(
+            profiles: profs,
+            maxBolusUnits: s.maxBolusUnits > 0 ? s.maxBolusUnits : nil,
+            maxBasalUnitsPerHour: s.maxBasalUnitsPerHour > 0 ? s.maxBasalUnitsPerHour : nil,
+            controlIQEnabled: s.controlIQEnabled,
+            controlIQWeightLbs: s.controlIQWeightLbs > 0 ? s.controlIQWeightLbs : nil,
+            controlIQTotalDailyInsulin: s.controlIQTotalDailyInsulin > 0 ? s.controlIQTotalDailyInsulin : nil)
     }
 
     /// Whether backed-up pump settings can be auto-applied to the CURRENT pump (Mobi + Advanced control
@@ -2059,49 +2260,83 @@ public final class AppModel {
         for prof in p.profiles {
             guard let first = prof.segments.first else { continue }
             let before = Set(snapshot.profiles.map(\.idpId))
-            await createProfileRaw(name: prof.name, basalRateUnitsPerHour: first.basalRateUnitsPerHour,
-                                   carbRatioGramsPerUnit: first.carbRatioGramsPerUnit, isf: first.isf,
-                                   targetBg: first.targetBg,
-                                   insulinDurationMinutes: prof.insulinDurationMinutes > 0 ? prof.insulinDurationMinutes : 300)
+            await createProfileRaw(
+                name: prof.name, basalRateUnitsPerHour: first.basalRateUnitsPerHour,
+                carbRatioGramsPerUnit: first.carbRatioGramsPerUnit, isf: first.isf,
+                targetBg: first.targetBg,
+                insulinDurationMinutes: prof.insulinDurationMinutes > 0 ? prof.insulinDurationMinutes : 300)
             if lastError != nil { return false }
             await refreshProfiles()
             guard let newId = snapshot.profiles.map(\.idpId).first(where: { !before.contains($0) }) else { continue }
             for seg in prof.segments.dropFirst() {
-                await addProfileSegmentRaw(idpId: newId, startTimeMinutes: seg.startTimeMinutes,
-                                           basalRateUnitsPerHour: seg.basalRateUnitsPerHour,
-                                           carbRatioGramsPerUnit: seg.carbRatioGramsPerUnit, isf: seg.isf, targetBg: seg.targetBg)
+                await addProfileSegmentRaw(
+                    idpId: newId, startTimeMinutes: seg.startTimeMinutes,
+                    basalRateUnitsPerHour: seg.basalRateUnitsPerHour,
+                    carbRatioGramsPerUnit: seg.carbRatioGramsPerUnit, isf: seg.isf, targetBg: seg.targetBg)
                 if lastError != nil { return false }
             }
         }
-        if let mb = p.maxBolusUnits { await setMaxBolus(units: mb); if lastError != nil { return false } }
-        if let mbasal = p.maxBasalUnitsPerHour { await setMaxBasal(unitsPerHour: mbasal); if lastError != nil { return false } }
+        if let mb = p.maxBolusUnits {
+            await setMaxBolus(units: mb)
+            if lastError != nil { return false }
+        }
+        if let mbasal = p.maxBasalUnitsPerHour {
+            await setMaxBasal(unitsPerHour: mbasal)
+            if lastError != nil { return false }
+        }
         if let ciq = p.controlIQEnabled {
-            await setControlIQ(enabled: ciq, weightLbs: p.controlIQWeightLbs ?? snapshot.controlIQWeightLbs,
-                               totalDailyInsulinUnits: p.controlIQTotalDailyInsulin ?? snapshot.controlIQTotalDailyInsulin)
+            await setControlIQ(
+                enabled: ciq, weightLbs: p.controlIQWeightLbs ?? snapshot.controlIQWeightLbs,
+                totalDailyInsulinUnits: p.controlIQTotalDailyInsulin ?? snapshot.controlIQTotalDailyInsulin)
             if lastError != nil { return false }
         }
         return true
     }
-#endif
+    #endif
 
-    public func setLowInsulinAlert(thresholdUnits: Int) async { await runControl(.setLowInsulinAlert) { try await source.setLowInsulinAlert(thresholdUnits: thresholdUnits) } }
-    public func setAutoOffAlert(enabled: Bool, durationMinutes: Int) async { await runControl(.setAutoOffAlert) { try await source.setAutoOffAlert(enabled: enabled, durationMinutes: durationMinutes) } }
-    public func setSiteChangeReminder(enabled: Bool, days: Int, timeOfDayMinutes: Int) async { await runControl(.setSiteChangeReminder) { try await source.setSiteChangeReminder(enabled: enabled, days: days, timeOfDayMinutes: timeOfDayMinutes) } }
-    public func setAlertSnooze(enabled: Bool, durationMinutes: Int) async { await runControl(.setAlertSnooze) { try await source.setAlertSnooze(enabled: enabled, durationMinutes: durationMinutes) } }
-    public func setCgmHighLowAlert(alertType: Int, thresholdMgdl: Int, repeatMinutes: Int, enabled: Bool) async {
-        await runGatedTherapy(.setCgmHighLowAlert) {
-            try await self.source.setCgmHighLowAlert(alertType: alertType, thresholdMgdl: thresholdMgdl, repeatMinutes: repeatMinutes, enabled: enabled)
+    public func setLowInsulinAlert(thresholdUnits: Int) async {
+        await runControl(.setLowInsulinAlert) { try await source.setLowInsulinAlert(thresholdUnits: thresholdUnits) }
+    }
+    public func setAutoOffAlert(enabled: Bool, durationMinutes: Int) async {
+        await runControl(.setAutoOffAlert) {
+            try await source.setAutoOffAlert(enabled: enabled, durationMinutes: durationMinutes)
         }
     }
-    public func setCgmOutOfRangeAlert(enabled: Bool, delayMinutes: Int) async { await runControl(.setCgmOutOfRangeAlert) { try await source.setCgmOutOfRangeAlert(enabled: enabled, delayMinutes: delayMinutes) } }
-    public func setCgmRiseFallAlert(alertType: Int, enabled: Bool, mgdlPerMin: Int) async { await runControl(.setCgmRiseFallAlert) { try await source.setCgmRiseFallAlert(alertType: alertType, enabled: enabled, mgdlPerMin: mgdlPerMin) } }
+    public func setSiteChangeReminder(enabled: Bool, days: Int, timeOfDayMinutes: Int) async {
+        await runControl(.setSiteChangeReminder) {
+            try await source.setSiteChangeReminder(enabled: enabled, days: days, timeOfDayMinutes: timeOfDayMinutes)
+        }
+    }
+    public func setAlertSnooze(enabled: Bool, durationMinutes: Int) async {
+        await runControl(.setAlertSnooze) {
+            try await source.setAlertSnooze(enabled: enabled, durationMinutes: durationMinutes)
+        }
+    }
+    public func setCgmHighLowAlert(alertType: Int, thresholdMgdl: Int, repeatMinutes: Int, enabled: Bool) async {
+        await runGatedTherapy(.setCgmHighLowAlert) {
+            try await self.source.setCgmHighLowAlert(
+                alertType: alertType, thresholdMgdl: thresholdMgdl, repeatMinutes: repeatMinutes, enabled: enabled)
+        }
+    }
+    public func setCgmOutOfRangeAlert(enabled: Bool, delayMinutes: Int) async {
+        await runControl(.setCgmOutOfRangeAlert) {
+            try await source.setCgmOutOfRangeAlert(enabled: enabled, delayMinutes: delayMinutes)
+        }
+    }
+    public func setCgmRiseFallAlert(alertType: Int, enabled: Bool, mgdlPerMin: Int) async {
+        await runControl(.setCgmRiseFallAlert) {
+            try await source.setCgmRiseFallAlert(alertType: alertType, enabled: enabled, mgdlPerMin: mgdlPerMin)
+        }
+    }
 
     // MARK: Remote (watch/Garmin) double-confirmation
 
-    public func presentRemoteBolus(requestId: String, units: Double, carbsGrams: Double? = nil,
-                                   bgMgdl: Int? = nil, remoteEstimate: Double? = nil,
-                                   includeStaleBG: Bool = false,
-                                   from surface: AccessPolicy.Surface = .phoneUI, peerId: String = "local") async {
+    public func presentRemoteBolus(
+        requestId: String, units: Double, carbsGrams: Double? = nil,
+        bgMgdl: Int? = nil, remoteEstimate: Double? = nil,
+        includeStaleBG: Bool = false,
+        from surface: AccessPolicy.Surface = .phoneUI, peerId: String = "local"
+    ) async {
         // Ignore a duplicate request that is already pending or already handled: don't
         // stack a second confirmation prompt for the same (peer, requestId).
         if let p = pendingRemoteBolus, p.requestId == requestId, p.peerId == peerId { return }
@@ -2110,8 +2345,10 @@ public final class AppModel {
         // forever for a verdict that never comes). Reject the newcomer with an explicit terminal status
         // so its remote knows it wasn't queued and can resend once the slot frees.
         if pendingRemoteBolus != nil {
-            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed,
-                               message: "Another bolus approval is pending on the phone — confirm or dismiss it, then resend."))
+            echo(
+                RemoteCommand(
+                    kind: .bolusStatus, requestId: requestId, status: .failed,
+                    message: "Another bolus approval is pending on the phone — confirm or dismiss it, then resend."))
             return
         }
         if deliveryLedgerCoordinator.isSettled(peerId: peerId, requestId: requestId) { return }
@@ -2119,29 +2356,35 @@ public final class AppModel {
         // `.bolus` peer permission + `remotesReadOnly` for an authenticated peer). Echo the exact reason.
         let decision = accessDecision(.deliverBolus, from: surface, peerId: peerId)
         guard decision.allowed else {
-            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed,
-                               message: decision.reason?.userMessage ?? "Not allowed"))
+            echo(
+                RemoteCommand(
+                    kind: .bolusStatus, requestId: requestId, status: .failed,
+                    message: decision.reason?.userMessage ?? "Not allowed"))
             return
         }
         // Freeze the authoritative dose BEFORE presenting: the approver must see the real
         // units, carbs, and the fresh glucose the dose was computed from — never a placeholder "0.00 U".
         // resolveRemoteDose fail-closes (and echoes `.failed`) on a missing estimate or divergence.
-        guard let resolved = await resolveRemoteDose(requestId: requestId, units: units, carbsGrams: carbsGrams,
-                                                     bgMgdl: bgMgdl, remoteEstimate: remoteEstimate,
-                                                     includeStaleBG: includeStaleBG) else { return }
+        guard
+            let resolved = await resolveRemoteDose(
+                requestId: requestId, units: units, carbsGrams: carbsGrams,
+                bgMgdl: bgMgdl, remoteEstimate: remoteEstimate,
+                includeStaleBG: includeStaleBG)
+        else { return }
         guard resolved.units > 0 else {
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "No insulin needed"))
             return
         }
-        pendingRemoteBolus = PendingRemoteBolus(requestId: requestId, units: resolved.units,
-                                                carbsGrams: resolved.carbsGrams, bgMgdl: resolved.recordedBg,
-                                                bgDate: resolved.bgDate, iobUnits: resolved.iobUnits,
-                                                remoteEstimate: remoteEstimate, requestedUnits: units,
-                                                // Carry the RAW WIRE carbs/bg (this function's own args,
-                                                // NOT resolved.*) for the idempotency doseKey at confirm time.
-                                                requestedCarbsGrams: carbsGrams, requestedBgMgdl: bgMgdl,
-                                                createdAt: Date(), peerId: peerId, surface: surface,
-                                                usedIncludedStaleBG: resolved.usedIncludedStaleBG)
+        pendingRemoteBolus = PendingRemoteBolus(
+            requestId: requestId, units: resolved.units,
+            carbsGrams: resolved.carbsGrams, bgMgdl: resolved.recordedBg,
+            bgDate: resolved.bgDate, iobUnits: resolved.iobUnits,
+            remoteEstimate: remoteEstimate, requestedUnits: units,
+            // Carry the RAW WIRE carbs/bg (this function's own args,
+            // NOT resolved.*) for the idempotency doseKey at confirm time.
+            requestedCarbsGrams: carbsGrams, requestedBgMgdl: bgMgdl,
+            createdAt: Date(), peerId: peerId, surface: surface,
+            usedIncludedStaleBG: resolved.usedIncludedStaleBG)
     }
 
     /// Drop a pending host-approval bolus bound to `peerId`. When a peer re-handshakes or
@@ -2160,7 +2403,8 @@ public final class AppModel {
         if Date().timeIntervalSince(pending.createdAt) > Self.remoteApprovalMaxAge {
             let msg = "Approval expired — ask the remote to send it again."
             echo(RemoteCommand(kind: .bolusStatus, requestId: pending.requestId, status: .failed, message: msg))
-            lastError = msg; notifyRemoteBolusRejected(msg)
+            lastError = msg
+            notifyRemoteBolusRejected(msg)
             return
         }
         // Re-check BOTH access and supersession at confirm time — settings or host state can
@@ -2172,28 +2416,33 @@ public final class AppModel {
         guard decision.allowed else {
             let msg = decision.reason?.userMessage ?? "Not allowed"
             echo(RemoteCommand(kind: .bolusStatus, requestId: pending.requestId, status: .failed, message: msg))
-            lastError = msg; notifyRemoteBolusRejected(msg)
+            lastError = msg
+            notifyRemoteBolusRejected(msg)
             return
         }
         if pending.surface.isRemote,
-           RemoteCommandFreshness.composeSupersededByHostDelivery(
-               sentAt: Int(pending.createdAt.timeIntervalSince1970), lastHostDeliveryAt: lastHostDeliveryAt) {
+            RemoteCommandFreshness.composeSupersededByHostDelivery(
+                sentAt: Int(pending.createdAt.timeIntervalSince1970), lastHostDeliveryAt: lastHostDeliveryAt)
+        {
             let msg = "A bolus was delivered after this request was created — reopen the remote and try again."
             echo(RemoteCommand(kind: .bolusStatus, requestId: pending.requestId, status: .failed, message: msg))
-            lastError = msg; notifyRemoteBolusRejected(msg)
+            lastError = msg
+            notifyRemoteBolusRejected(msg)
             return
         }
-        let resolved = ResolvedBolus(units: pending.units, carbsGrams: pending.carbsGrams,
-                                     recordedBg: pending.bgMgdl, bgDate: pending.bgDate, iobUnits: pending.iobUnits,
-                                     usedIncludedStaleBG: pending.usedIncludedStaleBG)
+        let resolved = ResolvedBolus(
+            units: pending.units, carbsGrams: pending.carbsGrams,
+            recordedBg: pending.bgMgdl, bgDate: pending.bgDate, iobUnits: pending.iobUnits,
+            usedIncludedStaleBG: pending.usedIncludedStaleBG)
         // Derive the idempotency doseKey from the ORIGINAL WIRE request params (units + the raw
         // requested carbs/bg), matching `remoteDeliver` and `executeResolved`'s doc comment — NOT the
         // resolved/frozen `pending.carbsGrams`/`pending.bgMgdl` (which still drive the delivered dose via
         // `resolved` below). This keeps present→confirm and one-shot `remoteDeliver` producing the SAME
         // doseKey for the same wire request, so the recency guard + `begin()` conflict keying can't be
         // narrowed by the two flows disagreeing. Delivery is unchanged.
-        let dkey = RemoteBolusLedger.doseKey(units: pending.requestedUnits, carbsGrams: pending.requestedCarbsGrams,
-                                             bgMgdl: pending.requestedBgMgdl)
+        let dkey = RemoteBolusLedger.doseKey(
+            units: pending.requestedUnits, carbsGrams: pending.requestedCarbsGrams,
+            bgMgdl: pending.requestedBgMgdl)
         await executeResolved(resolved, requestId: pending.requestId, peerId: pending.peerId, doseKey: dkey)
     }
 
@@ -2201,12 +2450,14 @@ public final class AppModel {
     /// (partial) one so the remote can tell the user exactly what happened.
     private func bolusOutcome(requestId: String, delivered: Double) -> RemoteCommand {
         if source.lastBolusCancelled {
-            return RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .cancelled,
-                                 deliveredUnits: delivered,
-                                 message: String(format: "Cancelled · %.2f U delivered", delivered))
+            return RemoteCommand(
+                kind: .bolusStatus, requestId: requestId, status: .cancelled,
+                deliveredUnits: delivered,
+                message: String(format: "Cancelled · %.2f U delivered", delivered))
         }
-        return RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .delivered,
-                             deliveredUnits: delivered)
+        return RemoteCommand(
+            kind: .bolusStatus, requestId: requestId, status: .delivered,
+            deliveredUnits: delivered)
     }
 
     /// Deliver a bolus requested by a remote (Watch / Garmin / Mac / remote-iPhone). The **host is the
@@ -2215,10 +2466,12 @@ public final class AppModel {
     /// `remoteDivergenceLimitUnits` the bolus is **rejected** (stale-settings guard) rather than
     /// delivering a surprising amount. Units-mode requests deliver the sent `units` unchanged. Carbs are
     /// recorded on the pump (metadata, via the backend) and locally for the smart features.
-    public func remoteDeliver(requestId: String, units: Double? = nil, carbsGrams: Double? = nil,
-                              bgMgdl: Int? = nil, remoteEstimate: Double? = nil, passcode: String? = nil,
-                              includeStaleBG: Bool = false, sentAt: Int? = nil,
-                              from surface: AccessPolicy.Surface = .phoneUI, peerId: String = "local") async {
+    public func remoteDeliver(
+        requestId: String, units: Double? = nil, carbsGrams: Double? = nil,
+        bgMgdl: Int? = nil, remoteEstimate: Double? = nil, passcode: String? = nil,
+        includeStaleBG: Bool = false, sentAt: Int? = nil,
+        from surface: AccessPolicy.Surface = .phoneUI, peerId: String = "local"
+    ) async {
         // The OPTIONAL Garmin bolus passcode. Do the ONE stateful `verify()` HERE (it arms the
         // exponential backoff on a wrong entry), then hand the evaluator a pure required/satisfied pair.
         // GARMIN ONLY. An ABSENT code is NOT run through `verify()` (so a caller that never prompts
@@ -2233,17 +2486,23 @@ public final class AppModel {
         }
         // Gate through the single evaluator (child mode for local/Garmin; the `.bolus` peer
         // permission + `remotesReadOnly` for an authenticated peer). Echo the exact denial reason.
-        let decision = accessDecision(.deliverBolus, from: surface, peerId: peerId,
-                                      bolusPasscodeRequired: passcodeRequired,
-                                      bolusPasscodeSatisfied: passcodeSatisfied)
+        let decision = accessDecision(
+            .deliverBolus, from: surface, peerId: peerId,
+            bolusPasscodeRequired: passcodeRequired,
+            bolusPasscodeSatisfied: passcodeSatisfied)
         guard decision.allowed else {
-            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed,
-                               message: decision.reason?.userMessage ?? "Not allowed"))
+            echo(
+                RemoteCommand(
+                    kind: .bolusStatus, requestId: requestId, status: .failed,
+                    message: decision.reason?.userMessage ?? "Not allowed"))
             return
         }
-        guard let resolved = await resolveRemoteDose(requestId: requestId, units: units, carbsGrams: carbsGrams,
-                                                     bgMgdl: bgMgdl, remoteEstimate: remoteEstimate,
-                                                     includeStaleBG: includeStaleBG) else { return }
+        guard
+            let resolved = await resolveRemoteDose(
+                requestId: requestId, units: units, carbsGrams: carbsGrams,
+                bgMgdl: bgMgdl, remoteEstimate: remoteEstimate,
+                includeStaleBG: includeStaleBG)
+        else { return }
         // Enforce the app-level remote-only per-bolus ceiling on the DELIVER path — it was
         // previously only ADVERTISED via `statusCommand`, so a stale/buggy Watch/Garmin that computed
         // off an earlier, higher ceiling could deliver above the user's just-lowered per-bolus cap. Remote
@@ -2256,10 +2515,12 @@ public final class AppModel {
         if surface.isRemote {
             let ceiling = remoteBolusMaximum(pumpMax: snapshot.maxBolusUnits)
             if ceiling > 0, resolved.units > ceiling {
-                let msg = String(format: "Dose %.2f U is above your remote limit of %.2f U — lower it and try again.",
-                                 resolved.units, ceiling)
+                let msg = String(
+                    format: "Dose %.2f U is above your remote limit of %.2f U — lower it and try again.",
+                    resolved.units, ceiling)
                 echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
-                lastError = msg; notifyRemoteBolusRejected(msg)
+                lastError = msg
+                notifyRemoteBolusRejected(msg)
                 return
             }
         }
@@ -2268,10 +2529,13 @@ public final class AppModel {
         // Placed BEFORE executeResolved (and thus before the ledger `begin`), so a superseded request never
         // reaches the pump and records no entry; a legitimate recompose with a fresh `sentAt` proceeds normally.
         if surface.isRemote,
-           RemoteCommandFreshness.composeSupersededByHostDelivery(sentAt: sentAt, lastHostDeliveryAt: lastHostDeliveryAt) {
+            RemoteCommandFreshness.composeSupersededByHostDelivery(
+                sentAt: sentAt, lastHostDeliveryAt: lastHostDeliveryAt)
+        {
             let msg = "A bolus was delivered after this request was created — reopen the remote and try again."
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
-            lastError = msg; notifyRemoteBolusRejected(msg)
+            lastError = msg
+            notifyRemoteBolusRejected(msg)
             return
         }
         let dkey = RemoteBolusLedger.doseKey(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
@@ -2285,10 +2549,12 @@ public final class AppModel {
         // mirroring the host-delivery-supersession placement above, so a rejected recompose never reaches the pump and records
         // no new entry.
         if !deliveryLedgerCoordinator.hasExistingEntry(peerId: peerId, requestId: requestId),
-           deliveryLedgerCoordinator.hasRecentlyDeliveredDuplicate(peerId: peerId, doseKey: dkey) {
+            deliveryLedgerCoordinator.hasRecentlyDeliveredDuplicate(peerId: peerId, doseKey: dkey)
+        {
             let msg = "A matching bolus was just delivered — if you meant to dose again, wait a moment and resend."
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
-            lastError = msg; notifyRemoteBolusRejected(msg)
+            lastError = msg
+            notifyRemoteBolusRejected(msg)
             return
         }
         await executeResolved(resolved, requestId: requestId, peerId: peerId, doseKey: dkey)
@@ -2298,12 +2564,12 @@ public final class AppModel {
     /// Once resolved, delivery uses THESE values verbatim — the number seen/approved is the number that
     /// delivers.
     struct ResolvedBolus: Equatable, Sendable {
-        let units: Double            // frozen authoritative dose
+        let units: Double  // frozen authoritative dose
         let carbsGrams: Double?
-        let recordedBg: Int?         // the glucose the dose was computed from (→ pump metadata)
-        let bgDate: Date?            // provenance/age of that glucose
-        let iobUnits: Double?        // IOB the calc used
-        var inputsVerified: Bool = true   // frozen verification state (remotes never resolve unverified)
+        let recordedBg: Int?  // the glucose the dose was computed from (→ pump metadata)
+        let bgDate: Date?  // provenance/age of that glucose
+        let iobUnits: Double?  // IOB the calc used
+        var inputsVerified: Bool = true  // frozen verification state (remotes never resolve unverified)
         /// Frozen provenance — true ONLY when the correction basis was the host's OWN
         /// acknowledged stale reading (the include-stale path). Gates nothing; carried through for audit
         /// (→ `RemoteBolusLedger.Entry`) so a delivered include-stale dose is durably attributable.
@@ -2322,9 +2588,11 @@ public final class AppModel {
     /// recomputes from its OWN reading. When intent is set and the host's own reading is genuinely stale
     /// AND equals the wire value (a consistency gate), the correction basis becomes the host's stale
     /// `snapshot.glucose`; otherwise the basis fails closed to carbs-only exactly as before.
-    private func resolveRemoteDose(requestId: String, units: Double?, carbsGrams: Double?,
-                                   bgMgdl: Int?, remoteEstimate: Double?,
-                                   includeStaleBG: Bool = false) async -> ResolvedBolus? {
+    private func resolveRemoteDose(
+        requestId: String, units: Double?, carbsGrams: Double?,
+        bgMgdl: Int?, remoteEstimate: Double?,
+        includeStaleBG: Bool = false
+    ) async -> ResolvedBolus? {
         // A carbs-MODE request is signalled by `carbsGrams` being present at all — INCLUDING 0, a
         // correction-only dose (high BG, no food) the wrist can legitimately compute. The old `carbs > 0`
         // guard routed a zero-carb correction to the units path (units 0 → "no insulin needed"), silently
@@ -2337,7 +2605,8 @@ public final class AppModel {
         guard let est = remoteEstimate, est.isFinite else {
             let msg = "Missing dose estimate — reopen the remote and try again."
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
-            lastError = msg; notifyRemoteBolusRejected(msg)
+            lastError = msg
+            notifyRemoteBolusRejected(msg)
             return nil
         }
         await refreshGlucoseNow()
@@ -2353,22 +2622,26 @@ public final class AppModel {
         let usedStale: Bool
         if let fresh = freshCorrectionBG {
             // Fresh reading present ⇒ it always wins (UNCHANGED behavior).
-            basis = fresh; usedStale = false
+            basis = fresh
+            usedStale = false
         } else if includeStaleBG, let g = snapshot.glucose, snapshot.isGlucoseStale,
-                  GlucoseFreshness.withinIncludableStaleness(snapshot.glucoseDate),
-                  let wire = bgMgdl, wire == g {
+            GlucoseFreshness.withinIncludableStaleness(snapshot.glucoseDate),
+            let wire = bgMgdl, wire == g
+        {
             // Acknowledged-stale path: the remote explicitly asked to include the stale reading AND the
             // host's OWN reading is genuinely stale-but-present AND — CRITICALLY — is no older than
             // `GlucoseFreshness.maxIncludableStaleness` (default 15 min, the includable-age CAP) AND matches
             // the wire value the remote estimated from. Recompute the correction from the host's own stale
             // reading (real-not-modelled). The age cap bounds this branch: without it a full
             // insulin-INCREASING correction could be recomputed off a reading of arbitrary age.
-            basis = g; usedStale = true
+            basis = g
+            usedStale = true
         } else {
             // Fail closed to carbs-only: no intent, no reading, stale-but-no-intent, a stale reading OLDER
             // than the includable cap (`maxIncludableStaleness`), or a host≠client mismatch. Identical to
             // today's carbs-only behavior.
-            basis = nil; usedStale = false
+            basis = nil
+            usedStale = false
         }
         let rec = await recommendBolus(carbsGrams: carbs, bgMgdl: basis)
         // A remote/automatic surface must NEVER auto-deliver a dose computed from unverified
@@ -2377,20 +2650,24 @@ public final class AppModel {
         guard rec.inputsVerified else {
             let msg = "Pump settings not verified yet — open faBolus on the phone to confirm this dose."
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
-            lastError = msg; notifyRemoteBolusRejected(msg)
+            lastError = msg
+            notifyRemoteBolusRejected(msg)
             return nil
         }
         let dose = rec.recommendedUnits
         // Wrist/Mac-vs-host divergence guard (advisory defense-in-depth, not authentication).
         if abs(dose - est) > Self.remoteDivergenceLimitUnits {
-            let msg = String(format: "Dose changed since your estimate (%.2f U → %.2f U). Reopen and confirm.", est, dose)
+            let msg = String(
+                format: "Dose changed since your estimate (%.2f U → %.2f U). Reopen and confirm.", est, dose)
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
-            lastError = msg; notifyRemoteBolusRejected(msg)
+            lastError = msg
+            notifyRemoteBolusRejected(msg)
             return nil
         }
-        return ResolvedBolus(units: dose, carbsGrams: carbs, recordedBg: basis,
-                             bgDate: snapshot.glucoseDate, iobUnits: snapshot.iobUnits, inputsVerified: true,
-                             usedIncludedStaleBG: usedStale)
+        return ResolvedBolus(
+            units: dose, carbsGrams: carbs, recordedBg: basis,
+            bgDate: snapshot.glucoseDate, iobUnits: snapshot.iobUnits, inputsVerified: true,
+            usedIncludedStaleBG: usedStale)
     }
 
     // MARK: - Durable delivery ledger — thin adapters over `DeliveryLedgerCoordinator`
@@ -2423,41 +2700,50 @@ public final class AppModel {
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: "No insulin needed"))
             return
         }
-        let outcome = await deliveryLedgerCoordinator.runLedgeredDelivery(peerId: peerId, requestId: requestId, doseKey: doseKey,
+        let outcome = await deliveryLedgerCoordinator.runLedgeredDelivery(
+            peerId: peerId, requestId: requestId, doseKey: doseKey,
             usedIncludedStaleBG: r.usedIncludedStaleBG,
             onStarted: { [weak self] in
                 self?.echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .delivering))
-            }) {
-            try await self.source.deliverBolus(units: r.units, carbsGrams: r.carbsGrams,
-                                               bgMgdl: r.recordedBg, iobUnits: r.iobUnits)   // frozen IOB
+            }
+        ) {
+            try await self.source.deliverBolus(
+                units: r.units, carbsGrams: r.carbsGrams,
+                bgMgdl: r.recordedBg, iobUnits: r.iobUnits)  // frozen IOB
         }
         switch outcome {
         case .duplicateInFlight:
             return
         case .replay(let status, let message, let deliveredUnits):
-            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId,
-                               status: RemoteCommand.Status(rawValue: status) ?? .failed,
-                               deliveredUnits: deliveredUnits, message: message))
+            echo(
+                RemoteCommand(
+                    kind: .bolusStatus, requestId: requestId,
+                    status: RemoteCommand.Status(rawValue: status) ?? .failed,
+                    deliveredUnits: deliveredUnits, message: message))
             return
         case .blocked(let msg):
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
-            lastError = msg; notifyRemoteBolusRejected(msg)
+            lastError = msg
+            notifyRemoteBolusRejected(msg)
         case .delivered(let units, _):
             if let c = r.carbsGrams, c > 0 { recordCarbs(grams: c) }
-            lastHostDeliveryAt = Date()   // stamp a completed host delivery (double-dose backstop)
+            lastHostDeliveryAt = Date()  // stamp a completed host delivery (double-dose backstop)
             echo(bolusOutcome(requestId: requestId, delivered: units))
             lastError = nil
         case .indeterminate:
             lastError = Self.indeterminateOutcomeLockedCopy
-            lastHostDeliveryAt = Date()   // an indeterminate outcome MAY have delivered — stamp supersession too (defense-in-depth)
+            lastHostDeliveryAt = Date()  // an indeterminate outcome MAY have delivered — stamp supersession too (defense-in-depth)
             // Peer wire: this `.unknown` echo message is UNCHANGED — already the locked copy, byte-identical.
-            echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .unknown,
-                               message: Self.indeterminateOutcomeLockedCopy))
+            echo(
+                RemoteCommand(
+                    kind: .bolusStatus, requestId: requestId, status: .unknown,
+                    message: Self.indeterminateOutcomeLockedCopy))
             // An immediate GOVERNED heads-up (.warning), alongside — never replacing — the
             // AUTHORITATIVE `.bolusReconciliation` post issued later for this same ledger entry.
-            postSafety(.bolusIndeterminate, severity: .warning,
-                       title: Self.indeterminateOutcomeLockedCopy, body: Self.indeterminateOutcomeLockedCopy,
-                       dedupeKey: "indeterminate-\(peerId)-\(requestId)")
+            postSafety(
+                .bolusIndeterminate, severity: .warning,
+                title: Self.indeterminateOutcomeLockedCopy, body: Self.indeterminateOutcomeLockedCopy,
+                dedupeKey: "indeterminate-\(peerId)-\(requestId)")
         case .failed(let msg):
             lastError = msg
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .failed, message: msg))
@@ -2506,7 +2792,9 @@ public final class AppModel {
     /// Deliver a bolus confirmed on the Quick-Bolus widget (its 1-2-3 tap is the confirmation).
     /// Same validated signed path as a remote bolus; returns the outcome so the widget can show
     /// delivered/cancelled/failed in place.
-    public func deliverWidgetBolus(requestId: String, units: Double, carbsGrams: Double? = nil, bgMgdl: Int? = nil) async -> (delivered: Double, cancelled: Bool, error: String?) {
+    public func deliverWidgetBolus(requestId: String, units: Double, carbsGrams: Double? = nil, bgMgdl: Int? = nil)
+        async -> (delivered: Double, cancelled: Bool, error: String?)
+    {
         // The Quick-Bolus widget is a LOCAL surface, so the single evaluator applies child mode AND
         // phone read-only (the widget must honor read-only; the remote-peer paths bypass it).
         let decision = accessDecision(.deliverBolus, from: .quickBolusWidget)
@@ -2517,16 +2805,18 @@ public final class AppModel {
         }
         // Durable ledger + global unresolved-delivery block, same as every other surface.
         let dkey = RemoteBolusLedger.doseKey(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
-        let outcome = await deliveryLedgerCoordinator.runLedgeredDelivery(peerId: "widget", requestId: requestId, doseKey: dkey,
+        let outcome = await deliveryLedgerCoordinator.runLedgeredDelivery(
+            peerId: "widget", requestId: requestId, doseKey: dkey,
             onStarted: { [weak self] in
                 self?.echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .delivering))
-            }) {
+            }
+        ) {
             try await self.source.deliverBolus(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
         }
         defer { refresh() }
         switch outcome {
         case .duplicateInFlight:
-            return (0, false, nil)   // already delivering; don't deliver again
+            return (0, false, nil)  // already delivering; don't deliver again
         case .replay(let status, _, let deliveredUnits):
             return (deliveredUnits ?? 0, status == RemoteCommand.Status.cancelled.rawValue, nil)
         case .blocked(let msg):
@@ -2535,7 +2825,7 @@ public final class AppModel {
             return (0, false, msg)
         case .delivered(let delivered, let cancelled):
             if let c = carbsGrams, c > 0 { recordCarbs(grams: c) }
-            lastHostDeliveryAt = Date()   // the widget path participates in host-delivery supersession too
+            lastHostDeliveryAt = Date()  // the widget path participates in host-delivery supersession too
             echo(bolusOutcome(requestId: requestId, delivered: delivered))
             lastError = nil
             return (delivered, cancelled, nil)
@@ -2543,15 +2833,16 @@ public final class AppModel {
             // Peer wire: the `.unknown` echo message stays this EXACT ORIGINAL shorter string,
             // byte-identical — split out from the USER-FACING copy below.
             let echoMsg = Self.widgetIndeterminateEchoMessage
-            let userMsg = Self.indeterminateOutcomeLockedCopy   // USER-FACING copy converges to the locked copy
+            let userMsg = Self.indeterminateOutcomeLockedCopy  // USER-FACING copy converges to the locked copy
             lastError = userMsg
-            lastHostDeliveryAt = Date()   // an indeterminate outcome MAY have delivered — stamp supersession too (defense-in-depth)
+            lastHostDeliveryAt = Date()  // an indeterminate outcome MAY have delivered — stamp supersession too (defense-in-depth)
             echo(RemoteCommand(kind: .bolusStatus, requestId: requestId, status: .unknown, message: echoMsg))
             // An immediate GOVERNED heads-up (.warning), alongside — never replacing — the
             // AUTHORITATIVE `.bolusReconciliation` post issued later for this same ledger entry.
-            postSafety(.bolusIndeterminate, severity: .warning,
-                       title: Self.indeterminateOutcomeLockedCopy, body: Self.indeterminateOutcomeLockedCopy,
-                       dedupeKey: "indeterminate-widget-\(requestId)")
+            postSafety(
+                .bolusIndeterminate, severity: .warning,
+                title: Self.indeterminateOutcomeLockedCopy, body: Self.indeterminateOutcomeLockedCopy,
+                dedupeKey: "indeterminate-widget-\(requestId)")
             return (0, false, userMsg)
         case .failed(let msg):
             lastError = msg
@@ -2568,4 +2859,3 @@ public final class AppModel {
         pendingRemoteBolus = nil
     }
 }
-

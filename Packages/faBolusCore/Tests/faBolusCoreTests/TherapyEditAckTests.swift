@@ -11,8 +11,8 @@ struct TherapyEditAckTests {
     @Test func firstUseDisclosureNamesTheAutomatedDeliveryImpact() {
         let d = TherapyEditAck.firstUseDisclosure
         #expect(!d.isEmpty)
-        #expect(d.contains("automated insulin delivery"))     // the distinct fact vs the S8 clinical-ownership ack
-        #expect(d.contains("around the clock"))                // not just the next manual bolus
+        #expect(d.contains("automated insulin delivery"))  // the distinct fact vs the S8 clinical-ownership ack
+        #expect(d.contains("around the clock"))  // not just the next manual bolus
         #expect(d.contains("not medical advice"))
         // Mechanism precision (§13 review): only basal + correction factor drive Control-IQ automation;
         // carb ratio + target size the manually-entered doses.

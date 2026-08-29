@@ -21,15 +21,16 @@ final class PatternInsightsTests: XCTestCase {
     }
 
     func testTirInsightAlwaysPresentAboveThreshold() {
-        let cgm = series(days: 4, stepMinutes: 5, lowHour: nil)   // 1153 pts over 4 days
+        let cgm = series(days: 4, stepMinutes: 5, lowHour: nil)  // 1153 pts over 4 days
         XCTAssertGreaterThan(cgm.count, 100)
         let out = PatternInsights().insights(cgm: cgm)
-        XCTAssertTrue(out.contains { $0.title.hasPrefix("Time in range:") },
-                      "the TIR insight is appended unconditionally once past the threshold")
+        XCTAssertTrue(
+            out.contains { $0.title.hasPrefix("Time in range:") },
+            "the TIR insight is appended unconditionally once past the threshold")
     }
 
     func testRecurringLowClusterDetectedAtInjectedHour() {
-        let cgm = series(days: 4, stepMinutes: 5, lowHour: 2)     // ~48 lows in local-hour 2 across 4 days
+        let cgm = series(days: 4, stepMinutes: 5, lowHour: 2)  // ~48 lows in local-hour 2 across 4 days
         let out = PatternInsights().insights(cgm: cgm)
         let low = out.first { $0.title.hasPrefix("Recurring lows") }
         XCTAssertNotNil(low, "a recurring-low cluster should be flagged for the injected low hour")
@@ -62,8 +63,9 @@ final class PatternInsightsTests: XCTestCase {
         let cgm = series(days: 4, stepMinutes: 5, lowHour: 2)
         let out = PatternInsights().insights(cgm: cgm)
         let low = out.first { $0.title.hasPrefix("Recurring lows") }
-        XCTAssertTrue(low?.detail.contains("70 mg/dL") ?? false,
-                      "unconverted default must still render the bare mg/dL literal exactly as before")
+        XCTAssertTrue(
+            low?.detail.contains("70 mg/dL") ?? false,
+            "unconverted default must still render the bare mg/dL literal exactly as before")
     }
 
     func testMmolUnitConvertsRecurringLowDetail() {

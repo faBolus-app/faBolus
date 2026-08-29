@@ -86,15 +86,15 @@ struct GlucoseWidgetView: View {
                 Image(systemName: "drop.fill").font(.title3)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("\(bg) \(arrow)").font(.system(size: 22, weight: .semibold, design: .rounded))
-                    // Restore the VoiceOver band word on the value itself, leaving the IOB
-                    // caption below as its own separate, unchanged spoken element.
+                        // Restore the VoiceOver band word on the value itself, leaving the IOB
+                        // caption below as its own separate, unchanged spoken element.
                         .accessibilityLabel(glucoseA11yLabel)
                     Text("IOB \(String(format: "%.1f U", snap.iobUnits))").font(.caption2)
                 }
             }
             .containerBackground(.clear, for: .widget)
 
-        default: // .systemSmall
+        default:  // .systemSmall
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(bg).font(.system(size: 44, weight: .bold, design: .rounded)).foregroundStyle(color)

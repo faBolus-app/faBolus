@@ -18,10 +18,10 @@ struct CgmStatusView: View {
 
     /// How one configured failover source relates to the live glucose picture.
     enum Classification: Equatable {
-        case activeFailover        // arbitrated as the live source right now (provenance == .failover(this))
-        case armedPumpLive         // the running source, but the pump feed is live (no failover active)
-        case selectedNotArmed      // selected in Settings but not yet the running instance — reopen to arm
-        case configuredNotSelected // has saved config but isn't the selected source
+        case activeFailover  // arbitrated as the live source right now (provenance == .failover(this))
+        case armedPumpLive  // the running source, but the pump feed is live (no failover active)
+        case selectedNotArmed  // selected in Settings but not yet the running instance — reopen to arm
+        case configuredNotSelected  // has saved config but isn't the selected source
     }
 
     /// One row of the surface. Live `statusCaseName`/`ageSeconds` are populated ONLY for the armed
@@ -38,8 +38,10 @@ struct CgmStatusView: View {
     /// No UserDefaults, no view — the active-failover decision is read from the already-arbitrated
     /// `provenance` (never recomputed here). `nonisolated` (like `CgmCredentialsView`'s pure helpers)
     /// so `CgmStatusSurfaceTests` can exercise it off the main actor without instantiating the view.
-    nonisolated static func classify(sourceId: String, selectedId: String?, armedId: String?,
-                                     provenance: GlucoseProvenance) -> Classification {
+    nonisolated static func classify(
+        sourceId: String, selectedId: String?, armedId: String?,
+        provenance: GlucoseProvenance
+    ) -> Classification {
         if case let .failover(activeId, _) = provenance, activeId == sourceId {
             return .activeFailover
         }
@@ -50,16 +52,19 @@ struct CgmStatusView: View {
 
     /// Pure row builder: one `Row` per configured source, live status/age attached only to the armed
     /// one. Order is the caller's (registry order in the view).
-    nonisolated static func rows(configured: [(id: String, name: String)],
-                                 selectedId: String?, armedId: String?,
-                                 provenance: GlucoseProvenance,
-                                 armedStatusCaseName: String?, armedAgeSeconds: Int?) -> [Row] {
+    nonisolated static func rows(
+        configured: [(id: String, name: String)],
+        selectedId: String?, armedId: String?,
+        provenance: GlucoseProvenance,
+        armedStatusCaseName: String?, armedAgeSeconds: Int?
+    ) -> [Row] {
         configured.map { c in
             let cls = classify(sourceId: c.id, selectedId: selectedId, armedId: armedId, provenance: provenance)
             let isArmed = (armedId == c.id)
-            return Row(id: c.id, name: c.name, classification: cls,
-                       statusCaseName: isArmed ? armedStatusCaseName : nil,
-                       ageSeconds: isArmed ? armedAgeSeconds : nil)
+            return Row(
+                id: c.id, name: c.name, classification: cls,
+                statusCaseName: isArmed ? armedStatusCaseName : nil,
+                ageSeconds: isArmed ? armedAgeSeconds : nil)
         }
     }
 
@@ -68,21 +73,21 @@ struct CgmStatusView: View {
     /// reaches this surface).
     nonisolated static func statusCaseName(_ status: GlucoseSourceStatus) -> String {
         switch status {
-        case .idle:       return "idle"
+        case .idle: return "idle"
         case .needsSetup: return "needsSetup"
-        case .searching:  return "searching"
-        case .connected:  return "connected"
-        case .stale:      return "stale"
-        case .error:      return "error"
+        case .searching: return "searching"
+        case .connected: return "connected"
+        case .stale: return "stale"
+        case .error: return "error"
         }
     }
 
     /// Short human label for a row's classification.
     nonisolated static func classificationLabel(_ c: Classification) -> String {
         switch c {
-        case .activeFailover:        return "Active failover — live now"
-        case .armedPumpLive:         return "Armed — pump feed is live"
-        case .selectedNotArmed:      return "Selected — reopen the app to arm"
+        case .activeFailover: return "Active failover — live now"
+        case .armedPumpLive: return "Armed — pump feed is live"
+        case .selectedNotArmed: return "Selected — reopen the app to arm"
         case .configuredNotSelected: return "Configured — not selected"
         }
     }
@@ -93,8 +98,10 @@ struct CgmStatusView: View {
     /// must pass the already-validated selection (`GlucoseSourceRegistry.selected()`, not the raw id)
     /// so `nil` always means "not selected" at both call sites. Pure so it is unit-testable without a
     /// live view.
-    nonisolated static func selectionStatusSubtitle(selected: (id: String, name: String)?, armedId: String?,
-                                                     provenance: GlucoseProvenance) -> (text: String, isActive: Bool) {
+    nonisolated static func selectionStatusSubtitle(
+        selected: (id: String, name: String)?, armedId: String?,
+        provenance: GlucoseProvenance
+    ) -> (text: String, isActive: Bool) {
         guard let selected else {
             return ("Pump only — no failover source selected", false)
         }
@@ -127,12 +134,13 @@ struct CgmStatusView: View {
     private var statusRows: [Row] {
         let probe = model.glucoseSourceProbe
         let age = probe?.latest.map { Int(max(0, Date().timeIntervalSince($0.date))) }
-        return Self.rows(configured: configuredSources(),
-                         selectedId: GlucoseSourceRegistry.selectedId(),
-                         armedId: probe?.id,
-                         provenance: model.glucoseProvenance,
-                         armedStatusCaseName: probe.map { Self.statusCaseName($0.status) },
-                         armedAgeSeconds: age)
+        return Self.rows(
+            configured: configuredSources(),
+            selectedId: GlucoseSourceRegistry.selectedId(),
+            armedId: probe?.id,
+            provenance: model.glucoseProvenance,
+            armedStatusCaseName: probe.map { Self.statusCaseName($0.status) },
+            armedAgeSeconds: age)
     }
 
     /// True when the persisted selection differs from the running instance — a Test then runs against
@@ -154,7 +162,9 @@ struct CgmStatusView: View {
             } header: {
                 Text("Configured sources")
             } footer: {
-                Text("Live status for each source you've configured. Only ONE source is armed at a time — the one you selected — so status and age are live only for that source; the rest are shown for reference. This reads the same arbitration the live glucose badge uses; it never changes how the app doses.")
+                Text(
+                    "Live status for each source you've configured. Only ONE source is armed at a time — the one you selected — so status and age are live only for that source; the rest are shown for reference. This reads the same arbitration the live glucose badge uses; it never changes how the app doses."
+                )
             }
 
             // Read-only echo of the most recent Test outcome. This page never hosts a Test button
@@ -189,14 +199,18 @@ struct CgmStatusView: View {
             } header: {
                 Text("Last test result")
             } footer: {
-                Text("A read-only echo of the most recent Test you ran on the CGM credentials & testing page. This page never re-runs the test itself.")
+                Text(
+                    "A read-only echo of the most recent Test you ran on the CGM credentials & testing page. This page never re-runs the test itself."
+                )
             }
 
             if needsRelaunchToArm {
                 Section {
                     Label {
-                        Text("You changed your failover source — **reopen the app to arm it**. Until then, a **Test** runs against the newly-selected source, but the previously-armed source is still what would actually drive failover.")
-                            .font(.footnote)
+                        Text(
+                            "You changed your failover source — **reopen the app to arm it**. Until then, a **Test** runs against the newly-selected source, but the previously-armed source is still what would actually drive failover."
+                        )
+                        .font(.footnote)
                     } icon: {
                         Image(systemName: "arrow.clockwise.circle.fill").foregroundStyle(.orange)
                     }

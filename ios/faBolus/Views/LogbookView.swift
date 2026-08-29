@@ -5,7 +5,7 @@ import faBolusCore
 /// mapped to neutral `HistoryEvent`s. Read-only. Grouped by day, newest first.
 struct LogbookView: View {
     @Bindable var model: AppModel
-    @State private var filter: HistoryEvent.Category? = nil
+    @State private var filter: HistoryEvent.Category?
 
     private var filtered: [HistoryEvent] {
         guard let f = filter else { return model.historyEvents }
@@ -23,9 +23,12 @@ struct LogbookView: View {
         NavigationStack {
             Group {
                 if model.historyEvents.isEmpty {
-                    ContentUnavailableView("No history yet",
+                    ContentUnavailableView(
+                        "No history yet",
                         systemImage: "clock.arrow.circlepath",
-                        description: Text("Pump history loads after connecting. Boluses, carbs, basal changes, alerts, and cartridge events appear here."))
+                        description: Text(
+                            "Pump history loads after connecting. Boluses, carbs, basal changes, alerts, and cartridge events appear here."
+                        ))
                 } else {
                     List {
                         ForEach(sections, id: \.day) { section in
@@ -43,12 +46,16 @@ struct LogbookView: View {
                         Button("All events") { filter = nil }
                         Divider()
                         ForEach(HistoryEvent.Category.allCases, id: \.self) { cat in
-                            Button { filter = cat } label: {
+                            Button {
+                                filter = cat
+                            } label: {
                                 Label(cat.rawValue.capitalized, systemImage: cat.symbol)
                             }
                         }
                     } label: {
-                        Image(systemName: filter == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
+                        Image(
+                            systemName: filter == nil
+                                ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill")
                     }
                     // The filled-vs-unfilled glyph is a color/shape-only cue for "a filter is
                     // active" — VoiceOver otherwise announces only the raw symbol name. Speak the

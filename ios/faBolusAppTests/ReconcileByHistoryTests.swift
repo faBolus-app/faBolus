@@ -35,12 +35,16 @@ struct ReconcileByHistoryTests {
     }
 
     private func scriptLastBolus(_ fake: FakePumpTransport, bolusId: Int, deliveredMilliunits: UInt32 = 2000) {
-        fake.script(LastBolusStatusV2Response.props.opCode,
-                   .frame(FakePumpTransport.lastBolus(bolusId: bolusId, deliveredMilliunits: deliveredMilliunits)))
+        fake.script(
+            LastBolusStatusV2Response.props.opCode,
+            .frame(FakePumpTransport.lastBolus(bolusId: bolusId, deliveredMilliunits: deliveredMilliunits)))
     }
     private func scriptHistoryStatus(_ fake: FakePumpTransport, numEntries: UInt32, first: UInt32, last: UInt32) {
-        fake.script(HistoryLogStatusResponse.props.opCode,
-                   .frame(FakePumpTransport.historyLogStatus(numEntries: numEntries, firstSequenceNum: first, lastSequenceNum: last)))
+        fake.script(
+            HistoryLogStatusResponse.props.opCode,
+            .frame(
+                FakePumpTransport.historyLogStatus(
+                    numEntries: numEntries, firstSequenceNum: first, lastSequenceNum: last)))
     }
 
     // MARK: - reconcile(bolusId:) — newer-intervening-bolus resolved by exact-id history search
@@ -59,9 +63,13 @@ struct ReconcileByHistoryTests {
 
             let task = Task { await backend.reconcile(bolusId: unresolvedId) }
             try? await Task.sleep(nanoseconds: 150_000_000)
-            backend.injectHistoryLogFrameForTesting(FakePumpTransport.historyLogStream(bolusRecordsById: [
-                (seq: 995, pumpTimeSec: 900_000, bolusId: unresolvedId, delivered: 1.5, iob: 0.5, completionStatusId: 3)
-            ]))
+            backend.injectHistoryLogFrameForTesting(
+                FakePumpTransport.historyLogStream(bolusRecordsById: [
+                    (
+                        seq: 995, pumpTimeSec: 900_000, bolusId: unresolvedId, delivered: 1.5, iob: 0.5,
+                        completionStatusId: 3
+                    )
+                ]))
             let result = await task.value
             #expect(result == .resolved(deliveredUnits: 1.5, cancelled: false))
         }
@@ -79,9 +87,13 @@ struct ReconcileByHistoryTests {
 
             let task = Task { await backend.reconcile(bolusId: unresolvedId) }
             try? await Task.sleep(nanoseconds: 150_000_000)
-            backend.injectHistoryLogFrameForTesting(FakePumpTransport.historyLogStream(bolusRecordsById: [
-                (seq: 994, pumpTimeSec: 900_100, bolusId: unresolvedId, delivered: 0, iob: 0.1, completionStatusId: 5)
-            ]))
+            backend.injectHistoryLogFrameForTesting(
+                FakePumpTransport.historyLogStream(bolusRecordsById: [
+                    (
+                        seq: 994, pumpTimeSec: 900_100, bolusId: unresolvedId, delivered: 0, iob: 0.1,
+                        completionStatusId: 5
+                    )
+                ]))
             let result = await task.value
             #expect(result == .resolved(deliveredUnits: 0, cancelled: false))
         }
@@ -114,7 +126,9 @@ struct ReconcileByHistoryTests {
             let result = await backend.reconcile(bolusId: unresolvedId)
             #expect(result == .unavailable)
             let pageCount = fake.sent.filter { $0.opCode == HistoryLogRequest.props.opCode }.count
-            #expect(pageCount <= 4, "the exact-id search must stop at its own small page cap (got \(pageCount) page requests)")
+            #expect(
+                pageCount <= 4,
+                "the exact-id search must stop at its own small page cap (got \(pageCount) page requests)")
             #expect(pageCount > 0, "the search must have actually tried at least one page before giving up")
         }
     }
@@ -129,10 +143,12 @@ struct ReconcileByHistoryTests {
             scriptLastBolus(fake, bolusId: bolusId, deliveredMilliunits: 3250)
             let result = await backend.reconcile(bolusId: bolusId)
             #expect(result == .resolved(deliveredUnits: 3.25, cancelled: false))
-            #expect(!fake.sent.contains { $0.opCode == HistoryLogRequest.props.opCode },
-                    "the unchanged fast path must never fall through to a history request")
-            #expect(!fake.sent.contains { $0.opCode == HistoryLogStatusRequest.props.opCode },
-                    "the unchanged fast path must never even probe the history range")
+            #expect(
+                !fake.sent.contains { $0.opCode == HistoryLogRequest.props.opCode },
+                "the unchanged fast path must never fall through to a history request")
+            #expect(
+                !fake.sent.contains { $0.opCode == HistoryLogStatusRequest.props.opCode },
+                "the unchanged fast path must never even probe the history range")
         }
     }
 
@@ -154,13 +170,18 @@ struct ReconcileByHistoryTests {
             // Ascending wire order within the page: the OLDER id-reused record (seq 100, delivered 1.0)
             // comes first, the NEWER current record (seq 990, delivered 2.5) comes last. `last(where:)`
             // must pick the newer one — `first(where:)` (the pre-WR-04 bug) would have picked 1.0.
-            backend.injectHistoryLogFrameForTesting(FakePumpTransport.historyLogStream(bolusRecordsById: [
-                (seq: 100, pumpTimeSec: 100_000, bolusId: reusedId, delivered: 1.0, iob: 0.3, completionStatusId: 3),
-                (seq: 990, pumpTimeSec: 900_000, bolusId: reusedId, delivered: 2.5, iob: 0.9, completionStatusId: 3),
-            ]))
+            backend.injectHistoryLogFrameForTesting(
+                FakePumpTransport.historyLogStream(bolusRecordsById: [
+                    (
+                        seq: 100, pumpTimeSec: 100_000, bolusId: reusedId, delivered: 1.0, iob: 0.3,
+                        completionStatusId: 3
+                    ),
+                    (seq: 990, pumpTimeSec: 900_000, bolusId: reusedId, delivered: 2.5, iob: 0.9, completionStatusId: 3)
+                ]))
             let result = await task.value
-            #expect(result == .resolved(deliveredUnits: 2.5, cancelled: false),
-                    "the NEWEST (later-in-page) same-id record must win — got \(result)")
+            #expect(
+                result == .resolved(deliveredUnits: 2.5, cancelled: false),
+                "the NEWEST (later-in-page) same-id record must win — got \(result)")
         }
     }
 
@@ -178,10 +199,13 @@ struct ReconcileByHistoryTests {
             backend.historySearchPageTimeoutOverride = 0.08
             let assignedId = 1234
             fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
-            fake.script(BolusPermissionResponse.props.opCode, .frame(FakePumpTransport.permissionGranted(bolusId: assignedId)))
-            fake.script(InitiateBolusResponse.props.opCode, .tx(.timedOut(characteristic: .control, opCode: InitiateBolusResponse.props.opCode)))
+            fake.script(
+                BolusPermissionResponse.props.opCode, .frame(FakePumpTransport.permissionGranted(bolusId: assignedId)))
+            fake.script(
+                InitiateBolusResponse.props.opCode,
+                .tx(.timedOut(characteristic: .control, opCode: InitiateBolusResponse.props.opCode)))
             _ = try? await backend.deliverBolus(units: 2.0, carbsGrams: nil, bgMgdl: nil, iobUnits: nil)
-            #expect(backend.deliveryOutcomeUnknown)   // precondition: genuinely indeterminate
+            #expect(backend.deliveryOutcomeUnknown)  // precondition: genuinely indeterminate
 
             let newerId = 9999
             scriptLastBolus(fake, bolusId: newerId)
@@ -189,9 +213,13 @@ struct ReconcileByHistoryTests {
 
             let task = Task { await backend.reconcileIndeterminateDelivery() }
             try? await Task.sleep(nanoseconds: 150_000_000)
-            backend.injectHistoryLogFrameForTesting(FakePumpTransport.historyLogStream(bolusRecordsById: [
-                (seq: 1990, pumpTimeSec: 900_500, bolusId: assignedId, delivered: 2.0, iob: 1.0, completionStatusId: 3)
-            ]))
+            backend.injectHistoryLogFrameForTesting(
+                FakePumpTransport.historyLogStream(bolusRecordsById: [
+                    (
+                        seq: 1990, pumpTimeSec: 900_500, bolusId: assignedId, delivered: 2.0, iob: 1.0,
+                        completionStatusId: 3
+                    )
+                ]))
             let delivered = await task.value
             #expect(delivered == 2.0)
             #expect(!backend.deliveryOutcomeUnknown, "the hold must clear once the history search resolves the id")
@@ -207,8 +235,11 @@ struct ReconcileByHistoryTests {
             backend.historySearchPageTimeoutOverride = 0.08
             let assignedId = 1235
             fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
-            fake.script(BolusPermissionResponse.props.opCode, .frame(FakePumpTransport.permissionGranted(bolusId: assignedId)))
-            fake.script(InitiateBolusResponse.props.opCode, .tx(.timedOut(characteristic: .control, opCode: InitiateBolusResponse.props.opCode)))
+            fake.script(
+                BolusPermissionResponse.props.opCode, .frame(FakePumpTransport.permissionGranted(bolusId: assignedId)))
+            fake.script(
+                InitiateBolusResponse.props.opCode,
+                .tx(.timedOut(characteristic: .control, opCode: InitiateBolusResponse.props.opCode)))
             _ = try? await backend.deliverBolus(units: 1.0, carbsGrams: nil, bgMgdl: nil, iobUnits: nil)
             #expect(backend.deliveryOutcomeUnknown)
 

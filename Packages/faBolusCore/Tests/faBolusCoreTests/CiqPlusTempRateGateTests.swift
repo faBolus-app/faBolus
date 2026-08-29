@@ -17,8 +17,9 @@ struct CiqPlusTempRateGateTests {
         // Gate false ⇒ inert on EVERY variant, including .controlIQPro itself — the bench flag alone
         // decides whether the option can ever appear, before capability is even considered.
         for v in ControllerVariant.allCases {
-            #expect(CiqPlusTempRate.isOffered(benchVerified: false, controllerVariant: v) == false,
-                    "bench-unverified must never offer the option (variant \(v))")
+            #expect(
+                CiqPlusTempRate.isOffered(benchVerified: false, controllerVariant: v) == false,
+                "bench-unverified must never offer the option (variant \(v))")
         }
     }
 

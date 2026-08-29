@@ -22,10 +22,10 @@ final class CalcInputProvenanceTests: XCTestCase {
 
     func testInt32MaxBoundIsAcceptedAndOnePastIsRejected() {
         var cmd = RemoteCommand(kind: .statusRead, bgMgdl: 120)
-        cmd.iobEpochSec = Int(Int32.max)               // last accepted second (2038-01-19)
+        cmd.iobEpochSec = Int(Int32.max)  // last accepted second (2038-01-19)
         cmd.therapyEpochSec = Int(Int32.max)
         XCTAssertNoThrow(try cmd.validate())
-        cmd.iobEpochSec = Int(Int32.max) / 2 + Int(Int32.max) / 2 + 2   // one past, 32-bit-safe
+        cmd.iobEpochSec = Int(Int32.max) / 2 + Int(Int32.max) / 2 + 2  // one past, 32-bit-safe
         XCTAssertThrowsError(try cmd.validate())
         cmd.iobEpochSec = Int(Int32.max)
         cmd.therapyEpochSec = Int(Int32.max) / 2 + Int(Int32.max) / 2 + 2
@@ -48,7 +48,7 @@ final class CalcInputProvenanceTests: XCTestCase {
     func testCalcEpochBoundFitsInThirtyTwoBits() {
         guard Int.bitWidth > 32 else { return }
         var cmd = RemoteCommand(kind: .statusRead, bgMgdl: 120)
-        cmd.iobEpochSec = 4_102_444_800               // old 2100-01-01 ceiling
+        cmd.iobEpochSec = 4_102_444_800  // old 2100-01-01 ceiling
         XCTAssertThrowsError(try cmd.validate())
     }
 
@@ -60,7 +60,7 @@ final class CalcInputProvenanceTests: XCTestCase {
         XCTAssertNil(cmd.therapyEpochSec)
         try cmd.validate()
         cmd = RemoteCommand(kind: .statusRead, bgMgdl: 120)
-        cmd.iobEpochSec = Int(Date().timeIntervalSince1970)   // one present, one absent is fine
+        cmd.iobEpochSec = Int(Date().timeIntervalSince1970)  // one present, one absent is fine
         try cmd.validate()
         XCTAssertNil(cmd.therapyEpochSec)
     }

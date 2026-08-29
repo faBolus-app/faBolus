@@ -9,7 +9,7 @@ struct QRCodeView: View {
     var body: some View {
         if let img = Self.image(from: string) {
             Image(uiImage: img)
-                .interpolation(.none)          // keep the modules crisp
+                .interpolation(.none)  // keep the modules crisp
                 .resizable()
                 .scaledToFit()
                 .frame(width: size, height: size)

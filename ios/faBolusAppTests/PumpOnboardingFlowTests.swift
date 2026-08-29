@@ -28,14 +28,14 @@ struct PumpOnboardingFlowTests {
         #expect(!s.hasCompletedPumpOnboarding)
         s.completePumpOnboarding()
         #expect(s.hasCompletedPumpOnboarding)
-        #expect(store(d).hasCompletedPumpOnboarding)   // persisted across relaunch
+        #expect(store(d).hasCompletedPumpOnboarding)  // persisted across relaunch
     }
 
     @Test func pumpOnboardingFlagIsIndependentOfModeOnboardingFlag() {
         let d = freshDefaults()
         let s = store(d)
-        s.completeOnboarding()                          // mode step done…
-        #expect(!s.hasCompletedPumpOnboarding)           // …pump step is a SEPARATE one-time flag
+        s.completeOnboarding()  // mode step done…
+        #expect(!s.hasCompletedPumpOnboarding)  // …pump step is a SEPARATE one-time flag
         s.completePumpOnboarding()
         #expect(s.hasCompletedOnboarding && s.hasCompletedPumpOnboarding)
     }

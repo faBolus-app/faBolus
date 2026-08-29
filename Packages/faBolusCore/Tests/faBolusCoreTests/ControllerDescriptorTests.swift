@@ -80,7 +80,7 @@ struct ControllerDescriptorTests {
         #expect(classic.basalModulation == plus.basalModulation)
         let cExercise = classic.activityPresets.first { $0.name == "Exercise" }
         let pExercise = plus.activityPresets.first { $0.name == "Exercise" }
-        #expect(cExercise == pExercise)   // Exercise identical
+        #expect(cExercise == pExercise)  // Exercise identical
     }
 
     // MARK: variant/descriptor plumbing
@@ -88,16 +88,18 @@ struct ControllerDescriptorTests {
     @Test func featureBitsVariantSelectsTheDescriptor() {
         // The pump's own bits pick the descriptor end-to-end: bits → controllerVariant → descriptor.
         #expect(PumpFeatureBits(controlIQSupported: false).controllerVariant == .none)
-        #expect(ControllerDescriptor.for(PumpFeatureBits(controlIQSupported: false).controllerVariant)
+        #expect(
+            ControllerDescriptor.for(PumpFeatureBits(controlIQSupported: false).controllerVariant)
                 == .noController)
-        #expect(ControllerDescriptor.for(
-            PumpFeatureBits(controlIQSupported: true, controlIQProSupported: true).controllerVariant)
+        #expect(
+            ControllerDescriptor.for(
+                PumpFeatureBits(controlIQSupported: true, controlIQProSupported: true).controllerVariant)
                 == .controlIQPlus)
     }
 
     @Test func snapshotExposesTheDescriptorForItsVariant() {
         var snap = PumpSnapshot()
-        #expect(snap.controllerDescriptor == .noController)   // default .none
+        #expect(snap.controllerDescriptor == .noController)  // default .none
         snap.controllerVariant = .controlIQPro
         #expect(snap.controllerDescriptor == .controlIQPlus)
         #expect(snap.controllerDescriptor.hasController)
@@ -108,11 +110,11 @@ struct ControllerDescriptorTests {
     /// Control-IQ-capability-gated section never shows a blank brand.
     @Test func controlIQBrandNameNamesTheVariantWithAGenericFallback() {
         var snap = PumpSnapshot()
-        #expect(snap.controlIQBrandName == "Control-IQ")          // .none ⇒ generic fallback (never "")
+        #expect(snap.controlIQBrandName == "Control-IQ")  // .none ⇒ generic fallback (never "")
         snap.controllerVariant = .controlIQ
         #expect(snap.controlIQBrandName == "Control-IQ")
         snap.controllerVariant = .controlIQPro
-        #expect(snap.controlIQBrandName == "Control-IQ+")         // the exact variant when known
+        #expect(snap.controlIQBrandName == "Control-IQ+")  // the exact variant when known
         #expect(!snap.controlIQBrandName.isEmpty)
     }
 }

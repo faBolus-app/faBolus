@@ -14,8 +14,10 @@ import faBolusCore
 @Suite(.serialized) struct ModeAutomationPrecedenceTests {
 
     private let store = UserDefaults(suiteName: WidgetStore.appGroup)
-    private let pendingKeys = ["pendingMode.exercise", "pendingMode.exercise.ts",
-                               "pendingMode.sleep", "pendingMode.sleep.ts"]
+    private let pendingKeys = [
+        "pendingMode.exercise", "pendingMode.exercise.ts",
+        "pendingMode.sleep", "pendingMode.sleep.ts"
+    ]
     private func clearPending() { pendingKeys.forEach { store?.removeObject(forKey: $0) } }
 
     /// Configure the AppSettings the apply path needs: advanced control on + Advanced mode (so the
@@ -23,8 +25,10 @@ import faBolusCore
     /// Returns a restore closure so the global singleton is left as we found it (ModeStoreTests pattern).
     private func configureSettings() -> () -> Void {
         let s = AppSettings.shared
-        let saved = (s.advancedControlEnabled, s.appMode, s.autoSleepMode, s.autoExerciseMode,
-                     s.modeReminders, s.phoneReadOnly, s.childModeEnabled)
+        let saved = (
+            s.advancedControlEnabled, s.appMode, s.autoSleepMode, s.autoExerciseMode,
+            s.modeReminders, s.phoneReadOnly, s.childModeEnabled
+        )
         s.advancedControlEnabled = true
         s.appMode = .advanced
         s.autoSleepMode = true
@@ -33,9 +37,13 @@ import faBolusCore
         s.phoneReadOnly = false
         s.childModeEnabled = false
         return {
-            s.advancedControlEnabled = saved.0; s.appMode = saved.1
-            s.autoSleepMode = saved.2; s.autoExerciseMode = saved.3
-            s.modeReminders = saved.4; s.phoneReadOnly = saved.5; s.childModeEnabled = saved.6
+            s.advancedControlEnabled = saved.0
+            s.appMode = saved.1
+            s.autoSleepMode = saved.2
+            s.autoExerciseMode = saved.3
+            s.modeReminders = saved.4
+            s.phoneReadOnly = saved.5
+            s.childModeEnabled = saved.6
         }
     }
 
@@ -52,8 +60,10 @@ import faBolusCore
     }
 
     @Test func defersAndNotifiesWhenAManualChangeIsRecent() async {
-        let restore = configureSettings(); defer { restore() }
-        clearPending(); defer { clearPending() }
+        let restore = configureSettings()
+        defer { restore() }
+        clearPending()
+        defer { clearPending() }
         let (model, backend) = await makeConnectedModel()
         defer { backend.disconnect() }
 
@@ -62,9 +72,10 @@ import faBolusCore
         model.noteManualModeChange(at: manualAt)
 
         var posted: [NotificationBroker.Message] = []
-        let result = await ModeAutomation.request(.sleep, enabled: true, model: model,
-                                                  now: manualAt.addingTimeInterval(10 * 60),
-                                                  post: { posted.append($0) })
+        let result = await ModeAutomation.request(
+            .sleep, enabled: true, model: model,
+            now: manualAt.addingTimeInterval(10 * 60),
+            post: { posted.append($0) })
 
         // Did NOT apply — the pump's mode is untouched (still Normal).
         #expect(backend.snapshot.controlIQMode == ControlIQActivity.normal.rawValue)
@@ -78,8 +89,10 @@ import faBolusCore
     }
 
     @Test func appliesNormallyWhenNoRecentManualChange() async {
-        let restore = configureSettings(); defer { restore() }
-        clearPending(); defer { clearPending() }
+        let restore = configureSettings()
+        defer { restore() }
+        clearPending()
+        defer { clearPending() }
         let (model, backend) = await makeConnectedModel()
         defer { backend.disconnect() }
 
@@ -88,9 +101,10 @@ import faBolusCore
         model.noteManualModeChange(at: manualAt)
 
         var posted: [NotificationBroker.Message] = []
-        let result = await ModeAutomation.request(.sleep, enabled: true, model: model,
-                                                  now: manualAt.addingTimeInterval(60 * 60 + 60),
-                                                  post: { posted.append($0) })
+        let result = await ModeAutomation.request(
+            .sleep, enabled: true, model: model,
+            now: manualAt.addingTimeInterval(60 * 60 + 60),
+            post: { posted.append($0) })
 
         // Applied on the pump — Sleep mode is now active — with no defer/queue and no reminder.
         #expect(backend.snapshot.controlIQMode == ControlIQActivity.sleep.rawValue)

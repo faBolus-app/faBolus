@@ -27,9 +27,11 @@ struct SettingDescriptor: Identifiable {
 
     var id: String { key }
 
-    init(_ key: String, _ category: SettingsCategory, tier: SettingTier = .user,
-         from minMode: AppMode, backsUp: Bool, syncsToICloud: Bool? = nil,
-         searchTitle: String? = nil, searchKeywords: String? = nil) {
+    init(
+        _ key: String, _ category: SettingsCategory, tier: SettingTier = .user,
+        from minMode: AppMode, backsUp: Bool, syncsToICloud: Bool? = nil,
+        searchTitle: String? = nil, searchKeywords: String? = nil
+    ) {
         self.key = key
         self.category = category
         self.tier = tier
@@ -54,7 +56,7 @@ enum SettingsCatalog {
         // Per-surface bolus-auth enables — a synced "bolusing on" must never arm a remote on another device.
         "garminBolusEnabled",
         // Remote-only dose ceiling — a synced value must never silently relax the cap on another device.
-        "remoteBolusCeiling",
+        "remoteBolusCeiling"
     ]
 
     /// Persisted `AppSettings` keys. See `SettingsCatalogTests` for the current count.
@@ -105,7 +107,7 @@ enum SettingsCatalog {
         .init("garminAlertIntensityMode", .remotes, from: .standard, backsUp: true),
         .init("garminAlertAudibleMinSeverity", .remotes, from: .standard, backsUp: true),
         .init("garminAlertCriticalOverridesDnd", .remotes, from: .standard, backsUp: true),
-        .init("garminComplicationSlots", .remotes, from: .standard, backsUp: true),
+        .init("garminComplicationSlots", .remotes, from: .standard, backsUp: true)
 
         // MARK: — Not backed up (caches + advisory/experimental toggles). syncsToICloud false by rule.
         // `historyCoverage` is deliberately NOT registered — no UI surface (pure sync bookkeeping).

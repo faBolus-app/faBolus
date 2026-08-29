@@ -49,7 +49,8 @@ public final class SealedTransport: RemoteTransport, @unchecked Sendable {
     /// handshake, with the same shared `secret` (code bytes first-pairing, token on reconnect) and the
     /// two handshake nonces.
     public func activateSession(secret: Data, phoneNonce: Data, macNonce: Data) {
-        lock.lock(); defer { lock.unlock() }
+        lock.lock()
+        defer { lock.unlock() }
         key = MacPairing.channelKey(secret: secret, phoneNonce: phoneNonce, macNonce: macNonce)
         sendCounter = 0
         expectedRecvCounter = 0
@@ -58,24 +59,37 @@ public final class SealedTransport: RemoteTransport, @unchecked Sendable {
     /// Forget the session key (on disconnect) so the next connection must re-handshake before any
     /// real command flows.
     public func endSession() {
-        lock.lock(); key = nil; lock.unlock()
+        lock.lock()
+        key = nil
+        lock.unlock()
     }
 
-    public var hasSession: Bool { lock.lock(); defer { lock.unlock() }; return key != nil }
+    public var hasSession: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return key != nil
+    }
 
     // MARK: Send
 
     public func send(_ command: RemoteCommand) {
-        if Self.isAuth(command.kind) { inner.send(command); return }   // handshake frames: cleartext, no secrets
+        if Self.isAuth(command.kind) {
+            inner.send(command)
+            return
+        }  // handshake frames: cleartext, no secrets
         // Check reachability here, before sealing, so the caller is handed back the command it sent.
-        if command.kind.mutatesPumpState, !inner.isReachable { reportUndeliverable(command); return }
+        if command.kind.mutatesPumpState, !inner.isReachable {
+            reportUndeliverable(command)
+            return
+        }
         lock.lock()
         guard let key else {
-            lock.unlock()   // no session yet → never emit a real command in clear
+            lock.unlock()  // no session yet → never emit a real command in clear
             if command.kind.mutatesPumpState { reportUndeliverable(command) }
             return
         }
-        let ctr = sendCounter; sendCounter &+= 1
+        let ctr = sendCounter
+        sendCounter &+= 1
         lock.unlock()
         guard let payload = Self.seal(command, key: key, counter: ctr) else {
             if command.kind.mutatesPumpState { reportUndeliverable(command) }
@@ -94,16 +108,24 @@ public final class SealedTransport: RemoteTransport, @unchecked Sendable {
             // re-handshake only begins after the link tears down (`endSession` clears the key), so an
             // in-session cleartext `authHello`/`authProof` can only be an injection trying to force a
             // re-pair / downgrade — drop it.
-            lock.lock(); let live = key != nil; lock.unlock()
+            lock.lock()
+            let live = key != nil
+            lock.unlock()
             if live { return }
-            deliver(cmd); return
+            deliver(cmd)
+            return
         }
         // Any non-auth command MUST arrive sealed once we're encrypting.
         guard cmd.kind == .sealed, let payload = cmd.sealedPayload else { return }
-        lock.lock(); let k = key; lock.unlock()
+        lock.lock()
+        let k = key
+        lock.unlock()
         guard let k, let (opened, ctr) = Self.open(payload, key: k) else { return }
         lock.lock()
-        guard ctr >= expectedRecvCounter else { lock.unlock(); return }   // replay / reorder → drop
+        guard ctr >= expectedRecvCounter else {
+            lock.unlock()
+            return
+        }  // replay / reorder → drop
         expectedRecvCounter = ctr &+ 1
         lock.unlock()
         deliver(opened)
@@ -123,7 +145,8 @@ public final class SealedTransport: RemoteTransport, @unchecked Sendable {
         guard let data = try? command.encoded() else { return nil }
         let ctr = counterData(counter)
         guard let box = try? AES.GCM.seal(data, using: key, authenticating: ctr),
-              let combined = box.combined else { return nil }
+            let combined = box.combined
+        else { return nil }
         return (ctr + combined).base64EncodedString()
     }
 
@@ -133,8 +156,9 @@ public final class SealedTransport: RemoteTransport, @unchecked Sendable {
         let boxData = blob.suffix(from: blob.startIndex + 8)
         let counter = ctrData.reduce(UInt64(0)) { ($0 << 8) | UInt64($1) }
         guard let box = try? AES.GCM.SealedBox(combined: boxData),
-              let opened = try? AES.GCM.open(box, using: key, authenticating: ctrData),
-              let cmd = try? RemoteCommand.decodeValidated(opened) else { return nil }   // audit A-07
+            let opened = try? AES.GCM.open(box, using: key, authenticating: ctrData),
+            let cmd = try? RemoteCommand.decodeValidated(opened)
+        else { return nil }  // audit A-07
         return (cmd, counter)
     }
 

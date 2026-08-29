@@ -16,7 +16,7 @@ struct MaxBolusClampTests {
         let mock = MockBackend()
         try await mock.setMaxBolus(units: 30)
         #expect(mock.snapshot.maxBolusUnits == 25.0)
-        try await mock.setMaxBolus(units: 8)          // a legitimate value is untouched
+        try await mock.setMaxBolus(units: 8)  // a legitimate value is untouched
         #expect(mock.snapshot.maxBolusUnits == 8.0)
     }
 
@@ -24,7 +24,7 @@ struct MaxBolusClampTests {
     @Test func appFunnelCapsTheLimitEndToEnd() async {
         let s = AppSettings.shared
         let savedAdv = s.advancedControlEnabled
-        s.advancedControlEnabled = true               // .setMaxBolus is advanced-gated; Mock is .mobiAdvanced
+        s.advancedControlEnabled = true  // .setMaxBolus is advanced-gated; Mock is .mobiAdvanced
         defer { s.advancedControlEnabled = savedAdv }
         let backend = MockBackend()
         let ledgerURL = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -45,8 +45,9 @@ struct MaxBolusClampTests {
         try? await backend.setMaxBolus(units: 30)
         let sent = fake.lastSent(SetMaxBolusLimitRequest.props.opCode)
         #expect(sent != nil, "a max-bolus-limit write must have gone out")
-        #expect(sent?.cargo == (try SetMaxBolusLimitRequest(maxBolusMilliunits: 25000)).cargo,
-                "the WRITTEN limit must be capped to 25 U (25000 mU) even when 30 U is requested")
+        #expect(
+            sent?.cargo == (try SetMaxBolusLimitRequest(maxBolusMilliunits: 25000)).cargo,
+            "the WRITTEN limit must be capped to 25 U (25000 mU) even when 30 U is requested")
     }
 
     /// CX-T-07 owner decision (ALIGN UP, 2026-08-25): a max-bolus limit request below the app's OLD 0.05 U
@@ -56,11 +57,12 @@ struct MaxBolusClampTests {
         let backend = TandemBackend(testTransport: fake)
         backend.setConnectionForTesting(.connected)
         fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
-        try? await backend.setMaxBolus(units: 0.1)   // below the old 0.05 U floor's neighbor, well below 1.0 U
+        try? await backend.setMaxBolus(units: 0.1)  // below the old 0.05 U floor's neighbor, well below 1.0 U
         let sent = fake.lastSent(SetMaxBolusLimitRequest.props.opCode)
         #expect(sent != nil, "a max-bolus-limit write must have gone out")
-        #expect(sent?.cargo == (try SetMaxBolusLimitRequest(maxBolusMilliunits: 1000)).cargo,
-                "the WRITTEN limit must be floored to 1.0 U (1000 mU) even when 0.1 U is requested")
+        #expect(
+            sent?.cargo == (try SetMaxBolusLimitRequest(maxBolusMilliunits: 1000)).cargo,
+            "the WRITTEN limit must be floored to 1.0 U (1000 mU) even when 0.1 U is requested")
     }
 
     // MARK: - WR-02 (15-GAP-01): setMaxBasal ceiling clamp, symmetric with setMaxBolus
@@ -73,11 +75,12 @@ struct MaxBolusClampTests {
         let backend = TandemBackend(testTransport: fake)
         backend.setConnectionForTesting(.connected)
         fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
-        try await backend.setMaxBasal(unitsPerHour: 20)   // above the 15 U/hr ceiling → must clamp, not throw
+        try await backend.setMaxBasal(unitsPerHour: 20)  // above the 15 U/hr ceiling → must clamp, not throw
         let sent = fake.lastSent(SetMaxBasalLimitRequest.props.opCode)
         #expect(sent != nil, "a max-basal-limit write must have gone out (clamped, not thrown)")
-        #expect(sent?.cargo == (try SetMaxBasalLimitRequest(maxHourlyBasalMilliunits: 15000)).cargo,
-                "the WRITTEN limit must be capped to 15.0 U/hr (15000 mU) even when 20 U/hr is requested")
+        #expect(
+            sent?.cargo == (try SetMaxBasalLimitRequest(maxHourlyBasalMilliunits: 15000)).cargo,
+            "the WRITTEN limit must be capped to 15.0 U/hr (15000 mU) even when 20 U/hr is requested")
     }
 
     /// WR-02 companion: a sub-floor max-basal request is floored to the kit's 1.0 U/hr throwing floor.
@@ -86,11 +89,12 @@ struct MaxBolusClampTests {
         let backend = TandemBackend(testTransport: fake)
         backend.setConnectionForTesting(.connected)
         fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
-        try await backend.setMaxBasal(unitsPerHour: 0.1)   // below the 1.0 U/hr floor
+        try await backend.setMaxBasal(unitsPerHour: 0.1)  // below the 1.0 U/hr floor
         let sent = fake.lastSent(SetMaxBasalLimitRequest.props.opCode)
         #expect(sent != nil, "a max-basal-limit write must have gone out")
-        #expect(sent?.cargo == (try SetMaxBasalLimitRequest(maxHourlyBasalMilliunits: 1000)).cargo,
-                "the WRITTEN limit must be floored to 1.0 U/hr (1000 mU) even when 0.1 U/hr is requested")
+        #expect(
+            sent?.cargo == (try SetMaxBasalLimitRequest(maxHourlyBasalMilliunits: 1000)).cargo,
+            "the WRITTEN limit must be floored to 1.0 U/hr (1000 mU) even when 0.1 U/hr is requested")
     }
 
     // MARK: - Phase 2 (D-01/D-02/D-03): fail-closed unread-op-115 freshness gate
@@ -104,7 +108,7 @@ struct MaxBolusClampTests {
     @Test func manualDeliverBlocksWhileMaxBolusUnread() async throws {
         let fake = FakePumpTransport()
         let backend = TandemBackend(testTransport: fake)
-        backend.setTherapyParamsDateForTesting(nil)     // recreate the never-read-op-115 window
+        backend.setTherapyParamsDateForTesting(nil)  // recreate the never-read-op-115 window
         fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
         do {
             _ = try await backend.deliverBolus(units: 2.0, carbsGrams: nil, bgMgdl: nil, iobUnits: nil)
@@ -116,8 +120,9 @@ struct MaxBolusClampTests {
             }
         }
         // No delivery write should have gone out — the guard fires before `perform` sends anything.
-        #expect(fake.lastSent(InitiateBolusRequest.props.opCode) == nil,
-                "no delivery bytes may be constructed while op-115 is unread")
+        #expect(
+            fake.lastSent(InitiateBolusRequest.props.opCode) == nil,
+            "no delivery bytes may be constructed while op-115 is unread")
     }
 
     // MARK: - D-06: boundary neighbors — the freshness guard composes with the max-bound guard
@@ -131,10 +136,13 @@ struct MaxBolusClampTests {
         let fake = FakePumpTransport()
         let backend = TandemBackend(testTransport: fake)
         fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
-        fake.script(BolusPermissionResponse.props.opCode, .frame(FakePumpTransport.permissionGranted(bolusId: Self.boundaryBolusId)))
-        backend.injectStatusFrameForTesting(FakePumpTransport.calcDataSnapshot(
-            iobMilliunits: 0, targetBg: 110, isf: 40, carbRatioMilliGramsPerUnit: 10_000,
-            maxBolusMilliunits: Int((pumpMaxUnits * 1000).rounded())))
+        fake.script(
+            BolusPermissionResponse.props.opCode,
+            .frame(FakePumpTransport.permissionGranted(bolusId: Self.boundaryBolusId)))
+        backend.injectStatusFrameForTesting(
+            FakePumpTransport.calcDataSnapshot(
+                iobMilliunits: 0, targetBg: 110, isf: 40, carbRatioMilliGramsPerUnit: 10_000,
+                maxBolusMilliunits: Int((pumpMaxUnits * 1000).rounded())))
         return (backend, fake)
     }
 
@@ -143,9 +151,15 @@ struct MaxBolusClampTests {
     /// clears the guard too.
     @Test func deliverSucceedsAfterOp115Read() async throws {
         let (b, fake) = makeReadBackend(pumpMaxUnits: 10.0)
-        fake.script(InitiateBolusResponse.props.opCode, .frame(FakePumpTransport.initiateAccepted(bolusId: Self.boundaryBolusId)))
-        fake.script(CurrentBolusStatusResponse.props.opCode, .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: Self.boundaryBolusId)))
-        fake.script(LastBolusStatusV2Response.props.opCode, .frame(FakePumpTransport.lastBolus(bolusId: Self.boundaryBolusId, deliveredMilliunits: 3000)))
+        fake.script(
+            InitiateBolusResponse.props.opCode,
+            .frame(FakePumpTransport.initiateAccepted(bolusId: Self.boundaryBolusId)))
+        fake.script(
+            CurrentBolusStatusResponse.props.opCode,
+            .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: Self.boundaryBolusId)))
+        fake.script(
+            LastBolusStatusV2Response.props.opCode,
+            .frame(FakePumpTransport.lastBolus(bolusId: Self.boundaryBolusId, deliveredMilliunits: 3000)))
         let delivered = try await b.deliverBolus(units: 3.0, carbsGrams: nil, bgMgdl: nil, iobUnits: nil)
         #expect(delivered == 3.0)
     }
@@ -154,9 +168,15 @@ struct MaxBolusClampTests {
     /// new freshness guard.
     @Test func deliverAtExactlyPumpMaxSucceedsAfterRead() async throws {
         let (b, fake) = makeReadBackend(pumpMaxUnits: 10.0)
-        fake.script(InitiateBolusResponse.props.opCode, .frame(FakePumpTransport.initiateAccepted(bolusId: Self.boundaryBolusId)))
-        fake.script(CurrentBolusStatusResponse.props.opCode, .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: Self.boundaryBolusId)))
-        fake.script(LastBolusStatusV2Response.props.opCode, .frame(FakePumpTransport.lastBolus(bolusId: Self.boundaryBolusId, deliveredMilliunits: 10000)))
+        fake.script(
+            InitiateBolusResponse.props.opCode,
+            .frame(FakePumpTransport.initiateAccepted(bolusId: Self.boundaryBolusId)))
+        fake.script(
+            CurrentBolusStatusResponse.props.opCode,
+            .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: Self.boundaryBolusId)))
+        fake.script(
+            LastBolusStatusV2Response.props.opCode,
+            .frame(FakePumpTransport.lastBolus(bolusId: Self.boundaryBolusId, deliveredMilliunits: 10000)))
         let delivered = try await b.deliverBolus(units: 10.0, carbsGrams: nil, bgMgdl: nil, iobUnits: nil)
         #expect(delivered == 10.0)
     }

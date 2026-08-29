@@ -17,8 +17,10 @@ public enum ManualPrecedence {
     /// True when a manual therapy action happened within `window` before `now` → scheduled mode
     /// automation should DEFER (queue + notify), not silently apply. Clock-injected for tests.
     /// A nil timestamp, or one older than the window, or a future timestamp → do not defer.
-    public static func shouldDeferAutomation(lastManualActionAt: Date?, now: Date,
-                                             window: TimeInterval = defaultWindowSeconds) -> Bool {
+    public static func shouldDeferAutomation(
+        lastManualActionAt: Date?, now: Date,
+        window: TimeInterval = defaultWindowSeconds
+    ) -> Bool {
         guard let t = lastManualActionAt else { return false }
         let dt = now.timeIntervalSince(t)
         return dt >= 0 && dt < window

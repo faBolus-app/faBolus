@@ -27,7 +27,8 @@ public enum TherapyConfirmations {
         let threshold = Double(totalDailyInsulinUnits) * maxBolusLimitTddFraction
         guard proposedUnits > threshold else { return nil }
         // `formatUnits` already appends " U" — do not double it.
-        return "\(formatUnits(proposedUnits, fractionDigits: 1)) is a large max bolus for your total daily insulin of \(totalDailyInsulinUnits) U. Set it anyway?"
+        return
+            "\(formatUnits(proposedUnits, fractionDigits: 1)) is a large max bolus for your total daily insulin of \(totalDailyInsulinUnits) U. Set it anyway?"
     }
 
     // MARK: - B1(d) §2.1(5): per-segment therapy-value advisories vs the TDD rules of thumb (WARN-ONLY)
@@ -56,16 +57,20 @@ public enum TherapyConfirmations {
     ///   Defaults to `.mgdl` so every pre-existing call site (and this method's own mg/dL-mode wording)
     ///   is byte-identical to before this parameter was added. `isfMgdlPerUnit`/`expected` stay mg/dL
     ///   `Int`/`Double` throughout the "1800 rule" math — only the rendered text changes.
-    public static func isfTddAdvisory(isfMgdlPerUnit: Int, totalDailyInsulinUnits: Int, unit: GlucoseUnit = .mgdl) -> String? {
+    public static func isfTddAdvisory(isfMgdlPerUnit: Int, totalDailyInsulinUnits: Int, unit: GlucoseUnit = .mgdl)
+        -> String?
+    {
         guard totalDailyInsulinUnits > 0 else { return nil }
         let expected = 1800.0 / Double(totalDailyInsulinUnits)
         guard isFarFromRule(Double(isfMgdlPerUnit), expected: expected) else { return nil }
         let expectedMgdl = Int(expected.rounded())
         switch unit {
         case .mgdl:
-            return "For a total daily insulin of \(totalDailyInsulinUnits) U, a correction factor near \(expectedMgdl) mg/dL per unit is typical (the “1800 rule”). \(isfMgdlPerUnit) mg/dL per unit is unusual — double-check."
+            return
+                "For a total daily insulin of \(totalDailyInsulinUnits) U, a correction factor near \(expectedMgdl) mg/dL per unit is typical (the “1800 rule”). \(isfMgdlPerUnit) mg/dL per unit is unusual — double-check."
         case .mmol:
-            return "For a total daily insulin of \(totalDailyInsulinUnits) U, a correction factor near \(unit.format(mgdl: expectedMgdl)) mmol/L per unit is typical (the “1800 rule”). \(unit.format(mgdl: isfMgdlPerUnit)) mmol/L per unit is unusual — double-check."
+            return
+                "For a total daily insulin of \(totalDailyInsulinUnits) U, a correction factor near \(unit.format(mgdl: expectedMgdl)) mmol/L per unit is typical (the “1800 rule”). \(unit.format(mgdl: isfMgdlPerUnit)) mmol/L per unit is unusual — double-check."
         }
     }
 
@@ -75,7 +80,8 @@ public enum TherapyConfirmations {
         guard totalDailyInsulinUnits > 0 else { return nil }
         let expected = 500.0 / Double(totalDailyInsulinUnits)
         guard isFarFromRule(carbRatioGramsPerUnit, expected: expected) else { return nil }
-        return "For a total daily insulin of \(totalDailyInsulinUnits) U, a carb ratio near \(Int(expected.rounded())) g per unit is typical (the “500 rule”). \(Int(carbRatioGramsPerUnit.rounded())) g per unit is unusual — double-check."
+        return
+            "For a total daily insulin of \(totalDailyInsulinUnits) U, a carb ratio near \(Int(expected.rounded())) g per unit is typical (the “500 rule”). \(Int(carbRatioGramsPerUnit.rounded())) g per unit is unusual — double-check."
     }
 
     /// **Basal-rate advisory** vs the "~50% of TDD as basal, spread across the day" rule of thumb (per-hour
@@ -86,6 +92,7 @@ public enum TherapyConfirmations {
         guard totalDailyInsulinUnits > 0 else { return nil }
         let expected = 0.5 * Double(totalDailyInsulinUnits) / 24.0
         guard isFarFromRule(basalUnitsPerHour, expected: expected) else { return nil }
-        return "For a total daily insulin of \(totalDailyInsulinUnits) U, an average basal near \(String(format: "%.2f", expected)) U/hr is typical (about half of daily insulin as basal; individual segments vary). \(String(format: "%.2f", basalUnitsPerHour)) U/hr is unusual — double-check."
+        return
+            "For a total daily insulin of \(totalDailyInsulinUnits) U, an average basal near \(String(format: "%.2f", expected)) U/hr is typical (about half of daily insulin as basal; individual segments vary). \(String(format: "%.2f", basalUnitsPerHour)) U/hr is unusual — double-check."
     }
 }

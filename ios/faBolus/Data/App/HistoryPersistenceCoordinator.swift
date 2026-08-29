@@ -45,8 +45,12 @@ final class HistoryPersistenceCoordinator {
         let sourceID: String
         let priority: Int
         switch provenance {
-        case .failover(let sid, _): sourceID = sid;    priority = 100   // independent source
-        default:                    sourceID = "pump"; priority = 50    // pump-relayed
+        case .failover(let sid, _):
+            sourceID = sid
+            priority = 100  // independent source
+        default:
+            sourceID = "pump"
+            priority = 50  // pump-relayed
         }
         let glucoseKeys = Set(glucose.map(\.date.timeIntervalSince1970))
         let newGlucose = glucose.filter { !lastPersistedGlucoseKeys.contains($0.date.timeIntervalSince1970) }
@@ -66,7 +70,8 @@ final class HistoryPersistenceCoordinator {
     /// Time-in-range / GMI over the *persisted* history (default 90 days) — for stats / future plotting.
     func storedStatistics(days: Int = 90) -> GlucoseStatistics? {
         guard let store else { return nil }
-        let end = Date(); let start = end.addingTimeInterval(-Double(days) * 86400)
+        let end = Date()
+        let start = end.addingTimeInterval(-Double(days) * 86400)
         return store.statistics(in: start...end)
     }
 

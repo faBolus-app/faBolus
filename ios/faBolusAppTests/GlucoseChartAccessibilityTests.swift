@@ -10,9 +10,9 @@ import faBolusCore
     /// Spans all three visually-distinct bands (low / in-range / very-high) per the plan's
     /// `<behavior>` spec. Dates are 5 minutes apart so a real chart would show them left-to-right.
     private static let sample: [GlucoseReading] = [
-        GlucoseReading(date: Date(timeIntervalSinceReferenceDate: 0), mgdl: 60),    // low (< 70)
-        GlucoseReading(date: Date(timeIntervalSinceReferenceDate: 300), mgdl: 100), // in-range (70...180)
-        GlucoseReading(date: Date(timeIntervalSinceReferenceDate: 600), mgdl: 300), // very high (> 250)
+        GlucoseReading(date: Date(timeIntervalSinceReferenceDate: 0), mgdl: 60),  // low (< 70)
+        GlucoseReading(date: Date(timeIntervalSinceReferenceDate: 300), mgdl: 100),  // in-range (70...180)
+        GlucoseReading(date: Date(timeIntervalSinceReferenceDate: 600), mgdl: 300)  // very high (> 250)
     ]
 
     /// The locale-aware short time string the production label prepends. Same format call the helper uses.
@@ -35,8 +35,9 @@ import faBolusCore
         for (i, r) in Self.sample.enumerated() {
             let time = Self.expectedTime(r)
             #expect(!time.isEmpty)
-            #expect(points[i].label?.hasPrefix("\(time), ") == true,
-                    "each data-point label must lead with the reading's time so trend/timing is spoken")
+            #expect(
+                points[i].label?.hasPrefix("\(time), ") == true,
+                "each data-point label must lead with the reading's time so trend/timing is spoken")
         }
     }
 
@@ -57,8 +58,8 @@ import faBolusCore
     @Test func symbolKindCoversAllFourGlucoseRangeBands() {
         // GlucoseRange has 4 cases (low/inRange/high/urgentHigh); the non-color cue must keep
         // .high distinguishable from .urgentHigh too, not just collapse both to "above range".
-        let highKind = GlucoseChartAccessibility.symbolKind(for: 200)   // .high (181...250)
-        let urgentKind = GlucoseChartAccessibility.symbolKind(for: 300) // .urgentHigh (> 250)
+        let highKind = GlucoseChartAccessibility.symbolKind(for: 200)  // .high (181...250)
+        let urgentKind = GlucoseChartAccessibility.symbolKind(for: 300)  // .urgentHigh (> 250)
         #expect(highKind == .high)
         #expect(urgentKind == .urgentHigh)
         #expect(highKind != urgentKind)

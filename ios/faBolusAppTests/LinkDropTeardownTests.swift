@@ -19,14 +19,20 @@ struct LinkDropTeardownTests {
     /// `ReadCascadeChainingGuardTests` exactly.
     private static func egvV1Frame(pumpSec: UInt32, mgdl: Int) -> [UInt8] {
         var c = [UInt8](repeating: 0, count: 8)
-        let ts = Bytes.toUint32(pumpSec); for i in 0..<4 { c[i] = ts[i] }
-        let bg = Bytes.firstTwoBytesLittleEndian(mgdl); c[4] = bg[0]; c[5] = bg[1]
-        c[6] = 1   // egvStatusId = 1 → hasValidReading
+        let ts = Bytes.toUint32(pumpSec)
+        for i in 0..<4 { c[i] = ts[i] }
+        let bg = Bytes.firstTwoBytesLittleEndian(mgdl)
+        c[4] = bg[0]
+        c[5] = bg[1]
+        c[6] = 1  // egvStatusId = 1 → hasValidReading
         return FakePumpTransport.frame(opCode: CurrentEGVGuiDataResponse.props.opCode, cargo: c, signed: false)
     }
 
     private func capture(_ op: () async throws -> Double) async -> Error? {
-        do { _ = try await op(); return nil } catch { return error }
+        do {
+            _ = try await op()
+            return nil
+        } catch { return error }
     }
     private func isIndeterminate(_ e: Error?) -> Bool { (e as? BolusError)?.isIndeterminate ?? false }
 
@@ -61,7 +67,9 @@ struct LinkDropTeardownTests {
         #expect(b.pollTimerIsActiveForTesting == false, "stopAllTimers() must tear down the recurring poll timer")
         // notePollCycleEnded(): the generation advances so an already-armed `scheduleAlertRead()` from the
         // cycle that just ended recognizes it is stale and no-ops instead of firing a rogue alert read.
-        #expect(b.pollCycleGenerationForTesting > generationBefore, "notePollCycleEnded() must advance the poll-cycle generation")
+        #expect(
+            b.pollCycleGenerationForTesting > generationBefore,
+            "notePollCycleEnded() must advance the poll-cycle generation")
         // Auth key cleared → `isPaired` fails closed, so a signed read can't land in the pre-auth window
         // before `onPaired` rebuilds the key on the next connect (and `validateDeliver` fails closed too).
         #expect(b.isPairedForTesting == false, "the auth key must be cleared so a signed read can't land pre-auth")
@@ -74,7 +82,7 @@ struct LinkDropTeardownTests {
     @Test func notLiveClimbToConnectingDoesNotTearDown() {
         for priorState: PumpConnectionState in [.scanning, .disconnected] {
             let b = backend()
-            b.setConnectionForTesting(priorState)   // NOT live (.connected/.bolusing)
+            b.setConnectionForTesting(priorState)  // NOT live (.connected/.bolusing)
             #expect(b.isPairedForTesting, "precondition: the test double carries an auth key")
             let generationBefore = b.pollCycleGenerationForTesting
 
@@ -83,10 +91,12 @@ struct LinkDropTeardownTests {
             #expect(b.snapshot.connection == .connecting, "prior \(priorState): climb still publishes .connecting")
             // No teardown side effects — these would flip only if `linkDroppedCleanup()` had run (the
             // wasLive path). They stay put here, distinguishing the not-live climb from a real drop.
-            #expect(b.pollCycleGenerationForTesting == generationBefore,
-                    "prior \(priorState): a not-live climb must NOT advance the poll-cycle generation")
-            #expect(b.isPairedForTesting,
-                    "prior \(priorState): a not-live climb must NOT clear the auth key")
+            #expect(
+                b.pollCycleGenerationForTesting == generationBefore,
+                "prior \(priorState): a not-live climb must NOT advance the poll-cycle generation")
+            #expect(
+                b.isPairedForTesting,
+                "prior \(priorState): a not-live climb must NOT clear the auth key")
         }
     }
 
@@ -101,13 +111,14 @@ struct LinkDropTeardownTests {
     @Test func connectionLostDuringDeliveryDoesNotReArmPolling() async {
         let fake = FakePumpTransport()
         let b = TandemBackend(testTransport: fake)
-        b.deliveryPollTimeoutOverride = 1.2   // keep the poll window short for the test
+        b.deliveryPollTimeoutOverride = 1.2  // keep the poll window short for the test
         // Time-sync + permission succeed; the initiate is accepted; the first status poll reports active.
         fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
         fake.script(BolusPermissionResponse.props.opCode, .frame(FakePumpTransport.permissionGranted(bolusId: bolusId)))
         fake.script(InitiateBolusResponse.props.opCode, .frame(FakePumpTransport.initiateAccepted(bolusId: bolusId)))
-        fake.script(CurrentBolusStatusResponse.props.opCode,
-                    .frame(FakePumpTransport.currentBolusStatus(statusId: 1, bolusId: bolusId)))   // active
+        fake.script(
+            CurrentBolusStatusResponse.props.opCode,
+            .frame(FakePumpTransport.currentBolusStatus(statusId: 1, bolusId: bolusId)))  // active
         // The mid-delivery drop: when the first status poll is awaited, run the REAL `.disconnected`
         // transition (→ `linkDroppedCleanup()` → `stopAllTimers()`), so the poll loop's next
         // `guard connection == .bolusing` fails and throws "connection lost during delivery".
@@ -120,8 +131,9 @@ struct LinkDropTeardownTests {
         #expect(isIndeterminate(e), "a mid-delivery link drop is an indeterminate outcome")
         #expect(b.deliveryOutcomeUnknown, "the indeterminate delivery holds the global block")
         // WR-04: the exit defer re-arms polling ONLY on a live link. The link is down, so nothing re-arms.
-        #expect(b.pollTimerIsActiveForTesting == false,
-                "WR-04: the perform defer must NOT re-arm a fresh poll timer on a dead link")
+        #expect(
+            b.pollTimerIsActiveForTesting == false,
+            "WR-04: the perform defer must NOT re-arm a fresh poll timer on a dead link")
     }
 
     // MARK: - WR-04 part 2 / CR-01: shared teardown stops the predictive machinery on a drop
@@ -154,7 +166,8 @@ struct LinkDropTeardownTests {
         // the recurring pollTimer AND the predictive timer (WR-04 part 2).
         b.applyClientState(.disconnected)
         #expect(b.snapshot.connection == .disconnected)
-        #expect(b.pollTimerIsActiveForTesting == false, "stopAllTimers() must tear down the recurring poll timer on a drop")
+        #expect(
+            b.pollTimerIsActiveForTesting == false, "stopAllTimers() must tear down the recurring poll timer on a drop")
 
         // The predictive path is now inert: a kick after the drop dispatches nothing into the dead link.
         dispatched.removeAll()

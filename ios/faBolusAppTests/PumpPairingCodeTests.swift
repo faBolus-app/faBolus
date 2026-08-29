@@ -7,9 +7,9 @@ import Testing
 @Suite struct PumpPairingCodeTests {
     @Test func acceptsSixDigitAsJpake() {
         #expect(PumpPairingCode.isValid("123456"))
-        #expect(PumpPairingCode.isValid("123-456"))          // separators ignored
+        #expect(PumpPairingCode.isValid("123-456"))  // separators ignored
         #expect(PumpPairingCode.isValid("123 456"))
-        #expect(!PumpPairingCode.isLegacy("123456"))          // → JPAKE
+        #expect(!PumpPairingCode.isLegacy("123456"))  // → JPAKE
     }
 
     @Test func acceptsSixteenCharAsLegacyV1() {
@@ -27,9 +27,9 @@ import Testing
 
     @Test func rejectsMalformedCodes() {
         #expect(!PumpPairingCode.isValid(""))
-        #expect(!PumpPairingCode.isValid("123"))              // too short
-        #expect(!PumpPairingCode.isValid("12345"))            // 5 digits
-        #expect(!PumpPairingCode.isValid("1234567"))           // 7 digits, not 16 alnum
+        #expect(!PumpPairingCode.isValid("123"))  // too short
+        #expect(!PumpPairingCode.isValid("12345"))  // 5 digits
+        #expect(!PumpPairingCode.isValid("1234567"))  // 7 digits, not 16 alnum
         #expect(!PumpPairingCode.isValid("abcd!fghijklmnop"))  // 15 alnum after stripping — not 16
     }
 }

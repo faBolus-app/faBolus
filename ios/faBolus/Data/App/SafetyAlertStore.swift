@@ -22,7 +22,7 @@ import UserNotifications
 final class SafetyAlertStore {
     static let key = AppGroupKeys.safetyAlerts
     private let store: UserDefaults
-    private(set) var entries: [String: Entry]   // keyed by dedupeKey
+    private(set) var entries: [String: Entry]  // keyed by dedupeKey
 
     /// Whether the persisted entry is a one-shot immediate post (the T0 disconnect/CGM-loss/
     /// reconciliation banner) or a delayed `DisconnectEscalation` step scheduled for a future `deadline`.
@@ -68,7 +68,7 @@ final class SafetyAlertStore {
 
     private static func load(_ store: UserDefaults) -> [String: Entry] {
         guard let data = store.data(forKey: key),
-              let decoded = try? JSONDecoder().decode([String: Entry].self, from: data)
+            let decoded = try? JSONDecoder().decode([String: Entry].self, from: data)
         else { return [:] }
         return decoded
     }
@@ -126,16 +126,17 @@ final class SafetyAlertStore {
 @MainActor
 enum SafetyAlertPoster {
     @discardableResult
-    static func post(_ message: NotificationBroker.Message,
-                     store: SafetyAlertStore,
-                     runtime: NotificationRuntime,
-                     userInfo: [AnyHashable: Any] = [:],
-                     categoryId: String = "",
-                     trigger: UNNotificationTrigger? = nil,
-                     deadline: Date? = nil,
-                     allowCritical: Bool = false,
-                     now: Date = Date(),
-                     add: (UNNotificationRequest) -> Void = { UNUserNotificationCenter.current().add($0) }
+    static func post(
+        _ message: NotificationBroker.Message,
+        store: SafetyAlertStore,
+        runtime: NotificationRuntime,
+        userInfo: [AnyHashable: Any] = [:],
+        categoryId: String = "",
+        trigger: UNNotificationTrigger? = nil,
+        deadline: Date? = nil,
+        allowCritical: Bool = false,
+        now: Date = Date(),
+        add: (UNNotificationRequest) -> Void = { UNUserNotificationCenter.current().add($0) }
     ) -> NotificationBroker.Decision {
         let entry = SafetyAlertStore.Entry(
             category: message.category, severity: message.severity, title: message.title,
@@ -143,8 +144,9 @@ enum SafetyAlertPoster {
             userInfo: SafetyAlertStore.sanitize(userInfo), categoryIdentifier: categoryId,
             issuedDate: now, deadline: deadline, kind: deadline == nil ? .immediate : .delayed,
             lifecycleState: .issued)
-        store.record(entry)   // persist BEFORE post — never the reverse order
-        return NotificationPoster.post(message, runtime: runtime, userInfo: userInfo, categoryId: categoryId,
-                                       trigger: trigger, allowCritical: allowCritical, now: now, add: add)
+        store.record(entry)  // persist BEFORE post — never the reverse order
+        return NotificationPoster.post(
+            message, runtime: runtime, userInfo: userInfo, categoryId: categoryId,
+            trigger: trigger, allowCritical: allowCritical, now: now, add: add)
     }
 }

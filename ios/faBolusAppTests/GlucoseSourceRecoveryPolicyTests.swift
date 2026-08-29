@@ -15,7 +15,9 @@ import Foundation
     @Test func aSingleUncleanStartNeverDisablesFailover() {
         let (next, shouldStart) = GlucoseSourceRecoveryPolicy.decide(
             GlucoseSourceRecoveryState(), wasClean: false, now: base)
-        #expect(shouldStart, "one unclean start (the overwhelmingly common jetsam/watchdog/OOM case) must never disable failover")
+        #expect(
+            shouldStart,
+            "one unclean start (the overwhelmingly common jetsam/watchdog/OOM case) must never disable failover")
         #expect(next.uncleanStartCount == 1)
         #expect(next.disabledUntil == nil)
     }
@@ -27,7 +29,7 @@ import Foundation
         for _ in 0..<(GlucoseSourceRecoveryPolicy.maxUncleanStartsBeforeDisable - 1) {
             (state, shouldStart) = GlucoseSourceRecoveryPolicy.decide(state, wasClean: false, now: now)
             #expect(shouldStart, "below the threshold, failover must stay enabled")
-            now = now.addingTimeInterval(60)   // still well inside uncleanStartWindow
+            now = now.addingTimeInterval(60)  // still well inside uncleanStartWindow
         }
         // The Nth unclean start within the window crosses the threshold.
         (state, shouldStart) = GlucoseSourceRecoveryPolicy.decide(state, wasClean: false, now: now)
@@ -63,7 +65,8 @@ import Foundation
 
     @Test func aCleanShutdownAlwaysResetsTheTally() {
         let state = GlucoseSourceRecoveryState(uncleanStartCount: 2, lastUncleanStartAt: base)
-        let (next, shouldStart) = GlucoseSourceRecoveryPolicy.decide(state, wasClean: true, now: base.addingTimeInterval(10))
+        let (next, shouldStart) = GlucoseSourceRecoveryPolicy.decide(
+            state, wasClean: true, now: base.addingTimeInterval(10))
         #expect(shouldStart)
         #expect(next.uncleanStartCount == 0)
         #expect(next.lastUncleanStartAt == nil)
@@ -79,7 +82,9 @@ import Foundation
         let farLater = base.addingTimeInterval(GlucoseSourceRecoveryPolicy.uncleanStartWindow + 3600)
         (state, shouldStart) = GlucoseSourceRecoveryPolicy.decide(state, wasClean: false, now: farLater)
         #expect(shouldStart)
-        #expect(state.uncleanStartCount == 1, "an unclean start outside the window resets the tally rather than accumulating")
+        #expect(
+            state.uncleanStartCount == 1,
+            "an unclean start outside the window resets the tally rather than accumulating")
     }
 
     @Test func neverClaimsATerminationCauseInItsPersistedState() {

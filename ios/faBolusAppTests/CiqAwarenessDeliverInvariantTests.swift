@@ -27,7 +27,8 @@ struct CiqAwarenessDeliverInvariantTests {
         fake.script(BolusPermissionResponse.props.opCode, .frame(FakePumpTransport.permissionGranted(bolusId: bolusId)))
         fake.script(initiateOp, .frame(FakePumpTransport.initiateAccepted(bolusId: bolusId)))
         fake.script(statusOp, .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: bolusId)))
-        fake.script(lastOp, .frame(FakePumpTransport.lastBolus(bolusId: bolusId, deliveredMilliunits: deliveredMilliunits)))
+        fake.script(
+            lastOp, .frame(FakePumpTransport.lastBolus(bolusId: bolusId, deliveredMilliunits: deliveredMilliunits)))
         return (backend, fake)
     }
 
@@ -37,7 +38,8 @@ struct CiqAwarenessDeliverInvariantTests {
     /// Used to assert the ACTUAL bytes written to the wire, not merely the mocked-and-matching return value.
     private func expectedUnitsOnlyCargo(enteredUnits: Double) throws -> [UInt8] {
         let mu = UInt32((enteredUnits * 1000).rounded())
-        let req = try InitiateBolusRequest(validating: mu, bolusID: bolusId, bolusTypeBitmask: InitiateBolusRequest.bitFood2)
+        let req = try InitiateBolusRequest(
+            validating: mu, bolusID: bolusId, bolusTypeBitmask: InitiateBolusRequest.bitFood2)
         return req.cargo
     }
 
@@ -163,7 +165,9 @@ struct CiqAwarenessDeliverInvariantTests {
             sentCargos.append(sent.cargo)
         }
         for cargo in sentCargos {
-            #expect(cargo == expectedCargo, "every quadrant must write byte-identical InitiateBolus cargo for the same consented amount")
+            #expect(
+                cargo == expectedCargo,
+                "every quadrant must write byte-identical InitiateBolus cargo for the same consented amount")
         }
     }
 }

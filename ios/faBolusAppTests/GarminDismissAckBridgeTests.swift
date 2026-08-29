@@ -13,7 +13,8 @@ struct GarminDismissAckBridgeTests {
     // MARK: - garminDismissAckDecision (checkpoint #2 absence-only / #4 typed-outcome)
 
     @Test func authenticatedClearedYieldsAck() {
-        let decision = garminDismissAckDecision(outcome: .authenticatedCleared, requestId: "r1", alertId: 5, alertKind: 1)
+        let decision = garminDismissAckDecision(
+            outcome: .authenticatedCleared, requestId: "r1", alertId: 5, alertKind: 1)
         #expect(decision == .ack(requestId: "r1", alertId: 5, alertKind: 1))
     }
 
@@ -27,14 +28,16 @@ struct GarminDismissAckBridgeTests {
     // MARK: - garminDismissShouldReplay (H2/HIGH-A)
 
     @Test func matchingReceiptRequestIdReplays() {
-        let receipt = GarminDismissReceipt(peer: "garmin", requestId: "r1", alertId: 5, alertKind: 1,
-                                           createdAt: Date(), acked: true)
+        let receipt = GarminDismissReceipt(
+            peer: "garmin", requestId: "r1", alertId: 5, alertKind: 1,
+            createdAt: Date(), acked: true)
         #expect(garminDismissShouldReplay(receipt: receipt, requestId: "r1"))
     }
 
     @Test func mismatchedOrAbsentReceiptDoesNotReplay() {
-        let receipt = GarminDismissReceipt(peer: "garmin", requestId: "r-OTHER", alertId: 5, alertKind: 1,
-                                           createdAt: Date(), acked: true)
+        let receipt = GarminDismissReceipt(
+            peer: "garmin", requestId: "r-OTHER", alertId: 5, alertKind: 1,
+            createdAt: Date(), acked: true)
         #expect(!garminDismissShouldReplay(receipt: receipt, requestId: "r1"))
         #expect(!garminDismissShouldReplay(receipt: nil, requestId: "r1"))
     }
@@ -44,7 +47,9 @@ struct GarminDismissAckBridgeTests {
     /// A single recorded sink invocation — a named `Equatable` struct (not a tuple, which Swift arrays
     /// can't `==`-compare) so assertions below can compare whole call lists directly.
     private struct Call: Equatable {
-        let requestId: String; let alertId: Int; let alertKind: Int
+        let requestId: String
+        let alertId: Int
+        let alertKind: Int
     }
 
     /// A recorder of every sink call, for asserting call counts/args/ORDER without any ConnectIQ type.
@@ -60,14 +65,24 @@ struct GarminDismissAckBridgeTests {
 
     @Test @MainActor func replayPathSendsStoredAckNeverRunsDismissAndSendsBackstop() async {
         let rec = Recorder()
-        let storedReceipt = GarminDismissReceipt(peer: "garmin", requestId: "r1", alertId: 5, alertKind: 1,
-                                                 createdAt: Date(), acked: false)
+        let storedReceipt = GarminDismissReceipt(
+            peer: "garmin", requestId: "r1", alertId: 5, alertKind: 1,
+            createdAt: Date(), acked: false)
         await garminHandleDismissAlert(
             requestId: "r1", alertId: 5, alertKind: 1,
             lookupReceipt: { _ in storedReceipt },
-            performDismiss: { rec.dismissPerformedCount += 1; return .authenticatedCleared },
-            persistReceipt: { rid, aid, akind in rec.persisted.append(Call(requestId: rid, alertId: aid, alertKind: akind)); rec.orderedEvents.append("persist") },
-            sendAck: { rid, aid, akind in rec.acksSent.append(Call(requestId: rid, alertId: aid, alertKind: akind)); rec.orderedEvents.append("ack") },
+            performDismiss: {
+                rec.dismissPerformedCount += 1
+                return .authenticatedCleared
+            },
+            persistReceipt: { rid, aid, akind in
+                rec.persisted.append(Call(requestId: rid, alertId: aid, alertKind: akind))
+                rec.orderedEvents.append("persist")
+            },
+            sendAck: { rid, aid, akind in
+                rec.acksSent.append(Call(requestId: rid, alertId: aid, alertKind: akind))
+                rec.orderedEvents.append("ack")
+            },
             sendStatusBackstop: { rec.backstopSentCount += 1 }
         )
         #expect(rec.dismissPerformedCount == 0, "a replay must never re-run the dismiss")
@@ -82,9 +97,18 @@ struct GarminDismissAckBridgeTests {
         await garminHandleDismissAlert(
             requestId: "r2", alertId: 7, alertKind: 2,
             lookupReceipt: { _ in nil },
-            performDismiss: { rec.dismissPerformedCount += 1; return .authenticatedCleared },
-            persistReceipt: { rid, aid, akind in rec.persisted.append(Call(requestId: rid, alertId: aid, alertKind: akind)); rec.orderedEvents.append("persist") },
-            sendAck: { rid, aid, akind in rec.acksSent.append(Call(requestId: rid, alertId: aid, alertKind: akind)); rec.orderedEvents.append("ack") },
+            performDismiss: {
+                rec.dismissPerformedCount += 1
+                return .authenticatedCleared
+            },
+            persistReceipt: { rid, aid, akind in
+                rec.persisted.append(Call(requestId: rid, alertId: aid, alertKind: akind))
+                rec.orderedEvents.append("persist")
+            },
+            sendAck: { rid, aid, akind in
+                rec.acksSent.append(Call(requestId: rid, alertId: aid, alertKind: akind))
+                rec.orderedEvents.append("ack")
+            },
             sendStatusBackstop: { rec.backstopSentCount += 1 }
         )
         #expect(rec.dismissPerformedCount == 1)
@@ -102,9 +126,15 @@ struct GarminDismissAckBridgeTests {
             await garminHandleDismissAlert(
                 requestId: "r3", alertId: 1, alertKind: 1,
                 lookupReceipt: { _ in nil },
-                performDismiss: { rec.dismissPerformedCount += 1; return outcome },
-                persistReceipt: { rid, aid, akind in rec.persisted.append(Call(requestId: rid, alertId: aid, alertKind: akind)) },
-                sendAck: { rid, aid, akind in rec.acksSent.append(Call(requestId: rid, alertId: aid, alertKind: akind)) },
+                performDismiss: {
+                    rec.dismissPerformedCount += 1
+                    return outcome
+                },
+                persistReceipt: { rid, aid, akind in
+                    rec.persisted.append(Call(requestId: rid, alertId: aid, alertKind: akind))
+                },
+                sendAck: { rid, aid, akind in rec.acksSent.append(Call(requestId: rid, alertId: aid, alertKind: akind))
+                },
                 sendStatusBackstop: { rec.backstopSentCount += 1 }
             )
             #expect(rec.persisted.isEmpty, "\(outcome) must never persist a receipt")
@@ -122,7 +152,9 @@ struct GarminDismissAckBridgeTests {
             requestId: "r4", alertId: 9, alertKind: 1,
             lookupReceipt: { _ in nil },
             performDismiss: { .authenticatedCleared },
-            persistReceipt: { rid, aid, akind in rec.persisted.append(Call(requestId: rid, alertId: aid, alertKind: akind)) },
+            persistReceipt: { rid, aid, akind in
+                rec.persisted.append(Call(requestId: rid, alertId: aid, alertKind: akind))
+            },
             sendAck: { rid, aid, akind in rec.acksSent.append(Call(requestId: rid, alertId: aid, alertKind: akind)) },
             sendStatusBackstop: { rec.backstopSentCount += 1 }
         )
@@ -207,12 +239,16 @@ struct GarminDismissAckBridgeTests {
         let now = Date()
         let total = GarminDismissReceiptStore.cap + 5
         for i in 0..<total {
-            store.persist(peer: "garmin", requestId: "r\(i)", alertId: i, alertKind: 1,
-                          now: now.addingTimeInterval(-Double(total - i)))   // i=0 oldest, i=total-1 newest (still past)
+            store.persist(
+                peer: "garmin", requestId: "r\(i)", alertId: i, alertKind: 1,
+                now: now.addingTimeInterval(-Double(total - i)))  // i=0 oldest, i=total-1 newest (still past)
         }
-        #expect(store.receipt(peer: "garmin", requestId: "r0", now: now) == nil, "the oldest entries must be pruned on overflow")
-        #expect(store.receipt(peer: "garmin", requestId: "r\(total - 1)", now: now) != nil,
-                "the newest entry must survive")
+        #expect(
+            store.receipt(peer: "garmin", requestId: "r0", now: now) == nil,
+            "the oldest entries must be pruned on overflow")
+        #expect(
+            store.receipt(peer: "garmin", requestId: "r\(total - 1)", now: now) != nil,
+            "the newest entry must survive")
     }
 
     /// T-14-32/MEDIUM-F: the dismiss-receipt lane is COMPLETELY separate from the bolus
@@ -224,7 +260,8 @@ struct GarminDismissAckBridgeTests {
         let store = GarminDismissReceiptStore(defaults: defaults)
         store.persist(peer: "garmin", requestId: "r1", alertId: 5, alertKind: 1)
         store.markAcked(peer: "garmin", requestId: "r1")
-        #expect(defaults.array(forKey: "garminEchoedRequestIds") == nil,
-                "the dismiss-receipt store must never write the bolus echo lane's key")
+        #expect(
+            defaults.array(forKey: "garminEchoedRequestIds") == nil,
+            "the dismiss-receipt store must never write the bolus echo lane's key")
     }
 }

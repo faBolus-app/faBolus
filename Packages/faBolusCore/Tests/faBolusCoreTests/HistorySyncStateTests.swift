@@ -11,8 +11,9 @@ final class HistorySyncStateTests: XCTestCase {
         XCTAssertEqual(HistorySyncState.idle(lastSynced: date), HistorySyncState.idle(lastSynced: date))
         XCTAssertEqual(HistorySyncState.idle(lastSynced: nil), HistorySyncState.idle(lastSynced: nil))
         XCTAssertNotEqual(HistorySyncState.idle(lastSynced: date), HistorySyncState.idle(lastSynced: nil))
-        XCTAssertNotEqual(HistorySyncState.idle(lastSynced: date),
-                          HistorySyncState.idle(lastSynced: date.addingTimeInterval(1)))
+        XCTAssertNotEqual(
+            HistorySyncState.idle(lastSynced: date),
+            HistorySyncState.idle(lastSynced: date.addingTimeInterval(1)))
     }
 
     func testSyncingAndPausedAreSingletonCases() {

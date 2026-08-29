@@ -91,7 +91,7 @@ public enum GlucosePlotScale {
             GlucoseThresholds.veryLow,
             GlucoseThresholds.low,
             GlucoseThresholds.high,
-            GlucoseThresholds.veryHigh,
+            GlucoseThresholds.veryHigh
         ]
         return marks.allSatisfy { floor <= $0 && $0 <= ceiling }
     }

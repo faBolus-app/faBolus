@@ -17,7 +17,7 @@ struct TherapyEditAckAppTests {
         s.acknowledgeTherapyEdit()
         #expect(s.hasAcknowledgedTherapyEdit)
         let first = s.therapyEditAckAt
-        s.acknowledgeTherapyEdit()                 // idempotent — must keep the first timestamp
+        s.acknowledgeTherapyEdit()  // idempotent — must keep the first timestamp
         #expect(s.therapyEditAckAt == first)
     }
 }

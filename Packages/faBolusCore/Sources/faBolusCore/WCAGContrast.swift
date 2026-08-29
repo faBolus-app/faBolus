@@ -29,10 +29,13 @@ public enum WCAGContrast {
     }
 
     /// WCAG contrast ratio between two sRGB colors (components 0...1).
-    public static func contrastRatio(red r1: Double, green g1: Double, blue b1: Double,
-                                     red r2: Double, green g2: Double, blue b2: Double) -> Double {
-        contrastRatio(luminance: relativeLuminance(red: r1, green: g1, blue: b1),
-                      luminance: relativeLuminance(red: r2, green: g2, blue: b2))
+    public static func contrastRatio(
+        red r1: Double, green g1: Double, blue b1: Double,
+        red r2: Double, green g2: Double, blue b2: Double
+    ) -> Double {
+        contrastRatio(
+            luminance: relativeLuminance(red: r1, green: g1, blue: b1),
+            luminance: relativeLuminance(red: r2, green: g2, blue: b2))
     }
 
     /// Contrast of an sRGB color against opaque white (#FFFFFF) — the iOS light-mode background.

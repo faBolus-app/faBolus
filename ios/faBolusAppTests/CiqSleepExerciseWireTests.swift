@@ -104,19 +104,23 @@ import faBolusCore
     // MARK: - compactLine (D-09.5 remote-first form) — mutual exclusivity + fail-closed
 
     @Test func compactLineIsNilInNormalMode() {
-        #expect(SleepExerciseAwareness.compactLine(mode: .normal, descriptor: .controlIQ,
-                                                    exerciseTimeRemainingSec: 300) == nil)
+        #expect(
+            SleepExerciseAwareness.compactLine(
+                mode: .normal, descriptor: .controlIQ,
+                exerciseTimeRemainingSec: 300) == nil)
     }
 
     @Test func compactLineForSleepNeverMentionsExerciseFacts() {
-        let line = SleepExerciseAwareness.compactLine(mode: .sleep, descriptor: .controlIQ,
-                                                       exerciseTimeRemainingSec: nil)
+        let line = SleepExerciseAwareness.compactLine(
+            mode: .sleep, descriptor: .controlIQ,
+            exerciseTimeRemainingSec: nil)
         #expect(line == "Sleep — AutoBolus off")
     }
 
     @Test func compactLineForExerciseIsAbsentWithoutAKnownTimer() {
-        let line = SleepExerciseAwareness.compactLine(mode: .exercise, descriptor: .controlIQ,
-                                                       exerciseTimeRemainingSec: nil)
+        let line = SleepExerciseAwareness.compactLine(
+            mode: .exercise, descriptor: .controlIQ,
+            exerciseTimeRemainingSec: nil)
         #expect(line == nil)
     }
 
@@ -124,9 +128,10 @@ import faBolusCore
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = TimeZone(identifier: "UTC")!
         let now = cal.date(from: DateComponents(year: 2026, month: 8, day: 17, hour: 13, minute: 0))!
-        let line = SleepExerciseAwareness.compactLine(mode: .exercise, descriptor: .controlIQ,
-                                                       exerciseTimeRemainingSec: 4 * 3600 + 20 * 60,
-                                                       now: now, calendar: cal)
+        let line = SleepExerciseAwareness.compactLine(
+            mode: .exercise, descriptor: .controlIQ,
+            exerciseTimeRemainingSec: 4 * 3600 + 20 * 60,
+            now: now, calendar: cal)
         #expect(line == "Exercise — ends 5:20")
     }
 
@@ -141,9 +146,10 @@ import faBolusCore
     /// 2026-08-17 is a Monday.
     @Test func activeWindowFindsASameDayEnabledSlotOnItsWeekday() {
         let cal = utcCalendar()
-        let now = cal.date(from: DateComponents(year: 2026, month: 8, day: 17, hour: 23, minute: 0))!   // Monday 23:00
-        let slot = PumpSleepScheduleSlot(slot: 0, enabled: true, activeDays: 1,   // Monday only
-                                         startMinute: 22 * 60, endMinute: 23 * 60 + 30)
+        let now = cal.date(from: DateComponents(year: 2026, month: 8, day: 17, hour: 23, minute: 0))!  // Monday 23:00
+        let slot = PumpSleepScheduleSlot(
+            slot: 0, enabled: true, activeDays: 1,  // Monday only
+            startMinute: 22 * 60, endMinute: 23 * 60 + 30)
         let window = SleepWindowDerivation.activeWindow(slots: [slot], now: now, calendar: cal)
         #expect(window?.startMinute == 22 * 60)
         #expect(window?.endMinute == 23 * 60 + 30)
@@ -151,17 +157,19 @@ import faBolusCore
 
     @Test func activeWindowIsNilOutsideTheConfiguredMinutes() {
         let cal = utcCalendar()
-        let now = cal.date(from: DateComponents(year: 2026, month: 8, day: 17, hour: 12, minute: 0))!   // Monday noon
-        let slot = PumpSleepScheduleSlot(slot: 0, enabled: true, activeDays: 1,
-                                         startMinute: 22 * 60, endMinute: 23 * 60 + 30)
+        let now = cal.date(from: DateComponents(year: 2026, month: 8, day: 17, hour: 12, minute: 0))!  // Monday noon
+        let slot = PumpSleepScheduleSlot(
+            slot: 0, enabled: true, activeDays: 1,
+            startMinute: 22 * 60, endMinute: 23 * 60 + 30)
         #expect(SleepWindowDerivation.activeWindow(slots: [slot], now: now, calendar: cal) == nil)
     }
 
     @Test func activeWindowIsNilForADisabledSlotEvenInsideItsMinutes() {
         let cal = utcCalendar()
         let now = cal.date(from: DateComponents(year: 2026, month: 8, day: 17, hour: 23, minute: 0))!
-        let slot = PumpSleepScheduleSlot(slot: 0, enabled: false, activeDays: 1,
-                                         startMinute: 22 * 60, endMinute: 23 * 60 + 30)
+        let slot = PumpSleepScheduleSlot(
+            slot: 0, enabled: false, activeDays: 1,
+            startMinute: 22 * 60, endMinute: 23 * 60 + 30)
         #expect(SleepWindowDerivation.activeWindow(slots: [slot], now: now, calendar: cal) == nil)
     }
 
@@ -170,13 +178,14 @@ import faBolusCore
     /// Tuesday's clock, since the slot's day-of-week names the START day).
     @Test func activeWindowHandlesAMidnightSpanningSlotOnBothSides() {
         let cal = utcCalendar()
-        let slot = PumpSleepScheduleSlot(slot: 0, enabled: true, activeDays: 1,   // Monday
-                                         startMinute: 22 * 60, endMinute: 6 * 60)
-        let tonight = cal.date(from: DateComponents(year: 2026, month: 8, day: 17, hour: 23, minute: 0))!   // Mon 23:00
+        let slot = PumpSleepScheduleSlot(
+            slot: 0, enabled: true, activeDays: 1,  // Monday
+            startMinute: 22 * 60, endMinute: 6 * 60)
+        let tonight = cal.date(from: DateComponents(year: 2026, month: 8, day: 17, hour: 23, minute: 0))!  // Mon 23:00
         #expect(SleepWindowDerivation.activeWindow(slots: [slot], now: tonight, calendar: cal) != nil)
-        let thisMorning = cal.date(from: DateComponents(year: 2026, month: 8, day: 18, hour: 3, minute: 0))!   // Tue 03:00
+        let thisMorning = cal.date(from: DateComponents(year: 2026, month: 8, day: 18, hour: 3, minute: 0))!  // Tue 03:00
         #expect(SleepWindowDerivation.activeWindow(slots: [slot], now: thisMorning, calendar: cal) != nil)
-        let afterEnd = cal.date(from: DateComponents(year: 2026, month: 8, day: 18, hour: 7, minute: 0))!   // Tue 07:00
+        let afterEnd = cal.date(from: DateComponents(year: 2026, month: 8, day: 18, hour: 7, minute: 0))!  // Tue 07:00
         #expect(SleepWindowDerivation.activeWindow(slots: [slot], now: afterEnd, calendar: cal) == nil)
     }
 
@@ -184,8 +193,9 @@ import faBolusCore
         let cal = utcCalendar()
         // Slot only active on Sunday (bit 6) — 2026-08-17 is a Monday, so no match even though the
         // clock time is inside the configured minute range.
-        let slot = PumpSleepScheduleSlot(slot: 0, enabled: true, activeDays: 1 << 6,
-                                         startMinute: 22 * 60, endMinute: 23 * 60 + 30)
+        let slot = PumpSleepScheduleSlot(
+            slot: 0, enabled: true, activeDays: 1 << 6,
+            startMinute: 22 * 60, endMinute: 23 * 60 + 30)
         let now = cal.date(from: DateComponents(year: 2026, month: 8, day: 17, hour: 23, minute: 0))!
         #expect(SleepWindowDerivation.activeWindow(slots: [slot], now: now, calendar: cal) == nil)
     }
@@ -203,9 +213,9 @@ import faBolusCore
     @Test func snapshotSelectsExactlyOnePresetNeverBoth() {
         var snap = PumpSnapshot()
         snap.controllerVariant = .controlIQ
-        snap.controlIQMode = 1   // sleep
+        snap.controlIQMode = 1  // sleep
         #expect(snap.ciqActivityPreset?.name == "Sleep")
-        snap.controlIQMode = 2   // exercise
+        snap.controlIQMode = 2  // exercise
         #expect(snap.ciqActivityPreset?.name == "Exercise")
     }
 
@@ -354,7 +364,7 @@ import faBolusCore
         #expect(m.ciqActivityPreset?.name == "Exercise")
 
         var normal = RemoteCommand(kind: .statusRead)
-        normal.controlIQMode = 0   // exerciseTimeRemainingSec absent ⇒ nil
+        normal.controlIQMode = 0  // exerciseTimeRemainingSec absent ⇒ nil
         normal.ciqSleepExerciseAwarenessEnabled = true
         m.handle(normal)
         #expect(m.controlIQMode == 0)

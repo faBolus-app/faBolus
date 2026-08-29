@@ -11,7 +11,7 @@ struct BandDriftGuardTests {
     /// The only symbols this scan treats as "this block classifies a glucose band". Held as a
     /// `String` array (not `Set`) because scan order doesn't matter and duplicates are harmless.
     static let bandClassificationEntryPoints = [
-        "GlucoseRange.classify(", ".rangeCategory", "WidgetSnapshot.rangeCategory(",
+        "GlucoseRange.classify(", ".rangeCategory", "WidgetSnapshot.rangeCategory("
     ]
 
     /// Forbidden raw Color identifiers inside a classifying block. Glucose color is display-only
@@ -41,10 +41,13 @@ struct BandDriftGuardTests {
         let fm = FileManager.default
         let skipDirNames: Set<String> = [
             ".build", "DerivedData", "Pods", ".git", "node_modules",
-            "faBolusDesign", "faBolusCore",
+            "faBolusDesign", "faBolusCore"
         ]
-        guard let enumerator = fm.enumerator(at: root, includingPropertiesForKeys: [.isDirectoryKey],
-                                              options: [.skipsHiddenFiles]) else { return [] }
+        guard
+            let enumerator = fm.enumerator(
+                at: root, includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles])
+        else { return [] }
         var results: [URL] = []
         for case let url as URL in enumerator {
             let name = url.lastPathComponent
@@ -76,8 +79,7 @@ struct BandDriftGuardTests {
         for (idx, line) in lines.enumerated() {
             if idx == targetIdx { return stack.last }
             for ch in line {
-                if ch == "{" { stack.append(idx) }
-                else if ch == "}" { if !stack.isEmpty { stack.removeLast() } }
+                if ch == "{" { stack.append(idx) } else if ch == "}" { if !stack.isEmpty { stack.removeLast() } }
             }
         }
         return nil
@@ -94,8 +96,12 @@ struct BandDriftGuardTests {
         for line in lines[startIdx...] {
             collected.append(line)
             for ch in line {
-                if ch == "{" { depth += 1; opened = true }
-                else if ch == "}" { depth -= 1 }
+                if ch == "{" {
+                    depth += 1
+                    opened = true
+                } else if ch == "}" {
+                    depth -= 1
+                }
             }
             if opened && depth <= 0 { break }
         }
@@ -106,8 +112,9 @@ struct BandDriftGuardTests {
 
     /// A classifying block must not hardcode a raw band color. Fail loudly if the scan finds nothing.
     @Test func noRawBandColorInsideAnyClassifyingBlockOutsideDesignOrCore() throws {
-        let repoRoot = try #require(Self.repoRootURL(),
-                                     "could not resolve repo root from #filePath=\(#filePath)")
+        let repoRoot = try #require(
+            Self.repoRootURL(),
+            "could not resolve repo root from #filePath=\(#filePath)")
         var scannedBlocks = 0
         var violations: [String] = []
 
@@ -126,25 +133,31 @@ struct BandDriftGuardTests {
 
                 let slice = Self.balancedSlice(startingAt: startIdx, in: lines)
                 for forbidden in Self.forbiddenRawBandColors where slice.contains(forbidden) {
-                    violations.append("\(url.lastPathComponent):\(startIdx + 1) contains forbidden raw band-color literal '\(forbidden)'")
+                    violations.append(
+                        "\(url.lastPathComponent):\(startIdx + 1) contains forbidden raw band-color literal '\(forbidden)'"
+                    )
                 }
             }
         }
 
-        #expect(violations.isEmpty,
-                "Band-color drift-guard violated:\n\(violations.joined(separator: "\n"))")
-        #expect(scannedBlocks > 0,
-                "expected to find at least one band-classifying block under \(repoRoot.path) — scan broke (would otherwise pass vacuously)")
+        #expect(
+            violations.isEmpty,
+            "Band-color drift-guard violated:\n\(violations.joined(separator: "\n"))")
+        #expect(
+            scannedBlocks > 0,
+            "expected to find at least one band-classifying block under \(repoRoot.path) — scan broke (would otherwise pass vacuously)"
+        )
     }
 
     /// `tirBar` and the chart scatter points color via `AppTheme` with no local classify call, so
     /// they stay out of the classify-entry-point scan by design, not a scan bug.
     @Test func agpBarAndChartScatterPointsContainNoDirectClassifyEntryPoint() throws {
-        let repoRoot = try #require(Self.repoRootURL(),
-                                     "could not resolve repo root from #filePath=\(#filePath)")
+        let repoRoot = try #require(
+            Self.repoRootURL(),
+            "could not resolve repo root from #filePath=\(#filePath)")
         let pins: [(file: String, signature: String)] = [
             ("ios/faBolus/Views/StatsCardView.swift", "func tirBar("),
-            ("ios/faBolus/Views/GlucoseChartView.swift", "var body: some View {"),
+            ("ios/faBolus/Views/GlucoseChartView.swift", "var body: some View {")
         ]
         for pin in pins {
             let url = repoRoot.appendingPathComponent(pin.file)
@@ -153,16 +166,19 @@ struct BandDriftGuardTests {
             let lines = stripped.components(separatedBy: "\n")
             let slice = try Self.functionSlice(signaturePrefix: pin.signature, in: lines, file: pin.file)
             let hit = Self.bandClassificationEntryPoints.first { slice.contains($0) }
-            #expect(hit == nil,
-                    "\(pin.file)'s \(pin.signature) unexpectedly contains a band-classification entry point ('\(hit ?? "")') — it is scoped OUT of D-01..D-07 (RESEARCH Open Qs #1/#2); if this is now intentional, this pin needs an owner-reviewed update, not a silent pass")
+            #expect(
+                hit == nil,
+                "\(pin.file)'s \(pin.signature) unexpectedly contains a band-classification entry point ('\(hit ?? "")') — it is scoped OUT of D-01..D-07 (RESEARCH Open Qs #1/#2); if this is now intentional, this pin needs an owner-reviewed update, not a silent pass"
+            )
         }
     }
 
     /// `tirBar` classifies via percentages, not `GlucoseRange.classify`, so it is also scanned
     /// directly: raw band-color literals must not resurface there.
     @Test func noRawBandColorInStatsCardViewTirBar() throws {
-        let repoRoot = try #require(Self.repoRootURL(),
-                                     "could not resolve repo root from #filePath=\(#filePath)")
+        let repoRoot = try #require(
+            Self.repoRootURL(),
+            "could not resolve repo root from #filePath=\(#filePath)")
         let file = "ios/faBolus/Views/StatsCardView.swift"
         let url = repoRoot.appendingPathComponent(file)
         let raw = try String(contentsOf: url, encoding: .utf8)
@@ -171,10 +187,12 @@ struct BandDriftGuardTests {
         let slice = try Self.functionSlice(signaturePrefix: "func tirBar(", in: lines, file: file)
 
         let violations = Self.forbiddenRawBandColors.filter { slice.contains($0) }
-        #expect(violations.isEmpty,
-                "tirBar still contains forbidden raw band-color literal(s): \(violations.joined(separator: ", "))")
-        #expect(!slice.isEmpty,
-                "expected to scan tirBar's body — resolution broke (would otherwise pass vacuously)")
+        #expect(
+            violations.isEmpty,
+            "tirBar still contains forbidden raw band-color literal(s): \(violations.joined(separator: ", "))")
+        #expect(
+            !slice.isEmpty,
+            "expected to scan tirBar's body — resolution broke (would otherwise pass vacuously)")
     }
 
     /// Locate a declaration by its signature-line substring and slice it via balanced braces — same
@@ -200,12 +218,14 @@ struct BandDriftGuardTests {
 
     /// Duplicate band-color classifiers deleted from production must stay gone.
     @Test func legacyBandColorDuplicateSitesAreAllDeleted() throws {
-        let repoRoot = try #require(Self.repoRootURL(),
-                                     "could not resolve repo root from #filePath=\(#filePath)")
+        let repoRoot = try #require(
+            Self.repoRootURL(),
+            "could not resolve repo root from #filePath=\(#filePath)")
 
         let macThemeURL = repoRoot.appendingPathComponent("mac/faBolusMac/MacTheme.swift")
-        #expect(!FileManager.default.fileExists(atPath: macThemeURL.path),
-                "mac/faBolusMac/MacTheme.swift should remain deleted (09.1-04)")
+        #expect(
+            !FileManager.default.fileExists(atPath: macThemeURL.path),
+            "mac/faBolusMac/MacTheme.swift should remain deleted (09.1-04)")
 
         // Exact original signatures, verified against git history immediately before each deletion:
         // watchGlucoseColor (commit a341263^), WidgetUI/MacWidgetUI's shared glucoseColor(_ category:)
@@ -216,7 +236,7 @@ struct BandDriftGuardTests {
             "glucoseColor(_ category: Int)",
             "MacWidgetUI",
             "func color(_ snap: WidgetSnapshot, now: Date) -> Color",
-            "static func band(_ mgdl: Int) -> Int",
+            "static func band(_ mgdl: Int) -> Int"
         ]
 
         var hits: [String] = []
@@ -227,14 +247,16 @@ struct BandDriftGuardTests {
                 hits.append("\(url.lastPathComponent) contains resurfaced symbol '\(symbol)'")
             }
         }
-        #expect(hits.isEmpty,
-                "Deleted band-color duplicate symbol(s) resurfaced:\n\(hits.joined(separator: "\n"))")
+        #expect(
+            hits.isEmpty,
+            "Deleted band-color duplicate symbol(s) resurfaced:\n\(hits.joined(separator: "\n"))")
     }
 
     /// A path-resolution bug must fail loudly, not pass vacuously (mirrors
     /// `LiveActivityBoundaryTests.fileResolutionActuallyFoundTheIntentsFile`).
     @Test func fileResolutionActuallyFoundTheRepoRoot() {
-        #expect(Self.repoRootURL() != nil,
-                "drift-guard could not locate the repo root — path resolution broke (#filePath=\(#filePath))")
+        #expect(
+            Self.repoRootURL() != nil,
+            "drift-guard could not locate the repo root — path resolution broke (#filePath=\(#filePath))")
     }
 }

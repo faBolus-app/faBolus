@@ -14,9 +14,9 @@ final class FakePumpTransport: PumpTransport {
 
     /// What to do when a given response opcode is awaited.
     enum Reply {
-        case frame([UInt8])                              // a valid response frame → parses to the typed response
-        case garbage                                     // an unparseable frame (post-write parse failure)
-        case tx(PumpTransactionCoordinator.TxError)      // timeout / connectionLost (write went out, reply lost)
+        case frame([UInt8])  // a valid response frame → parses to the typed response
+        case garbage  // an unparseable frame (post-write parse failure)
+        case tx(PumpTransactionCoordinator.TxError)  // timeout / connectionLost (write went out, reply lost)
     }
 
     /// Queues of replies keyed by RESPONSE opcode; each awaited request pops the next. An empty/absent
@@ -38,13 +38,17 @@ final class FakePumpTransport: PumpTransport {
         sent.last { $0.opCode == opCode }
     }
 
-    func script(_ responseOpCode: UInt8, _ replies: Reply...) { scripts[responseOpCode, default: []].append(contentsOf: replies) }
+    func script(_ responseOpCode: UInt8, _ replies: Reply...) {
+        scripts[responseOpCode, default: []].append(contentsOf: replies)
+    }
 
     // MARK: PumpTransport
 
     @discardableResult
-    func withWritePolicy<T>(_ policy: PumpBLEClient.WritePolicy,
-                            _ body: @MainActor () async throws -> T) async rethrows -> T {
+    func withWritePolicy<T>(
+        _ policy: PumpBLEClient.WritePolicy,
+        _ body: @MainActor () async throws -> T
+    ) async rethrows -> T {
         writePolicy = policy
         defer { writePolicy = .readOnly }
         return try await body()
@@ -56,8 +60,10 @@ final class FakePumpTransport: PumpTransport {
     private var nextTxId: UInt8 = 0
 
     @discardableResult
-    func send(_ message: Message, authenticationKey: [UInt8], pumpTimeSinceReset: UInt32,
-              allowInsulinDelivery: Bool) throws -> UInt8 {
+    func send(
+        _ message: Message, authenticationKey: [UInt8], pumpTimeSinceReset: UInt32,
+        allowInsulinDelivery: Bool
+    ) throws -> UInt8 {
         if let e = preWriteError[message.opCode] { throw e }
         sent.append((message.opCode, message.cargo, message.signed, allowInsulinDelivery))
         let txId = nextTxId
@@ -65,9 +71,11 @@ final class FakePumpTransport: PumpTransport {
         return txId
     }
 
-    func sendAwaitingResponse(_ message: Message, authenticationKey: [UInt8], pumpTimeSinceReset: UInt32,
-                              allowInsulinDelivery: Bool, responseOpCode: UInt8?,
-                              deadline: TimeInterval, serialized: Bool = false) async throws -> [UInt8] {
+    func sendAwaitingResponse(
+        _ message: Message, authenticationKey: [UInt8], pumpTimeSinceReset: UInt32,
+        allowInsulinDelivery: Bool, responseOpCode: UInt8?,
+        deadline: TimeInterval, serialized: Bool = false
+    ) async throws -> [UInt8] {
         // A pre-write failure throws before the write is recorded (clean pre-write failure).
         if let e = preWriteError[message.opCode] { throw e }
         // The write goes out first (matches the real client), THEN we await the reply.
@@ -76,12 +84,16 @@ final class FakePumpTransport: PumpTransport {
         awaited.append(op)
         willAwait?(op)
         let reply: Reply = {
-            if var q = scripts[op], !q.isEmpty { let r = q.removeFirst(); scripts[op] = q; return r }
-            return .tx(.timedOut(characteristic: message.characteristic, opCode: op))   // default: dropped
+            if var q = scripts[op], !q.isEmpty {
+                let r = q.removeFirst()
+                scripts[op] = q
+                return r
+            }
+            return .tx(.timedOut(characteristic: message.characteristic, opCode: op))  // default: dropped
         }()
         switch reply {
         case .frame(let f): return f
-        case .garbage: return [op, 0, 2, 0xDE, 0xAD, 0x00, 0x00]   // wrong length/crc → parse fails
+        case .garbage: return [op, 0, 2, 0xDE, 0xAD, 0x00, 0x00]  // wrong length/crc → parse fails
         case .tx(let e): throw e
         }
     }
@@ -118,7 +130,9 @@ final class FakePumpTransport: PumpTransport {
     private static func le2(_ v: Int) -> [UInt8] { Bytes.firstTwoBytesLittleEndian(v) }
 
     static func timeResponse(currentTime: UInt32 = 1000) -> [UInt8] {
-        frame(opCode: TimeSinceResetResponse.props.opCode, cargo: Bytes.toUint32(currentTime) + Bytes.toUint32(0), signed: false)
+        frame(
+            opCode: TimeSinceResetResponse.props.opCode, cargo: Bytes.toUint32(currentTime) + Bytes.toUint32(0),
+            signed: false)
     }
     static func permissionGranted(bolusId: Int) -> [UInt8] {
         frame(opCode: BolusPermissionResponse.props.opCode, cargo: [0] + le2(bolusId) + [0, 0, 0], signed: true)
@@ -130,19 +144,27 @@ final class FakePumpTransport: PumpTransport {
         frame(opCode: InitiateBolusResponse.props.opCode, cargo: [0] + le2(bolusId) + [0, 0, 0], signed: true)
     }
     static func initiateNack(bolusId: Int, statusType: Int = 3) -> [UInt8] {
-        frame(opCode: InitiateBolusResponse.props.opCode, cargo: [1] + le2(bolusId) + [0, 0, UInt8(statusType)], signed: true)
+        frame(
+            opCode: InitiateBolusResponse.props.opCode, cargo: [1] + le2(bolusId) + [0, 0, UInt8(statusType)],
+            signed: true)
     }
     /// statusId 0 = not active (bolus finished); 1/2 = active.
     static func currentBolusStatus(statusId: Int, bolusId: Int) -> [UInt8] {
         var c = [UInt8](repeating: 0, count: 15)
-        c[0] = UInt8(statusId); c[1] = le2(bolusId)[0]; c[2] = le2(bolusId)[1]
+        c[0] = UInt8(statusId)
+        c[1] = le2(bolusId)[0]
+        c[2] = le2(bolusId)[1]
         return frame(opCode: CurrentBolusStatusResponse.props.opCode, cargo: c, signed: false)
     }
     static func lastBolus(bolusId: Int, deliveredMilliunits: UInt32, status: Int = 3) -> [UInt8] {
         var c = [UInt8](repeating: 0, count: 24)
-        c[0] = UInt8(status); c[1] = le2(bolusId)[0]; c[2] = le2(bolusId)[1]
-        let ts = Bytes.toUint32(1000); for i in 0..<4 { c[5 + i] = ts[i] }
-        let dv = Bytes.toUint32(deliveredMilliunits); for i in 0..<4 { c[9 + i] = dv[i] }
+        c[0] = UInt8(status)
+        c[1] = le2(bolusId)[0]
+        c[2] = le2(bolusId)[1]
+        let ts = Bytes.toUint32(1000)
+        for i in 0..<4 { c[5 + i] = ts[i] }
+        let dv = Bytes.toUint32(deliveredMilliunits)
+        for i in 0..<4 { c[9 + i] = dv[i] }
         return frame(opCode: LastBolusStatusV2Response.props.opCode, cargo: c, signed: false)
     }
 
@@ -151,7 +173,8 @@ final class FakePumpTransport: PumpTransport {
     /// coordinator (these reads are fire-and-forget), so a test seeds it with `injectStatusFrameForTesting`.
     static func controlIQIOB(iobMilliunits: UInt32) -> [UInt8] {
         var c = [UInt8](repeating: 0, count: 17)
-        let v = Bytes.toUint32(iobMilliunits); for i in 0..<4 { c[12 + i] = v[i] }   // swan6hrIOB
+        let v = Bytes.toUint32(iobMilliunits)
+        for i in 0..<4 { c[12 + i] = v[i] }  // swan6hrIOB
         return frame(opCode: ControlIQIOBResponse.props.opCode, cargo: c, signed: false)
     }
 
@@ -161,7 +184,7 @@ final class FakePumpTransport: PumpTransport {
     static func homeScreenMirror(trendIconId: Int) -> [UInt8] {
         var c = [UInt8](repeating: 0, count: 9)
         c[0] = UInt8(trendIconId)
-        c[8] = 1   // cgmDisplayData: the mirror carries live CGM display state
+        c[8] = 1  // cgmDisplayData: the mirror carries live CGM display state
         return frame(opCode: HomeScreenMirrorResponse.props.opCode, cargo: c, signed: false)
     }
 
@@ -171,9 +194,11 @@ final class FakePumpTransport: PumpTransport {
     /// HomeScreenMirror trend (E8). `trendRate` is 0.1 mg/dL/min units (30 ⇒ +3.0 ⇒ a rising arrow).
     static func currentEgvV2(mgdl: Int, trendRate: Int) -> [UInt8] {
         var c = [UInt8](repeating: 0, count: 8)
-        let bg = le2(mgdl); c[4] = bg[0]; c[5] = bg[1]              // cgmReading (LE short)
-        c[6] = 1                                                    // egvStatusId = 1 → hasValidReading
-        c[7] = UInt8(bitPattern: Int8(truncatingIfNeeded: trendRate))   // signed trend rate
+        let bg = le2(mgdl)
+        c[4] = bg[0]
+        c[5] = bg[1]  // cgmReading (LE short)
+        c[6] = 1  // egvStatusId = 1 → hasValidReading
+        c[7] = UInt8(bitPattern: Int8(truncatingIfNeeded: trendRate))  // signed trend rate
         return frame(opCode: CurrentEgvGuiDataV2Response.props.opCode, cargo: c, signed: false)
     }
 
@@ -184,9 +209,11 @@ final class FakePumpTransport: PumpTransport {
     /// (on-device capture #6).
     static func currentEgvV1(mgdl: Int, trendRate: Int) -> [UInt8] {
         var c = [UInt8](repeating: 0, count: 8)
-        let bg = le2(mgdl); c[4] = bg[0]; c[5] = bg[1]              // cgmReading (LE short)
-        c[6] = 1                                                    // egvStatusId = 1 → hasValidReading
-        c[7] = UInt8(bitPattern: Int8(truncatingIfNeeded: trendRate))   // signed trend rate
+        let bg = le2(mgdl)
+        c[4] = bg[0]
+        c[5] = bg[1]  // cgmReading (LE short)
+        c[6] = 1  // egvStatusId = 1 → hasValidReading
+        c[7] = UInt8(bitPattern: Int8(truncatingIfNeeded: trendRate))  // signed trend rate
         return frame(opCode: CurrentEGVGuiDataResponse.props.opCode, cargo: c, signed: false)
     }
 
@@ -195,8 +222,9 @@ final class FakePumpTransport: PumpTransport {
     /// `PumpSnapshot.cartridgeLoadState` → the 09.9 `cartridgeReadyForBolus` pre-guard. loadStateId 0/1/2
     /// (CHANGE_CARTRIDGE/LOAD_CARTRIDGE/PRIME_TUBING) ⇒ not ready; the idle/unknown default 6 ⇒ ready.
     static func loadStatus(isLoadingActive: Bool, loadStateId: Int) -> [UInt8] {
-        frame(opCode: LoadStatusResponse.props.opCode,
-              cargo: [isLoadingActive ? 1 : 0, UInt8(truncatingIfNeeded: loadStateId), 0], signed: false)
+        frame(
+            opCode: LoadStatusResponse.props.opCode,
+            cargo: [isLoadingActive ? 1 : 0, UInt8(truncatingIfNeeded: loadStateId), 0], signed: false)
     }
 
     /// op-77 `ErrorResponse` (2 bytes: the rejected request's opcode, then the error code).
@@ -212,14 +240,24 @@ final class FakePumpTransport: PumpTransport {
     /// op-115 `BolusCalcDataSnapshotResponse` (size 46): the pump's calculator inputs (CR/ISF/target/max/iob)
     /// resolved for the active profile+segment. `carbRatioMilliGramsPerUnit` = grams-per-unit × 1000 (so 10000
     /// ⇒ 10 g/U); `iobMilliunits` should match the op-109 value or the host's cross-check trips `iobStale`.
-    static func calcDataSnapshot(iobMilliunits: UInt32, targetBg: Int, isf: Int,
-                                 carbRatioMilliGramsPerUnit: UInt32, maxBolusMilliunits: Int) -> [UInt8] {
+    static func calcDataSnapshot(
+        iobMilliunits: UInt32, targetBg: Int, isf: Int,
+        carbRatioMilliGramsPerUnit: UInt32, maxBolusMilliunits: Int
+    ) -> [UInt8] {
         var c = [UInt8](repeating: 0, count: 46)
-        let iobB = Bytes.toUint32(iobMilliunits); for i in 0..<4 { c[3 + i] = iobB[i] }      // iob
-        let tb = le2(targetBg); c[9] = tb[0]; c[10] = tb[1]                                   // targetBg
-        let isfB = le2(isf); c[11] = isfB[0]; c[12] = isfB[1]                                 // isf
-        let cr = Bytes.toUint32(carbRatioMilliGramsPerUnit); for i in 0..<4 { c[14 + i] = cr[i] }  // carbRatio
-        let mb = le2(maxBolusMilliunits); c[18] = mb[0]; c[19] = mb[1]                        // maxBolusAmount
+        let iobB = Bytes.toUint32(iobMilliunits)
+        for i in 0..<4 { c[3 + i] = iobB[i] }  // iob
+        let tb = le2(targetBg)
+        c[9] = tb[0]
+        c[10] = tb[1]  // targetBg
+        let isfB = le2(isf)
+        c[11] = isfB[0]
+        c[12] = isfB[1]  // isf
+        let cr = Bytes.toUint32(carbRatioMilliGramsPerUnit)
+        for i in 0..<4 { c[14 + i] = cr[i] }  // carbRatio
+        let mb = le2(maxBolusMilliunits)
+        c[18] = mb[0]
+        c[19] = mb[1]  // maxBolusAmount
         return frame(opCode: BolusCalcDataSnapshotResponse.props.opCode, cargo: c, signed: false)
     }
 
@@ -238,8 +276,10 @@ final class FakePumpTransport: PumpTransport {
     /// current evidenced key needs only op33's fields).
     static func pumpVersion(modelNum: UInt32 = 0, armSwVer: UInt32 = 0) -> [UInt8] {
         var c = [UInt8](repeating: 0, count: 48)
-        let arm = Bytes.toUint32(armSwVer); for i in 0..<4 { c[0 + i] = arm[i] }
-        let mn = Bytes.toUint32(modelNum);  for i in 0..<4 { c[44 + i] = mn[i] }
+        let arm = Bytes.toUint32(armSwVer)
+        for i in 0..<4 { c[0 + i] = arm[i] }
+        let mn = Bytes.toUint32(modelNum)
+        for i in 0..<4 { c[44 + i] = mn[i] }
         return frame(opCode: PumpVersionResponse.props.opCode, cargo: c, signed: false)
     }
 
@@ -248,9 +288,10 @@ final class FakePumpTransport: PumpTransport {
     /// op-59 `HistoryLogStatusResponse` (12 bytes: numEntries/firstSequenceNum/lastSequenceNum, all
     /// little-endian `UInt32`, per `TandemKit`'s `HistoryLog.swift`).
     static func historyLogStatus(numEntries: UInt32, firstSequenceNum: UInt32, lastSequenceNum: UInt32) -> [UInt8] {
-        frame(opCode: HistoryLogStatusResponse.props.opCode,
-              cargo: Bytes.toUint32(numEntries) + Bytes.toUint32(firstSequenceNum) + Bytes.toUint32(lastSequenceNum),
-              signed: false)
+        frame(
+            opCode: HistoryLogStatusResponse.props.opCode,
+            cargo: Bytes.toUint32(numEntries) + Bytes.toUint32(firstSequenceNum) + Bytes.toUint32(lastSequenceNum),
+            signed: false)
     }
 
     /// One 26-byte history-log CGM (EGV) record, matching `HistoryLog.parseCgmRecord`'s layout exactly:
@@ -258,10 +299,16 @@ final class FakePumpTransport: PumpTransport {
     /// pumpTimeSec = uint32@2, sequenceNum = uint32@6, glucoseMgdl = short@16.
     static func cgmHistoryRecord(sequenceNum: UInt32, pumpTimeSec: UInt32, mgdl: Int, typeId: Int = 256) -> [UInt8] {
         var r = [UInt8](repeating: 0, count: 26)
-        let t = le2(typeId); r[0] = t[0]; r[1] = t[1]
-        let ts = Bytes.toUint32(pumpTimeSec); for i in 0..<4 { r[2 + i] = ts[i] }
-        let seq = Bytes.toUint32(sequenceNum); for i in 0..<4 { r[6 + i] = seq[i] }
-        let g = le2(mgdl); r[16] = g[0]; r[17] = g[1]
+        let t = le2(typeId)
+        r[0] = t[0]
+        r[1] = t[1]
+        let ts = Bytes.toUint32(pumpTimeSec)
+        for i in 0..<4 { r[2 + i] = ts[i] }
+        let seq = Bytes.toUint32(sequenceNum)
+        for i in 0..<4 { r[6 + i] = seq[i] }
+        let g = le2(mgdl)
+        r[16] = g[0]
+        r[17] = g[1]
         return r
     }
 
@@ -270,17 +317,29 @@ final class FakePumpTransport: PumpTransport {
     /// sequenceNum = uint32@6, completionStatusId = short@10, bolusId = short@12, iob = float@14,
     /// deliveredUnits = float@18. `bolusId`/`completionStatusId` default to 0 (unused by most existing
     /// callers, which predate CC-11's restored `BolusHistoryRecord.bolusId` — Phase 14 14-04).
-    static func bolusHistoryRecord(sequenceNum: UInt32, pumpTimeSec: UInt32,
-                                   deliveredUnits: Double, iobUnits: Double,
-                                   bolusId: Int = 0, completionStatusId: Int = 0) -> [UInt8] {
+    static func bolusHistoryRecord(
+        sequenceNum: UInt32, pumpTimeSec: UInt32,
+        deliveredUnits: Double, iobUnits: Double,
+        bolusId: Int = 0, completionStatusId: Int = 0
+    ) -> [UInt8] {
         var r = [UInt8](repeating: 0, count: 26)
-        let t = le2(20); r[0] = t[0]; r[1] = t[1]
-        let ts = Bytes.toUint32(pumpTimeSec); for i in 0..<4 { r[2 + i] = ts[i] }
-        let seq = Bytes.toUint32(sequenceNum); for i in 0..<4 { r[6 + i] = seq[i] }
-        let cs = le2(completionStatusId); r[10] = cs[0]; r[11] = cs[1]
-        let bid = le2(bolusId); r[12] = bid[0]; r[13] = bid[1]
-        let iobB = Bytes.toFloat(Float(iobUnits)); for i in 0..<4 { r[14 + i] = iobB[i] }
-        let dv = Bytes.toFloat(Float(deliveredUnits)); for i in 0..<4 { r[18 + i] = dv[i] }
+        let t = le2(20)
+        r[0] = t[0]
+        r[1] = t[1]
+        let ts = Bytes.toUint32(pumpTimeSec)
+        for i in 0..<4 { r[2 + i] = ts[i] }
+        let seq = Bytes.toUint32(sequenceNum)
+        for i in 0..<4 { r[6 + i] = seq[i] }
+        let cs = le2(completionStatusId)
+        r[10] = cs[0]
+        r[11] = cs[1]
+        let bid = le2(bolusId)
+        r[12] = bid[0]
+        r[13] = bid[1]
+        let iobB = Bytes.toFloat(Float(iobUnits))
+        for i in 0..<4 { r[14 + i] = iobB[i] }
+        let dv = Bytes.toFloat(Float(deliveredUnits))
+        for i in 0..<4 { r[18 + i] = dv[i] }
         return r
     }
 
@@ -290,16 +349,26 @@ final class FakePumpTransport: PumpTransport {
     /// test needs — e.g. an unrecognized/`UnknownHistoryLog` typeId — and defaults to none).
     /// `bolusRecordsById` (CC-11, Phase 14 14-04) is a separate param from `bolusRecords` — additive, so
     /// no existing call site needs to change — for a test that needs the restored `bolusId` field.
-    static func historyLogStream(cgmReadings: [(seq: UInt32, pumpTimeSec: UInt32, mgdl: Int)] = [],
-                                 bolusRecords: [(seq: UInt32, pumpTimeSec: UInt32, delivered: Double, iob: Double)] = [],
-                                 bolusRecordsById: [(seq: UInt32, pumpTimeSec: UInt32, bolusId: Int, delivered: Double,
-                                                     iob: Double, completionStatusId: Int)] = [],
-                                 events: [[UInt8]] = [], streamId: Int = 0) -> [UInt8] {
-        var records: [[UInt8]] = cgmReadings.map { cgmHistoryRecord(sequenceNum: $0.seq, pumpTimeSec: $0.pumpTimeSec, mgdl: $0.mgdl) }
-        records += bolusRecords.map { bolusHistoryRecord(sequenceNum: $0.seq, pumpTimeSec: $0.pumpTimeSec, deliveredUnits: $0.delivered, iobUnits: $0.iob) }
+    static func historyLogStream(
+        cgmReadings: [(seq: UInt32, pumpTimeSec: UInt32, mgdl: Int)] = [],
+        bolusRecords: [(seq: UInt32, pumpTimeSec: UInt32, delivered: Double, iob: Double)] = [],
+        bolusRecordsById: [(
+            seq: UInt32, pumpTimeSec: UInt32, bolusId: Int, delivered: Double,
+            iob: Double, completionStatusId: Int
+        )] = [],
+        events: [[UInt8]] = [], streamId: Int = 0
+    ) -> [UInt8] {
+        var records: [[UInt8]] = cgmReadings.map {
+            cgmHistoryRecord(sequenceNum: $0.seq, pumpTimeSec: $0.pumpTimeSec, mgdl: $0.mgdl)
+        }
+        records += bolusRecords.map {
+            bolusHistoryRecord(
+                sequenceNum: $0.seq, pumpTimeSec: $0.pumpTimeSec, deliveredUnits: $0.delivered, iobUnits: $0.iob)
+        }
         records += bolusRecordsById.map {
-            bolusHistoryRecord(sequenceNum: $0.seq, pumpTimeSec: $0.pumpTimeSec, deliveredUnits: $0.delivered,
-                               iobUnits: $0.iob, bolusId: $0.bolusId, completionStatusId: $0.completionStatusId)
+            bolusHistoryRecord(
+                sequenceNum: $0.seq, pumpTimeSec: $0.pumpTimeSec, deliveredUnits: $0.delivered,
+                iobUnits: $0.iob, bolusId: $0.bolusId, completionStatusId: $0.completionStatusId)
         }
         records += events
         let cargo: [UInt8] = [UInt8(records.count), UInt8(streamId)] + records.flatMap { $0 }
@@ -312,10 +381,15 @@ final class FakePumpTransport: PumpTransport {
     /// future-reject test — `historyLogStream`'s `events:` param accepts pre-built raw records like this.)
     static func carbEnteredHistoryRecord(sequenceNum: UInt32, pumpTimeSec: UInt32, carbs: Float) -> [UInt8] {
         var r = [UInt8](repeating: 0, count: 26)
-        let t = le2(48); r[0] = t[0]; r[1] = t[1]
-        let ts = Bytes.toUint32(pumpTimeSec); for i in 0..<4 { r[2 + i] = ts[i] }
-        let seq = Bytes.toUint32(sequenceNum); for i in 0..<4 { r[6 + i] = seq[i] }
-        let c = Bytes.toFloat(carbs); for i in 0..<4 { r[10 + i] = c[i] }
+        let t = le2(48)
+        r[0] = t[0]
+        r[1] = t[1]
+        let ts = Bytes.toUint32(pumpTimeSec)
+        for i in 0..<4 { r[2 + i] = ts[i] }
+        let seq = Bytes.toUint32(sequenceNum)
+        for i in 0..<4 { r[6 + i] = seq[i] }
+        let c = Bytes.toFloat(carbs)
+        for i in 0..<4 { r[10 + i] = c[i] }
         return r
     }
 
@@ -324,10 +398,14 @@ final class FakePumpTransport: PumpTransport {
     /// `HistoryLogStreamResponse.init(cargo:)` parses `records` purely from however many 26-byte chunks
     /// fit in the cargo, NOT gated by this header byte, so a mismatch here is a genuine app-observable
     /// advertised-count-vs-actual disagreement). (Phase 15 15-04, CX-F-05 app-side guard test.)
-    static func historyLogStreamWithDeclaredCount(declaredCount: Int,
-                                                  cgmReadings: [(seq: UInt32, pumpTimeSec: UInt32, mgdl: Int)],
-                                                  streamId: Int = 0) -> [UInt8] {
-        let records: [[UInt8]] = cgmReadings.map { cgmHistoryRecord(sequenceNum: $0.seq, pumpTimeSec: $0.pumpTimeSec, mgdl: $0.mgdl) }
+    static func historyLogStreamWithDeclaredCount(
+        declaredCount: Int,
+        cgmReadings: [(seq: UInt32, pumpTimeSec: UInt32, mgdl: Int)],
+        streamId: Int = 0
+    ) -> [UInt8] {
+        let records: [[UInt8]] = cgmReadings.map {
+            cgmHistoryRecord(sequenceNum: $0.seq, pumpTimeSec: $0.pumpTimeSec, mgdl: $0.mgdl)
+        }
         let cargo: [UInt8] = [UInt8(declaredCount), UInt8(streamId)] + records.flatMap { $0 }
         return frame(opCode: HistoryLogStreamResponse.props.opCode, cargo: cargo, signed: false)
     }
@@ -346,6 +424,7 @@ final class FakePumpTransport: PumpTransport {
     /// builds a VALID HMAC trailer under `signedResponseTestKey`, matching `permissionGranted`/
     /// `initiateAccepted`'s own signed-response convention.
     static func dismissNotificationAck(status: Int) -> [UInt8] {
-        frame(opCode: DismissNotificationResponse.props.opCode, cargo: [UInt8(truncatingIfNeeded: status)], signed: true)
+        frame(
+            opCode: DismissNotificationResponse.props.opCode, cargo: [UInt8(truncatingIfNeeded: status)], signed: true)
     }
 }

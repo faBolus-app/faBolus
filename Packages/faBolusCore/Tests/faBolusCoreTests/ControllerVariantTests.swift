@@ -17,7 +17,8 @@ struct ControllerVariantTests {
     }
 
     @Test func proBitUpgradesToControlIQPro() {
-        #expect(PumpFeatureBits(controlIQSupported: true, controlIQProSupported: true).controllerVariant == .controlIQPro)
+        #expect(
+            PumpFeatureBits(controlIQSupported: true, controlIQProSupported: true).controllerVariant == .controlIQPro)
     }
 
     @Test func defaultBitsAreNone() {
@@ -42,8 +43,10 @@ struct ControllerVariantTests {
         // The Pro bit is controller IDENTITY, not a capability gate: adding it must NOT widen or narrow
         // the derived capabilities (that stays governed by the CIQ / basal-limit / BLE-control bits).
         let base = PumpFeatureBits(controlIQSupported: true, basalLimitSupported: true, blePumpControlSupported: true)
-        var pro = base; pro.controlIQProSupported = true
-        #expect(PumpCapabilities.derive(isMobi: true, features: base)
+        var pro = base
+        pro.controlIQProSupported = true
+        #expect(
+            PumpCapabilities.derive(isMobi: true, features: base)
                 == PumpCapabilities.derive(isMobi: true, features: pro))
     }
 }

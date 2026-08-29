@@ -17,13 +17,14 @@ struct CgmTestFlowStateTests {
     private final class StubGlucoseSource: GlucoseSource {
         let id = "stub"
         let priority = 100
-        let connectionKind: GlucoseConnectionKind = .localBLE   // D-06: conformers must classify
+        let connectionKind: GlucoseConnectionKind = .localBLE  // D-06: conformers must classify
         var latest: GlucoseSample?
         var history: [GlucoseReading] = []
         var status: GlucoseSourceStatus
         var onChange: (@MainActor () -> Void)?
         init(latest: GlucoseSample? = nil, status: GlucoseSourceStatus = .searching) {
-            self.latest = latest; self.status = status
+            self.latest = latest
+            self.status = status
         }
         func start() async {}
         func stop() {}
@@ -38,8 +39,9 @@ struct CgmTestFlowStateTests {
 
     @Test func bufferedSampleReturnsSuccessImmediately() {
         let stub = StubGlucoseSource(latest: sample(), status: .connected)
-        let outcome = CgmTestOutcome.testOutcome(latest: stub.latest, status: stub.status,
-                                                      elapsed: 0, timeout: 300)
+        let outcome = CgmTestOutcome.testOutcome(
+            latest: stub.latest, status: stub.status,
+            elapsed: 0, timeout: 300)
         #expect(outcome == .success(stub.latest!))
     }
 
@@ -47,15 +49,17 @@ struct CgmTestFlowStateTests {
 
     @Test func emptySourceWithinWindowReturnsWaiting() {
         let stub = StubGlucoseSource(latest: nil, status: .searching)
-        let outcome = CgmTestOutcome.testOutcome(latest: stub.latest, status: stub.status,
-                                                      elapsed: 60, timeout: 300)
+        let outcome = CgmTestOutcome.testOutcome(
+            latest: stub.latest, status: stub.status,
+            elapsed: 60, timeout: 300)
         #expect(outcome == .waiting)
     }
 
     @Test func emptySourceAtElapsedZeroReturnsWaiting() {
         let stub = StubGlucoseSource(latest: nil, status: .searching)
-        let outcome = CgmTestOutcome.testOutcome(latest: stub.latest, status: stub.status,
-                                                      elapsed: 0, timeout: 300)
+        let outcome = CgmTestOutcome.testOutcome(
+            latest: stub.latest, status: stub.status,
+            elapsed: 0, timeout: 300)
         #expect(outcome == .waiting)
     }
 
@@ -63,15 +67,17 @@ struct CgmTestFlowStateTests {
 
     @Test func emptySourcePastTimeoutReturnsTimeout() {
         let stub = StubGlucoseSource(latest: nil, status: .searching)
-        let outcome = CgmTestOutcome.testOutcome(latest: stub.latest, status: stub.status,
-                                                      elapsed: 301, timeout: 300)
+        let outcome = CgmTestOutcome.testOutcome(
+            latest: stub.latest, status: stub.status,
+            elapsed: 301, timeout: 300)
         #expect(outcome == .timeout(detail: nil))
     }
 
     @Test func emptySourceExactlyAtTimeoutReturnsTimeout() {
         let stub = StubGlucoseSource(latest: nil, status: .searching)
-        let outcome = CgmTestOutcome.testOutcome(latest: stub.latest, status: stub.status,
-                                                      elapsed: 300, timeout: 300)
+        let outcome = CgmTestOutcome.testOutcome(
+            latest: stub.latest, status: stub.status,
+            elapsed: 300, timeout: 300)
         #expect(outcome == .timeout(detail: nil))
     }
 
@@ -79,8 +85,9 @@ struct CgmTestFlowStateTests {
 
     @Test func hardErrorReturnsTimeoutWithErrorSurfacedRegardlessOfElapsed() {
         let stub = StubGlucoseSource(latest: nil, status: .error("connection refused"))
-        let outcome = CgmTestOutcome.testOutcome(latest: stub.latest, status: stub.status,
-                                                      elapsed: 5, timeout: 300)
+        let outcome = CgmTestOutcome.testOutcome(
+            latest: stub.latest, status: stub.status,
+            elapsed: 5, timeout: 300)
         #expect(outcome == .timeout(detail: "connection refused"))
     }
 
@@ -88,8 +95,9 @@ struct CgmTestFlowStateTests {
 
     @Test func bufferedSamplePastTimeoutStillReturnsSuccess() {
         let stub = StubGlucoseSource(latest: sample(140), status: .connected)
-        let outcome = CgmTestOutcome.testOutcome(latest: stub.latest, status: stub.status,
-                                                      elapsed: 999, timeout: 300)
+        let outcome = CgmTestOutcome.testOutcome(
+            latest: stub.latest, status: stub.status,
+            elapsed: 999, timeout: 300)
         #expect(outcome == .success(stub.latest!))
     }
 
@@ -102,7 +110,8 @@ struct CgmTestFlowStateTests {
         #expect(CgmTestCoordinator.cgmTestTimeout(for: .cloudPoll) <= 30)
         #expect(CgmTestCoordinator.cgmTestTimeout(for: .cloudPoll) > 0)
         // .localOnDevice reads a shared on-device store — near-instant, and shorter than the BLE window.
-        #expect(CgmTestCoordinator.cgmTestTimeout(for: .localOnDevice) < CgmTestCoordinator.cgmTestTimeout(for: .localBLE))
+        #expect(
+            CgmTestCoordinator.cgmTestTimeout(for: .localOnDevice) < CgmTestCoordinator.cgmTestTimeout(for: .localBLE))
         #expect(CgmTestCoordinator.cgmTestTimeout(for: .localOnDevice) > 0)
     }
 
@@ -133,7 +142,8 @@ struct CgmTestFlowStateTests {
         #expect(waiting.contains("xDrip App Group"))
         #expect(!waiting.contains("Dexcom app"))
         #expect(!waiting.lowercased().contains("wake cycle"))
-        let timeout = CgmCredentialsView.timeoutHeadline(kind: .localOnDevice, sourceName: "xDrip App Group", elapsedSeconds: 10)
+        let timeout = CgmCredentialsView.timeoutHeadline(
+            kind: .localOnDevice, sourceName: "xDrip App Group", elapsedSeconds: 10)
         #expect(!timeout.contains("Dexcom app"))
         #expect(timeout.lowercased().contains("syncing"))
     }
@@ -151,17 +161,20 @@ struct CgmTestFlowStateTests {
     }
 
     @Test func testDoesNotAbortWhileSourceUnchanged() {
-        #expect(!CgmTestCoordinator.cgmTestShouldAbort(startedSourceId: "dexcom-g7-ble", currentProbeId: "dexcom-g7-ble"))
+        #expect(
+            !CgmTestCoordinator.cgmTestShouldAbort(startedSourceId: "dexcom-g7-ble", currentProbeId: "dexcom-g7-ble"))
     }
 
     // MARK: - Phase 16 GO-1 Step 3 (REMED-16): drive CgmTestCoordinator directly (not the view),
     // proving the extracted state machine reproduces AppModel's pre-move transitions exactly, under
     // an injected clock (CX-A-08 — no wall-clock Date()/Task.sleep needed to make these deterministic).
 
-    private func makeCoordinator(probeId: String = "dexcom-g7-ble",
-                                  connectionKind: GlucoseConnectionKind = .cloudPoll,
-                                  latest: GlucoseSample?,
-                                  status: GlucoseSourceStatus) -> CgmTestCoordinator {
+    private func makeCoordinator(
+        probeId: String = "dexcom-g7-ble",
+        connectionKind: GlucoseConnectionKind = .cloudPoll,
+        latest: GlucoseSample?,
+        status: GlucoseSourceStatus
+    ) -> CgmTestCoordinator {
         let coordinator = CgmTestCoordinator()
         coordinator.probe = { (id: probeId, connectionKind: connectionKind, latest: latest, status: status) }
         return coordinator
@@ -174,11 +187,11 @@ struct CgmTestFlowStateTests {
     @Test func performTickTransitionsFromWaitingToSuccessOnScriptedProbe() {
         let coordinator = makeCoordinator(latest: nil, status: .searching)
         let startedAt = Date()
-        coordinator.now = { startedAt }   // no elapsed time passes between ticks
+        coordinator.now = { startedAt }  // no elapsed time passes between ticks
         let firstDone = coordinator.performTick(startedSourceId: "dexcom-g7-ble", startedAt: startedAt, timeout: 300)
         #expect(!firstDone)
         #expect(coordinator.state.outcome == .waiting)
-        #expect(coordinator.state.inProgress == false)   // performTick alone never flips inProgress on .waiting
+        #expect(coordinator.state.inProgress == false)  // performTick alone never flips inProgress on .waiting
 
         let sample = sample(150)
         coordinator.probe = { (id: "dexcom-g7-ble", connectionKind: .cloudPoll, latest: sample, status: .connected) }
@@ -231,7 +244,7 @@ struct CgmTestFlowStateTests {
     /// `start()` with no probe (no fallback source selected) reports `.timeout` synchronously, before
     /// any `Task` is even spawned — mirrors the pre-move guard clause in `AppModel.startCgmTest`.
     @Test func startWithNoProbeReportsTimeoutImmediately() {
-        let coordinator = CgmTestCoordinator()   // default probe closure returns nil
+        let coordinator = CgmTestCoordinator()  // default probe closure returns nil
         coordinator.start()
         #expect(coordinator.state.outcome == .timeout(detail: "No fallback source is selected."))
         #expect(coordinator.state.inProgress == false)

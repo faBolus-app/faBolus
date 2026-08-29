@@ -44,8 +44,9 @@ public final class StoredSettingChangeStore: StoredSettingChangePersisting {
         if let appGroupID, let g = fm.containerURL(forSecurityApplicationGroupIdentifier: appGroupID) {
             dir = g
         } else {
-            dir = try? fm.url(for: .applicationSupportDirectory, in: .userDomainMask,
-                              appropriateFor: nil, create: true)
+            dir = try? fm.url(
+                for: .applicationSupportDirectory, in: .userDomainMask,
+                appropriateFor: nil, create: true)
         }
         return dir?.appendingPathComponent("setting-change-log.json")
     }
@@ -56,7 +57,8 @@ public final class StoredSettingChangeStore: StoredSettingChangePersisting {
         /// the UI should show "settings history unavailable" rather than treat everything as unchanged.
         public let failedClosed: Bool
         public init(log: SettingChangeLog, failedClosed: Bool) {
-            self.log = log; self.failedClosed = failedClosed
+            self.log = log
+            self.failedClosed = failedClosed
         }
     }
 
@@ -94,8 +96,9 @@ public final class StoredSettingChangeStore: StoredSettingChangePersisting {
         // File exists but won't read/decode, OR is a newer schema than we understand ⇒ empty + flag,
         // never a mis-decode (a newer version could re-key or re-shape records).
         guard let data = try? Data(contentsOf: url),
-              let log = try? JSONDecoder().decode(SettingChangeLog.self, from: data),
-              log.version <= SettingChangeLog.currentVersion else {
+            let log = try? JSONDecoder().decode(SettingChangeLog.self, from: data),
+            log.version <= SettingChangeLog.currentVersion
+        else {
             return LoadOutcome(log: SettingChangeLog(), failedClosed: true)
         }
         return LoadOutcome(log: log, failedClosed: false)
@@ -104,7 +107,7 @@ public final class StoredSettingChangeStore: StoredSettingChangePersisting {
     /// Atomically persist the log (a crash mid-save can't leave a truncated file).
     public func save(_ log: SettingChangeLog) throws {
         let data = try JSONEncoder().encode(log)
-        try data.write(to: url, options: [.atomic, Self.fileProtection])   // F1 §13: AfterFirstUnlock at rest
+        try data.write(to: url, options: [.atomic, Self.fileProtection])  // F1 §13: AfterFirstUnlock at rest
     }
 
     public func saveBestEffort(_ log: SettingChangeLog) { try? save(log) }

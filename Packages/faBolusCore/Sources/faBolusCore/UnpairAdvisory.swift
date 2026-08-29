@@ -45,9 +45,9 @@ public enum UnpairAdvisory {
     public static func resolvedModel(snapshotModel: PumpModel, storedIsMobi: Bool?) -> PumpModel {
         if snapshotModel != .unknown { return snapshotModel }
         switch storedIsMobi {
-        case .some(true):  return .mobi
+        case .some(true): return .mobi
         case .some(false): return .tslimX2
-        case .none:        return .unknown
+        case .none: return .unknown
         }
     }
 

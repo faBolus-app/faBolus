@@ -41,11 +41,12 @@ struct CgmArbiterDiagnosticsTests {
             enabled: false)
         let lines = block.components(separatedBy: "\n")
 
-        #expect(lines == [
-            "",
-            "[CGM arbiter]",
-            "Turn on “Share local diagnostics” above to start collecting CGM-arbiter data.",
-        ])
+        #expect(
+            lines == [
+                "",
+                "[CGM arbiter]",
+                "Turn on “Share local diagnostics” above to start collecting CGM-arbiter data."
+            ])
         #expect(!block.contains("Active source"))
         #expect(!block.contains("dexcom-g7-ble"))
     }

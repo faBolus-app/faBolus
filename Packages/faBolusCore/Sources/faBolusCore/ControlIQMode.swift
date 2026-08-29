@@ -41,8 +41,8 @@ public enum ControlIQActivity: Int, Sendable, Equatable, CaseIterable {
     /// The command that clears this activity back to normal, or nil when already normal.
     public var clearCommand: ModeCommand? {
         switch self {
-        case .normal:   return nil
-        case .sleep:    return .sleepOff
+        case .normal: return nil
+        case .sleep: return .sleepOff
         case .exercise: return .exerciseOff
         }
     }
@@ -82,8 +82,10 @@ public enum ControlIQPrecondition {
     ///
     /// `nil` = the write is compatible; a non-nil string = the reason it's blocked. Applies symmetrically
     /// to enabling and disabling: if the pump can't take the config write remotely, neither direction can.
-    public static func configBlockReason(supportsControlIQConfig: Bool,
-                                         controllerVariant: ControllerVariant) -> String? {
+    public static func configBlockReason(
+        supportsControlIQConfig: Bool,
+        controllerVariant: ControllerVariant
+    ) -> String? {
         guard !supportsControlIQConfig else { return nil }
         // Not remotely configurable. If the pump nonetheless HAS a Control-IQ controller (t:slim X2), say
         // so specifically; otherwise it has no Control-IQ controller at all.
@@ -116,8 +118,10 @@ public enum CiqPlusTempRate {
     /// Control-IQ+ (`.controlIQPro`) — never `true` for classic Control-IQ or `.none`, even once the
     /// bench flips. The UI wraps its entire option in this predicate so the row/button is
     /// render-absent (not merely disabled/greyed) while it returns `false`.
-    public static func isOffered(benchVerified: Bool = benchVerifiedDefault,
-                                  controllerVariant: ControllerVariant) -> Bool {
+    public static func isOffered(
+        benchVerified: Bool = benchVerifiedDefault,
+        controllerVariant: ControllerVariant
+    ) -> Bool {
         benchVerified && controllerVariant == .controlIQPro
     }
 }

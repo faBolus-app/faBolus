@@ -56,10 +56,10 @@ import TandemMessages
     }
 
     @Test func freshnessEdgeRaisesOnLossClearsOnResumeNeverAtStartup() {
-        #expect(SafetyEdge.freshness(wasFresh: false, isFresh: false) == .none)   // no data yet ≠ data lost
-        #expect(SafetyEdge.freshness(wasFresh: true, isFresh: false) == .raise)   // had readings, lost them
-        #expect(SafetyEdge.freshness(wasFresh: false, isFresh: true) == .clear)   // resumed
-        #expect(SafetyEdge.freshness(wasFresh: true, isFresh: true) == .none)     // steady
+        #expect(SafetyEdge.freshness(wasFresh: false, isFresh: false) == .none)  // no data yet ≠ data lost
+        #expect(SafetyEdge.freshness(wasFresh: true, isFresh: false) == .raise)  // had readings, lost them
+        #expect(SafetyEdge.freshness(wasFresh: false, isFresh: true) == .clear)  // resumed
+        #expect(SafetyEdge.freshness(wasFresh: true, isFresh: true) == .none)  // steady
     }
 
     // MARK: Pump-identity → safety class (increment 5 — the reroute through autoSuppression)
@@ -69,26 +69,26 @@ import TandemMessages
         // Occlusion (delivery stopped) — the two occlusion alarm bits.
         #expect(TandemBackend.safetyClass(kind: K.alarm, id: 2) == .occlusion)
         #expect(TandemBackend.safetyClass(kind: K.alarm, id: 26) == .occlusion)
-        #expect(TandemBackend.safetyClass(kind: K.alarm, id: 8) == .other)        // "Empty cartridge" ≠ occlusion class
+        #expect(TandemBackend.safetyClass(kind: K.alarm, id: 8) == .other)  // "Empty cartridge" ≠ occlusion class
         // Low insulin in the cartridge.
         #expect(TandemBackend.safetyClass(kind: K.alert, id: 0) == .lowInsulin)
         #expect(TandemBackend.safetyClass(kind: K.alert, id: 17) == .lowInsulin)
         // CGM loss reported on the ALERT bitmap.
-        #expect(TandemBackend.safetyClass(kind: K.alert, id: 48) == .cgmDataLoss) // CGM unavailable
-        #expect(TandemBackend.safetyClass(kind: K.alert, id: 40) == .cgmDataLoss) // CGM error
+        #expect(TandemBackend.safetyClass(kind: K.alert, id: 48) == .cgmDataLoss)  // CGM unavailable
+        #expect(TandemBackend.safetyClass(kind: K.alert, id: 40) == .cgmDataLoss)  // CGM error
         // CC-09: the previously-missing loss-of-coverage variants (upstream AlertStatusResponse.java:107)
         // — these fell through to `.other` (auto-snooze/dismiss-eligible) before this fix.
         #expect(TandemBackend.safetyClass(kind: K.alert, id: 41) == .cgmDataLoss)
         #expect(TandemBackend.safetyClass(kind: K.alert, id: 42) == .cgmDataLoss)
-        #expect(TandemBackend.safetyClass(kind: K.alert, id: 6) == .other)        // Max basal rate
+        #expect(TandemBackend.safetyClass(kind: K.alert, id: 6) == .other)  // Max basal rate
         // CGM loss on the CGM bitmap (sensor failed/expired, out of range, failed connection, transmitter expired).
         for id in [11, 13, 14, 27, 39] {
             #expect(TandemBackend.safetyClass(kind: K.cgmAlert, id: id) == .cgmDataLoss)
         }
         // Glucose-LEVEL CGM alerts stay user-ruleable (.other) — force-protection is loss-of-coverage only.
-        #expect(TandemBackend.safetyClass(kind: K.cgmAlert, id: 2) == .other)     // High glucose
-        #expect(TandemBackend.safetyClass(kind: K.cgmAlert, id: 3) == .other)     // Low glucose
-        #expect(TandemBackend.safetyClass(kind: K.cgmAlert, id: 12) == .other)    // Sensor expiring (data still flows)
+        #expect(TandemBackend.safetyClass(kind: K.cgmAlert, id: 2) == .other)  // High glucose
+        #expect(TandemBackend.safetyClass(kind: K.cgmAlert, id: 3) == .other)  // Low glucose
+        #expect(TandemBackend.safetyClass(kind: K.cgmAlert, id: 12) == .other)  // Sensor expiring (data still flows)
         #expect(TandemBackend.safetyClass(kind: K.reminder, id: 0) == .other)
     }
 
@@ -106,14 +106,14 @@ import TandemMessages
     @Test func disconnectEdgeSchedulesTheEscalationFamilyAndStrengthensT0Copy() async {
         let backend = MockBackend()
         let model = AppModel(source: backend, ledgerStoreURL: tempLedgerURL())
-        await backend.connect()                       // previousConnection → .connected
+        await backend.connect()  // previousConnection → .connected
 
         var posted: [NotificationBroker.Message] = []
         var scheduled: [DisconnectEscalation.Step] = []
         model.notificationSink = { msg, _, _ in posted.append(msg) }
         model.notificationScheduleSink = { scheduled = $0 }
 
-        backend.disconnect()                          // onChange → refresh → .raise
+        backend.disconnect()  // onChange → refresh → .raise
 
         // Exactly one immediate T0 disconnect post, carrying the explicit pump-buttons instruction.
         let disc = posted.filter { $0.category == .pumpDisconnect }
@@ -130,13 +130,13 @@ import TandemMessages
     @Test func reconnectEdgeWithdrawsT0AndEveryEscalationStep() async {
         let backend = MockBackend()
         let model = AppModel(source: backend, ledgerStoreURL: tempLedgerURL())
-        await backend.connect()                       // → connected
-        backend.disconnect()                          // → disconnected (raise; uncaptured)
+        await backend.connect()  // → connected
+        backend.disconnect()  // → disconnected (raise; uncaptured)
 
         var withdrawn: [String] = []
         model.notificationWithdrawSink = { withdrawn = $0 }
 
-        await backend.connect()                       // final transition → .clear
+        await backend.connect()  // final transition → .clear
 
         #expect(withdrawn.contains("safety.pumpDisconnect"))
         for id in DisconnectEscalation.stepIds {
@@ -178,7 +178,7 @@ import TandemMessages
         #expect(reconciles.count == 1)
         #expect(reconciles.first?.title == "Bolus not delivered")
         #expect(reconciles.first?.dedupeKey == "reconcile-watch-r9")
-        #expect(!model.deliveryGloballyBlocked)   // and the interrupted entry cleared (not a permanent lock)
+        #expect(!model.deliveryGloballyBlocked)  // and the interrupted entry cleared (not a permanent lock)
     }
 
     // MARK: - Phase 13-01 (CX-F-03): viewless-launch wiring + pending-safety buffer
@@ -192,20 +192,23 @@ import TandemMessages
     /// no SwiftUI lifecycle event required.
     @Test func viewlessLaunchWiresASinkThatReceivesAPostSafetyCall() {
         let model = AppModel(source: MockBackend(), ledgerStoreURL: tempLedgerURL())
-        #expect(model.notificationSink == nil)   // nothing attached yet — the pre-fix restoration-launch gap
+        #expect(model.notificationSink == nil)  // nothing attached yet — the pre-fix restoration-launch gap
 
         // The init()-path only: no View, no `.onAppear`. Constructing the coordinator wires the sink.
         let coordinator = NotificationCoordinator(model: model)
-        #expect(model.notificationSink != nil, "constructing NotificationCoordinator must wire the sink without any .onAppear")
+        #expect(
+            model.notificationSink != nil,
+            "constructing NotificationCoordinator must wire the sink without any .onAppear")
 
         var posted: [NotificationBroker.Message] = []
         model.notificationSink = { msg, _, _ in posted.append(msg) }
 
-        model.postSafety(.pumpDisconnect, severity: .error, title: "Pump disconnected", body: "b",
-                         dedupeKey: "viewless-k1")
+        model.postSafety(
+            .pumpDisconnect, severity: .error, title: "Pump disconnected", body: "b",
+            dedupeKey: "viewless-k1")
 
         #expect(posted.map(\.dedupeKey) == ["viewless-k1"])
-        _ = coordinator   // keep the coordinator alive for the duration of the test
+        _ = coordinator  // keep the coordinator alive for the duration of the test
     }
 
     /// Test 2 (buffer + flush order): a `postSafety` issued while `notificationSink == nil` is retained
@@ -236,8 +239,8 @@ import TandemMessages
     /// instance, breaking the single-delegate invariant.
     @Test func onAppearNilGuardLeavesTheInitConstructedCoordinatorInPlace() {
         let model = AppModel(source: MockBackend(), ledgerStoreURL: tempLedgerURL())
-        let initCoordinator = NotificationCoordinator(model: model)   // mirrors FaBolusApp.init()
-        var notifier: NotificationCoordinator? = initCoordinator     // mirrors the @State var
+        let initCoordinator = NotificationCoordinator(model: model)  // mirrors FaBolusApp.init()
+        var notifier: NotificationCoordinator? = initCoordinator  // mirrors the @State var
 
         // Mirrors App.swift's `.onAppear` guard verbatim: `if notifier == nil { notifier = ... }`.
         if notifier == nil { notifier = NotificationCoordinator(model: model) }

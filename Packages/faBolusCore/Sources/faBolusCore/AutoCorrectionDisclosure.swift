@@ -26,17 +26,19 @@ public enum AutoCorrectionDisclosure {
     /// `lockoutStartDate` is absent or the window has already elapsed (`elapsed >= windowMinutes` —
     /// fail-closed: no active lockout left to disclose). The window length is read from the
     /// descriptor — never restated as a literal here.
-    public static func lockoutRemainingFraction(descriptor: ControllerDescriptor,
-                                                controllerEnabled: Bool,
-                                                lockoutStartDate: Date?,
-                                                now: Date) -> Double? {
+    public static func lockoutRemainingFraction(
+        descriptor: ControllerDescriptor,
+        controllerEnabled: Bool,
+        lockoutStartDate: Date?,
+        now: Date
+    ) -> Double? {
         guard descriptor.automaticCorrection.enabled,
-              controllerEnabled,
-              let windowMinutes = descriptor.automaticCorrection.blockedByRecentBolusMinutes,
-              let startDate = lockoutStartDate
+            controllerEnabled,
+            let windowMinutes = descriptor.automaticCorrection.blockedByRecentBolusMinutes,
+            let startDate = lockoutStartDate
         else { return nil }
         let elapsedMinutes = now.timeIntervalSince(startDate) / 60
-        guard elapsedMinutes < Double(windowMinutes) else { return nil }   // expired: no active lockout
+        guard elapsedMinutes < Double(windowMinutes) else { return nil }  // expired: no active lockout
         let fraction = elapsedMinutes / Double(windowMinutes)
         return min(max(fraction, 0.0), 1.0)
     }

@@ -11,14 +11,14 @@ enum CredentialStore {
     /// always-present `AppModel.eraseEverythingFullReset()` can enumerate + clear the same accounts
     /// the gated backup engine backs up, without depending on a compile-gated type.
     static let cgmSecretAccounts = [
-        "librelinkup.password", "dexcomshare.password", "nightscout.token", "nightscout.apisecret",
+        "librelinkup.password", "dexcomshare.password", "nightscout.token", "nightscout.apisecret"
     ]
 
     static func set(_ value: String?, account: String) {
         let base: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
+            kSecAttrAccount as String: account
         ]
         SecItemDelete(base as CFDictionary)
         guard let value, let data = value.data(using: .utf8) else { return }
@@ -34,11 +34,11 @@ enum CredentialStore {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecMatchLimit as String: kSecMatchLimitOne
         ]
         var out: CFTypeRef?
         guard SecItemCopyMatching(query as CFDictionary, &out) == errSecSuccess,
-              let data = out as? Data, let s = String(data: data, encoding: .utf8), !s.isEmpty
+            let data = out as? Data, let s = String(data: data, encoding: .utf8), !s.isEmpty
         else { return nil }
         return s
     }

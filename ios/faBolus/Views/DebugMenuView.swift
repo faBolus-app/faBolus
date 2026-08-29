@@ -29,10 +29,11 @@ struct DebugMenuView: View {
             } header: {
                 Text("Diagnostics")
             } footer: {
-                Text("Turns on local diagnostics collection (connection telemetry and an in-memory "
-                     + "BLE-session log). Diagnostics stay on this device and are never uploaded or "
-                     + "transmitted. This is read-only and never changes how the pump connects or doses. "
-                     + "Off by default.")
+                Text(
+                    "Turns on local diagnostics collection (connection telemetry and an in-memory "
+                        + "BLE-session log). Diagnostics stay on this device and are never uploaded or "
+                        + "transmitted. This is read-only and never changes how the pump connects or doses. "
+                        + "Off by default.")
             }
 
             Section {
@@ -43,7 +44,9 @@ struct DebugMenuView: View {
             } header: {
                 Text("Developer — Garmin remote")
             } footer: {
-                Text("Which published Garmin app the phone pairs with. After changing, re-run “Set up Garmin remote” (Settings → Watch & Garmin) or reopen the app for it to take effect. Beta = the original app id; Official = the second store copy.")
+                Text(
+                    "Which published Garmin app the phone pairs with. After changing, re-run “Set up Garmin remote” (Settings → Watch & Garmin) or reopen the app for it to take effect. Beta = the original app id; Official = the second store copy."
+                )
             }
             Section("Pump identity") {
                 row("Model", model.snapshot.pumpModelName.isEmpty ? "—" : model.snapshot.pumpModelName)
@@ -53,11 +56,17 @@ struct DebugMenuView: View {
             }
             Section("Live snapshot") {
                 // Reachable via 7-tap, not #if DEBUG — same display-unit funnel as every other surface.
-                row("Glucose", model.snapshot.glucose.map { "\(settings.glucoseDisplayUnit.format(mgdl: $0)) \(settings.glucoseDisplayUnit == .mmol ? "mmol/L" : "mg/dL")" } ?? "—")
+                row(
+                    "Glucose",
+                    model.snapshot.glucose.map {
+                        "\(settings.glucoseDisplayUnit.format(mgdl: $0)) \(settings.glucoseDisplayUnit == .mmol ? "mmol/L" : "mg/dL")"
+                    } ?? "—")
                 row("IOB", String(format: "%.2f U", model.snapshot.iobUnits))
                 row("Basal", String(format: "%.2f U/hr", model.snapshot.basalRateUnitsPerHour))
                 row("Suspended", model.snapshot.deliverySuspended ? "yes" : "no")
-                row("Control-IQ", "\(model.snapshot.controlIQEnabled ? "on" : "off") mode \(model.snapshot.controlIQMode)")
+                row(
+                    "Control-IQ",
+                    "\(model.snapshot.controlIQEnabled ? "on" : "off") mode \(model.snapshot.controlIQMode)")
                 row("Reservoir", String(format: "%.0f U", model.snapshot.reservoirUnits))
                 row("Battery", "\(model.snapshot.batteryPercent)%")
                 row("Max bolus", String(format: "%.2f U", model.snapshot.maxBolusUnits))
@@ -103,14 +112,17 @@ struct DebugMenuView: View {
                     Label("Share diagnostics", systemImage: "square.and.arrow.up")
                 }
             } footer: {
-                Text("Copies the diagnostics above to the clipboard so you can paste them into a support "
-                     + "message you choose to send. faBolus never uploads or transmits them itself.")
+                Text(
+                    "Copies the diagnostics above to the clipboard so you can paste them into a support "
+                        + "message you choose to send. faBolus never uploads or transmits them itself.")
             }
 
             Section {
-                Text("Read-only diagnostics. Destructive protocol commands (factory reset, shelf "
-                     + "mode, arbitrary message) are intentionally not exposed here.")
-                    .font(.footnote).foregroundStyle(.secondary)
+                Text(
+                    "Read-only diagnostics. Destructive protocol commands (factory reset, shelf "
+                        + "mode, arbitrary message) are intentionally not exposed here."
+                )
+                .font(.footnote).foregroundStyle(.secondary)
             }
         }
         .navigationTitle("Debug")
@@ -147,9 +159,10 @@ struct DebugMenuView: View {
         } header: {
             Text("Connection telemetry")
         } footer: {
-            Text(model.connectionTelemetry.enabled
-                 ? "Cumulative counters (uptime, why the link dropped, how unresolved deliveries settled). Local-only."
-                 : "Turn on “Share local diagnostics” above to start collecting these counters.")
+            Text(
+                model.connectionTelemetry.enabled
+                    ? "Cumulative counters (uptime, why the link dropped, how unresolved deliveries settled). Local-only."
+                    : "Turn on “Share local diagnostics” above to start collecting these counters.")
         }
     }
 
@@ -174,10 +187,12 @@ struct DebugMenuView: View {
         let entries = model.bleSessionLog.entries
         Section {
             if entries.isEmpty {
-                Text(model.bleSessionLog.enabled
-                     ? "No connection events recorded yet."
-                     : "Turn on “Share local diagnostics” above to record connection events.")
-                    .font(.caption).foregroundStyle(.secondary)
+                Text(
+                    model.bleSessionLog.enabled
+                        ? "No connection events recorded yet."
+                        : "Turn on “Share local diagnostics” above to record connection events."
+                )
+                .font(.caption).foregroundStyle(.secondary)
             } else {
                 ForEach(entries.reversed()) { e in
                     LabeledContent {
@@ -217,18 +232,19 @@ struct DebugMenuView: View {
         } header: {
             Text("Pump read exclusions")
         } footer: {
-            Text("Reads this pump rejected and the app has stopped sending (learned per pump). When a "
-                 + "safety-relevant read like the cartridge pre-check is unavailable, faBolus relies on the "
-                 + "pump's own protection for that check.")
+            Text(
+                "Reads this pump rejected and the app has stopped sending (learned per pump). When a "
+                    + "safety-relevant read like the cartridge pre-check is unavailable, faBolus relies on the "
+                    + "pump's own protection for that check.")
         }
     }
 
     /// Human-readable label for the tri-state cartridge readiness.
     private func cartridgeReadinessLabel(_ readiness: PumpSnapshot.CartridgeReadiness) -> String {
         switch readiness {
-        case .ready:    return "ready (confirmed)"
+        case .ready: return "ready (confirmed)"
         case .notReady: return "not ready — cartridge change/load in progress"
-        case .unknown:  return "unknown — relying on the pump's own protection"
+        case .unknown: return "unknown — relying on the pump's own protection"
         }
     }
 
@@ -313,7 +329,10 @@ struct DebugMenuView: View {
                 reconcile: t.reconcile.sorted(by: { $0.key < $1.key }).map { (key: $0.key, count: $0.value) }),
             DiagnosticsBundle.notificationTelemetrySection(
                 counts: notif.sorted(by: { $0.key < $1.key }).map {
-                    (category: $0.key, delivered: $0.value.delivered, dismissed: $0.value.dismissed, actedUpon: $0.value.actedUpon)
+                    (
+                        category: $0.key, delivered: $0.value.delivered, dismissed: $0.value.dismissed,
+                        actedUpon: $0.value.actedUpon
+                    )
                 }),
             Self.bleSessionLogExportLines(entries: model.bleSessionLog.entries, capacity: model.bleSessionLog.capacity),
             // Cached backend state, same opt-in as the other gated sections.
@@ -326,10 +345,11 @@ struct DebugMenuView: View {
                 provenance: model.glucoseProvenance,
                 sourceStatuses: model.glucoseSourceDiagnosticsInfo,
                 enabled: shareDiagnostics),
-            GarminDiagnostics.section(state: garminState, enabled: shareDiagnostics),
+            GarminDiagnostics.section(state: garminState, enabled: shareDiagnostics)
         ]
 
-        let preamble = "faBolus diagnostics (local-only, never uploaded)\n"
+        let preamble =
+            "faBolus diagnostics (local-only, never uploaded)\n"
             + "Generated: \(Date().formatted(date: .abbreviated, time: .standard))"
         return preamble + "\n" + DiagnosticsBundle.build(sections: sections)
     }

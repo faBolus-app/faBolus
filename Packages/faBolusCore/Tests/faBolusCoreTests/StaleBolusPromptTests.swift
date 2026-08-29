@@ -17,9 +17,9 @@ struct StaleBolusPromptTests {
     /// `GlucoseFreshness.staleAfter` (avoids cross-suite flakiness). Future-skew is a fixed constant.
     @Test func shouldWarnOnlyForAnExistingStaleReading() {
         let now = Date(timeIntervalSince1970: 1_000_000)
-        let fresh = now.addingTimeInterval(-10)             // 10 s old — fresh for any staleAfter ≥ 10 s
-        let stale = now.addingTimeInterval(-24 * 3600)      // 24 h old — stale for any staleAfter < 24 h
-        let future = now.addingTimeInterval(60 * 60)        // 1 h ahead — beyond the 5-min future skew
+        let fresh = now.addingTimeInterval(-10)  // 10 s old — fresh for any staleAfter ≥ 10 s
+        let stale = now.addingTimeInterval(-24 * 3600)  // 24 h old — stale for any staleAfter < 24 h
+        let future = now.addingTimeInterval(60 * 60)  // 1 h ahead — beyond the 5-min future skew
 
         #expect(!StaleBolusPrompt.shouldWarn(glucoseMgdl: 120, glucoseDate: fresh, now: now))
         #expect(StaleBolusPrompt.shouldWarn(glucoseMgdl: 120, glucoseDate: stale, now: now))
@@ -37,13 +37,16 @@ struct StaleBolusPromptTests {
         let savedStale = GlucoseFreshness.staleAfter, savedMax = GlucoseFreshness.maxIncludableStaleness
         GlucoseFreshness.staleAfter = 6 * 60
         GlucoseFreshness.maxIncludableStaleness = 15 * 60
-        defer { GlucoseFreshness.staleAfter = savedStale; GlucoseFreshness.maxIncludableStaleness = savedMax }
+        defer {
+            GlucoseFreshness.staleAfter = savedStale
+            GlucoseFreshness.maxIncludableStaleness = savedMax
+        }
 
         let now = Date(timeIntervalSince1970: 1_000_000)
-        let fresh = now.addingTimeInterval(-2 * 60)      // 2 min — fresh
-        let within = now.addingTimeInterval(-10 * 60)    // 10 min — stale, within cap
-        let beyond = now.addingTimeInterval(-20 * 60)    // 20 min — stale, OLDER than the cap
-        let future = now.addingTimeInterval(60 * 60)     // 1 h ahead — beyond future-skew tolerance
+        let fresh = now.addingTimeInterval(-2 * 60)  // 2 min — fresh
+        let within = now.addingTimeInterval(-10 * 60)  // 10 min — stale, within cap
+        let beyond = now.addingTimeInterval(-20 * 60)  // 20 min — stale, OLDER than the cap
+        let future = now.addingTimeInterval(60 * 60)  // 1 h ahead — beyond future-skew tolerance
 
         #expect(StaleBolusPrompt.mayOfferInclude(glucoseMgdl: 200, glucoseDate: within, now: now))
         #expect(!StaleBolusPrompt.mayOfferInclude(glucoseMgdl: 200, glucoseDate: beyond, now: now))
@@ -51,8 +54,11 @@ struct StaleBolusPromptTests {
         #expect(!StaleBolusPrompt.mayOfferInclude(glucoseMgdl: 200, glucoseDate: future, now: now))
         #expect(!StaleBolusPrompt.mayOfferInclude(glucoseMgdl: nil, glucoseDate: within, now: now))
         // Boundary: exactly AT the cap is includable (closed upper bound); one second past is not.
-        #expect(StaleBolusPrompt.mayOfferInclude(glucoseMgdl: 200, glucoseDate: now.addingTimeInterval(-15 * 60), now: now))
-        #expect(!StaleBolusPrompt.mayOfferInclude(glucoseMgdl: 200, glucoseDate: now.addingTimeInterval(-15 * 60 - 1), now: now))
+        #expect(
+            StaleBolusPrompt.mayOfferInclude(glucoseMgdl: 200, glucoseDate: now.addingTimeInterval(-15 * 60), now: now))
+        #expect(
+            !StaleBolusPrompt.mayOfferInclude(
+                glucoseMgdl: 200, glucoseDate: now.addingTimeInterval(-15 * 60 - 1), now: now))
     }
 
     @Test func choiceMapsToCalculatorInput() {
@@ -81,7 +87,7 @@ struct StaleBolusPromptTests {
             carbsGrams: carbs,
             bgMgdl: StaleBolusPrompt.bgForCalculation(.proceedWithout, staleGlucoseMgdl: staleBG),
             profile: profile)
-        #expect(included > without)                 // (230-110)/40 = +3 U correction is added
-        #expect(without == 3.0)                      // carbs-only: 30 g / 10 g·U⁻¹
+        #expect(included > without)  // (230-110)/40 = +3 U correction is added
+        #expect(without == 3.0)  // carbs-only: 30 g / 10 g·U⁻¹
     }
 }

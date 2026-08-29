@@ -25,7 +25,11 @@ public enum AppMode: String, Codable, Sendable, CaseIterable, Comparable {
     /// Increasing capability: `.simple < .standard < .advanced`. Lets a descriptor be gated by a
     /// *minimum* mode (`activeMode >= descriptor.minMode`) as well as by an explicit `Set<AppMode>`.
     private var rank: Int {
-        switch self { case .simple: return 0; case .standard: return 1; case .advanced: return 2 }
+        switch self {
+        case .simple: return 0
+        case .standard: return 1
+        case .advanced: return 2
+        }
     }
     public static func < (lhs: AppMode, rhs: AppMode) -> Bool { lhs.rank < rhs.rank }
 

@@ -30,8 +30,11 @@ struct LiveActivityAbsenceGuardTests {
         var results: [URL] = []
         for treeName in ["ios", "Shared"] {
             let treeRoot = root.appendingPathComponent(treeName)
-            guard let enumerator = fm.enumerator(at: treeRoot, includingPropertiesForKeys: [.isDirectoryKey],
-                                                  options: [.skipsHiddenFiles]) else { continue }
+            guard
+                let enumerator = fm.enumerator(
+                    at: treeRoot, includingPropertiesForKeys: [.isDirectoryKey],
+                    options: [.skipsHiddenFiles])
+            else { continue }
             for case let url as URL in enumerator {
                 let name = url.lastPathComponent
                 if skipDirNames.contains(name) || name.hasSuffix("Tests") {
@@ -49,8 +52,9 @@ struct LiveActivityAbsenceGuardTests {
     // MARK: - ABSENCE: no ActivityKit-driven surface outside DOSE_PATHS/tests/build
 
     @Test func noProductionFileOutsideAppModelReferencesActivityKit() throws {
-        let repoRoot = try #require(Self.repoRootURL(),
-                                     "could not resolve repo root from #filePath=\(#filePath)")
+        let repoRoot = try #require(
+            Self.repoRootURL(),
+            "could not resolve repo root from #filePath=\(#filePath)")
         var scanned = 0
         var violations: [String] = []
 
@@ -63,10 +67,14 @@ struct LiveActivityAbsenceGuardTests {
             }
         }
 
-        #expect(violations.isEmpty,
-                "ActivityKit regression — the following production files still reference ActivityKit:\n\(violations.joined(separator: "\n"))")
-        #expect(scanned > 0,
-                "scanned no files under ios/ or Shared/ — path resolution broke (#filePath=\(#filePath)); this guard would otherwise pass vacuously")
+        #expect(
+            violations.isEmpty,
+            "ActivityKit regression — the following production files still reference ActivityKit:\n\(violations.joined(separator: "\n"))"
+        )
+        #expect(
+            scanned > 0,
+            "scanned no files under ios/ or Shared/ — path resolution broke (#filePath=\(#filePath)); this guard would otherwise pass vacuously"
+        )
     }
 
     // MARK: - ABSENCE: the two Shared/ Live-Activity sources stay deleted
@@ -74,23 +82,27 @@ struct LiveActivityAbsenceGuardTests {
     /// Shared Live-Activity sources contain no ActivityKit token the content scan would catch, and Shared
     /// compiles into the app. A filename pin is the only bar to a re-added dose surface.
     @Test func sharedLiveActivitySourceFilesAreAbsent() throws {
-        let repoRoot = try #require(Self.repoRootURL(),
-                                     "could not resolve repo root from #filePath=\(#filePath)")
+        let repoRoot = try #require(
+            Self.repoRootURL(),
+            "could not resolve repo root from #filePath=\(#filePath)")
         for relative in ["Shared/LiveActivityShared.swift", "Shared/LiveActivityIntents.swift"] {
             let url = repoRoot.appendingPathComponent(relative)
-            #expect(!FileManager.default.fileExists(atPath: url.path),
-                    "\(relative) must stay absent — all of Shared/ compiles into the app target")
+            #expect(
+                !FileManager.default.fileExists(atPath: url.path),
+                "\(relative) must stay absent — all of Shared/ compiles into the app target")
         }
     }
 
     // MARK: - ABSENCE: App.swift no longer installs the LiveActivityIntentBridge
 
     @Test func appSwiftNoLongerReferencesLiveActivityIntentBridge() throws {
-        let repoRoot = try #require(Self.repoRootURL(),
-                                     "could not resolve repo root from #filePath=\(#filePath)")
+        let repoRoot = try #require(
+            Self.repoRootURL(),
+            "could not resolve repo root from #filePath=\(#filePath)")
         let url = repoRoot.appendingPathComponent("ios/faBolus/App.swift")
         let source = try String(contentsOf: url, encoding: .utf8)
-        #expect(!source.contains("LiveActivityIntentBridge"),
-                "App.swift must not reference LiveActivityIntentBridge — the Live Activity bridge install is removed")
+        #expect(
+            !source.contains("LiveActivityIntentBridge"),
+            "App.swift must not reference LiveActivityIntentBridge — the Live Activity bridge install is removed")
     }
 }

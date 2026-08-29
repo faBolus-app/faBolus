@@ -22,6 +22,6 @@ struct WidgetGlucoseThresholdsMirrorTests {
         for g in [40, 54, 69, 70, 120, 180, 181, 250, 251, 300] {
             #expect(WidgetSnapshot.rangeCategory(g) == GlucoseRange.classify(g).index)
         }
-        #expect(WidgetSnapshot.rangeCategory(nil) == -1)   // unknown stays unknown
+        #expect(WidgetSnapshot.rangeCategory(nil) == -1)  // unknown stays unknown
     }
 }

@@ -1,0 +1,111 @@
+# SwiftLint — advisory only. It reports; it does not gate a merge.
+#
+# `.swift-format` is the formatter of record. Every rule below that swift-format also owns is left
+# ENABLED on purpose (trailing_comma, comma, statement_position, switch_case_alignment,
+# vertical_parameter_alignment, trailing_newline, …): swift-format drives them to zero, so a nonzero
+# count here means someone edited a file without running the formatter. Only rules that genuinely
+# CONTRADICT swift-format's output are disabled — see `disabled_rules`.
+#
+# This app drives an insulin pump. Two standing rules for triaging output:
+#   1. Never rename a wire field, an App Group key, a settings key, or a `RemoteCommand` case to
+#      satisfy a linter. Those strings are a persisted contract with the widgets, the Garmin watch,
+#      and previously-written user data.
+#   2. Metric rules (file/type/function length, complexity, parameter count) describe AppModel,
+#      TandemBackend and SettingsView. They are warnings. Splitting a god object is a planned,
+#      characterization-tested refactor, not a style fix.
+#
+# Run: swiftlint lint --quiet ios Packages/faBolusCore Shared
+
+included:
+  - ios
+  - Shared
+  - Packages/faBolusCore
+
+excluded:
+  # Vendored third-party source. Not ours to restyle; drift against upstream must stay visible.
+  - ios/faBolus/Vendor
+  - Packages/ShareClient
+  - Packages/G7SensorKit
+  - Packages/DexcomG6Kit
+  - Packages/HistoryStore
+  # Generated / build output. SwiftLint resolves `excluded` relative to THIS file, so the per-package
+  # .build directories need naming explicitly — a bare `.build` does not match them.
+  - build
+  - .build
+  - Packages/faBolusCore/.build
+  - Packages/faBolusDesign/.build
+  - faBolus.xcodeproj
+  - site
+
+disabled_rules:
+  # swift-format moves `{` onto its own line after a multi-line condition; SwiftLint wants it
+  # trailing. swift-format wins.
+  - opening_brace
+  # Same conflict for wrapped closure signatures.
+  - closure_parameter_position
+  - todo
+
+line_length:
+  # p99 of this tree is ~126 columns, and long lines are overwhelmingly code plus a trailing safety
+  # or provenance comment, which swift-format will not relocate. 140 flags genuine outliers only.
+  warning: 140
+  error: 400
+  ignores_urls: true
+  ignores_comments: true
+
+identifier_name:
+  # Short bindings are idiomatic throughout (`b`, `s`, `mu`, `bg`, `fm`, `t0`). Enforcing a
+  # three-character floor would mean ~1,950 mechanical renames for zero behavioral gain.
+  min_length:
+    warning: 1
+    error: 1
+  allowed_symbols: ["_"]
+  # Test seams and frozen-accessor names are long on purpose
+  # (`reconcileIndeterminateDeliveryCallCountForTesting`); a descriptive name beats a short one here.
+  max_length:
+    warning: 60
+    error: 80
+
+type_name:
+  min_length:
+    warning: 1
+    error: 1
+  # Test suite names in this repo are long on purpose — they state the invariant they pin.
+  max_length:
+    warning: 60
+    error: 90
+
+# Metric rules: warn, never error.
+file_length:
+  warning: 800
+  error: 5000
+type_body_length:
+  warning: 500
+  error: 4000
+function_body_length:
+  warning: 80
+  error: 500
+cyclomatic_complexity:
+  warning: 15
+  error: 60
+function_parameter_count:
+  warning: 8
+  error: 20
+large_tuple:
+  warning: 3
+  error: 8
+nesting:
+  type_level: 3
+
+# An explicit `case foo = "foo"` on a wire or persisted enum is not redundant — it is the record that
+# the raw string is a CONTRACT with the widgets, the Garmin watch, and previously-written user data.
+# Dropping it would let a future `case` rename silently change the persisted value.
+redundant_string_enum_value: warning
+
+# `masterOn` in NotificationSettingsView and the `…Blacklists…` test names are the only hits. Both
+# are wording choices for a human, not a mechanical fix — left visible rather than silenced.
+inclusive_language: warning
+
+# Force-try / force-cast hits are all in test fixtures, where a throw is a test failure anyway.
+force_try: warning
+force_cast: warning

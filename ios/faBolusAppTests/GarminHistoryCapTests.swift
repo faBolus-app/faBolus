@@ -63,7 +63,9 @@ struct GarminHistoryCapTests {
         let epochs = out["historyEpochs"] as? [Int]
         #expect(history?.count == GarminHistoryCap.pointBudget)
         #expect(epochs?.count == GarminHistoryCap.pointBudget)
-        #expect(history == epochs, "history/historyEpochs must cap to the SAME tail so points stay aligned to their timestamps")
+        #expect(
+            history == epochs,
+            "history/historyEpochs must cap to the SAME tail so points stay aligned to their timestamps")
         #expect(history?.last == n - 1)
     }
 

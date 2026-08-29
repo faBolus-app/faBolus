@@ -39,10 +39,12 @@ enum ModeAutomation {
     /// Injectable seams (all default to production): `model` (the live `AppModel.shared`), `now` (the
     /// clock, for the S3 manual-precedence window), and `post` (the broker poster). Production callers
     /// pass none of them; the app tests inject a model + clock + a capturing poster.
-    static func request(_ mode: Mode, enabled: Bool,
-                        model: AppModel? = nil,
-                        now: Date = Date(),
-                        post: ((NotificationBroker.Message) -> Void)? = nil) async -> String {
+    static func request(
+        _ mode: Mode, enabled: Bool,
+        model: AppModel? = nil,
+        now: Date = Date(),
+        post: ((NotificationBroker.Message) -> Void)? = nil
+    ) async -> String {
         let model = model ?? AppModel.shared
         let post = post ?? Self.livePost
         guard settingOn(mode) else {
@@ -59,12 +61,16 @@ enum ModeAutomation {
                 // expires rather than auto-applying) and post a SUPPRESSIBLE informational reminder. This
                 // is the conservative direction: it withholds an automatic action and asks — it never
                 // applies a mode, changes a dose, or blocks anything the user does.
-                if ManualPrecedence.shouldDeferAutomation(lastManualActionAt: model.lastManualTherapyActionAt, now: now) {
+                if ManualPrecedence.shouldDeferAutomation(lastManualActionAt: model.lastManualTherapyActionAt, now: now)
+                {
                     queue(mode, enabled: enabled)
-                    remind(title: "faBolus",
-                           body: "Scheduled \(modeWord) mode wasn't applied automatically because you made a manual change recently. Open faBolus to apply it.",
-                           now: now, post: post)
-                    return "faBolus didn't switch \(label.lowercased()) automatically — you made a manual change recently. Open faBolus to apply it."
+                    remind(
+                        title: "faBolus",
+                        body:
+                            "Scheduled \(modeWord) mode wasn't applied automatically because you made a manual change recently. Open faBolus to apply it.",
+                        now: now, post: post)
+                    return
+                        "faBolus didn't switch \(label.lowercased()) automatically — you made a manual change recently. Open faBolus to apply it."
                 }
                 await model.applyMode(mode, on: enabled)
                 clear(mode)
@@ -73,16 +79,18 @@ enum ModeAutomation {
             }
             // Mobi app is alive but the pump link is down — queue it for the reconnect drain.
             queue(mode, enabled: enabled)
-            remind(title: "faBolus", body: "Will set \(label.lowercased()) when your pump reconnects.",
-                   now: now, post: post)
+            remind(
+                title: "faBolus", body: "Will set \(label.lowercased()) when your pump reconnects.",
+                now: now, post: post)
             return "faBolus will set \(label.lowercased()) once the pump reconnects."
         }
         // No live Mobi model (t:slim, non-Mobi, or the app isn't running): queue in case a Mobi
         // opens shortly, and remind the user to switch on the pump themselves.
         queue(mode, enabled: enabled)
-        remind(title: "Set \(label) on your pump",
-               body: "faBolus can't switch this pump's mode automatically — change it on the pump.",
-               now: now, post: post)
+        remind(
+            title: "Set \(label) on your pump",
+            body: "faBolus can't switch this pump's mode automatically — change it on the pump.",
+            now: now, post: post)
         return "Reminder posted to set \(label.lowercased()) on your pump."
     }
 
@@ -94,21 +102,27 @@ enum ModeAutomation {
         store.set(Date().timeIntervalSince1970, forKey: tsKey(mode))
     }
     private static func clear(_ mode: Mode) {
-        store?.removeObject(forKey: key(mode)); store?.removeObject(forKey: tsKey(mode))
+        store?.removeObject(forKey: key(mode))
+        store?.removeObject(forKey: tsKey(mode))
     }
 
     /// Apply any fresh queued requests — called from `AppModel.refresh()` once a mode-capable Mobi is
     /// connected, so a switch requested while offline still lands (within the TTL).
     static func applyPendingIfDue(using model: AppModel, now: Date = Date()) {
-        guard let store, model.canControlModes else { return }   // P13: canControlModes ⇒ supportsModes (Mobi-only)
+        guard let store, model.canControlModes else { return }  // P13: canControlModes ⇒ supportsModes (Mobi-only)
         // P16 S3: do NOT silently drain a queued switch while a recent manual action stands — draining it
         // would be exactly the silent auto-apply S3 prevents. Leave it queued; because the manual window
         // (60 min) outlives the pending TTL (15 min), it expires on its own if the user never applies it.
-        if ManualPrecedence.shouldDeferAutomation(lastManualActionAt: model.lastManualTherapyActionAt, now: now) { return }
+        if ManualPrecedence.shouldDeferAutomation(lastManualActionAt: model.lastManualTherapyActionAt, now: now) {
+            return
+        }
         for mode in [Mode.exercise, .sleep] {
             guard store.object(forKey: key(mode)) != nil, settingOn(mode) else { continue }
             let ts = store.double(forKey: tsKey(mode))
-            guard ts > 0, Date().timeIntervalSince1970 - ts <= pendingTTL else { clear(mode); continue }
+            guard ts > 0, Date().timeIntervalSince1970 - ts <= pendingTTL else {
+                clear(mode)
+                continue
+            }
             let enabled = store.bool(forKey: key(mode))
             clear(mode)
             Task { await model.applyMode(mode, on: enabled) }
@@ -123,8 +137,10 @@ enum ModeAutomation {
         NotificationPoster.post(message, runtime: NotificationRuntime())
     }
 
-    private static func remind(title: String, body: String, now: Date,
-                               post: (NotificationBroker.Message) -> Void) {
+    private static func remind(
+        title: String, body: String, now: Date,
+        post: (NotificationBroker.Message) -> Void
+    ) {
         guard AppSettings.shared.modeReminders else { return }
         // Routed through the broker like every other notification — a SUPPRESSIBLE `.info`/`.modeReminder`
         // message, never a never-suppressible safety alert. Stable `dedupeKey` (iOS collapses a rapid

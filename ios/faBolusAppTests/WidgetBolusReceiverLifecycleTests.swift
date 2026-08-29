@@ -26,8 +26,10 @@ import Foundation
     /// Post the widget's Darwin notification, then wait until `counter` stops changing for `quietWindow`
     /// (bounded by `timeout`), and return its value at that point. Darwin notifications round-trip
     /// through `notifyd` even within one process, so delivery is never synchronous with the post call.
-    private func postDarwinAndSettle(_ name: String, counter: Counter,
-                                     quietWindow: TimeInterval = 0.25, timeout: TimeInterval = 3.0) async -> Int {
+    private func postDarwinAndSettle(
+        _ name: String, counter: Counter,
+        quietWindow: TimeInterval = 0.25, timeout: TimeInterval = 3.0
+    ) async -> Int {
         CFNotificationCenterPostNotification(
             CFNotificationCenterGetDarwinNotifyCenter(),
             CFNotificationName(name as CFString), nil, nil, true)
@@ -60,17 +62,20 @@ import Foundation
 
         var receiver: WidgetBolusReceiver? = WidgetBolusReceiver(model: makeModel())
         let c2 = await postDarwinAndSettle(WidgetBolusStore.darwinPending, counter: counter)
-        #expect(c2 - c1 == ambientDelta + 1,
-                "the live receiver's own Darwin observer should add exactly one extra repost per post")
+        #expect(
+            c2 - c1 == ambientDelta + 1,
+            "the live receiver's own Darwin observer should add exactly one extra repost per post")
 
-        receiver = nil   // deinit must remove BOTH Darwin observers, not just deallocate the Swift object
+        receiver = nil  // deinit must remove BOTH Darwin observers, not just deallocate the Swift object
         _ = receiver
 
         // A brand-new instance — mirrors a scene teardown/re-appear creating a fresh receiver.
         let receiver2 = WidgetBolusReceiver(model: makeModel())
         let c3 = await postDarwinAndSettle(WidgetBolusStore.darwinPending, counter: counter)
-        #expect(c3 - c2 == ambientDelta + 1,
-                "a stale (deallocated) receiver's un-removed Darwin observer would add a SECOND extra repost here — the exact C6-02 duplicate-dispatch bug")
+        #expect(
+            c3 - c2 == ambientDelta + 1,
+            "a stale (deallocated) receiver's un-removed Darwin observer would add a SECOND extra repost here — the exact C6-02 duplicate-dispatch bug"
+        )
         _ = receiver2
     }
 
@@ -94,8 +99,10 @@ import Foundation
 
         let receiver2 = WidgetBolusReceiver(model: makeModel())
         let c3 = await postDarwinAndSettle(WidgetBolusStore.darwinCancel, counter: counter)
-        #expect(c3 - c2 == ambientDelta + 1,
-                "the cancel channel must mirror the pending channel's teardown — both Darwin observers are removed in deinit")
+        #expect(
+            c3 - c2 == ambientDelta + 1,
+            "the cancel channel must mirror the pending channel's teardown — both Darwin observers are removed in deinit"
+        )
         _ = receiver2
     }
 
@@ -121,8 +128,9 @@ import Foundation
         }
         let finalReceiver = WidgetBolusReceiver(model: makeModel())
         let c2 = await postDarwinAndSettle(WidgetBolusStore.darwinPending, counter: counter)
-        #expect(c2 - c1 == ambientDelta + 1,
-                "three prior generations must all have torn down cleanly — exactly one extra live observer remains")
+        #expect(
+            c2 - c1 == ambientDelta + 1,
+            "three prior generations must all have torn down cleanly — exactly one extra live observer remains")
         _ = finalReceiver
     }
 }

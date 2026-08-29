@@ -29,8 +29,8 @@ struct SentAtStampTests {
         let after = Int(Date().timeIntervalSince1970)
         let cmd = try #require(link.sent.first { $0.kind == .bolusRequest })
         let sentAt = try #require(cmd.sentAt)
-        #expect(sentAt >= before && sentAt <= after)     // stamped with the real send time
-        #expect(!RemoteCommandFreshness.isStale(cmd))     // a just-sent command is fresh → accepted
+        #expect(sentAt >= before && sentAt <= after)  // stamped with the real send time
+        #expect(!RemoteCommandFreshness.isStale(cmd))  // a just-sent command is fresh → accepted
     }
 
     @Test func aStampedBolusGoneStaleWouldBeRejectedByTheHost() throws {

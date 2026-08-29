@@ -43,21 +43,25 @@ public struct EatingTriggerConfig: Codable, Equatable, Sendable {
 
 /// A snapshot of the live signals fed to the engine. `nil` = unavailable/not measured.
 public struct EatingSignals: Sendable {
-    public var accelProb: Double?          // p(eating) from the model
-    public var cgmMealScore: Double?       // 0…1 unannounced-meal score
-    public var minutesSinceBolus: Double   // very large if never bolused
-    public var atMealPlace: Bool?          // location gate result (nil if off/unknown)
-    public init(accelProb: Double? = nil, cgmMealScore: Double? = nil,
-                minutesSinceBolus: Double = .greatestFiniteMagnitude, atMealPlace: Bool? = nil) {
-        self.accelProb = accelProb; self.cgmMealScore = cgmMealScore
-        self.minutesSinceBolus = minutesSinceBolus; self.atMealPlace = atMealPlace
+    public var accelProb: Double?  // p(eating) from the model
+    public var cgmMealScore: Double?  // 0…1 unannounced-meal score
+    public var minutesSinceBolus: Double  // very large if never bolused
+    public var atMealPlace: Bool?  // location gate result (nil if off/unknown)
+    public init(
+        accelProb: Double? = nil, cgmMealScore: Double? = nil,
+        minutesSinceBolus: Double = .greatestFiniteMagnitude, atMealPlace: Bool? = nil
+    ) {
+        self.accelProb = accelProb
+        self.cgmMealScore = cgmMealScore
+        self.minutesSinceBolus = minutesSinceBolus
+        self.atMealPlace = atMealPlace
     }
 }
 
 public enum EatingDecision: Equatable, Sendable {
     case fire
-    case hold(reason: String)       // conditions partly met / still confirming — no prompt yet
-    case suppress(reason: String)   // a gate blocked it
+    case hold(reason: String)  // conditions partly met / still confirming — no prompt yet
+    case suppress(reason: String)  // a gate blocked it
 }
 
 /// Pure fusion + confirmation-delay engine. Call `evaluate` on each new signal snapshot; it tracks how
@@ -68,7 +72,10 @@ public final class EatingTriggerEngine {
     private var conditionSince: Date?
 
     public init(config: EatingTriggerConfig) { self.config = config }
-    public func setConfig(_ c: EatingTriggerConfig) { config = c; conditionSince = nil }
+    public func setConfig(_ c: EatingTriggerConfig) {
+        config = c
+        conditionSince = nil
+    }
     public func reset() { conditionSince = nil }
 
     /// Whether the accel/CGM signals meet the configured combination (ignores the bolus/location
@@ -78,11 +85,11 @@ public final class EatingTriggerEngine {
         let accelPos = (s.accelProb ?? -1) >= config.accelThreshold
         let cgmPos = (s.cgmMealScore ?? -1) >= config.cgmMealThreshold
         switch config.mode {
-        case .accelOnly:                 return accelPos
-        case .cgmOnly:                   return cgmPos
-        case .either:                    return accelPos || cgmPos
-        case .bothAlways, .cgmThenAccel: return accelPos && cgmPos   // cgmThenAccel differs only in *when*
-        }                                                            // accel is sensed (wiring/battery)
+        case .accelOnly: return accelPos
+        case .cgmOnly: return cgmPos
+        case .either: return accelPos || cgmPos
+        case .bothAlways, .cgmThenAccel: return accelPos && cgmPos  // cgmThenAccel differs only in *when*
+        }  // accel is sensed (wiring/battery)
     }
 
     public func evaluate(_ s: EatingSignals, now: Date = Date()) -> EatingDecision {
@@ -118,7 +125,7 @@ public final class EatingTriggerEngine {
 public struct EatingTriggerEstimate: Equatable, Sendable {
     public enum Battery: String, Sendable { case none, low, medium, high }
     public let falseAlertsPerDay: Double
-    public let recallPercent: Int          // ~% of meals caught
+    public let recallPercent: Int  // ~% of meals caught
     public let typicalTimeToAlertSeconds: Int
     public let battery: Battery
 }
@@ -129,11 +136,13 @@ public struct EatingTriggerEstimate: Equatable, Sendable {
 /// the documented fallback.
 public struct EatingModelMetrics: Codable, Equatable, Sendable {
     public struct OperatingPoint: Codable, Equatable, Sendable {
-        public let threshold: Double          // accel enter-threshold
-        public let recall: Double             // meal recall (0…1)
+        public let threshold: Double  // accel enter-threshold
+        public let recall: Double  // meal recall (0…1)
         public let falseAlertsPerDay: Double
         public init(threshold: Double, recall: Double, falseAlertsPerDay: Double) {
-            self.threshold = threshold; self.recall = recall; self.falseAlertsPerDay = falseAlertsPerDay
+            self.threshold = threshold
+            self.recall = recall
+            self.falseAlertsPerDay = falseAlertsPerDay
         }
     }
     public let operatingPoints: [OperatingPoint]
@@ -151,20 +160,23 @@ public struct EatingModelMetrics: Codable, Equatable, Sendable {
             let a = operatingPoints[i - 1], b = operatingPoints[i]
             if t <= b.threshold {
                 let f = (t - a.threshold) / (b.threshold - a.threshold)
-                return (a.recall + f * (b.recall - a.recall),
-                        a.falseAlertsPerDay + f * (b.falseAlertsPerDay - a.falseAlertsPerDay))
+                return (
+                    a.recall + f * (b.recall - a.recall),
+                    a.falseAlertsPerDay + f * (b.falseAlertsPerDay - a.falseAlertsPerDay)
+                )
             }
         }
         return (hi.recall, hi.falseAlertsPerDay)
     }
     /// From the held-out free-living assessment (episode-scale + debounce, 45 held-out meals — the
     /// largest sample in RESULTS_SUMMARY.md). Ship the deployed model's real points via the manifest.
-    public static let faBolusDefault = EatingModelMetrics(operatingPoints: [
-        .init(threshold: 0.80, recall: 0.62, falseAlertsPerDay: 7.2),
-        .init(threshold: 0.85, recall: 0.62, falseAlertsPerDay: 4.1),
-        .init(threshold: 0.90, recall: 0.51, falseAlertsPerDay: 2.2),
-        .init(threshold: 0.95, recall: 0.49, falseAlertsPerDay: 0.6),
-    ], source: "held-out free-living assessment")
+    public static let faBolusDefault = EatingModelMetrics(
+        operatingPoints: [
+            .init(threshold: 0.80, recall: 0.62, falseAlertsPerDay: 7.2),
+            .init(threshold: 0.85, recall: 0.62, falseAlertsPerDay: 4.1),
+            .init(threshold: 0.90, recall: 0.51, falseAlertsPerDay: 2.2),
+            .init(threshold: 0.95, recall: 0.49, falseAlertsPerDay: 0.6)
+        ], source: "held-out free-living assessment")
 }
 
 public enum EatingTriggerEstimator {
@@ -176,9 +188,12 @@ public enum EatingTriggerEstimator {
     private static let accelDetectionLagSec = 60
 
     /// `accelMetrics` come from the accel model's held-out assessment (via the manifest).
-    public static func estimate(_ c: EatingTriggerConfig,
-                                accelMetrics: EatingModelMetrics = .faBolusDefault) -> EatingTriggerEstimate {
-        func scaled(baseFA: Double, baseRecall: Double, threshold: Double, ref: Double) -> (fa: Double, recall: Double) {
+    public static func estimate(
+        _ c: EatingTriggerConfig,
+        accelMetrics: EatingModelMetrics = .faBolusDefault
+    ) -> EatingTriggerEstimate {
+        func scaled(baseFA: Double, baseRecall: Double, threshold: Double, ref: Double) -> (fa: Double, recall: Double)
+        {
             let strictness = max(0.1, threshold / ref)
             return (baseFA / (strictness * strictness), min(0.95, baseRecall / strictness))
         }
@@ -192,25 +207,40 @@ public enum EatingTriggerEstimator {
         let andFA = (a.fa * g.fa) / 24.0
         switch c.mode {
         case .accelOnly:
-            fa = a.fa; recall = a.recall; lag = accelDetectionLagSec; battery = .medium
+            fa = a.fa
+            recall = a.recall
+            lag = accelDetectionLagSec
+            battery = .medium
         case .cgmOnly:
-            fa = g.fa; recall = g.recall; lag = cgmDetectionLagSec; battery = .none
+            fa = g.fa
+            recall = g.recall
+            lag = cgmDetectionLagSec
+            battery = .none
         case .either:
-            fa = a.fa + g.fa; recall = 1 - (1 - a.recall) * (1 - g.recall)
-            lag = min(accelDetectionLagSec, cgmDetectionLagSec); battery = .high
+            fa = a.fa + g.fa
+            recall = 1 - (1 - a.recall) * (1 - g.recall)
+            lag = min(accelDetectionLagSec, cgmDetectionLagSec)
+            battery = .high
         case .bothAlways:
-            fa = andFA; recall = min(a.recall, g.recall); lag = max(accelDetectionLagSec, cgmDetectionLagSec); battery = .high
+            fa = andFA
+            recall = min(a.recall, g.recall)
+            lag = max(accelDetectionLagSec, cgmDetectionLagSec)
+            battery = .high
         case .cgmThenAccel:
             // CGM flags first, wrist confirms during a burst → same precision as bothAlways, but accel only
             // runs on demand (low battery) and the nudge waits for the CGM lag + a short confirm.
-            fa = andFA; recall = min(a.recall, g.recall); lag = cgmDetectionLagSec + accelDetectionLagSec; battery = .low
+            fa = andFA
+            recall = min(a.recall, g.recall)
+            lag = cgmDetectionLagSec + accelDetectionLagSec
+            battery = .low
         }
 
         let delay = Double(c.confirmationDelaySeconds)
         fa *= exp(-delay / 180)
         lag += c.confirmationDelaySeconds
-        return EatingTriggerEstimate(falseAlertsPerDay: (fa * 10).rounded() / 10,
-                                     recallPercent: Int((recall * 100).rounded()),
-                                     typicalTimeToAlertSeconds: lag, battery: battery)
+        return EatingTriggerEstimate(
+            falseAlertsPerDay: (fa * 10).rounded() / 10,
+            recallPercent: Int((recall * 100).rounded()),
+            typicalTimeToAlertSeconds: lag, battery: battery)
     }
 }
