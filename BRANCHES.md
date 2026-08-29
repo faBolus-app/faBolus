@@ -160,7 +160,7 @@ non-empty) — a docs edit does not create, rename, or move any of them.
 | xDrip App-Group | `dev/cgm-extra` | scope-narrowing per 999.5-D1 |
 | Non-Venu-3S Garmin devices (fr265s / fenix7 / fr245 / edge540 / edge1040) + standalone watch-face app | `dev/garmin-devices` (faBolusGarmin repo) | scope-narrowing per 999.5-D1 (build-target set = Venu 3S alone, §1.3 below) |
 | Mac menu-bar remote | `dev/mac` | scope-narrowing per 999.5-D1 |
-| iPhone-to-iPhone peer remote | `dev/phone-remote` | scope-narrowing per 999.5-D1 (the shared `PhoneRemoteHost` receiver + the Garmin/widget remote path stay on `main`) |
+| iPhone-to-iPhone peer remote | `dev/phone-remote` | scope-narrowing per 999.5-D1 (the Garmin/widget remote path stays on `main`; the `PhoneRemoteHost` receiver does NOT — Phase 17.5 retired the `WCSession`/`PhoneRemoteHost` transport, so it survives only on this branch) |
 | Apple-Watch-as-remote | `dev/watch-remote` | scope-narrowing per 999.5-D1 |
 | Apple-Watch-as-host (direct-to-pump) | `dev/watch-host` | scope-narrowing per 999.5-D1 (own sub-branch, kept separate from watch-as-remote per owner instruction) |
 | faBolusNudge / Smart Assist submenu + Control-IQ-awareness readouts | `dev/nudge` | scope-narrowing per 999.5-D1 |
