@@ -28,7 +28,9 @@ enum DiagnosticsBundle {
 
     /// `[Pump identity]` — always present (no opt-in gate; not sensitive telemetry, just the
     /// connected pump's already-cached identity fields).
-    static func pumpIdentitySection(modelName: String, softwareVersion: String, isMobi: Bool, connection: String) -> String {
+    static func pumpIdentitySection(modelName: String, softwareVersion: String, isMobi: Bool, connection: String)
+        -> String
+    {
         var lines: [String] = ["", "[Pump identity]"]
         lines.append("Model: \(modelName.isEmpty ? "—" : modelName)")
         lines.append("Software: \(softwareVersion.isEmpty ? "—" : softwareVersion)")
@@ -39,9 +41,11 @@ enum DiagnosticsBundle {
 
     /// `[Connection telemetry]` — always present; counters simply read 0/— before any connection
     /// event has ever been recorded.
-    static func connectionTelemetrySection(connectCount: Int, totalUptimeFormatted: String,
-                                            disconnects: [(key: String, count: Int)],
-                                            reconcile: [(key: String, count: Int)]) -> String {
+    static func connectionTelemetrySection(
+        connectCount: Int, totalUptimeFormatted: String,
+        disconnects: [(key: String, count: Int)],
+        reconcile: [(key: String, count: Int)]
+    ) -> String {
         var lines: [String] = ["", "[Connection telemetry]"]
         lines.append("Connects: \(connectCount)")
         lines.append("Total uptime: \(totalUptimeFormatted)")
@@ -52,7 +56,9 @@ enum DiagnosticsBundle {
 
     /// `[Notification telemetry]` — flows through the same pure-aggregator array rather than staying
     /// an inline `View` block.
-    static func notificationTelemetrySection(counts: [(category: String, delivered: Int, dismissed: Int, actedUpon: Int)]) -> String {
+    static func notificationTelemetrySection(
+        counts: [(category: String, delivered: Int, dismissed: Int, actedUpon: Int)]
+    ) -> String {
         var lines: [String] = ["", "[Notification telemetry]"]
         if counts.isEmpty {
             lines.append("—")

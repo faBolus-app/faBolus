@@ -33,7 +33,10 @@ public enum DisconnectEscalation {
         /// user to the pump's own controls.
         public let body: String
         public init(id: String, afterSeconds: TimeInterval, title: String, body: String) {
-            self.id = id; self.afterSeconds = afterSeconds; self.title = title; self.body = body
+            self.id = id
+            self.afterSeconds = afterSeconds
+            self.title = title
+            self.body = body
         }
     }
 
@@ -49,14 +52,16 @@ public enum DisconnectEscalation {
     /// train the user to ignore it, which is itself a hazard. `AppModel`'s existing immediate post is
     /// T0 and is NOT in this list.
     public static let steps: [Step] = [
-        Step(id: "safety.pumpDisconnect.escalation.15m",
-             afterSeconds: 15 * 60,
-             title: "Pump still disconnected",
-             body: "faBolus still can't reach your pump (15 min). \(pumpButtonsInstruction)"),
-        Step(id: "safety.pumpDisconnect.escalation.30m",
-             afterSeconds: 30 * 60,
-             title: "Pump disconnected — act on the pump",
-             body: "faBolus has been unable to reach your pump for 30 minutes. \(pumpButtonsInstruction)"),
+        Step(
+            id: "safety.pumpDisconnect.escalation.15m",
+            afterSeconds: 15 * 60,
+            title: "Pump still disconnected",
+            body: "faBolus still can't reach your pump (15 min). \(pumpButtonsInstruction)"),
+        Step(
+            id: "safety.pumpDisconnect.escalation.30m",
+            afterSeconds: 30 * 60,
+            title: "Pump disconnected — act on the pump",
+            body: "faBolus has been unable to reach your pump for 30 minutes. \(pumpButtonsInstruction)")
     ]
 
     /// Every scheduled-escalation identifier, for cancellation on reconnect (paired with the immediate
@@ -78,5 +83,6 @@ public enum DisconnectEscalation {
 public enum StalenessWatchdog {
     public static let dedupeKey = "safety.cgmStalenessWatchdog"
     public static let title = "CGM data may be stale"
-    public static let body = "faBolus hasn't confirmed a fresh CGM reading recently. Check your sensor/transmitter, or open the app."
+    public static let body =
+        "faBolus hasn't confirmed a fresh CGM reading recently. Check your sensor/transmitter, or open the app."
 }

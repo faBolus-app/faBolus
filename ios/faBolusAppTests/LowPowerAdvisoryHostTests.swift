@@ -22,9 +22,9 @@ struct LowPowerAdvisoryHostTests {
 
     /// Off when idle (no connected source), when dismissed this episode, and when Low Power Mode is off.
     @Test func silentWhenIdleOrDismissedOrLpmOff() {
-        #expect(!LowPowerAdvisory.shouldWarn(lpmActive: true, sourceConnected: false, dismissedEpisode: false)) // idle
-        #expect(!LowPowerAdvisory.shouldWarn(lpmActive: true, sourceConnected: true, dismissedEpisode: true))   // dismissed
-        #expect(!LowPowerAdvisory.shouldWarn(lpmActive: false, sourceConnected: true, dismissedEpisode: false)) // lpm off
+        #expect(!LowPowerAdvisory.shouldWarn(lpmActive: true, sourceConnected: false, dismissedEpisode: false))  // idle
+        #expect(!LowPowerAdvisory.shouldWarn(lpmActive: true, sourceConnected: true, dismissedEpisode: true))  // dismissed
+        #expect(!LowPowerAdvisory.shouldWarn(lpmActive: false, sourceConnected: true, dismissedEpisode: false))  // lpm off
     }
 
     /// The model mirrors `ProcessInfo` at init and, when Low Power Mode is off (the test host default),
@@ -33,9 +33,9 @@ struct LowPowerAdvisoryHostTests {
         let (model, backend) = makeModel()
         #expect(model.lowPowerModeActive == ProcessInfo.processInfo.isLowPowerModeEnabled)
         await backend.connect()
-        #expect(model.snapshot.isLinked)                       // a live source is connected
+        #expect(model.snapshot.isLinked)  // a live source is connected
         if !ProcessInfo.processInfo.isLowPowerModeEnabled {
-            #expect(!model.shouldShowLowPowerAdvisory)         // WARN-only gate stays closed when LPM is off
+            #expect(!model.shouldShowLowPowerAdvisory)  // WARN-only gate stays closed when LPM is off
         }
         // Dismissing is a no-op on visibility here (advisory already hidden) and never throws/gates.
         model.dismissLowPowerAdvisory()

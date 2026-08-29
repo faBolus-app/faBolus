@@ -24,7 +24,7 @@ public final class BLELink: NSObject, RemoteTransport, @unchecked Sendable {
 
     // Fixed GATT identifiers shared by both ends. CBUUID is immutable; safe to share.
     nonisolated(unsafe) public static let serviceUUID = CBUUID(string: "F5A00001-8C2E-4B1A-9E7D-0A1B2C3D4E5F")
-    nonisolated(unsafe) static let statusCharUUID = CBUUID(string: "F5A00002-8C2E-4B1A-9E7D-0A1B2C3D4E5F")   // notify: phone→Mac
+    nonisolated(unsafe) static let statusCharUUID = CBUUID(string: "F5A00002-8C2E-4B1A-9E7D-0A1B2C3D4E5F")  // notify: phone→Mac
     nonisolated(unsafe) static let commandCharUUID = CBUUID(string: "F5A00003-8C2E-4B1A-9E7D-0A1B2C3D4E5F")  // write: Mac→phone
 
     private let role: Role
@@ -42,7 +42,11 @@ public final class BLELink: NSObject, RemoteTransport, @unchecked Sendable {
     private var acceptedCentral: CBCentral?
 
     // Central (Mac / remote iPhone) state
-    private struct DiscoveredPeer { let peripheral: CBPeripheral; var name: String; var lastSeen: Date }
+    private struct DiscoveredPeer {
+        let peripheral: CBPeripheral
+        var name: String
+        var lastSeen: Date
+    }
     private var centralManager: CBCentralManager?
     // Keyed by the STABLE peripheral identifier, not the advertised name: a backgrounded/locked host
     // stops advertising its LocalName, so keying by name split one device across a name and a UUID and
@@ -57,7 +61,7 @@ public final class BLELink: NSObject, RemoteTransport, @unchecked Sendable {
     /// The remote wants to be connected (pairing or reconnecting) → auto-connect to a faBolus peer.
     private var wantsConnection = false
     private var pruneTimer: DispatchSourceTimer?
-    private static let peerStale: TimeInterval = 12   // evict peers not re-seen within this window
+    private static let peerStale: TimeInterval = 12  // evict peers not re-seen within this window
     private var writing = false
 
     // Framing
@@ -70,10 +74,12 @@ public final class BLELink: NSObject, RemoteTransport, @unchecked Sendable {
         super.init()
         switch role {
         case .peripheral:
-            peripheralManager = CBPeripheralManager(delegate: self, queue: queue,
+            peripheralManager = CBPeripheralManager(
+                delegate: self, queue: queue,
                 options: [CBPeripheralManagerOptionRestoreIdentifierKey: "com.fabolus.ble.peripheral"])
         case .central:
-            centralManager = CBCentralManager(delegate: self, queue: queue,
+            centralManager = CBCentralManager(
+                delegate: self, queue: queue,
                 options: [CBCentralManagerOptionRestoreIdentifierKey: "com.fabolus.ble.central"])
         }
     }
@@ -89,7 +95,7 @@ public final class BLELink: NSObject, RemoteTransport, @unchecked Sendable {
         // txChunks for a late flush. Gate on the manager actually being powered on (mirrors the .poweredOn guard
         // the delegate callbacks already enforce). DEAD on main (BLELink is never constructed) — hardening only.
         case .peripheral: return peripheralManager?.state == .poweredOn && !subscribedCentrals.isEmpty
-        case .central:    return centralManager?.state == .poweredOn && connectedPeripheral != nil && commandChar != nil
+        case .central: return centralManager?.state == .poweredOn && connectedPeripheral != nil && commandChar != nil
         }
     }
     public var connectedPeerName: String? { connectedPeripheral?.name }
@@ -134,7 +140,11 @@ public final class BLELink: NSObject, RemoteTransport, @unchecked Sendable {
     private func split(_ data: Data) -> [Data] {
         let size = chunkSize
         var out: [Data] = [], i = 0
-        while i < data.count { let e = min(i + size, data.count); out.append(data.subdata(in: i..<e)); i = e }
+        while i < data.count {
+            let e = min(i + size, data.count)
+            out.append(data.subdata(in: i..<e))
+            i = e
+        }
         return out
     }
 
@@ -144,14 +154,15 @@ public final class BLELink: NSObject, RemoteTransport, @unchecked Sendable {
         case .peripheral:
             guard let pm = peripheralManager, let ch = statusChar, !subscribedCentrals.isEmpty else { return }
             while let chunk = txChunks.first {
-                if pm.updateValue(chunk, for: ch, onSubscribedCentrals: nil) { txChunks.removeFirst() }
-                else { break }   // queue full — resumes in peripheralManagerIsReadyToUpdateSubscribers
+                if pm.updateValue(chunk, for: ch, onSubscribedCentrals: nil) { txChunks.removeFirst() } else { break }  // queue full — resumes in peripheralManagerIsReadyToUpdateSubscribers
             }
         case .central:
-            guard let p = connectedPeripheral, let ch = commandChar, !writing, let chunk = txChunks.first else { return }
+            guard let p = connectedPeripheral, let ch = commandChar, !writing, let chunk = txChunks.first else {
+                return
+            }
             txChunks.removeFirst()
             writing = true
-            p.writeValue(chunk, for: ch, type: .withResponse)   // serialized; next chunk on didWriteValueFor
+            p.writeValue(chunk, for: ch, type: .withResponse)  // serialized; next chunk on didWriteValueFor
         }
     }
 
@@ -168,7 +179,10 @@ public final class BLELink: NSObject, RemoteTransport, @unchecked Sendable {
             let len = Int(rxBuffer.prefix(4).reduce(UInt32(0)) { ($0 << 8) | UInt32($1) })
             // Reject an oversized declared length before buffering toward it: drop + resync (a
             // well-behaved peer never sends this; a hostile one can't exhaust memory).
-            if len > Self.maxFrameBytes { rxBuffer.removeAll(keepingCapacity: false); break }
+            if len > Self.maxFrameBytes {
+                rxBuffer.removeAll(keepingCapacity: false)
+                break
+            }
             guard rxBuffer.count >= 4 + len else { break }
             let msg = rxBuffer.subdata(in: 4..<(4 + len))
             rxBuffer.removeSubrange(0..<(4 + len))
@@ -200,15 +214,17 @@ public final class BLELink: NSObject, RemoteTransport, @unchecked Sendable {
     /// pairing code / stored token authenticates the correct one.
     private func connectBestCandidate() {
         guard connectedPeripheral == nil, wantsConnection, !discovered.isEmpty else { return }
-        let pick = discovered.values.first(where: { $0.name == preferredPeerName })
+        let pick =
+            discovered.values.first(where: { $0.name == preferredPeerName })
             ?? discovered.values.max(by: { $0.lastSeen < $1.lastSeen })
         if let pick { centralManager?.connect(pick.peripheral, options: nil) }
     }
 
     /// Scan for faBolus hosts. `allowDuplicates` so `lastSeen` refreshes and stale peers can be pruned.
     private func startScanning() {
-        centralManager?.scanForPeripherals(withServices: [Self.serviceUUID],
-                                           options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
+        centralManager?.scanForPeripherals(
+            withServices: [Self.serviceUUID],
+            options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
         guard pruneTimer == nil else { return }
         let t = DispatchSource.makeTimerSource(queue: queue)
         t.schedule(deadline: .now() + 4, repeating: 4)
@@ -258,12 +274,16 @@ public final class BLELink: NSObject, RemoteTransport, @unchecked Sendable {
                 self.rxBuffer.removeAll(keepingCapacity: false)
             case .central:
                 self.centralManager?.stopScan()
-                self.pruneTimer?.cancel(); self.pruneTimer = nil
+                self.pruneTimer?.cancel()
+                self.pruneTimer = nil
                 if let p = self.connectedPeripheral { self.centralManager?.cancelPeripheralConnection(p) }
-                self.connectedPeripheral = nil; self.commandChar = nil
-                self.discovered.removeAll(); self.wantsConnection = false
+                self.connectedPeripheral = nil
+                self.commandChar = nil
+                self.discovered.removeAll()
+                self.wantsConnection = false
             }
-            self.txChunks.removeAll(); self.rxBuffer.removeAll()
+            self.txChunks.removeAll()
+            self.rxBuffer.removeAll()
         }
     }
 }
@@ -272,18 +292,22 @@ public final class BLELink: NSObject, RemoteTransport, @unchecked Sendable {
 extension BLELink: CBPeripheralManagerDelegate {
     public func peripheralManagerDidUpdateState(_ peripheral: CBPeripheralManager) {
         guard peripheral.state == .poweredOn else { return }
-        let status = CBMutableCharacteristic(type: Self.statusCharUUID, properties: [.notify],
-                                             value: nil, permissions: [.readable])
-        let command = CBMutableCharacteristic(type: Self.commandCharUUID,
-                                              properties: [.write, .writeWithoutResponse],
-                                              value: nil, permissions: [.writeable])
+        let status = CBMutableCharacteristic(
+            type: Self.statusCharUUID, properties: [.notify],
+            value: nil, permissions: [.readable])
+        let command = CBMutableCharacteristic(
+            type: Self.commandCharUUID,
+            properties: [.write, .writeWithoutResponse],
+            value: nil, permissions: [.writeable])
         let service = CBMutableService(type: Self.serviceUUID, primary: true)
         service.characteristics = [status, command]
         statusChar = status
         peripheral.removeAllServices()
         peripheral.add(service)
-        peripheral.startAdvertising([CBAdvertisementDataServiceUUIDsKey: [Self.serviceUUID],
-                                     CBAdvertisementDataLocalNameKey: displayName])
+        peripheral.startAdvertising([
+            CBAdvertisementDataServiceUUIDsKey: [Self.serviceUUID],
+            CBAdvertisementDataLocalNameKey: displayName
+        ])
     }
 
     public func peripheralManager(_ peripheral: CBPeripheralManager, willRestoreState dict: [String: Any]) {
@@ -295,11 +319,16 @@ extension BLELink: CBPeripheralManagerDelegate {
         }
     }
 
-    public func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral,
-                                  didSubscribeTo characteristic: CBCharacteristic) {
+    public func peripheralManager(
+        _ peripheral: CBPeripheralManager, central: CBCentral,
+        didSubscribeTo characteristic: CBCharacteristic
+    ) {
         // Audit A-08: adopt the first central; ignore any other while one is active (CoreBluetooth can't
         // refuse the subscribe, but we never broadcast to it and drop its writes below).
-        if acceptedCentral == nil { acceptedCentral = central; rxBuffer.removeAll(keepingCapacity: false) }
+        if acceptedCentral == nil {
+            acceptedCentral = central
+            rxBuffer.removeAll(keepingCapacity: false)
+        }
         guard central.identifier == acceptedCentral?.identifier else { return }
         if !subscribedCentrals.contains(where: { $0.identifier == central.identifier }) {
             subscribedCentrals.append(central)
@@ -308,8 +337,10 @@ extension BLELink: CBPeripheralManagerDelegate {
         pump()
     }
 
-    public func peripheralManager(_ peripheral: CBPeripheralManager, central: CBCentral,
-                                  didUnsubscribeFrom characteristic: CBCharacteristic) {
+    public func peripheralManager(
+        _ peripheral: CBPeripheralManager, central: CBCentral,
+        didUnsubscribeFrom characteristic: CBCharacteristic
+    ) {
         subscribedCentrals.removeAll { $0.identifier == central.identifier }
         // Free the slot when the accepted central leaves so the next one can be adopted (A-08).
         if central.identifier == acceptedCentral?.identifier {
@@ -345,7 +376,8 @@ extension BLELink: CBCentralManagerDelegate, CBPeripheralDelegate {
 
     public func centralManager(_ central: CBCentralManager, willRestoreState dict: [String: Any]) {
         if let peripherals = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral],
-           let p = peripherals.first {
+            let p = peripherals.first
+        {
             connectedPeripheral = p
             p.delegate = self
         }
@@ -359,11 +391,14 @@ extension BLELink: CBCentralManagerDelegate, CBPeripheralDelegate {
         return "faBolus device (\(peripheral.identifier.uuidString.suffix(4)))"
     }
 
-    public func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
-                               advertisementData: [String: Any], rssi RSSI: NSNumber) {
-        discovered[peripheral.identifier] = DiscoveredPeer(peripheral: peripheral,
-                                                           name: name(for: peripheral, advertisementData),
-                                                           lastSeen: Date())
+    public func centralManager(
+        _ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
+        advertisementData: [String: Any], rssi RSSI: NSNumber
+    ) {
+        discovered[peripheral.identifier] = DiscoveredPeer(
+            peripheral: peripheral,
+            name: name(for: peripheral, advertisementData),
+            lastSeen: Date())
         if connectedPeripheral == nil, wantsConnection { connectBestCandidate() }
         emitPeers()
     }
@@ -372,16 +407,22 @@ extension BLELink: CBCentralManagerDelegate, CBPeripheralDelegate {
         connectedPeripheral = peripheral
         peripheral.delegate = self
         peripheral.discoverServices([Self.serviceUUID])
-        emitPeers()   // drop the now-connected peer from the discoverable list
+        emitPeers()  // drop the now-connected peer from the discoverable list
     }
 
-    public func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral,
-                               error: Error?) {
+    public func centralManager(
+        _ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral,
+        error: Error?
+    ) {
         if peripheral.identifier == connectedPeripheral?.identifier {
-            connectedPeripheral = nil; commandChar = nil; writing = false; txChunks.removeAll(); rxBuffer.removeAll()
+            connectedPeripheral = nil
+            commandChar = nil
+            writing = false
+            txChunks.removeAll()
+            rxBuffer.removeAll()
         }
         reportReachability()
-        emitPeers()   // the peer is discoverable again now that it's disconnected
+        emitPeers()  // the peer is discoverable again now that it's disconnected
         // Auto-reconnect to the (or any) faBolus peer when the remote still wants a connection.
         if wantsConnection { connectBestCandidate() }
     }
@@ -391,29 +432,37 @@ extension BLELink: CBCentralManagerDelegate, CBPeripheralDelegate {
         peripheral.discoverCharacteristics([Self.statusCharUUID, Self.commandCharUUID], for: service)
     }
 
-    public func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService,
-                           error: Error?) {
+    public func peripheral(
+        _ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService,
+        error: Error?
+    ) {
         for c in service.characteristics ?? [] {
             if c.uuid == Self.commandCharUUID { commandChar = c }
             if c.uuid == Self.statusCharUUID { peripheral.setNotifyValue(true, for: c) }
         }
     }
 
-    public func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic,
-                           error: Error?) {
+    public func peripheral(
+        _ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic,
+        error: Error?
+    ) {
         if characteristic.uuid == Self.statusCharUUID, characteristic.isNotifying {
             reportReachability()
-            pump()   // flush anything queued before we were ready (e.g. the initial statusRead)
+            pump()  // flush anything queued before we were ready (e.g. the initial statusRead)
         }
     }
 
-    public func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic,
-                           error: Error?) {
+    public func peripheral(
+        _ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic,
+        error: Error?
+    ) {
         if characteristic.uuid == Self.statusCharUUID, let v = characteristic.value { ingest(v) }
     }
 
-    public func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic,
-                           error: Error?) {
+    public func peripheral(
+        _ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic,
+        error: Error?
+    ) {
         writing = false
         pump()
     }

@@ -38,7 +38,8 @@ public struct HistoryCoverageMap: Codable, Equatable, Sendable {
             // Overlapping, or directly adjacent (last.upperBound + 1 == r.lowerBound) — guard the +1
             // against UInt32.max overflow (the pump's sequence numbers are real-world bounded, but the
             // arithmetic must never trap on a pathological/adversarial value).
-            let adjacentOrOverlapping = last.upperBound >= r.lowerBound
+            let adjacentOrOverlapping =
+                last.upperBound >= r.lowerBound
                 || (last.upperBound != UInt32.max && last.upperBound + 1 == r.lowerBound)
             if adjacentOrOverlapping {
                 merged[merged.count - 1] = last.lowerBound...Swift.max(last.upperBound, r.upperBound)

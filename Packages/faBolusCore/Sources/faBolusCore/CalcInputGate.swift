@@ -23,9 +23,9 @@ public enum CalcInputGate {
     }
 
     public enum Decision: Equatable, Sendable {
-        case proceed              // no gate — deliver on the normal path
-        case prompt(Kind)         // show the warned two-way override of this kind BEFORE composing a dose
-        case blockNoTherapy       // the pump never reported its bolus settings — no dose can be sized; cancel only
+        case proceed  // no gate — deliver on the normal path
+        case prompt(Kind)  // show the warned two-way override of this kind BEFORE composing a dose
+        case blockNoTherapy  // the pump never reported its bolus settings — no dose can be sized; cancel only
     }
 
     /// The gate. Returns `.prompt` iff a warned override must be shown first, `.blockNoTherapy` iff no dose
@@ -45,15 +45,17 @@ public enum CalcInputGate {
     /// dose would be sized off a hardcoded guess (a carb dose cannot be computed without a real carb ratio;
     /// a wrong guess is a potential multiple-dose), and there are no "last-known" settings to honestly offer.
     /// That case returns `.blockNoTherapy` (warn + cancel only), never a deliverable override.
-    public static func decide(isCarbsMode: Bool, inputsVerified: Bool,
-                              iobStale: Bool, therapyStale: Bool,
-                              therapyAvailable: Bool, overrideAccepted: Bool) -> Decision {
+    public static func decide(
+        isCarbsMode: Bool, inputsVerified: Bool,
+        iobStale: Bool, therapyStale: Bool,
+        therapyAvailable: Bool, overrideAccepted: Bool
+    ) -> Decision {
         guard isCarbsMode, !inputsVerified else { return .proceed }
-        if overrideAccepted { return .proceed }          // re-entry after an accepted override (therapy WAS available)
-        guard therapyAvailable else { return .blockNoTherapy }   // never-read therapy → no dose can be sized
+        if overrideAccepted { return .proceed }  // re-entry after an accepted override (therapy WAS available)
+        guard therapyAvailable else { return .blockNoTherapy }  // never-read therapy → no dose can be sized
         if therapyStale && !iobStale { return .prompt(.therapy) }
         if iobStale && !therapyStale { return .prompt(.iob) }
-        return .prompt(.both)   // both stale, OR neither flag set but still unverified
+        return .prompt(.both)  // both stale, OR neither flag set but still unverified
     }
 
     /// The delivered dose for an accepted override on the manual/absent-BG path (the CGM path has its own

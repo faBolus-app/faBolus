@@ -19,7 +19,7 @@ struct R3CLedgerFaultTests {
     final class FakeLedgerStore: RemoteBolusLedgerPersisting, @unchecked Sendable {
         struct SaveError: Error {}
         var failAllSaves = false
-        var failSaveOnCall: Int? = nil        // 1-based
+        var failSaveOnCall: Int? = nil  // 1-based
         var reportCorruptLoad = false
         private(set) var saveCount = 0
         private var persisted: Data?
@@ -42,16 +42,22 @@ struct R3CLedgerFaultTests {
     private func withCleanSettings(_ body: () async throws -> Void) async rethrows {
         let s = AppSettings.shared
         let ro = s.phoneReadOnly, child = s.childModeEnabled
-        s.phoneReadOnly = false; s.childModeEnabled = false
-        defer { s.phoneReadOnly = ro; s.childModeEnabled = child }
+        s.phoneReadOnly = false
+        s.childModeEnabled = false
+        defer {
+            s.phoneReadOnly = ro
+            s.childModeEnabled = child
+        }
         try await body()
     }
 
     // #1 — the durable point itself fails: nothing may reach the pump.
     @Test func intentSaveFailureBlocksBeforeAnyPumpWrite() async {
         await withCleanSettings {
-            let store = FakeLedgerStore(); store.failAllSaves = true
-            let backend = MockBackend(); await backend.connect()
+            let store = FakeLedgerStore()
+            store.failAllSaves = true
+            let backend = MockBackend()
+            await backend.connect()
             let model = AppModel(source: backend, ledgerStore: store)
             await model.remoteDeliver(requestId: "f1", units: 2.0, peerId: "watch")
             // The pump was never asked to assign a bolus id → nothing could have been delivered.
@@ -68,18 +74,21 @@ struct R3CLedgerFaultTests {
     // relaunch treats as NOT delivered (auto-clearable) — never a silent double-dose, never a stuck lock.
     @Test func idCommitSaveFailureAbortsBeforeInitiateAndClearsOnRelaunch() async {
         await withCleanSettings {
-            let store = FakeLedgerStore(); store.failSaveOnCall = 2   // markSent save throws
-            let backend1 = MockBackend(); await backend1.connect()
+            let store = FakeLedgerStore()
+            store.failSaveOnCall = 2  // markSent save throws
+            let backend1 = MockBackend()
+            await backend1.connect()
             let model1 = AppModel(source: backend1, ledgerStore: store)
             await model1.remoteDeliver(requestId: "f2", units: 2.0, peerId: "watch")
-            #expect(backend1.lastAssignedBolusId != nil)   // the pump DID assign an id (permission granted)…
+            #expect(backend1.lastAssignedBolusId != nil)  // the pump DID assign an id (permission granted)…
             // …but the commit save failed, so the durable record (save #1) never got `sentToPump`.
             // A relaunch on the same durable content must auto-clear it as interrupted-pre-initiate.
-            let backend2 = MockBackend(); await backend2.connect()
+            let backend2 = MockBackend()
+            await backend2.connect()
             let model2 = AppModel(source: backend2, ledgerStore: store)
             await model2.reconcileUnresolvedDeliveries()
-            #expect(!model2.deliveryGloballyBlocked)       // safe record, not a permanent lock
-            #expect(backend2.lastAssignedBolusId == nil)   // and the relaunch never re-initiated
+            #expect(!model2.deliveryGloballyBlocked)  // safe record, not a permanent lock
+            #expect(backend2.lastAssignedBolusId == nil)  // and the relaunch never re-initiated
         }
     }
 
@@ -87,12 +96,14 @@ struct R3CLedgerFaultTests {
     // until a clean save lands. Releasing it on an unsaved terminal would allow a duplicate dose.
     @Test func terminalSaveFailureRetainsGlobalBlock() async {
         await withCleanSettings {
-            let store = FakeLedgerStore(); store.failSaveOnCall = 3   // the settle-delivered save throws
-            let backend = MockBackend(); await backend.connect()
+            let store = FakeLedgerStore()
+            store.failSaveOnCall = 3  // the settle-delivered save throws
+            let backend = MockBackend()
+            await backend.connect()
             let model = AppModel(source: backend, ledgerStore: store)
             await model.remoteDeliver(requestId: "f3", units: 2.0, peerId: "watch")
-            #expect(backend.lastAssignedBolusId != nil)    // the dose was initiated (and, in the mock, delivered)
-            #expect(model.deliveryGloballyBlocked)         // block retained: terminal outcome not durably saved
+            #expect(backend.lastAssignedBolusId != nil)  // the dose was initiated (and, in the mock, delivered)
+            #expect(model.deliveryGloballyBlocked)  // block retained: terminal outcome not durably saved
         }
     }
 
@@ -100,11 +111,12 @@ struct R3CLedgerFaultTests {
     @Test func noDurableStoreBlocksDelivery() async {
         await withCleanSettings {
             let store = FakeLedgerStore()
-            let backend = MockBackend(); await backend.connect()
+            let backend = MockBackend()
+            await backend.connect()
             let model = AppModel(source: backend, ledgerStore: store, forceNoDurableStore: true)
             #expect(model.deliveryGloballyBlocked)
             await model.remoteDeliver(requestId: "f4", units: 2.0, peerId: "watch")
-            #expect(backend.lastAssignedBolusId == nil)    // blocked ⇒ never reached the pump
+            #expect(backend.lastAssignedBolusId == nil)  // blocked ⇒ never reached the pump
             #expect(store.saveCount == 0)
         }
     }
@@ -113,8 +125,10 @@ struct R3CLedgerFaultTests {
     // corruption path is covered in AppModelBehaviorTests; this proves the block keys on the outcome).
     @Test func corruptLoadOutcomeFailsClosed() async {
         await withCleanSettings {
-            let store = FakeLedgerStore(); store.reportCorruptLoad = true
-            let backend = MockBackend(); await backend.connect()
+            let store = FakeLedgerStore()
+            store.reportCorruptLoad = true
+            let backend = MockBackend()
+            await backend.connect()
             let model = AppModel(source: backend, ledgerStore: store)
             await model.remoteDeliver(requestId: "f5", units: 2.0, peerId: "watch")
             #expect(model.deliveryGloballyBlocked)

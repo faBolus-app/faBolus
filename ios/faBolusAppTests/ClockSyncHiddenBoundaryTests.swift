@@ -30,8 +30,9 @@ struct ClockSyncHiddenBoundaryTests {
     @Test func syncTimeToNowStillIssuesTheWriteWithNoUIPresent() async throws {
         let (backend, fake) = makeSyncableBackend()
         try await backend.syncTimeToNow()
-        #expect(fake.lastSent(ChangeTimeDateRequest.props.opCode) != nil,
-                "the pump time-sync command must still reach the transport with no UI surface present")
+        #expect(
+            fake.lastSent(ChangeTimeDateRequest.props.opCode) != nil,
+            "the pump time-sync command must still reach the transport with no UI surface present")
     }
 
     /// The existing connection precondition is unchanged by this phase — LOCK-05 pins the SETTING

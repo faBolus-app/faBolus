@@ -21,9 +21,10 @@ private final class Loopback: RemoteTransport, @unchecked Sendable {
 @MainActor
 final class SealedTransportTests: XCTestCase {
     private func key() -> SymmetricKey {
-        MacPairing.channelKey(secret: Data("123456".utf8),
-                              phoneNonce: Data(repeating: 1, count: 16),
-                              macNonce: Data(repeating: 2, count: 16))
+        MacPairing.channelKey(
+            secret: Data("123456".utf8),
+            phoneNonce: Data(repeating: 1, count: 16),
+            macNonce: Data(repeating: 2, count: 16))
     }
 
     func testSealOpenRoundTrip() {
@@ -38,9 +39,10 @@ final class SealedTransportTests: XCTestCase {
 
     func testWrongKeyFailsToOpen() {
         let sealed = SealedTransport.seal(RemoteCommand(kind: .statusRead), key: key(), counter: 0)!
-        let wrong = MacPairing.channelKey(secret: Data("999999".utf8),
-                                          phoneNonce: Data(repeating: 1, count: 16),
-                                          macNonce: Data(repeating: 2, count: 16))
+        let wrong = MacPairing.channelKey(
+            secret: Data("999999".utf8),
+            phoneNonce: Data(repeating: 1, count: 16),
+            macNonce: Data(repeating: 2, count: 16))
         XCTAssertNil(SealedTransport.open(sealed, key: wrong))
     }
 
@@ -52,7 +54,9 @@ final class SealedTransportTests: XCTestCase {
     }
 
     func testEndToEndEncryptsAndDelivers() async {
-        let a = Loopback(), b = Loopback(); a.peer = b; b.peer = a
+        let a = Loopback(), b = Loopback()
+        a.peer = b
+        b.peer = a
         let sa = SealedTransport(inner: a), sb = SealedTransport(inner: b)
         let secret = Data("123456".utf8)
         let pn = Data(repeating: 1, count: 16), mn = Data(repeating: 2, count: 16)
@@ -73,7 +77,9 @@ final class SealedTransportTests: XCTestCase {
     }
 
     func testReplayRejected() async {
-        let a = Loopback(), b = Loopback(); a.peer = b; b.peer = a
+        let a = Loopback(), b = Loopback()
+        a.peer = b
+        b.peer = a
         let sa = SealedTransport(inner: a), sb = SealedTransport(inner: b)
         let secret = Data("123456".utf8), pn = Data(repeating: 1, count: 16), mn = Data(repeating: 2, count: 16)
         sa.activateSession(secret: secret, phoneNonce: pn, macNonce: mn)
@@ -87,13 +93,15 @@ final class SealedTransportTests: XCTestCase {
         let replay = a.sent.first!
         b.onReceive?(replay)
         try? await Task.sleep(nanoseconds: 30_000_000)
-        XCTAssertEqual(count, 1)   // the replayed frame is dropped
+        XCTAssertEqual(count, 1)  // the replayed frame is dropped
     }
 
     /// Audit A-01: once a session is live, a cleartext auth frame injected on the wire must be dropped
     /// on receive (a real re-handshake only follows a link teardown that clears the key).
     func testInSessionCleartextAuthDropped() async {
-        let a = Loopback(), b = Loopback(); a.peer = b; b.peer = a
+        let a = Loopback(), b = Loopback()
+        a.peer = b
+        b.peer = a
         let sa = SealedTransport(inner: a), sb = SealedTransport(inner: b)
         let secret = Data("123456".utf8), pn = Data(repeating: 1, count: 16), mn = Data(repeating: 2, count: 16)
         sa.activateSession(secret: secret, phoneNonce: pn, macNonce: mn)
@@ -114,11 +122,14 @@ final class SealedTransportTests: XCTestCase {
     }
 
     func testAuthPassesButRealCommandBlockedBeforeSession() async {
-        let a = Loopback(), b = Loopback(); a.peer = b; b.peer = a
-        let sa = SealedTransport(inner: a); _ = SealedTransport(inner: b)
+        let a = Loopback(), b = Loopback()
+        a.peer = b
+        b.peer = a
+        let sa = SealedTransport(inner: a)
+        _ = SealedTransport(inner: b)
         // No activateSession yet.
         sa.send(.auth(.authHello, clientId: "x"))
-        sa.send(RemoteCommand(kind: .bolusRequest, units: 1))   // must NOT go out in clear
+        sa.send(RemoteCommand(kind: .bolusRequest, units: 1))  // must NOT go out in clear
         try? await Task.sleep(nanoseconds: 30_000_000)
         XCTAssertEqual(a.sent.count, 1)
         XCTAssertEqual(a.sent.first?.kind, .authHello)

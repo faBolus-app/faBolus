@@ -34,7 +34,7 @@ struct RemoteCommandSchemaConformanceTests {
     private static let bleOrSwiftOnlyKinds: Set<RemoteCommand.Kind> = [
         .authHello, .authChallenge, .authProof, .authResult,
         .sealed,
-        .bolusApprovalRequest, .bolusApprovalResponse,
+        .bolusApprovalRequest, .bolusApprovalResponse
     ]
 
     /// LIVE Swift fields that must stay present on BOTH sides — a schema-only or Swift-only deletion
@@ -44,8 +44,10 @@ struct RemoteCommandSchemaConformanceTests {
     // MARK: - Path resolution can't pass vacuously
 
     @Test func fileResolutionActuallyFoundTheSchema() {
-        #expect(Self.resolve("schema/command.schema.json") != nil,
-                "path resolution broke — could not resolve schema/command.schema.json; the conformance checks below would pass vacuously")
+        #expect(
+            Self.resolve("schema/command.schema.json") != nil,
+            "path resolution broke — could not resolve schema/command.schema.json; the conformance checks below would pass vacuously"
+        )
     }
 
     // MARK: - kind.enum
@@ -53,8 +55,9 @@ struct RemoteCommandSchemaConformanceTests {
     @Test func schemaKindEnumEqualsTheDocumentedSharedSubsetOfRemoteCommandKind() throws {
         let schema = try Self.loadSchema()
         guard let properties = schema["properties"] as? [String: Any],
-              let kindSchema = properties["kind"] as? [String: Any],
-              let schemaKinds = kindSchema["enum"] as? [String] else {
+            let kindSchema = properties["kind"] as? [String: Any],
+            let schemaKinds = kindSchema["enum"] as? [String]
+        else {
             Issue.record("schema/command.schema.json has no properties.kind.enum array — conformance check cannot run")
             return
         }
@@ -62,14 +65,18 @@ struct RemoteCommandSchemaConformanceTests {
         let sharedSwiftKinds = RemoteCommand.Kind.allCases.filter { !Self.bleOrSwiftOnlyKinds.contains($0) }
         let sharedSwiftKindRawValues = Set(sharedSwiftKinds.map(\.rawValue))
 
-        #expect(Set(schemaKinds) == sharedSwiftKindRawValues,
-                "schema kind.enum \(schemaKinds.sorted()) must equal the documented shared subset of RemoteCommand.Kind \(sharedSwiftKindRawValues.sorted()) — a BLE-only/Mac-pairing/advisory kind leaked into the schema, or a shared kind is missing from it")
+        #expect(
+            Set(schemaKinds) == sharedSwiftKindRawValues,
+            "schema kind.enum \(schemaKinds.sorted()) must equal the documented shared subset of RemoteCommand.Kind \(sharedSwiftKindRawValues.sorted()) — a BLE-only/Mac-pairing/advisory kind leaked into the schema, or a shared kind is missing from it"
+        )
 
         // Belt-and-suspenders: every excluded case really is excluded (catches a typo in the exclusion set
         // itself hiding a real omission from the shared subset).
         for excluded in Self.bleOrSwiftOnlyKinds {
-            #expect(!schemaKinds.contains(excluded.rawValue),
-                    "'\(excluded.rawValue)' is documented BLE-only/Mac-pairing/advisory (RemoteCommand.swift) but appears in schema kind.enum")
+            #expect(
+                !schemaKinds.contains(excluded.rawValue),
+                "'\(excluded.rawValue)' is documented BLE-only/Mac-pairing/advisory (RemoteCommand.swift) but appears in schema kind.enum"
+            )
         }
     }
 
@@ -94,16 +101,22 @@ struct RemoteCommandSchemaConformanceTests {
         // conformance concerns — kinds and shared properties — live in one Swift-side test): every schema
         // property must have a matching RemoteCommand field.
         let schemaOnly = schemaPropertyNames.subtracting(swiftFieldNames)
-        #expect(schemaOnly.isEmpty,
-                "schema/command.schema.json declares propert\(schemaOnly.count == 1 ? "y" : "ies") with no matching RemoteCommand field: \(schemaOnly.sorted()) — update RemoteCommand.swift (and the Garmin Monkey C mirror)")
+        #expect(
+            schemaOnly.isEmpty,
+            "schema/command.schema.json declares propert\(schemaOnly.count == 1 ? "y" : "ies") with no matching RemoteCommand field: \(schemaOnly.sorted()) — update RemoteCommand.swift (and the Garmin Monkey C mirror)"
+        )
 
         // Direction 2: a kinds-only test would pass while these silently diverge. The fields with a
         // live AppModel producer must stay declared on BOTH sides.
         for field in Self.atRiskSharedFields {
-            #expect(schemaPropertyNames.contains(field),
-                    "'\(field)' must stay in schema/command.schema.json — frozen AppModel.swift still populates it; its retirement is a coordinated frozen change deferred beyond this UI phase")
-            #expect(swiftFieldNames.contains(field),
-                    "'\(field)' must stay a RemoteCommand field — the schema still declares it and frozen AppModel.swift still populates it")
+            #expect(
+                schemaPropertyNames.contains(field),
+                "'\(field)' must stay in schema/command.schema.json — frozen AppModel.swift still populates it; its retirement is a coordinated frozen change deferred beyond this UI phase"
+            )
+            #expect(
+                swiftFieldNames.contains(field),
+                "'\(field)' must stay a RemoteCommand field — the schema still declares it and frozen AppModel.swift still populates it"
+            )
         }
     }
 }

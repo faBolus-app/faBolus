@@ -41,9 +41,11 @@ public enum RemoteSendDisposition: Equatable, Sendable {
     ///   - isReachable: whether the peer is live right now.
     ///   - liveSendFailed: pass `true` when a live send was already attempted and errored, to decide
     ///     the fallback. A non-mutating command falls back to the queue; a mutating one must not.
-    public static func decide(kind: RemoteCommand.Kind,
-                              isReachable: Bool,
-                              liveSendFailed: Bool = false) -> RemoteSendDisposition {
+    public static func decide(
+        kind: RemoteCommand.Kind,
+        isReachable: Bool,
+        liveSendFailed: Bool = false
+    ) -> RemoteSendDisposition {
         if liveSendFailed { return kind.mutatesPumpState ? .reportUndeliverable : .queue }
         if isReachable { return .sendLive }
         return kind.mutatesPumpState ? .reportUndeliverable : .queue

@@ -13,7 +13,7 @@ import Testing
     @Test func declaredSetIsStableAndFullyClassified() {
         // Pin the size: adding a reachable pump-write entry point without classifying it here fails visibly.
         #expect(GatedPumpWrite.allCases.count == 38)
-        for w in GatedPumpWrite.allCases { _ = w.gate }   // exhaustive switch → also proves no crash
+        for w in GatedPumpWrite.allCases { _ = w.gate }  // exhaustive switch → also proves no crash
     }
 
     @Test func gatePartitionsMatchTheAppModelFunnels() {
@@ -21,17 +21,19 @@ import Testing
         // Both child-only writes are gated by child mode only (NOT read-only) — cancel is a safety STOP,
         // dismiss is low-risk. This locks the documented gap so P12's BolusGate review can't forget it.
         #expect(names(.childOnly) == ["cancelBolus", "dismissNotification"])
-        #expect(names(.unverifiedAck) == [
-            "createProfile", "setActiveProfile", "renameProfile", "deleteProfile",
-            "addProfileSegment", "modifyProfileSegment", "deleteProfileSegment", "setCgmHighLowAlert",
-            // P14 S6: the therapy-defining writes that previously bypassed the ack.
-            "setControlIQ", "setMaxBolus", "setMaxBasal",
-            // Phase 09.10: the Mobi native Sleep-schedule write — flag semantics + slots 1-3 unverified.
-            "setSleepSchedule",
-        ])
-        #expect(names(.controlInterlock).count == 22)   // P14 S6: was 25, three moved to .unverifiedAck
+        #expect(
+            names(.unverifiedAck) == [
+                "createProfile", "setActiveProfile", "renameProfile", "deleteProfile",
+                "addProfileSegment", "modifyProfileSegment", "deleteProfileSegment", "setCgmHighLowAlert",
+                // P14 S6: the therapy-defining writes that previously bypassed the ack.
+                "setControlIQ", "setMaxBolus", "setMaxBasal",
+                // Phase 09.10: the Mobi native Sleep-schedule write — flag semantics + slots 1-3 unverified.
+                "setSleepSchedule"
+            ])
+        #expect(names(.controlInterlock).count == 22)  // P14 S6: was 25, three moved to .unverifiedAck
         // The partition is total and disjoint.
-        let total = names(.ledgeredDelivery).count + names(.unverifiedAck).count
+        let total =
+            names(.ledgeredDelivery).count + names(.unverifiedAck).count
             + names(.childOnly).count + names(.controlInterlock).count
         #expect(total == GatedPumpWrite.allCases.count)
     }
@@ -47,8 +49,9 @@ import Testing
             #expect(!a.requiresAdvancedControlOptIn, "\(a.rawValue) must not require the advanced opt-in")
         }
         // The deliberate exclusion — Settings → Pump clock reaches this on Mobi without the opt-in.
-        #expect(!GatedPumpWrite.syncTimeToNow.requiresAdvancedControlOptIn,
-                "syncTimeToNow is capability-gated (supportsTimeSync), NOT opt-in-gated — must be excluded")
+        #expect(
+            !GatedPumpWrite.syncTimeToNow.requiresAdvancedControlOptIn,
+            "syncTimeToNow is capability-gated (supportsTimeSync), NOT opt-in-gated — must be excluded")
         // Every other control / unverified-ack write DOES require it (opt-in-gated in the UI).
         let advanced = Set(GatedPumpWrite.allCases.filter { $0.requiresAdvancedControlOptIn }.map(\.rawValue))
         let expected = names(.controlInterlock).union(names(.unverifiedAck)).subtracting(["syncTimeToNow"])
@@ -64,11 +67,11 @@ import Testing
     /// capability; delivery + the child-only pair require none (so Gate 5 never blocks a bolus).
     @Test func hasRequiredCapabilitySplitsTimeSyncFromTheAdvancedSet() {
         #expect(GatedPumpWrite.syncTimeToNow.hasRequiredCapability(in: .mobiAdvanced))
-        #expect(!GatedPumpWrite.syncTimeToNow.hasRequiredCapability(in: .full))   // t:slim: no timeSync
+        #expect(!GatedPumpWrite.syncTimeToNow.hasRequiredCapability(in: .full))  // t:slim: no timeSync
         // Phase 09.10: setSleepSchedule declares its OWN dedicated capability (supportsSleepScheduleWrite),
         // not the coarse supportsAnyAdvancedControl set — mirrors the pump protocol's own MOBI_ONLY scope.
         #expect(GatedPumpWrite.setSleepSchedule.hasRequiredCapability(in: .mobiAdvanced))
-        #expect(!GatedPumpWrite.setSleepSchedule.hasRequiredCapability(in: .full))   // t:slim: no sleep-schedule write
+        #expect(!GatedPumpWrite.setSleepSchedule.hasRequiredCapability(in: .full))  // t:slim: no sleep-schedule write
         for a in [GatedPumpWrite.setTempBasal, .suspendDelivery, .setMode, .setControlIQ] {
             #expect(a.hasRequiredCapability(in: .mobiAdvanced))
             #expect(!a.hasRequiredCapability(in: .full), "\(a.rawValue) needs an advanced capability")
@@ -87,15 +90,17 @@ import Testing
     /// tightening, per `hasRequiredCapabilitySplitsTimeSyncFromTheAdvancedSet` above.
     @Test func setMaxBolusRequiresSupportsLimits() {
         let advancedButNoLimits = PumpCapabilities(supportsControlIQSettings: true, supportsLimits: false)
-        #expect(advancedButNoLimits.supportsAnyAdvancedControl)   // sanity: the coarse check WOULD pass
+        #expect(advancedButNoLimits.supportsAnyAdvancedControl)  // sanity: the coarse check WOULD pass
         for a in [GatedPumpWrite.setMaxBolus, .setMaxBasal] {
-            #expect(!a.hasRequiredCapability(in: advancedButNoLimits),
-                    "\(a.rawValue) must deny when supportsLimits is false, even with other advanced control present")
+            #expect(
+                !a.hasRequiredCapability(in: advancedButNoLimits),
+                "\(a.rawValue) must deny when supportsLimits is false, even with other advanced control present")
         }
         let withLimits = PumpCapabilities(supportsLimits: true)
         for a in [GatedPumpWrite.setMaxBolus, .setMaxBasal] {
-            #expect(a.hasRequiredCapability(in: withLimits),
-                    "\(a.rawValue) must allow when supportsLimits is true")
+            #expect(
+                a.hasRequiredCapability(in: withLimits),
+                "\(a.rawValue) must allow when supportsLimits is true")
         }
         // .mobiAdvanced already carries supportsLimits: true — stays allowed (no shipped-path regression).
         #expect(GatedPumpWrite.setMaxBolus.hasRequiredCapability(in: .mobiAdvanced))

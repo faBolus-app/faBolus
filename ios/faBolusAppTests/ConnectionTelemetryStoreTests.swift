@@ -57,7 +57,9 @@ struct ConnectionTelemetryStoreTests {
     @Test func reasonTokenBucketsConnectionDetail() {
         #expect(ConnectionTelemetryStore.reasonToken(from: nil) == "dropped")
         #expect(ConnectionTelemetryStore.reasonToken(from: "Bluetooth is off") == "btOff")
-        #expect(ConnectionTelemetryStore.reasonToken(from: "Bluetooth permission denied — enable it in Settings") == "unauthorized")
+        #expect(
+            ConnectionTelemetryStore.reasonToken(from: "Bluetooth permission denied — enable it in Settings")
+                == "unauthorized")
         #expect(ConnectionTelemetryStore.reasonToken(from: "Bluetooth unavailable on this device") == "unsupported")
         #expect(ConnectionTelemetryStore.reasonToken(from: "Bluetooth is resetting…") == "resetting")
         #expect(ConnectionTelemetryStore.reasonToken(from: "Peer removed pairing") == "error")
@@ -76,7 +78,9 @@ struct ConnectionTelemetryStoreTests {
         #expect(token == "CBErrorDomain#6 → Connection timeout")
         // Pre-existing branches still win over the new fallback (unchanged behavior).
         #expect(ConnectionTelemetryStore.reasonToken(from: "Bluetooth is off") == "btOff")
-        #expect(ConnectionTelemetryStore.reasonToken(from: "Bluetooth permission denied — enable it in Settings") == "unauthorized")
+        #expect(
+            ConnectionTelemetryStore.reasonToken(from: "Bluetooth permission denied — enable it in Settings")
+                == "unauthorized")
         #expect(ConnectionTelemetryStore.reasonToken(from: "Bluetooth unavailable on this device") == "unsupported")
         #expect(ConnectionTelemetryStore.reasonToken(from: "Bluetooth is resetting…") == "resetting")
     }
@@ -95,7 +99,7 @@ struct ConnectionTelemetryStoreTests {
             13: "Operation not supported", 14: "Peer removed pairing information",
             15: "Encryption timed out", 16: "Too many LE paired devices",
             17: "LE GATT exceeded background notification limit",
-            18: "LE GATT near background notification limit",
+            18: "LE GATT near background notification limit"
         ]
         #expect(expected.count == 19)
         for (code, label) in expected {
@@ -131,10 +135,10 @@ struct ConnectionTelemetryStoreTests {
 
     @Test func commandLatencyBucketsResponsesAndTimeouts() {
         let (s, _) = makeStore(enabled: true)
-        s.recordCommandLatency(0.30)   // → lt500ms
-        s.recordCommandLatency(0.31)   // → lt500ms
-        s.recordCommandLatency(1.5)    // → lt2s
-        s.recordCommandLatency(nil)    // → timeout
+        s.recordCommandLatency(0.30)  // → lt500ms
+        s.recordCommandLatency(0.31)  // → lt500ms
+        s.recordCommandLatency(1.5)  // → lt2s
+        s.recordCommandLatency(nil)  // → timeout
         let t = s.snapshot
         #expect(t.commandLatency["lt500ms"] == 2)
         #expect(t.commandLatency["lt2s"] == 1)
@@ -173,17 +177,17 @@ struct ConnectionTelemetryStoreTests {
         d.set(Data(old.utf8), forKey: "connectionTelemetry.v1")
 
         let t = ConnectionTelemetryStore(store: d).snapshot
-        #expect(t.connectCount == 3)                 // preserved, not zeroed
+        #expect(t.connectCount == 3)  // preserved, not zeroed
         #expect(t.totalUptimeSeconds == 600)
         #expect(t.disconnects["btOff"] == 2)
         #expect(t.reconcile["delivered"] == 1)
-        #expect(t.commandLatency.isEmpty)            // new field defaults empty
+        #expect(t.commandLatency.isEmpty)  // new field defaults empty
 
         // …and a subsequent latency record composes with the migrated blob.
         let s = ConnectionTelemetryStore(store: d)
         s.recordCommandLatency(0.1)
         let t2 = s.snapshot
-        #expect(t2.connectCount == 3)                // still there after the write
+        #expect(t2.connectCount == 3)  // still there after the write
         #expect(t2.commandLatency["lt250ms"] == 1)
     }
 
@@ -195,8 +199,8 @@ struct ConnectionTelemetryStoreTests {
         d.set(true, forKey: NotificationRuntime.telemetryEnabledKey)
         let a = ConnectionTelemetryStore(store: d)
         let b = ConnectionTelemetryStore(store: d)
-        a.recordConnected(at: Date())            // writes connectCount = 1
-        b.recordReconciliation(.delivered)       // must preserve connectCount while adding reconcile
+        a.recordConnected(at: Date())  // writes connectCount = 1
+        b.recordReconciliation(.delivered)  // must preserve connectCount while adding reconcile
         let t = ConnectionTelemetryStore(store: d).snapshot
         #expect(t.connectCount == 1)
         #expect(t.reconcile["delivered"] == 1)

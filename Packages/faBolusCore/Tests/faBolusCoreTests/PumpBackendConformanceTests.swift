@@ -31,7 +31,10 @@ final class PumpBackendConformanceTests: XCTestCase {
         func connect() async { snapshot.connection = .connected }
         func disconnect() { snapshot.connection = .disconnected }
         func recommendBolus(carbsGrams: Double, bgMgdl: Int?) async -> BolusRecommendation {
-            var r = BolusRecommendation(); r.carbsGrams = carbsGrams; r.recommendedUnits = carbsGrams / 10; return r
+            var r = BolusRecommendation()
+            r.carbsGrams = carbsGrams
+            r.recommendedUnits = carbsGrams / 10
+            return r
         }
         func deliverBolus(units: Double, carbsGrams: Double?, bgMgdl: Int?, iobUnits: Double?) async throws -> Double {
             guard snapshot.connection == .connected else { throw BolusError.notConnected }
@@ -52,7 +55,7 @@ final class PumpBackendConformanceTests: XCTestCase {
     }
 
     func testDeliverGuards() async {
-        let b = StubBackend()   // not connected
+        let b = StubBackend()  // not connected
         await XCTAssertThrowsErrorAsync(try await b.deliverBolus(units: 1.0))
     }
 
@@ -84,14 +87,16 @@ final class PumpBackendConformanceTests: XCTestCase {
         XCTAssertNotNil(b.rawActiveNotifications)
         XCTAssertEqual(b.rawActiveNotifications, b.activeNotifications)
         await b.dismissNotification(b.activeNotifications[0])
-        XCTAssertEqual(b.rawActiveNotifications, b.activeNotifications, "the default must keep tracking activeNotifications after it changes")
+        XCTAssertEqual(
+            b.rawActiveNotifications, b.activeNotifications,
+            "the default must keep tracking activeNotifications after it changes")
     }
 
     /// A backend can be wrapped in a BackendDescriptor + built via its factory.
     func testBackendDescriptorFactory() {
         let d = BackendDescriptor(id: "stub", name: "Stub") { StubBackend() }
         XCTAssertEqual(d.id, "stub")
-        _ = d.make()   // builds without throwing
+        _ = d.make()  // builds without throwing
     }
 
     /// Phase 09.9 D-02: `.possiblyOutOfInsulin`'s message must be honest about being an INFERENCE
@@ -102,7 +107,8 @@ final class PumpBackendConformanceTests: XCTestCase {
         let error = BolusError.possiblyOutOfInsulin(reservoirUnits: 0.4, nackDetail: "nackReasonId=1")
         let description = error.errorDescription ?? ""
         XCTAssertTrue(description.contains("0.4"), "expected the reservoir figure in the message: \(description)")
-        XCTAssertTrue(description.contains("nackReasonId=1"), "expected the raw nack detail in the message: \(description)")
+        XCTAssertTrue(
+            description.contains("nackReasonId=1"), "expected the raw nack detail in the message: \(description)")
         XCTAssertTrue(
             description.contains("may be due to") || description.contains("may be"),
             "expected a hedging inference qualifier, not an assertion of fact: \(description)"
@@ -120,8 +126,13 @@ final class PumpBackendConformanceTests: XCTestCase {
 /// never crosses an actor boundary — that keeps Swift 6 strict concurrency happy without requiring
 /// `T: Sendable`.
 @MainActor
-func XCTAssertThrowsErrorAsync<T>(_ expression: @autoclosure @MainActor () async throws -> T,
-                                 _ message: String = "expected an error",
-                                 file: StaticString = #filePath, line: UInt = #line) async {
-    do { _ = try await expression(); XCTFail(message, file: file, line: line) } catch { /* expected */ }
+func XCTAssertThrowsErrorAsync<T>(
+    _ expression: @autoclosure @MainActor () async throws -> T,
+    _ message: String = "expected an error",
+    file: StaticString = #filePath, line: UInt = #line
+) async {
+    do {
+        _ = try await expression()
+        XCTFail(message, file: file, line: line)
+    } catch { /* expected */  }
 }

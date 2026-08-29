@@ -32,7 +32,8 @@ struct HistoryLogSyncTests {
     /// `HistoryLogRequests.swift:22-35`) back into its two fields, so a test can assert exactly which
     /// window was requested without re-parsing bytes inline at every call site.
     private func decodeHistoryLogRequest(_ sent: (opCode: UInt8, cargo: [UInt8], signed: Bool, allowDelivery: Bool))
-        -> (startLog: UInt32, numberOfLogs: Int) {
+        -> (startLog: UInt32, numberOfLogs: Int)
+    {
         (Bytes.readUint32(sent.cargo, 0), Int(sent.cargo[4]))
     }
 
@@ -50,9 +51,12 @@ struct HistoryLogSyncTests {
                 FakePumpTransport.historyLogStatus(numEntries: 100, firstSequenceNum: 1, lastSequenceNum: 100))
             // Coverage credits only RECEIVED sequences, so the first sync must genuinely receive
             // the whole 1...100 window to hold [1...100] (a single reading would credit only [100...100]).
-            injectHistoryStreamChunked(backend, stride(from: UInt32(100), through: UInt32(1), by: -1).map {
-                (seq: $0, pumpTimeSec: UInt32(1_000) * $0, mgdl: 110) })
-            backend.fireHistorySyncTickForTesting()   // debounce: window 1...100 exhausted → finishBackfill
+            injectHistoryStreamChunked(
+                backend,
+                stride(from: UInt32(100), through: UInt32(1), by: -1).map {
+                    (seq: $0, pumpTimeSec: UInt32(1_000) * $0, mgdl: 110)
+                })
+            backend.fireHistorySyncTickForTesting()  // debounce: window 1...100 exhausted → finishBackfill
 
             // Simulate a disconnect + reconnect where the pump now reports 1...130 — 30 NEW records were
             // logged during the gap. `fake.sent` is append-only (private(set)) from outside the fake, so
@@ -95,8 +99,11 @@ struct HistoryLogSyncTests {
                 FakePumpTransport.historyLogStatus(numEntries: 100, firstSequenceNum: 1, lastSequenceNum: 100))
             // Receive the whole 1...100 window so held coverage is [1...100] and the second sync's
             // gap is exactly the forward window 101...130 (seq 100 stays the newest ingested reading).
-            injectHistoryStreamChunked(backend, stride(from: UInt32(100), through: UInt32(1), by: -1).map {
-                (seq: $0, pumpTimeSec: UInt32(5_000) * $0, mgdl: 111) })
+            injectHistoryStreamChunked(
+                backend,
+                stride(from: UInt32(100), through: UInt32(1), by: -1).map {
+                    (seq: $0, pumpTimeSec: UInt32(5_000) * $0, mgdl: 111)
+                })
             backend.fireHistorySyncTickForTesting()
 
             // Second sync (same connection, no need to disconnect — injecting another status response
@@ -108,12 +115,13 @@ struct HistoryLogSyncTests {
                 FakePumpTransport.historyLogStatus(numEntries: 130, firstSequenceNum: 1, lastSequenceNum: 130))
             backend.injectHistoryLogFrameForTesting(
                 FakePumpTransport.historyLogStream(cgmReadings: [(seq: 105, pumpTimeSec: 50, mgdl: 77)]))
-            backend.fireHistorySyncTickForTesting()   // finishBackfill → onChange → AppModel.refresh() → persistNewHistory
+            backend.fireHistorySyncTickForTesting()  // finishBackfill → onChange → AppModel.refresh() → persistNewHistory
 
-            _ = fake   // keep the fake alive for the duration of the assertions
+            _ = fake  // keep the fake alive for the duration of the assertions
             let stored = model.storedGlucoseForTesting(in: Date(timeIntervalSince1970: 0)...Date())
-            #expect(stored.contains { $0.mgdl == 77 },
-                    "an interior-gap record older than the previously-ingested reading must still persist")
+            #expect(
+                stored.contains { $0.mgdl == 77 },
+                "an interior-gap record older than the previously-ingested reading must still persist")
         }
     }
 
@@ -140,7 +148,8 @@ struct HistoryLogSyncTests {
     /// (at or below its boundary — never under-fetching within it).
     @Test func retentionDaysBoundsFetch() {
         let floor = TandemBackend.retentionFloorSequence(pumpFirst: 10, pumpLast: 500, retentionDays: 30)
-        #expect(floor <= 10, "the fetch floor must never sit ABOVE pumpFirst — that would under-fetch the retention window")
+        #expect(
+            floor <= 10, "the fetch floor must never sit ABOVE pumpFirst — that would under-fetch the retention window")
     }
 
     /// The persisted coverage map survives `linkDroppedCleanup` and a fresh AppSettings load, and the
@@ -152,15 +161,19 @@ struct HistoryLogSyncTests {
             backend.injectStatusFrameForTesting(
                 FakePumpTransport.historyLogStatus(numEntries: 100, firstSequenceNum: 1, lastSequenceNum: 100))
             // Receive the whole 1...100 window so the credited (and persisted) coverage is [1...100].
-            injectHistoryStreamChunked(backend, stride(from: UInt32(100), through: UInt32(1), by: -1).map {
-                (seq: $0, pumpTimeSec: UInt32(1_000) * $0, mgdl: 100) })
-            backend.fireHistorySyncTickForTesting()   // window 1...100 credited to AppSettings.shared.historyCoverage
+            injectHistoryStreamChunked(
+                backend,
+                stride(from: UInt32(100), through: UInt32(1), by: -1).map {
+                    (seq: $0, pumpTimeSec: UInt32(1_000) * $0, mgdl: 100)
+                })
+            backend.fireHistorySyncTickForTesting()  // window 1...100 credited to AppSettings.shared.historyCoverage
 
-            backend.applyClientState(.disconnected)   // linkDroppedCleanup — must NOT clear historyCoverage
+            backend.applyClientState(.disconnected)  // linkDroppedCleanup — must NOT clear historyCoverage
 
             let fresh = AppSettings(defaults: .standard)
-            #expect(fresh.historyCoverage.ranges == [1...100],
-                    "the coverage map must survive both the disconnect cleanup and a fresh AppSettings load")
+            #expect(
+                fresh.historyCoverage.ranges == [1...100],
+                "the coverage map must survive both the disconnect cleanup and a fresh AppSettings load")
 
             // The next connect resumes: pump range grew to 1...110 — only the 10 new records are requested.
             backend.applyClientState(.ready)
@@ -186,7 +199,10 @@ struct HistoryLogSyncTests {
             // single-record EVEN gaps (2, 4, 6, ..., 1000), far more than any reasonable page cap.
             var held: [ClosedRange<UInt32>] = []
             var seq: UInt32 = 1
-            while seq <= 999 { held.append(seq...seq); seq += 2 }
+            while seq <= 999 {
+                held.append(seq...seq)
+                seq += 2
+            }
             AppSettings.shared.historyCoverage = HistoryCoverageMap(ranges: held)
 
             backend.injectStatusFrameForTesting(FakePumpTransport.timeResponse())
@@ -198,7 +214,9 @@ struct HistoryLogSyncTests {
             for _ in 0..<40 { backend.fireHistorySyncTickForTesting() }
 
             let pageCount = fake.sent.filter { $0.opCode == HistoryLogRequest.props.opCode }.count
-            #expect(pageCount <= 20, "a pathological coverage map must never exceed the safety cap (got \(pageCount) requests)")
+            #expect(
+                pageCount <= 20,
+                "a pathological coverage map must never exceed the safety cap (got \(pageCount) requests)")
         }
     }
 
@@ -220,14 +238,16 @@ struct HistoryLogSyncTests {
             withHistorySyncEnabled(false) {
                 let (backendOff, fakeOff) = makeBackend()
                 backendOff.injectStatusFrameForTesting(FakePumpTransport.timeResponse())
-                #expect(!fakeOff.sent.contains { $0.opCode == HistoryLogStatusRequest.props.opCode },
-                        "the on-connect auto-sync check must be suppressed while the toggle is off")
+                #expect(
+                    !fakeOff.sent.contains { $0.opCode == HistoryLogStatusRequest.props.opCode },
+                    "the on-connect auto-sync check must be suppressed while the toggle is off")
             }
             withHistorySyncEnabled(true) {
                 let (backendOn, fakeOn) = makeBackend()
                 backendOn.injectStatusFrameForTesting(FakePumpTransport.timeResponse())
-                #expect(fakeOn.sent.contains { $0.opCode == HistoryLogStatusRequest.props.opCode },
-                        "the on-connect check must still run once the toggle is enabled (Plan 01 regression)")
+                #expect(
+                    fakeOn.sent.contains { $0.opCode == HistoryLogStatusRequest.props.opCode },
+                    "the on-connect check must still run once the toggle is enabled (Plan 01 regression)")
             }
         }
     }
@@ -239,16 +259,19 @@ struct HistoryLogSyncTests {
             withHistorySyncEnabled(false) {
                 let (backend, fake) = makeBackend()
                 let model = AppModel(source: backend)
-                backend.setConnectionForTesting(.connected)   // "Sync now" requires an already-connected pump (bare .ready is only .connecting)
+                backend.setConnectionForTesting(.connected)  // "Sync now" requires an already-connected pump (bare .ready is only .connecting)
 
                 model.syncHistoryNow()
-                #expect(fake.sent.contains { $0.opCode == HistoryLogStatusRequest.props.opCode },
-                        "\"Sync now\" must issue the gap-sync status check even while auto-sync is disabled")
+                #expect(
+                    fake.sent.contains { $0.opCode == HistoryLogStatusRequest.props.opCode },
+                    "\"Sync now\" must issue the gap-sync status check even while auto-sync is disabled")
 
                 backend.injectStatusFrameForTesting(
                     FakePumpTransport.historyLogStatus(numEntries: 50, firstSequenceNum: 1, lastSequenceNum: 50))
-                #expect(fake.sent.contains { $0.opCode == HistoryLogRequest.props.opCode },
-                        "the manual trigger's response must still drive the gap-window fetch, disabled toggle notwithstanding")
+                #expect(
+                    fake.sent.contains { $0.opCode == HistoryLogRequest.props.opCode },
+                    "the manual trigger's response must still drive the gap-window fetch, disabled toggle notwithstanding"
+                )
             }
         }
     }
@@ -260,7 +283,8 @@ struct HistoryLogSyncTests {
     /// ≤9-record frames. Each frame accumulates into the current window's `receivedSeqsThisWindow`
     /// (`appendHistoryStreamFrame`); one `fireHistorySyncTickForTesting()` then credits from what landed.
     private func injectHistoryStreamChunked(
-        _ backend: TandemBackend, _ readings: [(seq: UInt32, pumpTimeSec: UInt32, mgdl: Int)]) {
+        _ backend: TandemBackend, _ readings: [(seq: UInt32, pumpTimeSec: UInt32, mgdl: Int)]
+    ) {
         var idx = 0
         while idx < readings.count {
             let chunk = Array(readings[idx..<min(idx + 9, readings.count)])
@@ -281,15 +305,20 @@ struct HistoryLogSyncTests {
             // Only the top sub-range seq 100…60 arrives (the pump paged backward from the top, then went
             // silent before reaching 59) — 41 records injected across ≤9-record frames.
             let received: [(seq: UInt32, pumpTimeSec: UInt32, mgdl: Int)] =
-                stride(from: UInt32(100), through: UInt32(60), by: -1).map { (seq: $0, pumpTimeSec: 1_000 + $0, mgdl: 110) }
+                stride(from: UInt32(100), through: UInt32(60), by: -1).map {
+                    (seq: $0, pumpTimeSec: 1_000 + $0, mgdl: 110)
+                }
             injectHistoryStreamChunked(backend, received)
-            backend.fireHistorySyncTickForTesting()   // window 1...100 exhausted → credit received sub-range
+            backend.fireHistorySyncTickForTesting()  // window 1...100 exhausted → credit received sub-range
 
-            #expect(AppSettings.shared.historyCoverage.ranges == [60...100],
-                    "only the RECEIVED top sub-range may be credited, never the un-received request cursor")
-            #expect(TandemBackend.missingRanges(pumpFirst: 1, pumpLast: 100, retentionFloor: 1,
-                                                held: AppSettings.shared.historyCoverage.ranges) == [1...59],
-                    "the swallowed 1...59 must remain a resumable gap the next sync re-requests")
+            #expect(
+                AppSettings.shared.historyCoverage.ranges == [60...100],
+                "only the RECEIVED top sub-range may be credited, never the un-received request cursor")
+            #expect(
+                TandemBackend.missingRanges(
+                    pumpFirst: 1, pumpLast: 100, retentionFloor: 1,
+                    held: AppSettings.shared.historyCoverage.ranges) == [1...59],
+                "the swallowed 1...59 must remain a resumable gap the next sync re-requests")
         }
     }
 
@@ -304,8 +333,9 @@ struct HistoryLogSyncTests {
             // No injectHistoryLogFrameForTesting — the requested page yields nothing.
             backend.fireHistorySyncTickForTesting()
 
-            #expect(AppSettings.shared.historyCoverage.ranges.isEmpty,
-                    "a window with nothing received must credit nothing to the coverage map")
+            #expect(
+                AppSettings.shared.historyCoverage.ranges.isEmpty,
+                "a window with nothing received must credit nothing to the coverage map")
         }
     }
 
@@ -318,12 +348,15 @@ struct HistoryLogSyncTests {
             backend.injectStatusFrameForTesting(
                 FakePumpTransport.historyLogStatus(numEntries: 9, firstSequenceNum: 1, lastSequenceNum: 9))
             let full: [(seq: UInt32, pumpTimeSec: UInt32, mgdl: Int)] =
-                stride(from: UInt32(9), through: UInt32(1), by: -1).map { (seq: $0, pumpTimeSec: 1_000 + $0, mgdl: 120) }
+                stride(from: UInt32(9), through: UInt32(1), by: -1).map {
+                    (seq: $0, pumpTimeSec: 1_000 + $0, mgdl: 120)
+                }
             backend.injectHistoryLogFrameForTesting(FakePumpTransport.historyLogStream(cgmReadings: full))
             backend.fireHistorySyncTickForTesting()
 
-            #expect(AppSettings.shared.historyCoverage.ranges == [1...9],
-                    "a fully-received window must still credit its whole range (success-path regression)")
+            #expect(
+                AppSettings.shared.historyCoverage.ranges == [1...9],
+                "a fully-received window must still credit its whole range (success-path regression)")
         }
     }
 }

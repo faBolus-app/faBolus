@@ -22,15 +22,17 @@ struct PumpCommsSuspendTests {
         b.injectQualifyingEventBitsForTesting(TandemBackend.pumpCommunicationsSuspendedBitForTesting)
         #expect(b.isCommsSuspendedForTesting, "the comms-suspension bit must arm the pause")
 
-        b.simulateRecurringFastAndStaticReadTickForTesting()   // a full fastRead()+staticRead() re-issue attempt
-        #expect(fake.sent.count == baseline,
-                "no NEW routine read must reach the wire while a pump comms-suspension is active")
+        b.simulateRecurringFastAndStaticReadTickForTesting()  // a full fastRead()+staticRead() re-issue attempt
+        #expect(
+            fake.sent.count == baseline,
+            "no NEW routine read must reach the wire while a pump comms-suspension is active")
 
         b.resumeCommsForTesting()
         #expect(!b.isCommsSuspendedForTesting, "resume must clear the pause")
         b.simulateRecurringFastAndStaticReadTickForTesting()
-        #expect(fake.sent.count > baseline,
-                "routine reads must resume reaching the wire once comms resume — released, not dropped forever")
+        #expect(
+            fake.sent.count > baseline,
+            "routine reads must resume reaching the wire once comms resume — released, not dropped forever")
     }
 
     /// The poll cadence itself (the 15s/60s watchdog) is never disabled by the pause — `PumpReadScheduler`
@@ -41,8 +43,9 @@ struct PumpCommsSuspendTests {
         b.startPollingLeavingPollTimerRunningForTesting()
         #expect(b.pollTimerIsActiveForTesting)
         b.injectQualifyingEventBitsForTesting(TandemBackend.pumpCommunicationsSuspendedBitForTesting)
-        #expect(b.pollTimerIsActiveForTesting,
-                "the pause must never invalidate/remove the poll timer — it stays the watchdog fallback")
+        #expect(
+            b.pollTimerIsActiveForTesting,
+            "the pause must never invalidate/remove the poll timer — it stays the watchdog fallback")
     }
 
     // MARK: - Deduped targeted re-fetches
@@ -56,9 +59,10 @@ struct PumpCommsSuspendTests {
         let firstCount = b.pendingRefetchOpcodesForTesting.count
         #expect(firstCount > 0, "at least one routine read must have been held and recorded")
 
-        b.simulateRecurringFastAndStaticReadTickForTesting()   // the SAME opcodes held again
-        #expect(b.pendingRefetchOpcodesForTesting.count == firstCount,
-                "a repeat opcode held across multiple ticks must be deduped (Set), never double-recorded")
+        b.simulateRecurringFastAndStaticReadTickForTesting()  // the SAME opcodes held again
+        #expect(
+            b.pendingRefetchOpcodesForTesting.count == firstCount,
+            "a repeat opcode held across multiple ticks must be deduped (Set), never double-recorded")
 
         // Resuming clears the record — a fresh pause starts a fresh one, never leaking a stale entry.
         b.resumeCommsForTesting()
@@ -80,8 +84,9 @@ struct PumpCommsSuspendTests {
         #expect(!b.isCommsSuspendedForTesting, "an unrecognized bit must never arm the pause")
 
         b.simulateRecurringFastAndStaticReadTickForTesting()
-        #expect(fake.sent.count > baseline,
-                "routine reads must proceed completely unaffected by an unrecognized qualifying-event bit")
+        #expect(
+            fake.sent.count > baseline,
+            "routine reads must proceed completely unaffected by an unrecognized qualifying-event bit")
     }
 
     @Test func zeroBitsIsANoOp() {
@@ -105,11 +110,13 @@ struct PumpCommsSuspendTests {
         fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
         fake.script(BolusPermissionResponse.props.opCode, .frame(FakePumpTransport.permissionGranted(bolusId: bolusId)))
         fake.script(InitiateBolusResponse.props.opCode, .frame(FakePumpTransport.initiateAccepted(bolusId: bolusId)))
-        fake.script(CurrentBolusStatusResponse.props.opCode,
-                    .frame(FakePumpTransport.currentBolusStatus(statusId: 1, bolusId: bolusId)),   // active — cancel fires here
-                    .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: bolusId)))    // done
-        fake.script(LastBolusStatusV2Response.props.opCode,
-                    .frame(FakePumpTransport.lastBolus(bolusId: bolusId, deliveredMilliunits: 1500)))
+        fake.script(
+            CurrentBolusStatusResponse.props.opCode,
+            .frame(FakePumpTransport.currentBolusStatus(statusId: 1, bolusId: bolusId)),  // active — cancel fires here
+            .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: bolusId)))  // done
+        fake.script(
+            LastBolusStatusV2Response.props.opCode,
+            .frame(FakePumpTransport.lastBolus(bolusId: bolusId, deliveredMilliunits: 1500)))
 
         // Pause BEFORE the bolus flow starts, and leave it paused for the WHOLE flow — proving the pause
         // never touches the signed delivery/cancel/time-sync path regardless of when it was armed.
@@ -122,16 +129,21 @@ struct PumpCommsSuspendTests {
 
         let delivered = try await b.deliverBolus(units: 1.5, carbsGrams: nil, bgMgdl: nil, iobUnits: nil)
         #expect(delivered == 1.5, "the delivery flow must complete normally — untouched by the routine-send pause")
-        #expect(fake.lastSent(CancelBolusRequest.props.opCode) != nil,
-                "cancelBolus must dispatch immediately even while comms are marked suspended — never held/queued")
-        #expect(fake.awaited.contains(TimeSinceResetResponse.props.opCode),
-                "the pre-bolus time-sync must proceed unheld even while comms are suspended")
-        #expect(fake.awaited.contains(BolusPermissionResponse.props.opCode),
-                "the signed permission request (auth-adjacent, signed) must proceed unheld while comms are suspended")
-        #expect(fake.awaited.contains(InitiateBolusResponse.props.opCode),
-                "the signed initiate must proceed unheld while comms are suspended")
-        #expect(b.isCommsSuspendedForTesting,
-                "the pause itself must be untouched by any of the above — it only ever gated routine reads")
+        #expect(
+            fake.lastSent(CancelBolusRequest.props.opCode) != nil,
+            "cancelBolus must dispatch immediately even while comms are marked suspended — never held/queued")
+        #expect(
+            fake.awaited.contains(TimeSinceResetResponse.props.opCode),
+            "the pre-bolus time-sync must proceed unheld even while comms are suspended")
+        #expect(
+            fake.awaited.contains(BolusPermissionResponse.props.opCode),
+            "the signed permission request (auth-adjacent, signed) must proceed unheld while comms are suspended")
+        #expect(
+            fake.awaited.contains(InitiateBolusResponse.props.opCode),
+            "the signed initiate must proceed unheld while comms are suspended")
+        #expect(
+            b.isCommsSuspendedForTesting,
+            "the pause itself must be untouched by any of the above — it only ever gated routine reads")
     }
 
     // MARK: - Ack-driven remote-dismiss
@@ -141,7 +153,7 @@ struct PumpCommsSuspendTests {
     private func makeMobiBackendWithActiveAlert() -> (TandemBackend, FakePumpTransport, PumpAlert)? {
         let fake = FakePumpTransport()
         let b = TandemBackend(testTransport: fake)
-        b.injectStatusFrameForTesting(FakePumpTransport.apiVersion(major: 4, minor: 0))   // → isMobi=true
+        b.injectStatusFrameForTesting(FakePumpTransport.apiVersion(major: 4, minor: 0))  // → isMobi=true
         b.injectStatusFrameForTesting(FakePumpTransport.alertStatusBitmap(1 << 5))
         guard let alert = b.activeNotifications.first(where: { $0.id == 5 }) else { return nil }
         fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
@@ -151,20 +163,24 @@ struct PumpCommsSuspendTests {
     @Test func authenticatedStatusZeroHidesTheAlert() async throws {
         let setup = try #require(makeMobiBackendWithActiveAlert())
         let (b, fake, alert) = setup
-        fake.script(DismissNotificationResponse.props.opCode, .frame(FakePumpTransport.dismissNotificationAck(status: 0)))
+        fake.script(
+            DismissNotificationResponse.props.opCode, .frame(FakePumpTransport.dismissNotificationAck(status: 0)))
         await b.dismissNotification(alert)
-        #expect(!b.activeNotifications.contains(where: { $0.id == 5 }),
-                "an authenticated status-zero ack must hide the alert")
+        #expect(
+            !b.activeNotifications.contains(where: { $0.id == 5 }),
+            "an authenticated status-zero ack must hide the alert")
         #expect(b.alertDebug.contains("cleared"))
     }
 
     @Test func rejectedStatusKeepsTheAlertVisible() async throws {
         let setup = try #require(makeMobiBackendWithActiveAlert())
         let (b, fake, alert) = setup
-        fake.script(DismissNotificationResponse.props.opCode, .frame(FakePumpTransport.dismissNotificationAck(status: 7)))
+        fake.script(
+            DismissNotificationResponse.props.opCode, .frame(FakePumpTransport.dismissNotificationAck(status: 7)))
         await b.dismissNotification(alert)
-        #expect(b.activeNotifications.contains(where: { $0.id == 5 }),
-                "a rejected (non-zero status) dismiss must NOT hide the alert — no optimistic ack")
+        #expect(
+            b.activeNotifications.contains(where: { $0.id == 5 }),
+            "a rejected (non-zero status) dismiss must NOT hide the alert — no optimistic ack")
         #expect(b.alertDebug.contains("rejected"))
     }
 
@@ -174,18 +190,21 @@ struct PumpCommsSuspendTests {
         // No DismissNotificationResponse scripted → FakePumpTransport's default is a dropped/timed-out
         // reply, matching a genuinely lost ack over the air.
         await b.dismissNotification(alert)
-        #expect(b.activeNotifications.contains(where: { $0.id == 5 }),
-                "a lost/never-arriving dismiss ack must NOT hide the alert")
+        #expect(
+            b.activeNotifications.contains(where: { $0.id == 5 }),
+            "a lost/never-arriving dismiss ack must NOT hide the alert")
         #expect(b.alertDebug.contains("unconfirmed"))
     }
 
     @Test func sendFailureKeepsTheAlertVisible() async throws {
         let setup = try #require(makeMobiBackendWithActiveAlert())
         let (b, fake, alert) = setup
-        fake.preWriteError[DismissNotificationRequest.props.opCode] = BolusError.pumpRejected("simulated pre-write failure")
+        fake.preWriteError[DismissNotificationRequest.props.opCode] = BolusError.pumpRejected(
+            "simulated pre-write failure")
         await b.dismissNotification(alert)
-        #expect(b.activeNotifications.contains(where: { $0.id == 5 }),
-                "a pre-write send failure must NOT hide the alert")
+        #expect(
+            b.activeNotifications.contains(where: { $0.id == 5 }),
+            "a pre-write send failure must NOT hide the alert")
     }
 
     /// "Snooze locally" (a pump that can't honor a remote dismiss — the default t:slim X2 test backend)
@@ -193,14 +212,16 @@ struct PumpCommsSuspendTests {
     /// alert is gone), and it must never even attempt a signed dismiss send.
     @Test func tSlimSnoozeLocallyStaysDistinctAndImmediate() async {
         let fake = FakePumpTransport()
-        let b = TandemBackend(testTransport: fake)   // default: isMobi=false ⇒ supportsRemoteAlertDismiss=false
+        let b = TandemBackend(testTransport: fake)  // default: isMobi=false ⇒ supportsRemoteAlertDismiss=false
         b.injectStatusFrameForTesting(FakePumpTransport.alertStatusBitmap(1 << 5))
         guard let alert = b.activeNotifications.first(where: { $0.id == 5 }) else {
-            Issue.record("setup: the alert must be active before dismissing it"); return
+            Issue.record("setup: the alert must be active before dismissing it")
+            return
         }
         await b.dismissNotification(alert)
-        #expect(!b.activeNotifications.contains(where: { $0.id == 5 }),
-                "a pure local snooze still hides immediately — it is a LOCAL action, never claiming the pump cleared it")
+        #expect(
+            !b.activeNotifications.contains(where: { $0.id == 5 }),
+            "a pure local snooze still hides immediately — it is a LOCAL action, never claiming the pump cleared it")
         #expect(b.alertDebug.contains("local-snoozed"))
         #expect(fake.sent.isEmpty, "a non-remote-dismissable pump must never attempt a signed dismiss send")
     }
@@ -211,14 +232,19 @@ struct PumpCommsSuspendTests {
     @Test func op184WireIsExactlyOneSignedNonDeliveryWriteWithExactCargo() async throws {
         let setup = try #require(makeMobiBackendWithActiveAlert())
         let (b, fake, alert) = setup
-        fake.script(DismissNotificationResponse.props.opCode, .frame(FakePumpTransport.dismissNotificationAck(status: 0)))
+        fake.script(
+            DismissNotificationResponse.props.opCode, .frame(FakePumpTransport.dismissNotificationAck(status: 0)))
         await b.dismissNotification(alert)
 
         let dismissWrites = fake.sent.filter { $0.opCode == DismissNotificationRequest.props.opCode }
         #expect(dismissWrites.count == 1, "exactly one op-184 write per dismiss")
-        let expectedCargo = DismissNotificationRequest(kind: NotificationKind(rawValue: alert.kind.rawValue) ?? .alert,
-                                                        notificationId: alert.id).cargo
-        #expect(dismissWrites.first?.cargo == expectedCargo, "op-184 cargo must be byte-identical to the typed method's own encode")
+        let expectedCargo = DismissNotificationRequest(
+            kind: NotificationKind(rawValue: alert.kind.rawValue) ?? .alert,
+            notificationId: alert.id
+        ).cargo
+        #expect(
+            dismissWrites.first?.cargo == expectedCargo,
+            "op-184 cargo must be byte-identical to the typed method's own encode")
         #expect(dismissWrites.first?.signed == true, "op-184 must be signed")
         #expect(dismissWrites.first?.allowDelivery == false, "a dismiss is never a delivery-authorizing write")
         #expect(fake.awaited.contains(DismissNotificationResponse.props.opCode), "op-185 must be awaited")
@@ -228,7 +254,8 @@ struct PumpCommsSuspendTests {
     @Test func typedOutcomeIsAuthenticatedClearedOnlyOnStatusZero() async throws {
         let setup = try #require(makeMobiBackendWithActiveAlert())
         let (b, fake, alert) = setup
-        fake.script(DismissNotificationResponse.props.opCode, .frame(FakePumpTransport.dismissNotificationAck(status: 0)))
+        fake.script(
+            DismissNotificationResponse.props.opCode, .frame(FakePumpTransport.dismissNotificationAck(status: 0)))
         let outcome = await b.dismissNotificationTyped(alert)
         #expect(outcome == .authenticatedCleared)
     }
@@ -236,7 +263,8 @@ struct PumpCommsSuspendTests {
     @Test func typedOutcomeIsRejectedOnNonZeroStatus() async throws {
         let setup = try #require(makeMobiBackendWithActiveAlert())
         let (b, fake, alert) = setup
-        fake.script(DismissNotificationResponse.props.opCode, .frame(FakePumpTransport.dismissNotificationAck(status: 7)))
+        fake.script(
+            DismissNotificationResponse.props.opCode, .frame(FakePumpTransport.dismissNotificationAck(status: 7)))
         let outcome = await b.dismissNotificationTyped(alert)
         #expect(outcome == .rejected)
     }
@@ -252,7 +280,8 @@ struct PumpCommsSuspendTests {
     @Test func typedOutcomeIsNoResponseOnPreWriteFailure() async throws {
         let setup = try #require(makeMobiBackendWithActiveAlert())
         let (b, fake, alert) = setup
-        fake.preWriteError[DismissNotificationRequest.props.opCode] = BolusError.pumpRejected("simulated pre-write failure")
+        fake.preWriteError[DismissNotificationRequest.props.opCode] = BolusError.pumpRejected(
+            "simulated pre-write failure")
         let outcome = await b.dismissNotificationTyped(alert)
         #expect(outcome == .noResponse)
     }
@@ -264,7 +293,8 @@ struct PumpCommsSuspendTests {
         let b = TandemBackend(testTransport: fake)
         b.injectStatusFrameForTesting(FakePumpTransport.alertStatusBitmap(1 << 5))
         guard let alert = b.activeNotifications.first(where: { $0.id == 5 }) else {
-            Issue.record("setup: the alert must be active before dismissing it"); return
+            Issue.record("setup: the alert must be active before dismissing it")
+            return
         }
         let outcome = await b.dismissNotificationTyped(alert)
         #expect(outcome == .localSnoozeOnly)
@@ -277,9 +307,12 @@ struct PumpCommsSuspendTests {
     @Test func legacyVoidDismissCallsTypedMethodExactlyOnceNoDoubleSend() async throws {
         let setup = try #require(makeMobiBackendWithActiveAlert())
         let (b, fake, alert) = setup
-        fake.script(DismissNotificationResponse.props.opCode, .frame(FakePumpTransport.dismissNotificationAck(status: 0)))
-        await b.dismissNotification(alert)   // the legacy void entry point
+        fake.script(
+            DismissNotificationResponse.props.opCode, .frame(FakePumpTransport.dismissNotificationAck(status: 0)))
+        await b.dismissNotification(alert)  // the legacy void entry point
         let dismissWrites = fake.sent.filter { $0.opCode == DismissNotificationRequest.props.opCode }
-        #expect(dismissWrites.count == 1, "the legacy void wrapper must call the typed method exactly once — no double-send")
+        #expect(
+            dismissWrites.count == 1, "the legacy void wrapper must call the typed method exactly once — no double-send"
+        )
     }
 }

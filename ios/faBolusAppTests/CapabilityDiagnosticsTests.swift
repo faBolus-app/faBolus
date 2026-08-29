@@ -29,11 +29,12 @@ struct CapabilityDiagnosticsTests {
         let block = CapabilityDiagnostics.section(capabilities: .mobiAdvanced, badOpcodes: [0x2F], enabled: false)
         let lines = block.components(separatedBy: "\n")
 
-        #expect(lines == [
-            "",
-            "[Capability/opcode]",
-            "Turn on “Share local diagnostics” above to start collecting capability/opcode data.",
-        ])
+        #expect(
+            lines == [
+                "",
+                "[Capability/opcode]",
+                "Turn on “Share local diagnostics” above to start collecting capability/opcode data."
+            ])
         // Never a capability flag or opcode value when the opt-in is off.
         #expect(!block.contains("supports"))
         #expect(!block.contains("47"))

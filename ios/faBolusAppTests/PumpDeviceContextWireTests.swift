@@ -29,12 +29,17 @@ struct PumpDeviceContextWireTests {
             var apiVer: ApiVersion?
             var trusted: Bool?
             applier.detectedIsMobi = { nil }
-            applier.applyDeviceContext = { captured = $0; apiVer = $1; trusted = $2 }
+            applier.applyDeviceContext = {
+                captured = $0
+                apiVer = $1
+                trusted = $2
+            }
             let mobi = apiVersion(major: 3, minor: 5)
             #expect(mobi.isMobi, "3.5 is the Mobi threshold")
             applier.apply(mobi, txId: 0, characteristic: .currentStatus)
             #expect(captured == true, "name unknown ⇒ device context uses the op33 heuristic (Mobi)")
-            #expect(apiVer == ApiVersion(major: 3, minor: 5), "VA-06: the REAL negotiated apiVersion is forwarded (3.5)")
+            #expect(
+                apiVer == ApiVersion(major: 3, minor: 5), "VA-06: the REAL negotiated apiVersion is forwarded (3.5)")
             #expect(trusted == false, "CC-06/C1: the op33 heuristic is NEVER forwarded as trusted")
         }
         // t:slim X2 API version (2.5) with no name detection ⇒ heuristic says NOT Mobi.
@@ -44,12 +49,17 @@ struct PumpDeviceContextWireTests {
             var apiVer: ApiVersion?
             var trusted: Bool?
             applier.detectedIsMobi = { nil }
-            applier.applyDeviceContext = { captured = $0; apiVer = $1; trusted = $2 }
+            applier.applyDeviceContext = {
+                captured = $0
+                apiVer = $1
+                trusted = $2
+            }
             let tslim = apiVersion(major: 2, minor: 5)
             #expect(!tslim.isMobi, "2.5 is t:slim X2, not Mobi")
             applier.apply(tslim, txId: 0, characteristic: .currentStatus)
             #expect(captured == false, "name unknown ⇒ device context uses the op33 heuristic (t:slim)")
-            #expect(apiVer == ApiVersion(major: 2, minor: 5), "VA-06: the REAL negotiated apiVersion is forwarded (2.5)")
+            #expect(
+                apiVer == ApiVersion(major: 2, minor: 5), "VA-06: the REAL negotiated apiVersion is forwarded (2.5)")
             #expect(trusted == false, "CC-06/C1: the op33 heuristic is NEVER forwarded as trusted")
         }
     }
@@ -66,12 +76,18 @@ struct PumpDeviceContextWireTests {
             var apiVer: ApiVersion?
             var trusted: Bool?
             applier.detectedIsMobi = { true }
-            applier.applyDeviceContext = { captured = $0; apiVer = $1; trusted = $2 }
+            applier.applyDeviceContext = {
+                captured = $0
+                apiVer = $1
+                trusted = $2
+            }
             let tslimByApi = apiVersion(major: 2, minor: 5)
             #expect(!tslimByApi.isMobi, "the heuristic alone would say NOT Mobi")
             applier.apply(tslimByApi, txId: 0, characteristic: .currentStatus)
             #expect(captured == true, "name-detected Mobi must win over the op33 API heuristic")
-            #expect(apiVer == ApiVersion(major: 2, minor: 5), "VA-06: apiVersion is the frame's own (2.5), independent of the name-derived model")
+            #expect(
+                apiVer == ApiVersion(major: 2, minor: 5),
+                "VA-06: apiVersion is the frame's own (2.5), independent of the name-derived model")
             #expect(trusted == true, "CC-06/C1: a name-derived value (fresh or C8-reapplied) is trusted")
         }
         // Name says t:slim, but the op33 frame's heuristic says Mobi (3.5) — the name must win.
@@ -81,12 +97,18 @@ struct PumpDeviceContextWireTests {
             var apiVer: ApiVersion?
             var trusted: Bool?
             applier.detectedIsMobi = { false }
-            applier.applyDeviceContext = { captured = $0; apiVer = $1; trusted = $2 }
+            applier.applyDeviceContext = {
+                captured = $0
+                apiVer = $1
+                trusted = $2
+            }
             let mobiByApi = apiVersion(major: 3, minor: 5)
             #expect(mobiByApi.isMobi, "the heuristic alone would say Mobi")
             applier.apply(mobiByApi, txId: 0, characteristic: .currentStatus)
             #expect(captured == false, "name-detected t:slim must win over the op33 API heuristic")
-            #expect(apiVer == ApiVersion(major: 3, minor: 5), "VA-06: apiVersion is the frame's own (3.5), independent of the name-derived model")
+            #expect(
+                apiVer == ApiVersion(major: 3, minor: 5),
+                "VA-06: apiVersion is the frame's own (3.5), independent of the name-derived model")
             #expect(trusted == true, "CC-06/C1: a name-derived value (fresh or C8-reapplied) is trusted")
         }
     }
@@ -139,11 +161,13 @@ struct PumpDeviceContextWireTests {
         b.applyClientState(.discovering)
         #expect(b.identityTrustedForTesting == true, "precondition: reapply stamped trust before op33")
 
-        b.injectStatusFrameForTesting(FakePumpTransport.apiVersion(major: 3, minor: 5))   // REAL op33, arrives later this cycle
+        b.injectStatusFrameForTesting(FakePumpTransport.apiVersion(major: 3, minor: 5))  // REAL op33, arrives later this cycle
 
-        #expect(b.identityTrustedForTesting == true, "codex C8: op33 must NOT clobber the reapplied trust back to false")
-        #expect(b.identityGateErrorForTesting(tracerMessage()) == nil,
-                "a real, trusted Mobi's [.mobi]-restricted 0xCE send must NOT be gated")
+        #expect(
+            b.identityTrustedForTesting == true, "codex C8: op33 must NOT clobber the reapplied trust back to false")
+        #expect(
+            b.identityGateErrorForTesting(tracerMessage()) == nil,
+            "a real, trusted Mobi's [.mobi]-restricted 0xCE send must NOT be gated")
     }
 
     /// With no persisted trusted record, a t:slim misidentified as Mobi by the op33 API-version
@@ -153,14 +177,16 @@ struct PumpDeviceContextWireTests {
         resetIdentityStores()
         let b = TandemBackend(testTransport: FakePumpTransport())
 
-        b.applyClientState(.discovering)   // no persisted record ⇒ reapply is a no-op
+        b.applyClientState(.discovering)  // no persisted record ⇒ reapply is a no-op
 
-        b.injectStatusFrameForTesting(FakePumpTransport.apiVersion(major: 3, minor: 5))   // the exact t:slim-reporting-API-3.5 fixture
+        b.injectStatusFrameForTesting(FakePumpTransport.apiVersion(major: 3, minor: 5))  // the exact t:slim-reporting-API-3.5 fixture
 
         #expect(b.connectedPumpModelForTesting == .mobi, "VA-06 unaffected: the heuristic still identifies a model")
         #expect(b.identityTrustedForTesting == false, "the op33 heuristic can never satisfy the trust bit")
-        #expect(b.identityGateErrorForTesting(tracerMessage()) == .identityNotEstablished(opcode: SetSleepScheduleRequest.props.opCode),
-                "a misidentified t:slim's Mobi-only send must fail closed")
+        #expect(
+            b.identityGateErrorForTesting(tracerMessage())
+                == .identityNotEstablished(opcode: SetSleepScheduleRequest.props.opCode),
+            "a misidentified t:slim's Mobi-only send must fail closed")
     }
 
     // MARK: - op33 supplies the real apiVersion so the kit floors bite
@@ -177,17 +203,20 @@ struct PumpDeviceContextWireTests {
 
         // Pre-op33: apiVersion is nil ⇒ the floor fails OPEN (today's send-then-NACK behavior).
         #expect(b.negotiatedApiVersionForTesting == nil, "no apiVersion negotiated before op33")
-        #expect(b.deviceSupportErrorForTesting(LoadStatusRequest()) == nil,
-                "pre-op33 the minApi floor fails open (nil apiVersion) — behavior-preserving")
+        #expect(
+            b.deviceSupportErrorForTesting(LoadStatusRequest()) == nil,
+            "pre-op33 the minApi floor fails open (nil apiVersion) — behavior-preserving")
 
-        b.injectStatusFrameForTesting(FakePumpTransport.apiVersion(major: 2, minor: 5))   // REAL op33
+        b.injectStatusFrameForTesting(FakePumpTransport.apiVersion(major: 2, minor: 5))  // REAL op33
 
-        #expect(b.negotiatedApiVersionForTesting == ApiVersion(major: 2, minor: 5),
-                "VA-06: op33 supplies the REAL negotiated apiVersion (2.5), not nil")
+        #expect(
+            b.negotiatedApiVersionForTesting == ApiVersion(major: 2, minor: 5),
+            "VA-06: op33 supplies the REAL negotiated apiVersion (2.5), not nil")
         #expect(b.connectedPumpModelForTesting == .tslim, "op33 (2.5) identifies a t:slim")
-        #expect(b.deviceSupportErrorForTesting(LoadStatusRequest())
-                    == .unsupportedOnDevice(opcode: LoadStatusRequest.props.opCode),
-                "VA-06 now BITES: op20 (minApi 3.4) is filtered on the API-2.5 t:slim — no send, no op-77, no teardown")
+        #expect(
+            b.deviceSupportErrorForTesting(LoadStatusRequest())
+                == .unsupportedOnDevice(opcode: LoadStatusRequest.props.opCode),
+            "VA-06 now BITES: op20 (minApi 3.4) is filtered on the API-2.5 t:slim — no send, no op-77, no teardown")
     }
 
     /// A Mobi (API 3.5) must not be over-gated: its own reads still pass. The floor is evaluated
@@ -196,17 +225,20 @@ struct PumpDeviceContextWireTests {
         resetIdentityStores()
         let b = TandemBackend(testTransport: FakePumpTransport())
 
-        b.injectStatusFrameForTesting(FakePumpTransport.apiVersion(major: 3, minor: 5))   // REAL op33 (Mobi)
+        b.injectStatusFrameForTesting(FakePumpTransport.apiVersion(major: 3, minor: 5))  // REAL op33 (Mobi)
 
-        #expect(b.negotiatedApiVersionForTesting == ApiVersion(major: 3, minor: 5),
-                "VA-06: op33 supplies the REAL negotiated apiVersion (3.5)")
+        #expect(
+            b.negotiatedApiVersionForTesting == ApiVersion(major: 3, minor: 5),
+            "VA-06: op33 supplies the REAL negotiated apiVersion (3.5)")
         #expect(b.connectedPumpModelForTesting == .mobi, "op33 (3.5) identifies a Mobi")
         // A Mobi-restricted read ([.mobi], minApi 3.5) is SUPPORTED on a Mobi at 3.5 — not filtered.
-        #expect(b.deviceSupportErrorForTesting(CgmStatusV2Request()) == nil,
-                "VA-06 must NOT regress Mobi: a [.mobi] / minApi-3.5 read still passes on a Mobi at 3.5")
+        #expect(
+            b.deviceSupportErrorForTesting(CgmStatusV2Request()) == nil,
+            "VA-06 must NOT regress Mobi: a [.mobi] / minApi-3.5 read still passes on a Mobi at 3.5")
         // And the below-floor-on-t:slim read op20 is FINE on the Mobi (3.5 ≥ 3.4) — the floor is per-API.
-        #expect(b.deviceSupportErrorForTesting(LoadStatusRequest()) == nil,
-                "op20 (minApi 3.4) is supported on a Mobi at API 3.5 — the gate is API-floored, not blanket")
+        #expect(
+            b.deviceSupportErrorForTesting(LoadStatusRequest()) == nil,
+            "op20 (minApi 3.4) is supported on a Mobi at API 3.5 — the gate is API-floored, not blanket")
     }
 
     /// Reapply must confirm the peripheral the kit is actually (re)connecting before stamping trust —
@@ -218,11 +250,12 @@ struct PumpDeviceContextWireTests {
         PumpPeripheralStore.set(uuidA)
         TrustedPumpIdentityStore.set(isMobi: true, for: uuidA)
         let b = TandemBackend(testTransport: FakePumpTransport())
-        b.armReconnectTargetForTesting(uuidB)   // the kit is reconnecting a DIFFERENT peripheral
+        b.armReconnectTargetForTesting(uuidB)  // the kit is reconnecting a DIFFERENT peripheral
 
         b.applyClientState(.discovering)
 
-        #expect(b.identityTrustedForTesting == false, "a stale trusted record for UUID-A must not trust a UUID-B session")
+        #expect(
+            b.identityTrustedForTesting == false, "a stale trusted record for UUID-A must not trust a UUID-B session")
     }
 
     // MARK: - Forced one-time authoritative re-scan when peripheral is known but trust store is empty
@@ -237,15 +270,17 @@ struct PumpDeviceContextWireTests {
     @Test func connectForcesAuthoritativeScanWhenPeripheralKnownButTrustStoreEmpty() async {
         resetIdentityStores()
         let uuid = UUID()
-        PumpPeripheralStore.set(uuid)   // pre-existing pairing…
+        PumpPeripheralStore.set(uuid)  // pre-existing pairing…
         // …but NO TrustedPumpIdentityStore entry (the day-zero-upgrade state).
         #expect(TrustedPumpIdentityStore.isMobi(for: uuid) == nil, "precondition: empty trust store")
         let b = TandemBackend(testTransport: FakePumpTransport())
 
         await b.connect()
 
-        #expect(b.lastConnectRouteForTesting == .scan,
-                "CR-01: with a known peripheral but empty trust store, connect() must SCAN (force a genuine didDiscover), NOT take the fast connectKnownPeripheral path")
+        #expect(
+            b.lastConnectRouteForTesting == .scan,
+            "CR-01: with a known peripheral but empty trust store, connect() must SCAN (force a genuine didDiscover), NOT take the fast connectKnownPeripheral path"
+        )
     }
 
     /// The complementary steady state: once a trusted record exists for the known peripheral, `connect()`
@@ -254,24 +289,26 @@ struct PumpDeviceContextWireTests {
         resetIdentityStores()
         let uuid = UUID()
         PumpPeripheralStore.set(uuid)
-        TrustedPumpIdentityStore.set(isMobi: true, for: uuid)   // a genuine prior didDiscover ran
+        TrustedPumpIdentityStore.set(isMobi: true, for: uuid)  // a genuine prior didDiscover ran
         let b = TandemBackend(testTransport: FakePumpTransport())
 
         await b.connect()
 
-        #expect(b.lastConnectRouteForTesting == .known,
-                "CR-01: with a trusted record present, connect() resumes the fast connectKnownPeripheral path")
+        #expect(
+            b.lastConnectRouteForTesting == .known,
+            "CR-01: with a trusted record present, connect() resumes the fast connectKnownPeripheral path")
     }
 
     /// First-ever pairing (no stored peripheral id at all) still scans — unchanged behavior.
     @Test func connectScansWhenNoPeripheralIdAtAll() async {
-        resetIdentityStores()   // no PumpPeripheralStore.id()
+        resetIdentityStores()  // no PumpPeripheralStore.id()
         let b = TandemBackend(testTransport: FakePumpTransport())
 
         await b.connect()
 
-        #expect(b.lastConnectRouteForTesting == .scan,
-                "first-ever pairing (no stored peripheral id) scans, as before")
+        #expect(
+            b.lastConnectRouteForTesting == .scan,
+            "first-ever pairing (no stored peripheral id) scans, as before")
     }
 
     // No dedicated "nil/unknown-target no-op preserves a pre-set `detectedIsMobi`" test here, and that
@@ -294,13 +331,14 @@ struct PumpDeviceContextWireTests {
         PumpPeripheralStore.set(uuidA)
         TrustedPumpIdentityStore.set(isMobi: true, for: uuidA)
         let b = TandemBackend(testTransport: FakePumpTransport())
-        b.armReconnectTargetForTesting(uuidB)   // kit is driving a DIFFERENT peripheral
-        b.detectedIsMobiForTesting = true        // a stale name-authority value from a prior session
+        b.armReconnectTargetForTesting(uuidB)  // kit is driving a DIFFERENT peripheral
+        b.detectedIsMobiForTesting = true  // a stale name-authority value from a prior session
 
         b.applyClientState(.discovering)
 
-        #expect(b.detectedIsMobiForTesting == nil,
-                "WR-01: a genuine peripheral mismatch must defensively clear the stale detectedIsMobi")
+        #expect(
+            b.detectedIsMobiForTesting == nil,
+            "WR-01: a genuine peripheral mismatch must defensively clear the stale detectedIsMobi")
         #expect(b.identityTrustedForTesting == false, "and it must never stamp trust for the mismatched peripheral")
     }
 }

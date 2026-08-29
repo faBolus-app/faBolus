@@ -13,9 +13,10 @@ final class GlucoseProvenanceTests: XCTestCase {
 
     func testStatusCommandCarriesAnAbsoluteSourceEpoch() throws {
         let taken = Date().addingTimeInterval(-90)
-        var cmd = RemoteCommand(kind: .statusRead, bgMgdl: 142,
-                                glucoseAgeSec: 90,
-                                glucoseEpochSec: Int(taken.timeIntervalSince1970))
+        var cmd = RemoteCommand(
+            kind: .statusRead, bgMgdl: 142,
+            glucoseAgeSec: 90,
+            glucoseEpochSec: Int(taken.timeIntervalSince1970))
         try cmd.validate()
         let round = try RemoteCommand.decodeValidated(try cmd.encoded())
         XCTAssertEqual(round.glucoseEpochSec, Int(taken.timeIntervalSince1970))
@@ -24,15 +25,16 @@ final class GlucoseProvenanceTests: XCTestCase {
     /// An age is computed when the message is composed, so it understates the reading's true age by
     /// however long the message spent in flight. The epoch does not drift, which is the whole point.
     func testAgeDerivedFromTheEpochDoesNotDriftWithTransitTime() {
-        let taken = Date().addingTimeInterval(-300)          // reading is 5 min old
-        let cmd = RemoteCommand(kind: .statusRead, bgMgdl: 142,
-                                glucoseAgeSec: 300,
-                                glucoseEpochSec: Int(taken.timeIntervalSince1970))
+        let taken = Date().addingTimeInterval(-300)  // reading is 5 min old
+        let cmd = RemoteCommand(
+            kind: .statusRead, bgMgdl: 142,
+            glucoseAgeSec: 300,
+            glucoseEpochSec: Int(taken.timeIntervalSince1970))
         // Pretend the message sat in flight for 10 minutes before this receiver saw it.
         let receivedAt = Date().addingTimeInterval(600)
 
         let fromEpoch = receivedAt.timeIntervalSince1970 - Double(cmd.glucoseEpochSec!)
-        let fromAge = cmd.glucoseAgeSec!                     // what a receiver would believe
+        let fromAge = cmd.glucoseAgeSec!  // what a receiver would believe
 
         XCTAssertEqual(fromEpoch, 900, accuracy: 2, "epoch-derived age must include transit time")
         XCTAssertEqual(fromAge, 300, accuracy: 2)
@@ -43,9 +45,9 @@ final class GlucoseProvenanceTests: XCTestCase {
 
     func testFutureEpochIsRejected() {
         var cmd = RemoteCommand(kind: .statusRead, bgMgdl: 120)
-        cmd.glucoseEpochSec = Int(Int32.max)           // the last accepted second (2038-01-19)
+        cmd.glucoseEpochSec = Int(Int32.max)  // the last accepted second (2038-01-19)
         XCTAssertNoThrow(try cmd.validate())
-        cmd.glucoseEpochSec = Int(Int32.max) / 2 + Int(Int32.max) / 2 + 2   // one past it, 32-bit-safe
+        cmd.glucoseEpochSec = Int(Int32.max) / 2 + Int(Int32.max) / 2 + 2  // one past it, 32-bit-safe
         XCTAssertThrowsError(try cmd.validate())
     }
 
@@ -56,15 +58,17 @@ final class GlucoseProvenanceTests: XCTestCase {
     /// work sat on a branch. Monkey C's `Lang.Number` is signed 32-bit too, so the Garmin wire could
     /// not have carried the old bound either.
     func testTheEpochBoundFitsInThirtyTwoBits() {
-        XCTAssertLessThanOrEqual(Int(Int32.max), Int(Int32.max),
-                                 "the ceiling must be representable in a signed 32-bit integer")
+        XCTAssertLessThanOrEqual(
+            Int(Int32.max), Int(Int32.max),
+            "the ceiling must be representable in a signed 32-bit integer")
         // A value inside the old bound but outside Int32 must be rejected, not silently accepted:
         // it can never have come from a consumer that can represent it.
         var cmd = RemoteCommand(kind: .statusRead, bgMgdl: 120)
         if Int.bitWidth > 32 {
-            cmd.glucoseEpochSec = 4_102_444_800        // the old 2100-01-01 ceiling
-            XCTAssertThrowsError(try cmd.validate(),
-                                 "a stamp no 32-bit consumer can hold must not validate")
+            cmd.glucoseEpochSec = 4_102_444_800  // the old 2100-01-01 ceiling
+            XCTAssertThrowsError(
+                try cmd.validate(),
+                "a stamp no 32-bit consumer can hold must not validate")
         }
     }
 

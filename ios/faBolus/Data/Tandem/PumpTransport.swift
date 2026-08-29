@@ -15,22 +15,28 @@ public protocol PumpTransport: AnyObject {
 
     /// Run `body` with the policy elevated for exactly this op, always restoring `.readOnly` (PX-03/04).
     @discardableResult
-    func withWritePolicy<T>(_ policy: PumpBLEClient.WritePolicy,
-                            _ body: @MainActor () async throws -> T) async rethrows -> T
+    func withWritePolicy<T>(
+        _ policy: PumpBLEClient.WritePolicy,
+        _ body: @MainActor () async throws -> T
+    ) async rethrows -> T
 
     /// Fire a (possibly signed) message. Returns the wire txId; throws synchronously on a pre-write
     /// authorization/not-ready failure (a clean pre-write failure — nothing went out).
     @discardableResult
-    func send(_ message: Message, authenticationKey: [UInt8], pumpTimeSinceReset: UInt32,
-              allowInsulinDelivery: Bool) throws -> UInt8
+    func send(
+        _ message: Message, authenticationKey: [UInt8], pumpTimeSinceReset: UInt32,
+        allowInsulinDelivery: Bool
+    ) throws -> UInt8
 
     /// Send and await the correlated response frame (PX-08). A synchronous throw = pre-write failure; a
     /// `PumpTransactionCoordinator.TxError` = the write went out and the response was lost/late.
     /// `serialized` marks a delivery-class command (R3-D): rejected with `.busy` before any write if
     /// another serialized transaction is already outstanding, so two delivery opcodes never overlap.
-    func sendAwaitingResponse(_ message: Message, authenticationKey: [UInt8], pumpTimeSinceReset: UInt32,
-                              allowInsulinDelivery: Bool, responseOpCode: UInt8?,
-                              deadline: TimeInterval, serialized: Bool) async throws -> [UInt8]
+    func sendAwaitingResponse(
+        _ message: Message, authenticationKey: [UInt8], pumpTimeSinceReset: UInt32,
+        allowInsulinDelivery: Bool, responseOpCode: UInt8?,
+        deadline: TimeInterval, serialized: Bool
+    ) async throws -> [UInt8]
 }
 
 /// `PumpBLEClient` already implements every member — retroactive conformance, no added code.

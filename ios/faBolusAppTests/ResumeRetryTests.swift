@@ -18,7 +18,7 @@ struct ResumeRetryTests {
     /// very resume-failure path under test — the default double is pre-paired.
     private func resumingBackend() -> TandemBackend {
         let b = TandemBackend(testTransport: FakePumpTransport(), authKey: [])
-        b.pairingTimeoutSecForTesting = 0.05   // fired manually below — never waits out the real 30 s deadline
+        b.pairingTimeoutSecForTesting = 0.05  // fired manually below — never waits out the real 30 s deadline
         return b
     }
 
@@ -32,15 +32,15 @@ struct ResumeRetryTests {
         defer { PairingStore.useInMemoryBackingForTests = false }
         PairingStore.clear()
         defer { PairingStore.clear() }
-        PairingStore.save(Self.storedSecret)   // a modern JPAKE quick-pair resume secret
+        PairingStore.save(Self.storedSecret)  // a modern JPAKE quick-pair resume secret
 
         let b = resumingBackend()
         #expect(!b.isPairedForTesting, "precondition: unpaired, so the watchdog's guard !isPaired won't short-circuit")
-        b.beginPairingForTesting(code: "")   // "" + stored secret → quick-pair RESUME (onFirstPair == nil)
+        b.beginPairingForTesting(code: "")  // "" + stored secret → quick-pair RESUME (onFirstPair == nil)
         #expect(b.pairingCoordinatorIsLiveForTesting, "precondition: the resume handshake is armed")
         #expect(b.resumeRetryCountForTesting == 0, "precondition: a fresh retry budget")
 
-        b.firePairingWatchdogForTesting()   // resume-path timeout → handleResumeFailure(), budget remaining
+        b.firePairingWatchdogForTesting()  // resume-path timeout → handleResumeFailure(), budget remaining
 
         // Took the bounded-RETRY branch, not the error branch: the budget advanced (0 → 1).
         #expect(b.resumeRetryCountForTesting == 1, "a resume failure with budget remaining must retry, not error")
@@ -48,7 +48,9 @@ struct ResumeRetryTests {
         // pre-existing reconnecting posture in place) — it must NOT go straight to a terminal wiped state.
         #expect(b.snapshot.connection != .error, "must not surface a terminal error while the retry budget remains")
         // The safety-critical invariant: the stored secret survives a resume-failure retry, byte-for-byte.
-        #expect(PairingStore.load() == Self.storedSecret, "the stored secret must survive a resume retry — never auto-wiped")
+        #expect(
+            PairingStore.load() == Self.storedSecret, "the stored secret must survive a resume retry — never auto-wiped"
+        )
         #expect(PairingStore.hasAnyPairing, "hasStoredPairing stays true across a resume retry")
     }
 
@@ -66,7 +68,7 @@ struct ResumeRetryTests {
         PairingStore.save(Self.storedSecret)
 
         let b = resumingBackend()
-        b.beginPairingForTesting(code: "")   // quick-pair RESUME
+        b.beginPairingForTesting(code: "")  // quick-pair RESUME
 
         // maxResumeRetries == 2 → the first two failures RETRY (budget 1, then 2), no terminal error.
         b.firePairingWatchdogForTesting()
@@ -80,15 +82,24 @@ struct ResumeRetryTests {
         b.firePairingWatchdogForTesting()
 
         #expect(b.snapshot.connection == .error, "an exhausted resume budget surfaces a terminal-but-retryable error")
-        #expect(b.resumeRetryCountForTesting == 0, "the budget resets on exhaustion so the next reconnect gets a fresh budget")
+        #expect(
+            b.resumeRetryCountForTesting == 0,
+            "the budget resets on exhaustion so the next reconnect gets a fresh budget")
         // The SAFETY-critical property: the derived secret is RETAINED even after exhaustion — NEVER auto-wiped.
-        #expect(PairingStore.load() == Self.storedSecret, "the stored secret is retained even after the retry budget is exhausted")
-        #expect(PairingStore.hasAnyPairing, "hasStoredPairing stays true after exhaustion — only forgetPairing() wipes it")
+        #expect(
+            PairingStore.load() == Self.storedSecret,
+            "the stored secret is retained even after the retry budget is exhausted")
+        #expect(
+            PairingStore.hasAnyPairing, "hasStoredPairing stays true after exhaustion — only forgetPairing() wipes it")
         // The error is presented as recoverable (retry / Forget Pairing), not a silent wipe-and-re-pair.
         #expect(b.snapshot.connectionDetail?.contains("Tap to retry") == true, "the exhausted error offers a retry")
-        #expect(b.snapshot.connectionDetail?.contains("Forget Pairing") == true, "…and points at Forget Pairing, not an auto-wipe")
+        #expect(
+            b.snapshot.connectionDetail?.contains("Forget Pairing") == true,
+            "…and points at Forget Pairing, not an auto-wipe")
         // The transient auth key is dropped so the delivery gate fails closed, even though the durable secret stays.
-        #expect(!b.isPairedForTesting, "the auth key is cleared (delivery gate fails closed) while the durable secret is retained")
+        #expect(
+            !b.isPairedForTesting,
+            "the auth key is cleared (delivery gate fails closed) while the durable secret is retained")
     }
 
     /// 3 — Fresh full pair is UNCHANGED: with NO stored secret, `beginPairingForTesting(code: "123456")`
@@ -105,18 +116,26 @@ struct ResumeRetryTests {
         #expect(!PairingStore.hasAnyPairing, "precondition: no stored secret → a FRESH pair, not a resume")
 
         let b = resumingBackend()
-        b.beginPairingForTesting(code: "123456")   // 6-digit → FRESH JPAKE pair (onFirstPair != nil)
+        b.beginPairingForTesting(code: "123456")  // 6-digit → FRESH JPAKE pair (onFirstPair != nil)
         #expect(b.pairingCoordinatorIsLiveForTesting, "precondition: the fresh handshake is armed")
         #expect(b.resumeRetryCountForTesting == 0, "precondition: the resume budget is untouched")
 
-        b.firePairingWatchdogForTesting()   // fresh-pair timeout → the unchanged straight-to-.error path
+        b.firePairingWatchdogForTesting()  // fresh-pair timeout → the unchanged straight-to-.error path
 
-        #expect(b.snapshot.connection == .error, "a fresh full-pair timeout still fails closed straight to .error (unchanged)")
-        #expect(b.resumeRetryCountForTesting == 0, "a fresh pair never enters the resume-retry budget — no stored secret to protect")
+        #expect(
+            b.snapshot.connection == .error,
+            "a fresh full-pair timeout still fails closed straight to .error (unchanged)")
+        #expect(
+            b.resumeRetryCountForTesting == 0,
+            "a fresh pair never enters the resume-retry budget — no stored secret to protect")
         #expect(!PairingStore.hasAnyPairing, "a fresh-pair failure has no stored secret — nothing to wipe or retain")
         // The fresh-pair detail is the pre-existing copy, distinct from the resume-exhausted "Forget Pairing" copy.
-        #expect(b.snapshot.connectionDetail?.contains("t:connect") == true, "the fresh-pair failure keeps its unchanged copy")
-        #expect(b.snapshot.connectionDetail?.contains("Forget Pairing") != true, "the fresh path must not show the resume-recovery copy")
+        #expect(
+            b.snapshot.connectionDetail?.contains("t:connect") == true,
+            "the fresh-pair failure keeps its unchanged copy")
+        #expect(
+            b.snapshot.connectionDetail?.contains("Forget Pairing") != true,
+            "the fresh path must not show the resume-recovery copy")
     }
 
     /// C1-01 (owner-adopted 2026-08-25) — a unique durable-ledger URL so `AppModel` instances in these
@@ -144,17 +163,20 @@ struct ResumeRetryTests {
         // fast path — seed it so the fix takes the `connectKnownPeripheral` branch, not the `startScan()`
         // fallback (mirrors `PumpPeripheralStoreTests`' save/restore idiom).
         let priorPeripheralId = PumpPeripheralStore.id()
-        defer { if let priorPeripheralId { PumpPeripheralStore.set(priorPeripheralId) } else { PumpPeripheralStore.clear() } }
+        defer {
+            if let priorPeripheralId { PumpPeripheralStore.set(priorPeripheralId) } else { PumpPeripheralStore.clear() }
+        }
         PumpPeripheralStore.set(UUID())
 
         let b = resumingBackend()
         b.beginPairingForTesting(code: "")
         #expect(b.resumeRetryActionForTesting == nil, "precondition: no reconnect action recorded yet")
 
-        b.firePairingWatchdogForTesting()   // transient resume failure, budget remaining
+        b.firePairingWatchdogForTesting()  // transient resume failure, budget remaining
 
-        #expect(b.resumeRetryActionForTesting == .reestablish,
-                "the retry branch must re-establish (connectKnownPeripheral), never disconnect() (C1-01)")
+        #expect(
+            b.resumeRetryActionForTesting == .reestablish,
+            "the retry branch must re-establish (connectKnownPeripheral), never disconnect() (C1-01)")
     }
 
     /// 6 — C1-01/C1-04 (Test 2 of the plan's 3): the SAME transient resume-failure ALSO fires the typed
@@ -179,13 +201,15 @@ struct ResumeRetryTests {
         model.notificationScheduleSink = { scheduled = $0 }
 
         b.beginPairingForTesting(code: "")
-        b.firePairingWatchdogForTesting()   // transient resume failure, budget remaining
+        b.firePairingWatchdogForTesting()  // transient resume failure, budget remaining
 
         let disc = posted.filter { $0.category == .pumpDisconnect }
-        #expect(disc.count == 1,
-                "a transient resume-failure that dies from .connecting must still alarm, via the typed event")
-        #expect(disc.first?.dedupeKey == "safety.pumpDisconnect",
-                "reuses the SafetyEdge pump-disconnect dedupe key so a later reconnect withdraws it too")
+        #expect(
+            disc.count == 1,
+            "a transient resume-failure that dies from .connecting must still alarm, via the typed event")
+        #expect(
+            disc.first?.dedupeKey == "safety.pumpDisconnect",
+            "reuses the SafetyEdge pump-disconnect dedupe key so a later reconnect withdraws it too")
         #expect(!scheduled.isEmpty, "the escalation ladder must be scheduled alongside the immediate T0 post")
         #expect(scheduled.map(\.id) == DisconnectEscalation.stepIds)
     }
@@ -207,13 +231,14 @@ struct ResumeRetryTests {
         model.notificationScheduleSink = { _ in }
 
         b.beginPairingForTesting(code: "")
-        b.firePairingWatchdogForTesting()   // retry 1/2
-        b.firePairingWatchdogForTesting()   // retry 2/2
-        b.firePairingWatchdogForTesting()   // budget exhausted → straight to .error
+        b.firePairingWatchdogForTesting()  // retry 1/2
+        b.firePairingWatchdogForTesting()  // retry 2/2
+        b.firePairingWatchdogForTesting()  // budget exhausted → straight to .error
 
         #expect(b.snapshot.connection == .error, "precondition: the budget is exhausted")
-        #expect(posted.filter { $0.category == .pumpDisconnect }.count >= 1,
-                "the exhausted branch must still alarm — no regression from the typed-event addition")
+        #expect(
+            posted.filter { $0.category == .pumpDisconnect }.count >= 1,
+            "the exhausted branch must still alarm — no regression from the typed-event addition")
     }
 
     /// 8 — `forgetPairing()` (R2-06) remains the ONLY thing that wipes `PairingStore`. Together with tests 1
@@ -229,8 +254,8 @@ struct ResumeRetryTests {
         PairingStore.save(Self.storedSecret)
         #expect(PairingStore.hasAnyPairing, "precondition: a stored secret is present")
 
-        let b = TandemBackend(testTransport: FakePumpTransport())   // default double: connected + paired
-        b.forgetPairing()   // R2-06 explicit teardown-and-wipe
+        let b = TandemBackend(testTransport: FakePumpTransport())  // default double: connected + paired
+        b.forgetPairing()  // R2-06 explicit teardown-and-wipe
 
         #expect(PairingStore.load() == nil, "forgetPairing() is the ONLY thing that wipes the stored secret")
         #expect(!PairingStore.hasAnyPairing, "no pairing material survives an explicit forget")

@@ -30,8 +30,12 @@ struct LedgerBlockPrecedenceGuardTests {
     private func withCleanSettings(_ body: () async throws -> Void) async rethrows {
         let s = AppSettings.shared
         let ro = s.phoneReadOnly, child = s.childModeEnabled
-        s.phoneReadOnly = false; s.childModeEnabled = false
-        defer { s.phoneReadOnly = ro; s.childModeEnabled = child }
+        s.phoneReadOnly = false
+        s.childModeEnabled = false
+        defer {
+            s.phoneReadOnly = ro
+            s.childModeEnabled = child
+        }
         try await body()
     }
 
@@ -43,8 +47,10 @@ struct LedgerBlockPrecedenceGuardTests {
     /// `noDurableStore` string, not the `ledgerFailedClosed` one.
     @Test func noDurableStoreOutranksLedgerFailedClosedWhenBothAreSet() async {
         await withCleanSettings {
-            let store = R3CLedgerFaultTests.FakeLedgerStore(); store.reportCorruptLoad = true
-            let backend = MockBackend(); await backend.connect()
+            let store = R3CLedgerFaultTests.FakeLedgerStore()
+            store.reportCorruptLoad = true
+            let backend = MockBackend()
+            await backend.connect()
             let model = AppModel(source: backend, ledgerStore: store, forceNoDurableStore: true)
             await model.reconcileUnresolvedDeliveries()
             #expect(model.deliveryBlockedReason == Self.noDurableStoreMessage)
@@ -57,9 +63,11 @@ struct LedgerBlockPrecedenceGuardTests {
     /// two combo tests in this suite, not a third simultaneous flag on this fake.)
     @Test func ledgerFailedClosedAloneResolvesToItsOwnMessage() async {
         await withCleanSettings {
-            let store = R3CLedgerFaultTests.FakeLedgerStore(); store.reportCorruptLoad = true
-            let backend = MockBackend(); await backend.connect()
-            let model = AppModel(source: backend, ledgerStore: store)   // forceNoDurableStore defaults false
+            let store = R3CLedgerFaultTests.FakeLedgerStore()
+            store.reportCorruptLoad = true
+            let backend = MockBackend()
+            await backend.connect()
+            let model = AppModel(source: backend, ledgerStore: store)  // forceNoDurableStore defaults false
             await model.reconcileUnresolvedDeliveries()
             #expect(model.deliveryBlockedReason == Self.ledgerFailedClosedMessage)
         }
@@ -76,13 +84,14 @@ struct LedgerBlockPrecedenceGuardTests {
             let store = R3CLedgerFaultTests.FakeLedgerStore()
             var ledger = RemoteBolusLedger()
             _ = ledger.begin(peerId: "local", requestId: "clearable-noid", doseKey: "u:1")
-            ledger.markDelivering(peerId: "local", requestId: "clearable-noid")             // no bolus id
+            ledger.markDelivering(peerId: "local", requestId: "clearable-noid")  // no bolus id
             _ = ledger.begin(peerId: "watch", requestId: "stuck-with-id", doseKey: "u:2")
             ledger.markDelivering(peerId: "watch", requestId: "stuck-with-id", bolusId: 9001)  // has an id
-            try store.save(ledger)      // seed call — succeeds (saveCount == 1)
-            store.failSaveOnCall = 2    // the post-reconcile batch persist (persistTerminalOrBlock) throws
+            try store.save(ledger)  // seed call — succeeds (saveCount == 1)
+            store.failSaveOnCall = 2  // the post-reconcile batch persist (persistTerminalOrBlock) throws
 
-            let backend = MockBackend(); await backend.connect()   // no reconcileResultsById[9001] ⇒ .unavailable
+            let backend = MockBackend()
+            await backend.connect()  // no reconcileResultsById[9001] ⇒ .unavailable
             let model = AppModel(source: backend, ledgerStore: store)
             await model.reconcileUnresolvedDeliveries()
             #expect(model.deliveryBlockedReason == Self.terminalSaveFailedMessage)
@@ -96,7 +105,8 @@ struct LedgerBlockPrecedenceGuardTests {
     /// alarming "check the pump" one reserved for a genuinely unconfirmed outcome.
     @Test func liveInFlightBlockUsesTheWaitMessageNotTheCheckThePumpOne() async {
         await withCleanSettings {
-            let backend = MockBackend(); await backend.connect()
+            let backend = MockBackend()
+            await backend.connect()
             let ledgerURL = URL(fileURLWithPath: NSTemporaryDirectory())
                 .appendingPathComponent("a2-live-\(UUID().uuidString).json")
             let model = AppModel(source: backend, ledgerStoreURL: ledgerURL)
@@ -124,7 +134,8 @@ struct LedgerBlockPrecedenceGuardTests {
             ledger.markDelivering(peerId: "watch", requestId: "crashed-mid-delivery", bolusId: 5555)
             try RemoteBolusLedgerStore(url: ledgerURL).save(ledger)
 
-            let backend = MockBackend(); await backend.connect()   // no reconcileResultsById[5555] ⇒ .unavailable
+            let backend = MockBackend()
+            await backend.connect()  // no reconcileResultsById[5555] ⇒ .unavailable
             let model = AppModel(source: backend, ledgerStoreURL: ledgerURL)
             await model.reconcileUnresolvedDeliveries()
             #expect(model.deliveryBlockedReason == Self.genuinelyUnresolvedMessage)

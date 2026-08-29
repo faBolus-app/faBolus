@@ -17,11 +17,11 @@ final class PeerPairingPayloadTests: XCTestCase {
 
     func testRejectsForeignStrings() {
         XCTAssertNil(PeerPairingPayload(qrString: "https://example.com"))
-        XCTAssertNil(PeerPairingPayload(qrString: "fabolus-pair://v1?host=&code="))   // empty fields
+        XCTAssertNil(PeerPairingPayload(qrString: "fabolus-pair://v1?host=&code="))  // empty fields
         XCTAssertNil(PeerPairingPayload(qrString: "random text"))
     }
 
     func testStrongCodeIs128Bit() {
-        XCTAssertEqual(MacPairing.newStrongCode().count, 32)   // 16 bytes hex
+        XCTAssertEqual(MacPairing.newStrongCode().count, 32)  // 16 bytes hex
     }
 }

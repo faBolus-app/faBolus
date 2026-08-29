@@ -51,7 +51,7 @@ struct LoopInsightsExclusionGuardTests {
         "LoopInsights_MealDebriefModels.swift",
         "LoopInsights_Models.swift",
         "LoopInsights_Phase5Models.swift",
-        "LoopInsights_SuggestionRecord.swift",
+        "LoopInsights_SuggestionRecord.swift"
     ]
 
     /// Display-only INCLUDE files that must not be on the denylist.
@@ -63,7 +63,7 @@ struct LoopInsightsExclusionGuardTests {
         "LoopInsights_AlcoholTracker.swift",
         "LoopInsights_AlcoholLogView.swift",
         "LoopInsights_CaregiverDigestService.swift",
-        "LoopInsights_CaregiverDigestView.swift",
+        "LoopInsights_CaregiverDigestView.swift"
     ]
 
     /// Resolve `ios/faBolus` by walking up from `#filePath`
@@ -86,8 +86,11 @@ struct LoopInsightsExclusionGuardTests {
     private static func allSwiftFiles(under root: URL) -> [URL] {
         let fm = FileManager.default
         let skipDirNames: Set<String> = [".build", "DerivedData", "Pods", ".git", "node_modules"]
-        guard let enumerator = fm.enumerator(at: root, includingPropertiesForKeys: [.isDirectoryKey],
-                                             options: [.skipsHiddenFiles]) else { return [] }
+        guard
+            let enumerator = fm.enumerator(
+                at: root, includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles])
+        else { return [] }
         var results: [URL] = []
         for case let url as URL in enumerator {
             let name = url.lastPathComponent
@@ -114,8 +117,10 @@ struct LoopInsightsExclusionGuardTests {
 
         for url in files {
             let basename = url.lastPathComponent
-            #expect(!Self.deniedBasenames.contains(basename),
-                    "D-14 violated — excluded LoopInsights file '\(basename)' is compiled at \(url.path). Excluded files re-arm the no-novel-medical-advice violation and inflate the §13 gate; only the eight benign INCLUDE files may be vendored.")
+            #expect(
+                !Self.deniedBasenames.contains(basename),
+                "D-14 violated — excluded LoopInsights file '\(basename)' is compiled at \(url.path). Excluded files re-arm the no-novel-medical-advice violation and inflate the §13 gate; only the eight benign INCLUDE files may be vendored."
+            )
         }
     }
 
@@ -123,8 +128,10 @@ struct LoopInsightsExclusionGuardTests {
 
     @Test func benignIncludeFilesAreNotDenied() {
         for basename in Self.benignIncludeBasenames {
-            #expect(!Self.deniedBasenames.contains(basename),
-                    "\(basename) is a benign D-14 INCLUDE file (09.18d scope) and must NOT be on the exclusion denylist — otherwise this guard would block 09.18d from vendoring it.")
+            #expect(
+                !Self.deniedBasenames.contains(basename),
+                "\(basename) is a benign D-14 INCLUDE file (09.18d scope) and must NOT be on the exclusion denylist — otherwise this guard would block 09.18d from vendoring it."
+            )
         }
     }
 }

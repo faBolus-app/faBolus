@@ -4,10 +4,10 @@ import XCTest
 final class GlucoseFreshnessTests: XCTestCase {
     func testIsStaleThreshold() {
         let now = Date()
-        XCTAssertTrue(GlucoseFreshness.isStale(nil, now: now))                              // unknown → stale
-        XCTAssertFalse(GlucoseFreshness.isStale(now.addingTimeInterval(-60), now: now))     // 1 min → fresh
-        XCTAssertFalse(GlucoseFreshness.isStale(now.addingTimeInterval(-359), now: now))    // just under 6 min
-        XCTAssertTrue(GlucoseFreshness.isStale(now.addingTimeInterval(-361), now: now))     // just over 6 min
+        XCTAssertTrue(GlucoseFreshness.isStale(nil, now: now))  // unknown → stale
+        XCTAssertFalse(GlucoseFreshness.isStale(now.addingTimeInterval(-60), now: now))  // 1 min → fresh
+        XCTAssertFalse(GlucoseFreshness.isStale(now.addingTimeInterval(-359), now: now))  // just under 6 min
+        XCTAssertTrue(GlucoseFreshness.isStale(now.addingTimeInterval(-361), now: now))  // just over 6 min
     }
 
     func testFutureDatedReadingIsStaleBeyondClockSkew() {
@@ -17,8 +17,10 @@ final class GlucoseFreshnessTests: XCTestCase {
         XCTAssertTrue(GlucoseFreshness.isStale(now.addingTimeInterval(30 * 60), now: now))
         XCTAssertEqual(GlucoseFreshness.presentation(of: now.addingTimeInterval(30 * 60), now: now), .stale)
         // Just past the skew boundary → stale; just inside it → fresh (ordinary jitter tolerated).
-        XCTAssertTrue(GlucoseFreshness.isStale(now.addingTimeInterval(GlucoseFreshness.futureSkewTolerance + 1), now: now))
-        XCTAssertFalse(GlucoseFreshness.isStale(now.addingTimeInterval(GlucoseFreshness.futureSkewTolerance - 1), now: now))
+        XCTAssertTrue(
+            GlucoseFreshness.isStale(now.addingTimeInterval(GlucoseFreshness.futureSkewTolerance + 1), now: now))
+        XCTAssertFalse(
+            GlucoseFreshness.isStale(now.addingTimeInterval(GlucoseFreshness.futureSkewTolerance - 1), now: now))
         XCTAssertEqual(GlucoseFreshness.presentation(of: now.addingTimeInterval(5), now: now), .fresh)
     }
 
@@ -34,32 +36,41 @@ final class GlucoseFreshnessTests: XCTestCase {
     func testPresentationThreeStages() {
         let now = Date()
         let original = (GlucoseFreshness.staleAfter, GlucoseFreshness.hideAfter)
-        defer { GlucoseFreshness.staleAfter = original.0; GlucoseFreshness.hideAfter = original.1 }
-        GlucoseFreshness.staleAfter = 360        // 6 min
-        GlucoseFreshness.hideAfter = 1200        // 20 min
+        defer {
+            GlucoseFreshness.staleAfter = original.0
+            GlucoseFreshness.hideAfter = original.1
+        }
+        GlucoseFreshness.staleAfter = 360  // 6 min
+        GlucoseFreshness.hideAfter = 1200  // 20 min
         func p(_ ageSec: TimeInterval) -> GlucosePresentation {
             GlucoseFreshness.presentation(of: now.addingTimeInterval(-ageSec), now: now)
         }
         XCTAssertEqual(p(60), .fresh)
-        XCTAssertEqual(p(600), .stale)           // between stale and hide
-        XCTAssertEqual(p(1300), .hidden)         // past hide
+        XCTAssertEqual(p(600), .stale)  // between stale and hide
+        XCTAssertEqual(p(1300), .hidden)  // past hide
     }
 
     func testNeverHideAlwaysStale() {
         let now = Date()
         let original = (GlucoseFreshness.staleAfter, GlucoseFreshness.hideAfter)
-        defer { GlucoseFreshness.staleAfter = original.0; GlucoseFreshness.hideAfter = original.1 }
+        defer {
+            GlucoseFreshness.staleAfter = original.0
+            GlucoseFreshness.hideAfter = original.1
+        }
         GlucoseFreshness.staleAfter = 360
-        GlucoseFreshness.hideAfter = nil                                   // never hide
+        GlucoseFreshness.hideAfter = nil  // never hide
         XCTAssertEqual(GlucoseFreshness.presentation(of: now.addingTimeInterval(-99999), now: now), .stale)
     }
 
     func testHideImmediatelySkipsGrey() {
         let now = Date()
         let original = (GlucoseFreshness.staleAfter, GlucoseFreshness.hideAfter)
-        defer { GlucoseFreshness.staleAfter = original.0; GlucoseFreshness.hideAfter = original.1 }
+        defer {
+            GlucoseFreshness.staleAfter = original.0
+            GlucoseFreshness.hideAfter = original.1
+        }
         GlucoseFreshness.staleAfter = 360
-        GlucoseFreshness.hideAfter = 360                                  // hide == stale → no grey
+        GlucoseFreshness.hideAfter = 360  // hide == stale → no grey
         XCTAssertEqual(GlucoseFreshness.presentation(of: now.addingTimeInterval(-100), now: now), .fresh)
         XCTAssertEqual(GlucoseFreshness.presentation(of: now.addingTimeInterval(-400), now: now), .hidden)
     }

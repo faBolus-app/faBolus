@@ -33,13 +33,20 @@ struct AlertsBannerView: View {
                     if n.isDismissable && model.capabilities.supportsAlertClear {
                         Button {
                             clearing.insert(n.id)
-                            Task { await model.dismissNotification(n); clearing.remove(n.id) }
+                            Task {
+                                await model.dismissNotification(n)
+                                clearing.remove(n.id)
+                            }
                         } label: {
-                            if clearing.contains(n.id) { ProgressView() }
+                            if clearing.contains(n.id) {
+                                ProgressView()
+                            }
                             // "Snooze" (not "Clear") on pumps that can't be dismissed remotely, so the
                             // label doesn't imply it silences the pump itself.
-                            else { Text(model.capabilities.supportsRemoteAlertDismiss ? "Clear" : "Snooze")
-                                    .font(.caption).fontWeight(.semibold) }
+                            else {
+                                Text(model.capabilities.supportsRemoteAlertDismiss ? "Clear" : "Snooze")
+                                    .font(.caption).fontWeight(.semibold)
+                            }
                         }
                         .buttonStyle(.bordered)
                         .disabled(clearing.contains(n.id))
@@ -61,7 +68,7 @@ struct AlertsBannerView: View {
     }
     private func color(_ k: PumpAlertKind) -> Color {
         switch k {
-        case .alarm: return AppTheme.low          // red — most serious
+        case .alarm: return AppTheme.low  // red — most serious
         case .cgmAlert: return AppTheme.high
         default: return .orange
         }

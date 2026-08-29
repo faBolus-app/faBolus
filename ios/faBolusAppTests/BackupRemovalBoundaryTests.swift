@@ -13,9 +13,9 @@ import faBolusCore
 
     /// Fails if this build compiled `FABOLUS_BACKUP` on. The body is empty at the correct default.
     @Test func backupSurfaceIsCompiledOutByDefault() {
-#if FABOLUS_BACKUP
+        #if FABOLUS_BACKUP
         Issue.record("FABOLUS_BACKUP is compiled IN on this build — narrow main's default must be 0")
-#endif
+        #endif
     }
 
     // MARK: - NON-INTERFERENCE: still-present paths beside the gated members keep working

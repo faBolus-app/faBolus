@@ -51,7 +51,12 @@ struct GlucoseThresholdsTests {
     }
 
     private func expectedClosedIndex(_ g: Int) -> Int {
-        switch g { case ..<70: return 0; case 70...180: return 1; case 181...250: return 2; default: return 3 }
+        switch g {
+        case ..<70: return 0
+        case 70...180: return 1
+        case 181...250: return 2
+        default: return 3
+        }
     }
 
     // MARK: - GlucoseStatistics (clinical): closed convention preserved
@@ -75,9 +80,9 @@ struct GlucoseThresholdsTests {
         #expect(onlyBucket(54) == "low")
         #expect(onlyBucket(69) == "low")
         #expect(onlyBucket(70) == "inRange")
-        #expect(onlyBucket(180) == "inRange")   // closed upper bound — 180 is IN range for TIR
+        #expect(onlyBucket(180) == "inRange")  // closed upper bound — 180 is IN range for TIR
         #expect(onlyBucket(181) == "high")
-        #expect(onlyBucket(250) == "high")       // 250 is high, not very-high
+        #expect(onlyBucket(250) == "high")  // 250 is high, not very-high
         #expect(onlyBucket(251) == "veryHigh")
     }
 
@@ -91,7 +96,7 @@ struct GlucoseThresholdsTests {
     @Test func everyBandHasADistinctNonColorLabel() {
         let bands: [GlucoseRange] = [.low, .inRange, .high, .urgentHigh]
         let labels = bands.map(\.shortLabel)
-        #expect(Set(labels).count == 4)            // all distinct
+        #expect(Set(labels).count == 4)  // all distinct
         #expect(labels.allSatisfy { !$0.isEmpty })
         // The channel tracks classify, so a colorblind user reads the same band the color would show.
         #expect(GlucoseRange.classify(55).shortLabel == "Low")

@@ -149,7 +149,8 @@ enum GarminImuWindowDecode {
 
     private static func decodeV2(_ dict: [String: Any]) -> [Float] {
         guard let ch = (dict["ch"] as? NSNumber)?.intValue, ch > 0,
-              let n = (dict["n"] as? NSNumber)?.intValue, n > 0 else { return [] }
+            let n = (dict["n"] as? NSNumber)?.intValue, n > 0
+        else { return [] }
         let total = n * ch
         guard total > 0, total <= maxTotalSamples else { return [] }
         guard let scaleRaw = dict["scale"] as? [Any], scaleRaw.count == ch else { return [] }
@@ -196,15 +197,25 @@ func garminClassifyAppInstallState(installed: Bool?) -> GarminDiagnostics.AppIns
 
 /// A terminal outcome to re-enqueue as a `bolusStatus` echo on launch. ConnectIQ-free so the
 /// seeding decision gets unit coverage in the default target.
-struct GarminEchoSeed: Equatable { let requestId: String; let status: String; let deliveredUnits: Double?; let message: String? }
+struct GarminEchoSeed: Equatable {
+    let requestId: String
+    let status: String
+    let deliveredUnits: Double?
+    let message: String?
+}
 
 /// Which of the ledger's durable terminal outcomes to re-enqueue as echoes on launch — those NOT
 /// already confirmed-sent to the watch. `alreadyEchoed` is the durable set of requestIds whose
 /// echo was previously acked.
-func garminEchoesToSeed(terminalOutcomes: [(requestId: String, status: String, message: String?, deliveredUnits: Double?)],
-                        alreadyEchoed: Set<String>) -> [GarminEchoSeed] {
+func garminEchoesToSeed(
+    terminalOutcomes: [(requestId: String, status: String, message: String?, deliveredUnits: Double?)],
+    alreadyEchoed: Set<String>
+) -> [GarminEchoSeed] {
     terminalOutcomes.filter { !alreadyEchoed.contains($0.requestId) }
-                    .map { GarminEchoSeed(requestId: $0.requestId, status: $0.status, deliveredUnits: $0.deliveredUnits, message: $0.message) }
+        .map {
+            GarminEchoSeed(
+                requestId: $0.requestId, status: $0.status, deliveredUnits: $0.deliveredUnits, message: $0.message)
+        }
 }
 
 // MARK: - ConnectIQ-free dismiss-ack decision + handler
@@ -228,8 +239,10 @@ enum GarminDismissAckDecision: Equatable {
     case ack(requestId: String, alertId: Int, alertKind: Int)
     case noAck
 }
-func garminDismissAckDecision(outcome: DismissOutcome, requestId: String, alertId: Int,
-                              alertKind: Int) -> GarminDismissAckDecision {
+func garminDismissAckDecision(
+    outcome: DismissOutcome, requestId: String, alertId: Int,
+    alertKind: Int
+) -> GarminDismissAckDecision {
     guard outcome == .authenticatedCleared else { return .noAck }
     return .ack(requestId: requestId, alertId: alertId, alertKind: alertKind)
 }
@@ -259,7 +272,7 @@ func garminHandleDismissAlert(
     let outcome = await performDismiss()
     switch garminDismissAckDecision(outcome: outcome, requestId: requestId, alertId: alertId, alertKind: alertKind) {
     case .ack(let rid, let aid, let akind):
-        persistReceipt(rid, aid, akind)   // BEFORE sendAck — persist must win the race against a crash
+        persistReceipt(rid, aid, akind)  // BEFORE sendAck — persist must win the race against a crash
         sendAck(rid, aid, akind)
     case .noAck:
         break
@@ -291,7 +304,10 @@ final class GarminRemoteBridge: NSObject {
     static let sharedBetaAppUUID = UUID(uuidString: "A1B2C3D4-E5F6-0011-2233-445566778899")!
     static let betaAppUUID: UUID = {
         if let s = Bundle.main.object(forInfoDictionaryKey: "GarminBetaAppID") as? String,
-           let id = UUID(uuidString: s.trimmingCharacters(in: .whitespaces)) { return id }
+            let id = UUID(uuidString: s.trimmingCharacters(in: .whitespaces))
+        {
+            return id
+        }
         return sharedBetaAppUUID
     }()
     static let officialAppUUID = UUID(uuidString: "DED131EC-B69D-4649-3650-153AEF623BE6")!
@@ -321,8 +337,8 @@ final class GarminRemoteBridge: NSObject {
     // discovered; sending before `deviceCharacteristicsDiscovered:` silently loses messages.
     // Gate pump() on this and drain the queue when discovery lands.
     private var readiness = GarminMessageReadiness()
-    private var pendingStatus: [String: Any]?     // latest coalesced statusRead payload
-    private var echoQueue: [[String: Any]] = []   // ordered command echoes; never coalesced/dropped
+    private var pendingStatus: [String: Any]?  // latest coalesced statusRead payload
+    private var echoQueue: [[String: Any]] = []  // ordered command echoes; never coalesced/dropped
     // In-memory `echoQueue` replays terminal echoes until transport-acked within a process.
     // `seedTerminalEchoesFromLedger()` (at launch) closes the across-restart gap from the durable
     // ledger's terminal Garmin outcomes that were not already confirmed-sent. `didSeedTerminalEchoes`
@@ -373,8 +389,9 @@ final class GarminRemoteBridge: NSObject {
         // in the background on BLE activity — paired with early (launch-time) construction so a
         // background relaunch has a live bridge. `restoreDevice()` is the intended reconnect-on-launch
         // (the SDK does not handle willRestoreState itself).
-        ConnectIQ.sharedInstance().initialize(withUrlScheme: Self.urlScheme, uiOverrideDelegate: nil,
-                                              stateRestorationIdentifier: "fabolus.connectiq")
+        ConnectIQ.sharedInstance().initialize(
+            withUrlScheme: Self.urlScheme, uiOverrideDelegate: nil,
+            stateRestorationIdentifier: "fabolus.connectiq")
         model.addRemoteEcho { [weak self] cmd in self?.send(cmd) }
         // Proactive status push when pump data changes. AppModel already drives this on a new CGM
         // value and a new/critical pump alert, so the closed-app Garmin background service can
@@ -427,8 +444,9 @@ final class GarminRemoteBridge: NSObject {
             model?.garminStatus = "Garmin returned no device (callback URL had no devices)."
             return
         }
-        UserDefaults.standard.set([first.uuid.uuidString, first.modelName ?? "", first.friendlyName ?? ""],
-                                  forKey: Self.deviceDefaultsKey)
+        UserDefaults.standard.set(
+            [first.uuid.uuidString, first.modelName ?? "", first.friendlyName ?? ""],
+            forKey: Self.deviceDefaultsKey)
         device = first
         registerApp()
         model?.garminStatus = "Garmin remote: \(first.friendlyName ?? first.modelName ?? "device") ✓"
@@ -436,7 +454,8 @@ final class GarminRemoteBridge: NSObject {
 
     private func restoreDevice() {
         guard let parts = UserDefaults.standard.array(forKey: Self.deviceDefaultsKey) as? [String],
-              parts.count == 3, let uuid = UUID(uuidString: parts[0]) else { return }
+            parts.count == 3, let uuid = UUID(uuidString: parts[0])
+        else { return }
         device = IQDevice(id: uuid, modelName: parts[1], friendlyName: parts[2])
         registerApp()
         model?.garminStatus = "Garmin remote: \(parts[2].isEmpty ? parts[1] : parts[2])"
@@ -480,7 +499,7 @@ final class GarminRemoteBridge: NSObject {
                     // (registerApp runs from restoreDevice at every launch) would be its own surprise.
                     self.model?.garminStatus = state.statusText
                 case .unknown:
-                    break   // fail-safe: no status change, readiness stays false
+                    break  // fail-safe: no status change, readiness stays false
                 }
             }
         }
@@ -525,12 +544,13 @@ final class GarminRemoteBridge: NSObject {
         let outcomes = model.garminTerminalOutcomes()
         let seeds = garminEchoesToSeed(terminalOutcomes: outcomes, alreadyEchoed: Self.alreadyEchoedRequestIds())
         for seed in seeds {
-            let cmd = RemoteCommand(kind: .bolusStatus, requestId: seed.requestId,
-                                    status: RemoteCommand.Status(rawValue: seed.status),
-                                    deliveredUnits: seed.deliveredUnits, message: seed.message)
+            let cmd = RemoteCommand(
+                kind: .bolusStatus, requestId: seed.requestId,
+                status: RemoteCommand.Status(rawValue: seed.status),
+                deliveredUnits: seed.deliveredUnits, message: seed.message)
             if let dict = try? cmd.asDictionary() { echoQueue.append(dict) }
         }
-        pump()   // readiness gate defers transmit until the device is message-ready
+        pump()  // readiness gate defers transmit until the device is message-ready
     }
 
     /// Launch-time analogue of `seedTerminalEchoesFromLedger()` for the dismiss-ack lane: a receipt
@@ -540,9 +560,11 @@ final class GarminRemoteBridge: NSObject {
         guard !didSeedDismissReceipts, let model else { return }
         didSeedDismissReceipts = true
         for receipt in Self.dismissReceiptStore.unackedReceipts() {
-            send(model.dismissAckCommand(requestId: receipt.requestId, alertId: receipt.alertId, alertKind: receipt.alertKind))
+            send(
+                model.dismissAckCommand(
+                    requestId: receipt.requestId, alertId: receipt.alertId, alertKind: receipt.alertKind))
         }
-        pump()   // readiness gate defers transmit until the device is message-ready
+        pump()  // readiness gate defers transmit until the device is message-ready
     }
 
     // Durable already-echoed requestId set (UserDefaults, bounded).
@@ -561,13 +583,22 @@ final class GarminRemoteBridge: NSObject {
         // Also gate on message-readiness — a send before characteristics discovery is silently
         // lost. Enqueue-before-pump means gating here only DEFERS the transmit; discovery drains it.
         guard let app, readiness.canSend, !sendInFlight else { return }
-        let next: [String: Any]; let isEcho: Bool; let attempts: Int
-        if let f = inFlight {                       // re-attempt of a payload whose completion was lost
-            next = f.payload; isEcho = f.isEcho; attempts = f.attempts
+        let next: [String: Any]
+        let isEcho: Bool
+        let attempts: Int
+        if let f = inFlight {  // re-attempt of a payload whose completion was lost
+            next = f.payload
+            isEcho = f.isEcho
+            attempts = f.attempts
         } else if !echoQueue.isEmpty {
-            next = echoQueue.removeFirst(); isEcho = true; attempts = 0
+            next = echoQueue.removeFirst()
+            isEcho = true
+            attempts = 0
         } else if let status = pendingStatus {
-            next = status; pendingStatus = nil; isEcho = false; attempts = 0
+            next = status
+            pendingStatus = nil
+            isEcho = false
+            attempts = 0
         } else {
             return
         }
@@ -580,63 +611,66 @@ final class GarminRemoteBridge: NSObject {
         // watch may drop a stale one without holding up the next. A terminal echo is NEVER marked
         // transient (must not be silently coalesced by the transport). Distinct from permanent/
         // transient RESULT classification below: this flag describes the outbound send.
-        ConnectIQ.sharedInstance().sendMessage(next, to: app, progress: nil, completion: { [weak self] result in
-            Task { @MainActor in
-                guard let self, gen == self.sendGeneration else { return }   // watchdog already superseded this send
-                self.sendWatchdog?.invalidate(); self.sendWatchdog = nil
-                // Classify onto ConnectIQ-free GarminSendResult at this boundary — no raw
-                // IQSendMessageResult crosses into GarminDiagnostics or the disposition helper.
-                // Permanent (IQConstants.h:34-48): the device/app rejects the message outright —
-                // retrying can never succeed. Everything else is transient.
-                let sendResult: GarminSendResult
-                switch result {
-                case .success: sendResult = .success
-                case .failure_AppNotFound, .failure_UnsupportedType, .failure_InsufficientMemory:
-                    sendResult = .permanentFailure
-                default: sendResult = .transientFailure
-                }
-                // Map onto ConnectIQ-free GarminDiagnostics.SendOutcome at this boundary.
-                switch sendResult {
-                case .success: self.lastSendOutcomeForDiagnostics = .delivered
-                case .transientFailure: self.lastSendOutcomeForDiagnostics = .failed
-                case .permanentFailure: self.lastSendOutcomeForDiagnostics = .permanentlyFailed
-                }
-                let isEcho = self.inFlight?.isEcho ?? false
-                // Transient failure of a terminal echo must NOT be dropped — park it at the front of
-                // echoQueue so a readiness-gated reconnect drain replays it. Permanent echo failure is
-                // surfaced above and dropped — NOT re-parked; the ledger re-seed remains the backstop.
-                // A coalesced status snapshot is safe to drop either way.
-                switch garminSendDisposition(result: sendResult, isEcho: isEcho) {
-                case .reenqueueFront:
-                    if let f = self.inFlight { self.echoQueue.insert(f.payload, at: 0) }
-                case .ack:
-                    // Terminal echo confirmed sent — record its requestId durably so a launch re-seed
-                    // does not re-echo an outcome the watch already got. A dismissAck echo routes to
-                    // its own durable lane (GarminDismissReceiptStore) — NEVER `markAlreadyEchoed`,
-                    // which is the bolus-only 256-entry set. Distinguished by payload `kind`.
-                    if let f = self.inFlight, f.isEcho, let rid = f.payload["requestId"] as? String {
-                        if (f.payload["kind"] as? String) == "dismissAck" {
-                            Self.dismissReceiptStore.markAcked(peer: "garmin", requestId: rid)
-                        } else {
-                            Self.markAlreadyEchoed(rid)
-                        }
+        ConnectIQ.sharedInstance().sendMessage(
+            next, to: app, progress: nil,
+            completion: { [weak self] result in
+                Task { @MainActor in
+                    guard let self, gen == self.sendGeneration else { return }  // watchdog already superseded this send
+                    self.sendWatchdog?.invalidate()
+                    self.sendWatchdog = nil
+                    // Classify onto ConnectIQ-free GarminSendResult at this boundary — no raw
+                    // IQSendMessageResult crosses into GarminDiagnostics or the disposition helper.
+                    // Permanent (IQConstants.h:34-48): the device/app rejects the message outright —
+                    // retrying can never succeed. Everything else is transient.
+                    let sendResult: GarminSendResult
+                    switch result {
+                    case .success: sendResult = .success
+                    case .failure_AppNotFound, .failure_UnsupportedType, .failure_InsufficientMemory:
+                        sendResult = .permanentFailure
+                    default: sendResult = .transientFailure
                     }
-                case .drop, .surfaceAndDrop:
-                    break
+                    // Map onto ConnectIQ-free GarminDiagnostics.SendOutcome at this boundary.
+                    switch sendResult {
+                    case .success: self.lastSendOutcomeForDiagnostics = .delivered
+                    case .transientFailure: self.lastSendOutcomeForDiagnostics = .failed
+                    case .permanentFailure: self.lastSendOutcomeForDiagnostics = .permanentlyFailed
+                    }
+                    let isEcho = self.inFlight?.isEcho ?? false
+                    // Transient failure of a terminal echo must NOT be dropped — park it at the front of
+                    // echoQueue so a readiness-gated reconnect drain replays it. Permanent echo failure is
+                    // surfaced above and dropped — NOT re-parked; the ledger re-seed remains the backstop.
+                    // A coalesced status snapshot is safe to drop either way.
+                    switch garminSendDisposition(result: sendResult, isEcho: isEcho) {
+                    case .reenqueueFront:
+                        if let f = self.inFlight { self.echoQueue.insert(f.payload, at: 0) }
+                    case .ack:
+                        // Terminal echo confirmed sent — record its requestId durably so a launch re-seed
+                        // does not re-echo an outcome the watch already got. A dismissAck echo routes to
+                        // its own durable lane (GarminDismissReceiptStore) — NEVER `markAlreadyEchoed`,
+                        // which is the bolus-only 256-entry set. Distinguished by payload `kind`.
+                        if let f = self.inFlight, f.isEcho, let rid = f.payload["requestId"] as? String {
+                            if (f.payload["kind"] as? String) == "dismissAck" {
+                                Self.dismissReceiptStore.markAcked(peer: "garmin", requestId: rid)
+                            } else {
+                                Self.markAlreadyEchoed(rid)
+                            }
+                        }
+                    case .drop, .surfaceAndDrop:
+                        break
+                    }
+                    self.inFlight = nil
+                    self.sendInFlight = false
+                    if sendResult == .success {
+                        self.pump()  // drain the next queued message (echo first, else the latest status)
+                    } else {
+                        // Do NOT synchronously re-pump on an explicit failure — that busy-loops the
+                        // just-failed payload. Recovery rides the readiness-gated reconnect drain plus
+                        // a bounded backoff (a permanent failure has nothing left to re-pump for THIS
+                        // payload, but the backoff still drains whatever else is queued).
+                        self.scheduleBackoffPump()
+                    }
                 }
-                self.inFlight = nil
-                self.sendInFlight = false
-                if sendResult == .success {
-                    self.pump()   // drain the next queued message (echo first, else the latest status)
-                } else {
-                    // Do NOT synchronously re-pump on an explicit failure — that busy-loops the
-                    // just-failed payload. Recovery rides the readiness-gated reconnect drain plus
-                    // a bounded backoff (a permanent failure has nothing left to re-pump for THIS
-                    // payload, but the backoff still drains whatever else is queued).
-                    self.scheduleBackoffPump()
-                }
-            }
-        }, isTransient: !isEcho)
+            }, isTransient: !isEcho)
     }
 
     /// Arm (replacing any prior) the send-watchdog for the current in-flight send.
@@ -653,7 +687,7 @@ final class GarminRemoteBridge: NSObject {
     /// re-attempt the same payload (bounded), else drop it and move on. Bumping `sendGeneration` makes any
     /// late completion for this send a no-op, so it can't double-drain.
     private func sendWatchdogFired(generation gen: Int) {
-        guard gen == sendGeneration else { return }   // a completion already advanced us; stale timer
+        guard gen == sendGeneration else { return }  // a completion already advanced us; stale timer
         sendGeneration &+= 1
         sendWatchdog = nil
         sendInFlight = false
@@ -662,7 +696,7 @@ final class GarminRemoteBridge: NSObject {
         if var f = inFlight {
             f.attempts += 1
             if f.attempts < Self.maxSendAttempts {
-                inFlight = f   // bounded re-attempt
+                inFlight = f  // bounded re-attempt
             } else {
                 // Attempts exhausted. A watchdog TIMEOUT has no permanent/transient signal (no
                 // IQSendMessageResult) — stays on the boolean seam, always treated as transient,
@@ -682,7 +716,8 @@ final class GarminRemoteBridge: NSObject {
     /// enough. The pump() it fires still honors the readiness gate.
     private func scheduleBackoffPump() {
         guard sendBackoff == nil else { return }
-        sendBackoff = Timer.scheduledTimer(withTimeInterval: Self.sendBackoffInterval, repeats: false) { [weak self] _ in
+        sendBackoff = Timer.scheduledTimer(withTimeInterval: Self.sendBackoffInterval, repeats: false) {
+            [weak self] _ in
             // Fires on the main run loop (scheduled from the @MainActor completion), so we're really on the
             // main actor — hop in explicitly, matching armSendWatchdog.
             MainActor.assumeIsolated {
@@ -700,8 +735,10 @@ final class GarminRemoteBridge: NSObject {
         // gated; a late cancel is still honored. Additive: a legacy Garmin that omits `sentAt`
         // is not gated.
         if RemoteCommandFreshness.isStale(cmd) {
-            send(RemoteCommand(kind: .bolusStatus, requestId: cmd.requestId,
-                               status: .failed, message: RemoteCommandFreshness.rejectionMessage))
+            send(
+                RemoteCommand(
+                    kind: .bolusStatus, requestId: cmd.requestId,
+                    status: .failed, message: RemoteCommandFreshness.rejectionMessage))
             return
         }
         switch cmd.kind {
@@ -709,7 +746,9 @@ final class GarminRemoteBridge: NSObject {
             // Watch already confirmed via hold-to-deliver — deliver directly, no phone dialog.
             // Pump still enforces max + signing. Blocked when Garmin is read-only.
             guard !AppSettings.shared.remotesReadOnly else {
-                send(RemoteCommand(kind: .bolusStatus, requestId: cmd.requestId, status: .failed, message: "Read-only mode"))
+                send(
+                    RemoteCommand(
+                        kind: .bolusStatus, requestId: cmd.requestId, status: .failed, message: "Read-only mode"))
                 return
             }
             // Host recomputes carbs→units, runs the divergence guard, records carbs.
@@ -717,11 +756,14 @@ final class GarminRemoteBridge: NSObject {
             // Forward the entered bolus passcode so the host verifies it against the salted hash.
             // When a passcode is required and this is absent/wrong, `remoteDeliver` denies and
             // echoes `.failed` — the watch never verifies or stores it.
-            Task { await model.remoteDeliver(requestId: cmd.requestId, units: cmd.units,
-                                             carbsGrams: cmd.carbsGrams, bgMgdl: cmd.bgMgdl.map(Int.init),
-                                             remoteEstimate: cmd.remoteEstimateUnits, passcode: cmd.bolusPasscode,
-                                             includeStaleBG: cmd.includeStaleBG ?? false, sentAt: cmd.sentAt,
-                                             from: .garmin, peerId: "garmin") }
+            Task {
+                await model.remoteDeliver(
+                    requestId: cmd.requestId, units: cmd.units,
+                    carbsGrams: cmd.carbsGrams, bgMgdl: cmd.bgMgdl.map(Int.init),
+                    remoteEstimate: cmd.remoteEstimateUnits, passcode: cmd.bolusPasscode,
+                    includeStaleBG: cmd.includeStaleBG ?? false, sentAt: cmd.sentAt,
+                    from: .garmin, peerId: "garmin")
+            }
         case .cancelBolus:
             // Just request the cancel; the in-flight delivery loop echoes the single final
             // status (cancelled · partial, or delivered if it finished first). No echo here, or
@@ -739,16 +781,22 @@ final class GarminRemoteBridge: NSObject {
                         lookupReceipt: { rid in Self.dismissReceiptStore.receipt(peer: "garmin", requestId: rid) },
                         performDismiss: { await model.dismissAlert(id: id, kind: k, from: .garmin, peerId: "garmin") },
                         persistReceipt: { rid, aid, akind in
-                            Self.dismissReceiptStore.persist(peer: "garmin", requestId: rid, alertId: aid, alertKind: akind)
+                            Self.dismissReceiptStore.persist(
+                                peer: "garmin", requestId: rid, alertId: aid, alertKind: akind)
                         },
-                        sendAck: { rid, aid, akind in self.send(model.dismissAckCommand(requestId: rid, alertId: aid, alertKind: akind)) },
+                        sendAck: { rid, aid, akind in
+                            self.send(model.dismissAckCommand(requestId: rid, alertId: aid, alertKind: akind))
+                        },
                         sendStatusBackstop: { self.send(model.statusCommand(includeHistory: true)) }
                     )
                 }
             }
         case .statusRead:
             if cmd.forceGlucose == true {
-                Task { await model.refreshGlucoseNow(); self.send(model.statusCommand(includeHistory: true, replyingTo: cmd.requestId)) }
+                Task {
+                    await model.refreshGlucoseNow()
+                    self.send(model.statusCommand(includeHistory: true, replyingTo: cmd.requestId))
+                }
             } else {
                 send(model.statusCommand(includeHistory: true, replyingTo: cmd.requestId))
             }
@@ -806,7 +854,10 @@ final class GarminRemoteBridge {
     /// `GarminDiagnostics`/`DebugMenuView` compile in a build without the Connect IQ SDK.
     static weak var shared: GarminRemoteBridge?
 
-    init(model: AppModel) { model.garminStatus = nil; Self.shared = self }
+    init(model: AppModel) {
+        model.garminStatus = nil
+        Self.shared = self
+    }
     func handleOpenURL(_ url: URL) {}
 
     var hasDevice: Bool { false }

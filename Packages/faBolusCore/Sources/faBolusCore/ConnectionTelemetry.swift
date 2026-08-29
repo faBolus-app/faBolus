@@ -28,9 +28,11 @@ public struct ConnectionTelemetry: Sendable, Equatable, Codable {
         case delivered, cancelled, notDelivered, unavailable, indeterminate
     }
 
-    public init(connectCount: Int = 0, totalUptimeSeconds: Double = 0,
-                disconnects: [String: Int] = [:], reconcile: [String: Int] = [:],
-                commandLatency: [String: Int] = [:]) {
+    public init(
+        connectCount: Int = 0, totalUptimeSeconds: Double = 0,
+        disconnects: [String: Int] = [:], reconcile: [String: Int] = [:],
+        commandLatency: [String: Int] = [:]
+    ) {
         self.connectCount = connectCount
         self.totalUptimeSeconds = totalUptimeSeconds
         self.disconnects = disconnects
@@ -43,7 +45,9 @@ public struct ConnectionTelemetry: Sendable, Equatable, Codable {
     // would fall back to a zeroed telemetry, silently wiping the shipped connect/uptime/disconnect/reconcile
     // counters. Decode every field with `decodeIfPresent` (defaulting to empty/zero) so an old blob upgrades
     // in place, preserving those counters. Encoding stays the default (all keys written).
-    private enum CodingKeys: String, CodingKey { case connectCount, totalUptimeSeconds, disconnects, reconcile, commandLatency }
+    private enum CodingKeys: String, CodingKey {
+        case connectCount, totalUptimeSeconds, disconnects, reconcile, commandLatency
+    }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         connectCount = try c.decodeIfPresent(Int.self, forKey: .connectCount) ?? 0
@@ -59,11 +63,11 @@ public struct ConnectionTelemetry: Sendable, Equatable, Codable {
     public static func latencyBucket(_ seconds: Double) -> String {
         switch seconds {
         case ..<0.25: return "lt250ms"
-        case ..<0.5:  return "lt500ms"
-        case ..<1:    return "lt1s"
-        case ..<2:    return "lt2s"
-        case ..<4:    return "lt4s"
-        default:      return "ge4s"
+        case ..<0.5: return "lt500ms"
+        case ..<1: return "lt1s"
+        case ..<2: return "lt2s"
+        case ..<4: return "lt4s"
+        default: return "ge4s"
         }
     }
     /// The bucket token for a command that never got a response (timed out / disconnected mid-wait).

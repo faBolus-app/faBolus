@@ -40,8 +40,9 @@ import faBolusCore
         NightscoutUploader.shared.sync(snapshot: snapshot, glucose: glucose, boluses: boluses)
 
         for key in ["ns.lastEntryMs", "ns.lastBolusEpoch", "ns.lastStatus"] {
-            #expect(d.object(forKey: key) == nil,
-                    "\(key) must stay unset — the stub must never persist an upload high-water mark")
+            #expect(
+                d.object(forKey: key) == nil,
+                "\(key) must stay unset — the stub must never persist an upload high-water mark")
         }
 
         // Calling it again is equally inert (not a one-shot no-op that then does real work).
@@ -56,10 +57,11 @@ import faBolusCore
     /// Source-level proof that `maybeBackfillNightscout()` is gone from AppModel, not merely renamed or re-gated.
     @Test func maybeBackfillNightscoutIsAbsentFromAppModel() throws {
         let testFileURL = URL(fileURLWithPath: #filePath)
-        let repoRoot = testFileURL
-            .deletingLastPathComponent()   // drop the filename → .../ios/faBolusAppTests
-            .deletingLastPathComponent()   // → .../ios
-            .deletingLastPathComponent()   // → repo root
+        let repoRoot =
+            testFileURL
+            .deletingLastPathComponent()  // drop the filename → .../ios/faBolusAppTests
+            .deletingLastPathComponent()  // → .../ios
+            .deletingLastPathComponent()  // → repo root
         let appModelURL = repoRoot.appendingPathComponent("ios/faBolus/Data/AppModel.swift")
         let source = try String(contentsOf: appModelURL, encoding: .utf8)
         #expect(source.count > 200, "AppModel.swift resolved implausibly short — path resolution likely broke")
@@ -70,12 +72,16 @@ import faBolusCore
         // would false-positive on that comment. Matching the exact declaration shape sidesteps that.
         let deletedDeclarations = ["func maybeBackfillNightscout(", "var lastNSBackfill"]
         for declaration in deletedDeclarations {
-            #expect(!source.contains(declaration),
-                    "D4-07 violated — '\(declaration)' still present in AppModel.swift; the vestigial Nightscout backfill must be DELETED, not merely gated")
+            #expect(
+                !source.contains(declaration),
+                "D4-07 violated — '\(declaration)' still present in AppModel.swift; the vestigial Nightscout backfill must be DELETED, not merely gated"
+            )
         }
 
         // The remaining `NightscoutUploader.shared.sync(...)` call site is the inert stub, not a backfill — confirm it is still present so this test does not silently start asserting something else.
-        #expect(source.contains("NightscoutUploader.shared.sync("),
-                "NightscoutUploader.shared.sync(...) call site unexpectedly missing — see the D4-07 rationale for why it stays")
+        #expect(
+            source.contains("NightscoutUploader.shared.sync("),
+            "NightscoutUploader.shared.sync(...) call site unexpectedly missing — see the D4-07 rationale for why it stays"
+        )
     }
 }

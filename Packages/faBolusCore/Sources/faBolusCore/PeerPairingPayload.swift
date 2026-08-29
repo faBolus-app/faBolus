@@ -20,17 +20,19 @@ public struct PeerPairingPayload: Equatable, Sendable {
         var c = URLComponents()
         c.scheme = Self.scheme
         c.host = "v1"
-        c.queryItems = [URLQueryItem(name: "host", value: hostName),
-                        URLQueryItem(name: "code", value: code)]
+        c.queryItems = [
+            URLQueryItem(name: "host", value: hostName),
+            URLQueryItem(name: "code", value: code)
+        ]
         return c.url?.absoluteString ?? ""
     }
 
     /// Parse a scanned string; nil if it isn't a valid faBolus pairing QR.
     public init?(qrString: String) {
         guard let c = URLComponents(string: qrString), c.scheme == Self.scheme,
-              let items = c.queryItems,
-              let host = items.first(where: { $0.name == "host" })?.value, !host.isEmpty,
-              let code = items.first(where: { $0.name == "code" })?.value, !code.isEmpty
+            let items = c.queryItems,
+            let host = items.first(where: { $0.name == "host" })?.value, !host.isEmpty,
+            let code = items.first(where: { $0.name == "code" })?.value, !code.isEmpty
         else { return nil }
         self.hostName = host
         self.code = code

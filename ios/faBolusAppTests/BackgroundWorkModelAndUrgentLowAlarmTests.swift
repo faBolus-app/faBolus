@@ -26,7 +26,10 @@ import faBolusCore
         var history: [GlucoseReading] = []
         var status: GlucoseSourceStatus = .connected
         var onChange: (@MainActor () -> Void)?
-        init(id: String = "fake-failover", priority: Int = 10) { self.id = id; self.priority = priority }
+        init(id: String = "fake-failover", priority: Int = 10) {
+            self.id = id
+            self.priority = priority
+        }
         func start() async {}
         func stop() {}
     }
@@ -36,11 +39,11 @@ import faBolusCore
     @Test func refreshArmsTheStalenessWatchdogOnAFreshReadingAndCancelsItOnceNoLongerFresh() {
         let savedStale = GlucoseFreshness.staleAfter
         defer { GlucoseFreshness.staleAfter = savedStale }
-        GlucoseFreshness.staleAfter = 300   // 5 min — plenty of margin for the "still fresh" seeds below
+        GlucoseFreshness.staleAfter = 300  // 5 min — plenty of margin for the "still fresh" seeds below
 
         let backend = MockBackend()
         let model = AppModel(source: backend, ledgerStoreURL: tempLedgerURL())
-        let coordinator = NotificationCoordinator(model: model)   // proves the sinks are actually wired
+        let coordinator = NotificationCoordinator(model: model)  // proves the sinks are actually wired
         #expect(model.notificationStalenessSink != nil)
         #expect(model.notificationStalenessCancelSink != nil)
 
@@ -50,7 +53,7 @@ import faBolusCore
         model.notificationStalenessCancelSink = { cancelCount += 1 }
 
         let d1 = Date()
-        backend.seedFreshGlucose(120, at: d1)   // fires onChange -> refresh()
+        backend.seedFreshGlucose(120, at: d1)  // fires onChange -> refresh()
         #expect(armedDates == [d1])
         #expect(cancelCount == 0)
 
@@ -82,7 +85,7 @@ import faBolusCore
     /// A failover source's own fresh, in-range reading that crosses `UrgentLowAlarm.thresholdMgdl`
     /// raises once; recovery (the pump feed returns) clears.
     @Test func urgentLowAlarmRaisesOnTheArbitratedFailoverValueAndClearsOnRecovery() {
-        let backend = MockBackend()   // seeds a STALE pump reading (10 min old) — pumpFresh == false
+        let backend = MockBackend()  // seeds a STALE pump reading (10 min old) — pumpFresh == false
         let model = AppModel(source: backend, ledgerStoreURL: tempLedgerURL())
         let coordinator = NotificationCoordinator(model: model)
         var posted: [NotificationBroker.Message] = []
@@ -95,7 +98,9 @@ import faBolusCore
         model.setGlucoseSourceForTesting(fake)
 
         model.publicRefresh()
-        #expect(model.glucoseProvenance.isFailover, "the pump's own reading is stale — the fresh fake source must take over")
+        #expect(
+            model.glucoseProvenance.isFailover, "the pump's own reading is stale — the fresh fake source must take over"
+        )
         #expect(posted.map(\.dedupeKey).contains(UrgentLowAlarm.dedupeKey))
         // The urgent-low alarm posts under its own never-suppressible category, `.urgentLowGlucose`,
         // decoupled from `.cgmDataLoss` (disabling the "CGM data lost" banner must not silence this backstop).
@@ -117,24 +122,27 @@ import faBolusCore
     /// provenance even with no fresh pump reading — the alarm must still fire off `!pumpFresh` plus the
     /// fresh `UrgentLowSentinel`, or a below-range low with no pump reading would be invisible.
     @Test func urgentLowAlarmRaisesOnTheFreshBelowRangeSentinelEvenWithoutAFailoverProvenance() {
-        let backend = MockBackend()   // seeds a STALE pump reading — pumpFresh == false
+        let backend = MockBackend()  // seeds a STALE pump reading — pumpFresh == false
         let model = AppModel(source: backend, ledgerStoreURL: tempLedgerURL())
         let coordinator = NotificationCoordinator(model: model)
         var posted: [NotificationBroker.Message] = []
         model.notificationSink = { msg, _, _ in posted.append(msg) }
 
         let poller = PollingGlucoseSource(id: "sentinel-source", priority: 5)
-        poller.ingestRawReading(mgdl: 30, date: Date())   // below GlucosePlausibility.minimum (40)
+        poller.ingestRawReading(mgdl: 30, date: Date())  // below GlucosePlausibility.minimum (40)
         #expect(poller.latest == nil, "a below-range raw reading must never become `latest` / a dose input")
         model.setGlucoseSourceForTesting(poller)
 
         model.publicRefresh()
-        #expect(model.glucoseProvenance == .pump,
-               "no valid sample exists to fail over TO — the arbiter correctly reports plain .pump provenance")
-        #expect(posted.map(\.dedupeKey).contains(UrgentLowAlarm.dedupeKey),
-               "the alarm must still fire off the fresh sentinel despite the .pump provenance")
-        #expect(model.snapshot.glucose != 30,
-               "the sentinel value must never surface as the arbitrated snapshot glucose value")
+        #expect(
+            model.glucoseProvenance == .pump,
+            "no valid sample exists to fail over TO — the arbiter correctly reports plain .pump provenance")
+        #expect(
+            posted.map(\.dedupeKey).contains(UrgentLowAlarm.dedupeKey),
+            "the alarm must still fire off the fresh sentinel despite the .pump provenance")
+        #expect(
+            model.snapshot.glucose != 30,
+            "the sentinel value must never surface as the arbitrated snapshot glucose value")
         _ = coordinator
     }
 

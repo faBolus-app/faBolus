@@ -27,7 +27,8 @@ struct PhoneWidgetDoubleDoseTests {
         let ledgerURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("doubledose-ledger-\(UUID().uuidString).json")
         let model = AppModel(source: backend, ledgerStoreURL: ledgerURL)
-        let rec = EchoRecorder(); rec.attach(to: model)
+        let rec = EchoRecorder()
+        rec.attach(to: model)
         if connected { await backend.connect() }
         return (model, backend, rec)
     }
@@ -37,12 +38,19 @@ struct PhoneWidgetDoubleDoseTests {
         let ro = s.phoneReadOnly, child = s.childModeEnabled, allowed = s.childAllowed, adv = s.advancedControlEnabled
         let rro = s.remotesReadOnly, clr = s.readOnlyAllowAlertClear
         let mode = s.appMode
-        s.phoneReadOnly = false; s.childModeEnabled = false; s.advancedControlEnabled = true
-        s.remotesReadOnly = false; s.readOnlyAllowAlertClear = false
+        s.phoneReadOnly = false
+        s.childModeEnabled = false
+        s.advancedControlEnabled = true
+        s.remotesReadOnly = false
+        s.readOnlyAllowAlertClear = false
         s.appMode = .advanced
         defer {
-            s.phoneReadOnly = ro; s.childModeEnabled = child; s.childAllowed = allowed
-            s.advancedControlEnabled = adv; s.remotesReadOnly = rro; s.readOnlyAllowAlertClear = clr
+            s.phoneReadOnly = ro
+            s.childModeEnabled = child
+            s.childAllowed = allowed
+            s.advancedControlEnabled = adv
+            s.remotesReadOnly = rro
+            s.readOnlyAllowAlertClear = clr
             s.appMode = mode
         }
         try await body()
@@ -65,23 +73,25 @@ struct PhoneWidgetDoubleDoseTests {
 
             let iob0 = backend.snapshot.iobUnits
             // Actor 1: a units-mode remote dose delivers normally.
-            await model.remoteDeliver(requestId: "actor1-req", units: 1.0,
-                                      sentAt: Int(Date().timeIntervalSince1970),
-                                      from: .garmin, peerId: "garmin")
+            await model.remoteDeliver(
+                requestId: "actor1-req", units: 1.0,
+                sentAt: Int(Date().timeIntervalSince1970),
+                from: .garmin, peerId: "garmin")
             #expect(rec.last?.status == .delivered)
             let iobAfterActor1 = backend.snapshot.iobUnits
-            #expect(iobAfterActor1 > iob0 + 0.9)                      // actor 1 really delivered
+            #expect(iobAfterActor1 > iob0 + 0.9)  // actor 1 really delivered
             #expect(rec.count(.delivering) == 1)
 
             // Actor 2: the SAME dose content (same units), a FRESH requestId, a `sentAt` comfortably AFTER
             // the host-delivery stamp (isolates the content+time guard — compose-supersession must NOT
             // be what fires here).
-            await model.remoteDeliver(requestId: "actor2-req", units: 1.0,
-                                      sentAt: Int(Date().timeIntervalSince1970) + 5,
-                                      from: .garmin, peerId: "garmin")
+            await model.remoteDeliver(
+                requestId: "actor2-req", units: 1.0,
+                sentAt: Int(Date().timeIntervalSince1970) + 5,
+                from: .garmin, peerId: "garmin")
             #expect(rec.last?.status == .failed)
             #expect(rec.last?.message?.contains("delivered after this request was created") == false)
-            #expect(rec.count(.delivering) == 1)                      // NO second delivering echo
+            #expect(rec.count(.delivering) == 1)  // NO second delivering echo
             // No second pump write: IOB unchanged from actor 1's delivery.
             #expect(abs(backend.snapshot.iobUnits - iobAfterActor1) < tol)
         }
@@ -96,15 +106,17 @@ struct PhoneWidgetDoubleDoseTests {
             AppSettings.shared.garminBolusEnabled = true
             defer { AppSettings.shared.garminBolusEnabled = savedGarmin }
 
-            await model.remoteDeliver(requestId: "actor1-req-b", units: 1.0,
-                                      sentAt: Int(Date().timeIntervalSince1970),
-                                      from: .garmin, peerId: "garmin")
+            await model.remoteDeliver(
+                requestId: "actor1-req-b", units: 1.0,
+                sentAt: Int(Date().timeIntervalSince1970),
+                from: .garmin, peerId: "garmin")
             #expect(rec.last?.status == .delivered)
 
             // Different units ⇒ a different doseKey ⇒ not flagged by the recency guard.
-            await model.remoteDeliver(requestId: "actor2-req-b", units: 2.0,
-                                      sentAt: Int(Date().timeIntervalSince1970) + 5,
-                                      from: .garmin, peerId: "garmin")
+            await model.remoteDeliver(
+                requestId: "actor2-req-b", units: 2.0,
+                sentAt: Int(Date().timeIntervalSince1970) + 5,
+                from: .garmin, peerId: "garmin")
             #expect(rec.last?.status == .delivered)
             #expect(abs((backend.lastDeliver?.units ?? -1) - 2.0) < tol)
         }
@@ -126,8 +138,9 @@ struct PhoneWidgetDoubleDoseTests {
             defer { AppSettings.shared.garminBolusEnabled = savedGarmin }
 
             let dose = await model.recommendBolus(carbsGrams: 30, bgMgdl: nil).recommendedUnits
-            await model.presentRemoteBolus(requestId: "cxf01-a", units: 0, carbsGrams: 30,
-                                           remoteEstimate: dose, from: .garmin, peerId: "garmin")
+            await model.presentRemoteBolus(
+                requestId: "cxf01-a", units: 0, carbsGrams: 30,
+                remoteEstimate: dose, from: .garmin, peerId: "garmin")
             #expect(model.pendingRemoteBolus != nil)
 
             // An intervening HOST delivery completes (stamps lastHostDeliveryAt AFTER the pending
@@ -157,8 +170,9 @@ struct PhoneWidgetDoubleDoseTests {
             defer { AppSettings.shared.garminBolusEnabled = savedGarmin }
 
             let dose = await model.recommendBolus(carbsGrams: 30, bgMgdl: nil).recommendedUnits
-            await model.presentRemoteBolus(requestId: "cxf01-b", units: 0, carbsGrams: 30,
-                                           remoteEstimate: dose, from: .garmin, peerId: "garmin")
+            await model.presentRemoteBolus(
+                requestId: "cxf01-b", units: 0, carbsGrams: 30,
+                remoteEstimate: dose, from: .garmin, peerId: "garmin")
             #expect(model.pendingRemoteBolus != nil)
 
             // Access is revoked for remote surfaces WHILE the approval is pending.
@@ -168,7 +182,7 @@ struct PhoneWidgetDoubleDoseTests {
             #expect(model.pendingRemoteBolus == nil)
             #expect(rec.last?.status == .failed)
             #expect(rec.last?.message?.lowercased().contains("read-only") == true)
-            #expect(backend.lastDeliver == nil)   // never reached the backend
+            #expect(backend.lastDeliver == nil)  // never reached the backend
         }
     }
 
@@ -182,8 +196,9 @@ struct PhoneWidgetDoubleDoseTests {
             defer { AppSettings.shared.garminBolusEnabled = savedGarmin }
 
             let dose = await model.recommendBolus(carbsGrams: 30, bgMgdl: nil).recommendedUnits
-            await model.presentRemoteBolus(requestId: "cxf01-c", units: 0, carbsGrams: 30,
-                                           remoteEstimate: dose, from: .garmin, peerId: "garmin")
+            await model.presentRemoteBolus(
+                requestId: "cxf01-c", units: 0, carbsGrams: 30,
+                remoteEstimate: dose, from: .garmin, peerId: "garmin")
             await model.confirmRemoteBolus()
             #expect(model.pendingRemoteBolus == nil)
             #expect(rec.last?.status == .delivered)
@@ -210,12 +225,13 @@ struct PhoneWidgetDoubleDoseTests {
             #expect(backend.snapshot.iobUnits > 0.9)
 
             // A remote request composed BEFORE the widget delivery must now be caught as superseded.
-            await model.remoteDeliver(requestId: "c301-remote-old", units: 2.0,
-                                      sentAt: Int(Date().timeIntervalSince1970) - 120,
-                                      from: .garmin, peerId: "garmin")
+            await model.remoteDeliver(
+                requestId: "c301-remote-old", units: 2.0,
+                sentAt: Int(Date().timeIntervalSince1970) - 120,
+                from: .garmin, peerId: "garmin")
             #expect(rec.last?.status == .failed)
             #expect(rec.last?.message?.contains("delivered after this request was created") == true)
-            #expect(abs((backend.lastDeliver?.units ?? -1) - 1.0) < tol)   // only the widget's 1.0 U landed
+            #expect(abs((backend.lastDeliver?.units ?? -1) - 1.0) < tol)  // only the widget's 1.0 U landed
         }
     }
 
@@ -230,15 +246,16 @@ struct PhoneWidgetDoubleDoseTests {
             AppSettings.shared.garminBolusEnabled = true
             defer { AppSettings.shared.garminBolusEnabled = savedGarmin }
 
-            let composedBefore = Int(Date().timeIntervalSince1970) - 5   // "composed" just before the widget tap
+            let composedBefore = Int(Date().timeIntervalSince1970) - 5  // "composed" just before the widget tap
             let w = await model.deliverWidgetBolus(requestId: "c301-w2", units: 1.0)
             #expect(w.delivered > 0)
             let iobAfterWidget = backend.snapshot.iobUnits
 
-            await model.remoteDeliver(requestId: "c301-r2", units: 3.0, sentAt: composedBefore,
-                                      from: .garmin, peerId: "garmin")
+            await model.remoteDeliver(
+                requestId: "c301-r2", units: 3.0, sentAt: composedBefore,
+                from: .garmin, peerId: "garmin")
             #expect(rec.last?.status == .failed)
-            #expect(rec.count(.delivering) == 1)                          // only the widget ever delivered
+            #expect(rec.count(.delivering) == 1)  // only the widget ever delivered
             #expect(abs(backend.snapshot.iobUnits - iobAfterWidget) < tol)  // no second pump write
         }
     }
@@ -259,30 +276,33 @@ struct PhoneWidgetDoubleDoseTests {
             defer { AppSettings.shared.garminBolusEnabled = savedGarmin }
 
             let carbs = 30.0
-            let freshBg = 120      // host's FRESH reading (becomes the resolved correction basis)
-            let wireBg = 185       // the DIFFERENT bg the remote sent on the wire
+            let freshBg = 120  // host's FRESH reading (becomes the resolved correction basis)
+            let wireBg = 185  // the DIFFERENT bg the remote sent on the wire
             backend.setLiveIob(1.0)
-            backend.seedFreshGlucose(freshBg, at: Date())   // fresh ⇒ freshCorrectionBG == 120 wins as basis
+            backend.seedFreshGlucose(freshBg, at: Date())  // fresh ⇒ freshCorrectionBG == 120 wins as basis
 
             // The remote's estimate must match the host recompute off the FRESH basis (120), or the
             // divergence guard would reject before we ever reach the doseKey.
             let dose = await model.recommendBolus(carbsGrams: carbs, bgMgdl: freshBg).recommendedUnits
-            await model.presentRemoteBolus(requestId: "wr01", units: 0, carbsGrams: carbs, bgMgdl: wireBg,
-                                           remoteEstimate: dose, from: .garmin, peerId: "garmin")
+            await model.presentRemoteBolus(
+                requestId: "wr01", units: 0, carbsGrams: carbs, bgMgdl: wireBg,
+                remoteEstimate: dose, from: .garmin, peerId: "garmin")
             #expect(model.pendingRemoteBolus != nil)
             await model.confirmRemoteBolus()
             #expect(rec.last?.status == .delivered)
-            #expect(backend.lastDeliver?.bg == freshBg)   // delivered dose still uses the FROZEN fresh basis (unchanged)
+            #expect(backend.lastDeliver?.bg == freshBg)  // delivered dose still uses the FROZEN fresh basis (unchanged)
 
             // The recency index (carried in the value-type ledger snapshot) must be keyed on the WIRE bg.
             let snap = model.privacyExportLedgerSnapshot
             let wireKey = RemoteBolusLedger.doseKey(units: 0, carbsGrams: carbs, bgMgdl: wireBg)
             let resolvedKey = RemoteBolusLedger.doseKey(units: 0, carbsGrams: carbs, bgMgdl: freshBg)
-            #expect(wireKey != resolvedKey)   // the two bases really do produce different keys
-            #expect(snap.hasRecentlyDeliveredDuplicate(peerId: "garmin", doseKey: wireKey),
-                    "confirm-path doseKey must match remoteDeliver's raw-wire doseKey (WR-01)")
-            #expect(!snap.hasRecentlyDeliveredDuplicate(peerId: "garmin", doseKey: resolvedKey),
-                    "confirm-path doseKey must NOT be keyed on the resolved correction basis (WR-01)")
+            #expect(wireKey != resolvedKey)  // the two bases really do produce different keys
+            #expect(
+                snap.hasRecentlyDeliveredDuplicate(peerId: "garmin", doseKey: wireKey),
+                "confirm-path doseKey must match remoteDeliver's raw-wire doseKey (WR-01)")
+            #expect(
+                !snap.hasRecentlyDeliveredDuplicate(peerId: "garmin", doseKey: resolvedKey),
+                "confirm-path doseKey must NOT be keyed on the resolved correction basis (WR-01)")
         }
     }
 
@@ -295,11 +315,12 @@ struct PhoneWidgetDoubleDoseTests {
     @Test func localBolusIndeterminateStampsLastHostDeliveryAt() async {
         try? await withCleanSettings {
             let (model, backend, _) = await makeModel(connected: true)
-            #expect(model.lastHostDeliveryAt == nil)                      // baseline
+            #expect(model.lastHostDeliveryAt == nil)  // baseline
             backend.forceIndeterminateNextDelivery = true
             await model.deliverBolus(units: 1.0)
             #expect(model.lastError == AppModel.indeterminateOutcomeLockedCopy)  // genuinely indeterminate
-            #expect(model.lastHostDeliveryAt != nil, "an indeterminate local bolus must stamp lastHostDeliveryAt (IN-02)")
+            #expect(
+                model.lastHostDeliveryAt != nil, "an indeterminate local bolus must stamp lastHostDeliveryAt (IN-02)")
         }
     }
 
@@ -310,13 +331,15 @@ struct PhoneWidgetDoubleDoseTests {
             let savedGarmin = AppSettings.shared.garminBolusEnabled
             AppSettings.shared.garminBolusEnabled = true
             defer { AppSettings.shared.garminBolusEnabled = savedGarmin }
-            #expect(model.lastHostDeliveryAt == nil)                      // baseline
+            #expect(model.lastHostDeliveryAt == nil)  // baseline
             backend.forceIndeterminateNextDelivery = true
-            await model.remoteDeliver(requestId: "in02-remote", units: 2.0,
-                                      sentAt: Int(Date().timeIntervalSince1970),
-                                      from: .garmin, peerId: "garmin")
-            #expect(rec.last?.status == .unknown)                         // indeterminate echo
-            #expect(model.lastHostDeliveryAt != nil, "an indeterminate remote bolus must stamp lastHostDeliveryAt (IN-02)")
+            await model.remoteDeliver(
+                requestId: "in02-remote", units: 2.0,
+                sentAt: Int(Date().timeIntervalSince1970),
+                from: .garmin, peerId: "garmin")
+            #expect(rec.last?.status == .unknown)  // indeterminate echo
+            #expect(
+                model.lastHostDeliveryAt != nil, "an indeterminate remote bolus must stamp lastHostDeliveryAt (IN-02)")
         }
     }
 
@@ -327,12 +350,13 @@ struct PhoneWidgetDoubleDoseTests {
             let savedGarmin = AppSettings.shared.garminBolusEnabled
             AppSettings.shared.garminBolusEnabled = true
             defer { AppSettings.shared.garminBolusEnabled = savedGarmin }
-            #expect(model.lastHostDeliveryAt == nil)                      // baseline
+            #expect(model.lastHostDeliveryAt == nil)  // baseline
             backend.forceIndeterminateNextDelivery = true
             let w = await model.deliverWidgetBolus(requestId: "in02-widget", units: 1.0)
-            #expect(w.delivered == 0)                                     // indeterminate → no confirmed delivery
+            #expect(w.delivered == 0)  // indeterminate → no confirmed delivery
             #expect(w.error != nil)
-            #expect(model.lastHostDeliveryAt != nil, "an indeterminate widget bolus must stamp lastHostDeliveryAt (IN-02)")
+            #expect(
+                model.lastHostDeliveryAt != nil, "an indeterminate widget bolus must stamp lastHostDeliveryAt (IN-02)")
         }
     }
 
@@ -340,11 +364,13 @@ struct PhoneWidgetDoubleDoseTests {
     @Test func extendedBolusIndeterminateStampsLastHostDeliveryAt() async {
         try? await withCleanSettings {
             let (model, backend, _) = await makeModel(connected: true)
-            #expect(model.lastHostDeliveryAt == nil)                      // baseline
+            #expect(model.lastHostDeliveryAt == nil)  // baseline
             backend.forceIndeterminateNextDelivery = true
             await model.deliverExtendedBolus(totalUnits: 2.0, nowUnits: 1.0, durationMinutes: 30)
             #expect(model.lastError == AppModel.indeterminateOutcomeLockedCopy)  // genuinely indeterminate
-            #expect(model.lastHostDeliveryAt != nil, "an indeterminate extended bolus must stamp lastHostDeliveryAt (IN-02)")
+            #expect(
+                model.lastHostDeliveryAt != nil, "an indeterminate extended bolus must stamp lastHostDeliveryAt (IN-02)"
+            )
         }
     }
 }

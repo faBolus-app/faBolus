@@ -30,29 +30,42 @@ public struct FaBolusBackup: Codable, Sendable {
         public var schemaVersion: Int
         public var createdAt: Date
         public var appVersion: String
-        public var pumpModel: String    // "mobi" | "tslim" | "unknown"
+        public var pumpModel: String  // "mobi" | "tslim" | "unknown"
         public var deviceName: String
-        public init(schemaVersion: Int = FaBolusBackup.currentSchema, createdAt: Date,
-                    appVersion: String, pumpModel: String, deviceName: String) {
-            self.schemaVersion = schemaVersion; self.createdAt = createdAt
-            self.appVersion = appVersion; self.pumpModel = pumpModel; self.deviceName = deviceName
+        public init(
+            schemaVersion: Int = FaBolusBackup.currentSchema, createdAt: Date,
+            appVersion: String, pumpModel: String, deviceName: String
+        ) {
+            self.schemaVersion = schemaVersion
+            self.createdAt = createdAt
+            self.appVersion = appVersion
+            self.pumpModel = pumpModel
+            self.deviceName = deviceName
         }
     }
 
-    public init(meta: Meta, appSettings: [String: BackupValue]? = nil,
-                secrets: SecretsBackup? = nil, pumpSettings: PumpSettingsBackup? = nil,
-                siteAtlas: SiteAtlasBackup? = nil, trackers: TrackerBackup? = nil) {
-        self.meta = meta; self.appSettings = appSettings
-        self.secrets = secrets; self.pumpSettings = pumpSettings
-        self.siteAtlas = siteAtlas; self.trackers = trackers
+    public init(
+        meta: Meta, appSettings: [String: BackupValue]? = nil,
+        secrets: SecretsBackup? = nil, pumpSettings: PumpSettingsBackup? = nil,
+        siteAtlas: SiteAtlasBackup? = nil, trackers: TrackerBackup? = nil
+    ) {
+        self.meta = meta
+        self.appSettings = appSettings
+        self.secrets = secrets
+        self.pumpSettings = pumpSettings
+        self.siteAtlas = siteAtlas
+        self.trackers = trackers
     }
 
     public func encoded() throws -> Data {
-        let e = JSONEncoder(); e.dateEncodingStrategy = .iso8601; e.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let e = JSONEncoder()
+        e.dateEncodingStrategy = .iso8601
+        e.outputFormatting = [.prettyPrinted, .sortedKeys]
         return try e.encode(self)
     }
     public static func decode(_ data: Data) throws -> FaBolusBackup {
-        let d = JSONDecoder(); d.dateDecodingStrategy = .iso8601
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .iso8601
         return try d.decode(FaBolusBackup.self, from: data)
     }
 }
@@ -66,35 +79,51 @@ public enum BackupValue: Codable, Sendable, Equatable {
     case string(String)
     case stringArray([String])
     case intArray([Int])
-    case data(Data)               // JSON blobs like alertRules / childAllowed (base64 in JSON)
+    case data(Data)  // JSON blobs like alertRules / childAllowed (base64 in JSON)
 
     private enum CodingKeys: String, CodingKey { case type, value }
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         switch self {
-        case .bool(let v):        try c.encode("bool", forKey: .type);        try c.encode(v, forKey: .value)
-        case .int(let v):         try c.encode("int", forKey: .type);         try c.encode(v, forKey: .value)
-        case .double(let v):      try c.encode("double", forKey: .type);      try c.encode(v, forKey: .value)
-        case .string(let v):      try c.encode("string", forKey: .type);      try c.encode(v, forKey: .value)
-        case .stringArray(let v): try c.encode("stringArray", forKey: .type); try c.encode(v, forKey: .value)
-        case .intArray(let v):    try c.encode("intArray", forKey: .type);    try c.encode(v, forKey: .value)
-        case .data(let v):        try c.encode("data", forKey: .type);        try c.encode(v, forKey: .value)
+        case .bool(let v):
+            try c.encode("bool", forKey: .type)
+            try c.encode(v, forKey: .value)
+        case .int(let v):
+            try c.encode("int", forKey: .type)
+            try c.encode(v, forKey: .value)
+        case .double(let v):
+            try c.encode("double", forKey: .type)
+            try c.encode(v, forKey: .value)
+        case .string(let v):
+            try c.encode("string", forKey: .type)
+            try c.encode(v, forKey: .value)
+        case .stringArray(let v):
+            try c.encode("stringArray", forKey: .type)
+            try c.encode(v, forKey: .value)
+        case .intArray(let v):
+            try c.encode("intArray", forKey: .type)
+            try c.encode(v, forKey: .value)
+        case .data(let v):
+            try c.encode("data", forKey: .type)
+            try c.encode(v, forKey: .value)
         }
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         switch try c.decode(String.self, forKey: .type) {
-        case "bool":        self = .bool(try c.decode(Bool.self, forKey: .value))
-        case "int":         self = .int(try c.decode(Int.self, forKey: .value))
-        case "double":      self = .double(try c.decode(Double.self, forKey: .value))
-        case "string":      self = .string(try c.decode(String.self, forKey: .value))
+        case "bool": self = .bool(try c.decode(Bool.self, forKey: .value))
+        case "int": self = .int(try c.decode(Int.self, forKey: .value))
+        case "double": self = .double(try c.decode(Double.self, forKey: .value))
+        case "string": self = .string(try c.decode(String.self, forKey: .value))
         case "stringArray": self = .stringArray(try c.decode([String].self, forKey: .value))
-        case "intArray":    self = .intArray(try c.decode([Int].self, forKey: .value))
-        case "data":        self = .data(try c.decode(Data.self, forKey: .value))
-        case let other:     throw DecodingError.dataCorruptedError(forKey: .type, in: c,
-                                debugDescription: "unknown BackupValue type \(other)")
+        case "intArray": self = .intArray(try c.decode([Int].self, forKey: .value))
+        case "data": self = .data(try c.decode(Data.self, forKey: .value))
+        case let other:
+            throw DecodingError.dataCorruptedError(
+                forKey: .type, in: c,
+                debugDescription: "unknown BackupValue type \(other)")
         }
     }
 
@@ -103,13 +132,13 @@ public enum BackupValue: Codable, Sendable, Equatable {
     /// field title already implies the unit, and this value is generic — a carb ratio isn't insulin units).
     public var displayString: String {
         switch self {
-        case .bool(let v):        return v ? "on" : "off"
-        case .int(let v):         return String(v)
-        case .double(let v):      return String(format: "%g", v)   // 1.2 / 12 / 0.05 — no trailing zeros, no unit
-        case .string(let v):      return v
+        case .bool(let v): return v ? "on" : "off"
+        case .int(let v): return String(v)
+        case .double(let v): return String(format: "%g", v)  // 1.2 / 12 / 0.05 — no trailing zeros, no unit
+        case .string(let v): return v
         case .stringArray(let v): return v.joined(separator: ", ")
-        case .intArray(let v):    return v.map(String.init).joined(separator: ", ")
-        case .data:               return "(data)"
+        case .intArray(let v): return v.map(String.init).joined(separator: ", ")
+        case .data: return "(data)"
         }
     }
 }
@@ -131,12 +160,17 @@ public struct PumpSettingsBackup: Codable, Sendable {
     public var controlIQWeightLbs: Int?
     public var controlIQTotalDailyInsulin: Int?
 
-    public init(profiles: [ProfileBackup] = [], maxBolusUnits: Double? = nil,
-                maxBasalUnitsPerHour: Double? = nil, controlIQEnabled: Bool? = nil,
-                controlIQWeightLbs: Int? = nil, controlIQTotalDailyInsulin: Int? = nil) {
-        self.profiles = profiles; self.maxBolusUnits = maxBolusUnits
-        self.maxBasalUnitsPerHour = maxBasalUnitsPerHour; self.controlIQEnabled = controlIQEnabled
-        self.controlIQWeightLbs = controlIQWeightLbs; self.controlIQTotalDailyInsulin = controlIQTotalDailyInsulin
+    public init(
+        profiles: [ProfileBackup] = [], maxBolusUnits: Double? = nil,
+        maxBasalUnitsPerHour: Double? = nil, controlIQEnabled: Bool? = nil,
+        controlIQWeightLbs: Int? = nil, controlIQTotalDailyInsulin: Int? = nil
+    ) {
+        self.profiles = profiles
+        self.maxBolusUnits = maxBolusUnits
+        self.maxBasalUnitsPerHour = maxBasalUnitsPerHour
+        self.controlIQEnabled = controlIQEnabled
+        self.controlIQWeightLbs = controlIQWeightLbs
+        self.controlIQTotalDailyInsulin = controlIQTotalDailyInsulin
     }
 
     public struct ProfileBackup: Codable, Sendable, Equatable {
@@ -145,8 +179,10 @@ public struct PumpSettingsBackup: Codable, Sendable {
         public var insulinDurationMinutes: Int
         public var segments: [SegmentBackup]
         public init(name: String, active: Bool, insulinDurationMinutes: Int = 0, segments: [SegmentBackup]) {
-            self.name = name; self.active = active
-            self.insulinDurationMinutes = insulinDurationMinutes; self.segments = segments
+            self.name = name
+            self.active = active
+            self.insulinDurationMinutes = insulinDurationMinutes
+            self.segments = segments
         }
     }
     /// One time-segment (minutes past midnight) of a profile.
@@ -156,10 +192,15 @@ public struct PumpSettingsBackup: Codable, Sendable {
         public var carbRatioGramsPerUnit: Double
         public var isf: Int
         public var targetBg: Int
-        public init(startTimeMinutes: Int, basalRateUnitsPerHour: Double,
-                    carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) {
-            self.startTimeMinutes = startTimeMinutes; self.basalRateUnitsPerHour = basalRateUnitsPerHour
-            self.carbRatioGramsPerUnit = carbRatioGramsPerUnit; self.isf = isf; self.targetBg = targetBg
+        public init(
+            startTimeMinutes: Int, basalRateUnitsPerHour: Double,
+            carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int
+        ) {
+            self.startTimeMinutes = startTimeMinutes
+            self.basalRateUnitsPerHour = basalRateUnitsPerHour
+            self.carbRatioGramsPerUnit = carbRatioGramsPerUnit
+            self.isf = isf
+            self.targetBg = targetBg
         }
     }
 }
@@ -175,18 +216,24 @@ public struct SiteAtlasBackup: Codable, Sendable {
 /// One recorded site placement in a `SiteAtlasBackup`.
 public struct SiteAtlasEntryBackup: Codable, Sendable, Equatable {
     public var siteID: String
-    public var kind: String        // "pump" | "sensor"
-    public var bodySide: String    // "front" | "back"
+    public var kind: String  // "pump" | "sensor"
+    public var bodySide: String  // "front" | "back"
     public var normalizedX: Double
     public var normalizedY: Double
     public var note: String?
     public var date: Date
-    public init(siteID: String, kind: String, bodySide: String,
-                normalizedX: Double, normalizedY: Double, note: String?,
-                date: Date) {
-        self.siteID = siteID; self.kind = kind; self.bodySide = bodySide
-        self.normalizedX = normalizedX; self.normalizedY = normalizedY
-        self.note = note; self.date = date
+    public init(
+        siteID: String, kind: String, bodySide: String,
+        normalizedX: Double, normalizedY: Double, note: String?,
+        date: Date
+    ) {
+        self.siteID = siteID
+        self.kind = kind
+        self.bodySide = bodySide
+        self.normalizedX = normalizedX
+        self.normalizedY = normalizedY
+        self.note = note
+        self.date = date
     }
 }
 
@@ -198,7 +245,8 @@ public struct TrackerBackup: Codable, Sendable {
     public var caffeine: [CaffeineEntryBackup]
     public var alcohol: [AlcoholEntryBackup]
     public init(caffeine: [CaffeineEntryBackup] = [], alcohol: [AlcoholEntryBackup] = []) {
-        self.caffeine = caffeine; self.alcohol = alcohol
+        self.caffeine = caffeine
+        self.alcohol = alcohol
     }
 }
 
@@ -209,7 +257,10 @@ public struct CaffeineEntryBackup: Codable, Sendable, Equatable {
     public var source: String
     public var date: Date
     public init(entryID: String, milligrams: Double, source: String, date: Date) {
-        self.entryID = entryID; self.milligrams = milligrams; self.source = source; self.date = date
+        self.entryID = entryID
+        self.milligrams = milligrams
+        self.source = source
+        self.date = date
     }
 }
 
@@ -220,6 +271,9 @@ public struct AlcoholEntryBackup: Codable, Sendable, Equatable {
     public var source: String
     public var date: Date
     public init(entryID: String, standardDrinks: Double, source: String, date: Date) {
-        self.entryID = entryID; self.standardDrinks = standardDrinks; self.source = source; self.date = date
+        self.entryID = entryID
+        self.standardDrinks = standardDrinks
+        self.source = source
+        self.date = date
     }
 }

@@ -35,8 +35,10 @@ struct LowPowerAdvisoryTests {
             for connected in [false, true] {
                 for dismissed in [false, true] {
                     let expected = lpm && connected && !dismissed
-                    #expect(LowPowerAdvisory.shouldWarn(lpmActive: lpm, sourceConnected: connected,
-                                                        dismissedEpisode: dismissed) == expected)
+                    #expect(
+                        LowPowerAdvisory.shouldWarn(
+                            lpmActive: lpm, sourceConnected: connected,
+                            dismissedEpisode: dismissed) == expected)
                 }
             }
         }

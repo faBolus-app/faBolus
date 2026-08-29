@@ -20,8 +20,8 @@ struct CarbBoundInvariantTests {
     }
 
     @Test func normalValuesRoundToNearestInt() {
-        #expect(TandemBackend.clampCarbGrams(30.4) == 30)   // rounds down
-        #expect(TandemBackend.clampCarbGrams(45.6) == 46)   // rounds up
+        #expect(TandemBackend.clampCarbGrams(30.4) == 30)  // rounds down
+        #expect(TandemBackend.clampCarbGrams(45.6) == 46)  // rounds up
         #expect(TandemBackend.clampCarbGrams(0) == 0)
     }
 
@@ -68,12 +68,13 @@ struct CarbBoundInvariantTests {
             -0.1, -5, -1000,
             .infinity, -.infinity, .nan,
             Double(Int.max), Double(Int.min), Double(Int.max) * 2,
-            .greatestFiniteMagnitude, -.greatestFiniteMagnitude, .leastNonzeroMagnitude,
+            .greatestFiniteMagnitude, -.greatestFiniteMagnitude, .leastNonzeroMagnitude
         ]
         for input in inputs {
             let result = TandemBackend.clampCarbGrams(input)
-            #expect((0...Self.upperBound).contains(result),
-                    "clampCarbGrams(\(String(describing: input))) = \(result) escaped 0...\(Self.upperBound)")
+            #expect(
+                (0...Self.upperBound).contains(result),
+                "clampCarbGrams(\(String(describing: input))) = \(result) escaped 0...\(Self.upperBound)")
         }
     }
 }

@@ -54,9 +54,9 @@ struct DexcomShareSourceTests {
             return FakeShareClient()
         }
         _ = try await source.fetch(user: "u", pass: "p", server: .US)
-        _ = try await source.fetch(user: "u2", pass: "p", server: .US)     // username changed
+        _ = try await source.fetch(user: "u2", pass: "p", server: .US)  // username changed
         #expect(counter.n == 2, "a username change must rebuild the client (fresh login)")
-        _ = try await source.fetch(user: "u2", pass: "p2", server: .US)    // password changed
+        _ = try await source.fetch(user: "u2", pass: "p2", server: .US)  // password changed
         #expect(counter.n == 3, "a password change must rebuild the client")
         _ = try await source.fetch(user: "u2", pass: "p2", server: .APAC)  // region changed
         #expect(counter.n == 4, "a region change must rebuild the client")
@@ -86,8 +86,9 @@ struct DexcomShareSourceTests {
         #expect(source.effectiveInterval(base: 60, failures: 0) == 60, "no failures → base cadence unchanged")
         #expect(source.effectiveInterval(base: 60, failures: 1) == 120)
         #expect(source.effectiveInterval(base: 60, failures: 3) == 480)
-        #expect(source.effectiveInterval(base: 60, failures: 10) == 480,
-                "backoff must cap at maxBackoffMultiplier (8×), not grow unbounded")
+        #expect(
+            source.effectiveInterval(base: 60, failures: 10) == 480,
+            "backoff must cap at maxBackoffMultiplier (8×), not grow unbounded")
 
         source.recordPollOutcome(success: false)
         source.recordPollOutcome(success: false)
@@ -117,9 +118,9 @@ struct DexcomShareSourceTests {
         let now = Date()
         let readings: [(mgdl: Int, date: Date, trend: Int)] = [
             (mgdl: 120, date: now, trend: 4),
-            (mgdl: 35, date: now.addingTimeInterval(60), trend: 4),    // below GlucosePlausibility.minimum (40)
-            (mgdl: 0, date: now.addingTimeInterval(120), trend: 4),    // glucose<=0 — unchanged silent drop
-            (mgdl: 500, date: now.addingTimeInterval(180), trend: 4),  // above .maximum (400) — decode garbage, unchanged silent drop
+            (mgdl: 35, date: now.addingTimeInterval(60), trend: 4),  // below GlucosePlausibility.minimum (40)
+            (mgdl: 0, date: now.addingTimeInterval(120), trend: 4),  // glucose<=0 — unchanged silent drop
+            (mgdl: 500, date: now.addingTimeInterval(180), trend: 4)  // above .maximum (400) — decode garbage, unchanged silent drop
         ]
         let (samples, belowRange) = DexcomShareSource.partition(readings: readings, sourceID: "dexcom-share")
         #expect(samples.count == 1)

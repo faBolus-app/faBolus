@@ -17,8 +17,13 @@ public struct GlucoseSourceDescriptor: Identifiable, Sendable {
     /// managers sharing a restore-identifier string is a CoreBluetooth SIGABRT. Most descriptor
     /// closures ignore the flag (`{ _ in SomeSource() }`).
     public let make: @MainActor (_ restoreStateEnabled: Bool) -> GlucoseSource
-    public init(id: String, name: String, sensors: [String] = [],
-                make: @escaping @MainActor (_ restoreStateEnabled: Bool) -> GlucoseSource) {
-        self.id = id; self.name = name; self.sensors = sensors; self.make = make
+    public init(
+        id: String, name: String, sensors: [String] = [],
+        make: @escaping @MainActor (_ restoreStateEnabled: Bool) -> GlucoseSource
+    ) {
+        self.id = id
+        self.name = name
+        self.sensors = sensors
+        self.make = make
     }
 }

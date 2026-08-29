@@ -18,8 +18,10 @@ struct TherapyConfirmationsTests {
 
     @Test func neverFiresWhenTheCeilingIsSmallRelativeToTdd() {
         // TDD 60 ⇒ threshold 30 U, above the 25 U hard cap — so nothing reachable in the editor confirms.
-        #expect(TherapyConfirmations.maxBolusLimitConfirm(proposedUnits: Interlocks.absoluteMaxUnits,
-                                                          totalDailyInsulinUnits: 60) == nil)
+        #expect(
+            TherapyConfirmations.maxBolusLimitConfirm(
+                proposedUnits: Interlocks.absoluteMaxUnits,
+                totalDailyInsulinUnits: 60) == nil)
     }
 
     @Test func confirmIsAdviceNotAClamp() {
@@ -27,7 +29,7 @@ struct TherapyConfirmationsTests {
         // the value. The 25 U hard cap is enforced separately by `Interlocks`, unaffected by this.
         let msg = TherapyConfirmations.maxBolusLimitConfirm(proposedUnits: 24, totalDailyInsulinUnits: 20)
         #expect(msg != nil)
-        #expect(msg?.contains("20 U") == true)                 // names the user's own TDD
+        #expect(msg?.contains("20 U") == true)  // names the user's own TDD
         // The proposed amount renders correctly ONCE — `formatUnits` already carries " U" (guards against
         // a doubled "U U" suffix in this user-facing safety dialog).
         #expect(msg?.contains("24.0 U ") == true)
@@ -47,13 +49,13 @@ struct TherapyConfirmationsTests {
 
     @Test func isf1800RuleFiresOnlyWhenFarFromExpected() {
         // TDD 45 ⇒ 1800/45 = 40 mg/dL/U; band 3× ⇒ silent within [13.3, 120].
-        #expect(TherapyConfirmations.isfTddAdvisory(isfMgdlPerUnit: 40, totalDailyInsulinUnits: 45) == nil)   // on the rule
-        #expect(TherapyConfirmations.isfTddAdvisory(isfMgdlPerUnit: 90, totalDailyInsulinUnits: 45) == nil)   // 2.25× — within band
-        let far = TherapyConfirmations.isfTddAdvisory(isfMgdlPerUnit: 130, totalDailyInsulinUnits: 45)         // >3× ⇒ advisory
+        #expect(TherapyConfirmations.isfTddAdvisory(isfMgdlPerUnit: 40, totalDailyInsulinUnits: 45) == nil)  // on the rule
+        #expect(TherapyConfirmations.isfTddAdvisory(isfMgdlPerUnit: 90, totalDailyInsulinUnits: 45) == nil)  // 2.25× — within band
+        let far = TherapyConfirmations.isfTddAdvisory(isfMgdlPerUnit: 130, totalDailyInsulinUnits: 45)  // >3× ⇒ advisory
         #expect(far != nil)
         #expect(far?.contains("1800 rule") == true)
-        #expect(far?.contains("45 U") == true)             // names the user's own TDD
-        #expect(TherapyConfirmations.isfTddAdvisory(isfMgdlPerUnit: 12, totalDailyInsulinUnits: 45) != nil)   // <1/3× ⇒ advisory (typo-catch)
+        #expect(far?.contains("45 U") == true)  // names the user's own TDD
+        #expect(TherapyConfirmations.isfTddAdvisory(isfMgdlPerUnit: 12, totalDailyInsulinUnits: 45) != nil)  // <1/3× ⇒ advisory (typo-catch)
     }
 
     @Test func carbRatio500RuleFiresOnlyWhenFarFromExpected() {
@@ -96,7 +98,7 @@ struct TherapyConfirmationsTests {
         #expect(far != nil)
         #expect(far?.contains("mg/dL") == false, "mmol mode must never leak an mg/dL label")
         #expect(far?.contains("mmol/L per unit") == true)
-        #expect(far?.contains("2.2 mmol/L per unit") == true)   // 1800/45 = 40 mg/dL → 2.2 mmol/L
-        #expect(far?.contains("7.2 mmol/L per unit") == true)   // 130 mg/dL → 7.2 mmol/L
+        #expect(far?.contains("2.2 mmol/L per unit") == true)  // 1800/45 = 40 mg/dL → 2.2 mmol/L
+        #expect(far?.contains("7.2 mmol/L per unit") == true)  // 130 mg/dL → 7.2 mmol/L
     }
 }

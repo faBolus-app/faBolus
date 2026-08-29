@@ -19,7 +19,7 @@ struct PumpPairingInstrumentationTests {
         b.onPairingSendForTesting = { typeName, opcode, cargoBytes in
             sends.append((typeName, opcode, cargoBytes))
         }
-        b.beginPairingForTesting(code: "abcd1234ijkl5678")   // valid 16-char → legacy V1
+        b.beginPairingForTesting(code: "abcd1234ijkl5678")  // valid 16-char → legacy V1
         #expect(sends.count == 1)
         #expect(sends.first?.typeName == "CentralChallengeRequest")
         #expect(sends.first?.opcode == 16)
@@ -33,7 +33,7 @@ struct PumpPairingInstrumentationTests {
         b.onPairingSendForTesting = { typeName, opcode, cargoBytes in
             sends.append((typeName, opcode, cargoBytes))
         }
-        b.beginPairingForTesting(code: "123456")   // valid 6-digit → JPAKE
+        b.beginPairingForTesting(code: "123456")  // valid 6-digit → JPAKE
         #expect(sends.count == 1)
         #expect(sends.first?.typeName == "Jpake1aRequest")
     }
@@ -67,13 +67,19 @@ struct PumpPairingPostPairBootstrapOrderTests {
         // pre-version burst (dispatched only after the op33/op85 version responses identify the pump), so the
         // synchronous burst is 16 (trio 3 + fastRead's 6 non-gated + staticRead 7), not 17.
         #expect(dispatched.count == 16)
-        #expect(dispatched.prefix(3).map(\.typeName) == ["ApiVersionRequest", "PumpVersionRequest", "TimeSinceResetRequest"],
-                "the reference-required bootstrap trio must be dispatched first, in this exact order")
+        #expect(
+            dispatched.prefix(3).map(\.typeName) == [
+                "ApiVersionRequest", "PumpVersionRequest", "TimeSinceResetRequest"
+            ],
+            "the reference-required bootstrap trio must be dispatched first, in this exact order")
         #expect(dispatched.prefix(3).map(\.opcode) == [32, 84, 54])
-        #expect(dispatched[3].typeName == "ControlIQIOBRequest",
-                "fastRead()'s CURRENT_STATUS reads must follow the bootstrap trio, not precede it — capture #3's exact failure mode")
-        #expect(!dispatched.contains { $0.typeName == "LoadStatusRequest" },
-                "op20 LoadStatusRequest is identity-gated — it must NOT be in the pre-version burst")
+        #expect(
+            dispatched[3].typeName == "ControlIQIOBRequest",
+            "fastRead()'s CURRENT_STATUS reads must follow the bootstrap trio, not precede it — capture #3's exact failure mode"
+        )
+        #expect(
+            !dispatched.contains { $0.typeName == "LoadStatusRequest" },
+            "op20 LoadStatusRequest is identity-gated — it must NOT be in the pre-version burst")
     }
 
     /// The recurring `pollTimer` tick (`fastRead()`/`staticRead()` called directly, bypassing
@@ -84,9 +90,10 @@ struct PumpPairingPostPairBootstrapOrderTests {
         var dispatched: [(typeName: String, opcode: UInt8)] = []
         b.onReadDispatchedForTesting = { typeName, opcode in dispatched.append((typeName, opcode)) }
         b.simulateRecurringFastAndStaticReadTickForTesting()
-        #expect(dispatched.count == 14)   // api25 refinement: op20 LoadStatusRequest RESTORED to fastRead() (back to 14)
-        #expect(dispatched.first?.typeName == "ControlIQIOBRequest",
-                "a recurring tick starts directly with fastRead()'s own first message — no bootstrap prepend")
+        #expect(dispatched.count == 14)  // api25 refinement: op20 LoadStatusRequest RESTORED to fastRead() (back to 14)
+        #expect(
+            dispatched.first?.typeName == "ControlIQIOBRequest",
+            "a recurring tick starts directly with fastRead()'s own first message — no bootstrap prepend")
     }
 }
 
@@ -120,12 +127,12 @@ struct PumpPairingStaleTimerGuardTests {
         b.alertReadDelaySecForTesting = 0.05
         var dispatched: [(typeName: String, opcode: UInt8)] = []
         b.onReadDispatchedForTesting = { typeName, opcode in dispatched.append((typeName, opcode)) }
-        b.startPollingForTesting()   // cycle 1: pollCycleGeneration = G1; dispatches its own 16 reads
-                                      // synchronously; schedules alertRead() @ +0.05s under G1
-        dispatched.removeAll()       // only care about what's dispatched from cycle 2 on
-        b.startPollingForTesting()   // cycle 2 (reconnect + re-pair): bumps pollCycleGeneration to G2
-                                      // BEFORE cycle 1's still-pending +0.05s alertRead call can fire;
-                                      // dispatches its own 16 reads synchronously right here
+        b.startPollingForTesting()  // cycle 1: pollCycleGeneration = G1; dispatches its own 16 reads
+        // synchronously; schedules alertRead() @ +0.05s under G1
+        dispatched.removeAll()  // only care about what's dispatched from cycle 2 on
+        b.startPollingForTesting()  // cycle 2 (reconnect + re-pair): bumps pollCycleGeneration to G2
+        // BEFORE cycle 1's still-pending +0.05s alertRead call can fire;
+        // dispatches its own 16 reads synchronously right here
         // ≫ cycle 1's stale 0.05s deadline (must no-op) + cycle 2's own LEGITIMATE scheduleAlertRead
         // (armed at cycle 2's startPolling(), firing +0.05s later) + its own 5-message dispatch.
         try? await Task.sleep(nanoseconds: 200_000_000)
@@ -133,10 +140,15 @@ struct PumpPairingStaleTimerGuardTests {
         // static-registry hardening — deferred out of the pre-version burst] + staticRead, all synchronous) +
         // 5 (its own legitimate alertRead — tslim-reconnect-loop Phase B removed the 2 AAM requests) = 21. A
         // missing/broken guard would add cycle 1's stale extra 5 → 26.
-        #expect(dispatched.count == 21,
-                "cycle 2's own 21 reads only — a missing guard would let cycle 1's stale alertRead add 5 more (26)")
-        #expect(dispatched.prefix(3).map(\.typeName) == ["ApiVersionRequest", "PumpVersionRequest", "TimeSinceResetRequest"],
-                "cycle 2's bootstrap trio must still be dispatched FIRST — a stale cycle-1 alertRead landing before cycle 2's own startPolling() runs would corrupt this order, exactly matching the AlertStatusRequest-before-ApiVersionRequest corruption observed in on-device capture #4")
+        #expect(
+            dispatched.count == 21,
+            "cycle 2's own 21 reads only — a missing guard would let cycle 1's stale alertRead add 5 more (26)")
+        #expect(
+            dispatched.prefix(3).map(\.typeName) == [
+                "ApiVersionRequest", "PumpVersionRequest", "TimeSinceResetRequest"
+            ],
+            "cycle 2's bootstrap trio must still be dispatched FIRST — a stale cycle-1 alertRead landing before cycle 2's own startPolling() runs would corrupt this order, exactly matching the AlertStatusRequest-before-ApiVersionRequest corruption observed in on-device capture #4"
+        )
     }
 
     /// The other half of the fix: `pollTimer` (the ultimate SOURCE of repeated stale `scheduleAlertRead`
@@ -147,8 +159,10 @@ struct PumpPairingStaleTimerGuardTests {
         b.startPollingLeavingPollTimerRunningForTesting()
         #expect(b.pollTimerIsActiveForTesting, "startPolling() should have armed a live pollTimer")
         b.applyClientState(.disconnected)
-        #expect(!b.pollTimerIsActiveForTesting,
-                "linkDroppedCleanup() must invalidate pollTimer the instant the link is confirmed down, so a stale tick can never fire into a later, unrelated connection cycle")
+        #expect(
+            !b.pollTimerIsActiveForTesting,
+            "linkDroppedCleanup() must invalidate pollTimer the instant the link is confirmed down, so a stale tick can never fire into a later, unrelated connection cycle"
+        )
     }
 }
 
@@ -231,8 +245,9 @@ struct PumpEgvPollTests {
         let b = backend()
         b.injectStatusFrameForTesting(FakePumpTransport.errorResponse(requestOpCode: 34))
         b.applyClientState(.disconnected)
-        #expect(b.badOpcodesForTesting.contains(34),
-                "an opcode already proven unsupported by this pump stays proven across a reconnect")
+        #expect(
+            b.badOpcodesForTesting.contains(34),
+            "an opcode already proven unsupported by this pump stays proven across a reconnect")
     }
 
     // MARK: - The three direct (non-polling-burst) EGV send sites
@@ -313,7 +328,7 @@ struct PumpV1EgvResponseTests {
         let b = backend()
         #expect(b.snapshot.glucose == nil)
         b.injectStatusFrameForTesting(FakePumpTransport.currentEgvV1(mgdl: 137, trendRate: 0))
-        #expect(b.snapshot.glucose == 137)       // the value still lands on the snapshot
+        #expect(b.snapshot.glucose == 137)  // the value still lands on the snapshot
         #expect(b.snapshot.cgmActive)
         // VA-01: this fixture carries NO reading timestamp (pumpSec == 0) and no pump↔phone clock anchor was
         // established, so the reading time is untrustworthy. It must FAIL CLOSED — `glucoseDate` stays nil
@@ -344,7 +359,8 @@ struct PumpV1EgvResponseTests {
     @Test func v1InvalidFrameDoesNotProduceAReading() {
         let b = backend()
         var cargo = [UInt8](repeating: 0, count: 8)
-        cargo[4] = 120; cargo[6] = 0    // egvStatusId 0 = INVALID
+        cargo[4] = 120
+        cargo[6] = 0  // egvStatusId 0 = INVALID
         b.injectStatusFrameForTesting(
             FakePumpTransport.frame(opCode: 35, cargo: cargo, signed: false))
         #expect(!b.snapshot.cgmActive)

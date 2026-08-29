@@ -38,19 +38,26 @@ struct NotificationSingleBuilderGuardTests {
         for base in dirs {
             guard let walker = fm.enumerator(at: base, includingPropertiesForKeys: nil) else { continue }
             for case let url as URL in walker where url.pathExtension == "swift" {
-                if url.path.contains("Tests") { continue }   // production source only
+                if url.path.contains("Tests") { continue }  // production source only
                 guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
                 scanned += 1
                 guard text.contains(Self.marker) else { continue }
-                if url.lastPathComponent == Self.allowedFile { sawAllowedBuilder = true }
-                else { violations.append(url.lastPathComponent) }
+                if url.lastPathComponent == Self.allowedFile {
+                    sawAllowedBuilder = true
+                } else {
+                    violations.append(url.lastPathComponent)
+                }
             }
         }
         // A path-resolution break (0 files) or a moved builder must fail loudly, not pass vacuously.
         #expect(scanned > 0, "single-builder guard scanned no files — path resolution broke")
-        #expect(sawAllowedBuilder,
-                "\(Self.allowedFile) no longer builds a UNNotificationRequest — did NotificationPoster move? Update this guard so it can't pass vacuously.")
-        #expect(violations.isEmpty,
-                "§6 single-builder invariant: UNNotificationRequest is constructed outside NotificationPoster in: \(violations.joined(separator: ", "))")
+        #expect(
+            sawAllowedBuilder,
+            "\(Self.allowedFile) no longer builds a UNNotificationRequest — did NotificationPoster move? Update this guard so it can't pass vacuously."
+        )
+        #expect(
+            violations.isEmpty,
+            "§6 single-builder invariant: UNNotificationRequest is constructed outside NotificationPoster in: \(violations.joined(separator: ", "))"
+        )
     }
 }

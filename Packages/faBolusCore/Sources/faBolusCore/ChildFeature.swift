@@ -10,31 +10,31 @@ import Foundation
 /// `childAllowed` set and backups keep decoding. The Keychain-backed PIN store (`ChildModeStore`) stays
 /// in the app target.
 public enum ChildFeature: String, Codable, CaseIterable, Identifiable, Sendable {
-    case bolus            // deliver a bolus (phone / watch / Mac / Garmin / widget)
-    case cancelBolus      // stop a running bolus — benign (stops insulin), allowed by default
-    case dismissAlerts    // clear/snooze pump alerts — benign, allowed by default
+    case bolus  // deliver a bolus (phone / watch / Mac / Garmin / widget)
+    case cancelBolus  // stop a running bolus — benign (stops insulin), allowed by default
+    case dismissAlerts  // clear/snooze pump alerts — benign, allowed by default
     case advancedControl  // suspend/resume, temp basal, modes, profiles, cartridge/fill, CGM session, limits…
-    case changeSettings   // open Settings / change sources, credentials, pairing, and child mode itself
+    case changeSettings  // open Settings / change sources, credentials, pairing, and child mode itself
 
     public var id: String { rawValue }
 
     public var label: String {
         switch self {
-        case .bolus:           return "Deliver boluses"
-        case .cancelBolus:     return "Cancel a running bolus"
-        case .dismissAlerts:   return "Clear / snooze alerts"
+        case .bolus: return "Deliver boluses"
+        case .cancelBolus: return "Cancel a running bolus"
+        case .dismissAlerts: return "Clear / snooze alerts"
         case .advancedControl: return "Advanced pump control"
-        case .changeSettings:  return "Change settings"
+        case .changeSettings: return "Change settings"
         }
     }
 
     public var detail: String {
         switch self {
-        case .bolus:           return "Give insulin from any device (phone, watch, Garmin, widget)."
-        case .cancelBolus:     return "Stop a bolus that's in progress. Safe — it only stops insulin."
-        case .dismissAlerts:   return "Acknowledge or clear pump alerts."
+        case .bolus: return "Give insulin from any device (phone, watch, Garmin, widget)."
+        case .cancelBolus: return "Stop a bolus that's in progress. Safe — it only stops insulin."
+        case .dismissAlerts: return "Acknowledge or clear pump alerts."
         case .advancedControl: return "Suspend/resume, temp basal, modes, profiles, cartridge, CGM session."
-        case .changeSettings:  return "Open Settings and change the app, CGM sources, pairing, or this mode."
+        case .changeSettings: return "Open Settings and change the app, CGM sources, pairing, or this mode."
         }
     }
 

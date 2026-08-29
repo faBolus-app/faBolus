@@ -47,10 +47,10 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         public var mutatesPumpState: Bool {
             switch self {
             case .bolusRequest, .bolusConfirm, .cancelBolus, .suspendPump, .resumePump,
-                 .dismissAlert, .bolusApprovalRequest, .bolusApprovalResponse, .sealed:
+                .dismissAlert, .bolusApprovalRequest, .bolusApprovalResponse, .sealed:
                 return true
             case .bolusStatus, .statusRead, .dismissAck,
-                 .authHello, .authChallenge, .authProof, .authResult:
+                .authHello, .authChallenge, .authProof, .authResult:
                 return false
             }
         }
@@ -70,14 +70,17 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// A pump alert/alarm summarized for a remote (id + kind + title).
     public struct RemoteAlert: Codable, Equatable, Sendable {
         public var id: Int
-        public var kind: Int      // NotificationKind rawValue (alert=1, alarm=2, cgmAlert=3)
+        public var kind: Int  // NotificationKind rawValue (alert=1, alarm=2, cgmAlert=3)
         public var title: String
         /// Phone-classified salience tier ("info"|"high"|"critical") for the Garmin
         /// alert-intensity gate. Optional + defaulted nil so every existing call site is source-compatible;
         /// a legacy host omits it and the watch treats an absent value as "critical" (highest salience).
         public var severity: String?
         public init(id: Int, kind: Int, title: String, severity: String? = nil) {
-            self.id = id; self.kind = kind; self.title = title; self.severity = severity
+            self.id = id
+            self.kind = kind
+            self.title = title
+            self.severity = severity
         }
         /// Stable identity of a pump alert for new-alert detection on a remote — `(kind, id)`.
         public var identity: String { "\(kind)-\(id)" }
@@ -122,10 +125,10 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// their own arrow shape from this — their fonts can't render Unicode arrows.
     public var trend: String?
     // Calculator settings the phone shares so a remote can compute carbs→units locally.
-    public var carbRatio: Double?     // grams per unit
-    public var isf: Double?           // correction factor, mg/dL per unit
-    public var targetBg: Double?      // mg/dL
-    public var maxBolusUnits: Double? // pump's configured max
+    public var carbRatio: Double?  // grams per unit
+    public var isf: Double?  // correction factor, mg/dL per unit
+    public var targetBg: Double?  // mg/dL
+    public var maxBolusUnits: Double?  // pump's configured max
     // Extra pump status for a remote's detail screen.
     public var reservoirUnits: Double?
     public var batteryPercent: Double?
@@ -167,7 +170,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var alertId: Int?
     public var alertKind: Int?
     // Shared bolus settings so remotes honor the same defaults/increments (statusRead reply).
-    public var bolusMode: String?        // "carbs" | "units"
+    public var bolusMode: String?  // "carbs" | "units"
     public var bolusIncrement: Double?
     public var carbIncrement: Double?
     // Garmin remote layout (statusRead reply): the swipe order of the screens and which one opens
@@ -551,38 +554,60 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// complication slots. Absent ⇒ the watch keeps its default (iob/reservoir/battery). Display-only.
     public var garminComplicationSlots: [String]? = nil
 
-    public init(kind: Kind, requestId: String = UUID().uuidString, sentAt: Int? = nil, units: Double? = nil,
-                carbsGrams: Double? = nil, bgMgdl: Double? = nil, confirmToken: String? = nil,
-                status: Status? = nil, deliveredUnits: Double? = nil, message: String? = nil,
-                trend: String? = nil,
-                carbRatio: Double? = nil, isf: Double? = nil, targetBg: Double? = nil,
-                maxBolusUnits: Double? = nil, reservoirUnits: Double? = nil,
-                batteryPercent: Double? = nil, lastBolusUnits: Double? = nil,
-                basalRate: Double? = nil,
-                glucoseAgeSec: Double? = nil, glucoseEpochSec: Int? = nil,
-                history: [Int]? = nil, historyEpochs: [Int]? = nil,
-                alerts: [RemoteAlert]? = nil, alertId: Int? = nil, alertKind: Int? = nil,
-                bolusMode: String? = nil, bolusIncrement: Double? = nil, carbIncrement: Double? = nil,
-                screenOrder: [String]? = nil, defaultScreen: String? = nil,
-                glucoseStaleMinutes: Int? = nil, glucoseHideDelayMinutes: Int? = nil,
-                detailsOrder: [String]? = nil, watchChartRanges: [Int]? = nil,
-                garminComplicationDisplay: String? = nil, remotesReadOnly: Bool? = nil) {
+    public init(
+        kind: Kind, requestId: String = UUID().uuidString, sentAt: Int? = nil, units: Double? = nil,
+        carbsGrams: Double? = nil, bgMgdl: Double? = nil, confirmToken: String? = nil,
+        status: Status? = nil, deliveredUnits: Double? = nil, message: String? = nil,
+        trend: String? = nil,
+        carbRatio: Double? = nil, isf: Double? = nil, targetBg: Double? = nil,
+        maxBolusUnits: Double? = nil, reservoirUnits: Double? = nil,
+        batteryPercent: Double? = nil, lastBolusUnits: Double? = nil,
+        basalRate: Double? = nil,
+        glucoseAgeSec: Double? = nil, glucoseEpochSec: Int? = nil,
+        history: [Int]? = nil, historyEpochs: [Int]? = nil,
+        alerts: [RemoteAlert]? = nil, alertId: Int? = nil, alertKind: Int? = nil,
+        bolusMode: String? = nil, bolusIncrement: Double? = nil, carbIncrement: Double? = nil,
+        screenOrder: [String]? = nil, defaultScreen: String? = nil,
+        glucoseStaleMinutes: Int? = nil, glucoseHideDelayMinutes: Int? = nil,
+        detailsOrder: [String]? = nil, watchChartRanges: [Int]? = nil,
+        garminComplicationDisplay: String? = nil, remotesReadOnly: Bool? = nil
+    ) {
         self.version = Self.schemaVersion
-        self.kind = kind; self.requestId = requestId; self.sentAt = sentAt; self.units = units
-        self.carbsGrams = carbsGrams; self.bgMgdl = bgMgdl; self.confirmToken = confirmToken
-        self.status = status; self.deliveredUnits = deliveredUnits; self.message = message
+        self.kind = kind
+        self.requestId = requestId
+        self.sentAt = sentAt
+        self.units = units
+        self.carbsGrams = carbsGrams
+        self.bgMgdl = bgMgdl
+        self.confirmToken = confirmToken
+        self.status = status
+        self.deliveredUnits = deliveredUnits
+        self.message = message
         self.trend = trend
-        self.carbRatio = carbRatio; self.isf = isf; self.targetBg = targetBg
+        self.carbRatio = carbRatio
+        self.isf = isf
+        self.targetBg = targetBg
         self.maxBolusUnits = maxBolusUnits
-        self.reservoirUnits = reservoirUnits; self.batteryPercent = batteryPercent
-        self.lastBolusUnits = lastBolusUnits; self.basalRate = basalRate
-        self.glucoseAgeSec = glucoseAgeSec; self.glucoseEpochSec = glucoseEpochSec
-        self.history = history; self.historyEpochs = historyEpochs
-        self.alerts = alerts; self.alertId = alertId; self.alertKind = alertKind
-        self.bolusMode = bolusMode; self.bolusIncrement = bolusIncrement; self.carbIncrement = carbIncrement
-        self.screenOrder = screenOrder; self.defaultScreen = defaultScreen
-        self.glucoseStaleMinutes = glucoseStaleMinutes; self.glucoseHideDelayMinutes = glucoseHideDelayMinutes
-        self.detailsOrder = detailsOrder; self.watchChartRanges = watchChartRanges
+        self.reservoirUnits = reservoirUnits
+        self.batteryPercent = batteryPercent
+        self.lastBolusUnits = lastBolusUnits
+        self.basalRate = basalRate
+        self.glucoseAgeSec = glucoseAgeSec
+        self.glucoseEpochSec = glucoseEpochSec
+        self.history = history
+        self.historyEpochs = historyEpochs
+        self.alerts = alerts
+        self.alertId = alertId
+        self.alertKind = alertKind
+        self.bolusMode = bolusMode
+        self.bolusIncrement = bolusIncrement
+        self.carbIncrement = carbIncrement
+        self.screenOrder = screenOrder
+        self.defaultScreen = defaultScreen
+        self.glucoseStaleMinutes = glucoseStaleMinutes
+        self.glucoseHideDelayMinutes = glucoseHideDelayMinutes
+        self.detailsOrder = detailsOrder
+        self.watchChartRanges = watchChartRanges
         self.garminComplicationDisplay = garminComplicationDisplay
         self.remotesReadOnly = remotesReadOnly
     }
@@ -618,14 +643,14 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         case crossField(String)
         public var description: String {
             switch self {
-            case .tooLarge(let n):        return "command too large (\(n) bytes)"
-            case .badVersion(let v):      return "unsupported schema version \(v)"
-            case .badRequestId:           return "missing or oversized requestId"
+            case .tooLarge(let n): return "command too large (\(n) bytes)"
+            case .badVersion(let v): return "unsupported schema version \(v)"
+            case .badRequestId: return "missing or oversized requestId"
             case .oversizedString(let f): return "oversized string field: \(f)"
-            case .nonFinite(let f):       return "non-finite number: \(f)"
-            case .outOfRange(let f):      return "value out of range: \(f)"
+            case .nonFinite(let f): return "non-finite number: \(f)"
+            case .outOfRange(let f): return "value out of range: \(f)"
             case .tooManyElements(let f): return "too many elements: \(f)"
-            case .crossField(let f):      return "invalid field combination: \(f)"
+            case .crossField(let f): return "invalid field combination: \(f)"
             }
         }
     }
@@ -633,7 +658,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public static let maxEncodedBytes = 32 * 1024
     public static let maxRequestIdLength = 128
     public static let maxStringLength = 1024
-    public static let maxBlobLength = 16 * 1024      // base64 sealed payload / token
+    public static let maxBlobLength = 16 * 1024  // base64 sealed payload / token
     public static let maxArrayCount = 1024
 
     /// Decode with a hard byte cap and full field validation. Use on every untrusted transport path.
@@ -662,7 +687,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
             ("targetBg", targetBg), ("maxBolusUnits", maxBolusUnits), ("reservoirUnits", reservoirUnits),
             ("batteryPercent", batteryPercent), ("lastBolusUnits", lastBolusUnits), ("basalRate", basalRate),
             ("glucoseAgeSec", glucoseAgeSec),
-            ("maxBasalUnitsPerHour", maxBasalUnitsPerHour),
+            ("maxBasalUnitsPerHour", maxBasalUnitsPerHour)
         ]
         for (name, v) in allDoubles where v != nil {
             guard v!.isFinite else { throw ValidationError.nonFinite(name) }
@@ -770,7 +795,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
             ("garminComplicationDisplay", garminComplicationDisplay), ("authClientId", authClientId),
             ("authNonce", authNonce), ("authProof", authProof), ("bolusPasscode", bolusPasscode),
             // Short frozen-enum settings tokens (fail-closed to defaults on the watch).
-            ("alertIntensityMode", alertIntensityMode), ("alertAudibleMinSeverity", alertAudibleMinSeverity),
+            ("alertIntensityMode", alertIntensityMode), ("alertAudibleMinSeverity", alertAudibleMinSeverity)
         ]
         for (name, s) in strings where s != nil {
             guard s!.count <= Self.maxStringLength else { throw ValidationError.oversizedString(name) }
@@ -784,7 +809,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
             ("history", history?.count), ("historyEpochs", historyEpochs?.count),
             ("alerts", alerts?.count), ("rawAlerts", rawAlerts?.count), ("screenOrder", screenOrder?.count),
             ("detailsOrder", detailsOrder?.count), ("watchChartRanges", watchChartRanges?.count),
-            ("garminComplicationSlots", garminComplicationSlots?.count),
+            ("garminComplicationSlots", garminComplicationSlots?.count)
         ]
         for (name, c) in arrays where c != nil {
             guard c! <= Self.maxArrayCount else { throw ValidationError.tooManyElements(name) }
@@ -793,7 +818,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         // Kind-specific cross-field rules: field-level bounds above aren't enough — a bolusRequest
         // can be internally contradictory in ways that must fail closed before it reaches the host.
         if kind == .bolusRequest {
-            if let m = extendedMinutes {   // an extended (combo) bolus
+            if let m = extendedMinutes {  // an extended (combo) bolus
                 guard m > 0 else { throw ValidationError.crossField("extended bolus with zero duration") }
                 if let now = extendedNowUnits, let u = units, now > u + 0.0001 {
                     throw ValidationError.crossField("extendedNowUnits (\(now)) exceeds total units (\(u))")
@@ -825,9 +850,11 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     }
 
     /// Build a pairing-handshake command (see `MacPairing`, `PeerRemoteHost`, `MacRemoteModel`).
-    public static func auth(_ kind: Kind, clientId: String? = nil, nonce: String? = nil,
-                            proof: String? = nil, sealedToken: String? = nil, ok: Bool? = nil,
-                            message: String? = nil, firstPairing: Bool? = nil) -> RemoteCommand {
+    public static func auth(
+        _ kind: Kind, clientId: String? = nil, nonce: String? = nil,
+        proof: String? = nil, sealedToken: String? = nil, ok: Bool? = nil,
+        message: String? = nil, firstPairing: Bool? = nil
+    ) -> RemoteCommand {
         var c = RemoteCommand(kind: kind)
         c.authClientId = clientId
         c.authNonce = nonce

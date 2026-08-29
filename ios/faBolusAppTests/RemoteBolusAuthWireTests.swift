@@ -23,13 +23,15 @@ import faBolusCore
         let m = RemoteCommandWireFixture(link: FakeLink())
         #expect(!m.garminBolusEnabled)
         #expect(!m.bolusPasscodeRequired)
-        #expect(!m.garminBolusAllowed)              // no push yet ⇒ bolus hidden
+        #expect(!m.garminBolusAllowed)  // no push yet ⇒ bolus hidden
     }
 
     @Test func legacyHostWithoutTheFieldsStaysDisabled() {
         // A host predating §2.3 omits the enables entirely; the remote must NOT infer "enabled".
         let m = RemoteCommandWireFixture(link: FakeLink())
-        var cmd = RemoteCommand(kind: .statusRead); cmd.message = "Connected"; cmd.remotesReadOnly = false
+        var cmd = RemoteCommand(kind: .statusRead)
+        cmd.message = "Connected"
+        cmd.remotesReadOnly = false
         m.handle(cmd)
         #expect(!m.garminBolusAllowed)
     }
@@ -37,15 +39,19 @@ import faBolusCore
     @Test func pushArmsGarminBolusButReadOnlyStillWins() {
         let m = RemoteCommandWireFixture(link: FakeLink())
         var on = RemoteCommand(kind: .statusRead)
-        on.message = "Connected"; on.remotesReadOnly = false
-        on.garminBolusEnabled = true; on.bolusPasscodeRequired = true
+        on.message = "Connected"
+        on.remotesReadOnly = false
+        on.garminBolusEnabled = true
+        on.bolusPasscodeRequired = true
         m.handle(on)
         #expect(m.garminBolusEnabled && m.bolusPasscodeRequired)
-        #expect(m.garminBolusAllowed)               // enabled + not read-only ⇒ allowed
+        #expect(m.garminBolusAllowed)  // enabled + not read-only ⇒ allowed
 
         var ro = RemoteCommand(kind: .statusRead)
-        ro.message = "Connected"; ro.remotesReadOnly = true; ro.garminBolusEnabled = true
+        ro.message = "Connected"
+        ro.remotesReadOnly = true
+        ro.garminBolusEnabled = true
         m.handle(ro)
-        #expect(!m.garminBolusAllowed)              // read-only wins over the enable
+        #expect(!m.garminBolusAllowed)  // read-only wins over the enable
     }
 }

@@ -9,13 +9,15 @@ import faBolusCore
 private final class MockShareLikeGlucoseSource: GlucoseSource {
     let id: String
     let priority = 90
-    let connectionKind: GlucoseConnectionKind = .cloudPoll   // Share-shaped: a cloud-polled source
+    let connectionKind: GlucoseConnectionKind = .cloudPoll  // Share-shaped: a cloud-polled source
     var latest: GlucoseSample?
     var history: [GlucoseReading]
     var status: GlucoseSourceStatus = .connected
     var onChange: (@MainActor () -> Void)?
     init(id: String = "dexcom-share", latest: GlucoseSample?, history: [GlucoseReading] = []) {
-        self.id = id; self.latest = latest; self.history = history
+        self.id = id
+        self.latest = latest
+        self.history = history
     }
     func start() async {}
     func stop() {}
@@ -28,8 +30,9 @@ struct CgmShareOnlyBoundaryTests {
     @Test func registryContainsOnlyDexcomShare() {
         let expected: Set<String> = ["dexcom-share"]
         let actual = Set(GlucoseSourceRegistry.enabled.map(\.id))
-        #expect(actual == expected,
-                "narrow main's CGM registry must be exactly \(expected); got \(actual)")
+        #expect(
+            actual == expected,
+            "narrow main's CGM registry must be exactly \(expected); got \(actual)")
     }
 
     /// Every source this milestone removes is fully gone from the registry: absent from `enabled` AND
@@ -38,8 +41,9 @@ struct CgmShareOnlyBoundaryTests {
         let enabledIds = Set(GlucoseSourceRegistry.enabled.map(\.id))
         for id in ["dexcom-g7-ble", "dexcom-g6-ble", "librelinkup", "xdrip-appgroup", "nightscout", "healthkit"] {
             #expect(!enabledIds.contains(id), "\(id) must be removed from GlucoseSourceRegistry.enabled")
-            #expect(GlucoseSourceRegistry.descriptor(id: id) == nil,
-                    "\(id) must have no descriptor at all, not just be unlisted")
+            #expect(
+                GlucoseSourceRegistry.descriptor(id: id) == nil,
+                "\(id) must have no descriptor at all, not just be unlisted")
         }
     }
 
@@ -47,7 +51,7 @@ struct CgmShareOnlyBoundaryTests {
     @Test func shareReadingFlowsThroughArbiterMerge() throws {
         var stalePump = PumpSnapshot()
         stalePump.glucose = 100
-        stalePump.glucoseDate = Date().addingTimeInterval(-10 * 60)   // 10 min old → stale (>6 min)
+        stalePump.glucoseDate = Date().addingTimeInterval(-10 * 60)  // 10 min old → stale (>6 min)
         stalePump.trend = GlucoseTrend.flat.rawValue
 
         let freshShareSample = try #require(

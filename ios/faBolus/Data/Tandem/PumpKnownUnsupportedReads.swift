@@ -56,9 +56,11 @@ enum PumpKnownUnsupportedReads {
         //     read with only medium-confidence evidence, so it is deliberately NOT suppressed here;
         //     on-device bisection decides it.
         if isMobi == false, softwareVersion == "2.5" {
-            return [LoadStatusRequest.props.opCode,
-                    HighestAamRequest.props.opCode,
-                    ActiveAamBitsRequest.props.opCode]
+            return [
+                LoadStatusRequest.props.opCode,
+                HighestAamRequest.props.opCode,
+                ActiveAamBitsRequest.props.opCode
+            ]
         }
         return []
     }

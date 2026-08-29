@@ -65,7 +65,8 @@ import faBolusCore
     @Test func legacyHostOmittingSharedBoundsKeepsSafeDefault() {
         let m = RemoteCommandWireFixture(link: FakeLink())
         var cmd = RemoteCommand(kind: .statusRead)
-        cmd.message = "Connected"; cmd.bgMgdl = 120
+        cmd.message = "Connected"
+        cmd.bgMgdl = 120
         m.handle(cmd)
         #expect(m.glucosePlotFloor == GlucosePlotScale.defaultFloor)
         #expect(m.glucosePlotCeiling == GlucosePlotScale.defaultCeiling)
@@ -103,7 +104,7 @@ import faBolusCore
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.glucosePlotFloor = 40
         cmd.glucosePlotCeiling = 300
-        cmd.glucosePlotFloorSmall = 45     // not an actual option
+        cmd.glucosePlotFloorSmall = 45  // not an actual option
         cmd.glucosePlotCeilingSmall = 320  // not an actual option
         m.handle(cmd)
         #expect(GlucosePlotScale.floorOptions.contains(m.smallScreenFloor))
@@ -118,8 +119,8 @@ import faBolusCore
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.watchChartRanges = [3, 6, 12, 24]
         m.handle(cmd)
-        #expect(m.chartRanges == [3, 6, 12, 24])                       // the time-range mirror DID update
-        #expect(m.glucosePlotFloor == GlucosePlotScale.defaultFloor)    // …but the Y-axis bounds did not
+        #expect(m.chartRanges == [3, 6, 12, 24])  // the time-range mirror DID update
+        #expect(m.glucosePlotFloor == GlucosePlotScale.defaultFloor)  // …but the Y-axis bounds did not
         #expect(m.glucosePlotCeiling == GlucosePlotScale.defaultCeiling)
         #expect(m.smallScreenFloor == GlucosePlotScale.defaultFloor)
         #expect(m.smallScreenCeiling == GlucosePlotScale.defaultCeiling)

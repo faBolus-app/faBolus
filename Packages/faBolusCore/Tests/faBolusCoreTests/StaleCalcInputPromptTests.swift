@@ -38,10 +38,10 @@ struct StaleCalcInputPromptTests {
     // MARK: - Warning copy names the SUBTRACT framing (never "ignore/zero the IOB")
 
     @Test func iobWarningNamesSubtractAndTheValueAndAge() {
-        let stale = now.addingTimeInterval(-7 * 60)          // 7 min old
+        let stale = now.addingTimeInterval(-7 * 60)  // 7 min old
         let msg = StaleIobPrompt.warningMessage(iobUnits: 1.40, iobDate: stale, now: now)
-        #expect(msg.contains("SUBTRACT"))                    // the framing is subtract, not drop/zero
-        #expect(msg.contains("1.40"))                        // names the last-known value that stays subtracted
+        #expect(msg.contains("SUBTRACT"))  // the framing is subtract, not drop/zero
+        #expect(msg.contains("1.40"))  // names the last-known value that stays subtracted
         #expect(msg.contains(CalcInputFreshness.ageLabel(for: stale, now: now)))
         #expect(!msg.lowercased().contains("ignore"))
     }
@@ -56,9 +56,9 @@ struct StaleCalcInputPromptTests {
         let stale = now.addingTimeInterval(-20 * 60)
         let profile = BolusMath.Profile(carbRatioGramsPerUnit: 12, isfMgdlPerUnit: 45, targetBgMgdl: 110, iobUnits: 0)
         let msg = StaleTherapyPrompt.warningMessage(profile: profile, therapyDate: stale, now: now)
-        #expect(msg.contains("12"))     // carb ratio
-        #expect(msg.contains("45"))     // ISF
-        #expect(msg.contains("110"))    // target
+        #expect(msg.contains("12"))  // carb ratio
+        #expect(msg.contains("45"))  // ISF
+        #expect(msg.contains("110"))  // target
         #expect(msg.contains(CalcInputFreshness.ageLabel(for: stale, now: now)))
     }
 
@@ -79,9 +79,9 @@ struct StaleCalcInputPromptTests {
         let profile = BolusMath.Profile(carbRatioGramsPerUnit: 12, isfMgdlPerUnit: 45, targetBgMgdl: 110, iobUnits: 0)
         let msg = StaleTherapyPrompt.warningMessage(profile: profile, therapyDate: stale, now: now, unit: .mmol)
         #expect(msg.contains("mg/dL") == false, "mmol mode must never leak an mg/dL label")
-        #expect(msg.contains("12 g/U"))          // carb ratio is unit-agnostic — unaffected
-        #expect(msg.contains("2.5 mmol/L"))      // ISF converted
-        #expect(msg.contains("6.1 mmol/L"))      // target converted
+        #expect(msg.contains("12 g/U"))  // carb ratio is unit-agnostic — unaffected
+        #expect(msg.contains("2.5 mmol/L"))  // ISF converted
+        #expect(msg.contains("6.1 mmol/L"))  // target converted
         #expect(msg.contains(CalcInputFreshness.ageLabel(for: stale, now: now)))
     }
 }

@@ -18,7 +18,9 @@ final class CgmTestCoordinator {
     /// failover source — id / connectionKind / latest reading / status). A `typealias` over the
     /// SAME anonymous tuple shape `AppModel.glucoseSourceProbe` already returns, so the `probe`
     /// closure below is wired with zero conversion at the call site.
-    typealias Probe = (id: String, connectionKind: GlucoseConnectionKind, latest: GlucoseSample?, status: GlucoseSourceStatus)
+    typealias Probe = (
+        id: String, connectionKind: GlucoseConnectionKind, latest: GlucoseSample?, status: GlucoseSourceStatus
+    )
 
     /// The 4 fields the Test flow publishes (`cgmTestInProgress` / `cgmTestElapsedSeconds` /
     /// `cgmTestTimeoutSeconds` / `cgmTestOutcome`).
@@ -62,9 +64,9 @@ final class CgmTestCoordinator {
     /// `connectionKind`, NOT on `id`-string literals.
     static func cgmTestTimeout(for kind: GlucoseConnectionKind) -> TimeInterval {
         switch kind {
-        case .localBLE:      return 6 * 60   // one full Dexcom wake/connect cycle (~5 min) + margin
-        case .cloudPoll:     return 20        // auth handshake + one network round-trip (~15–20s)
-        case .localOnDevice: return 10        // near-instant read of the shared on-device store
+        case .localBLE: return 6 * 60  // one full Dexcom wake/connect cycle (~5 min) + margin
+        case .cloudPoll: return 20  // auth handshake + one network round-trip (~15–20s)
+        case .localOnDevice: return 10  // near-instant read of the shared on-device store
         }
     }
 
@@ -81,7 +83,8 @@ final class CgmTestCoordinator {
     @discardableResult
     func performTick(startedSourceId: String, startedAt: Date, timeout: TimeInterval) -> Bool {
         guard let probeValue = probe(),
-              !Self.cgmTestShouldAbort(startedSourceId: startedSourceId, currentProbeId: probeValue.id) else {
+            !Self.cgmTestShouldAbort(startedSourceId: startedSourceId, currentProbeId: probeValue.id)
+        else {
             // Source changed/cleared mid-Test — clear BOTH the in-progress flag AND the
             // outcome so no frozen stale `.waiting` screen is left behind.
             state.inProgress = false
@@ -90,8 +93,9 @@ final class CgmTestCoordinator {
         }
         let elapsed = now().timeIntervalSince(startedAt)
         state.elapsedSeconds = Int(elapsed)
-        let outcome = CgmTestOutcome.testOutcome(latest: probeValue.latest, status: probeValue.status,
-                                                  elapsed: elapsed, timeout: timeout)
+        let outcome = CgmTestOutcome.testOutcome(
+            latest: probeValue.latest, status: probeValue.status,
+            elapsed: elapsed, timeout: timeout)
         state.outcome = outcome
         if case .waiting = outcome { return false }
         state.inProgress = false
@@ -104,10 +108,12 @@ final class CgmTestCoordinator {
     func start() {
         pollTask?.cancel()
         guard let probeValue = probe() else {
-            state = State(inProgress: false, elapsedSeconds: 0, timeoutSeconds: 0,
-                          outcome: .timeout(detail: failoverAutoDisabled()
-                            ? "The fallback source was temporarily disabled after repeated unclean starts — it will automatically retry, or re-select it in Settings now."
-                            : "No fallback source is selected."))
+            state = State(
+                inProgress: false, elapsedSeconds: 0, timeoutSeconds: 0,
+                outcome: .timeout(
+                    detail: failoverAutoDisabled()
+                        ? "The fallback source was temporarily disabled after repeated unclean starts — it will automatically retry, or re-select it in Settings now."
+                        : "No fallback source is selected."))
             return
         }
         let sourceId = probeValue.id

@@ -10,8 +10,9 @@ import Foundation
 /// never dispenses on a stray tap (a wrong/late 1-2-3 tap resets).
 
 private func postDarwin(_ name: String) {
-    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
-                                         CFNotificationName(name as CFString), nil, nil, true)
+    CFNotificationCenterPostNotification(
+        CFNotificationCenterGetDarwinNotifyCenter(),
+        CFNotificationName(name as CFString), nil, nil, true)
 }
 private func reloadWidget() {
     WidgetCenter.shared.reloadTimelines(ofKind: "FaBolusQuickBolus")
@@ -22,7 +23,7 @@ struct WidgetBolusAdjustIntent: AppIntent {
     static let title: LocalizedStringResource = "Adjust Bolus Amount"
     static let openAppWhenRun = false
 
-    @Parameter(title: "Delta") var delta: Int   // +1 or -1
+    @Parameter(title: "Delta") var delta: Int  // +1 or -1
 
     init() {}
     init(delta: Int) { self.delta = delta }
@@ -32,7 +33,7 @@ struct WidgetBolusAdjustIntent: AppIntent {
         let step = carbs ? WidgetBolusStore.carbIncrement : WidgetBolusStore.increment
         let maxV = carbs ? WidgetBolusStore.maxCarbs : WidgetBolusStore.maxBolus
         var v = WidgetBolusStore.draft + Double(delta) * step
-        v = (v / step).rounded() * step   // snap to the increment grid
+        v = (v / step).rounded() * step  // snap to the increment grid
         WidgetBolusStore.draft = min(max(0, v), maxV)
         reloadWidget()
         return .result()
@@ -56,7 +57,10 @@ struct WidgetBolusBeginConfirmIntent: AppIntent {
     static let title: LocalizedStringResource = "Confirm Bolus Amount"
     static let openAppWhenRun = false
     func perform() async throws -> some IntentResult {
-        if WidgetBolusStore.draft > 0 { WidgetBolusStore.stage = "confirm"; WidgetBolusStore.resetProgress() }
+        if WidgetBolusStore.draft > 0 {
+            WidgetBolusStore.stage = "confirm"
+            WidgetBolusStore.resetProgress()
+        }
         reloadWidget()
         return .result()
     }
@@ -67,7 +71,9 @@ struct WidgetBolusBackIntent: AppIntent {
     static let title: LocalizedStringResource = "Back to Amount"
     static let openAppWhenRun = false
     func perform() async throws -> some IntentResult {
-        WidgetBolusStore.stage = "amount"; WidgetBolusStore.resetProgress(); reloadWidget()
+        WidgetBolusStore.stage = "amount"
+        WidgetBolusStore.resetProgress()
+        reloadWidget()
         return .result()
     }
 }
@@ -100,9 +106,11 @@ struct WidgetBolusDeliverIntent: AppIntent {
         if WidgetBolusStore.stage == "confirm", WidgetBolusStore.progress() == 2, amount > 0 {
             let reqId = UUID().uuidString
             let mode = WidgetBolusStore.mode
-            WidgetBolusStore.setPending(WidgetBolusRequest(amount: amount, mode: mode, requestId: reqId, createdAt: Date()))
+            WidgetBolusStore.setPending(
+                WidgetBolusRequest(amount: amount, mode: mode, requestId: reqId, createdAt: Date()))
             // `units` here is the entered amount for display; the app writes the real delivered units.
-            WidgetBolusStore.setStatus(WidgetBolusStatus(phase: .delivering, units: mode == "units" ? amount : 0, requestId: reqId))
+            WidgetBolusStore.setStatus(
+                WidgetBolusStatus(phase: .delivering, units: mode == "units" ? amount : 0, requestId: reqId))
             postDarwin(WidgetBolusStore.darwinPending)
         }
         WidgetBolusStore.resetEntry()

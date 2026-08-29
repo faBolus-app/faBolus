@@ -8,7 +8,7 @@ struct WidgetCoreDelegationGuardTests {
     /// The two widget source files. `faBolusAppTests` cannot link the widget extension, so a source scan is the proof.
     private static let targetFiles = [
         "ios/faBolusWidgets/GlucoseWidget.swift",
-        "ios/faBolusWidgets/StatusWidget.swift",
+        "ios/faBolusWidgets/StatusWidget.swift"
     ]
 
     /// Band-boundary values `GlucoseRange.classify` owns. A widget file containing one as a bare numeric
@@ -44,8 +44,9 @@ struct WidgetCoreDelegationGuardTests {
     /// contains a hardcoded glucose mg/dL threshold literal outside a comment; a `filesScanned > 0` guard
     /// so a broken path resolution fails loudly instead of vacuously passing.
     @Test func bothWidgetsDelegateGlucoseBandClassificationToCore() throws {
-        let repoRoot = try #require(Self.repoRootURL(),
-                                     "could not resolve repo root from #filePath=\(#filePath)")
+        let repoRoot = try #require(
+            Self.repoRootURL(),
+            "could not resolve repo root from #filePath=\(#filePath)")
         var filesScanned = 0
         var missingImport: [String] = []
         var missingClassifyCall: [String] = []
@@ -69,20 +70,28 @@ struct WidgetCoreDelegationGuardTests {
             }
         }
 
-        #expect(missingImport.isEmpty,
-                "widget file(s) missing 'import faBolusCore' — CX-A-06 Core delegation regressed: \(missingImport)")
-        #expect(missingClassifyCall.isEmpty,
-                "widget file(s) no longer call GlucoseRange.classify — CX-A-06 Core delegation regressed: \(missingClassifyCall)")
-        #expect(thresholdLiteralHits.isEmpty,
-                "widget file(s) reintroduced a local glucose threshold literal (CX-A-06 drift):\n\(thresholdLiteralHits.joined(separator: "\n"))")
-        #expect(filesScanned > 0,
-                "expected to scan the 2 widget files under \(repoRoot.path) — path resolution broke (would otherwise pass vacuously)")
+        #expect(
+            missingImport.isEmpty,
+            "widget file(s) missing 'import faBolusCore' — CX-A-06 Core delegation regressed: \(missingImport)")
+        #expect(
+            missingClassifyCall.isEmpty,
+            "widget file(s) no longer call GlucoseRange.classify — CX-A-06 Core delegation regressed: \(missingClassifyCall)"
+        )
+        #expect(
+            thresholdLiteralHits.isEmpty,
+            "widget file(s) reintroduced a local glucose threshold literal (CX-A-06 drift):\n\(thresholdLiteralHits.joined(separator: "\n"))"
+        )
+        #expect(
+            filesScanned > 0,
+            "expected to scan the 2 widget files under \(repoRoot.path) — path resolution broke (would otherwise pass vacuously)"
+        )
     }
 
     /// A path-resolution bug must fail loudly, not pass vacuously (mirrors
     /// `BandDriftGuardTests.fileResolutionActuallyFoundTheRepoRoot`).
     @Test func fileResolutionActuallyFoundTheRepoRoot() {
-        #expect(Self.repoRootURL() != nil,
-                "guard could not locate the repo root — path resolution broke (#filePath=\(#filePath))")
+        #expect(
+            Self.repoRootURL() != nil,
+            "guard could not locate the repo root — path resolution broke (#filePath=\(#filePath))")
     }
 }

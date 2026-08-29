@@ -28,8 +28,10 @@ struct RemoteStatusComposerRawSnapshotTests {
             alertCriticalOverridesDnd: false, garminComplicationSlots: ["iob", "reservoir", "battery"])
     }
 
-    private func inputs(supportsRemoteAlertDismiss: Bool,
-                         rawActiveNotifications: [PumpAlert]? = nil) -> RemoteStatusInputs {
+    private func inputs(
+        supportsRemoteAlertDismiss: Bool,
+        rawActiveNotifications: [PumpAlert]? = nil
+    ) -> RemoteStatusInputs {
         RemoteStatusInputs(
             includeHistory: false, requestId: nil, snapshot: PumpSnapshot(),
             activeNotifications: [], glucoseHistory: [], now: Date(timeIntervalSince1970: 1_700_000_000),

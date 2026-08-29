@@ -15,13 +15,13 @@ let package = Package(
     name: "faBolusDesign",
     platforms: [.iOS(.v17), .watchOS(.v10), .macOS(.v13)],
     products: [
-        .library(name: "faBolusDesign", targets: ["faBolusDesign"]),
+        .library(name: "faBolusDesign", targets: ["faBolusDesign"])
     ],
     dependencies: [
-        .package(path: "../faBolusCore"),
+        .package(path: "../faBolusCore")
     ],
     targets: [
         .target(name: "faBolusDesign", dependencies: ["faBolusCore"]),
-        .testTarget(name: "faBolusDesignTests", dependencies: ["faBolusDesign"]),
+        .testTarget(name: "faBolusDesignTests", dependencies: ["faBolusDesign"])
     ]
 )

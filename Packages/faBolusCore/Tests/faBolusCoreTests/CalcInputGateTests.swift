@@ -15,9 +15,11 @@ import Testing
             for iob in [true, false] {
                 for therapy in [true, false] {
                     for avail in [true, false] {
-                        #expect(CalcInputGate.decide(isCarbsMode: false, inputsVerified: verified,
-                                                     iobStale: iob, therapyStale: therapy,
-                                                     therapyAvailable: avail, overrideAccepted: false) == .proceed)
+                        #expect(
+                            CalcInputGate.decide(
+                                isCarbsMode: false, inputsVerified: verified,
+                                iobStale: iob, therapyStale: therapy,
+                                therapyAvailable: avail, overrideAccepted: false) == .proceed)
                     }
                 }
             }
@@ -27,29 +29,41 @@ import Testing
     // MARK: - Carbs mode: verified proceeds; unverified prompts (even in-window); re-entry proceeds
 
     @Test func carbsVerifiedProceeds() {
-        #expect(CalcInputGate.decide(isCarbsMode: true, inputsVerified: true, iobStale: false,
-                                     therapyStale: false, therapyAvailable: true, overrideAccepted: false) == .proceed)
+        #expect(
+            CalcInputGate.decide(
+                isCarbsMode: true, inputsVerified: true, iobStale: false,
+                therapyStale: false, therapyAvailable: true, overrideAccepted: false) == .proceed)
         // Verified proceeds even if a display-staleness flag is somehow set (shouldn't happen, but the gate
         // keys on inputsVerified, not the flags).
-        #expect(CalcInputGate.decide(isCarbsMode: true, inputsVerified: true, iobStale: true,
-                                     therapyStale: true, therapyAvailable: true, overrideAccepted: false) == .proceed)
+        #expect(
+            CalcInputGate.decide(
+                isCarbsMode: true, inputsVerified: true, iobStale: true,
+                therapyStale: true, therapyAvailable: true, overrideAccepted: false) == .proceed)
     }
 
     @Test func carbsUnverifiedNeitherFlagStillPrompts() {
         // The unconfirmed-but-in-window case: compose read timed out (inputsVerified=false) but both values
         // are still inside their windows (flags false). MUST still prompt — routed to .both — never silently
         // deliver. This is the exact case a window-only gate would have missed.
-        #expect(CalcInputGate.decide(isCarbsMode: true, inputsVerified: false, iobStale: false,
-                                     therapyStale: false, therapyAvailable: true, overrideAccepted: false) == .prompt(.both))
+        #expect(
+            CalcInputGate.decide(
+                isCarbsMode: true, inputsVerified: false, iobStale: false,
+                therapyStale: false, therapyAvailable: true, overrideAccepted: false) == .prompt(.both))
     }
 
     @Test func carbsUnverifiedKindSelection() {
-        #expect(CalcInputGate.decide(isCarbsMode: true, inputsVerified: false, iobStale: true,
-                                     therapyStale: false, therapyAvailable: true, overrideAccepted: false) == .prompt(.iob))
-        #expect(CalcInputGate.decide(isCarbsMode: true, inputsVerified: false, iobStale: false,
-                                     therapyStale: true, therapyAvailable: true, overrideAccepted: false) == .prompt(.therapy))
-        #expect(CalcInputGate.decide(isCarbsMode: true, inputsVerified: false, iobStale: true,
-                                     therapyStale: true, therapyAvailable: true, overrideAccepted: false) == .prompt(.both))
+        #expect(
+            CalcInputGate.decide(
+                isCarbsMode: true, inputsVerified: false, iobStale: true,
+                therapyStale: false, therapyAvailable: true, overrideAccepted: false) == .prompt(.iob))
+        #expect(
+            CalcInputGate.decide(
+                isCarbsMode: true, inputsVerified: false, iobStale: false,
+                therapyStale: true, therapyAvailable: true, overrideAccepted: false) == .prompt(.therapy))
+        #expect(
+            CalcInputGate.decide(
+                isCarbsMode: true, inputsVerified: false, iobStale: true,
+                therapyStale: true, therapyAvailable: true, overrideAccepted: false) == .prompt(.both))
     }
 
     // MARK: - No real therapy ever read (op-115 never arrived) → BLOCK, never a deliverable guess
@@ -60,9 +74,11 @@ import Testing
         // NEVER a `.prompt` that could deliver a dose off the hardcoded CR=10 guess. All flag combinations.
         for iob in [true, false] {
             for therapy in [true, false] {
-                #expect(CalcInputGate.decide(isCarbsMode: true, inputsVerified: false,
-                                             iobStale: iob, therapyStale: therapy,
-                                             therapyAvailable: false, overrideAccepted: false) == .blockNoTherapy)
+                #expect(
+                    CalcInputGate.decide(
+                        isCarbsMode: true, inputsVerified: false,
+                        iobStale: iob, therapyStale: therapy,
+                        therapyAvailable: false, overrideAccepted: false) == .blockNoTherapy)
             }
         }
     }
@@ -72,9 +88,11 @@ import Testing
         // (Only reachable when therapy WAS available, since the no-therapy case has no accept button.)
         for iob in [true, false] {
             for therapy in [true, false] {
-                #expect(CalcInputGate.decide(isCarbsMode: true, inputsVerified: false,
-                                             iobStale: iob, therapyStale: therapy,
-                                             therapyAvailable: true, overrideAccepted: true) == .proceed)
+                #expect(
+                    CalcInputGate.decide(
+                        isCarbsMode: true, inputsVerified: false,
+                        iobStale: iob, therapyStale: therapy,
+                        therapyAvailable: true, overrideAccepted: true) == .proceed)
             }
         }
     }

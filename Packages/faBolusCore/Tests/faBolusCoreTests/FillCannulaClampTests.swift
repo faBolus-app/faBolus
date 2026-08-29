@@ -10,24 +10,24 @@ import Testing
 struct FillCannulaClampTests {
 
     @Test func clampNeverYieldsZeroOrNegative() {
-        #expect(FillLimits.clampPrimeSize(0) == 1)      // 0 is upstream-invalid → floored to 1, never 0
-        #expect(FillLimits.clampPrimeSize(-5) == 1)     // negative → floored, never ≤ 0
+        #expect(FillLimits.clampPrimeSize(0) == 1)  // 0 is upstream-invalid → floored to 1, never 0
+        #expect(FillLimits.clampPrimeSize(-5) == 1)  // negative → floored, never ≤ 0
     }
 
     @Test func clampPassesThroughMidRangeValues() {
         #expect(FillLimits.clampPrimeSize(300) == 300)
-        #expect(FillLimits.clampPrimeSize(1) == 1)      // floor itself is a valid pass-through
+        #expect(FillLimits.clampPrimeSize(1) == 1)  // floor itself is a valid pass-through
     }
 
     @Test func clampCapsAtTheDeliberateOneUnitCeilingUnraised() {
         // The 1.0U cap (maxCannulaMilliunits = 1000) is a deliberate app ceiling BELOW the kit's 3000 mU
         // upstream ceiling — this task raises only the FLOOR (Pitfall 4), never this cap.
         #expect(FillLimits.clampPrimeSize(9999) == 1000)
-        #expect(FillLimits.clampPrimeSize(3000) == 1000)   // even the kit's own ceiling is still capped here
+        #expect(FillLimits.clampPrimeSize(3000) == 1000)  // even the kit's own ceiling is still capped here
     }
 
     @Test func maxCannulaMilliunitsCapItselfIsUnchanged() {
-        #expect(FillLimits.maxCannulaMilliunits == 1000)   // 1.0 U — unraised (CX-T-07 explicitly keeps this)
+        #expect(FillLimits.maxCannulaMilliunits == 1000)  // 1.0 U — unraised (CX-T-07 explicitly keeps this)
         #expect(FillLimits.minCannulaMilliunits == 1)
     }
 }

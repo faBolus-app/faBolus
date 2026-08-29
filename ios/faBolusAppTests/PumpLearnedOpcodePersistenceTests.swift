@@ -63,21 +63,25 @@ struct PumpLearnedOpcodePersistenceTests {
     @Test func doseInputReadRejectionsAreNeverPersistedWhileOp20Is() {
         let (store, suite, defaults) = isolatedStore()
         defer { defaults.removePersistentDomain(forName: suite) }
-        let iob = ControlIQIOBRequest.props.opCode                 // op108 (dose input)
-        let therapy = BolusCalcDataSnapshotRequest.props.opCode    // op115 (dose input)
+        let iob = ControlIQIOBRequest.props.opCode  // op108 (dose input)
+        let therapy = BolusCalcDataSnapshotRequest.props.opCode  // op115 (dose input)
         store.record(iob, for: "A", firmware: "2.5")
         store.record(therapy, for: "A", firmware: "2.5")
-        #expect(!store.learnedOpcodes(for: "A").contains(iob),
-                "op108 (IOB) must never be durably blacklisted — no re-probe would ever run (bricks the calculator)")
-        #expect(!store.learnedOpcodes(for: "A").contains(therapy),
-                "op115 (therapy settings) must never be durably blacklisted")
-        #expect(store.learnedOpcodes(for: "A").isEmpty,
-                "recording only dose-input reads must persist nothing at all")
+        #expect(
+            !store.learnedOpcodes(for: "A").contains(iob),
+            "op108 (IOB) must never be durably blacklisted — no re-probe would ever run (bricks the calculator)")
+        #expect(
+            !store.learnedOpcodes(for: "A").contains(therapy),
+            "op115 (therapy settings) must never be durably blacklisted")
+        #expect(
+            store.learnedOpcodes(for: "A").isEmpty,
+            "recording only dose-input reads must persist nothing at all")
 
         // Contrast / regression guard: op20 (the cartridge pre-guard read) still persists normally.
         store.record(loadStatusOpcode, for: "A", firmware: "2.5")
-        #expect(store.learnedOpcodes(for: "A") == [loadStatusOpcode],
-                "op20 must still persist normally — its self-heal is unchanged by the R2-10 dose-input allowlist")
+        #expect(
+            store.learnedOpcodes(for: "A") == [loadStatusOpcode],
+            "op20 must still persist normally — its self-heal is unchanged by the R2-10 dose-input allowlist")
     }
 
     /// `reset(for:)` forgets one pump only.
@@ -104,17 +108,19 @@ struct PumpLearnedOpcodePersistenceTests {
         // correlates it to op20 and persists the learned skip.
         let s1 = TandemBackend(testTransport: FakePumpTransport())
         s1.configurePersistedBadOpcodesForTesting(store: store, pumpKey: key)
-        s1.setSoftwareVersionForTesting("2.5")               // op33 already read the API/firmware version
-        await s1.refreshLoadStatus()                         // op20 out (txId 0), now outstanding
+        s1.setSoftwareVersionForTesting("2.5")  // op33 already read the API/firmware version
+        await s1.refreshLoadStatus()  // op20 out (txId 0), now outstanding
         s1.injectStatusFrameForTesting(FakePumpTransport.errorResponse(requestOpCode: 0, errorCode: 0))
         #expect(s1.badOpcodesForTesting.contains(loadStatusOpcode))
-        #expect(store.learnedOpcodes(for: key).contains(loadStatusOpcode),
-                "the learned op20 rejection must be persisted durably, keyed to the pump")
+        #expect(
+            store.learnedOpcodes(for: key).contains(loadStatusOpcode),
+            "the learned op20 rejection must be persisted durably, keyed to the pump")
 
         // Session 2 — a fresh process (relaunch): new backend, firmware not yet known ("").
         let s2 = TandemBackend(testTransport: FakePumpTransport())
         s2.configurePersistedBadOpcodesForTesting(store: store, pumpKey: key)
-        var skipped: [UInt8] = []; var dispatched: [UInt8] = []
+        var skipped: [UInt8] = []
+        var dispatched: [UInt8] = []
         s2.onReadSkippedForTesting = { _, op in skipped.append(op) }
         s2.onReadDispatchedForTesting = { _, op in dispatched.append(op) }
         s2.startPollingForTesting()
@@ -122,10 +128,12 @@ struct PumpLearnedOpcodePersistenceTests {
         // the pump (firmware unknown "" here → static registry empty; the SKIP comes purely from the persisted
         // per-pump hydration, proving the two mechanisms are additive).
         s2.releaseIdentityGatedReadsForTesting()
-        #expect(skipped.contains(loadStatusOpcode),
-                "after a relaunch, op20 must be skipped from the first poll — no re-drop")
-        #expect(!dispatched.contains(loadStatusOpcode),
-                "op20 must not be re-sent on a post-learn connection")
+        #expect(
+            skipped.contains(loadStatusOpcode),
+            "after a relaunch, op20 must be skipped from the first poll — no re-drop")
+        #expect(
+            !dispatched.contains(loadStatusOpcode),
+            "op20 must not be re-sent on a post-learn connection")
     }
 
     /// A pump with no learned op20 rejection keeps polling op20 so `cartridgeReadyForBolus` stays live.
@@ -137,14 +145,16 @@ struct PumpLearnedOpcodePersistenceTests {
         var dispatched: [UInt8] = []
         b.onReadDispatchedForTesting = { _, op in dispatched.append(op) }
         b.startPollingForTesting()
-        b.releaseIdentityGatedReadsForTesting()   // op33/op85 identify a supported pump → deferred op20 goes out
-        #expect(dispatched.contains(loadStatusOpcode),
-                "a pump with no learned op20 rejection must keep polling op20 (pre-guard stays live)")
+        b.releaseIdentityGatedReadsForTesting()  // op33/op85 identify a supported pump → deferred op20 goes out
+        #expect(
+            dispatched.contains(loadStatusOpcode),
+            "a pump with no learned op20 rejection must keep polling op20 (pre-guard stays live)")
         // op20 succeeds → LoadStatusResponse feeds cartridgeLoadState. loadStateId 0 = CHANGE_CARTRIDGE (a
         // loading state) ⇒ the fail-closed pre-guard must go false — proving the poll feeds it LIVE.
         b.injectStatusFrameForTesting(FakePumpTransport.loadStatus(isLoadingActive: true, loadStateId: 0))
-        #expect(!b.snapshot.cartridgeReadyForBolus,
-                "the polled op20 reply must update cartridgeLoadState so the fail-closed pre-guard stays live")
+        #expect(
+            !b.snapshot.cartridgeReadyForBolus,
+            "the polled op20 reply must update cartridgeLoadState so the fail-closed pre-guard stays live")
     }
 
     /// KEY ISOLATION (end-to-end): after pump A learns + persists op20, a DIFFERENT pump (same store) still
@@ -152,7 +162,8 @@ struct PumpLearnedOpcodePersistenceTests {
     @Test func aDifferentPumpNeverInheritsAnotherPumpsLoadStatusSkip() async {
         let (store, suite, defaults) = isolatedStore()
         defer { defaults.removePersistentDomain(forName: suite) }
-        let keyA = "pump-A-\(UUID().uuidString)"; let keyB = "pump-B-\(UUID().uuidString)"
+        let keyA = "pump-A-\(UUID().uuidString)"
+        let keyB = "pump-B-\(UUID().uuidString)"
 
         let a = TandemBackend(testTransport: FakePumpTransport())
         a.configurePersistedBadOpcodesForTesting(store: store, pumpKey: keyA)
@@ -166,9 +177,10 @@ struct PumpLearnedOpcodePersistenceTests {
         var dispatched: [UInt8] = []
         b.onReadDispatchedForTesting = { _, op in dispatched.append(op) }
         b.startPollingForTesting()
-        b.releaseIdentityGatedReadsForTesting()   // op33/op85 identify pump B → its deferred op20 goes out
-        #expect(dispatched.contains(loadStatusOpcode),
-                "a DIFFERENT pump must never inherit pump A's op20 skip — the persisted set is identity-scoped")
+        b.releaseIdentityGatedReadsForTesting()  // op33/op85 identify pump B → its deferred op20 goes out
+        #expect(
+            dispatched.contains(loadStatusOpcode),
+            "a DIFFERENT pump must never inherit pump A's op20 skip — the persisted set is identity-scoped")
         #expect(store.learnedOpcodes(for: keyB).isEmpty)
     }
 
@@ -179,19 +191,21 @@ struct PumpLearnedOpcodePersistenceTests {
         let (store, suite, defaults) = isolatedStore()
         defer { defaults.removePersistentDomain(forName: suite) }
         let key = "pump-A-\(UUID().uuidString)"
-        store.record(loadStatusOpcode, for: key, firmware: "2.5")   // learned under firmware 2.5
+        store.record(loadStatusOpcode, for: key, firmware: "2.5")  // learned under firmware 2.5
 
         let b = TandemBackend(testTransport: FakePumpTransport())
         b.configurePersistedBadOpcodesForTesting(store: store, pumpKey: key)
-        b.setSoftwareVersionForTesting("3.0")                        // pump now reports a NEW firmware
+        b.setSoftwareVersionForTesting("3.0")  // pump now reports a NEW firmware
         var dispatched: [UInt8] = []
         b.onReadDispatchedForTesting = { _, op in dispatched.append(op) }
         b.startPollingForTesting()
-        b.releaseIdentityGatedReadsForTesting()   // firmware 3.0 → static registry empty → deferred op20 re-tested
-        #expect(dispatched.contains(loadStatusOpcode),
-                "a firmware change must discard the stale op20 skip and re-test op20")
-        #expect(store.learnedOpcodes(for: key).isEmpty,
-                "the stale learned set must be cleared on a firmware change")
+        b.releaseIdentityGatedReadsForTesting()  // firmware 3.0 → static registry empty → deferred op20 re-tested
+        #expect(
+            dispatched.contains(loadStatusOpcode),
+            "a firmware change must discard the stale op20 skip and re-test op20")
+        #expect(
+            store.learnedOpcodes(for: key).isEmpty,
+            "the stale learned set must be cleared on a firmware change")
     }
 
     /// RELAUNCH TRUSTS PERSISTED: on a fresh process (firmware not yet re-read, "") the UUID-keyed persisted
@@ -204,15 +218,17 @@ struct PumpLearnedOpcodePersistenceTests {
 
         let b = TandemBackend(testTransport: FakePumpTransport())
         b.configurePersistedBadOpcodesForTesting(store: store, pumpKey: key)
-        var skipped: [UInt8] = []; var dispatched: [UInt8] = []
+        var skipped: [UInt8] = []
+        var dispatched: [UInt8] = []
         b.onReadSkippedForTesting = { _, op in skipped.append(op) }
         b.onReadDispatchedForTesting = { _, op in dispatched.append(op) }
         b.startPollingForTesting()
         // api25 static-registry hardening: op20 identity-gated — released here (firmware unknown "" → static
         // registry empty; the SKIP comes purely from the UUID-keyed persisted hydration).
         b.releaseIdentityGatedReadsForTesting()
-        #expect(skipped.contains(loadStatusOpcode),
-                "on a fresh launch (firmware unknown) the UUID-keyed persisted op20 skip must apply — no re-drop")
+        #expect(
+            skipped.contains(loadStatusOpcode),
+            "on a fresh launch (firmware unknown) the UUID-keyed persisted op20 skip must apply — no re-drop")
         #expect(!dispatched.contains(loadStatusOpcode))
     }
 
@@ -229,22 +245,25 @@ struct PumpLearnedOpcodePersistenceTests {
         let b = TandemBackend(testTransport: FakePumpTransport())
         b.configurePersistedBadOpcodesForTesting(store: store, pumpKey: key)
         b.setSoftwareVersionForTesting("2.5")
-        await b.refreshLoadStatus()                                   // op20 out (txId 0)
+        await b.refreshLoadStatus()  // op20 out (txId 0)
         b.injectStatusFrameForTesting(FakePumpTransport.errorResponse(requestOpCode: 0, errorCode: 0))
         #expect(b.badOpcodesForTesting.contains(loadStatusOpcode), "op20 learned IN-MEMORY under fw 2.5")
         #expect(store.learnedOpcodes(for: key).contains(loadStatusOpcode), "and persisted")
 
         // Firmware changes on the SAME backend (no relaunch).
         b.setSoftwareVersionForTesting("3.0")
-        var dispatched: [UInt8] = []; var skipped: [UInt8] = []
+        var dispatched: [UInt8] = []
+        var skipped: [UInt8] = []
         b.onReadDispatchedForTesting = { _, op in dispatched.append(op) }
         b.onReadSkippedForTesting = { _, op in skipped.append(op) }
         b.startPollingForTesting()
-        b.releaseIdentityGatedReadsForTesting()   // firmware 3.0 → static registry empty → deferred op20 re-polled
-        #expect(!b.badOpcodesForTesting.contains(loadStatusOpcode),
-                "a firmware change must clear the IN-MEMORY learned op20 on the same backend (WR-05)")
-        #expect(dispatched.contains(loadStatusOpcode),
-                "op20 must be re-polled under the new firmware, not stay skipped until relaunch (WR-05)")
+        b.releaseIdentityGatedReadsForTesting()  // firmware 3.0 → static registry empty → deferred op20 re-polled
+        #expect(
+            !b.badOpcodesForTesting.contains(loadStatusOpcode),
+            "a firmware change must clear the IN-MEMORY learned op20 on the same backend (WR-05)")
+        #expect(
+            dispatched.contains(loadStatusOpcode),
+            "op20 must be re-polled under the new firmware, not stay skipped until relaunch (WR-05)")
         #expect(!skipped.contains(loadStatusOpcode), "op20 is no longer skipped after the firmware change")
     }
 
@@ -257,11 +276,14 @@ struct PumpLearnedOpcodePersistenceTests {
         defer { defaults.removePersistentDomain(forName: suite) }
         let cap = PumpBadOpcodeStore.maxRetainedPumps
         for i in 0...(cap + 3) { store.record(loadStatusOpcode, for: "pump-\(i)", firmware: "2.5") }
-        #expect(store.retainedPumpCountForTesting <= cap,
-                "the store must cap the number of retained pumps (IN-03)")
-        #expect(store.learnedOpcodes(for: "pump-\(cap + 3)").contains(loadStatusOpcode),
-                "the most-recently-updated pump is retained")
-        #expect(store.learnedOpcodes(for: "pump-0").isEmpty,
-                "the least-recently-updated pump is evicted once the cap is exceeded (LRU) (IN-03)")
+        #expect(
+            store.retainedPumpCountForTesting <= cap,
+            "the store must cap the number of retained pumps (IN-03)")
+        #expect(
+            store.learnedOpcodes(for: "pump-\(cap + 3)").contains(loadStatusOpcode),
+            "the most-recently-updated pump is retained")
+        #expect(
+            store.learnedOpcodes(for: "pump-0").isEmpty,
+            "the least-recently-updated pump is evicted once the cap is exceeded (LRU) (IN-03)")
     }
 }

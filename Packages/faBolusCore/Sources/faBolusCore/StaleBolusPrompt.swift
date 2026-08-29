@@ -59,7 +59,7 @@ public enum StaleBolusPrompt {
     /// not compose or send anything at all (see `proceeds`).
     public static func bgForCalculation(_ choice: StaleBolusChoice, staleGlucoseMgdl: Int?) -> Int? {
         switch choice {
-        case .includeStale:            return staleGlucoseMgdl
+        case .includeStale: return staleGlucoseMgdl
         case .proceedWithout, .cancel: return nil
         }
     }
@@ -71,6 +71,6 @@ public enum StaleBolusPrompt {
     /// wording — including that the stale value was DROPPED from the dose — is identical everywhere.
     public static func warningMessage(glucoseMgdl: Int, glucoseDate: Date, now: Date = Date()) -> String {
         "Your CGM reading (\(glucoseMgdl) mg/dL) is \(GlucoseFreshness.ageLabel(for: glucoseDate, now: now)) "
-        + "and was left out of this dose. Include it in the correction, bolus for carbs only, or cancel?"
+            + "and was left out of this dose. Include it in the correction, bolus for carbs only, or cancel?"
     }
 }

@@ -8,11 +8,12 @@ let package = Package(
     name: "faBolusCore",
     platforms: [.iOS(.v17), .watchOS(.v10), .macOS(.v13)],
     products: [
-        .library(name: "faBolusCore", targets: ["faBolusCore"]),
+        .library(name: "faBolusCore", targets: ["faBolusCore"])
     ],
     targets: [
         .target(name: "faBolusCore"),
-        .testTarget(name: "faBolusCoreTests", dependencies: ["faBolusCore"],
-                    resources: [.process("Fixtures")]),
+        .testTarget(
+            name: "faBolusCoreTests", dependencies: ["faBolusCore"],
+            resources: [.process("Fixtures")])
     ]
 )

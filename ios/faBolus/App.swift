@@ -50,20 +50,25 @@ struct FaBolusApp: App {
     var body: some Scene {
         WindowGroup {
             RootContainerView(model: model)
-                .alert("Save this pump's PIN?", isPresented: Binding(
-                    get: { model.savePinPrompt != nil },
-                    set: { if !$0 { model.dismissSavePinPrompt() } }
-                )) {
+                .alert(
+                    "Save this pump's PIN?",
+                    isPresented: Binding(
+                        get: { model.savePinPrompt != nil },
+                        set: { if !$0 { model.dismissSavePinPrompt() } }
+                    )
+                ) {
                     Button("Save PIN") { model.saveOfferedPin() }
                     Button("Not now", role: .cancel) { model.dismissSavePinPrompt() }
                 } message: {
-                    Text("This looks like a Tandem Mobi — its PIN doesn't change. faBolus can save it so you don't re-type it next time you connect. You can change or clear it later on the Connect screen.")
+                    Text(
+                        "This looks like a Tandem Mobi — its PIN doesn't change. faBolus can save it so you don't re-type it next time you connect. You can change or clear it later on the Connect screen."
+                    )
                 }
                 .onAppear {
                     // The Garmin bridge is constructed at launch in `init()` (above),
                     // not lazily here, so a background BLE relaunch has a live bridge before any view appears.
-                    if notifier == nil { notifier = NotificationCoordinator(model: model) }      // broker-owned notification path (§6)
-                    if widgetBolus == nil { widgetBolus = WidgetBolusReceiver(model: model) }    // Quick-Bolus widget delivery
+                    if notifier == nil { notifier = NotificationCoordinator(model: model) }  // broker-owned notification path (§6)
+                    if widgetBolus == nil { widgetBolus = WidgetBolusReceiver(model: model) }  // Quick-Bolus widget delivery
                     // CR-01: start the always-on Mobi reject backstop exactly once — it
                     // then runs for the process's lifetime independent of any view's presence.
                     if mobiRejectBackstop == nil {
@@ -72,16 +77,16 @@ struct FaBolusApp: App {
                         mobiRejectBackstop = backstop
                     }
                     #if FABOLUS_BACKUP
-                    ICloudSettingsSync.shared.start()   // optional; no-op unless built with FABOLUS_ICLOUD
+                    ICloudSettingsSync.shared.start()  // optional; no-op unless built with FABOLUS_ICLOUD
                     #endif
                     AppSettings.shared.syncWidgetConfig()
-                    model.publishWidgetLockState()   // seed the Quick-Bolus widget's lock flag
-                    AppSettings.shared.applyFreshness()   // stale/hide thresholds → faBolusCore
+                    model.publishWidgetLockState()  // seed the Quick-Bolus widget's lock flag
+                    AppSettings.shared.applyFreshness()  // stale/hide thresholds → faBolusCore
                     // Apply pinned history retention at every launch. The Data/History view that used
                     // to be the only caller of `applyRetention` is gone, so without this the setting
                     // would read as pinned but nothing would prune older glucose.
                     model.applyRetention(days: AppSettings.shared.historyRetentionDays)
-                    widgetBolus?.handlePending()   // deliver any queued widget bolus (suspended-app fallback)
+                    widgetBolus?.handlePending()  // deliver any queued widget bolus (suspended-app fallback)
                 }
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .active {
@@ -100,7 +105,7 @@ struct FaBolusApp: App {
                         }
                     } else if phase == .background {
                         #if FABOLUS_BACKUP
-                        ICloudSettingsSync.shared.push()   // optional; no-op unless built with FABOLUS_ICLOUD
+                        ICloudSettingsSync.shared.push()  // optional; no-op unless built with FABOLUS_ICLOUD
                         #endif
                         // debug pump-background-disconnect: no app-side action needed on background. A drop
                         // that happens while suspended is recovered by the kit's INLINE background-safe
@@ -121,7 +126,7 @@ struct FaBolusApp: App {
                         // Widget tap-to-bolus / open (fabolus://bolus). Opens the confirm flow.
                         if url.host == "bolus" { model.openBolusRequested = true }
                     } else {
-                        garmin?.handleOpenURL(url)   // Connect IQ device-selection callback
+                        garmin?.handleOpenURL(url)  // Connect IQ device-selection callback
                     }
                 }
         }

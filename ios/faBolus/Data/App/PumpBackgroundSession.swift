@@ -51,7 +51,7 @@ final class PumpBackgroundSession {
     // MARK: - State
 
     private var token: Int?
-    private var wantReconnect = false   // a background reconnect is in progress
+    private var wantReconnect = false  // a background reconnect is in progress
 
     // MARK: - Background reconnect window (belt-and-suspenders for the kit's inline connect)
 
@@ -100,7 +100,8 @@ final class PumpBackgroundSession {
                 // UIKit invokes the expiration handler on the main thread; hop into the actor to fail safe.
                 MainActor.assumeIsolated { self?.taskExpired() }
             }
-            Self.log.log("bg session armed (\(reason, privacy: .public)) granted=\(self.token != nil, privacy: .public)")
+            Self.log.log(
+                "bg session armed (\(reason, privacy: .public)) granted=\(self.token != nil, privacy: .public)")
         } else if !wantReconnect, token != nil {
             endCurrentTask(reason: reason)
         }
@@ -186,7 +187,7 @@ final class CommsSuspensionGate {
     func shouldHoldRoutineSend() -> Bool {
         guard isPaused else { return false }
         if let pausedAt, now().timeIntervalSince(pausedAt) > Self.maxHoldDuration {
-            resume()   // fail-safe: never hold forever — the poll watchdog takes it from here
+            resume()  // fail-safe: never hold forever — the poll watchdog takes it from here
             return false
         }
         return true

@@ -17,8 +17,14 @@ import Testing
         var skipConfirmIfResult = false
 
         func get() -> Bool { backing }
-        func set(_ v: Bool) { setCalls.append(v); backing = v }
-        func skipConfirmIf() -> Bool { skipConfirmIfCalls += 1; return skipConfirmIfResult }
+        func set(_ v: Bool) {
+            setCalls.append(v)
+            backing = v
+        }
+        func skipConfirmIf() -> Bool {
+            skipConfirmIfCalls += 1
+            return skipConfirmIfResult
+        }
         func requestConfirm() { requestConfirmCalls += 1 }
     }
 
@@ -36,13 +42,13 @@ import Testing
         binding.wrappedValue = true
         #expect(spy.requestConfirmCalls == 1)
         #expect(spy.setCalls.isEmpty)
-        #expect(spy.backing == false)   // snap-back: set was never invoked, backing is still false
+        #expect(spy.backing == false)  // snap-back: set was never invoked, backing is still false
     }
 
     @Test func cancelSnapsBackBecauseSetWasNeverCalledOnTheConfirmPath() {
         let spy = Spy()
         let binding = guardedToggle(get: spy.get, set: spy.set, requestConfirm: spy.requestConfirm)
-        binding.wrappedValue = true                 // user flips on -> requestConfirm fires
+        binding.wrappedValue = true  // user flips on -> requestConfirm fires
         // Simulate Cancel: no confirm action ever calls spy.set(true). A re-read must show false.
         #expect(binding.wrappedValue == false)
         #expect(spy.setCalls.isEmpty)
@@ -51,8 +57,9 @@ import Testing
     @Test func enablingWithSkipConfirmTrueWritesImmediatelyAndNeverRequestsConfirm() {
         let spy = Spy()
         spy.skipConfirmIfResult = true
-        let binding = guardedToggle(get: spy.get, set: spy.set,
-                                     skipConfirmIf: spy.skipConfirmIf, requestConfirm: spy.requestConfirm)
+        let binding = guardedToggle(
+            get: spy.get, set: spy.set,
+            skipConfirmIf: spy.skipConfirmIf, requestConfirm: spy.requestConfirm)
         binding.wrappedValue = true
         #expect(spy.setCalls == [true])
         #expect(spy.requestConfirmCalls == 0)

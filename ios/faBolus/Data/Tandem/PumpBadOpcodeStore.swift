@@ -87,7 +87,7 @@ struct PumpBadOpcodeStore: @unchecked Sendable {
         var map = loadMap()
         var p = map[pumpKey] ?? Persisted(fw: firmware, ops: [])
         if let firmware, let existing = p.fw, existing != firmware {
-            p.ops = []           // firmware changed since these were learned → re-test from scratch
+            p.ops = []  // firmware changed since these were learned → re-test from scratch
         }
         if let firmware { p.fw = firmware }
         if !p.ops.contains(Int(opcode)) { p.ops.append(Int(opcode)) }
@@ -128,11 +128,16 @@ struct PumpBadOpcodeStore: @unchecked Sendable {
 
     /// `seq`: a monotonic last-updated stamp for LRU eviction. Optional so a legacy persisted payload
     /// decodes cleanly (nil ⇒ sorts oldest ⇒ evicted first). `fw`/`ops` unchanged.
-    private struct Persisted: Codable { var fw: String?; var ops: [Int]; var seq: Int? = nil }
+    private struct Persisted: Codable {
+        var fw: String?
+        var ops: [Int]
+        var seq: Int? = nil
+    }
 
     private func loadMap() -> [String: Persisted] {
         guard let data = defaults.data(forKey: storageKey),
-              let map = try? JSONDecoder().decode([String: Persisted].self, from: data) else { return [:] }
+            let map = try? JSONDecoder().decode([String: Persisted].self, from: data)
+        else { return [:] }
         return map
     }
 

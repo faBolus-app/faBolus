@@ -35,11 +35,11 @@ public enum BatteryChargingPresentation {
         } else {
             // Level→glyph mapping — this helper is the ONE place that owns it.
             switch percent {
-            case ...5:   symbol = "battery.0"
-            case ...37:  symbol = "battery.25"
-            case ...62:  symbol = "battery.50"
-            case ...87:  symbol = "battery.75"
-            default:     symbol = "battery.100"
+            case ...5: symbol = "battery.0"
+            case ...37: symbol = "battery.25"
+            case ...62: symbol = "battery.50"
+            case ...87: symbol = "battery.75"
+            default: symbol = "battery.100"
             }
         }
         return BatteryPresentation(

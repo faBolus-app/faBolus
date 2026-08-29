@@ -9,11 +9,11 @@ struct PumpModelTests {
 
     @Test func snapshotDerivesModelFromMobiAndName() {
         var snap = PumpSnapshot()
-        #expect(snap.pumpModel == .unknown)          // nothing detected yet
+        #expect(snap.pumpModel == .unknown)  // nothing detected yet
         snap.pumpModelName = "t:slim X2"
-        #expect(snap.pumpModel == .tslimX2)          // a name but not Mobi ⇒ t:slim
+        #expect(snap.pumpModel == .tslimX2)  // a name but not Mobi ⇒ t:slim
         snap.isMobi = true
-        #expect(snap.pumpModel == .mobi)             // Mobi wins regardless of name
+        #expect(snap.pumpModel == .mobi)  // Mobi wins regardless of name
     }
 
     @Test func onlyMobiHasASavablePairingPin() {

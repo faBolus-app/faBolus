@@ -22,8 +22,16 @@ struct RemoteStatusComposerEquivalenceTests {
     private func withClean(_ body: () async throws -> Void) async rethrows {
         let s = AppSettings.shared
         let child = s.childModeEnabled, ro = s.phoneReadOnly, adv = s.advancedControlEnabled, rro = s.remotesReadOnly
-        s.childModeEnabled = false; s.phoneReadOnly = false; s.advancedControlEnabled = true; s.remotesReadOnly = false
-        defer { s.childModeEnabled = child; s.phoneReadOnly = ro; s.advancedControlEnabled = adv; s.remotesReadOnly = rro }
+        s.childModeEnabled = false
+        s.phoneReadOnly = false
+        s.advancedControlEnabled = true
+        s.remotesReadOnly = false
+        defer {
+            s.childModeEnabled = child
+            s.phoneReadOnly = ro
+            s.advancedControlEnabled = adv
+            s.remotesReadOnly = rro
+        }
         try await body()
     }
 
@@ -43,7 +51,7 @@ struct RemoteStatusComposerEquivalenceTests {
             let (model, backend) = makeModel()
             await backend.connect()
             let sampleDate = try #require(backend.snapshot.glucoseDate)
-            let fixedNow = sampleDate.addingTimeInterval(30)   // 30s after the sample: unambiguously fresh
+            let fixedNow = sampleDate.addingTimeInterval(30)  // 30s after the sample: unambiguously fresh
             // A fixed `replyingTo` id is required for the a==b determinism check below: with no
             // `replyingTo`, `RemoteCommand`'s own default initializer mints a FRESH random UUID per
             // call (by design — an unsolicited push has no request to echo), which is a genuine,
@@ -59,8 +67,8 @@ struct RemoteStatusComposerEquivalenceTests {
             #expect(a.glucoseEpochSec == Int(sampleDate.timeIntervalSince1970))
             #expect(a.canBolus == true)
             #expect(a.bolusBlockReason == nil)
-            #expect(a.maxBolusUnits == backend.snapshot.maxBolusUnits)   // no remote ceiling set ⇒ passthrough
-            #expect(a.trend == GlucoseTrend.flat.token)                 // MockBackend seeds .flat
+            #expect(a.maxBolusUnits == backend.snapshot.maxBolusUnits)  // no remote ceiling set ⇒ passthrough
+            #expect(a.trend == GlucoseTrend.flat.token)  // MockBackend seeds .flat
             #expect(a.remotesReadOnly == false)
             #expect(a.history?.isEmpty == false)
             #expect(a.historyEpochs?.count == a.history?.count)
@@ -77,7 +85,7 @@ struct RemoteStatusComposerEquivalenceTests {
 
     @Test func disconnectedIsDeterministicAndCorrect() async throws {
         try await withClean {
-            let (model, backend) = makeModel()   // never connected — stays .disconnected
+            let (model, backend) = makeModel()  // never connected — stays .disconnected
             let sampleDate = try #require(backend.snapshot.glucoseDate)
             let fixedNow = sampleDate.addingTimeInterval(30)
             let requestId = "fixture-disconnected"
@@ -105,7 +113,7 @@ struct RemoteStatusComposerEquivalenceTests {
             await backend.connect()
             #expect(!backend.activeNotifications.isEmpty, "MockBackend must seed at least one alert for this scenario")
             let sampleDate = try #require(backend.snapshot.glucoseDate)
-            let fixedNow = sampleDate.addingTimeInterval(3600)   // 1h later: unambiguously stale
+            let fixedNow = sampleDate.addingTimeInterval(3600)  // 1h later: unambiguously stale
             let requestId = "fixture-stale-with-alerts"
 
             let a = model.statusCommand(includeHistory: true, replyingTo: requestId, now: fixedNow)
@@ -153,7 +161,7 @@ struct RemoteStatusComposerEquivalenceTests {
     /// regression this scan exists to catch (a MISSED input in `RemoteStatusInputs`/
     /// `RemoteStatusSettings` should fail the build/test, not tempt a live read).
     private static let forbiddenLiveReadTokens: [String] = [
-        "AppSettings.shared", "BolusPasscodeStore", "Date()", "self.snapshot", "AppModel",
+        "AppSettings.shared", "BolusPasscodeStore", "Date()", "self.snapshot", "AppModel"
     ]
 
     private static func repoRootURL() -> URL? {
@@ -169,8 +177,9 @@ struct RemoteStatusComposerEquivalenceTests {
 
     private static func readComposerSource() throws -> String {
         let root = try #require(Self.repoRootURL())
-        return try String(contentsOf: root.appendingPathComponent("ios/faBolus/Data/Remote/RemoteStatusComposer.swift"),
-                          encoding: .utf8)
+        return try String(
+            contentsOf: root.appendingPathComponent("ios/faBolus/Data/Remote/RemoteStatusComposer.swift"),
+            encoding: .utf8)
     }
 
     /// Strips everything from the first `//` on each line onward (line/doc comments) so the forbidden-
@@ -188,8 +197,9 @@ struct RemoteStatusComposerEquivalenceTests {
     @Test func composerFileContainsNoLiveSingletonOrClockRead() throws {
         let code = Self.codeOnly(try Self.readComposerSource())
         for token in Self.forbiddenLiveReadTokens {
-            #expect(!code.contains(token),
-                    "RemoteStatusComposer.swift's CODE contains a forbidden live-read token: '\(token)' (INV-C)")
+            #expect(
+                !code.contains(token),
+                "RemoteStatusComposer.swift's CODE contains a forbidden live-read token: '\(token)' (INV-C)")
         }
     }
 
@@ -201,8 +211,9 @@ struct RemoteStatusComposerEquivalenceTests {
         let code = Self.codeOnly(try Self.readComposerSource())
         for poison in ["AppSettings.shared.remotesReadOnly", "BolusPasscodeStore.isRequired", "Date()"] {
             let poisoned = code + "\nlet _ = \(poison)\n"
-            #expect(Self.forbiddenLiveReadTokens.contains { poisoned.contains($0) },
-                    "the purity scan failed to catch an injected live-read reference to '\(poison)'")
+            #expect(
+                Self.forbiddenLiveReadTokens.contains { poisoned.contains($0) },
+                "the purity scan failed to catch an injected live-read reference to '\(poison)'")
         }
     }
 
@@ -223,13 +234,21 @@ struct RemoteStatusComposerEquivalenceTests {
             while i < chars.count {
                 let ch = chars[i]
                 if inString {
-                    if escaped { escaped = false }
-                    else if ch == "\\" { escaped = true }
-                    else if ch == "\"" { inString = false }
-                    else if ch == "/" && i + 1 < chars.count && chars[i + 1] == "/" { return true }
+                    if escaped {
+                        escaped = false
+                    } else if ch == "\\" {
+                        escaped = true
+                    } else if ch == "\"" {
+                        inString = false
+                    } else if ch == "/" && i + 1 < chars.count && chars[i + 1] == "/" {
+                        return true
+                    }
                 } else {
-                    if ch == "\"" { inString = true }
-                    else if ch == "/" && i + 1 < chars.count && chars[i + 1] == "/" { break } // real code comment
+                    if ch == "\"" {
+                        inString = true
+                    } else if ch == "/" && i + 1 < chars.count && chars[i + 1] == "/" {
+                        break
+                    }  // real code comment
                 }
                 i += 1
             }
@@ -240,8 +259,10 @@ struct RemoteStatusComposerEquivalenceTests {
     /// The assumption, made loud: if this ever fails, `codeOnly` is no longer exact — rework the string
     /// literal or make `codeOnly` a real comment-aware parser. Do NOT relax the purity scan.
     @Test func codeOnlyStripperAssumptionHolds() throws {
-        #expect(!Self.hasSlashSlashInsideStringLiteral(try Self.readComposerSource()),
-                "RemoteStatusComposer.swift now has a `//` inside a string literal — codeOnly's strip-from-first-`//` will over-strip real code and silently weaken the INV-C purity scan.")
+        #expect(
+            !Self.hasSlashSlashInsideStringLiteral(try Self.readComposerSource()),
+            "RemoteStatusComposer.swift now has a `//` inside a string literal — codeOnly's strip-from-first-`//` will over-strip real code and silently weaken the INV-C purity scan."
+        )
     }
 
     /// Fault-injection: the assumption checker must FLAG a `//` inside a string literal and PASS a `//`

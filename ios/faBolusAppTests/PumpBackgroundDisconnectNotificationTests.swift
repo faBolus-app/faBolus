@@ -32,21 +32,26 @@ struct PumpBackgroundDisconnectNotificationTests {
         model.notificationWithdrawSink = { withdrawn = $0 }
 
         // Establish a live link (previousConnection → .connected).
-        b.setConnectionForTesting(.connected); b.onChange?()
+        b.setConnectionForTesting(.connected)
+        b.onChange?()
 
         // Genuine drop: the kit's `didError` fires FIRST (still .connected), then `didChange(.connecting)`.
-        b.applyClientError(DropErr()); b.onChange?()
-        b.applyClientState(.connecting); b.onChange?()
+        b.applyClientError(DropErr())
+        b.onChange?()
+        b.applyClientState(.connecting)
+        b.onChange?()
 
         #expect(b.snapshot.connection == .connecting, "the reconnect window must present as .connecting")
-        #expect(posted.filter { $0.category == .pumpDisconnect }.isEmpty,
-                "a momentary drop the kit is recovering must post NO pump-disconnect banner")
+        #expect(
+            posted.filter { $0.category == .pumpDisconnect }.isEmpty,
+            "a momentary drop the kit is recovering must post NO pump-disconnect banner")
         #expect(scheduled.isEmpty, "no escalation may be scheduled during the reconnect window")
 
         // Recovery in the background → the `.clear` edge withdraws the (never-fired) banner + escalation.
         // Bare BLE `.ready` only reaches `.connecting`; usable `.connected` is published at polling/onPaired.
         // Drive that usable transition directly so the recovery edge fires.
-        b.setConnectionForTesting(.connected); b.onChange?()
+        b.setConnectionForTesting(.connected)
+        b.onChange?()
         #expect(b.snapshot.connection == .connected)
         #expect(withdrawn.contains(disconnectKey), "recovery must withdraw the disconnect family")
     }
@@ -62,22 +67,29 @@ struct PumpBackgroundDisconnectNotificationTests {
         model.notificationSink = { msg, _, _ in posted.append(msg) }
         model.notificationScheduleSink = { scheduled = $0 }
 
-        b.setConnectionForTesting(.connected); b.onChange?()
-        b.applyClientError(DropErr()); b.onChange?()
-        b.applyClientState(.connecting); b.onChange?()
+        b.setConnectionForTesting(.connected)
+        b.onChange?()
+        b.applyClientError(DropErr())
+        b.onChange?()
+        b.applyClientState(.connecting)
+        b.onChange?()
         #expect(posted.filter { $0.category == .pumpDisconnect }.isEmpty, "silent until the ladder gives up")
         #expect(scheduled.isEmpty)
 
         // Ladder gives up. Kit ordering: `didChange(.reconnectExhausted)` fires, THEN
         // `didError(.reconnectLoopDetected)` — which must not post a second banner.
-        b.applyClientState(.reconnectExhausted); b.onChange?()
-        b.applyClientError(PumpBLEClient.ClientError.reconnectLoopDetected); b.onChange?()
+        b.applyClientState(.reconnectExhausted)
+        b.onChange?()
+        b.applyClientError(PumpBLEClient.ClientError.reconnectLoopDetected)
+        b.onChange?()
 
         #expect(b.snapshot.connection == .error)
-        #expect(posted.filter { $0.category == .pumpDisconnect }.count == 1,
-                "exactly one pump-disconnect banner, fired only at exhaustion")
-        #expect(scheduled.map(\.id) == DisconnectEscalation.stepIds,
-                "the full escalation family is scheduled at exhaustion")
+        #expect(
+            posted.filter { $0.category == .pumpDisconnect }.count == 1,
+            "exactly one pump-disconnect banner, fired only at exhaustion")
+        #expect(
+            scheduled.map(\.id) == DisconnectEscalation.stepIds,
+            "the full escalation family is scheduled at exhaustion")
     }
 
     /// A terminal `.error` reached directly from `.connecting` (not only via `.reconnectExhausted`) must
@@ -90,9 +102,12 @@ struct PumpBackgroundDisconnectNotificationTests {
         model.notificationSink = { msg, _, _ in posted.append(msg) }
         model.notificationScheduleSink = { scheduled = $0 }
 
-        b.setConnectionForTesting(.connected); b.onChange?()
-        b.applyClientError(DropErr()); b.onChange?()
-        b.applyClientState(.connecting); b.onChange?()
+        b.setConnectionForTesting(.connected)
+        b.onChange?()
+        b.applyClientError(DropErr())
+        b.onChange?()
+        b.applyClientState(.connecting)
+        b.onChange?()
         #expect(posted.filter { $0.category == .pumpDisconnect }.isEmpty, "silent through the reconnect window")
 
         // Reached .error DIRECTLY from .connecting — no .reconnectExhausted label in between. Uses the
@@ -100,13 +115,16 @@ struct PumpBackgroundDisconnectNotificationTests {
         // exactly what `handleResumeFailure()`'s exhausted branch does in production: it assigns
         // `snapshot.connection = .error` directly (there is no `PumpBLEClient.State.error` — that kit-level
         // enum has no such case; `.error` only ever exists at the app-level `PumpConnectionState`).
-        b.setConnectionForTesting(.error); b.onChange?()
+        b.setConnectionForTesting(.error)
+        b.onChange?()
 
         #expect(b.snapshot.connection == .error)
-        #expect(posted.filter { $0.category == .pumpDisconnect }.count == 1,
-                "a terminal .error reached directly from .connecting must alarm exactly once (C1-04)")
-        #expect(scheduled.map(\.id) == DisconnectEscalation.stepIds,
-                "the full escalation family is scheduled on this edge too")
+        #expect(
+            posted.filter { $0.category == .pumpDisconnect }.count == 1,
+            "a terminal .error reached directly from .connecting must alarm exactly once (C1-04)")
+        #expect(
+            scheduled.map(\.id) == DisconnectEscalation.stepIds,
+            "the full escalation family is scheduled on this edge too")
     }
 
     /// A bare read/notify error while the link is still `.ready` must not cascade into a disconnect banner.
@@ -116,8 +134,10 @@ struct PumpBackgroundDisconnectNotificationTests {
         var posted: [NotificationBroker.Message] = []
         model.notificationSink = { msg, _, _ in posted.append(msg) }
 
-        b.setConnectionForTesting(.connected); b.onChange?()
-        b.applyClientError(DropErr()); b.onChange?()   // read/notify error, kit stays .ready (no didChange)
+        b.setConnectionForTesting(.connected)
+        b.onChange?()
+        b.applyClientError(DropErr())
+        b.onChange?()  // read/notify error, kit stays .ready (no didChange)
 
         #expect(b.snapshot.connection == .connected, "a transient read error must not fabricate a disconnect")
         #expect(posted.filter { $0.category == .pumpDisconnect }.isEmpty)

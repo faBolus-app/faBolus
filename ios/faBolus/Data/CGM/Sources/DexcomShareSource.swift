@@ -29,7 +29,8 @@ extension ShareClient: ShareGlucoseFetching {}
 final class DexcomShareSource: PollingGlucoseSource {
     /// Builds the underlying Share client for a given credential/region set. Injectable so tests can
     /// count constructions (each new client == a fresh login handshake) without hitting Dexcom.
-    typealias ClientFactory = @MainActor (_ user: String, _ pass: String, _ server: KnownShareServers) -> ShareGlucoseFetching
+    typealias ClientFactory =
+        @MainActor (_ user: String, _ pass: String, _ server: KnownShareServers) -> ShareGlucoseFetching
     private let makeClient: ClientFactory
 
     /// The cached client + the credentials it was built from. Reused across `poll()` so the
@@ -38,9 +39,11 @@ final class DexcomShareSource: PollingGlucoseSource {
     private var client: ShareGlucoseFetching?
     private var cachedCreds: (user: String, pass: String, server: KnownShareServers)?
 
-    init(clientFactory: @escaping ClientFactory = { user, pass, server in
-        ShareClient(username: user, password: pass, shareServer: server)
-    }) {
+    init(
+        clientFactory: @escaping ClientFactory = { user, pass, server in
+            ShareClient(username: user, password: pass, shareServer: server)
+        }
+    ) {
         self.makeClient = clientFactory
         super.init(id: "dexcom-share", priority: 20)
     }
@@ -57,7 +60,8 @@ final class DexcomShareSource: PollingGlucoseSource {
 
     override func poll() async throws -> [GlucoseSample] {
         guard let user = GlucoseSourceConfig.string("dexcomshare.username"),
-              let pass = CredentialStore.get(account: "dexcomshare.password") else {
+            let pass = CredentialStore.get(account: "dexcomshare.password")
+        else {
             throw SourceError.needsSetup("Dexcom Share")
         }
         let server = Self.server(for: GlucoseSourceConfig.string("dexcomshare.region"))
@@ -81,20 +85,25 @@ final class DexcomShareSource: PollingGlucoseSource {
         if client == nil
             || cachedCreds?.user != user
             || cachedCreds?.pass != pass
-            || cachedCreds?.server != server {
+            || cachedCreds?.server != server
+        {
             client = makeClient(user, pass, server)
             cachedCreds = (user, pass, server)
         }
         guard let client else { return [] }
-        let sid = id   // capture the Sendable id, not self, into the callback
+        let sid = id  // capture the Sendable id, not self, into the callback
         do {
             let raw: [(mgdl: Int, date: Date, trend: Int)] = try await withCheckedThrowingContinuation { cont in
                 // ShareClient handles session re-auth internally (maxReauthAttempts).
                 client.fetchLast(48) { error, values in
-                    if let error { cont.resume(throwing: error); return }
-                    cont.resume(returning: (values ?? []).map {
-                        (mgdl: Int($0.glucose), date: $0.timestamp, trend: Int($0.trend))
-                    })
+                    if let error {
+                        cont.resume(throwing: error)
+                        return
+                    }
+                    cont.resume(
+                        returning: (values ?? []).map {
+                            (mgdl: Int($0.glucose), date: $0.timestamp, trend: Int($0.trend))
+                        })
                 }
             }
             // Back on the MainActor now (the continuation resumes into this @MainActor-isolated
@@ -125,12 +134,15 @@ final class DexcomShareSource: PollingGlucoseSource {
     /// discarding it. An above-`.maximum` reading (decode garbage) — or `glucose <= 0` — is still
     /// silently dropped either way.
     static func partition(readings: [(mgdl: Int, date: Date, trend: Int)], sourceID: String)
-        -> (samples: [GlucoseSample], belowRange: [(mgdl: Int, date: Date)]) {
+        -> (samples: [GlucoseSample], belowRange: [(mgdl: Int, date: Date)])
+    {
         var samples: [GlucoseSample] = []
         var belowRange: [(mgdl: Int, date: Date)] = []
         for r in readings {
             guard r.mgdl > 0 else { continue }
-            if let sample = GlucoseSample(mgdl: r.mgdl, date: r.date, trend: CgmTrend.dexcom(r.trend), sourceID: sourceID) {
+            if let sample = GlucoseSample(
+                mgdl: r.mgdl, date: r.date, trend: CgmTrend.dexcom(r.trend), sourceID: sourceID)
+            {
                 samples.append(sample)
             } else if r.mgdl < GlucosePlausibility.minimum {
                 belowRange.append((mgdl: r.mgdl, date: r.date))

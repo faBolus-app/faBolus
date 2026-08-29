@@ -26,10 +26,16 @@ struct TslimFastPathReconnectIdentityRegressionTests {
         let fake = FakePumpTransport()
         let backend = TandemBackend(testTransport: fake)
         fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
-        fake.script(BolusPermissionResponse.props.opCode, .frame(FakePumpTransport.permissionGranted(bolusId: Self.bolusId)))
-        fake.script(InitiateBolusResponse.props.opCode, .frame(FakePumpTransport.initiateAccepted(bolusId: Self.bolusId)))
-        fake.script(CurrentBolusStatusResponse.props.opCode, .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: Self.bolusId)))
-        fake.script(LastBolusStatusV2Response.props.opCode, .frame(FakePumpTransport.lastBolus(bolusId: Self.bolusId, deliveredMilliunits: 2000)))
+        fake.script(
+            BolusPermissionResponse.props.opCode, .frame(FakePumpTransport.permissionGranted(bolusId: Self.bolusId)))
+        fake.script(
+            InitiateBolusResponse.props.opCode, .frame(FakePumpTransport.initiateAccepted(bolusId: Self.bolusId)))
+        fake.script(
+            CurrentBolusStatusResponse.props.opCode,
+            .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: Self.bolusId)))
+        fake.script(
+            LastBolusStatusV2Response.props.opCode,
+            .frame(FakePumpTransport.lastBolus(bolusId: Self.bolusId, deliveredMilliunits: 2000)))
         return (backend, fake)
     }
 
@@ -42,7 +48,7 @@ struct TslimFastPathReconnectIdentityRegressionTests {
         b.setPumpModelIdentityForTesting(pumpModelName: "", isMobi: false)
         b.detectedIsMobiForTesting = nil
         b.setConnectionForTesting(.scanning)
-        b.armReconnectTargetForTesting(uuid)   // connectKnownPeripheral armed the kit's reconnectTargetId
+        b.armReconnectTargetForTesting(uuid)  // connectKnownPeripheral armed the kit's reconnectTargetId
     }
 
     // MARK: - the regression: a paired t:slim reconnecting via the fast path must resolve to .tslimX2
@@ -53,16 +59,17 @@ struct TslimFastPathReconnectIdentityRegressionTests {
         resetIdentityStores()
         let uuid = UUID()
         PumpPeripheralStore.set(uuid)
-        TrustedPumpIdentityStore.set(isMobi: false, for: uuid)   // a genuine prior didDiscover identified a t:slim
+        TrustedPumpIdentityStore.set(isMobi: false, for: uuid)  // a genuine prior didDiscover identified a t:slim
         let b = TandemBackend(testTransport: FakePumpTransport())
         armColdLaunchFastPath(b, uuid: uuid)
         #expect(b.snapshot.pumpModel == .unknown, "precondition: fresh cold launch, model not yet published")
 
-        b.applyClientState(.discovering)   // fires reapplyTrustedIdentityIfKnown()
-        b.injectStatusFrameForTesting(FakePumpTransport.apiVersion(major: 2, minor: 5))   // REAL op33 (t:slim, API 2.5)
+        b.applyClientState(.discovering)  // fires reapplyTrustedIdentityIfKnown()
+        b.injectStatusFrameForTesting(FakePumpTransport.apiVersion(major: 2, minor: 5))  // REAL op33 (t:slim, API 2.5)
 
-        #expect(b.snapshot.pumpModel == .tslimX2,
-                "a paired t:slim reconnecting via the fast path must resolve to .tslimX2, never .unknown")
+        #expect(
+            b.snapshot.pumpModel == .tslimX2,
+            "a paired t:slim reconnecting via the fast path must resolve to .tslimX2, never .unknown")
         #expect(!b.snapshot.isMobi, "the restored published identity must be t:slim, not Mobi")
     }
 
@@ -78,7 +85,7 @@ struct TslimFastPathReconnectIdentityRegressionTests {
 
         b.applyClientState(.discovering)
         b.injectStatusFrameForTesting(FakePumpTransport.apiVersion(major: 2, minor: 5))
-        b.setConnectionForTesting(.connected)   // reconnect completed + polling resumed (markUsableAndStartPolling)
+        b.setConnectionForTesting(.connected)  // reconnect completed + polling resumed (markUsableAndStartPolling)
 
         let delivered = try await b.deliverBolus(units: 2.0, carbsGrams: nil, bgMgdl: nil, iobUnits: nil)
         #expect(delivered == 2.0, "a genuine t:slim reconnecting via the fast path must not be Mobi-rejected")
@@ -96,15 +103,17 @@ struct TslimFastPathReconnectIdentityRegressionTests {
         resetIdentityStores()
         let uuid = UUID()
         PumpPeripheralStore.set(uuid)
-        TrustedPumpIdentityStore.set(isMobi: true, for: uuid)   // a genuine prior didDiscover identified a Mobi
+        TrustedPumpIdentityStore.set(isMobi: true, for: uuid)  // a genuine prior didDiscover identified a Mobi
         let b = TandemBackend(testTransport: FakePumpTransport())
         armColdLaunchFastPath(b, uuid: uuid)
 
         b.applyClientState(.discovering)
-        b.injectStatusFrameForTesting(FakePumpTransport.apiVersion(major: 3, minor: 5))   // REAL op33 (Mobi, API 3.5)
+        b.injectStatusFrameForTesting(FakePumpTransport.apiVersion(major: 3, minor: 5))  // REAL op33 (Mobi, API 3.5)
 
-        #expect(b.snapshot.pumpModel == .mobi,
-                "the fix must restore the persisted model faithfully — a trusted Mobi resolves to .mobi, not .unknown or .tslimX2")
+        #expect(
+            b.snapshot.pumpModel == .mobi,
+            "the fix must restore the persisted model faithfully — a trusted Mobi resolves to .mobi, not .unknown or .tslimX2"
+        )
         #expect(b.snapshot.isMobi, "the restored published identity must be Mobi")
     }
 }

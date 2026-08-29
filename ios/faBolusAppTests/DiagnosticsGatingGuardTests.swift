@@ -35,7 +35,7 @@ struct DiagnosticsGatingGuardTests {
                 stack.append(String(trimmed.dropFirst("#elseif ".count)))
             } else if trimmed.hasPrefix("#else") {
                 if !stack.isEmpty { stack.removeLast() }
-                stack.append("")   // else-branch condition is the negation — not itself a debug token
+                stack.append("")  // else-branch condition is the negation — not itself a debug token
             } else if trimmed.hasPrefix("#endif") {
                 if !stack.isEmpty { stack.removeLast() }
             }
@@ -55,7 +55,8 @@ struct DiagnosticsGatingGuardTests {
 
     @Test func bleSessionLogRecordPathIsNotDebugOnlyGated() throws {
         guard let url = Self.resolve("ios/faBolus/Data/Diagnostics/BLESessionLog.swift") else {
-            Issue.record("could not resolve ios/faBolus/Data/Diagnostics/BLESessionLog.swift from #filePath=\(#filePath)")
+            Issue.record(
+                "could not resolve ios/faBolus/Data/Diagnostics/BLESessionLog.swift from #filePath=\(#filePath)")
             return
         }
         let source = try String(contentsOf: url, encoding: .utf8)
@@ -65,8 +66,9 @@ struct DiagnosticsGatingGuardTests {
             Issue.record("could not locate BLESessionLog.record(_:detail:at:) — resolution/signature drift")
             return
         }
-        #expect(!Self.isInsideDebugOnlyDirective(lines: lines, targetLineIndex: recordLine),
-                "BLESessionLog.record is wrapped in a debug-only compilation gate — D-01 requires it permanent")
+        #expect(
+            !Self.isInsideDebugOnlyDirective(lines: lines, targetLineIndex: recordLine),
+            "BLESessionLog.record is wrapped in a debug-only compilation gate — D-01 requires it permanent")
     }
 
     // MARK: - The export-write path is never debug-only gated
@@ -83,8 +85,9 @@ struct DiagnosticsGatingGuardTests {
             Issue.record("could not locate DebugMenuView.writeDiagnosticsExportFile — resolution/signature drift")
             return
         }
-        #expect(!Self.isInsideDebugOnlyDirective(lines: lines, targetLineIndex: writeLine),
-                "writeDiagnosticsExportFile is wrapped in a debug-only compilation gate — D-01 requires it permanent")
+        #expect(
+            !Self.isInsideDebugOnlyDirective(lines: lines, targetLineIndex: writeLine),
+            "writeDiagnosticsExportFile is wrapped in a debug-only compilation gate — D-01 requires it permanent")
     }
 
     // MARK: - A path-resolution bug must fail loudly, not pass vacuously

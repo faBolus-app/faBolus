@@ -9,16 +9,17 @@ import Testing
 // scheduling otherwise races them against sibling rows (flaky reds). Mirrors StackingGuardNoticeAckTests.
 @Suite(.serialized) struct StackingGuardTests {
 
-    private let target = 120   // arbitrary pump-reported op-115 target for these rows
+    private let target = 120  // arbitrary pump-reported op-115 target for these rows
 
     // MARK: - SG1 fires: entered > positive recommended, glucose above the pump's own target, displayable dose
 
     @Test func firesWhenOverridingAboveTargetWithDisplayableDose() {
         let cases: [(entered: Double, recommended: Double)] = [(2.0, 0.5), (5.0, 1.0), (10.0, 9.9)]
         for c in cases {
-            let d = StackingGuard.calcOverride(enteredUnits: c.entered, recommendedUnits: c.recommended,
-                                                displaysNumericDose: true, pumpIOBUnits: 0.5,
-                                                glucoseMgdl: target + 10, targetMgdl: target)
+            let d = StackingGuard.calcOverride(
+                enteredUnits: c.entered, recommendedUnits: c.recommended,
+                displaysNumericDose: true, pumpIOBUnits: 0.5,
+                glucoseMgdl: target + 10, targetMgdl: target)
             #expect(d.friction == .disclose)
             #expect(d.message?.contains("more than the pump's calculator suggested") == true)
         }
@@ -27,10 +28,11 @@ import Testing
     // MARK: - False positive: exact-recommended carb bolus never fires, regardless of absolute size
 
     @Test func exactRecommendedNeverFiresRegardlessOfSize() {
-        for dose in [0.5, 5.0, 25.0, 80.0] {   // large carb bolus sizes
-            let d = StackingGuard.calcOverride(enteredUnits: dose, recommendedUnits: dose,
-                                                displaysNumericDose: true, pumpIOBUnits: 1.0,
-                                                glucoseMgdl: target + 20, targetMgdl: target)
+        for dose in [0.5, 5.0, 25.0, 80.0] {  // large carb bolus sizes
+            let d = StackingGuard.calcOverride(
+                enteredUnits: dose, recommendedUnits: dose,
+                displaysNumericDose: true, pumpIOBUnits: 1.0,
+                glucoseMgdl: target + 20, targetMgdl: target)
             #expect(d.friction == .none)
         }
     }
@@ -38,9 +40,10 @@ import Testing
     @Test func underRecommendedNeverFires() {
         let cases: [(entered: Double, recommended: Double)] = [(0.0, 1.0), (1.0, 2.0), (2.0, 7.0)]
         for c in cases {
-            let d = StackingGuard.calcOverride(enteredUnits: c.entered, recommendedUnits: c.recommended,
-                                                displaysNumericDose: true, pumpIOBUnits: 0,
-                                                glucoseMgdl: target + 10, targetMgdl: target)
+            let d = StackingGuard.calcOverride(
+                enteredUnits: c.entered, recommendedUnits: c.recommended,
+                displaysNumericDose: true, pumpIOBUnits: 0,
+                glucoseMgdl: target + 10, targetMgdl: target)
             #expect(d.friction == .none)
         }
     }
@@ -49,9 +52,10 @@ import Testing
 
     @Test func fullOverrideAgainstZeroRecommendedDisclosesWithoutRatio() {
         for entered in [0.5, 3.0, 25.0] {
-            let d = StackingGuard.calcOverride(enteredUnits: entered, recommendedUnits: 0,
-                                                displaysNumericDose: true, pumpIOBUnits: 0,
-                                                glucoseMgdl: target + 10, targetMgdl: target)
+            let d = StackingGuard.calcOverride(
+                enteredUnits: entered, recommendedUnits: 0,
+                displaysNumericDose: true, pumpIOBUnits: 0,
+                glucoseMgdl: target + 10, targetMgdl: target)
             #expect(d.friction == .disclose)
             #expect(d.message != nil)
             if let m = d.message {
@@ -62,9 +66,10 @@ import Testing
     }
 
     @Test func zeroEnteredAgainstZeroRecommendedNeverFires() {
-        let d = StackingGuard.calcOverride(enteredUnits: 0, recommendedUnits: 0,
-                                            displaysNumericDose: true, pumpIOBUnits: 0,
-                                            glucoseMgdl: target + 10, targetMgdl: target)
+        let d = StackingGuard.calcOverride(
+            enteredUnits: 0, recommendedUnits: 0,
+            displaysNumericDose: true, pumpIOBUnits: 0,
+            glucoseMgdl: target + 10, targetMgdl: target)
         #expect(d.friction == .none)
     }
 
@@ -72,9 +77,10 @@ import Testing
 
     @Test func hardcodedGuessSuppressesSG1Regardless() {
         for recommended in [0.0, 1.0] {
-            let d = StackingGuard.calcOverride(enteredUnits: 10.0, recommendedUnits: recommended,
-                                                displaysNumericDose: false, pumpIOBUnits: 0,
-                                                glucoseMgdl: target + 30, targetMgdl: target)
+            let d = StackingGuard.calcOverride(
+                enteredUnits: 10.0, recommendedUnits: recommended,
+                displaysNumericDose: false, pumpIOBUnits: 0,
+                glucoseMgdl: target + 30, targetMgdl: target)
             #expect(d.friction == .none)
         }
     }
@@ -83,17 +89,19 @@ import Testing
 
     @Test func glucoseAtOrBelowTargetNeverFires() {
         for glucose in [target, target - 20] {
-            let d = StackingGuard.calcOverride(enteredUnits: 5.0, recommendedUnits: 2.0,
-                                                displaysNumericDose: true, pumpIOBUnits: 0,
-                                                glucoseMgdl: glucose, targetMgdl: target)
+            let d = StackingGuard.calcOverride(
+                enteredUnits: 5.0, recommendedUnits: 2.0,
+                displaysNumericDose: true, pumpIOBUnits: 0,
+                glucoseMgdl: glucose, targetMgdl: target)
             #expect(d.friction == .none)
         }
     }
 
     @Test func absentGlucoseNeverFires() {
-        let d = StackingGuard.calcOverride(enteredUnits: 5.0, recommendedUnits: 2.0,
-                                            displaysNumericDose: true, pumpIOBUnits: 0,
-                                            glucoseMgdl: nil, targetMgdl: target)
+        let d = StackingGuard.calcOverride(
+            enteredUnits: 5.0, recommendedUnits: 2.0,
+            displaysNumericDose: true, pumpIOBUnits: 0,
+            glucoseMgdl: nil, targetMgdl: target)
         #expect(d.friction == .none)
     }
 
@@ -120,9 +128,10 @@ import Testing
             for recommended in entries {
                 for glucose in glucoses {
                     for displayable in [true, false] {
-                        let d = StackingGuard.calcOverride(enteredUnits: entered, recommendedUnits: recommended,
-                                                            displaysNumericDose: displayable, pumpIOBUnits: 1.0,
-                                                            glucoseMgdl: glucose, targetMgdl: target)
+                        let d = StackingGuard.calcOverride(
+                            enteredUnits: entered, recommendedUnits: recommended,
+                            displaysNumericDose: displayable, pumpIOBUnits: 1.0,
+                            glucoseMgdl: glucose, targetMgdl: target)
                         assertNoForbiddenPhrase(d)
                     }
                 }
@@ -135,9 +144,10 @@ import Testing
                     assertNoForbiddenPhrase(sg2)
                     for glucose in glucoses {
                         for displayable in [true, false] {
-                            let sg3a = StackingGuard.escalation(enteredUnits: entered, recommendedUnits: recommended,
-                                                                displaysNumericDose: displayable, pumpIOBUnits: 1.0,
-                                                                glucoseMgdl: glucose, targetMgdl: target, maxBolusUnits: max)
+                            let sg3a = StackingGuard.escalation(
+                                enteredUnits: entered, recommendedUnits: recommended,
+                                displaysNumericDose: displayable, pumpIOBUnits: 1.0,
+                                glucoseMgdl: glucose, targetMgdl: target, maxBolusUnits: max)
                             assertNoForbiddenPhrase(sg3a)
                         }
                     }
@@ -211,23 +221,27 @@ import Testing
 
     @Test func escalationNoneWhenNeitherSG1NorSG2WouldFire() {
         // Not displayable.
-        var d = StackingGuard.escalation(enteredUnits: 10.0, recommendedUnits: 1.0, displaysNumericDose: false,
-                                          pumpIOBUnits: 0, glucoseMgdl: target + 50, targetMgdl: target, maxBolusUnits: 25.0)
+        var d = StackingGuard.escalation(
+            enteredUnits: 10.0, recommendedUnits: 1.0, displaysNumericDose: false,
+            pumpIOBUnits: 0, glucoseMgdl: target + 50, targetMgdl: target, maxBolusUnits: 25.0)
         #expect(d.friction == .none)
 
         // Glucose at/below target.
-        d = StackingGuard.escalation(enteredUnits: 10.0, recommendedUnits: 1.0, displaysNumericDose: true,
-                                      pumpIOBUnits: 0, glucoseMgdl: target, targetMgdl: target, maxBolusUnits: 25.0)
+        d = StackingGuard.escalation(
+            enteredUnits: 10.0, recommendedUnits: 1.0, displaysNumericDose: true,
+            pumpIOBUnits: 0, glucoseMgdl: target, targetMgdl: target, maxBolusUnits: 25.0)
         #expect(d.friction == .none)
 
         // Absent glucose.
-        d = StackingGuard.escalation(enteredUnits: 10.0, recommendedUnits: 1.0, displaysNumericDose: true,
-                                      pumpIOBUnits: 0, glucoseMgdl: nil, targetMgdl: target, maxBolusUnits: 25.0)
+        d = StackingGuard.escalation(
+            enteredUnits: 10.0, recommendedUnits: 1.0, displaysNumericDose: true,
+            pumpIOBUnits: 0, glucoseMgdl: nil, targetMgdl: target, maxBolusUnits: 25.0)
         #expect(d.friction == .none)
 
         // Not an override at all (entered <= recommended).
-        d = StackingGuard.escalation(enteredUnits: 1.0, recommendedUnits: 5.0, displaysNumericDose: true,
-                                      pumpIOBUnits: 0, glucoseMgdl: target + 50, targetMgdl: target, maxBolusUnits: 25.0)
+        d = StackingGuard.escalation(
+            enteredUnits: 1.0, recommendedUnits: 5.0, displaysNumericDose: true,
+            pumpIOBUnits: 0, glucoseMgdl: target + 50, targetMgdl: target, maxBolusUnits: 25.0)
         #expect(d.friction == .none)
     }
 
@@ -235,9 +249,10 @@ import Testing
 
     @Test func escalationExactRecommendedNeverFiresRegardlessOfSize() {
         for dose in [0.5, 5.0, 25.0, 80.0] {
-            let d = StackingGuard.escalation(enteredUnits: dose, recommendedUnits: dose, displaysNumericDose: true,
-                                              pumpIOBUnits: 1.0, glucoseMgdl: target + 20, targetMgdl: target,
-                                              maxBolusUnits: dose)   // even exactly at "max" — still not an override
+            let d = StackingGuard.escalation(
+                enteredUnits: dose, recommendedUnits: dose, displaysNumericDose: true,
+                pumpIOBUnits: 1.0, glucoseMgdl: target + 20, targetMgdl: target,
+                maxBolusUnits: dose)  // even exactly at "max" — still not an override
             #expect(d.friction == .none)
         }
     }
@@ -248,31 +263,38 @@ import Testing
         let recommended = 2.0
         // A representative sweep of increasing entered doses (increasing ratio), max kept high (no SG2
         // contribution) so only the ratio cut-points drive the tier.
-        let entered: [Double] = [2.5, 2.9,   // ratio 1.25, 1.45           -> disclose
-                                  3.1, 3.9,   // ratio 1.55, 1.95          -> confirmExtra
-                                  4.1, 8.0]   // ratio 2.05, 4.0           -> reenter
+        let entered: [Double] = [
+            2.5, 2.9,  // ratio 1.25, 1.45           -> disclose
+            3.1, 3.9,  // ratio 1.55, 1.95          -> confirmExtra
+            4.1, 8.0
+        ]  // ratio 2.05, 4.0           -> reenter
         var priorRank = -1
         for e in entered {
-            let d = StackingGuard.escalation(enteredUnits: e, recommendedUnits: recommended, displaysNumericDose: true,
-                                              pumpIOBUnits: 0, glucoseMgdl: target + 10, targetMgdl: target,
-                                              maxBolusUnits: 1_000.0)
+            let d = StackingGuard.escalation(
+                enteredUnits: e, recommendedUnits: recommended, displaysNumericDose: true,
+                pumpIOBUnits: 0, glucoseMgdl: target + 10, targetMgdl: target,
+                maxBolusUnits: 1_000.0)
             #expect(d.friction != .none, "entered \(e) over recommended \(recommended) must fire")
             #expect(d.friction.rawValue >= priorRank, "friction must never step DOWN as entered increases")
             priorRank = d.friction.rawValue
         }
-        #expect(priorRank == StackingGuard.Friction.reenter.rawValue, "the largest override in the sweep must reach .reenter")
+        #expect(
+            priorRank == StackingGuard.Friction.reenter.rawValue,
+            "the largest override in the sweep must reach .reenter")
 
         // Explicit tier boundaries against the DEFAULT statics (1.5 / 2.0).
         func tier(_ e: Double) -> StackingGuard.Friction {
-            StackingGuard.escalation(enteredUnits: e, recommendedUnits: recommended, displaysNumericDose: true,
-                                      pumpIOBUnits: 0, glucoseMgdl: target + 10, targetMgdl: target,
-                                      maxBolusUnits: 1_000.0).friction
+            StackingGuard.escalation(
+                enteredUnits: e, recommendedUnits: recommended, displaysNumericDose: true,
+                pumpIOBUnits: 0, glucoseMgdl: target + 10, targetMgdl: target,
+                maxBolusUnits: 1_000.0
+            ).friction
         }
-        #expect(tier(2.5) == .disclose)      // ratio 1.25 < 1.5
-        #expect(tier(2.9) == .disclose)      // ratio 1.45 < 1.5
+        #expect(tier(2.5) == .disclose)  // ratio 1.25 < 1.5
+        #expect(tier(2.9) == .disclose)  // ratio 1.45 < 1.5
         #expect(tier(3.0) == .confirmExtra)  // ratio 1.50 == cut-point (>=)
         #expect(tier(3.9) == .confirmExtra)  // ratio 1.95 < 2.0
-        #expect(tier(4.0) == .reenter)       // ratio 2.00 == cut-point (>=)
+        #expect(tier(4.0) == .reenter)  // ratio 2.00 == cut-point (>=)
         #expect(tier(8.0) == .reenter)
     }
 
@@ -282,16 +304,18 @@ import Testing
         // ratio 1.1 (entered 2.2 / recommended 2.0) is well below confirmExtraOverrideRatio's default 1.5,
         // but maxBolusUnits == enteredUnits means SG2 (maxBolusProximity) fires — that alone must be enough
         // to reach .confirmExtra.
-        let d = StackingGuard.escalation(enteredUnits: 2.2, recommendedUnits: 2.0, displaysNumericDose: true,
-                                          pumpIOBUnits: 0, glucoseMgdl: target + 10, targetMgdl: target,
-                                          maxBolusUnits: 2.2)
+        let d = StackingGuard.escalation(
+            enteredUnits: 2.2, recommendedUnits: 2.0, displaysNumericDose: true,
+            pumpIOBUnits: 0, glucoseMgdl: target + 10, targetMgdl: target,
+            maxBolusUnits: 2.2)
         #expect(d.friction == .confirmExtra)
     }
 
     @Test func escalationBelowMaxAtModestRatioStaysAtDisclose() {
-        let d = StackingGuard.escalation(enteredUnits: 2.2, recommendedUnits: 2.0, displaysNumericDose: true,
-                                          pumpIOBUnits: 0, glucoseMgdl: target + 10, targetMgdl: target,
-                                          maxBolusUnits: 25.0)
+        let d = StackingGuard.escalation(
+            enteredUnits: 2.2, recommendedUnits: 2.0, displaysNumericDose: true,
+            pumpIOBUnits: 0, glucoseMgdl: target + 10, targetMgdl: target,
+            maxBolusUnits: 25.0)
         #expect(d.friction == .disclose)
     }
 
@@ -299,9 +323,10 @@ import Testing
 
     @Test func escalationFullOverrideAgainstZeroRecommendedGoesStraightToReenter() {
         for entered in [0.5, 3.0, 25.0] {
-            let d = StackingGuard.escalation(enteredUnits: entered, recommendedUnits: 0, displaysNumericDose: true,
-                                              pumpIOBUnits: 0, glucoseMgdl: target + 10, targetMgdl: target,
-                                              maxBolusUnits: 25.0)
+            let d = StackingGuard.escalation(
+                enteredUnits: entered, recommendedUnits: 0, displaysNumericDose: true,
+                pumpIOBUnits: 0, glucoseMgdl: target + 10, targetMgdl: target,
+                maxBolusUnits: 25.0)
             #expect(d.friction == .reenter)
             #expect(d.message != nil)
             if let m = d.message {
@@ -322,30 +347,34 @@ import Testing
         }
 
         // A ratio of 1.2 sits below the DEFAULT confirmExtra cut-point (1.5) -> disclose.
-        var d = StackingGuard.escalation(enteredUnits: 2.4, recommendedUnits: 2.0, displaysNumericDose: true,
-                                          pumpIOBUnits: 0, glucoseMgdl: target + 10, targetMgdl: target,
-                                          maxBolusUnits: 1_000.0)
+        var d = StackingGuard.escalation(
+            enteredUnits: 2.4, recommendedUnits: 2.0, displaysNumericDose: true,
+            pumpIOBUnits: 0, glucoseMgdl: target + 10, targetMgdl: target,
+            maxBolusUnits: 1_000.0)
         #expect(d.friction == .disclose)
 
         // Lower the static below that same ratio (1.2) — the SAME entered/recommended pair must now cross
         // into .confirmExtra, proving the boundary tracks the static rather than a baked-in literal.
         StackingGuard.confirmExtraOverrideRatio = 1.1
-        d = StackingGuard.escalation(enteredUnits: 2.4, recommendedUnits: 2.0, displaysNumericDose: true,
-                                      pumpIOBUnits: 0, glucoseMgdl: target + 10, targetMgdl: target,
-                                      maxBolusUnits: 1_000.0)
+        d = StackingGuard.escalation(
+            enteredUnits: 2.4, recommendedUnits: 2.0, displaysNumericDose: true,
+            pumpIOBUnits: 0, glucoseMgdl: target + 10, targetMgdl: target,
+            maxBolusUnits: 1_000.0)
         #expect(d.friction == .confirmExtra)
 
         // Same for the reenter cut-point: default 2.0 means ratio 1.8 stays at confirmExtra; lowering the
         // static to 1.7 must push that SAME pair to .reenter.
-        d = StackingGuard.escalation(enteredUnits: 3.6, recommendedUnits: 2.0, displaysNumericDose: true,
-                                      pumpIOBUnits: 0, glucoseMgdl: target + 10, targetMgdl: target,
-                                      maxBolusUnits: 1_000.0)
-        #expect(d.friction == .confirmExtra)   // ratio 1.8, still below default reenter cut-point 2.0
+        d = StackingGuard.escalation(
+            enteredUnits: 3.6, recommendedUnits: 2.0, displaysNumericDose: true,
+            pumpIOBUnits: 0, glucoseMgdl: target + 10, targetMgdl: target,
+            maxBolusUnits: 1_000.0)
+        #expect(d.friction == .confirmExtra)  // ratio 1.8, still below default reenter cut-point 2.0
 
         StackingGuard.reenterOverrideRatio = 1.7
-        d = StackingGuard.escalation(enteredUnits: 3.6, recommendedUnits: 2.0, displaysNumericDose: true,
-                                      pumpIOBUnits: 0, glucoseMgdl: target + 10, targetMgdl: target,
-                                      maxBolusUnits: 1_000.0)
+        d = StackingGuard.escalation(
+            enteredUnits: 3.6, recommendedUnits: 2.0, displaysNumericDose: true,
+            pumpIOBUnits: 0, glucoseMgdl: target + 10, targetMgdl: target,
+            maxBolusUnits: 1_000.0)
         #expect(d.friction == .reenter)
     }
 

@@ -34,21 +34,24 @@ struct RemoteRoleDiagnosticsTests {
     }
 
     @Test func disabledRendersOnlyHeaderAndEmptyStatePrompt() {
-        let peer = RemoteRoleDiagnostics.PeerInfo(displayName: "Zev's MacBook Pro", connected: true, policy: .fullControl)
+        let peer = RemoteRoleDiagnostics.PeerInfo(
+            displayName: "Zev's MacBook Pro", connected: true, policy: .fullControl)
         let block = RemoteRoleDiagnostics.section(role: "host", peers: [peer], enabled: false)
         let lines = block.components(separatedBy: "\n")
 
-        #expect(lines == [
-            "",
-            "[Remote role]",
-            "Turn on “Share local diagnostics” above to start collecting remote-role data.",
-        ])
+        #expect(
+            lines == [
+                "",
+                "[Remote role]",
+                "Turn on “Share local diagnostics” above to start collecting remote-role data."
+            ])
         #expect(!block.contains("Zev's MacBook Pro"))
     }
 
     @Test func peerDisplayNameNeverAppearsVerbatim() {
-        let peer = RemoteRoleDiagnostics.PeerInfo(displayName: "Zev's MacBook Pro", connected: true,
-                                                   policy: RemotePeerPolicy(permissions: [.bolus], approvalMode: .auto))
+        let peer = RemoteRoleDiagnostics.PeerInfo(
+            displayName: "Zev's MacBook Pro", connected: true,
+            policy: RemotePeerPolicy(permissions: [.bolus], approvalMode: .auto))
         let block = RemoteRoleDiagnostics.section(role: "host", peers: [peer], enabled: true)
         #expect(!block.contains("Zev's MacBook Pro"))
         #expect(!block.contains("MacBook"))

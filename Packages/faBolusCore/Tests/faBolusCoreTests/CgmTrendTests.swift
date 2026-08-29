@@ -6,7 +6,7 @@ final class CgmTrendTests: XCTestCase {
         XCTAssertEqual(CgmTrend.nightscout("DoubleUp"), .upUp)
         XCTAssertEqual(CgmTrend.nightscout("SingleUp"), .up)
         XCTAssertEqual(CgmTrend.nightscout("FortyFiveUp"), .rising)
-        XCTAssertEqual(CgmTrend.nightscout("Flat"), .flat)       // explicit steady → flat (reported)
+        XCTAssertEqual(CgmTrend.nightscout("Flat"), .flat)  // explicit steady → flat (reported)
         XCTAssertEqual(CgmTrend.nightscout("FortyFiveDown"), .falling)
         XCTAssertEqual(CgmTrend.nightscout("SingleDown"), .down)
         XCTAssertEqual(CgmTrend.nightscout("DoubleDown"), .downDown)
@@ -18,7 +18,7 @@ final class CgmTrendTests: XCTestCase {
 
     func testDexcomNumericAndString() {
         XCTAssertEqual(CgmTrend.dexcom(1), .upUp)
-        XCTAssertEqual(CgmTrend.dexcom(4), .flat)                // 4 Flat → flat (reported steady)
+        XCTAssertEqual(CgmTrend.dexcom(4), .flat)  // 4 Flat → flat (reported steady)
         XCTAssertEqual(CgmTrend.dexcom(7), .downDown)
         XCTAssertEqual(CgmTrend.dexcom(name: "FortyFiveDown"), .falling)
         XCTAssertEqual(CgmTrend.dexcom(name: "singleup"), .up)
@@ -32,7 +32,7 @@ final class CgmTrendTests: XCTestCase {
 
     func testLibreTrendArrow() {
         XCTAssertEqual(CgmTrend.libre(1), .down)
-        XCTAssertEqual(CgmTrend.libre(3), .flat)                // 3 Flat → flat (reported steady)
+        XCTAssertEqual(CgmTrend.libre(3), .flat)  // 3 Flat → flat (reported steady)
         XCTAssertEqual(CgmTrend.libre(5), .up)
         // C8: absent / unknown arrow → nil (no arrow).
         XCTAssertNil(CgmTrend.libre(0))

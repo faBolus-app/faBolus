@@ -13,9 +13,9 @@ struct StackingGuardNoticeAckTests {
     /// (`<root>/ios/faBolusAppTests/StackingGuardNoticeAckTests.swift`).
     private static var repoRoot: URL {
         URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()   // drop the filename → .../ios/faBolusAppTests
-            .deletingLastPathComponent()   // → .../ios
-            .deletingLastPathComponent()   // → repo root
+            .deletingLastPathComponent()  // drop the filename → .../ios/faBolusAppTests
+            .deletingLastPathComponent()  // → .../ios
+            .deletingLastPathComponent()  // → repo root
     }
 
     private static var bolusEntryViewSource: String {
@@ -35,33 +35,39 @@ struct StackingGuardNoticeAckTests {
         s.acknowledgeStackingGuardNotice()
         #expect(s.hasAcknowledgedStackingGuardNotice)
         let first = s.stackingGuardNoticeAckAt
-        s.acknowledgeStackingGuardNotice()                 // idempotent — must keep the first timestamp
+        s.acknowledgeStackingGuardNotice()  // idempotent — must keep the first timestamp
         #expect(s.stackingGuardNoticeAckAt == first)
     }
 
     // MARK: - LOCK-06: the notice UI never presents — proven at the source level
 
     @Test func sourceCompiles() {
-        #expect(!Self.bolusEntryViewSource.isEmpty,
-                "could not read BolusEntryView.swift at the resolved repo-root path — check #filePath resolution")
+        #expect(
+            !Self.bolusEntryViewSource.isEmpty,
+            "could not read BolusEntryView.swift at the resolved repo-root path — check #filePath resolution")
     }
 
     @Test func noStackingGuardNoticeStateVariableRemainsInBolusEntryView() {
         // Regardless of ack state, there is no `showStackingGuardNotice` for anything to flip true —
         // the notice cannot present because its presentation-state variable no longer exists.
-        #expect(!Self.bolusEntryViewSource.contains("showStackingGuardNotice"),
-                "showStackingGuardNotice must be fully removed — the notice never presents (LOCK-06)")
+        #expect(
+            !Self.bolusEntryViewSource.contains("showStackingGuardNotice"),
+            "showStackingGuardNotice must be fully removed — the notice never presents (LOCK-06)")
     }
 
     @Test func noStackingGuardNoticeAlertRendersInBolusEntryView() {
-        #expect(!Self.bolusEntryViewSource.contains("New: Insulin Stacking Guard"),
-                "the one-shot stacking-guard notice alert must not render (LOCK-06)")
+        #expect(
+            !Self.bolusEntryViewSource.contains("New: Insulin Stacking Guard"),
+            "the one-shot stacking-guard notice alert must not render (LOCK-06)")
     }
 
     @Test func noOrphanedNoticeCopyConstantRemainsInBolusEntryView() {
-        #expect(!Self.bolusEntryViewSource.contains("stackingGuardNoticeCopy ="),
-                "stackingGuardNoticeCopy must be removed — it described a friction path that cannot fire with friction permanently off (LOCK-06)")
-        #expect(!Self.bolusEntryViewSource.contains("an extra confirmation or a re-type step"),
-                "no copy describing the now-impossible friction path may remain in BolusEntryView.swift")
+        #expect(
+            !Self.bolusEntryViewSource.contains("stackingGuardNoticeCopy ="),
+            "stackingGuardNoticeCopy must be removed — it described a friction path that cannot fire with friction permanently off (LOCK-06)"
+        )
+        #expect(
+            !Self.bolusEntryViewSource.contains("an extra confirmation or a re-type step"),
+            "no copy describing the now-impossible friction path may remain in BolusEntryView.swift")
     }
 }

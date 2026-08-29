@@ -23,10 +23,10 @@ public enum BolusMath {
     /// ratio and IOB ×1000; callers pass the divided values, matching `BolusCalcDataSnapshotResponse`
     /// accessors like `carbRatioGramsPerUnit`).
     public struct Profile: Sendable, Equatable {
-        public var carbRatioGramsPerUnit: Double   // g/U
-        public var isfMgdlPerUnit: Int             // mg/dL per U
-        public var targetBgMgdl: Int               // mg/dL
-        public var iobUnits: Double                // U (≤ 0 is treated as no IOB, matching the oracle's `iob > 0` gate)
+        public var carbRatioGramsPerUnit: Double  // g/U
+        public var isfMgdlPerUnit: Int  // mg/dL per U
+        public var targetBgMgdl: Int  // mg/dL
+        public var iobUnits: Double  // U (≤ 0 is treated as no IOB, matching the oracle's `iob > 0` gate)
         public init(carbRatioGramsPerUnit: Double, isfMgdlPerUnit: Int, targetBgMgdl: Int, iobUnits: Double) {
             self.carbRatioGramsPerUnit = carbRatioGramsPerUnit
             self.isfMgdlPerUnit = isfMgdlPerUnit
@@ -62,7 +62,7 @@ public enum BolusMath {
             if profile.carbRatioGramsPerUnit > 0 {
                 fromCarbs = dp(carbs / profile.carbRatioGramsPerUnit)
             } else {
-                carbSanityFail = true   // FailedSanityCheck: invalid carb ratio
+                carbSanityFail = true  // FailedSanityCheck: invalid carb ratio
             }
         }
 
@@ -71,9 +71,9 @@ public enum BolusMath {
         var bgSanityFail = false
         if let bg = bgMgdl {
             if profile.targetBgMgdl < 40 || profile.targetBgMgdl > 400 {
-                bgSanityFail = true     // target out of range / empty
+                bgSanityFail = true  // target out of range / empty
             } else if profile.isfMgdlPerUnit <= 0 {
-                bgSanityFail = true     // no ISF present
+                bgSanityFail = true  // no ISF present
             } else if !GlucosePlausibility.isPlausible(mgdl: bg) {
                 // Dose-path backstop (independent of the source-level GlucoseSample gate): the
                 // reading itself is outside [40,400] — implausible/corrupt. Treat it as "no BG
@@ -101,7 +101,7 @@ public enum BolusMath {
             } else if corr == 0 {
                 // do nothing
             } else {
-                total += corr   // POSITIVE_BG_CORRECTION
+                total += corr  // POSITIVE_BG_CORRECTION
             }
         } else {
             // below target — correction is negative and *reduces* the dose
@@ -109,9 +109,9 @@ public enum BolusMath {
             if corr == 0 {
                 // do nothing (unreachable: fromBG < 0 here)
             } else if total + corr > 0 {
-                total += corr   // NEGATIVE_BG_CORRECTION
+                total += corr  // NEGATIVE_BG_CORRECTION
             } else {
-                total = 0.0     // correction + IOB would take it negative → floor the total at 0
+                total = 0.0  // correction + IOB would take it negative → floor the total at 0
             }
         }
         total = dp(total)
@@ -121,8 +121,9 @@ public enum BolusMath {
             // Oracle returns fromUser(0) when any FailedSanityCheck is present.
             return Result(totalUnits: 0, fromCarbs: 0, fromBG: 0, fromIOB: 0, sanityFailed: true)
         }
-        return Result(totalUnits: max(0, total), fromCarbs: fromCarbs, fromBG: fromBG, fromIOB: fromIOB,
-                      sanityFailed: false)
+        return Result(
+            totalUnits: max(0, total), fromCarbs: fromCarbs, fromBG: fromBG, fromIOB: fromIOB,
+            sanityFailed: false)
     }
 
     /// Convenience: just the recommended total units (≥ 0), matching the oracle `getTotal()`.

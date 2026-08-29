@@ -24,16 +24,17 @@ final class RemoteCommandTests: XCTestCase {
     }
 
     func testStatusReadRoundTripData() throws {
-        let cmd = RemoteCommand(kind: .statusRead, units: 1.25,
-                                bgMgdl: 142, message: "Connected", trend: "up45",
-                                carbRatio: 10, isf: 40, targetBg: 110, maxBolusUnits: 25,
-                                reservoirUnits: 142, batteryPercent: 80, lastBolusUnits: 2.0,
-                                glucoseAgeSec: 120, history: [110, 120, 130],
-                                alerts: [.init(id: 2, kind: 3, title: "High glucose")],
-                                bolusMode: "carbs", bolusIncrement: 0.05, carbIncrement: 5,
-                                screenOrder: ["glance", "alerts"], defaultScreen: "glance")
+        let cmd = RemoteCommand(
+            kind: .statusRead, units: 1.25,
+            bgMgdl: 142, message: "Connected", trend: "up45",
+            carbRatio: 10, isf: 40, targetBg: 110, maxBolusUnits: 25,
+            reservoirUnits: 142, batteryPercent: 80, lastBolusUnits: 2.0,
+            glucoseAgeSec: 120, history: [110, 120, 130],
+            alerts: [.init(id: 2, kind: 3, title: "High glucose")],
+            bolusMode: "carbs", bolusIncrement: 0.05, carbIncrement: 5,
+            screenOrder: ["glance", "alerts"], defaultScreen: "glance")
         var withMode = cmd
-        withMode.activeMode = "simple"   // remotes need the phone's active mode on the wire
+        withMode.activeMode = "simple"  // remotes need the phone's active mode on the wire
         let decoded = try RemoteCommand.decode(try withMode.encoded())
         XCTAssertEqual(decoded, withMode)
         XCTAssertEqual(decoded.activeMode, "simple")
@@ -70,8 +71,9 @@ final class RemoteCommandTests: XCTestCase {
     }
 
     func testBolusStatusEcho() throws {
-        let cmd = RemoteCommand(kind: .bolusStatus, requestId: "abc",
-                                status: .cancelled, deliveredUnits: 0.8, message: "Cancelled · 0.80 U")
+        let cmd = RemoteCommand(
+            kind: .bolusStatus, requestId: "abc",
+            status: .cancelled, deliveredUnits: 0.8, message: "Cancelled · 0.80 U")
         let decoded = try RemoteCommand.decode(try cmd.encoded())
         XCTAssertEqual(decoded.status, .cancelled)
         XCTAssertEqual(decoded.deliveredUnits, 0.8)
@@ -205,10 +207,12 @@ final class RemoteCommandTests: XCTestCase {
         let back = try RemoteCommand.from(try cmd.asDictionary())
         XCTAssertEqual(back.kind, .dismissAck)
         XCTAssertEqual(back.alertId, 3)
-        XCTAssertFalse(RemoteCommand.Kind.dismissAck.mutatesPumpState,
-                        "an ack is observational, never a pump write")
-        XCTAssertFalse(RemoteCommand.Kind.dismissAck.isFreshnessSensitive,
-                        "a dismiss ack is insulin-neutral, never freshness-gated")
+        XCTAssertFalse(
+            RemoteCommand.Kind.dismissAck.mutatesPumpState,
+            "an ack is observational, never a pump write")
+        XCTAssertFalse(
+            RemoteCommand.Kind.dismissAck.isFreshnessSensitive,
+            "a dismiss ack is insulin-neutral, never freshness-gated")
     }
 
     /// A well-formed dismissAck (alertId + alertKind present) passes `validate()` — the cross-field
@@ -260,13 +264,16 @@ final class RemoteCommandTests: XCTestCase {
         cmd.rawAlerts = []
         cmd.supportsRawAlertSnapshot = true
         let json = String(data: try cmd.encoded(), encoding: .utf8) ?? ""
-        XCTAssertTrue(json.contains("\"rawAlerts\":[]"), "an empty-but-present rawAlerts must still be emitted on the wire: \(json)")
+        XCTAssertTrue(
+            json.contains("\"rawAlerts\":[]"),
+            "an empty-but-present rawAlerts must still be emitted on the wire: \(json)")
         let decoded = try RemoteCommand.decode(try cmd.encoded())
         XCTAssertNotNil(decoded.rawAlerts)
         XCTAssertEqual(decoded.rawAlerts?.count, 0)
 
         let bare = try RemoteCommand.decode(try RemoteCommand(kind: .statusRead).encoded())
-        XCTAssertNil(bare.rawAlerts, "an unset rawAlerts must be omitted from the wire entirely, decoding to nil (not [])")
+        XCTAssertNil(
+            bare.rawAlerts, "an unset rawAlerts must be omitted from the wire entirely, decoding to nil (not [])")
         XCTAssertNil(bare.supportsRawAlertSnapshot)
     }
 
@@ -276,7 +283,8 @@ final class RemoteCommandTests: XCTestCase {
         cmd.rawAlerts = (0..<(RemoteCommand.maxArrayCount + 1)).map { .init(id: $0, kind: 1, title: "x") }
         XCTAssertThrowsError(try cmd.validate()) { error in
             guard case RemoteCommand.ValidationError.tooManyElements(let field) = error else {
-                XCTFail("expected .tooManyElements, got \(error)"); return
+                XCTFail("expected .tooManyElements, got \(error)")
+                return
             }
             XCTAssertEqual(field, "rawAlerts")
         }
