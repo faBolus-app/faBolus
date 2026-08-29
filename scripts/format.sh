@@ -41,10 +41,24 @@ fi
 # printer cannot act on (an end-of-line comment that pushes a line past the limit can only be fixed
 # by MOVING the comment, which is a source change, not formatting), so it fails on a correctly
 # formatted tree.
+# Report the tool version: swift-format's output is version-dependent, so "is the tree formatted?"
+# is only a meaningful question relative to a known formatter. A different Xcode formats differently.
+echo "swift-format $(xcrun swift-format --version) (from $(xcrun --find swift-format))"
+
+# Fail LOUDLY and separately if swift-format cannot even read the config. Without this the loop below
+# would report every file as "unformatted" — which is what a stale Xcode on a CI runner actually did.
+if ! probe=$(xcrun swift-format format "${FILES[0]}" 2>&1 >/dev/null); then
+  echo "❌ swift-format could not run — this is a TOOL/CONFIG problem, not an unformatted tree:" >&2
+  echo "   $probe" >&2
+  echo "   .swift-format is written for the swift-format shipped with Xcode 26.6 (6.3.0). An older" >&2
+  echo "   swift-format may reject it outright. Do NOT reformat the tree to satisfy an older tool." >&2
+  exit 2
+fi
+
 if [ "$MODE" = lint ]; then
   unformatted=()
   for f in "${FILES[@]}"; do
-    if ! xcrun swift-format format "$f" | diff -q - "$f" >/dev/null 2>&1; then
+    if ! xcrun swift-format format "$f" 2>/dev/null | diff -q - "$f" >/dev/null 2>&1; then
       unformatted+=("$f")
     fi
   done
