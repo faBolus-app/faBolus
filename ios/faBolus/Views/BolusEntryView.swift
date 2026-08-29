@@ -1027,6 +1027,9 @@ struct BolusEntryView: View {
         // not the frozen request — a mid-flight cancel/partial isn't overstated.
         let bannerUnits = model.lastDeliveredUnits ?? f.units
         let extended: BolusConfirmation.ExtendedDetail?
+        // `!lastDeliveredWasCancelled` is load-bearing: on a cancelled extended delivery the now/total
+        // split cannot be decomposed from the single returned total, so asserting one would state a
+        // split that never happened. Fall back to the plain delivered-units line instead.
         if let now = f.extendedNow, !model.lastDeliveredWasCancelled {
             extended = BolusConfirmation.ExtendedDetail(nowUnits: now, totalUnits: f.units, durationMinutes: f.extendedDurationMin ?? 0)
         } else {
