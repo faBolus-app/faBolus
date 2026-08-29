@@ -216,3 +216,64 @@ jobs:
           set -o pipefail
           xcodebuild -project faBolus.xcodeproj -scheme faBolus \
             -resolvePackageDependencies
+
+  # Style / lint report (advisory). SwiftLint here is a REPORT, never a gate: continue-on-error keeps a
+  # style regression from blocking a dose-path fix. `.swiftlint.yml` records which rules are
+  # deliberately configured away and why (wire-field names, frozen-accessor setters, god-object
+  # metrics). `swift-format lint` proves the tree is still formatted.
+  style:
+    name: Style report (swift-format + SwiftLint, advisory)
+    runs-on: macos-15
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      # PIN the formatter rather than using the runner's Xcode. The image lags Xcode by several point
+      # releases (it shipped 26.3 / swift-format 6.2.3 while .swift-format targets 26.6 / 6.3.0), and
+      # 6.2.3 formats 3 of these files differently — which made this check report a false "unformatted
+      # tree". Homebrew's swift-format 603.0.0 is byte-identical to Xcode 26.6's 6.3.0, verified on
+      # exactly those 3 files, so it is a stable single source of truth for both CI and developers.
+      - name: Install the pinned swift-format
+        run: brew list swift-format >/dev/null 2>&1 || brew install swift-format
+
+      # `format.sh --lint` exits 2 (not 1) when swift-format cannot run or cannot read the config —
+      # a tool problem, not an unformatted tree. Treat that as a skip-with-notice, so the report can
+      # never tell anyone to reformat the tree to satisfy the wrong formatter.
+      - name: swift-format — is the tree formatted?
+        env:
+          SWIFT_FORMAT: /opt/homebrew/bin/swift-format
+        run: |
+          set +e
+          ./scripts/format.sh --lint
+          rc=$?
+          set -e
+          if [ "$rc" -eq 2 ]; then
+            echo "::notice::swift-format could not read .swift-format — skipping the format report"
+            exit 0
+          fi
+          exit "$rc"
+
+      - name: SwiftLint
+        run: |
+          brew list swiftlint >/dev/null 2>&1 || brew install swiftlint
+          swiftlint lint --quiet --reporter github-actions-logging || true
+          swiftlint lint --quiet --reporter csv > /tmp/sl.csv || true
+          echo "SwiftLint findings by rule:"
+          cut -d, -f6 /tmp/sl.csv | sort | uniq -c | sort -rn
+          echo "at error severity: $(cut -d, -f5 /tmp/sl.csv | grep -c -i error || true)"
+
+  # Semgrep — the local `.semgrep/deslop.yml` ruleset only, no marketplace packs. Flags AI-agent
+  # process residue (phase/ticket breadcrumbs, migration notes, drifted line references) and vacuous
+  # tests. Advisory: every hit needs human triage, because a genuine safety comment can match a
+  # residue pattern and a source-scanning guard test can be the last line of defense for a dose path.
+  semgrep:
+    name: Semgrep deslop rules (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Semgrep (local rules)
+        run: |
+          pipx install semgrep || pip install --user semgrep
+          # No --error: semgrep exits 0 with findings by default, which is what "advisory" means here.
+          semgrep --config .semgrep/deslop.yml --metrics=off .

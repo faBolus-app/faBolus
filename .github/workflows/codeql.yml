@@ -1,0 +1,92 @@
+# CodeQL — semantic security analysis (taint, injection, unsafe API, cleartext handling).
+#
+# This is a SECURITY layer, not a style or slop gate. CodeQL does not find phase-ticket comments or
+# vacuous tests; Semgrep and SwiftLint cover those in ci.yml.
+#
+# Triage rules for this repo:
+#   - Do NOT "clean up" a fail-closed path, a clamp, a confirm gesture, or a frozen accessor because a
+#     query dislikes it. The empty setters on `childModeEnabled` / `requireRemoteBolusApproval` /
+#     `alertRules` are safety interlocks, not dead code.
+#   - Crypto- and randomness-family queries will fire on the Mac/peer pairing payload and the App
+#     Group / Keychain plumbing. Review each alert, dismiss with a reason in the code-scanning UI.
+#   - A cleartext-logging alert on glucose or insulin values is worth reading carefully: those are
+#     health data, and the diagnostics bundle is user-shareable.
+#
+# Swift analysis requires macOS and a real compile — there is no Linux or Windows path. This repo is
+# public, so GitHub code scanning is free; a private fork would need GitHub Advanced Security.
+#
+# Build note: this uses `FABOLUS_TANDEM_LOCAL=1` with a branch-matched TandemKit checkout, mirroring
+# ci.yml's `ios-build` job, so the database describes the same graph CI builds. The pinned-revision
+# default is proved separately by ci.yml's `tandemkit-pin-resolves`.
+
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly, so a newly published query reaches the default branch without waiting for a push.
+    - cron: '41 6 * * 1'
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    name: Analyze Swift
+    runs-on: macos-15
+    timeout-minutes: 90
+    permissions:
+      security-events: write
+      packages: read
+      contents: read
+
+    steps:
+      - name: Checkout faBolus
+        uses: actions/checkout@v4
+
+      - name: Checkout TandemKit (main)
+        uses: actions/checkout@v4
+        with:
+          repository: faBolus-app/TandemKit
+          ref: main
+          path: repos/TandemKit
+          submodules: recursive
+
+      - name: Place TandemKit as the sibling checkout project.yml expects
+        run: mv repos/TandemKit ../TandemKit
+
+      # Select the NEWEST installed Xcode, exactly as ci.yml's `ios-build` job does. The previous
+      # hardcoded `Xcode_26.app` does not exist on the runner image, so this fell back to the default
+      # `Xcode.app` — an older toolchain whose stricter Sendable checking rejects
+      # `UNUserNotificationCenter.pendingNotificationRequests()` in NotificationCoordinator and failed
+      # the build. The same commit compiles cleanly in `ios-build`, which picks the newest Xcode.
+      - name: Select the newest Xcode
+        run: |
+          echo "Installed Xcodes:"; ls -d /Applications/Xcode*.app 2>/dev/null || true
+          NEWEST="$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)"
+          if [ -n "$NEWEST" ]; then sudo xcode-select -s "$NEWEST/Contents/Developer"; fi
+          echo "Selected Xcode:"; xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: swift
+          build-mode: manual
+
+      # Manual build mode, not autobuild: `generate-project.sh` (never bare `xcodegen`) derives the
+      # real spec from the project.yml template, so the database matches a buildable configuration.
+      - name: Build the app + widgets
+        run: |
+          FABOLUS_TANDEM_LOCAL=1 FABOLUS_NUDGE=0 FABOLUS_GARMIN=0 ./scripts/generate-project.sh
+          xcodebuild -project faBolus.xcodeproj -scheme faBolus \
+            -destination 'generic/platform=iOS Simulator' -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO build
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:swift

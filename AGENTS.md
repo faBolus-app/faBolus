@@ -48,6 +48,21 @@ There is **no Watch app on `main`**. Do not build `faBolusWatch` or assume a `wa
   callbacks that aren't must be `nonisolated` and hop back with `Task { @MainActor in … }`.
 - Match surrounding style. Comments explain **why** (safety, hardware, fail-closed). Do not add
   phase/ticket IDs, “moved from X” notes, or file-header novels.
+- **Run the formatter before you commit:** `./scripts/format.sh` (`--lint` to check only). Use the
+  script, not bare `swift-format`: it filters out the vendored trees, which must never be restyled,
+  and it prints the formatter version it used. swift-format's output is version-dependent — 6.2.3
+  and 6.3.0 disagree on three files in this tree — so CI pins Homebrew's build
+  (`brew install swift-format`, 603.0.0, byte-identical to Xcode 26.6's 6.3.0). Override the binary
+  with `SWIFT_FORMAT=/path/to/swift-format` if your Xcode is older.
+  The committed `.swift-format` disables every swift-format *rule* and keeps only the pretty-printer,
+  so it reflows whitespace but never rewrites code. CI reports (does not gate) on an unformatted tree.
+- `swiftlint lint --quiet` is advisory. Read `.swiftlint.yml` before "fixing" a hit: several rules
+  fire on things that are deliberate here — an empty `set {}` on a frozen accessor IS the freeze, an
+  explicit `case foo = "foo"` records a wire contract, and the metric rules describe wire-message
+  constructors. Never rename a wire field, settings key, or `RemoteCommand` case to satisfy a linter.
+- `semgrep --config .semgrep/deslop.yml --metrics=off .` flags AI-process residue (phase/ticket
+  breadcrumbs, migration notes, drifted `File.swift:123` references) and vacuous tests. Advisory —
+  triage by hand; a genuine safety comment can match a residue pattern.
 - Sibling repos: `../TandemKit` (pump protocol — change message bytes there, with an oracle test) and
   `../faBolusGarmin`. Keep the `RemoteCommand` schema in sync.
 
