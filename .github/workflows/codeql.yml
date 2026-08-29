@@ -76,6 +76,14 @@ jobs:
         with:
           languages: swift
           build-mode: manual
+          # `security-and-quality` rather than the default `code-scanning` suite. Be aware what this
+          # does and does not buy on Swift: Swift ships 27 security queries and ZERO
+          # quality/maintainability queries, so this suite is identical to `security-extended` here
+          # and adds exactly one query over the default (`UnsafeJsEval`, medium precision, which
+          # needs a WKWebView this workspace does not have). It is set anyway because it costs
+          # nothing and picks up Swift quality queries automatically if GitHub ever ships them.
+          # The two `precision: low` credential queries no suite selects are added explicitly.
+          queries: security-and-quality,./.github/codeql/swift-extra.qls
 
       # Manual build mode, not autobuild: `generate-project.sh` (never bare `xcodegen`) derives the
       # real spec from the project.yml template, so the database matches a buildable configuration.
