@@ -168,7 +168,7 @@ struct BandDriftGuardTests {
             let hit = Self.bandClassificationEntryPoints.first { slice.contains($0) }
             #expect(
                 hit == nil,
-                "\(pin.file)'s \(pin.signature) unexpectedly contains a band-classification entry point ('\(hit ?? "")') — it is scoped OUT of D-01..D-07 (RESEARCH Open Qs #1/#2); if this is now intentional, this pin needs an owner-reviewed update, not a silent pass"
+                "\(pin.file)'s \(pin.signature) unexpectedly contains a band-classification entry point ('\(hit ?? "")') — it is scoped OUT of the band-classification scope; if this is now intentional, this pin needs an owner-reviewed update, not a silent pass"
             )
         }
     }
@@ -225,12 +225,12 @@ struct BandDriftGuardTests {
         let macThemeURL = repoRoot.appendingPathComponent("mac/faBolusMac/MacTheme.swift")
         #expect(
             !FileManager.default.fileExists(atPath: macThemeURL.path),
-            "mac/faBolusMac/MacTheme.swift should remain deleted (09.1-04)")
+            "mac/faBolusMac/MacTheme.swift should remain deleted")
 
         // Exact original signatures, verified against git history immediately before each deletion:
         // watchGlucoseColor (commit a341263^), WidgetUI/MacWidgetUI's shared glucoseColor(_ category:)
         // shape (commits 4b56382^/8d824cc^), the complication's private color switch (a341263^), and
-        // this plan's own Task 1 deletion (band(_:), verified earlier in this plan against HEAD~1).
+        // and the band(_:) deletion itself (verified against HEAD~1).
         let forbiddenDeclarations = [
             "func watchGlucoseColor(",
             "glucoseColor(_ category: Int)",

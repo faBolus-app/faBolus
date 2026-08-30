@@ -105,7 +105,7 @@ struct HistoryLogTimezoneTests {
                 zoneCal.timeZone = tz
                 guard let springForward = recentSpringForward(in: tz) else {
                     Issue.record(
-                        "TimeZone.current (\(tz.identifier)) does not observe DST — the NSTimeZone.default override did not reach TimeZone.current, so the VA-18 boundary cannot be exercised on this host."
+                        "TimeZone.current (\(tz.identifier)) does not observe DST — the NSTimeZone.default override did not reach TimeZone.current, so the DST boundary cannot be exercised on this host."
                     )
                     return
                 }
@@ -168,7 +168,7 @@ struct HistoryLogTimezoneTests {
                 zoneCal.timeZone = tz
                 guard let springForward = recentSpringForward(in: tz) else {
                     Issue.record(
-                        "TimeZone.current (\(tz.identifier)) does not observe DST — cannot exercise the VA-18 spring-forward straddle on this host."
+                        "TimeZone.current (\(tz.identifier)) does not observe DST — cannot exercise the spring-forward straddle on this host."
                     )
                     return
                 }
@@ -239,7 +239,7 @@ struct HistoryLogTimezoneTests {
                 zoneCal.timeZone = tz
                 guard let springForward = recentSpringForward(in: tz) else {
                     Issue.record(
-                        "TimeZone.current (\(tz.identifier)) does not observe DST — cannot exercise the VA-18 promotion boundary on this host."
+                        "TimeZone.current (\(tz.identifier)) does not observe DST — cannot exercise the promotion boundary on this host."
                     )
                     return
                 }

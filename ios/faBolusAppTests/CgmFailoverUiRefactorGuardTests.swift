@@ -159,6 +159,6 @@ struct CgmFailoverUiRefactorGuardTests {
         let source = try #require(Self.readSource(Self.statusViewPath))
         #expect(
             !source.contains("startCgmTest"),
-            "CgmStatusView must not reference startCgmTest — the Test action stays on the Configure page (D-03)")
+            "CgmStatusView must not reference startCgmTest — the Test action stays on the Configure page")
     }
 }

@@ -80,7 +80,7 @@ struct NotificationSettingsView: View {
             !category.neverSuppressible,
             "enabledBinding(for:) must never be used for a never-suppressible trio category "
                 + "(\(category.rawValue)) — use safetyEnabledBinding(for:) instead, which keeps "
-                + "`enabled` and `userAcknowledgedSafetyDisable` paired (09.25 WR-02).")
+                + "`enabled` and `userAcknowledgedSafetyDisable` paired.")
         return Binding(
             get: { categorySettings[category]?.enabled ?? category.defaultEnabled },
             set: { on in

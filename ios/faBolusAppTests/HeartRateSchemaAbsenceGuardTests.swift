@@ -45,7 +45,7 @@ struct HeartRateSchemaAbsenceGuardTests {
             for token in Self.bannedHeartRateTokens {
                 #expect(
                     !source.contains(token),
-                    "D-07/D-18.2 violated — \(relativePath) contains banned heart-rate token '\(token)'. HR is chart context only and must be routed out-of-band (HealthKit + the Garmin envelope in GarminRemoteBridge.swift) before RemoteCommand.fromValidated, never added to the signed command schema."
+                    "\(relativePath) contains banned heart-rate token '\(token)'. HR is chart context only and must be routed out-of-band (HealthKit + the Garmin envelope in GarminRemoteBridge.swift) before RemoteCommand.fromValidated, never added to the signed command schema."
                 )
             }
         }

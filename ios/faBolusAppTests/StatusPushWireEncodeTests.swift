@@ -38,16 +38,16 @@ import faBolusCore
 
         #expect(
             !json.contains("watchBolusEnabled"),
-            "the real status push must no longer emit watchBolusEnabled (D1-01) — this is the RED assertion Task 2 turns GREEN"
+            "the real status push must no longer emit watchBolusEnabled"
         )
 
         #expect(
             !json.contains("eatingSensingOn"),
-            "the real status push must no longer emit eatingSensingOn (D1-01) — this is the RED assertion Task 2 turns GREEN"
+            "the real status push must no longer emit eatingSensingOn"
         )
         #expect(
             !json.contains("eatingProb"),
-            "the real status push must no longer emit eatingProb (D1-01) — eatingProb is only ever set on an eatingEvent, not statusRead, but this pins its absence explicitly alongside eatingSensingOn"
+            "the real status push must no longer emit eatingProb — eatingProb is only ever set on an eatingEvent, not statusRead, but this pins its absence explicitly alongside eatingSensingOn"
         )
 
         for keepKey in ["garminBolusEnabled", "activeMode", "watchChartRanges"] {

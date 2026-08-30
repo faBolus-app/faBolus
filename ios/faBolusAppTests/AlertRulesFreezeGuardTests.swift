@@ -22,7 +22,7 @@ struct AlertRulesFreezeGuardTests {
     @Test func alertRulesIsAlwaysEmptyByDefault() {
         #expect(
             AppSettings.shared.alertRules.isEmpty,
-            "alertRules must be frozen to always-empty so applyAutoRules early-returns unconditionally (FEAT-08, D-07, SAFETY)"
+            "alertRules must be frozen to always-empty so applyAutoRules early-returns unconditionally (SAFETY)"
         )
     }
 
@@ -33,7 +33,7 @@ struct AlertRulesFreezeGuardTests {
         AppSettings.shared.applyBackup(["alertRules": .data(encoded)])
         #expect(
             AppSettings.shared.alertRules.isEmpty,
-            "a restored backup carrying a non-empty alertRules blob must never re-arm the custom-rule engine (FEAT-08, D-07, SAFETY)"
+            "a restored backup carrying a non-empty alertRules blob must never re-arm the custom-rule engine (SAFETY)"
         )
     }
 
@@ -43,7 +43,7 @@ struct AlertRulesFreezeGuardTests {
         AppSettings.shared.alertRules = [Self.sampleRule(), Self.sampleRule()]
         #expect(
             AppSettings.shared.alertRules.isEmpty,
-            "alertRules's getter-level freeze must reject a direct setter call too, not just applyBackup (FEAT-08, D-07, SAFETY)"
+            "alertRules's getter-level freeze must reject a direct setter call too, not just applyBackup (SAFETY)"
         )
     }
 

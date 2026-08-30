@@ -47,7 +47,7 @@ struct PumpDeliveryOpcodeScopeGuardTests {
         #expect(
             PumpReadCatalog.doseInputReadOpcodes
                 .isDisjoint(with: PumpReadCatalog.deliveryControlWriteOpcodes),
-            "the dose-input read allowlist and the delivery/control-write guard set must be DISJOINT (R2-10)")
+            "the dose-input read allowlist and the delivery/control-write guard set must be DISJOINT")
         #expect(
             PumpReadCatalog.doseInputReadOpcodes
                 .isSubset(of: PumpReadCatalog.currentStatusReadOpcodes),

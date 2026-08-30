@@ -276,9 +276,8 @@ jobs:
   # tests. Advisory: every hit needs human triage, because a genuine safety comment can match a
   # residue pattern and a source-scanning guard test can be the last line of defense for a dose path.
   semgrep:
-    name: Semgrep deslop rules (advisory)
+    name: Semgrep deslop rules (report advisory, residue ratcheted)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - name: Semgrep (local rules)
@@ -286,3 +285,48 @@ jobs:
           pipx install semgrep || pip install --user semgrep
           # No --error: semgrep exits 0 with findings by default, which is what "advisory" means here.
           semgrep --config .semgrep/deslop.yml --metrics=off .
+      - name: Deslop residue ratchet
+        run: |
+          semgrep --config .semgrep/deslop.yml --metrics=off --json -q . > /tmp/sg.json
+          python3 - <<'PY'
+          # Reports every rule; FAILS only when a RESIDUE rule rises above its committed baseline.
+          #
+          # `source-text-scanning-test` and `working-tree-absence-scanner` are deliberately NOT gated.
+          # They do not flag slop -- they inventory this repo's source-scanning guard tests and
+          # working-tree absence guards, which are load-bearing safety machinery. Their count going UP
+          # means somebody added a guard, so gating them would punish the right behaviour.
+          import collections, json, sys
+
+          INVENTORY = {"source-text-scanning-test", "working-tree-absence-scanner"}
+          base = json.load(open(".semgrep/baseline.json"))["residue"]
+          results = json.load(open("/tmp/sg.json"))["results"]
+          cur = collections.Counter(r["check_id"].split(".")[-1] for r in results)
+
+          risen = []
+          print("rule                                now  baseline")
+          for rule in sorted(set(cur) | set(base) | INVENTORY):
+              n = cur.get(rule, 0)
+              if rule in INVENTORY:
+                  print(f"  {rule:34s} {n:4d}   (inventory, not gated)")
+                  continue
+              b = base.get(rule, 0)
+              note = ""
+              if n > b:
+                  note = "  <== ABOVE BASELINE"
+                  risen.append((rule, b, n))
+              elif n < b:
+                  note = "  (below baseline -- lower it to lock this in)"
+              print(f"  {rule:34s} {n:4d}  {b:4d}{note}")
+
+          if risen:
+              print()
+              for rule, b, n in risen:
+                  print(f"::error::deslop residue rose: {rule} {b} -> {n}. Remove the new "
+                        f"phase/ticket breadcrumb, migration note or drifted line reference. If the "
+                        f"hit is a genuine KEEP (a measurement, an ISO date, an oracle .java "
+                        f"citation, a display-width budget), raise the number in "
+                        f".semgrep/baseline.json in the same commit and say why.")
+              sys.exit(1)
+          print(f"\nresidue total: {sum(v for k, v in cur.items() if k not in INVENTORY)} "
+                f"(baseline {sum(base.values())}) -- no regression")
+          PY

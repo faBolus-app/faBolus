@@ -28,7 +28,7 @@ struct BatteryChargingPresentationTests {
         // 80 falls in the `...87` bucket -> "battery.75".
         let p = BatteryChargingPresentation.make(percent: 80, charging: false)
         #expect(p.symbolName == "battery.75")
-        #expect(!p.showsChargingText, "fail-closed: no false Charging text (D-03)")
+        #expect(!p.showsChargingText, "fail-closed: no false Charging text")
         #expect(!p.usesLowTint)
         #expect(p.valueText == "80%")
     }

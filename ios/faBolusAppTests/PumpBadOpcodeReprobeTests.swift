@@ -63,7 +63,7 @@ struct PumpBadOpcodeReprobeTests {
             "op74 is skipped for the rest of THIS session after a transient op77 correlates to it")
         #expect(
             !store.learnedOpcodes(for: key).contains(cgmAlertOpcode),
-            "op74 must NEVER reach the durable per-pump store (CX-F-04) — a transient error must not permanently silence the CGM-alert mirror"
+            "op74 must NEVER reach the durable per-pump store — a transient error must not permanently silence the CGM-alert mirror"
         )
 
         // Connection 2 (a reconnect): startPolling's hydration must leave op74 eligible for re-probe — it
@@ -86,7 +86,7 @@ struct PumpBadOpcodeReprobeTests {
         }
         #expect(
             store.learnedOpcodes(for: "A").isEmpty,
-            "none of the alert-read burst's 5 opcodes may ever be durably persisted (CX-F-04)")
+            "none of the alert-read burst's 5 opcodes may ever be durably persisted")
     }
 
     // MARK: - Test 2 (in-memory skip): op74 is skipped for the rest of THIS session, not re-thrashed
@@ -122,7 +122,7 @@ struct PumpBadOpcodeReprobeTests {
         let therapy = BolusCalcDataSnapshotRequest.props.opCode  // op115
         #expect(
             PumpReadCatalog.doseInputReadOpcodes == [iob, therapy],
-            "R2-10's dose-input allowlist must be untouched by the CX-F-04 alert-read allowlist")
+            "the dose-input allowlist must be untouched by the alert-read allowlist")
         #expect(
             PumpReadCatalog.alertReadOpcodes.isDisjoint(with: PumpReadCatalog.doseInputReadOpcodes),
             "the two never-durably-blacklist allowlists must not overlap — distinct mechanisms, distinct opcodes")
@@ -144,7 +144,7 @@ struct PumpBadOpcodeReprobeTests {
         b.startPollingForTesting()
         #expect(
             !b.badOpcodesForTesting.contains(iob),
-            "op108 must still be dropped from badOpcodes on the next connection — unregressed by this plan")
+            "op108 must still be dropped from badOpcodes on the next connection")
         #expect(dispatched.contains(iob), "op108 must still be RE-SENT on the next connection cycle")
     }
 
@@ -153,7 +153,7 @@ struct PumpBadOpcodeReprobeTests {
     @Test func aSkippedOp74IsDisclosedInSafetyDegradedNotes() {
         #expect(
             PumpReadCatalog.safetyRelevantReadOpcodes.contains(cgmAlertOpcode),
-            "op74 must be added to safetyRelevantReadOpcodes (Task 2 / CONTEXT.md pre-answer)")
+            "op74 must be added to safetyRelevantReadOpcodes")
         let notes = PumpReadCatalog.safetyDegradedNotes(excludedOpcodes: [cgmAlertOpcode])
         #expect(
             notes.contains { $0.contains("op-74") || $0.contains(PumpReadCatalog.readName(for: cgmAlertOpcode)) },

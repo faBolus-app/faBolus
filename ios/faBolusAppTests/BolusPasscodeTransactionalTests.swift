@@ -176,7 +176,7 @@ struct BolusPasscodeTransactionalTests {
         let settingsSource = try String(contentsOf: settingsURL, encoding: .utf8)
         #expect(
             settingsSource.contains("let ok = BolusPasscodeStore.setPasscode(code)"),
-            "SettingsView must capture setPasscode's Bool return (CX-F-10), not discard it")
+            "SettingsView must capture setPasscode's Bool return, not discard it")
         #expect(
             settingsSource.contains("if ok { passcodeSet = BolusPasscodeStore.isRequired }"),
             "SettingsView must only report the passcode as changed when the store confirms success")

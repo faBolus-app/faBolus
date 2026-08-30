@@ -1,0 +1,4 @@
+{
+  "_comment": "Deslop residue ratchet baseline. CI fails if any rule below RISES above its number. Lower a number in the same commit that removes residue. Raising one requires a stated reason: the only legitimate raise is a genuine KEEP (a measurement, an ISO date, an oracle/.java citation, a display-width budget). The two inventory rules (source-text-scanning-test, working-tree-absence-scanner) are deliberately NOT listed -- they count safety guard tests, and their rising is desirable.",
+  "residue": {}
+}

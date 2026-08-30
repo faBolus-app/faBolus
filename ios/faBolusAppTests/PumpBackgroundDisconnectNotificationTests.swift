@@ -121,7 +121,7 @@ struct PumpBackgroundDisconnectNotificationTests {
         #expect(b.snapshot.connection == .error)
         #expect(
             posted.filter { $0.category == .pumpDisconnect }.count == 1,
-            "a terminal .error reached directly from .connecting must alarm exactly once (C1-04)")
+            "a terminal .error reached directly from .connecting must alarm exactly once")
         #expect(
             scheduled.map(\.id) == DisconnectEscalation.stepIds,
             "the full escalation family is scheduled on this edge too")

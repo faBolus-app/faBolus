@@ -138,7 +138,7 @@ struct ResumeRetryTests {
             "the fresh path must not show the resume-recovery copy")
     }
 
-    /// C1-01 — a unique durable-ledger URL so `AppModel` instances in these
+    /// A unique durable-ledger URL so `AppModel` instances in these
     /// tests don't share the App Group ledger with other serialized suites. Mirrors
     /// `SafetyNotificationTests.tempLedgerURL()`.
     private func tempLedgerURL() -> URL {
@@ -146,7 +146,7 @@ struct ResumeRetryTests {
             .appendingPathComponent("resume-retry-ledger-\(UUID().uuidString).json")
     }
 
-    /// 5 — C1-01: a transient resume-failure within the retry budget calls the
+    /// 5 — a transient resume-failure within the retry budget calls the
     /// RE-ESTABLISH path (`connectKnownPeripheral`), never `disconnect()` — the fix for the bug where
     /// `disconnect()` sets `intentionalDisconnect = true` and kills the kit's reconnect ladder, so the link
     /// never comes back in the background. `client` is a real, unconnected `PumpBLEClient` with no fake
@@ -159,7 +159,7 @@ struct ResumeRetryTests {
         PairingStore.clear()
         defer { PairingStore.clear() }
         PairingStore.save(Self.storedSecret)
-        // C1-01: the retry branch re-adopts the KNOWN peripheral id, exactly like `connect()`'s cold-launch
+        // The retry branch re-adopts the KNOWN peripheral id, exactly like `connect()`'s cold-launch
         // fast path — seed it so the fix takes the `connectKnownPeripheral` branch, not the `startScan()`
         // fallback (mirrors `PumpPeripheralStoreTests`' save/restore idiom).
         let priorPeripheralId = PumpPeripheralStore.id()
@@ -176,10 +176,10 @@ struct ResumeRetryTests {
 
         #expect(
             b.resumeRetryActionForTesting == .reestablish,
-            "the retry branch must re-establish (connectKnownPeripheral), never disconnect() (C1-01)")
+            "the retry branch must re-establish (connectKnownPeripheral), never disconnect()")
     }
 
-    /// 6 — C1-01: the SAME transient resume-failure ALSO fires the typed
+    /// 6 — the SAME transient resume-failure ALSO fires the typed
     /// `onReliabilityEvent(.resumeRetryFailed)`, which `AppModel` translates into a never-suppressible
     /// `.pumpDisconnect` post + the escalation ladder — even though this edge dies from `.connecting`, where
     /// `SafetyEdge.connection` never raises (it only fires on a direct `.connected/.bolusing → down` edge).

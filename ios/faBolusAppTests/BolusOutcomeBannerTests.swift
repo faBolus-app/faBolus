@@ -41,7 +41,7 @@ struct BolusOutcomeBannerTests {
     @Test func stagedStillProducesNoBannerEvenWithAMessage() {
         // An awaiting-approval bolus must never show a banner — staged is never a terminal outcome.
         let banner = BolusConfirmation.banner(for: .staged, units: 2.50, message: "irrelevant")
-        #expect(banner == nil, "an awaiting-approval bolus must never show a banner (D-05)")
+        #expect(banner == nil, "an awaiting-approval bolus must never show a banner")
     }
 
     // MARK: - Per-presentation identity token
@@ -58,6 +58,6 @@ struct BolusOutcomeBannerTests {
         // …but each construction gets its own presentation token.
         #expect(
             first?.token != second?.token,
-            "each banner construction must have a unique per-presentation token (WR-04)")
+            "each banner construction must have a unique per-presentation token")
     }
 }

@@ -81,7 +81,7 @@ struct PumpLearnedOpcodePersistenceTests {
         store.record(loadStatusOpcode, for: "A", firmware: "2.5")
         #expect(
             store.learnedOpcodes(for: "A") == [loadStatusOpcode],
-            "op20 must still persist normally — its self-heal is unchanged by the R2-10 dose-input allowlist")
+            "op20 must still persist normally — its self-heal is unchanged by the dose-input allowlist")
     }
 
     /// `reset(for:)` forgets one pump only.
@@ -260,10 +260,10 @@ struct PumpLearnedOpcodePersistenceTests {
         b.releaseIdentityGatedReadsForTesting()  // firmware 3.0 → static registry empty → deferred op20 re-polled
         #expect(
             !b.badOpcodesForTesting.contains(loadStatusOpcode),
-            "a firmware change must clear the IN-MEMORY learned op20 on the same backend (WR-05)")
+            "a firmware change must clear the IN-MEMORY learned op20 on the same backend")
         #expect(
             dispatched.contains(loadStatusOpcode),
-            "op20 must be re-polled under the new firmware, not stay skipped until relaunch (WR-05)")
+            "op20 must be re-polled under the new firmware, not stay skipped until relaunch")
         #expect(!skipped.contains(loadStatusOpcode), "op20 is no longer skipped after the firmware change")
     }
 
@@ -278,12 +278,12 @@ struct PumpLearnedOpcodePersistenceTests {
         for i in 0...(cap + 3) { store.record(loadStatusOpcode, for: "pump-\(i)", firmware: "2.5") }
         #expect(
             store.retainedPumpCountForTesting <= cap,
-            "the store must cap the number of retained pumps (IN-03)")
+            "the store must cap the number of retained pumps")
         #expect(
             store.learnedOpcodes(for: "pump-\(cap + 3)").contains(loadStatusOpcode),
             "the most-recently-updated pump is retained")
         #expect(
             store.learnedOpcodes(for: "pump-0").isEmpty,
-            "the least-recently-updated pump is evicted once the cap is exceeded (LRU) (IN-03)")
+            "the least-recently-updated pump is evicted once the cap is exceeded (LRU)")
     }
 }

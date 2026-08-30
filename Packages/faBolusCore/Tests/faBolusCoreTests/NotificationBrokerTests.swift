@@ -109,7 +109,7 @@ import Foundation
         #expect(!cgm.deliver && cgm.reason == .categoryDisabled)
         // `.urgentLowGlucose` is UNAFFECTED — its own category still delivers.
         let low = B.decide(msg(.urgentLowGlucose), settings: settings, state: B.State(), now: at(9, 0), calendar: cal)
-        #expect(low.deliver, "disabling `.cgmDataLoss` must NOT silence the urgent-low backstop (MD-01 decoupling)")
+        #expect(low.deliver, "disabling `.cgmDataLoss` must NOT silence the urgent-low backstop (category decoupling)")
     }
 
     @Test func safetyCategoriesAlwaysDeliverEvenFullyLocked() {
@@ -136,7 +136,7 @@ import Foundation
             // the budget that gates a genuine bolusDeliveryFailed.
             #expect(
                 d.nextState.deliveredToday == 999,
-                "\(c.rawValue) is budget-exempt (C6-01) — the daily counter must not move")
+                "\(c.rawValue) is budget-exempt — the daily counter must not move")
             #expect(
                 d.nextState.lastDeliveredAt[c.rawValue] == at(3, 0),
                 "\(c.rawValue) must still be recorded via lastDeliveredAt")

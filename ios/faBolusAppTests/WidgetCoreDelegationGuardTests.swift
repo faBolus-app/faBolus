@@ -72,14 +72,14 @@ struct WidgetCoreDelegationGuardTests {
 
         #expect(
             missingImport.isEmpty,
-            "widget file(s) missing 'import faBolusCore' — CX-A-06 Core delegation regressed: \(missingImport)")
+            "widget file(s) missing 'import faBolusCore' — Core delegation regressed: \(missingImport)")
         #expect(
             missingClassifyCall.isEmpty,
-            "widget file(s) no longer call GlucoseRange.classify — CX-A-06 Core delegation regressed: \(missingClassifyCall)"
+            "widget file(s) no longer call GlucoseRange.classify — Core delegation regressed: \(missingClassifyCall)"
         )
         #expect(
             thresholdLiteralHits.isEmpty,
-            "widget file(s) reintroduced a local glucose threshold literal (CX-A-06 drift):\n\(thresholdLiteralHits.joined(separator: "\n"))"
+            "widget file(s) reintroduced a local glucose threshold literal (Core delegation drift):\n\(thresholdLiteralHits.joined(separator: "\n"))"
         )
         #expect(
             filesScanned > 0,
