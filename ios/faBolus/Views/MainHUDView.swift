@@ -286,12 +286,18 @@ struct PumpDetailsCard: View {
     /// Value string for a detail field id, or nil to skip the row (no data).
     private func value(_ id: String) -> String? {
         switch id {
-        case "iob": return String(format: "%.2f U", snapshot.iobUnits)
-        case "reservoir": return "\(Int(snapshot.reservoirUnits)) U"
+        // `…IfRead` funnel, same reason as the reservoir/battery rows below: `iobUnits` is a
+        // non-optional `0`, so a pump that never answered op-109 asserted a confident `0.00 U` of
+        // active insulin here. A real 0.00 U still shows `0.00 U`; only never-reported shows "—".
+        case "iob": return PumpValuePresentation.text(snapshot.iobUnitsIfRead, format: "%.2f U")
+        // Both rows go through the shared presentation helpers on the `…IfRead` funnel, so an
+        // unread pump read shows "—" (like `carbRatio`/`isf` below) instead of a confident 0
+        // (debug `tslim-reservoir-battery-zero`).
+        case "reservoir": return ReservoirPresentation.make(units: snapshot.reservoirUnitsIfRead).valueText
         case "battery":
             // Reuse BatteryChargingPresentation (same as the battery pill); don't re-interpolate.
             let battery = BatteryChargingPresentation.make(
-                percent: snapshot.batteryPercent, charging: snapshot.batteryCharging)
+                percent: snapshot.batteryPercentIfRead, charging: snapshot.batteryCharging)
             return battery.valueText
         case "cgm": return snapshot.cgmActive ? "Active" : "Inactive"
         case "lastBolus":

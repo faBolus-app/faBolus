@@ -74,6 +74,15 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     public var iobUnits: Double
     public var reservoirUnits: Double
     public var batteryPercent: Int
+    /// When the pump last REPORTED `reservoirUnits` (op-37). `nil` ⇒ never read ⇒ the surface must render
+    /// unknown ("—"), never `0 U`. Additive optional, so a legacy payload decodes to `nil` — the fail-safe
+    /// direction: showing unknown for one publish cycle is correct, showing a fabricated reading is not.
+    /// Debug session `tslim-reservoir-battery-zero` (op-36 was durably excluded on a brand-new t:slim X2,
+    /// so a non-optional zero-defaulted `reservoirUnits` reported a confident empty cartridge).
+    public var reservoirDate: Date?
+    /// When the pump last REPORTED `batteryPercent`/`batteryCharging` (op-145). `nil` ⇒ never read ⇒
+    /// unknown, never `0%`. Same origin and same additive-optional reasoning as `reservoirDate`.
+    public var batteryDate: Date?
     /// Whether the pump is currently charging (op-145 `chargingStatus == 1`, mirrored verbatim from
     /// `PumpSnapshot.batteryCharging`). Additive, fail-closed default `false` (matches
     /// `deliverySuspended`'s own non-optional shape): absent/legacy key ⇒ never a fabricated charging
@@ -120,6 +129,17 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     public var iobDate: Date?
     /// Effective basal delivery rate (U/hr) — never an invented temp-rate percent.
     public var basalRateUnitsPerHour: Double
+    /// Whether `basalRateUnitsPerHour` reflects a value actually READ from the pump (op-77), mirroring
+    /// `PumpSnapshot.basalRateKnown`. `nil`/absent ⇒ UNKNOWN ⇒ a consuming surface must render "—", never
+    /// `0.00 U/hr` (which reads as "delivery stopped"). A real 0 U/hr — a suspend, or a 0 U/hr temp rate —
+    /// arrives as `true` + `0`, and must still render as `0`.
+    ///
+    /// Additive-optional in the fail-safe direction, exactly like `reservoirDate`/`batteryDate`: a
+    /// pre-fix payload already on disk decodes to `nil` and reads as unknown until the app republishes.
+    /// Published unconditionally even though no widget family renders basal TODAY — the App-Group
+    /// snapshot was carrying a fabricated `0` for it, and shipping the receipt alongside the value is
+    /// what stops the next surface that adds a basal row from silently inheriting the defect.
+    public var basalRateKnown: Bool?
     /// Whether basal delivery is currently suspended.
     public var deliverySuspended: Bool
     /// Control-IQ user mode: 0 = normal, 1 = sleep, 2 = exercise.
@@ -150,12 +170,14 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     public init(
         glucose: Int? = nil, glucoseDate: Date? = nil, trendArrow: String = "", iobUnits: Double = 0,
         reservoirUnits: Double = 0, batteryPercent: Int = 0, batteryCharging: Bool = false,
+        reservoirDate: Date? = nil, batteryDate: Date? = nil,
         lastBolusUnits: Double? = nil,
         lastBolusDate: Date? = nil, connected: Bool = false, updatedAt: Date = Date(),
         recentPoints: [Point] = [], activeAlerts: [String] = [], cgmActive: Bool = false,
         carbRatio: Double = 0, isf: Int = 0, targetBg: Int = 0, maxBolusUnits: Double = 0,
         staleAfterSec: TimeInterval? = nil, hideAfterSec: TimeInterval? = nil,
         displayUnit: String? = nil, iobDate: Date? = nil, basalRateUnitsPerHour: Double = 0,
+        basalRateKnown: Bool? = nil,
         deliverySuspended: Bool = false, controlIQMode: Int = 0, controlIQEnabled: Bool = false,
         hasSnoozeEligibleAlert: Bool = false, showUnitLabel: Bool = false,
         cartridgeReady: Bool = true
@@ -167,6 +189,8 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         self.reservoirUnits = reservoirUnits
         self.batteryPercent = batteryPercent
         self.batteryCharging = batteryCharging
+        self.reservoirDate = reservoirDate
+        self.batteryDate = batteryDate
         self.lastBolusUnits = lastBolusUnits
         self.lastBolusDate = lastBolusDate
         self.connected = connected
@@ -183,6 +207,7 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         self.displayUnit = displayUnit
         self.iobDate = iobDate
         self.basalRateUnitsPerHour = basalRateUnitsPerHour
+        self.basalRateKnown = basalRateKnown
         self.deliverySuspended = deliverySuspended
         self.controlIQMode = controlIQMode
         self.controlIQEnabled = controlIQEnabled
@@ -193,10 +218,12 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case glucose, glucoseDate, trendArrow, iobUnits, reservoirUnits, batteryPercent, batteryCharging,
+            reservoirDate, batteryDate,
             lastBolusUnits,
             lastBolusDate, connected, updatedAt, recentPoints, activeAlerts, cgmActive, carbRatio, isf,
             targetBg, maxBolusUnits, staleAfterSec, hideAfterSec, displayUnit, iobDate,
-            basalRateUnitsPerHour, deliverySuspended, controlIQMode, controlIQEnabled, hasSnoozeEligibleAlert,
+            basalRateUnitsPerHour, basalRateKnown,
+            deliverySuspended, controlIQMode, controlIQEnabled, hasSnoozeEligibleAlert,
             showUnitLabel, cartridgeReady
     }
 
@@ -219,6 +246,11 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         // `deliverySuspended`'s own fail-closed default; an older widget-extension binary never shows
         // a fabricated charging badge from a missing key.
         batteryCharging = try c.decodeIfPresent(Bool.self, forKey: .batteryCharging) ?? false
+        // Absent ⇒ nil ⇒ "never read" ⇒ the surface renders "—". A pre-fix payload on disk has no
+        // receipt keys, so it reads as unknown until the app republishes — deliberately the fail-safe
+        // direction (debug `tslim-reservoir-battery-zero`).
+        reservoirDate = try c.decodeIfPresent(Date.self, forKey: .reservoirDate)
+        batteryDate = try c.decodeIfPresent(Date.self, forKey: .batteryDate)
         lastBolusUnits = try c.decodeIfPresent(Double.self, forKey: .lastBolusUnits)
         lastBolusDate = try c.decodeIfPresent(Date.self, forKey: .lastBolusDate)
         connected = try c.decodeIfPresent(Bool.self, forKey: .connected) ?? false
@@ -235,6 +267,10 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         displayUnit = try c.decodeIfPresent(String.self, forKey: .displayUnit)
         iobDate = try c.decodeIfPresent(Date.self, forKey: .iobDate)
         basalRateUnitsPerHour = try c.decodeIfPresent(Double.self, forKey: .basalRateUnitsPerHour) ?? 0
+        // Deliberately NOT `?? false`: this is a tri-state (`nil` = the publisher never said, `false` =
+        // the pump has not answered op-77, `true` = it has). Collapsing absent into `false` would be
+        // harmless today but would make a legacy payload indistinguishable from a positively-unread one.
+        basalRateKnown = try c.decodeIfPresent(Bool.self, forKey: .basalRateKnown)
         deliverySuspended = try c.decodeIfPresent(Bool.self, forKey: .deliverySuspended) ?? false
         controlIQMode = try c.decodeIfPresent(Int.self, forKey: .controlIQMode) ?? 0
         controlIQEnabled = try c.decodeIfPresent(Bool.self, forKey: .controlIQEnabled) ?? false
@@ -326,10 +362,19 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
 
     public static let placeholder = WidgetSnapshot(
         glucose: 124, glucoseDate: Date(), trendArrow: "→", iobUnits: 1.2, reservoirUnits: 142, batteryPercent: 80,
+        // Receipts stamped so the widget PLACEHOLDER shows its sample values rather than the unknown
+        // placeholder a never-read value now correctly produces (debug `tslim-reservoir-battery-zero`).
+        reservoirDate: Date(), batteryDate: Date(),
         lastBolusUnits: 2.5, lastBolusDate: Date().addingTimeInterval(-1800), connected: true,
         recentPoints: (0..<24).map {
             .init(t: Date().addingTimeInterval(Double($0 - 24) * 300), mgdl: 110 + ($0 % 6) * 8)
-        })
+        },
+        // Same reason as `reservoirDate`/`batteryDate` above, and the reason it must be declared HERE:
+        // `iobDate` sits after `recentPoints` in `init`, and Swift requires call order to match. Without
+        // it the widget gallery/preview would show the sample `iobUnits: 1.2` as "—", because the
+        // widgets now gate IOB on this receipt (the previous placeholder relied on `iobUnits` being
+        // rendered unconditionally).
+        iobDate: Date())
 }
 
 /// App Group–backed store for the widget snapshot. Both the app and the widget read/write here.

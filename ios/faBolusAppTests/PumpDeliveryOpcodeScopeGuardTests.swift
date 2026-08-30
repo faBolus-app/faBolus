@@ -76,7 +76,7 @@ struct PumpDeliveryOpcodeScopeGuardTests {
 
     @Test func insertBadOpcodeRefusesEveryDeliveryControlWriteOpcode() {
         let s = scheduler()
-        for op in PumpReadCatalog.deliveryControlWriteOpcodes { s.insertBadOpcode(op) }
+        for op in PumpReadCatalog.deliveryControlWriteOpcodes { s.insertBadOpcode(op, durability: .immediate) }
         #expect(
             s.badOpcodesForTesting.isDisjoint(with: PumpReadCatalog.deliveryControlWriteOpcodes),
             "a delivery/control-write opcode must never be recorded in the read-only never-resend set")
@@ -87,7 +87,7 @@ struct PumpDeliveryOpcodeScopeGuardTests {
     /// READ (LastBolusStatusV2). The guardrail must not over-block reads.
     @Test func insertBadOpcodeStillLearnsAReadCollidingOpcodeAsABadRead() {
         let s = scheduler()
-        s.insertBadOpcode(LastBolusStatusV2Request.props.opCode)  // op-164, a currentStatus read
+        s.insertBadOpcode(LastBolusStatusV2Request.props.opCode, durability: .immediate)  // op-164, a currentStatus read
         #expect(
             s.badOpcodesForTesting.contains(LastBolusStatusV2Request.props.opCode),
             "a read-colliding opcode must remain learnable as a bad READ — the guard is not over-broad")

@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import faBolusCore
+import faBolusDesign
 
 /// Hidden Debug menu — read-only diagnostics for power users, revealed by tapping the Settings
 /// disclaimer 7×. Intentionally contains NO destructive/arbitrary-send actions: factory reset,
@@ -61,14 +62,28 @@ struct DebugMenuView: View {
                     model.snapshot.glucose.map {
                         "\(settings.glucoseDisplayUnit.format(mgdl: $0)) \(settings.glucoseDisplayUnit == .mmol ? "mmol/L" : "mg/dL")"
                     } ?? "—")
-                row("IOB", String(format: "%.2f U", model.snapshot.iobUnits))
-                row("Basal", String(format: "%.2f U/hr", model.snapshot.basalRateUnitsPerHour))
+                // `…IfRead` funnels, same reason as the Reservoir/Battery rows below: the Debug menu is
+                // where a support diagnosis starts, so a read the pump never answered must read "—",
+                // never a confident `0.00 U` / `0.00 U/hr`. A real 0 (no active insulin, a suspend)
+                // still prints as 0.
+                row("IOB", PumpValuePresentation.text(model.snapshot.iobUnitsIfRead, format: "%.2f U"))
+                row(
+                    "Basal",
+                    PumpValuePresentation.text(model.snapshot.basalRateUnitsPerHourIfRead, format: "%.2f U/hr"))
                 row("Suspended", model.snapshot.deliverySuspended ? "yes" : "no")
                 row(
                     "Control-IQ",
                     "\(model.snapshot.controlIQEnabled ? "on" : "off") mode \(model.snapshot.controlIQMode)")
-                row("Reservoir", String(format: "%.0f U", model.snapshot.reservoirUnits))
-                row("Battery", "\(model.snapshot.batteryPercent)%")
+                // `…IfRead` funnel: the Debug menu is where a support diagnosis starts, so it must
+                // never show a fabricated 0 for a read the pump never answered
+                // (debug `tslim-reservoir-battery-zero`).
+                row("Reservoir", ReservoirPresentation.make(units: model.snapshot.reservoirUnitsIfRead).valueText)
+                row(
+                    "Battery",
+                    BatteryChargingPresentation.make(
+                        percent: model.snapshot.batteryPercentIfRead,
+                        charging: model.snapshot.batteryCharging
+                    ).valueText)
                 row("Max bolus", String(format: "%.2f U", model.snapshot.maxBolusUnits))
             }
 
@@ -229,6 +244,14 @@ struct DebugMenuView: View {
                 Label(note, systemImage: "exclamationmark.shield")
                     .font(.footnote).foregroundStyle(.orange).textSelection(.enabled)
             }
+            // Q3 recovery (debug `tslim-reservoir-battery-zero`): an exclusion learned from a transient
+            // error is no longer permanent, but a pump ALREADY in that state needs a way out that isn't
+            // a full unpair. Read-only in the safety sense — it re-enables SENDING the reads and cannot
+            // fabricate a reading or turn an unknown pre-guard into confirmed-ready.
+            if !excluded.isEmpty {
+                Button("Re-probe rejected reads") { model.resetLearnedReadExclusions() }
+                    .disabled(!model.snapshot.isLinked)
+            }
         } header: {
             Text("Pump read exclusions")
         } footer: {
@@ -307,12 +330,12 @@ struct DebugMenuView: View {
         // Already-tracked Garmin state; never issues a new ConnectIQ send.
         let garminState: GarminDiagnostics.BridgeState? = {
             guard let bridge = GarminRemoteBridge.shared, bridge.hasDevice else { return nil }
-            return GarminDiagnostics.BridgeState(
-                queueDepth: bridge.queueDepthForDiagnostics,
-                lastSendOutcome: bridge.lastSendOutcomeForDiagnostics,
-                watchdogFires: bridge.sendWatchdogFireCountForDiagnostics,
-                deviceConnected: bridge.deviceConnectedForDiagnostics,
-                deviceName: bridge.deviceNameForDiagnostics)
+            // Full projection (queue/send/watchdog/device plus the bug-2.2 stall discriminators:
+            // message-readiness, echo-vs-status queue breakdown, last-send progress bytes, late
+            // completions, auto-recovery count, app-install state) is assembled on the bridge, so a new
+            // diagnostics field can never be silently forgotten here — which is exactly how
+            // `appInstallState` ended up tracked but unreadable.
+            return bridge.diagnosticsBridgeState
         }()
 
         let sections: [String] = [

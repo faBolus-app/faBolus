@@ -91,6 +91,13 @@ public final class AppModel {
         (source as? PumpDiagnosticsProviding)?.badOpcodesForDiagnostics ?? []
     }
 
+    /// Forget the learned read exclusions for the current pump so every read is re-probed, without
+    /// unpairing. Same `PumpDiagnosticsProviding` funnel as `badOpcodesForDiagnostics`; a no-op on a
+    /// backend without the machinery. Debug session `tslim-reservoir-battery-zero` (Q3 recovery).
+    public func resetLearnedReadExclusions() {
+        (source as? PumpDiagnosticsProviding)?.resetLearnedReadExclusions()
+    }
+
     /// Subscribers fired whenever the active pump-alert set changes, so a notifier can post/clear iOS
     /// notifications the user can act on. Multi-subscriber (mirrors `remoteEchoes`/`statusListeners`) —
     /// the old single-assignment closure allowed exactly one observer.

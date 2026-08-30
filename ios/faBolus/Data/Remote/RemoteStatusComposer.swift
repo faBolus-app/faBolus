@@ -32,19 +32,43 @@ enum RemoteStatusComposer {
         let history = inputs.includeHistory ? recent.map { $0.mgdl } : nil
         let historyEpochs = inputs.includeHistory ? recent.map { Int($0.date.timeIntervalSince1970) } : nil
         var cmd = RemoteCommand(
-            kind: .statusRead, units: s.iobUnits,
+            // On a `.statusRead` `units` carries the pump's IOB (op-109). `…IfRead`, so a pump that has
+            // never answered it is ABSENT on the wire rather than a fabricated `0` — `units` is already
+            // `Double?` and `validate()`'s range check passes nil through. A remote cannot tell a real
+            // 0.00 U (no active insulin, the common case) from a filled-in one.
+            //
+            // Dose-direction note: on the Garmin side `iob` is a dose input (`AppState.computeUnits`
+            // subtracts it), so this was checked in the fail-closed direction before changing. Absent ⇒
+            // the watch keeps its last-known `iob`, whose cold-launch default is `0.0` — byte-identical
+            // to what the fabricated `0` produced — and any retained real value subtracts MORE insulin,
+            // i.e. a smaller suggestion. Sending a fabricated `0` was the fail-OPEN choice.
+            kind: .statusRead, units: s.iobUnitsIfRead,
             bgMgdl: s.glucose.map(Double.init), message: s.connection.rawValue,
-            trend: GlucoseTrend.token(from: s.trend),
+            // No glucose reading ⇒ no trend to report. `PumpSnapshot.trend` defaults to
+            // `GlucoseTrend.flat.rawValue`, so before any CGM read `token(from:)` returned a confident
+            // "flat" — an inferred trend presented as a reported one, which is the exact defect
+            // `GlucoseTrend.token(from:)`'s own doc comment says it was written to stop. Coupling this to
+            // `bgMgdl` is the display-side fix; the zero-value DEFAULT itself is recorded as a separate
+            // proposal (it also silently disables the derived-arrow backfill in `PumpResponseApplier`).
+            trend: s.glucose == nil ? nil : GlucoseTrend.token(from: s.trend),
             carbRatio: s.carbRatio > 0 ? s.carbRatio : nil,
             isf: s.isf > 0 ? Double(s.isf) : nil,
             targetBg: s.targetBg > 0 ? Double(s.targetBg) : nil,
             // Pump max clamped to the optional remote-only ceiling. Computed by
             // `AppModel.remoteBolusMaximum` and passed in — never re-derived here.
             maxBolusUnits: inputs.remoteMax,
-            reservoirUnits: s.reservoirUnits,
-            batteryPercent: Double(s.batteryPercent),
+            // `…IfRead`, so an UNREAD reservoir/battery is ABSENT on the wire rather than a
+            // fabricated 0 — these `RemoteCommand` fields are already `Double?`, and a remote cannot
+            // tell a real 0 (empty cartridge / dead battery) from a filled-in one. Same shape as
+            // `carbRatio`/`isf`/`targetBg` immediately above. Debug `tslim-reservoir-battery-zero`.
+            reservoirUnits: s.reservoirUnitsIfRead,
+            batteryPercent: s.batteryPercentIfRead.map(Double.init),
             lastBolusUnits: s.lastBolusUnits,
-            basalRate: s.basalRateUnitsPerHour,
+            // Same `…IfRead` treatment, gated on `basalRateKnown`: a pump that has never answered op-41
+            // is ABSENT here rather than sending `0`, which a remote would render as "delivery stopped".
+            // A real 0 U/hr (a 0 U/hr temp rate, or a suspend) still travels as `0` — that distinction is
+            // the whole reason `basalRateKnown` exists.
+            basalRate: s.basalRateUnitsPerHourIfRead,
             glucoseAgeSec: age,
             // Group A: send the pump's own reading time, not just an age computed
             // here — an age is already wrong by however long this message is in

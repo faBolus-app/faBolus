@@ -40,6 +40,14 @@ struct GlucoseWidgetView: View {
         return unit.format(mgdl: g)
     }
     private var arrow: String { WidgetUI.isStale(snap, now: now) ? "" : snap.trendArrow }
+    /// Active insulin, receipt-gated on `iobDate` so a pump that has never answered op-109 shows the
+    /// unknown placeholder rather than a confident `0.0 U` (`iobUnits` is a non-optional `0`). ONE
+    /// definition for both families below, so the two tiles can't drift apart. A real 0.0 U of active
+    /// insulin — the common case between boluses — still renders `0.0 U`. Sibling of the
+    /// reservoir/battery receipt gating on `StatusWidget` (debug `tslim-reservoir-battery-zero`).
+    private var iobText: String {
+        PumpValuePresentation.text(snap.iobDate == nil ? nil : snap.iobUnits, format: "%.1f U")
+    }
     /// The classified band, kept ONLY to restore the VoiceOver zone word that
     /// `BandIndicator` used to speak via its own `.accessibilityLabel(shortLabel)` —
     /// no visual glyph is reintroduced. `nil` while stale/hidden/unknown (mirrors the gating
@@ -89,7 +97,7 @@ struct GlucoseWidgetView: View {
                         // Restore the VoiceOver band word on the value itself, leaving the IOB
                         // caption below as its own separate, unchanged spoken element.
                         .accessibilityLabel(glucoseA11yLabel)
-                    Text("IOB \(String(format: "%.1f U", snap.iobUnits))").font(.caption2)
+                    Text("IOB \(iobText)").font(.caption2)
                 }
             }
             .containerBackground(.clear, for: .widget)
@@ -111,7 +119,7 @@ struct GlucoseWidgetView: View {
                 }
                 Spacer()
                 HStack {
-                    Label(String(format: "%.1f U", snap.iobUnits), systemImage: "syringe")
+                    Label(iobText, systemImage: "syringe")
                         .font(.caption2).foregroundStyle(.secondary)
                     Spacer()
                     // The SAMPLE age (from the reading's own timestamp), not the publish time — always

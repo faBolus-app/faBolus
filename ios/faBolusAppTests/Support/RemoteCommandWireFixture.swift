@@ -36,6 +36,13 @@ final class RemoteCommandWireFixture {
     var iobUnits: Double = 0
     var reservoirUnits: Double = 0
     var batteryPercent: Int = 0
+    /// Set when a `statusRead` actually CARRIED `reservoirUnits`. The host now omits the field when the
+    /// pump has never answered the reservoir read, so a remote must be able to tell "0 U remaining" from
+    /// "never reported" — the same distinction `PumpSnapshot.reservoirDate` draws on the phone
+    /// (debug session `tslim-reservoir-battery-zero`). nil ⇒ never carried ⇒ render unknown, not 0.
+    var reservoirDate: Date?
+    /// Set when a `statusRead` actually CARRIED `batteryPercent`. See `reservoirDate`.
+    var batteryDate: Date?
     /// Mirrors `RemoteCommand.batteryCharging`. Default false = fail-closed
     /// (a cold launch / legacy host shows plain battery, never a fabricated charging state). The on-wire
     /// `chargingStatus == 1` semantics remain an UNVERIFIED-GUESS (docs/UNVERIFIED-GUESSES.md).
@@ -410,8 +417,17 @@ final class RemoteCommandWireFixture {
             }
             if let t = cmd.trend { trend = Self.arrow(fromToken: t) }
             if let iob = cmd.units { iobUnits = iob }
-            if let r = cmd.reservoirUnits { reservoirUnits = r }
-            if let b = cmd.batteryPercent { batteryPercent = Int(b) }
+            // Keep-last on an absent key (like every other optional field here), but only stamp the
+            // read receipt when the value was genuinely PRESENT on this statusRead — so an omitted
+            // field can never be mistaken for a reported 0.
+            if let r = cmd.reservoirUnits {
+                reservoirUnits = r
+                reservoirDate = Date()
+            }
+            if let b = cmd.batteryPercent {
+                batteryPercent = Int(b)
+                batteryDate = Date()
+            }
             // Deliberately NOT `if let c = cmd.batteryCharging { batteryCharging = c }`, which would
             // keep the last-known value on an absent key — a stale "Charging" claim, the exact
             // false-positive badge the fail-closed intent exists to prevent. Unlike most optional
@@ -621,6 +637,7 @@ final class RemoteCommandWireFixture {
             glucose: glucose, glucoseDate: glucoseDate, trendArrow: trend,
             iobUnits: iobUnits, reservoirUnits: reservoirUnits,
             batteryPercent: batteryPercent, batteryCharging: batteryCharging,
+            reservoirDate: reservoirDate, batteryDate: batteryDate,
             lastBolusUnits: lastBolusUnits,
             connected: reachable, updatedAt: Date(),
             cgmActive: cgmActive, carbRatio: carbRatio, isf: isf,
@@ -740,6 +757,8 @@ extension RemoteCommandWireFixture {
         s.iobUnits = iobUnits
         s.reservoirUnits = reservoirUnits
         s.batteryPercent = batteryPercent
+        s.reservoirDate = reservoirDate
+        s.batteryDate = batteryDate
         s.batteryCharging = batteryCharging
         s.carbRatio = carbRatio
         s.isf = isf

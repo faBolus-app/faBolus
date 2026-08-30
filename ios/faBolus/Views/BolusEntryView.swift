@@ -516,15 +516,30 @@ struct BolusEntryView: View {
                             LabeledContent(
                                 "Carb + correction",
                                 value: String(format: "%.2f U", rec.recommendedUnits + rec.iobUnits))
-                            // Grey + age the IOB row when the active-insulin read is stale.
-                            let iobStalePresent = CalcInputFreshness.iobPresentation(of: rec.iobDate) == .stale
+                            // Grey + age the IOB row when the active-insulin read is stale — and treat
+                            // NEVER-READ (`iobPresentation` == `.hidden`, i.e. `iobDate == nil`) as
+                            // unconfirmed too. `== .stale` alone read the absent case as FRESH, so a
+                            // pump that had never answered op-109 showed "−0.00 U" in the confirmed
+                            // colour with no caveat, while `CalcInputGate` was separately prompting
+                            // "Active insulin not confirmed" about the very same term.
+                            //
+                            // The NUMBER deliberately stays `−0.00 U` rather than becoming "—": unlike
+                            // the HUD pills, this row explains the ARITHMETIC that produced the dose
+                            // above it, and the calculator really did subtract 0. Blanking it would make
+                            // the breakdown stop adding up and hide that a 0 was used. What was missing
+                            // was the caveat, not the number.
+                            let iobPresent = CalcInputFreshness.iobPresentation(of: rec.iobDate)
+                            let iobUnconfirmed = iobPresent != .fresh
                             let iobAge = rec.iobDate.map { CalcInputFreshness.ageLabel(for: $0) }
                             LabeledContent {
                                 Text(String(format: "−%.2f U", rec.iobUnits))
-                                    .foregroundStyle(iobStalePresent ? AppTheme.low : .primary)
+                                    .foregroundStyle(iobUnconfirmed ? AppTheme.low : .primary)
                             } label: {
-                                if iobStalePresent, let a = iobAge {
+                                if let a = iobAge, iobPresent == .stale {
                                     Text("Active insulin (IOB) · \(a)").foregroundStyle(.orange)
+                                } else if iobPresent == .hidden {
+                                    // No age to name — the pump has never reported IOB at all.
+                                    Text("Active insulin (IOB) · not reported").foregroundStyle(.orange)
                                 } else {
                                     Text("Active insulin (IOB)")
                                 }

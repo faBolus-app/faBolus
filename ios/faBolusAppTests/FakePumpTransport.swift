@@ -178,6 +178,26 @@ final class FakePumpTransport: PumpTransport {
         return frame(opCode: ControlIQIOBResponse.props.opCode, cargo: c, signed: false)
     }
 
+    /// op-41 `CurrentBasalStatusResponse` (9 bytes: profileBasalRate@0-3, currentBasalRate@4-7, both
+    /// little-endian milliunits/hr, then `basalModifiedBitmask`@8). Feeds
+    /// `PumpSnapshot.basalRateUnitsPerHour` AND stamps `basalRateKnown`.
+    /// `currentMilliunitsPerHour: 0` builds a GENUINE 0 U/hr reply — a suspend, or a 0 U/hr temp rate —
+    /// which is the case that must stay distinguishable from "this read was never answered".
+    ///
+    /// NOTE the opcode is 41, not 77. `PumpSnapshot.basalRateKnown`'s doc comment said "op-77
+    /// CurrentBasalStatusResponse"; op-77 is `ErrorResponse` (see `errorResponse` below). The comment
+    /// was corrected alongside this builder.
+    static func currentBasalStatus(currentMilliunitsPerHour: UInt32, profileMilliunitsPerHour: UInt32? = nil)
+        -> [UInt8]
+    {
+        var c = [UInt8](repeating: 0, count: 9)
+        let profile = Bytes.toUint32(profileMilliunitsPerHour ?? currentMilliunitsPerHour)
+        let current = Bytes.toUint32(currentMilliunitsPerHour)
+        for i in 0..<4 { c[i] = profile[i] }
+        for i in 0..<4 { c[4 + i] = current[i] }
+        return frame(opCode: CurrentBasalStatusResponse.props.opCode, cargo: c, signed: false)
+    }
+
     /// op-57 `HomeScreenMirrorResponse` (9 bytes). Byte 0 is `cgmTrendIconId` (0 = the pump's explicit
     /// **no arrow**; 2 = up, etc. — matching `CGMTrendIcon`). The pump's icon is authoritative, so a test
     /// can pin that a later client-side derivation never overwrites it. Byte 8 = `cgmDisplayData`.
@@ -225,6 +245,29 @@ final class FakePumpTransport: PumpTransport {
         frame(
             opCode: LoadStatusResponse.props.opCode,
             cargo: [isLoadingActive ? 1 : 0, UInt8(truncatingIfNeeded: loadStateId), 0], signed: false)
+    }
+
+    /// op-37 `InsulinStatusResponse` (4 bytes: currentInsulinAmount@0-1 little-endian, isEstimate@2,
+    /// insulinLowAmount@3). Reply to the op-36 `InsulinStatusRequest` poll; feeds
+    /// `PumpSnapshot.reservoirUnits`. `unitsRemaining: 0` builds a GENUINE empty-cartridge reply — the
+    /// case that must stay distinguishable from "this read was never answered".
+    static func insulinStatus(unitsRemaining: Int, isEstimate: Bool = false, lowAmount: Int = 0) -> [UInt8] {
+        let u = le2(unitsRemaining)
+        return frame(
+            opCode: InsulinStatusResponse.props.opCode,
+            cargo: [u[0], u[1], isEstimate ? 1 : 0, UInt8(truncatingIfNeeded: lowAmount)], signed: false)
+    }
+
+    /// op-145 `CurrentBatteryV2Response` (11 bytes: currentBatteryAbc@0, currentBatteryIbc@1 = the
+    /// percent, chargingStatus@2, remainder unused by the app). Reply to the op-144
+    /// `CurrentBatteryV2Request` poll. `percent: 0` builds a GENUINE dead-battery reply — the case that
+    /// must stay distinguishable from "this read was never answered".
+    static func currentBatteryV2(percent: Int, charging: Bool = false) -> [UInt8] {
+        var c = [UInt8](repeating: 0, count: 11)
+        c[0] = UInt8(truncatingIfNeeded: percent)
+        c[1] = UInt8(truncatingIfNeeded: percent)
+        c[2] = charging ? 1 : 0
+        return frame(opCode: CurrentBatteryV2Response.props.opCode, cargo: c, signed: false)
     }
 
     /// op-77 `ErrorResponse` (2 bytes: the rejected request's opcode, then the error code).

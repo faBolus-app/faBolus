@@ -182,7 +182,8 @@ struct CalcInputGuardedSendTests {
         s.isConnected = { true }
         s.send = { _ in 0 }
         s.calcInputRefreshTimeout = 0.05
-        s.insertBadOpcode(ControlIQIOBRequest.props.opCode)  // op-109 previously rejected (a READ)
+        // `.immediate` = authoritatively rejected. `durability` is non-defaulting by design; see `insertBadOpcode`.
+        s.insertBadOpcode(ControlIQIOBRequest.props.opCode, durability: .immediate)  // op-109 previously rejected (a READ)
         var skipped: [UInt8] = []
         s.onReadSkippedForTesting = { _, op in skipped.append(op) }
         _ = await s.refreshCalcInputsConfirmed()

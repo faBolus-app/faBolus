@@ -33,6 +33,12 @@ enum WidgetPublisher {
             // Fail-closed decode default (`false`) on the App-Group carrier handles the
             // legacy/absent case.
             batteryCharging: s.batteryCharging,
+            // Read receipts travel with the values so the widget/complication can render "—" for a
+            // read the pump never answered instead of a fabricated 0
+            // (debug `tslim-reservoir-battery-zero`). Declared order in `WidgetSnapshot.init` is
+            // batteryCharging -> reservoirDate -> batteryDate; Swift requires call order to match.
+            reservoirDate: s.reservoirDate,
+            batteryDate: s.batteryDate,
             lastBolusUnits: s.lastBolusUnits,
             lastBolusDate: s.lastBolusDate,
             connected: s.connection == .connected || s.connection == .bolusing,
@@ -54,6 +60,12 @@ enum WidgetPublisher {
             // Pump-surface fields, mapped straight from PumpSnapshot alongside iobUnits/reservoirUnits.
             iobDate: s.iobDate,
             basalRateUnitsPerHour: s.basalRateUnitsPerHour,
+            // The op-77 read receipt for the line above. Published even though no widget family renders
+            // basal today: the carrier was otherwise publishing a fabricated `0.00 U/hr` for a pump that
+            // had never answered the read, and a receipt that ships with the value can't be forgotten
+            // later. Declared order in `WidgetSnapshot.init` is basalRateUnitsPerHour -> basalRateKnown
+            // -> deliverySuspended; Swift requires call order to match.
+            basalRateKnown: s.basalRateKnown,
             deliverySuspended: s.deliverySuspended,
             controlIQMode: s.controlIQMode,
             controlIQEnabled: s.controlIQEnabled,

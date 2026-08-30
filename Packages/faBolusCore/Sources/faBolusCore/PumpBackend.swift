@@ -291,6 +291,20 @@ public protocol PumpDiagnosticsProviding: AnyObject {
     /// Opcodes the connected pump has rejected this connection-lifetime, for the
     /// `[Capability/opcode]` diagnostics section.
     var badOpcodesForDiagnostics: Set<UInt8> { get }
+    /// Forget every learned read exclusion for the currently-adopted pump and re-probe from the next
+    /// poll, WITHOUT unpairing. Recovery path for debug session `tslim-reservoir-battery-zero`: an
+    /// exclusion learned from a transient error used to be permanent, and the only way out was a full
+    /// `forgetPairing()` (which also drops pairing credentials and the trusted-identity record).
+    ///
+    /// Cannot make a read appear to have SUCCEEDED — it only re-enables sending it — so it can never
+    /// turn an unknown pre-guard into a confirmed-ready one.
+    func resetLearnedReadExclusions()
+}
+
+extension PumpDiagnosticsProviding {
+    /// Default no-op, so a backend with no learned-exclusion machinery (mocks, tests, a future
+    /// non-Tandem backend) conforms without change.
+    public func resetLearnedReadExclusions() {}
 }
 
 /// The phone's TYPED, authenticated outcome of a signed pump dismiss

@@ -84,8 +84,20 @@ struct StatusWidgetView: View {
 
             // Right: pump metrics.
             VStack(alignment: .leading, spacing: 6) {
-                metric("syringe", "Active Insulin", connectionStale ? "--" : String(format: "%.2f U", snap.iobUnits))
-                metric("drop", "Reservoir", connectionStale ? "--" : "\(Int(snap.reservoirUnits)) U")
+                // Receipt-gated, exactly like the reservoir row below: `iobUnits` is a non-optional `0`,
+                // and `connectionStale` only answers "did the host stop publishing?" — a LIVE snapshot
+                // whose pump never answered op-109 sailed past it and rendered a confident `0.00 U`.
+                // A real 0.00 U (no active insulin) still shows `0.00 U`.
+                let iob = PumpValuePresentation.make(
+                    snap.iobDate == nil ? nil : snap.iobUnits, format: "%.2f U")
+                metric("syringe", "Active Insulin", connectionStale ? "--" : iob.valueText)
+                // Through `ReservoirPresentation` on the receipt-gated value, so a reservoir read the
+                // pump never answered shows the unknown placeholder rather than a fabricated "0 U"
+                // (debug `tslim-reservoir-battery-zero`). Kept distinct from `connectionStale`'s "--":
+                // that means "the host stopped publishing", this means "the pump never told us".
+                let reservoir = ReservoirPresentation.make(
+                    units: snap.reservoirDate == nil ? nil : snap.reservoirUnits)
+                metric("drop", "Reservoir", connectionStale ? "--" : reservoir.valueText)
                 if let u = snap.lastBolusUnits, let d = snap.lastBolusDate {
                     metric(
                         "clock.arrow.circlepath", "Last bolus",
@@ -95,8 +107,10 @@ struct StatusWidgetView: View {
                     // helper every other battery-rendering surface uses, so a not-charging medium widget
                     // renders the level-appropriate glyph (`battery.0/.25/.50/.75/.100`) instead of always
                     // showing a full battery. Charging is never shown as a warning.
+                    // Receipt-gated percent — an unread battery must not render as a dead one.
                     let battery = BatteryChargingPresentation.make(
-                        percent: snap.batteryPercent, charging: snap.batteryCharging)
+                        percent: snap.batteryDate == nil ? nil : snap.batteryPercent,
+                        charging: snap.batteryCharging)
                     // Consume the centralized `valueText` instead of re-interpolating the
                     // "N% · Charging" string here. Once the snapshot's publish time is stale (host
                     // killed), the battery value greys to "--" — it is a dateless metric with no

@@ -100,6 +100,11 @@ public final class MockBackend: PumpBackend {
         snapshot.therapyParamsDate = seededAt
         snapshot.reservoirUnits = 142
         snapshot.batteryPercent = 78
+        // Read receipts, same seed instant as `iobDate`/`therapyParamsDate` above: the simulator HAS
+        // "read" these, so they must render as real values, not as the unknown placeholder a
+        // never-answered read now correctly produces (debug `tslim-reservoir-battery-zero`).
+        snapshot.reservoirDate = seededAt
+        snapshot.batteryDate = seededAt
         snapshot.cgmActive = true
         snapshot.carbRatio = 10
         snapshot.isf = 40
@@ -110,6 +115,11 @@ public final class MockBackend: PumpBackend {
         snapshot.isMobi = mobi
         snapshot.pumpModelName = mobi ? "Mobi (simulated)" : "t:slim X2 (simulated)"
         snapshot.basalRateUnitsPerHour = 0.8
+        // The read receipt for the line above, same reason as `reservoirDate`/`batteryDate` and
+        // `iobDate`: the simulator HAS "read" op-77, so the basal pill must show `0.80 U/hr`, not the
+        // unknown placeholder a never-answered read now correctly produces. Without this the mock's
+        // basal reads "—" everywhere (pill, Debug menu, and absent on the Garmin wire).
+        snapshot.basalRateKnown = true
         snapshot.controlIQEnabled = true
         snapshot.cgmSessionActive = true
         snapshot.cartridgeLoadState = 6  // unknown/idle

@@ -39,6 +39,12 @@ final class PumpReadScheduler {
     /// survives a reconnect and an app relaunch. Default is a no-op. Never called with op0
     /// (`insertBadOpcode` guards it).
     var persistBadOpcode: (UInt8) -> Void = { _ in }
+    /// Count ONE corroborating strike for a rejection whose durability is
+    /// `.afterCorroboratingStrikes`, and persist it durably only once
+    /// `PumpBadOpcodeStore.durableStrikeThreshold` strikes have been counted on DISTINCT connection
+    /// cycles. Default is a no-op. Bound to the same peripheral-UUID-keyed `PumpBadOpcodeStore` as
+    /// `persistBadOpcode`; `insertBadOpcode` applies the identical hold-out guards to both paths.
+    var strikeBadOpcode: (UInt8) -> Void = { _ in }
     /// Current pump identity — model class (`isMobi`) + `softwareVersion` — as populated by the
     /// bootstrap version responses (op33/op85). Consulted by `noteBootstrapVersionIdentified()`
     /// to key the static `PumpKnownUnsupportedReads` registry so a known-bad combo's identity-gated
@@ -120,12 +126,34 @@ final class PumpReadScheduler {
     var onReadSkippedForTesting: ((_ typeName: String, _ opcode: UInt8) -> Void)?
     #endif
 
+    /// Opcodes suppressed this connection by a `.neverPersist` (transient-class) rejection. Subtracted
+    /// from `badOpcodes` at each `startPolling()` so the read is re-probed on the next connection —
+    /// generalising, from a per-family allowlist to a per-error-class rule, exactly the treatment
+    /// `PumpReadCatalog.alertReadOpcodes` and `doseInputReadOpcodes` already get. Tracked separately
+    /// from `badOpcodes` because an opcode may ALSO have been learned authoritatively, and an
+    /// authoritative skip must not be undone by a later transient error on the same opcode.
+    private var transientlyLearnedOpcodes: Set<UInt8> = []
+    /// Opcodes that have already had a corroborating strike counted THIS connection cycle. Cleared at
+    /// each `startPolling()`, so `PumpBadOpcodeStore.durableStrikeThreshold` really means "on distinct
+    /// cycles" — without this a single burst that errors the same read three times would reach the
+    /// threshold instantly and the corroboration rule would be vacuous.
+    private var strikesRecordedThisCycle: Set<UInt8> = []
+
     /// Feed for the `ErrorResponse` delegate case — records an opcode the pump has just rejected
-    /// so `sendStatusRead()` never re-sends it this connection-lifetime, AND persists it durably
-    /// for this pump so the skip survives a reconnect and an app relaunch. op0 is never suppressed
-    /// — it is the empty-cargo artifact / bootstrap opcode; `resolveErrorResponse` never resolves
-    /// to it, and this guard is the belt-and-suspenders.
-    func insertBadOpcode(_ opcode: UInt8) {
+    /// so `sendStatusRead()` never re-sends it this connection-lifetime, AND (when the rejection is
+    /// durable-eligible) persists it for this pump so the skip survives a reconnect and an app
+    /// relaunch. op0 is never suppressed — it is the empty-cargo artifact / bootstrap opcode;
+    /// `resolveErrorResponse` never resolves to it, and this guard is the belt-and-suspenders.
+    ///
+    /// `durability` is DELIBERATELY non-defaulting, and there is deliberately no single-argument overload
+    /// (debug session `tslim-reservoir-battery-zero` self-audit). A defaulting shape is how this bug class
+    /// returns: a future caller would silently acquire `.immediate` and make a transient error permanent
+    /// again, which is exactly the defect that cost five supported reads on a brand-new t:slim X2. Every
+    /// caller must state what the pump's error actually PROVED. `resolveErrorResponse` is the only
+    /// production caller and derives it from `PumpErrorClass` + `PumpOpcodeCorrelation`; the
+    /// `insertBadOpcodeForTesting` seam and the test suite pass `.immediate` explicitly to mean
+    /// "authoritatively rejected".
+    func insertBadOpcode(_ opcode: UInt8, durability: PumpBadOpcodeDurability) {
         guard opcode != 0 else { return }
         // The never-resend set governs ONLY CURRENT_STATUS reads (`sendStatusRead`). It must NEVER
         // hold a pure delivery/control-WRITE opcode — otherwise an op77 whose cargo NAMES a delivery
@@ -148,7 +176,36 @@ final class PumpReadScheduler {
         // throttling, so a transient op77 can be mis-correlated to ANY of them. A durable skip
         // would permanently silence the phone-side CGM-alert mirror with no re-probe.
         guard !PumpReadCatalog.alertReadOpcodes.contains(opcode) else { return }
-        persistBadOpcode(opcode)
+        // Ration the DURABLE write by what the error actually proved (see `PumpBadOpcodeDurability`).
+        // The in-memory skip above is unconditional — it is what stops a bad exchange being re-thrashed
+        // every 15 s poll — but only a durable write can make a mistake permanent, so only it is gated.
+        //
+        // debug `tslim-reservoir-battery-zero`: this gate is the fix. `resolveErrorResponse` used not to
+        // receive `errorCodeId` at all, so a transient MESSAGE_BUFFER_FULL / CRC_MISMATCH /
+        // TRANSACTION_ID_MISMATCH / INVALID_AUTHENTICATION_ERROR — the everyday output of an UNSTABLE
+        // link — durably deleted a fully-supported read on its FIRST occurrence, with no threshold and no
+        // re-probe. Five ordinary reads (op-20/36/56/144/164) were lost that way on a brand-new t:slim X2,
+        // taking the reservoir and battery rows with them. (Deliberately no connect-RATE claim here: see
+        // `PumpErrorClass` for why the diagnostics export's rows cannot yield one.)
+        switch durability {
+        case .neverPersist:
+            // Transient: suppressed for THIS connection only, then re-probed. Never written to the store.
+            transientlyLearnedOpcodes.insert(opcode)
+        case .afterCorroboratingStrikes:
+            // Ambiguous error attributed by txId echo under a burst — corroborate across cycles before
+            // committing. Also suppressed this connection, and re-probed until the threshold is reached.
+            transientlyLearnedOpcodes.insert(opcode)
+            guard !strikesRecordedThisCycle.contains(opcode) else { return }
+            strikesRecordedThisCycle.insert(opcode)
+            strikeBadOpcode(opcode)
+        case .immediate:
+            // Authoritative (BAD_OPCODE, or an unambiguously-attributed opcode-less error): unchanged —
+            // the API-2.5 t:slim X2 still learns op20 in one drop and never re-drops it after a relaunch.
+            // An authoritative skip also cancels any earlier transient suppression of the same opcode, so
+            // `startPolling`'s re-probe can't undo it.
+            transientlyLearnedOpcodes.remove(opcode)
+            persistBadOpcode(opcode)
+        }
     }
 
     /// Drop opcodes from the IN-MEMORY never-resend set. `badOpcodes` deliberately survives a
@@ -249,24 +306,69 @@ final class PumpReadScheduler {
     /// ControlIQIOB, a dose input) AND leave op20 un-suppressed. Guessing the oldest is never
     /// safe: prefer the txId echo, accept only the unambiguous single-outstanding case, else
     /// resolve to 0.
+    /// Overload preserving the original two-argument shape for callers that have no error code to hand.
+    /// An absent code is classified as `.ambiguous` (never as an authoritative `BAD_OPCODE`), matching
+    /// `PumpErrorClass.of(errorCodeId: 0)`.
     @discardableResult
     func resolveErrorResponse(requestCodeId: Int, txId: UInt8) -> UInt8 {
+        resolveErrorResponse(requestCodeId: requestCodeId, errorCodeId: 0, txId: txId)
+    }
+
+    /// - Parameter errorCodeId: the op-77 cargo's `errorCodeId`. Added for debug session
+    ///   `tslim-reservoir-battery-zero` — it was previously not passed in at ALL, so every error class
+    ///   (buffer-full, CRC, txId mismatch, auth) reached the durable never-resend store exactly like a
+    ///   genuine `BAD_OPCODE`. `PumpErrorClass` + `PumpOpcodeCorrelation` now decide durability; the
+    ///   in-memory, connection-scoped skip is unchanged in every case.
+    @discardableResult
+    func resolveErrorResponse(requestCodeId: Int, errorCodeId: Int, txId: UInt8) -> UInt8 {
         let named = UInt8(truncatingIfNeeded: requestCodeId)
         let resolved: UInt8
+        let correlation: PumpOpcodeCorrelation
         if named != 0 {
             resolved = named
+            correlation = .namedByPump
+        } else if outstandingReads.count == 1, let only = outstandingReads.first?.opcode {
+            // Checked BEFORE the txId echo: with exactly one read in flight the attribution is certain
+            // whether or not the echo matches, and this is the on-demand `refreshLoadStatus()` shape the
+            // documented API-2.5 op-20 self-heal depends on. (The echo branch below would resolve to the
+            // same opcode here; only the CONFIDENCE label differs, and it must be the stronger one.)
+            resolved = only
+            correlation = .soleOutstandingRead
         } else if let byTxId = outstandingReads.last(where: { $0.txId == txId })?.opcode {
             resolved = byTxId  // PRIMARY: the pump echoes the request txId in frame[1]
-        } else if outstandingReads.count == 1, let only = outstandingReads.first?.opcode {
-            resolved = only  // unambiguous: exactly one read outstanding (no guess)
+            correlation = .txIdEchoUnderBurst
         } else {
             resolved = 0  // FAIL CLOSED — never guess the oldest
+            correlation = .namedByPump  // unused; nothing is recorded when resolved == 0
         }
         if resolved != 0 {
-            insertBadOpcode(resolved)  // in-memory never-resend skip + durable per-pump persist (refinement)
+            // in-memory never-resend skip + a durable per-pump persist RATIONED by what was actually proved
+            insertBadOpcode(
+                resolved,
+                durability: PumpBadOpcodeDurability.of(
+                    errorClass: PumpErrorClass.of(errorCodeId: errorCodeId), correlation: correlation))
             outstandingReads.removeAll { $0.opcode == resolved }
         }
         return resolved
+    }
+
+    /// Drop every exclusion learned WITHOUT authoritative proof — the transient-class skips and the
+    /// not-yet-corroborated ambiguous ones — so they are re-probed. Called by `startPolling()`.
+    private func reProbeProvisionallyLearnedOpcodes() {
+        badOpcodes.subtract(transientlyLearnedOpcodes)
+        transientlyLearnedOpcodes.removeAll()
+        strikesRecordedThisCycle.removeAll()
+    }
+
+    /// Q3 recovery seam for debug session `tslim-reservoir-battery-zero`. Clears the IN-MEMORY
+    /// never-resend set outright so every read is re-probed from the next poll. `TandemBackend` pairs this
+    /// with a durable-store reset; exposed separately because `badOpcodes` deliberately survives a
+    /// reconnect for the scheduler's lifetime, so resetting only the store would leave the reads skipped
+    /// until the app was relaunched.
+    func clearAllLearnedForReprobe() {
+        badOpcodes.removeAll()
+        transientlyLearnedOpcodes.removeAll()
+        strikesRecordedThisCycle.removeAll()
     }
 
     /// On-demand single status read (e.g. the pump wizard's `refreshLoadStatus()`), routed through
@@ -642,6 +744,13 @@ final class PumpReadScheduler {
         // local FIRST — on a firmware change its provider resets the store AND calls
         // `clearLearned(...)`, so it must not run inside the `formUnion` argument (that would be
         // a simultaneous-access-to-`badOpcodes` violation).
+        // Re-probe every PROVISIONALLY learned exclusion FIRST — the transient-class skips and the
+        // ambiguous ones that have not yet reached `PumpBadOpcodeStore.durableStrikeThreshold`. Ordered
+        // BEFORE the hydration union on purpose: an opcode that has since crossed the strike threshold is
+        // in the durable store, so the union immediately re-adds it. Doing this AFTER the union would
+        // strip a now-durable exclusion right back out again.
+        // debug `tslim-reservoir-battery-zero`: this is what makes a wrongly-learned exclusion temporary.
+        reProbeProvisionallyLearnedOpcodes()
         let persisted = loadPersistedBadOpcodes()
         badOpcodes.formUnion(persisted.subtracting(PumpReadCatalog.deliveryControlWriteOpcodes))
         // Re-probe the dose-input reads (op108 IOB / op115 therapy) on EVERY connection cycle so

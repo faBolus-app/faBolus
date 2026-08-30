@@ -41,6 +41,14 @@ enum GarminDiagnostics {
         case unknown = "unknown"
         case installed = "installed"
         case notInstalled = "not installed / wrong app id"
+        /// The SDK refused to construct an `IQApp` handle at all for our (app-uuid, device) pair —
+        /// `IQApp(uuid:store:device:)` is a FAILABLE initializer (the ObjC factory
+        /// `+appWithUUID:storeUuid:device:` carries no nullability annotation, so Swift imports it as
+        /// `init?`). Distinct from `.notInstalled`: there, we have a handle and the watch answered "not
+        /// installed"; here we never got far enough to ask. It must be its own visible state because
+        /// with `app == nil` the `guard let app` in `pump()` silently blocks EVERY send for the rest of
+        /// the process — the exact silent-stall class bug 2.2 exists to eliminate.
+        case noAppHandle = "no app handle"
 
         /// User-facing status text — used both for `AppModel.garminStatus` (visible not-installed
         /// state) and diagnostics rendering.
@@ -51,10 +59,15 @@ enum GarminDiagnostics {
                 return
                     "Garmin app not installed on the watch (or a beta/official app-id mismatch) — open the Connect IQ Store to install/verify it."
             case .unknown: return "install status unknown"
+            case .noAppHandle:
+                return
+                    "Garmin remote unavailable — could not create an app reference for this watch. Re-select the watch under “Set up Garmin remote”."
             }
         }
         /// Whether the not-installed/mismatch state should offer a Connect IQ Store link — the ONLY
-        /// state that does (installed needs no action; unknown has nothing actionable to offer yet).
+        /// state that does (installed needs no action; unknown has nothing actionable to offer yet;
+        /// `.noAppHandle` has no store remedy either — with no handle there is nothing to show a store
+        /// page FOR, and `showStore(for:)` requires the very `IQApp` we failed to build).
         var offerStoreLink: Bool { self == .notInstalled }
     }
 
@@ -69,10 +82,50 @@ enum GarminDiagnostics {
         /// Raw device name, if known — redacted to a stable token before it ever reaches the
         /// rendered text; never rendered verbatim.
         let deviceName: String?
-        /// The watch-app install/version state — defaults to `.installed` so existing call sites
-        /// that construct a `BridgeState` without this field (e.g. `DebugMenuView`) keep compiling
-        /// and rendering as before.
-        let appInstallState: AppInstallState = .installed
+        /// The watch-app install/version state.
+        ///
+        /// Was `let appInstallState: AppInstallState = .installed` — and Swift EXCLUDES a `let` stored
+        /// property that has a default value from the synthesised memberwise initializer, so it was
+        /// permanently `.installed`, unsettable by any call site, and the `App:` line below was
+        /// unreachable dead code. `var` with the same default keeps every existing call site compiling
+        /// while making the field real. (Found while diagnosing bug 2.2 `watch-cgm-status-lag`, whose
+        /// only observability channel this is.)
+        var appInstallState: AppInstallState = .installed
+
+        // MARK: bug 2.2 stall discriminators
+        //
+        // The 2026-08-29 device export (`Queue depth: 2 / Last send: timed out / Watchdog fires: 10 /
+        // Device: connected`) could not distinguish "the message-readiness gate latched false" from
+        // "the ConnectIQ channel is wedged" from "a re-parked echo is starving status", because the
+        // section had no field for any of them. Each of the following exists to make ONE of those
+        // mechanisms provable or refutable from a single owner-supplied export. All default so existing
+        // call sites keep compiling.
+
+        /// The `GarminMessageReadiness` gate. A stall with `false` is the readiness latch; a stall with
+        /// `true` is the transport.
+        var messageReady: Bool = true
+        /// Ordered command echoes waiting (bolus outcomes, dismiss acks, control dicts) — the lane that
+        /// drains before status and can therefore starve it.
+        var echoQueueDepth: Int = 0
+        /// Whether a coalesced status snapshot is waiting behind that lane.
+        var statusPending: Bool = false
+        /// Bytes moved on the most recent send, from the SDK's `progress:` block (which ConnectIQ.h
+        /// guarantees fires at least once). `nil` means no progress callback ever arrived — the
+        /// transfer never started, which is the opposite verdict from "slow but moving".
+        var lastSendProgress: SendProgress? = nil
+        /// Completions that arrived AFTER the send-watchdog had already superseded them. Non-zero proves
+        /// the channel works and the deadline was too short — the most decisive single field here.
+        var lateCompletions: Int = 0
+        /// How many times the bridge rebuilt its own ConnectIQ registration to recover. Non-zero proves
+        /// self-healing fired instead of waiting for the user to tap "Set up Garmin remote".
+        var autoRecoveries: Int = 0
+    }
+
+    /// Bytes transferred / total for a single ConnectIQ send, projected from the SDK's `progress:`
+    /// block. Plain value type — no ConnectIQ type reaches this file.
+    struct SendProgress: Equatable {
+        let sentBytes: Int
+        let totalBytes: Int
     }
 
     /// Deterministic, non-identifying token for a Garmin device name — same input always yields the
@@ -116,12 +169,36 @@ enum GarminDiagnostics {
         } else {
             lines.append("Device: disconnected")
         }
-        // Surface the not-installed/wrong-app state explicitly — never a silent "✓" while
-        // readiness never arms. Only rendered when it's NOT the default "installed" (avoids adding
-        // noise to the common-case output every existing test already pins).
-        if state.appInstallState != .installed {
-            lines.append("App: \(state.appInstallState.statusText)")
+        // bug 2.2 discriminators — each answers one of the competing stall mechanisms the previous
+        // export could not tell apart. Appended AFTER the existing lines so every prior pin holds.
+        lines.append("Message-ready: \(state.messageReady ? "yes" : "no")")
+        lines.append("Echo queue: \(state.echoQueueDepth)")
+        lines.append("Status pending: \(state.statusPending ? "yes" : "no")")
+        if let p = state.lastSendProgress {
+            lines.append("Last send progress: \(p.sentBytes)/\(p.totalBytes) bytes")
+        } else {
+            // Explicit, never omitted: a missing line would read as "not measured", when the whole
+            // point is proving that ZERO bytes moved (the SDK guarantees progress fires at least once
+            // for a transfer that actually started).
+            lines.append("Last send progress: none")
         }
+        lines.append("Late completions: \(state.lateCompletions)")
+        lines.append("Auto recoveries: \(state.autoRecoveries)")
+        // Surface the watch-app install/version state on EVERY pull — never a silent "✓" while
+        // readiness never arms. Previously conditional on `!= .installed`, which was unreachable (the
+        // field was an unsettable `let`); a wrong app id is one of the stall candidates, so its
+        // healthy value has to be visible too or its absence proves nothing.
+        lines.append("App: \(state.appInstallState.statusText)")
+        // Legend. The owner reads this export COLD, months later, without the debug session open — and
+        // it is the ONLY verification loop for the bug-2.2 fix (no one can drive ConnectIQ/BLE from a
+        // test). So the export has to interpret itself: each line below maps an observable signature to
+        // the single mechanism it implicates. Keep these in sync with the discriminators above.
+        lines.append("— How to read the above —")
+        lines.append("Message-ready: no + Device: connected  ⇒ readiness latch (should self-clear now)")
+        lines.append("Late completions > 0  ⇒ sends DO finish, just slower than the deadline")
+        lines.append("Auto recoveries > 0  ⇒ registration had wedged; the bridge rebuilt it itself")
+        lines.append("Echo queue > 0 + Status pending: yes  ⇒ an echo was starving status pushes")
+        lines.append("Last send progress: none + Message-ready: yes  ⇒ nothing moved; not our bug")
         return lines.joined(separator: "\n")
     }
 }

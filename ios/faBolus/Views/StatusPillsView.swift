@@ -25,19 +25,33 @@ struct StatusPillsView: View {
             // Grey + age when IOB is stale (`CalcInputFreshness`). Missing date ⇒ no age, never
             // invented as fresh on the dose path.
             let iobStale = CalcInputFreshness.iobPresentation(of: snapshot.iobDate, now: now) == .stale
+            // `…IfRead` funnel: a pump that has never answered op-109 has NO active-insulin value, and
+            // `iobUnits` is a non-optional `0`, so this used to render a confident `0.00 U` — with the
+            // FRESH insulin tint, because `iobPresentation(of: nil)` is `.hidden`, not `.stale`, so the
+            // `== .stale` test above read the absent case as fresh. A real 0.00 U IOB (very common) still
+            // renders `0.00 U`; only "never reported" renders "—". Sibling of the reservoir/battery fix
+            // from debug `tslim-reservoir-battery-zero`.
+            let iob = PumpValuePresentation.make(snapshot.iobUnitsIfRead, format: "%.2f U")
             pill(
-                icon: "drop.fill", tint: iobStale ? AppTheme.low : AppTheme.insulin,
-                value: String(format: "%.2f U", snapshot.iobUnits),
+                icon: "drop.fill",
+                // Unknown is neither live nor a warning: grey, exactly like the unknown reservoir below.
+                tint: !iob.isKnown ? .gray : (iobStale ? AppTheme.low : AppTheme.insulin),
+                value: iob.valueText,
                 label: calcAgedLabel("Active Insulin", date: snapshot.iobDate, stale: iobStale, now: now),
                 stale: iobStale)
         case "reservoir":
+            // Through `ReservoirPresentation` so an UNREAD reservoir shows "—", never a fabricated
+            // "0 U" (debug `tslim-reservoir-battery-zero`). Greyed while unknown, like the stale-IOB
+            // treatment above — an absent reading is not live data.
+            let reservoir = ReservoirPresentation.make(units: snapshot.reservoirUnitsIfRead)
             pill(
-                icon: "cross.vial.fill", tint: .teal,
-                value: String(format: "%.0f U", snapshot.reservoirUnits), label: "Reservoir")
+                icon: "cross.vial.fill", tint: reservoir.isKnown ? .teal : .gray,
+                value: reservoir.valueText, label: "Reservoir")
         case "battery":
             // Single glyph/"Charging"/tint decision — don't fork a second level→glyph switch.
+            // `…IfRead` (not the raw percent) so an unread battery can't render as a dead one.
             let battery = BatteryChargingPresentation.make(
-                percent: snapshot.batteryPercent,
+                percent: snapshot.batteryPercentIfRead,
                 charging: snapshot.batteryCharging)
             pill(
                 icon: battery.symbolName,
@@ -50,9 +64,15 @@ struct StatusPillsView: View {
             if snapshot.deliverySuspended {
                 pill(icon: "pause.circle.fill", tint: AppTheme.low, value: "Suspended", label: "Delivery")
             } else {
+                // `…IfRead` funnel on `basalRateKnown`. Before this, a pump that had never answered
+                // op-41 rendered a confident `0.00 U/hr` — which reads as "delivery stopped", the one
+                // claim this pill must not fabricate, and the exact reason `basalRateKnown` was added
+                // (it had NO consumer until now). A real 0.00 U/hr — a 0 U/hr temp rate, or a suspend
+                // that the `deliverySuspended` branch above hasn't caught — still shows `0.00 U/hr`.
+                let basal = PumpValuePresentation.make(snapshot.basalRateUnitsPerHourIfRead, format: "%.2f U/hr")
                 pill(
-                    icon: "waveform.path.ecg", tint: AppTheme.insulin,
-                    value: String(format: "%.2f U/hr", snapshot.basalRateUnitsPerHour), label: "Basal")
+                    icon: "waveform.path.ecg", tint: basal.isKnown ? AppTheme.insulin : .gray,
+                    value: basal.valueText, label: "Basal")
             }
         case "controlIQ":
             pill(

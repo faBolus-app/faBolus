@@ -434,8 +434,14 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// the reliable, direct model signal — the API version does NOT cleanly separate the two (newer
     /// t:slim X2 firmware reports API >= 3.5). nil = name didn't identify it → fall back to API version.
     private var detectedIsMobi: Bool?
-    // The `badOpcodes` never-resend backstop lives on `readScheduler`. The `ErrorResponse`
-    // delegate case (on `responseApplier`) feeds it via `readScheduler.insertBadOpcode(_:)`.
+    // The `badOpcodes` never-resend backstop lives on `readScheduler`. The `ErrorResponse` delegate
+    // case (on `responseApplier`) feeds it through `resolveBadOpcodeForError` →
+    // `readScheduler.resolveErrorResponse(requestCodeId:errorCodeId:txId:)`, which is the ONLY
+    // production entry point. That is deliberate: `resolveErrorResponse` is where the pump's error
+    // CLASS is weighed (`PumpErrorClass`) before anything is recorded durably, so routing round it
+    // would restore exactly the defect debug session `tslim-reservoir-battery-zero` fixed — a single
+    // transient error permanently deleting a supported read. There is intentionally no
+    // `responseApplier.insertBadOpcode` seam to bypass it with.
     /// Durable, per-pump memory of the read opcodes THIS pump has rejected, so the learned `badOpcodes`
     /// skip survives an app relaunch (not just a reconnect) and is scoped to pump identity — a DIFFERENT
     /// pump never inherits it. Keyed by the pump's peripheral UUID (`currentPumpKey()`), stamped with
@@ -806,6 +812,7 @@ public final class TandemBackend: NSObject, PumpBackend {
         // Durable, per-pump learned-bad-opcode hydrate/persist.
         readScheduler.loadPersistedBadOpcodes = { [weak self] in self?.persistedBadOpcodesForCurrentPump() ?? [] }
         readScheduler.persistBadOpcode = { [weak self] opcode in self?.persistBadOpcodeForCurrentPump(opcode) }
+        readScheduler.strikeBadOpcode = { [weak self] opcode in self?.strikeBadOpcodeForCurrentPump(opcode) }
         // The pump identity that keys the STATIC known-unsupported-reads registry, read live off the
         // snapshot the bootstrap op33/op85 responses populate — so the deferred identity-gated read
         // (op20) is suppressed before the first send on a KNOWN-bad combo (t:slim X2 sw 2.5). Distinct
@@ -862,6 +869,33 @@ public final class TandemBackend: NSObject, PumpBackend {
         badOpcodeStore.record(opcode, for: key, firmware: firmware.isEmpty ? nil : firmware)
     }
 
+    /// Count ONE corroborating strike for a rejection the scheduler classified as
+    /// `.afterCorroboratingStrikes` — an ambiguous, opcode-less op-77 attributed by txId echo while a
+    /// burst of reads was in flight. The store promotes it to a durable exclusion only at
+    /// `PumpBadOpcodeStore.durableStrikeThreshold` strikes; the scheduler guarantees at most one strike
+    /// per connection cycle. Debug session `tslim-reservoir-battery-zero`.
+    private func strikeBadOpcodeForCurrentPump(_ opcode: UInt8) {
+        guard opcode != 0, let key = currentPumpKey() else { return }
+        let firmware = snapshot.softwareVersion
+        badOpcodeStore.recordStrike(opcode, for: key, firmware: firmware.isEmpty ? nil : firmware)
+    }
+
+    /// Q3 recovery for debug session `tslim-reservoir-battery-zero`: forget every learned read exclusion
+    /// for the currently-adopted pump and re-probe from the next poll, WITHOUT unpairing.
+    ///
+    /// Before this existed the only route out of a wrongly-learned exclusion was `forgetPairing()`, which
+    /// also clears `PairingStore`/`PumpPeripheralStore`/`TrustedPumpIdentityStore` and forces the user to
+    /// re-enter the pump-side pairing code — a heavy recovery for a state the app created. Clears BOTH the
+    /// durable store and the scheduler's in-memory set, because `badOpcodes` deliberately survives a
+    /// reconnect for the scheduler's lifetime (store-only would leave the reads skipped until relaunch).
+    /// Does not touch pairing, credentials or trusted identity, and cannot make a read appear to have
+    /// succeeded — it only re-enables SENDING the read.
+    public func resetLearnedReadExclusions() {
+        if let key = currentPumpKey() { badOpcodeStore.reset(for: key) }
+        readScheduler.clearAllLearnedForReprobe()
+        onChange?()
+    }
+
     /// Wires `responseApplier`'s injected closures — called from
     /// BOTH initializers right after `super.init()`, same two-phase-init reason as `wireReadScheduler()`.
     private func wireResponseApplier() {
@@ -894,12 +928,12 @@ public final class TandemBackend: NSObject, PumpBackend {
         responseApplier.cgmReadingDate = { [weak self] pumpSec, now in
             self?.readScheduler.cgmReadingDate(pumpSec: pumpSec, now: now)
         }
-        responseApplier.insertBadOpcode = { [weak self] opcode in self?.readScheduler.insertBadOpcode(opcode) }
         // Resolve an inbound op77 to the true failing opcode (cargo requestCodeId when named, else
         // the outstanding read correlated by echoed txId / FIFO), record it in `badOpcodes`, and
         // return it for the standing diagnostic log line.
-        responseApplier.resolveBadOpcodeForError = { [weak self] requestCodeId, txId in
-            self?.readScheduler.resolveErrorResponse(requestCodeId: requestCodeId, txId: txId)
+        responseApplier.resolveBadOpcodeForError = { [weak self] requestCodeId, errorCodeId, txId in
+            self?.readScheduler.resolveErrorResponse(
+                requestCodeId: requestCodeId, errorCodeId: errorCodeId, txId: txId)
                 ?? UInt8(truncatingIfNeeded: requestCodeId)
         }
         // Gap-sync state lives on `historySyncCoordinator` — the gap-sync state machine now
@@ -1119,7 +1153,9 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// never-resend `badOpcodes` set, so a test can prove the newly-guarded raw-send reads (HistoryLog
     /// op60, IDP op64/op66, ProfileStatus) are now SKIPPED by that backstop — behavior impossible before
     /// they were routed through `sendOnDemandRead`.
-    func insertBadOpcodeForTesting(_ opcode: UInt8) { readScheduler.insertBadOpcode(opcode) }
+    func insertBadOpcodeForTesting(_ opcode: UInt8) {
+        readScheduler.insertBadOpcode(opcode, durability: .immediate)
+    }
 
     /// Test seam: fires with the SAME non-PHI facts the
     /// `pairingLog` call in `pumpClientDidBecomeReady` emits for each outgoing pairing message, so a

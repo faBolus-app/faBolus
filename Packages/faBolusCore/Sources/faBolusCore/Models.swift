@@ -144,8 +144,54 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// to prove the active-insulin term is fresh before subtracting it, and to grey/age the IOB row —
     /// exactly like `glucoseDate` for the glucose feed. nil ⇒ unknown age ⇒ treated as stale.
     public var iobDate: Date?
+    /// Active insulin ONLY when the pump has actually reported it; `nil` when unread. The display funnel,
+    /// exactly mirroring `reservoirUnitsIfRead`/`batteryPercentIfRead` — a `0.00 U` IOB row on a pump that
+    /// never answered op-109 is a fabricated clinical claim (0 U of active insulin is a real, common state,
+    /// so absence must not be able to imitate it).
+    ///
+    /// Added by the app-wide "never display a fabricated value" sweep that followed debug session
+    /// `tslim-reservoir-battery-zero`. `iobDate` already existed, but every consumer tested
+    /// `CalcInputFreshness.iobPresentation(…) == .stale`, and the nil case is `.hidden`, NOT `.stale` — so an
+    /// unread IOB rendered as a FRESH-looking `0.00 U` (not even greyed). This funnel is the single place
+    /// the "is this real?" test lives, so no surface re-derives it.
+    ///
+    /// NEVER consult this from the dose path — use `iobUnits`, whose semantics are frozen, together with
+    /// `isIobStale()`/`CalcInputGate` (which already treat a nil `iobDate` as stale and prompt).
+    public var iobUnitsIfRead: Double? { iobDate == nil ? nil : iobUnits }
+    /// Units remaining, as last reported by the pump (op-37 `InsulinStatusResponse`).
+    ///
+    /// NON-optional with a `0` default, DELIBERATELY unchanged: the dose path and
+    /// `StackingGuard.insufficientReservoir` read this field, and that pre-guard treats `0` as a valid
+    /// "empty" reading and only a NEGATIVE value as "no reading". Do not make this optional or negative
+    /// on absence — it would flip that disclosure to `.none`, i.e. fail OPEN.
+    /// Read `reservoirDate`/`reservoirUnitsIfRead` to tell "never read" from "genuinely 0".
     public var reservoirUnits: Double = 0
+    /// Battery percent, as last reported by the pump (op-145 `CurrentBatteryV2Response`). Same
+    /// non-optional, zero-default shape and same reasoning as `reservoirUnits`; read `batteryDate` /
+    /// `batteryPercentIfRead` to tell "never read" from "genuinely 0".
     public var batteryPercent: Int = 0
+    /// When `reservoirUnits` (op-37 `InsulinStatusResponse`) was last received from the pump — exactly
+    /// the role `iobDate` plays for `iobUnits`. `nil` ⇒ this pump has never answered the reservoir read,
+    /// so there is NO value and every surface must render unknown.
+    ///
+    /// Added for debug session `tslim-reservoir-battery-zero`. A brand-new t:slim X2 had op-36 durably
+    /// excluded, so the reservoir read was never sent — and because `reservoirUnits` is a non-optional
+    /// `0`, the HUD, the details card, the widget and the Garmin wire all reported a confident `0 U`.
+    /// An empty cartridge is a clinically meaningful state, so absence must never be able to imitate it.
+    public var reservoirDate: Date?
+    /// When `batteryPercent`/`batteryCharging` (op-145 `CurrentBatteryV2Response`) were last received.
+    /// `nil` ⇒ never read ⇒ unknown, never `0%`. Same origin as `reservoirDate`: op-144 was durably
+    /// excluded and the battery row asserted a flat `0%` — with the EMPTY-battery glyph and the
+    /// low-battery warning tint — for a fully-charged pump.
+    public var batteryDate: Date?
+    /// Reservoir units ONLY when the pump has actually reported them; `nil` when unread. The single
+    /// funnel every display surface should use, so no view re-derives the "is this real?" test and they
+    /// can never drift apart. Never consult this from the dose path — use `reservoirUnits` there, whose
+    /// semantics are frozen.
+    public var reservoirUnitsIfRead: Double? { reservoirDate == nil ? nil : reservoirUnits }
+    /// Battery percent ONLY when the pump has actually reported it; `nil` when unread. Display funnel,
+    /// mirroring `reservoirUnitsIfRead`.
+    public var batteryPercentIfRead: Int? { batteryDate == nil ? nil : batteryPercent }
     /// The pump POSITIVELY reported it is charging (op-145 `CurrentBatteryV2Response.chargingStatus
     /// == 1`). Fail-closed default `false`: any other/unknown value AND "never read this op-145 reply
     /// yet" both read identically as not-charging — never a false charging badge (mirrors
@@ -176,12 +222,29 @@ public struct PumpSnapshot: Sendable, Equatable {
     public var softwareVersion: String = ""
     /// Current basal delivery rate (units/hr) and whether delivery is suspended.
     public var basalRateUnitsPerHour: Double = 0
-    /// Whether `basalRateUnitsPerHour` reflects a value actually READ from the pump (op-77
-    /// CurrentBasalStatusResponse) rather than the default-unknown 0. Without this flag a genuine 0 U/hr
-    /// basal — a suspend or a 0 U/hr temp — is indistinguishable from "never read", so the GraphDetailView
-    /// readout would render a real suspend as the unknown em-dash "—" instead of "0/hr". Set true the
+    /// Whether `basalRateUnitsPerHour` reflects a value actually READ from the pump (op-41
+    /// `CurrentBasalStatusResponse`) rather than the default-unknown 0. (This said "op-77" before; op-77
+    /// is `ErrorResponse`. The wrong number here is not harmless — it is the read a reader would go
+    /// looking for to reason about whether this flag can be trusted.) Without this flag a genuine 0 U/hr
+    /// basal — a suspend or a 0 U/hr temp — is indistinguishable from "never read", so a basal readout
+    /// would render a real suspend as the unknown em-dash "—" instead of "0/hr". Set true the
     /// first time a basal-status frame lands; display-only, never a dose input.
+    /// (The old wording pointed at a `GraphDetailView` that no longer exists. The live consumers are
+    /// `basalRateUnitsPerHourIfRead` below and, through it, `StatusPillsView`, `DebugMenuView` and
+    /// `RemoteStatusComposer` — until that funnel was added this flag had ZERO consumers, which is why
+    /// every one of those surfaces was still printing the unread `0.00 U/hr` it exists to prevent.)
     public var basalRateKnown: Bool = false
+    /// Basal rate ONLY when the pump has actually reported it; `nil` when unread. The display/wire funnel,
+    /// mirroring `reservoirUnitsIfRead`/`iobUnitsIfRead`, so the "is this real?" test lives in exactly one
+    /// place instead of every surface re-reading `basalRateKnown` (which, before the sweep below, NO surface
+    /// read at all — the flag existed, was set correctly by `PumpResponseApplier`, and had zero consumers).
+    ///
+    /// Added by the app-wide "never display a fabricated value" sweep that followed debug session
+    /// `tslim-reservoir-battery-zero`: the basal pill, the Debug menu row and the Garmin wire all rendered a
+    /// flat `0.00 U/hr` on a pump that had never answered op-41. Note a real `0.00 U/hr` (a suspend, or a
+    /// 0 U/hr temp rate) STILL renders as `0.00 U/hr` — `basalRateKnown` is true then — which is exactly the
+    /// distinction this field was created to preserve.
+    public var basalRateUnitsPerHourIfRead: Double? { basalRateKnown ? basalRateUnitsPerHour : nil }
     /// Configured max basal-rate limit (units/hr), from BasalLimitSettings. 0 = unknown/not read.
     public var maxBasalUnitsPerHour: Double = 0
     public var deliverySuspended: Bool = false

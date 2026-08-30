@@ -105,14 +105,35 @@ struct PumpUnsupportedReadSelfHealTests {
 
     // MARK: - a dose-input read (op108/op115) is re-probed each connection, never durably skipped
 
-    /// op108 `ControlIQIOBRequest` (IOB) and op115 `BolusCalcDataSnapshotRequest` (therapy settings) feed the
-    /// bolus calculator; op109 is the ONLY IOB source, so a DURABLE skip would fail-close `recommendBolus`
-    /// forever with no re-probe. Unlike op20 (which learns-and-STAYS-skipped across reconnects), a dose-input
-    /// read op77'd this connection is skipped only for the REST of this session and is DROPPED from
-    /// `badOpcodes` on the next `startPolling()`, so it is re-sent every connection. op20 (NOT a dose input)
-    /// stays skipped across the reconnect — the contrast that proves the re-probe allowlist is
-    /// dose-input-scoped.
-    @Test func aDoseInputReadOp77dThisConnectionIsReProbedNextConnectionWhileOp20StaysSkipped() {
+    /// Every read op77'd by an AMBIGUOUS error while a burst was in flight is re-probed on the next
+    /// connection — the dose-input reads (op108 `ControlIQIOBRequest` IOB, op115 `BolusCalcDataSnapshotRequest`
+    /// therapy settings) AND op20, which is not a dose input.
+    ///
+    /// OWNER DECISION (debug session `tslim-reservoir-battery-zero`), recorded here so it is not
+    /// accidentally undone: **do not restore the old family-scoped assertion.** This test previously
+    /// asserted the opposite for op20 — "op20, NOT being a dose-input read, STAYS skipped across the
+    /// reconnect — the contrast that proves the re-probe allowlist is dose-input-scoped". That framing was
+    /// the bug. The allowlist is no longer scoped by which read FAMILY an opcode belongs to; it is scoped by
+    /// what the pump's error actually PROVED, because family membership was never evidence about capability.
+    ///
+    /// Here op20 is attributed by a txId echo while a full ~16-read burst is outstanding
+    /// (`PumpOpcodeCorrelation.txIdEchoUnderBurst`) from an opcode-less `[0,0]` cargo
+    /// (`PumpErrorClass.ambiguous`). That is a MIS-CORRELATION artefact — the error was produced by the
+    /// burst and merely pinned onto whichever read the echo pointed at — not a capability fact, so it must
+    /// stay PROVISIONAL and be re-probed until `PumpBadOpcodeStore.durableStrikeThreshold` cycles
+    /// corroborate it. Treating that single observation as authoritative is precisely what durably deleted
+    /// five perfectly-supported reads (op-20/36/56/144/164) on a brand-new t:slim X2 and blanked the
+    /// reservoir and battery rows.
+    ///
+    /// The one-drop-ever guarantee is NOT weakened; it is pinned where it was actually earned, by
+    /// `op20LearnedAsTheSoleOutstandingReadStillStaysSkippedAcrossAReconnect` below (unambiguous
+    /// attribution on the on-demand `refreshLoadStatus()` path the API-2.5 t:slim X2 pairing-loop self-heal
+    /// really uses) and by `PumpTransientErrorNeverDurablyBlacklistsTests`'
+    /// `aGenuineBadOpcodeStillPersistsOnTheFirstObservation` (a real `BAD_OPCODE(6)`,
+    /// which still sticks immediately regardless of correlation). Dose-input reads additionally stay
+    /// never-durable in their own right: op109 is the sole IOB source, so a durable skip would fail-close
+    /// `recommendBolus` forever with no re-probe.
+    @Test func aDoseInputReadAndABurstAttributedOp20AreBothReProbedOnTheNextConnection() {
         let b = TandemBackend(testTransport: FakePumpTransport())
         let iob = ControlIQIOBRequest.props.opCode  // op108 (dose input)
         let therapy = BolusCalcDataSnapshotRequest.props.opCode  // op115 (dose input)
@@ -142,6 +163,15 @@ struct PumpUnsupportedReadSelfHealTests {
         var dispatched: [UInt8] = []
         b.onReadDispatchedForTesting = { _, op in dispatched.append(op) }
         b.startPollingForTesting()
+        // op20 is IDENTITY-GATED: `startPolling()` resets `bootstrapVersionIdentified` /
+        // `identityGatedReadsDispatchedThisCycle` and calls `fastRead(includingIdentityGatedReads: false)`,
+        // so op20 is held back until this cycle's op33 identifies the pump. Release it here exactly as
+        // connection N does above — otherwise op20 is never offered to `sendStatusRead` at all on N+1 and
+        // the re-probe assertion below would be unobservable for the wrong reason (it would appear in
+        // NEITHER `dispatched` nor `skipped`). Do NOT "fix" a failure here by raising the fixture's API
+        // version: `sendStatusRead` applies no `minApi`/`isSupported` floor gate — its only skip condition
+        // is `badOpcodes` — so the floor cannot be what withholds op20 on this path.
+        b.releaseIdentityGatedReadsForTesting()
         #expect(
             !b.badOpcodesForTesting.contains(iob),
             "op108 must be dropped from badOpcodes on the next connection — re-probed, never durably skipped")
@@ -150,10 +180,38 @@ struct PumpUnsupportedReadSelfHealTests {
             "op115 must be dropped from badOpcodes on the next connection — re-probed, never durably skipped")
         #expect(dispatched.contains(iob), "op108 must be RE-SENT on connection N+1")
         #expect(dispatched.contains(therapy), "op115 must be RE-SENT on connection N+1")
+        // op20's treatment here is the OWNER DECISION documented at the top of this test: burst-attributed
+        // + opcode-less ⇒ provisional, re-probed until corroborated. Do not flip this back to
+        // `contains(op20)`; read the header first.
         #expect(
-            b.badOpcodesForTesting.contains(op20),
-            "op20 (NOT a dose-input read) must STAY skipped across the reconnect — the contrast that scopes the allowlist"
-        )
+            !b.badOpcodesForTesting.contains(op20),
+            "a BURST-attributed ambiguous op77 is provisional — op20 must be re-probed, not permanently dropped")
+        #expect(dispatched.contains(op20), "op20 must be re-probed on connection N+1 after a burst-attributed op77")
+    }
+
+    /// The other side of the contract above: when op20 is the SOLE outstanding read (the on-demand
+    /// `refreshLoadStatus()` shape the API-2.5 t:slim X2 pairing-loop self-heal is built on) the
+    /// attribution involves no guess, so the skip is authoritative and STILL survives the reconnect —
+    /// one drop, ever. Debug session `tslim-reservoir-battery-zero` narrowed the provisional treatment to
+    /// burst-attributed rejections only; it must not have weakened this path.
+    @Test func op20LearnedAsTheSoleOutstandingReadStillStaysSkippedAcrossAReconnect() async {
+        let b = TandemBackend(testTransport: FakePumpTransport())
+        b.setSoftwareVersionForTesting("2.5")
+        await b.refreshLoadStatus()  // op20 is the ONLY outstanding read
+        b.injectStatusFrameForTesting(FakePumpTransport.errorResponse(requestOpCode: 0, errorCode: 0))
+        #expect(b.badOpcodesForTesting.contains(loadStatusOpcode))
+
+        var dispatched: [UInt8] = []
+        var skipped: [UInt8] = []
+        b.onReadDispatchedForTesting = { _, op in dispatched.append(op) }
+        b.onReadSkippedForTesting = { _, op in skipped.append(op) }
+        b.startPollingForTesting()
+        b.releaseIdentityGatedReadsForTesting()
+        #expect(
+            b.badOpcodesForTesting.contains(loadStatusOpcode),
+            "an unambiguously-attributed op20 rejection stays skipped across the reconnect — one drop, ever")
+        #expect(skipped.contains(loadStatusOpcode))
+        #expect(!dispatched.contains(loadStatusOpcode))
     }
 }
 

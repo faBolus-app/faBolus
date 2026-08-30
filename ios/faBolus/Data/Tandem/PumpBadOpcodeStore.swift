@@ -41,6 +41,17 @@ struct PumpBadOpcodeStore: @unchecked Sendable {
     /// a monotonic counter — deterministic, not wall-clock).
     static let maxRetainedPumps = 16
 
+    /// How many observations on DISTINCT connection cycles a `.afterCorroboratingStrikes` rejection needs
+    /// before it becomes a durable exclusion. See `PumpBadOpcodeDurability`.
+    ///
+    /// Added for debug session `tslim-reservoir-battery-zero`: an opcode-less op-77 attributed by txId echo
+    /// while ~16 reads were in flight is the one case where a burst-produced error can be pinned onto a
+    /// perfectly supported read, and a single such observation used to be enough to blacklist it forever.
+    /// 3 is chosen so a genuinely unsupported read still converges quickly (it fails on EVERY cycle) while
+    /// no realistic one-off does. It costs nothing on a good link: the in-memory skip already suppresses
+    /// the read for the rest of each connection, so the extra strikes are not extra drops within a cycle.
+    static let durableStrikeThreshold = 3
+
     init(defaults: UserDefaults = .standard, storageKey: String = "learnedBadOpcodesByPump") {
         self.defaults = defaults
         self.storageKey = storageKey
@@ -69,25 +80,80 @@ struct PumpBadOpcodeStore: @unchecked Sendable {
     /// from the stamp already stored for this pump, the pre-existing opcodes are dropped first (they were
     /// learned under a different firmware and may no longer hold) before this one is recorded under the new
     /// stamp.
-    func record(_ opcode: UInt8, for pumpKey: String, firmware: String?) {
-        guard opcode != 0 else { return }
-        // Never persist a pure delivery/control-WRITE opcode. `PumpReadScheduler.insertBadOpcode` already
-        // refuses these before calling `persistBadOpcode`; this second choke point so a future direct
-        // caller of the durable store can never seed a delivery opcode that would later hydrate into
-        // `badOpcodes`. Read-colliding opcodes (op164/op144) are NOT in this set, so a legitimately-learned
-        // READ still persists.
-        guard !PumpReadCatalog.deliveryControlWriteOpcodes.contains(opcode) else { return }
-        // Never persist a dose-input READ (op108 IOB / op115 therapy). A durable blacklist would brick
-        // the bolus calculator with no re-probe. `insertBadOpcode` already refuses these; this second
-        // choke point covers a future direct caller or a foreign/legacy persisted entry replayed here.
-        guard !PumpReadCatalog.doseInputReadOpcodes.contains(opcode) else { return }
-        // Never persist an alert-read burst opcode (op72-76, incl. op74 `CGMAlertStatusRequest`). A
-        // durable blacklist would silence the phone-side CGM-alert mirror with no re-probe.
-        guard !PumpReadCatalog.alertReadOpcodes.contains(opcode) else { return }
+    /// The three hold-out sets every write path must respect, factored out so `record` and
+    /// `recordStrike` can never drift apart. Returns false when this opcode must never be persisted:
+    ///  - op0: the empty-cargo artifact / bootstrap opcode;
+    ///  - a pure delivery/control-WRITE opcode (read-colliding op144/op164 are deliberately NOT in that
+    ///    set, so a legitimately-learned READ still persists);
+    ///  - a dose-input READ (op108 IOB / op115 therapy) — a durable blacklist bricks the calculator;
+    ///  - an alert-read burst opcode (op72-76) — a durable blacklist silences the CGM-alert mirror.
+    /// `PumpReadScheduler.insertBadOpcode` already refuses all of these before calling in; this is the
+    /// second choke point so a future direct caller of the durable store can never seed one.
+    private func isPersistable(_ opcode: UInt8) -> Bool {
+        guard opcode != 0 else { return false }
+        guard !PumpReadCatalog.deliveryControlWriteOpcodes.contains(opcode) else { return false }
+        guard !PumpReadCatalog.doseInputReadOpcodes.contains(opcode) else { return false }
+        guard !PumpReadCatalog.alertReadOpcodes.contains(opcode) else { return false }
+        return true
+    }
+
+    /// Count one corroborating observation for `opcode` and persist it ONLY once the count reaches
+    /// `durableStrikeThreshold`. Below the threshold nothing enters the never-resend set, so the read is
+    /// re-probed on the next connection instead of being permanently deleted.
+    ///
+    /// The caller is responsible for calling this at most ONCE PER CONNECTION CYCLE per opcode
+    /// (`PumpReadScheduler.strikesRecordedThisCycle`) — otherwise a single burst that errors the same read
+    /// three times would reach the threshold instantly and the corroboration rule would be vacuous.
+    /// Strike counts are dropped whenever the learned set is dropped (firmware change, `reset(for:)`), so
+    /// a re-test always starts from zero.
+    @discardableResult
+    func recordStrike(_ opcode: UInt8, for pumpKey: String, firmware: String?) -> Bool {
+        guard isPersistable(opcode) else { return false }
         var map = loadMap()
         var p = map[pumpKey] ?? Persisted(fw: firmware, ops: [])
         if let firmware, let existing = p.fw, existing != firmware {
             p.ops = []  // firmware changed since these were learned → re-test from scratch
+            p.stk = nil  // …and the strikes were earned under that stale firmware too
+        }
+        if let firmware { p.fw = firmware }
+        let slot = String(opcode)
+        var strikes = p.stk ?? [:]
+        let count = (strikes[slot] ?? 0) + 1
+        strikes[slot] = count
+        p.stk = strikes
+        let reachedThreshold = count >= Self.durableStrikeThreshold
+        if reachedThreshold, !p.ops.contains(Int(opcode)) { p.ops.append(Int(opcode)) }
+        p.seq = (map.values.compactMap { $0.seq }.max() ?? 0) + 1
+        map[pumpKey] = p
+        map = prunedToCap(map)
+        saveMap(map)
+        return reachedThreshold
+    }
+
+    #if DEBUG
+    /// Test accessor: corroborating strikes counted so far for one opcode on one pump.
+    func strikeCountForTesting(_ opcode: UInt8, for pumpKey: String) -> Int {
+        loadMap()[pumpKey]?.stk?[String(opcode)] ?? 0
+    }
+    #endif
+
+    func record(_ opcode: UInt8, for pumpKey: String, firmware: String?) {
+        // The four hold-out guards (op0, delivery/control WRITE, dose-input READ, alert-read burst) live in
+        // `isPersistable` and are applied through it rather than restated here, so this path and
+        // `recordStrike` genuinely CANNOT drift apart — see that helper's doc comment for what each one
+        // protects and why. `PumpReadScheduler.insertBadOpcode` already refuses all four before calling in;
+        // this is the second choke point, covering a future direct caller of the durable store and a
+        // foreign/legacy persisted entry replayed here.
+        //
+        // debug `tslim-reservoir-battery-zero` self-audit: these guards were previously duplicated inline
+        // here while `recordStrike` used the helper, so the helper's "can never drift apart" claim was not
+        // actually true of this path. Routed through the helper to make it true.
+        guard isPersistable(opcode) else { return }
+        var map = loadMap()
+        var p = map[pumpKey] ?? Persisted(fw: firmware, ops: [])
+        if let firmware, let existing = p.fw, existing != firmware {
+            p.ops = []  // firmware changed since these were learned → re-test from scratch
+            p.stk = nil  // …and so were any corroborating strikes
         }
         if let firmware { p.fw = firmware }
         if !p.ops.contains(Int(opcode)) { p.ops.append(Int(opcode)) }
@@ -132,6 +198,11 @@ struct PumpBadOpcodeStore: @unchecked Sendable {
         var fw: String?
         var ops: [Int]
         var seq: Int?
+        /// Corroborating strike counts, keyed by the opcode's decimal string (JSON object keys must be
+        /// strings). Optional so a legacy persisted payload decodes cleanly (nil ⇒ no strikes yet).
+        /// Only `.afterCorroboratingStrikes` rejections land here; an `.immediate` one goes straight to
+        /// `ops`. Cleared alongside `ops` on a firmware change.
+        var stk: [String: Int]?
     }
 
     private func loadMap() -> [String: Persisted] {

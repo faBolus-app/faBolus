@@ -36,15 +36,19 @@ final class PumpResponseApplier {
     var schedulePredictiveBurst: (Date) -> Void = { _ in }
     /// Bound to `readScheduler.cgmReadingDate(pumpSec:now:)`. `nil` ⇒ the reading time is untrustworthy.
     var cgmReadingDate: (UInt32, Date) -> Date? = { _, _ in nil }
-    /// Bound to `readScheduler.insertBadOpcode(_:)`.
-    var insertBadOpcode: (UInt8) -> Void = { _ in }
-    /// Bound to `readScheduler.resolveErrorResponse(requestCodeId:txId:)`. Resolves an inbound
-    /// op77 `ErrorResponse` to the true failing opcode — the cargo's `requestCodeId` when the pump
-    /// names it, else the outstanding read correlated by the echoed txId (frame[1]) or in-order FIFO
-    /// — records it in the never-resend `badOpcodes` set, and returns it for the diagnostic log
-    /// (0 when unresolvable, so opcode 0 is never suppressed). Default trusts the cargo, used only
-    /// before wiring.
-    var resolveBadOpcodeForError: (_ requestCodeId: Int, _ txId: UInt8) -> UInt8 = { requestCodeId, _ in
+    /// Bound to `readScheduler.resolveErrorResponse(requestCodeId:errorCodeId:txId:)`. Resolves an
+    /// inbound op77 `ErrorResponse` to the true failing opcode — the cargo's `requestCodeId` when the
+    /// pump names it, else the outstanding read correlated by the echoed txId (frame[1]) — records it
+    /// in the never-resend `badOpcodes` set, and returns it for the diagnostic log (0 when
+    /// unresolvable, so opcode 0 is never suppressed). Default trusts the cargo, used only before
+    /// wiring.
+    ///
+    /// `errorCodeId` is passed through because it decides whether the exclusion may be made DURABLE:
+    /// only `BAD_OPCODE(6)` is a statement about opcode support, so a transient error must not
+    /// permanently delete a working read (debug session `tslim-reservoir-battery-zero` — five ordinary
+    /// reads were lost that way on a brand-new t:slim X2). See `PumpErrorClass`.
+    var resolveBadOpcodeForError: (_ requestCodeId: Int, _ errorCodeId: Int, _ txId: UInt8) -> UInt8 = {
+        requestCodeId, _, _ in
         UInt8(truncatingIfNeeded: requestCodeId)
     }
     /// Bound to `TandemBackend.beginGapSync(pumpFirst:pumpLast:)`.
@@ -181,10 +185,19 @@ final class PumpResponseApplier {
                 if history.count > 288 { history.removeFirst() }
             }
         case let m as InsulinStatusResponse:
-            withSnapshot { $0.reservoirUnits = Double(m.currentInsulinAmount) }
+            withSnapshot {
+                $0.reservoirUnits = Double(m.currentInsulinAmount)
+                // Stamp the read receipt so display can tell a GENUINE 0 (empty cartridge) from
+                // "the pump never answered op-36" — which is exactly what a durably-excluded read
+                // produced on the owner's t:slim X2 (debug `tslim-reservoir-battery-zero`).
+                $0.reservoirDate = Date()
+            }
         case let m as CurrentBatteryV2Response:
             withSnapshot { snap in
                 snap.batteryPercent = m.batteryPercent
+                // Read receipt — see `reservoirDate` above. Stamped on EVERY reply (not just the
+                // first), matching `iobDate`'s last-received semantics.
+                snap.batteryDate = Date()
                 // Mirror the oracle's `isCharging()` — only a POSITIVE `chargingStatus == 1` reads as
                 // charging; any other/unknown value fails closed to `false`. Unconditional assign
                 // (never "if let"-preserved), same shape as `batteryPercent` on this same frame.
@@ -422,7 +435,7 @@ final class PumpResponseApplier {
             // supported read. Resolve + record only for `.currentStatus`; a `.control` op77 is
             // logged but never touches `badOpcodes`.
             if characteristic == .currentStatus {
-                let resolved = resolveBadOpcodeForError(m.requestCodeId, txId)
+                let resolved = resolveBadOpcodeForError(m.requestCodeId, m.errorCodeId, txId)
                 Self.pairingLog.log(
                     "pump error ← requestOpcode=\(resolved, privacy: .public) errorCode=\(m.errorCodeId, privacy: .public) badOpcode=\(m.isBadOpcode, privacy: .public) — will not resend this opcode"
                 )
