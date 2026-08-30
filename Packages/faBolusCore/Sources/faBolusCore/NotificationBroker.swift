@@ -25,7 +25,11 @@ public enum NotificationBroker {
         // The §6 never-disableable safety categories.
         case pumpDisconnect  // the pump link dropped while it was connected/bolusing
         case bolusReconciliation  // the AUTHORITATIVE result of a bolus, incl. a resolved indeterminate
-        case cgmDataLoss  // the app stopped receiving CGM data (distinct from a pump-raised CGM alert)
+        /// The app stopped receiving CGM data (distinct from a pump-raised CGM alert, which arrives on
+        /// `pumpAlert` with `safetyClass == .cgmDataLoss` and is unaffected by any of this). Still a
+        /// never-suppressible category, but since 2026-08-30 it never NOTIFIES — a CGM gap is UI state
+        /// only. See `deliversAsNotification` for the decision and its accepted residual.
+        case cgmDataLoss
         /// The pump link keeps FLAPPING — a bounded run of live→reconnecting re-pair/re-drop cycles
         /// the reconnect ladder folds to `.connecting`, so `SafetyEdge.connection` (and the muteable
         /// `pumpDisconnect` alert) stay silent through it. This is a SEPARATE never-suppressible
@@ -73,6 +77,70 @@ public enum NotificationBroker {
             default: return true
             }
         }
+
+        /// Whether this condition surfaces as a NOTIFICATION at all, or as UI state only (the app's HUD,
+        /// the widgets, and the watch status push).
+        ///
+        /// `cgmDataLoss` is the one category that does not notify (**owner decision, 2026-08-30**). Both of
+        /// its posters — the immediate "CGM data lost" banner on the `SafetyEdge.freshness` raise edge, and
+        /// the pre-armed background staleness watchdog — fire at the SAME `GlucoseFreshness.staleAfter`
+        /// threshold, so the category produced one notification request per advanced CGM datum (720 of them
+        /// in the 2026-08-29 diagnostics export ≈ 60 h of entirely normal operation) while telling the
+        /// wearer nothing the greyed, age-labelled CGM pill and widget value do not already say.
+        ///
+        /// **Accepted residual, stated explicitly:** because the watchdog fires at the same threshold as
+        /// the banner rather than later, this also removes the only notification that could reach a wearer
+        /// whose CGM gap outlives the app being alive — i.e. a MULTI-HOUR outage is now silent too, not
+        /// just a short gap. A long-outage escalation would be a NEW, separately-scheduled alert (see
+        /// `DisconnectEscalation` for the ladder shape); nothing here provides one. The app-owned urgent-low
+        /// backstop is deliberately NOT affected: it lives on its own `urgentLowGlucose` category.
+        ///
+        /// Read by `decide()` (so every poster, in-process or out, is covered) and by the app's coordinator
+        /// BEFORE it persists a durable replay record, so a silent category leaves nothing behind.
+        public var deliversAsNotification: Bool {
+            switch self {
+            case .cgmDataLoss: return false
+            default: return true
+            }
+        }
+
+        /// Whether a notification in this category may carry an action that SILENCES the category (the
+        /// "Snooze 2h" button).
+        ///
+        /// False for the two unresolved-dose categories (**owner decision, 2026-08-30**): "Bolus outcome
+        /// unknown" (`bolusIndeterminate`) and "Bolus not delivered" (`bolusDeliveryFailed`) previously
+        /// offered a snooze as their ONLY action, and since neither posts at `.critical` severity that
+        /// snooze was honoured — so the single tap available on an unresolved-dose alert silenced exactly
+        /// the category that must not be silenced. They now offer no action buttons at all; iOS still
+        /// provides the default tap (open the app) and swipe-to-dismiss, so nothing became harder to deal
+        /// with — only the one-tap silence is gone.
+        ///
+        /// False for every `neverSuppressible` category too. Those already carried no snooze action, but
+        /// deriving BOTH the registered actions and the snooze WRITE side from this one predicate means the
+        /// affordance and the governance can no longer disagree — including for a notification that was
+        /// DELIVERED by an older build and still sits in Notification Center with its old snooze button
+        /// (`setNotificationCategories` replaces the registered set at launch, but an already-delivered
+        /// notification keeps the actions it was delivered with).
+        public var permitsSilencingAction: Bool {
+            if neverSuppressible { return false }
+            switch self {
+            case .bolusIndeterminate, .bolusDeliveryFailed: return false
+            default: return true
+            }
+        }
+
+        /// Whether this category ANNOUNCES an already-terminal fact rather than tracking an ongoing
+        /// condition — the axis that decides when a durable replay record is finished.
+        ///
+        /// True only for `bolusReconciliation`. Every `bolusReconciliation` post is emitted immediately
+        /// after the ledger entry it describes has been terminally settled, so by the time the durable
+        /// record exists the dose is already resolved and the only open question is whether the wearer has
+        /// been SHOWN it. A condition category (`pumpDisconnect`, `pumpConnectionUnstable`,
+        /// `urgentLowGlucose`) is the opposite: presentation resolves nothing, and its record must keep
+        /// replaying until the condition itself clears and withdraws it — which is what keeps an unresolved
+        /// disconnect visible across a relaunch, since the cold-launch edge detectors deliberately do not
+        /// re-raise. See `shouldReplayPersistedAlert`.
+        public var announcesSettledResult: Bool { self == .bolusReconciliation }
 
         /// Whether the category is ON by default. The never-suppressible ones are always on (and can't be
         /// turned off); meal reminders default OFF (tightest defaults, §6); the rest default ON.
@@ -274,6 +342,10 @@ public enum NotificationBroker {
     public enum SuppressionReason: String, Sendable, Equatable {
         case categoryDisabled, snoozed, quietHours, rateLimited, dailyBudgetReached, mealBudgetReached,
             episodeAlreadyNotified
+        /// The category surfaces as UI state only and never as a notification
+        /// (`Category.deliversAsNotification == false`). Distinct from `categoryDisabled`, which is a
+        /// USER choice that a user can reverse: this one is policy and there is no setting for it.
+        case uiStateOnly
     }
 
     public struct Decision: Sendable, Equatable {
@@ -288,6 +360,11 @@ public enum NotificationBroker {
     /// dedupe/episode tracking works) — no setting, quiet-hour, rate-limit, or budget can drop it. Ordering
     /// for governed categories: category enabled → episode-not-already-notified → quiet-hours → rate-limit →
     /// budget. `settings` is looked up per category (falling back to that category's defaults).
+    ///
+    /// The ONE thing checked above that guarantee is `Category.deliversAsNotification`: a category that
+    /// surfaces as UI state only is not a notification channel at all, so "always delivered" does not apply
+    /// to it. Today that is `cgmDataLoss` alone, and it is a POLICY refusal (`.uiStateOnly`) with no user
+    /// setting behind it — not a suppression a setting, snooze, quiet-hour, rate-limit or budget produced.
     public static func decide(
         _ message: Message,
         settings: [Category: CategorySettings],
@@ -328,6 +405,15 @@ public enum NotificationBroker {
         func deliver() -> Decision { Decision(deliver: true, reason: nil, nextState: record()) }
         func suppress(_ r: SuppressionReason) -> Decision { Decision(deliver: false, reason: r, nextState: s) }
 
+        // A category that surfaces as UI state only never becomes a notification — checked ABOVE the
+        // never-suppressible short-circuit, because "always delivered" is a statement about a category
+        // that notifies at all, and this one does not. Placed at the single governed decision point so it
+        // holds for every poster (the app's coordinator, a replayed durable record, an out-of-process
+        // intent) rather than at one call site. `suppress` advances no counter and records no episode, so
+        // a silent category can never consume the budget that gates a genuine `bolusDeliveryFailed`.
+        // Owner decision 2026-08-30 — see `Category.deliversAsNotification` for the accepted residual.
+        if !message.category.deliversAsNotification { return suppress(.uiStateOnly) }
+
         let cfg = settings[message.category] ?? .defaults(for: message.category)
 
         // Safety categories bypass EVERYTHING (still recorded so dedupe/episode/counters stay coherent) —
@@ -363,7 +449,17 @@ public enum NotificationBroker {
         // User snooze: suppress this category until its deadline. Placed BELOW the `neverSuppressible`
         // return above (and skipped for `.critical`), so neither a snooze nor a disable can silence a
         // safety alarm — even one carried by a governed category.
-        if !critical, let until = s.snoozedUntil?[message.category.rawValue], now < until { return suppress(.snoozed) }
+        //
+        // Also gated on `permitsSilencingAction`, so an unresolved-dose category can never be silenced by
+        // a snooze that already exists in the persisted map — one written by a build that still offered the
+        // button, or tapped on a notification delivered before the button was removed. The write side
+        // (`snooze(_:category:until:)`) refuses to record new ones; this is the read-side half, and it is
+        // what makes the removal retroactive rather than only forward-looking.
+        if !critical, message.category.permitsSilencingAction,
+            let until = s.snoozedUntil?[message.category.rawValue], now < until
+        {
+            return suppress(.snoozed)
+        }
 
         // One-notification-per-episode: a governed repeat of an already-notified episode is dropped.
         // Applies to `.critical` too (re-raise of an active alarm is driven by `forgetEpisode`).
@@ -402,6 +498,36 @@ public enum NotificationBroker {
             || (message.safetyClass?.isForceProtected ?? false)
     }
 
+    /// Whether a DURABLE safety-alert replay record should be re-submitted on launch, or retired instead.
+    ///
+    /// The app persists a replay record for every never-suppressible post BEFORE handing the request to
+    /// the OS, so an alert issued moments before a cold-restoration relaunch cannot silently vanish. That
+    /// log had exactly one pruning route — the condition resolving — which meant `bolusReconciliation`,
+    /// whose per-delivery dedupe key (`RemoteBolusLedger.reconciliationDedupeKey`) no caller could
+    /// enumerate, was re-announced at EVERY launch forever for a dose that settled days earlier. This is
+    /// the missing rule, and the care is entirely in what counts as "resolved":
+    ///
+    /// - A category that does not notify at all is never replayed (nothing to show, and re-evaluating it
+    ///   every launch would leave the record accumulating).
+    /// - A category that ANNOUNCES an already-settled result is finished once it has been PRESENTED.
+    ///   Presentation is positive evidence: never a timer, never the record's age, never a redraw. A
+    ///   record that was persisted but not yet presented (a process death between the persist and the OS
+    ///   `add`) still replays, so the persist-then-replay guarantee is unchanged — the wearer is
+    ///   guaranteed at least one presentation and, after this, at most one re-alarm.
+    /// - Everything else tracks a CONDITION: presentation resolves nothing, so it keeps replaying until
+    ///   the condition clears and withdraws it.
+    ///
+    /// Withdrawing a safety alert about a dose that is genuinely unresolved would be worse than a
+    /// duplicate, and this rule cannot do that: the dose interlock is the durable ledger, not this
+    /// notification. An unresolved delivery keeps its ledger entry non-terminal, keeps the global delivery
+    /// block on, is retried at every launch and every reconnect, and posts a FRESH announcement when it
+    /// finally settles. Retiring a replay record cannot settle a ledger entry or release a block.
+    public static func shouldReplayPersistedAlert(category: Category, alreadyPresented: Bool) -> Bool {
+        if !category.deliversAsNotification { return false }
+        if category.announcesSettledResult { return !alreadyPresented }
+        return true
+    }
+
     /// The calendar-day key used for the daily budget rollover. Stable and calendar-explicit (no `Date()`).
     public static func dayKey(_ date: Date, calendar: Calendar = .current) -> String {
         let c = calendar.dateComponents([.year, .month, .day], from: date)
@@ -416,7 +542,10 @@ public enum NotificationBroker {
     /// (`CategorySettings.userAcknowledgedSafetyDisable`), never through this snooze mechanism. A
     /// transient snooze/quiet-hour/rate-limit/budget still cannot suppress a trio member.
     public static func snooze(_ state: State, category: Category, until: Date) -> State {
-        guard !category.neverSuppressible else { return state }
+        // Generalized from `!neverSuppressible` to `permitsSilencingAction`, which is a strict widening
+        // (every never-suppressible category permits no silencing action) and additionally refuses the two
+        // unresolved-dose categories. See `Category.permitsSilencingAction`.
+        guard category.permitsSilencingAction else { return state }
         var out = state
         var m = out.snoozedUntil ?? [:]
         m[category.rawValue] = until

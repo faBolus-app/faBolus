@@ -361,10 +361,16 @@ final class DeliveryLedgerCoordinator {
                     status: RemoteCommand.Status.failed.rawValue,
                     message: "Interrupted before the pump accepted it — not delivered.",
                     deliveredUnits: 0)
+                // The dedupe key is minted by `RemoteBolusLedger.reconciliationDedupeKey` (byte-identical
+                // to the literal that used to be inline here) so this dynamic per-delivery family has one
+                // constructor and a matching recognizer — which is what nothing could enumerate before,
+                // and therefore what nothing ever withdrew. Emitted immediately AFTER `settle(…)` above:
+                // this record always describes an already-terminal delivery, which is the fact
+                // `NotificationBroker.shouldReplayPersistedAlert` and the one-time purge both rely on.
                 postSafety(
                     .bolusReconciliation, .warning, "Bolus not delivered",
                     "A bolus that was interrupted never reached the pump (0 U). Re-enter it if you still need it.",
-                    "reconcile-\(entry.peerId)-\(entry.requestId)")
+                    RemoteBolusLedger.reconciliationDedupeKey(peerId: entry.peerId, requestId: entry.requestId))
                 recordReconciliation(.notDelivered)
                 changed = true
                 continue
@@ -377,6 +383,8 @@ final class DeliveryLedgerCoordinator {
                     status: (cancelled ? RemoteCommand.Status.cancelled : .delivered).rawValue,
                     message: "Reconciled from pump history.", deliveredUnits: delivered)
                 let f = formatUnits(delivered)
+                // Same key constructor, and again emitted immediately AFTER `settle(…)` — see the note on
+                // the not-delivered post above.
                 postSafety(
                     .bolusReconciliation,
                     .info,
@@ -384,7 +392,7 @@ final class DeliveryLedgerCoordinator {
                     cancelled
                         ? "Reconciled from the pump: \(f) U delivered before it was cancelled."
                         : "Reconciled from the pump: \(f) U delivered.",
-                    "reconcile-\(entry.peerId)-\(entry.requestId)")
+                    RemoteBolusLedger.reconciliationDedupeKey(peerId: entry.peerId, requestId: entry.requestId))
                 recordReconciliation(cancelled ? .cancelled : .delivered)
                 changed = true
             case .unavailable:

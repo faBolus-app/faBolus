@@ -14,10 +14,17 @@ import UserNotifications
 /// `NotificationRuntime` already uses.
 ///
 /// An entry is written BEFORE the OS request is submitted (`SafetyAlertPoster.post` —
-/// persist-before-post) and removed only when the underlying condition resolves or is acknowledged
-/// (`NotificationCoordinator.withdraw(_:)` / `withdrawAll(for:)`, BOTH of which must prune it — a
-/// category-wide withdrawal that left a durable entry behind would replay it after the condition
-/// resolved).
+/// persist-before-post). It is removed on any of three routes, and a category has exactly one of them:
+/// - the underlying CONDITION resolves or is acknowledged (`NotificationCoordinator.withdraw(_:)` /
+///   `withdrawAll(for:)`, BOTH of which must prune it — a category-wide withdrawal that left a durable
+///   entry behind would replay it after the condition resolved);
+/// - the entry ANNOUNCES an already-settled result (`bolusReconciliation`) and has been PRESENTED, so
+///   there is nothing left to keep alarming about — see `NotificationBroker.shouldReplayPersistedAlert`
+///   and `LifecycleState.presented`. This route is what `bolusReconciliation` lacked: its per-delivery
+///   dedupe key had no fixed list to withdraw by, so the launch replay re-announced a long-settled dose
+///   forever;
+/// - the one-time `purgeLegacyReconciliationEntriesOnce()` migration, for records written before the
+///   route above existed.
 @MainActor
 final class SafetyAlertStore {
     static let key = AppGroupKeys.safetyAlerts
@@ -28,13 +35,22 @@ final class SafetyAlertStore {
     /// reconciliation banner) or a delayed `DisconnectEscalation` step scheduled for a future `deadline`.
     enum Kind: String, Codable, Sendable { case immediate, delayed }
 
-    /// Lifecycle marker. `.issued` is the only state ever persisted today — an entry whose condition
-    /// resolves (reconnect / CGM feed resumes / an authoritative reconciliation) is pruned outright by
-    /// `withdraw`/`withdrawAll` rather than transitioned to a terminal state, since nothing else ever
-    /// needs to read a resolved entry. Modeled as an explicit enum (not inferred from mere presence in
-    /// the dictionary) so the replay contract is self-documenting and any future terminal state slots in
-    /// without a shape change.
-    enum LifecycleState: String, Codable, Sendable { case issued }
+    /// Lifecycle marker. An entry whose CONDITION resolves (reconnect / CGM feed resumes) is pruned
+    /// outright by `withdraw`/`withdrawAll` rather than transitioned to a terminal state, since nothing
+    /// else ever needs to read a resolved entry. Modeled as an explicit enum (not inferred from mere
+    /// presence in the dictionary) so the replay contract is self-documenting.
+    ///
+    /// `.presented` is set once the OS has accepted the request (`SafetyAlertPoster.post`, immediately
+    /// after the `add(_:)` closure returns for a delivered decision). It is the ONLY positive evidence
+    /// available that the wearer was actually shown the alert, and it is what retires a
+    /// `bolusReconciliation` record — an announcement of an already-settled dose is finished once it has
+    /// been shown, whereas a condition record keeps replaying regardless (see
+    /// `NotificationBroker.shouldReplayPersistedAlert`). An entry stuck at `.issued` was persisted but
+    /// never handed to the OS (a process death in that window), so it must still replay: that is exactly
+    /// the case the durable log exists for.
+    ///
+    /// Decoding is forward-safe: a blob written before `.presented` existed contains only `"issued"`.
+    enum LifecycleState: String, Codable, Sendable { case issued, presented }
 
     /// The full replay contract for one issued safety alert — everything
     /// `NotificationPoster.post`/`NotificationCoordinator.replayTrigger` need to reconstruct and re-post
@@ -103,8 +119,76 @@ final class SafetyAlertStore {
         persist()
     }
 
+    /// Mark an entry `.presented` — the OS accepted its request, so the wearer has been shown it. Called
+    /// from `SafetyAlertPoster.post` AFTER the `add(_:)` closure returns, which keeps the
+    /// persist-before-post ordering untouched (the record is written before the post; only this marker
+    /// moves afterwards). A no-op for an unknown key, so a withdrawal that raced the post cannot
+    /// resurrect a pruned entry.
+    func markPresented(dedupeKey: String) {
+        guard var entry = entries[dedupeKey], entry.lifecycleState != .presented else { return }
+        entry.lifecycleState = .presented
+        entries[dedupeKey] = entry
+        persist()
+    }
+
     /// Every still-unresolved persisted entry, for replay on launch.
     func unresolvedEntries() -> [Entry] { Array(entries.values) }
+
+    // MARK: - One-time purge of the legacy reconciliation replay records
+
+    /// Purge the `bolusReconciliation` replay records an older build left behind — **once per install**,
+    /// gated by `AppGroupKeys.safetyAlertsReconciliationPurged`. Returns the keys removed (empty on every
+    /// subsequent launch). Requested explicitly by the owner, whose device carries a stuck record that had
+    /// been re-announced at every launch since it was written.
+    ///
+    /// **Predicate, stated explicitly:** remove every persisted entry whose `category` is
+    /// `.bolusReconciliation`, and nothing else. Not keyed on age, not on a timer, not on the dedupe-key
+    /// shape, and not on `lifecycleState` (every legacy record reads `.issued`, so that would not
+    /// discriminate).
+    ///
+    /// **Why this cannot discard a record about a genuinely unresolved dose:**
+    /// 1. A `.bolusReconciliation` post is emitted only from `reconcileUnresolvedDeliveries()`, and at
+    ///    BOTH of its post sites the ledger entry has already been terminally settled by the immediately
+    ///    preceding `RemoteBolusLedger.settle(…)`. There is no code path that creates one of these records
+    ///    for an unresolved dose, so every record this removes describes an already-terminal delivery.
+    /// 2. The dose interlock is the durable LEDGER, never this notification record. An unresolved delivery
+    ///    keeps its ledger entry non-terminal, keeps the global delivery block on, is retried at every
+    ///    launch and every reconnect, and posts a FRESH announcement once it settles. Removing a
+    ///    notification record cannot settle a ledger entry, cannot release a block, and cannot make a dose
+    ///    look resolved.
+    /// 3. Scope is one category. `pumpDisconnect` / `pumpConnectionUnstable` / `urgentLowGlucose` records
+    ///    — the ones that track a still-live condition — are untouched.
+    ///
+    /// **Accepted cost, stated:** if the purge lands on a launch where a reconciliation record had been
+    /// persisted but not yet presented (a process death between the persist and the OS `add`), the wearer
+    /// misses ONE informational banner about a dose that is already settled and already visible in the
+    /// app. That is the price of the owner's explicit request to clear the stuck record; it is one-time
+    /// and cannot recur, because from here on a record is retired by presentation instead.
+    @discardableResult
+    func purgeLegacyReconciliationEntriesOnce() -> [String] {
+        guard !store.bool(forKey: AppGroupKeys.safetyAlertsReconciliationPurged) else { return [] }
+        let keys = entries.values.filter { $0.category == .bolusReconciliation }.map(\.dedupeKey)
+        // Set the flag even when there is nothing to remove: a fresh install must not keep re-checking,
+        // and a later legitimate reconciliation must never be caught by this purge.
+        store.set(true, forKey: AppGroupKeys.safetyAlertsReconciliationPurged)
+        guard !keys.isEmpty else { return [] }
+        for key in keys { entries.removeValue(forKey: key) }
+        persist()
+        return keys
+    }
+
+    /// Erase the durable replay log outright (for "Delete all on-device data"). Called from
+    /// `NotificationRuntime.eraseStoredBlobs`, which owns the notification-runtime blobs in this App
+    /// Group; before this the replay log was omitted there, so a stuck record survived a full data erase.
+    ///
+    /// Caveat, same as the sibling runtime blobs it is called beside: this clears the PERSISTED blob, not
+    /// the in-memory `entries` of a store instance that is already alive, so a mutation later in the same
+    /// process would write its cached dictionary back. It is a belt, not the load-bearing mechanism —
+    /// `purgeLegacyReconciliationEntriesOnce()` and retirement-on-presentation are what actually stop a
+    /// settled reconciliation re-alarming, and neither depends on an erase.
+    static func eraseStoredBlob(store: UserDefaults?) {
+        store?.removeObject(forKey: key)
+    }
 
     /// Sanitize an arbitrary `[AnyHashable: Any]` userInfo dict to the Codable `[String: String]` shape
     /// this store persists — drops any key that isn't already a `String`, rather than crashing or
@@ -145,8 +229,14 @@ enum SafetyAlertPoster {
             issuedDate: now, deadline: deadline, kind: deadline == nil ? .immediate : .delayed,
             lifecycleState: .issued)
         store.record(entry)  // persist BEFORE post — never the reverse order
-        return NotificationPoster.post(
+        let decision = NotificationPoster.post(
             message, runtime: runtime, userInfo: userInfo, categoryId: categoryId,
             trigger: trigger, allowCritical: allowCritical, now: now, add: add)
+        // The OS has the request: mark it presented. This is what lets an announcement of an
+        // already-settled dose (`Category.announcesSettledResult`) be retired instead of replayed at
+        // every launch forever, and it is deliberately AFTER the post, so an entry stuck at `.issued`
+        // still means "persisted but never handed to the OS" and still replays.
+        if decision.deliver { store.markPresented(dedupeKey: message.dedupeKey) }
+        return decision
     }
 }

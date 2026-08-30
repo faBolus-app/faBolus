@@ -15,6 +15,12 @@ public enum AppGroupKeys {
 
     // MARK: - Safety-alert replay persistence (`SafetyAlertStore.swift`)
     public static let safetyAlerts = "notificationBroker.safetyAlerts.v1"
+    /// Set once, after the one-time purge of the `bolusReconciliation` replay records an older build
+    /// left behind (those records had no pruning path, so the launch replay re-announced a long-settled
+    /// dose forever). Presence of this key means the purge has run on this install and must not run
+    /// again — see `SafetyAlertStore.purgeLegacyReconciliationEntriesOnce()` for the predicate and why
+    /// it cannot discard a genuinely unresolved dose.
+    public static let safetyAlertsReconciliationPurged = "notificationBroker.safetyAlerts.reconciliationPurged.v1"
 
     // MARK: - Connection telemetry (`ConnectionTelemetryStore.swift`)
     public static let connectionTelemetry = "connectionTelemetry.v1"

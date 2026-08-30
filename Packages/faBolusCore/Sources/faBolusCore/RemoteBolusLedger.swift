@@ -272,6 +272,32 @@ public struct RemoteBolusLedger: Codable, Sendable {
         entries[k] = e
     }
 
+    // MARK: - The reconciliation notification's dedupe-key family
+
+    /// Stable prefix of the per-delivery `bolusReconciliation` notification dedupe key.
+    public static let reconciliationDedupeKeyPrefix = "reconcile-"
+
+    /// The dedupe key of the `bolusReconciliation` notification announcing this delivery's authoritative
+    /// outcome. Byte-identical to the literal the two post sites in `DeliveryLedgerCoordinator` built
+    /// inline before this existed, so a durable replay record written by an older build is still
+    /// recognized.
+    ///
+    /// It exists because the key is DYNAMIC (one per peer+request), which is precisely why nothing ever
+    /// withdrew it: `withdrawNotifications` is only ever handed FIXED keys, and no caller could enumerate
+    /// this family. Minting it here — with `isReconciliationDedupeKey` as the matching recognizer — gives
+    /// the family a name a withdrawal path can address.
+    public static func reconciliationDedupeKey(peerId: String, requestId: String) -> String {
+        "\(reconciliationDedupeKeyPrefix)\(peerId)-\(requestId)"
+    }
+
+    /// Whether `dedupeKey` belongs to the reconciliation family above. Deliberately a plain prefix test:
+    /// `peerId` and `requestId` are opaque and may contain `-`, so nothing tighter is sound. Callers that
+    /// PRUNE should prefer matching on the notification category (which cannot be spoofed by a key that
+    /// happens to share the prefix) and use this to recognize/target, not to authorize.
+    public static func isReconciliationDedupeKey(_ dedupeKey: String) -> Bool {
+        dedupeKey.hasPrefix(reconciliationDedupeKeyPrefix)
+    }
+
     /// True when the request has a recorded terminal outcome (test/introspection helper).
     public func isSettled(peerId: String, requestId: String) -> Bool {
         entries[key(peerId, requestId)]?.state == .terminal

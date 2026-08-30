@@ -41,7 +41,10 @@ import UserNotifications
             store: isolatedStore(#function), settings: hostile,
             budget: B.Budget(dailyTotal: 0, dailyMeal: 0))
         var posted: [String] = []
-        for c in C.allCases where c.neverSuppressible {
+        // `.cgmDataLoss` is excluded: it is never-suppressible AND, since 2026-08-30, never a
+        // notification at all (a CGM gap is UI state only), so "always posts" does not apply to it. Its
+        // refusal is asserted directly below so the coverage is not merely dropped.
+        for c in C.allCases where c.neverSuppressible && c.deliversAsNotification {
             let d = NotificationPoster.post(msg(c, key: c.rawValue), runtime: rt, now: at(3, 0)) {
                 posted.append($0.identifier)
             }
@@ -49,9 +52,14 @@ import UserNotifications
         }
         // `pumpConnectionUnstable` and `urgentLowGlucose` are never-suppressible too — they post under the hostile config.
         #expect(
-            Set(posted) == [
-                "pumpDisconnect", "bolusReconciliation", "cgmDataLoss", "pumpConnectionUnstable", "urgentLowGlucose"
-            ])
+            Set(posted) == ["pumpDisconnect", "bolusReconciliation", "pumpConnectionUnstable", "urgentLowGlucose"])
+        // The UI-state-only category builds no request at all, and says so.
+        var cgmRequests: [UNNotificationRequest] = []
+        let cgm = NotificationPoster.post(msg(.cgmDataLoss, key: "cgm-locked"), runtime: rt, now: at(3, 0)) {
+            cgmRequests.append($0)
+        }
+        #expect(!cgm.deliver && cgm.reason == .uiStateOnly)
+        #expect(cgmRequests.isEmpty, "a UI-state-only category must never reach the OS")
         // A governed category under the SAME hostile config does not post (proves the config is hostile).
         let g = NotificationPoster.post(msg(.pumpAlert), runtime: rt, now: at(3, 0)) { posted.append($0.identifier) }
         #expect(!g.deliver && g.reason == .categoryDisabled)
@@ -184,8 +192,9 @@ import UserNotifications
         #expect(reqs.first?.content.interruptionLevel == .critical)
         #expect(reqs.first?.content.sound == .defaultCritical)
         // Safety category but NOT allowed → degrades to .timeSensitive, which still breaks through Focus/DND.
+        // (`.urgentLowGlucose`, not `.cgmDataLoss` — the latter no longer builds a request at all.)
         reqs.removeAll()
-        NotificationPoster.post(msg(.cgmDataLoss, key: "s2"), runtime: rt, allowCritical: false, now: at(9, 0)) {
+        NotificationPoster.post(msg(.urgentLowGlucose, key: "s2"), runtime: rt, allowCritical: false, now: at(9, 0)) {
             reqs.append($0)
         }
         #expect(reqs.first?.content.interruptionLevel == .timeSensitive)
@@ -263,8 +272,10 @@ import UserNotifications
         #expect(
             !disabled.deliver && disabled.reason == .categoryDisabled,
             "an acknowledged safety-disable is honored by a fresh runtime + the real poster")
-        // cgmDataLoss (untouched) still delivers on the same runtime.
-        let untouched = NotificationPoster.post(msg(.cgmDataLoss, key: "cgm1"), runtime: rt2, now: at(9, 0)) { _ in }
+        // bolusReconciliation (untouched) still delivers on the same runtime.
+        let untouched = NotificationPoster.post(
+            msg(.bolusReconciliation, key: "recon1"), runtime: rt2, now: at(9, 0)
+        ) { _ in }
         #expect(untouched.deliver, "an untouched trio category is unaffected by another category's disable")
     }
 
@@ -567,18 +578,20 @@ import UserNotifications
     /// Replay must prune an entry whose decision is `.categoryDisabled`, or a disabled trio would re-suppress forever.
     @Test func replayPrunesEntriesTheBrokerSuppressesAsCategoryDisabled() {
         let defaults = isolatedStore(#function)
-        // The user has explicitly disabled + acknowledged the `.cgmDataLoss` safety category.
-        var cfg = NotificationBroker.CategorySettings.defaults(for: .cgmDataLoss)
+        // The user has explicitly disabled + acknowledged the `.urgentLowGlucose` safety category.
+        // (`.urgentLowGlucose`, not `.cgmDataLoss` — the latter is now retired by the UI-state-only rule
+        // instead, which would make this test pass without exercising the `.categoryDisabled` prune.)
+        var cfg = NotificationBroker.CategorySettings.defaults(for: .urgentLowGlucose)
         cfg.enabled = false
         cfg.userAcknowledgedSafetyDisable = true
-        let rt = NotificationRuntime(store: defaults, settings: [.cgmDataLoss: cfg])
+        let rt = NotificationRuntime(store: defaults, settings: [.urgentLowGlucose: cfg])
         let store = SafetyAlertStore(store: defaults)
         // A durable entry for that now-disabled category (will decide `.categoryDisabled` on replay) plus
         // one for an unconfigured category that still delivers (default-enabled) and must be kept.
         store.record(
             .init(
-                category: .cgmDataLoss, severity: .warning, title: "t", body: "b",
-                dedupeKey: "safety.cgmDataLoss", userInfo: [:], categoryIdentifier: "",
+                category: .urgentLowGlucose, severity: .critical, title: "t", body: "b",
+                dedupeKey: "safety.urgentLowGlucose", userInfo: [:], categoryIdentifier: "",
                 issuedDate: Date(), deadline: nil, kind: .immediate, lifecycleState: .issued))
         store.record(
             .init(
@@ -591,7 +604,7 @@ import UserNotifications
         // Constructing the coordinator runs `replayPersistedSafetyAlerts()` in its init.
         let coordinator = NotificationCoordinator(model: model, runtime: rt, safetyAlertStore: store)
         #expect(
-            store.entries["safety.cgmDataLoss"] == nil,
+            store.entries["safety.urgentLowGlucose"] == nil,
             "a replay decision of .categoryDisabled must prune the dead durable entry")
         #expect(
             store.entries["safety.pumpDisconnect"] != nil,

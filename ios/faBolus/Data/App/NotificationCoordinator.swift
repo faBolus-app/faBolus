@@ -76,13 +76,18 @@ final class NotificationRuntime {
     /// True when the user has opted into local notification telemetry (default false).
     var telemetryEnabled: Bool { store.bool(forKey: Self.telemetryEnabledKey) }
 
-    /// Erase the persisted broker runtime state + per-category telemetry BLOBS from the App
-    /// Group (for "Delete all on-device data"). Leaves the opt-in flag and per-category SETTINGS alone —
-    /// those are preferences, not accumulated data.
+    /// Erase the persisted broker runtime state, the per-category telemetry, and the durable
+    /// safety-alert REPLAY LOG from the App Group (for "Delete all on-device data"). Leaves the opt-in
+    /// flag and per-category SETTINGS alone — those are preferences, not accumulated data.
+    ///
+    /// The replay log was omitted here originally, which is why a `bolusReconciliation` record with no
+    /// pruning path survived a full "Delete all on-device data" and kept re-announcing a long-settled
+    /// dose. It is accumulated data like the other two, and it is erased with them.
     static func eraseStoredBlobs(store: UserDefaults? = UserDefaults(suiteName: WidgetStore.appGroup)) {
         guard let store else { return }
         store.removeObject(forKey: stateKey)
         store.removeObject(forKey: telemetryKey)
+        SafetyAlertStore.eraseStoredBlob(store: store)
     }
 
     /// Record a delivered notification for `category` (opt-in only). Called from the poster's deliver path.
@@ -185,10 +190,15 @@ final class NotificationRuntime {
     }
 
     /// Snooze a category until `until`, persisted (App-Group) so the next `evaluate` in any process honors
-    /// it. Re-reads first (like `evaluate`) so a concurrent counter advance isn't clobbered; `snooze(_:)`
-    /// refuses `neverSuppressible` categories, so a safety alert can never be silenced.
+    /// it. Re-reads first (like `evaluate`) so a concurrent counter advance isn't clobbered.
+    ///
+    /// Refuses any category that `permitsSilencingAction == false` — every `neverSuppressible` one as
+    /// before, and now also the two unresolved-dose categories, so a "Snooze 2h" button on a notification
+    /// DELIVERED by an older build (still sitting in Notification Center with the actions it was
+    /// delivered with) is inert when tapped. `NotificationBroker.snooze` enforces the same rule, so
+    /// nothing is written even if this guard were bypassed.
     func snooze(_ category: NotificationBroker.Category, until: Date) {
-        guard !category.neverSuppressible else { return }
+        guard category.permitsSilencingAction else { return }
         if let data = store.data(forKey: stateKey),
             let decoded = try? JSONDecoder().decode(NotificationBroker.State.self, from: data)
         {
@@ -333,6 +343,17 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         model.notificationStalenessSink = { [weak self] date in self?.scheduleStalenessWatchdog(from: date) }
         model.notificationStalenessCancelSink = { [weak self] in self?.cancelStalenessWatchdog() }
         model.addNotificationsSubscriber { [weak self] alerts in self?.syncPumpAlerts(alerts) }
+        // Clean up what earlier builds left behind, BEFORE the replay below reads the store.
+        //
+        // 1. The one-time purge the owner asked for: the `bolusReconciliation` replay records an older
+        //    build could never prune. See `purgeLegacyReconciliationEntriesOnce()` for the exact predicate
+        //    and why it cannot discard a record about a genuinely unresolved dose. Idempotent (flag-gated).
+        // 2. `.cgmDataLoss` is UI state only now, so nothing of that category may be left outstanding: an
+        //    already-delivered banner, a staleness watchdog armed before the update (OS-pending requests
+        //    survive an app update), and its durable records all go. Also idempotent — after the first
+        //    launch there is nothing to find, because no `.cgmDataLoss` request is ever created again.
+        safetyAlertStore.purgeLegacyReconciliationEntriesOnce()
+        withdrawAll(for: .cgmDataLoss)
         // Replay any still-unresolved safety alert persisted from a prior launch, AFTER the sink is
         // wired + the pending-safety buffer flushed above, so a restoration launch reconstructs and
         // re-submits every not-yet-resolved entry.
@@ -429,8 +450,19 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         userInfo: [AnyHashable: Any] = [:], categoryId: String = "",
         trigger: UNNotificationTrigger? = nil, deadline: Date? = nil
     ) -> NotificationBroker.Decision {
-        // Default a governed category to its registered id (which carries the SNOOZE action) unless the
-        // caller already supplied one (pump alerts pass PUMP_ALERT for their CLEAR action).
+        // A category that surfaces as UI state only never becomes a notification. The REFUSAL itself still
+        // comes from the broker (`decide()` is the single governed decision point, and it returns
+        // `.uiStateOnly` for exactly these categories — this does not re-derive the policy, it only routes
+        // around the persist). What this early return buys is the SIDE EFFECT: the `neverSuppressible`
+        // branch below persists a durable replay record BEFORE the broker decides (the persist-before-post
+        // guarantee), so reaching it would leave behind a record that nothing ever posts and nothing ever
+        // prunes — the exact defect this round is fixing for `bolusReconciliation`.
+        guard message.category.deliversAsNotification else {
+            return runtime.evaluate(message, now: Date())
+        }
+        // Default a governed category to its registered id unless the caller already supplied one (pump
+        // alerts pass PUMP_ALERT for their CLEAR action). Whether that registered category carries a
+        // SNOOZE action is decided by `Category.permitsSilencingAction` in `registerCategories()`.
         let cat = categoryId.isEmpty ? Self.categoryIdentifier(for: message.category) : categoryId
         // Request the OS Critical Alert level when the user opted in; the poster restricts it to the
         // never-suppressible safety categories, and iOS ignores it unless the app holds the entitlement
@@ -485,6 +517,14 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     /// `cgmFresh` is true, which itself requires the reading to be within the window), `replayTrigger`
     /// returns nil and nothing is scheduled — never a crash on an invalid 0/negative-interval trigger.
     private func scheduleStalenessWatchdog(from date: Date, now: Date = Date()) {
+        // A CGM gap is UI state only — `.cgmDataLoss` never notifies (owner decision 2026-08-30). Arming a
+        // pre-armed OS request the poster is guaranteed to refuse is pure waste, and, before this, each
+        // re-arm also incremented the category's `delivered` telemetry counter (once per ADVANCED CGM
+        // datum — 720 of them in the 2026-08-29 export, none of which the wearer ever saw). Returning here
+        // stops both. The arm/cancel sinks stay wired: `cancelStalenessWatchdog()` still has legacy work
+        // to do (see its note), and removing the watchdog machinery outright touches `AppModel` and
+        // `faBolusCore`, which is a separate change.
+        guard NotificationBroker.Category.cgmDataLoss.deliversAsNotification else { return }
         let deadline = date.addingTimeInterval(GlucoseFreshness.staleAfter)
         guard let trigger = Self.replayTrigger(deadline: deadline, now: now) else { return }
         let msg = NotificationBroker.Message(
@@ -494,8 +534,11 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         post(msg, trigger: trigger, deadline: deadline)
     }
 
-    /// Cancel a pre-armed staleness watchdog — the feed is no longer fresh (the real `.cgmDataLoss` edge
-    /// already alarmed for real by then), so a stale/redundant watchdog notification must not also fire.
+    /// Cancel a pre-armed staleness watchdog. Nothing arms one any more (see `scheduleStalenessWatchdog`),
+    /// but this is still load-bearing as CLEANUP: a `UNTimeIntervalNotificationTrigger` armed by a
+    /// PREVIOUS build survives an app update, so without this a watchdog scheduled before the update could
+    /// still fire afterwards. Withdrawing by its fixed key removes both the pending OS request and the
+    /// durable replay record.
     private func cancelStalenessWatchdog() {
         withdraw([StalenessWatchdog.dedupeKey])
     }
@@ -513,11 +556,17 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         return UNTimeIntervalNotificationTrigger(timeInterval: deadline.timeIntervalSince(now), repeats: false)
     }
 
-    /// Persist-then-replay: reconstruct + re-submit every still-unresolved safety-alert entry from
-    /// `safetyAlertStore` at launch, so an alert issued before a cold-restoration relaunch is guaranteed
-    /// to reach the user rather than silently vanish. Does NOT re-persist (each entry is already durable)
-    /// — only reconstructs + re-submits the OS request through the plain (non-recording) poster, so
-    /// `issuedDate` is never clobbered by a replay.
+    /// Persist-then-replay: reconstruct + re-submit every safety-alert entry from `safetyAlertStore` that
+    /// still has a job to do, so an alert issued before a cold-restoration relaunch is guaranteed to reach
+    /// the user rather than silently vanish. Does NOT re-persist the entry (each is already durable) —
+    /// it goes through the plain `NotificationPoster`, so `issuedDate` is never clobbered by a replay.
+    ///
+    /// "Plain" means it skips the persist-before-post wrapper, NOT that it is silent: a delivered replay
+    /// still increments the category's `delivered` telemetry counter like any other post, which is why a
+    /// forever-replaying entry inflated its own count in the diagnostics export.
+    ///
+    /// Which entries still have a job is `NotificationBroker.shouldReplayPersistedAlert`'s decision; the
+    /// ones that do not are retired here rather than re-evaluated on every future launch.
     private func replayPersistedSafetyAlerts(now: Date = Date()) {
         let allowCritical = AppSettings.shared.criticalAlertsEnabled
         // `SafetyAlertPoster.post` persists the durable entry BEFORE the broker decides (the
@@ -528,8 +577,21 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         // `.categoryDisabled`, so a permanently-unresolved, user-disabled entry can't be
         // re-loaded/re-evaluated/re-suppressed on every launch forever. This touches only the replay path
         // — the persist-before-post ordering for the enabled case is unchanged.
-        var suppressedDisabledKeys: [String] = []
+        var retiredKeys: [String] = []
         for entry in safetyAlertStore.unresolvedEntries() {
+            // Does this record still have a job to do? `shouldReplayPersistedAlert` is the one place that
+            // answers it (see its doc comment for what counts as "resolved" and why retiring a record can
+            // never lose an unresolved dose). Retired without replaying: a category that no longer
+            // notifies at all, and an announcement of an already-settled dose that has already been
+            // PRESENTED — which is what stopped `reconcile-<peerId>-<requestId>` re-alarming at every
+            // launch forever.
+            guard
+                NotificationBroker.shouldReplayPersistedAlert(
+                    category: entry.category, alreadyPresented: entry.lifecycleState == .presented)
+            else {
+                retiredKeys.append(entry.dedupeKey)
+                continue
+            }
             let msg = NotificationBroker.Message(
                 category: entry.category, severity: entry.severity,
                 title: entry.title, body: entry.body, dedupeKey: entry.dedupeKey)
@@ -539,11 +601,17 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
                 userInfo: entry.userInfo.mapValues { $0 as Any },
                 categoryId: entry.categoryIdentifier, trigger: trigger,
                 allowCritical: allowCritical, now: now, add: { [center] in center.add($0) })
+            if decision.deliver, entry.category.announcesSettledResult {
+                // The one guaranteed presentation the durable log exists to provide has now happened, so
+                // this announcement is finished. Retired in THIS launch rather than marked and retired in
+                // the next, so a settled dose is re-announced at most once.
+                retiredKeys.append(entry.dedupeKey)
+            }
             if !decision.deliver, decision.reason == .categoryDisabled {
-                suppressedDisabledKeys.append(entry.dedupeKey)
+                retiredKeys.append(entry.dedupeKey)
             }
         }
-        safetyAlertStore.remove(dedupeKeys: suppressedDisabledKeys)
+        safetyAlertStore.remove(dedupeKeys: retiredKeys)
     }
 
     /// The registered notification-category id for a broker category: `PUMP_ALERT` for pump alerts (CLEAR
@@ -617,13 +685,34 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     /// this, so it didn't reproduce locally). If a second registrar is ever added, revisit with a
     /// main-actor-hopping merge rather than reintroducing a `self`-capturing background completion.
     private func registerCategories() {
+        center.setNotificationCategories(Self.ownedCategories())
+    }
+
+    /// The complete set of notification categories this app owns — extracted from `registerCategories()`
+    /// as a pure function so the ACTIONS attached to each category are directly unit-testable without a
+    /// real `UNUserNotificationCenter` (`UNNotificationCategory` is publicly constructible and its
+    /// `actions` are publicly readable). There was previously no coverage of the registration surface at
+    /// all, which is how an unresolved-dose alert shipped with a category-silencing snooze as its only
+    /// button.
+    static func ownedCategories() -> Set<UNNotificationCategory> {
         let clear = UNNotificationAction(
             identifier: "CLEAR", title: "Clear",
             options: [.authenticationRequired])
         let snooze = UNNotificationAction(identifier: "SNOOZE", title: "Snooze 2h", options: [])
         // Pump alerts: dismiss-on-pump (CLEAR) + snooze the category. Every OTHER governed (suppressible)
-        // category gets a snooze action, keyed by its raw value. Safety categories are never registered
-        // with a snooze action, so they cannot be snoozed from a notification.
+        // category is registered under its raw value, and whether it carries the snooze action is decided
+        // by the ONE predicate `NotificationBroker.Category.permitsSilencingAction` — the same predicate
+        // the snooze write side reads, so the affordance and the governance cannot disagree.
+        //
+        // That makes `.bolusIndeterminate` ("Bolus outcome unknown") and `.bolusDeliveryFailed` ("Bolus
+        // not delivered") register with NO actions at all (owner decision 2026-08-30): a snooze was their
+        // ONLY button, and neither posts at `.critical`, so the single tap available on an unresolved-dose
+        // alert silenced the category for two hours. They keep a category IDENTIFIER (so the notification
+        // stays attributable and a future `.customDismissAction` has somewhere to live) but no buttons —
+        // iOS still provides its own default tap and swipe-to-dismiss, so nothing became harder to act on.
+        //
+        // Safety categories are not registered at all (`categoryIdentifier(for:)` returns "" for them), so
+        // they cannot be snoozed from a notification either.
         var cats: Set<UNNotificationCategory> = [
             UNNotificationCategory(
                 identifier: Self.pumpAlertCategory, actions: [clear, snooze],
@@ -632,10 +721,10 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         for c in NotificationBroker.Category.allCases where !c.neverSuppressible && c != .pumpAlert {
             cats.insert(
                 UNNotificationCategory(
-                    identifier: c.rawValue, actions: [snooze],
+                    identifier: c.rawValue, actions: c.permitsSilencingAction ? [snooze] : [],
                     intentIdentifiers: [], options: []))
         }
-        center.setNotificationCategories(cats)
+        return cats
     }
 
     // MARK: Delegate

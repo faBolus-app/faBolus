@@ -60,23 +60,28 @@ import Foundation
 
     @Test func bolusDeliveryFailedIsGovernedNotASafetyCategory() {
         // A FAILED / BLOCKED delivery notification. The owner decided it is
-        // SUPPRESSIBLE (unlike the three safety categories) — it defaults ON, can be disabled, and can be
-        // snoozed. (The INDETERMINATE outcome it is deliberately NOT posted for stays a
-        // `bolusReconciliation` concern, and that category IS never-suppressible.)
+        // SUPPRESSIBLE (unlike the three safety categories) — it defaults ON and can be disabled. It can
+        // NO LONGER be snoozed (owner decision 2026-08-30 — an unresolved-dose alert must not be
+        // one-tap silenceable; see `Category.permitsSilencingAction`), which is what the last arm pins.
+        // (The INDETERMINATE outcome it is deliberately NOT posted for stays a `bolusReconciliation`
+        // concern, and that category IS never-suppressible.)
         #expect(!C.bolusDeliveryFailed.neverSuppressible)
         #expect(C.bolusDeliveryFailed.defaultEnabled)
-        // Disabled → suppressed.
+        // Disabled → suppressed. A deliberate per-category disable is still honored.
         let off = B.decide(
             msg(.bolusDeliveryFailed),
             settings: [.bolusDeliveryFailed: B.CategorySettings(enabled: false)],
             state: B.State(), now: at(9, 0), calendar: cal)
         #expect(!off.deliver && off.reason == .categoryDisabled)
-        // Snoozed → suppressed until the deadline (a governed category honors snooze; a safety one can't).
+        // Snooze is REFUSED on both sides: the write side records nothing, and even a hand-forged snooze
+        // map cannot suppress it on the read side.
         let snoozed = B.snooze(B.State(), category: .bolusDeliveryFailed, until: at(10, 0))
+        #expect(snoozed.snoozedUntil?["bolusDeliveryFailed"] == nil, "the write side must refuse the snooze")
+        let forged = B.State(snoozedUntil: ["bolusDeliveryFailed": at(10, 0)])
         let d = B.decide(
             msg(.bolusDeliveryFailed), settings: enabled(.bolusDeliveryFailed),
-            state: snoozed, now: at(9, 0), calendar: cal)
-        #expect(!d.deliver && d.reason == .snoozed)
+            state: forged, now: at(9, 0), calendar: cal)
+        #expect(d.deliver, "an unresolved-dose alert must never be silenced by a snooze")
     }
 
     /// `bolusIndeterminate` is governed (suppressible), not in the never-suppressible set, and ON by
@@ -104,9 +109,10 @@ import Foundation
         let settings: [C: B.CategorySettings] = [
             .cgmDataLoss: B.CategorySettings(enabled: false, userAcknowledgedSafetyDisable: true)
         ]
-        // `.cgmDataLoss` itself correctly suppresses (the acknowledged-disable escape).
+        // `.cgmDataLoss` itself does not deliver — since 2026-08-30 it is UI state only, so it is refused
+        // as `.uiStateOnly` BEFORE the acknowledged-disable escape is ever consulted.
         let cgm = B.decide(msg(.cgmDataLoss), settings: settings, state: B.State(), now: at(9, 0), calendar: cal)
-        #expect(!cgm.deliver && cgm.reason == .categoryDisabled)
+        #expect(!cgm.deliver && cgm.reason == .uiStateOnly)
         // `.urgentLowGlucose` is UNAFFECTED — its own category still delivers.
         let low = B.decide(msg(.urgentLowGlucose), settings: settings, state: B.State(), now: at(9, 0), calendar: cal)
         #expect(low.deliver, "disabling `.cgmDataLoss` must NOT silence the urgent-low backstop (category decoupling)")
@@ -126,7 +132,10 @@ import Foundation
             })
         // Day already blown past a zero budget.
         let state = B.State(dayKey: B.dayKey(at(3, 0), calendar: cal), deliveredToday: 999, mealDeliveredToday: 999)
-        for c in C.allCases where c.neverSuppressible {
+        // `.cgmDataLoss` is excluded: it is never-suppressible AND never a notification at all since
+        // 2026-08-30 (`deliversAsNotification == false`), so "always delivers" does not apply to it. Its
+        // own refusal is asserted explicitly at the end of this test, so the coverage is not just dropped.
+        for c in C.allCases where c.neverSuppressible && c.deliversAsNotification {
             let d = B.decide(
                 msg(c), settings: settings, state: state,
                 budget: B.Budget(dailyTotal: 0, dailyMeal: 0), now: at(3, 0), calendar: cal)
@@ -158,7 +167,7 @@ import Foundation
                         userAcknowledgedSafetyDisable: true)
                 )
             })
-        for c in C.allCases where c.neverSuppressible && c.isUserConfigurable {
+        for c in C.allCases where c.neverSuppressible && c.isUserConfigurable && c.deliversAsNotification {
             let d = B.decide(
                 msg(c), settings: acknowledged, state: state,
                 budget: B.Budget(dailyTotal: 0, dailyMeal: 0), now: at(3, 0), calendar: cal)
@@ -166,6 +175,15 @@ import Foundation
                 !d.deliver && d.reason == .categoryDisabled,
                 "\(c.rawValue) must suppress once the user acknowledged disabling it")
         }
+        // The excluded category, asserted directly: `.cgmDataLoss` is refused under the SAME hostile
+        // config for a policy reason (`.uiStateOnly`), not because the user disabled anything, and it
+        // consumes no budget slot and records no episode on the way out.
+        let cgm = B.decide(
+            msg(.cgmDataLoss), settings: settings, state: state,
+            budget: B.Budget(dailyTotal: 0, dailyMeal: 0), now: at(3, 0), calendar: cal)
+        #expect(!cgm.deliver && cgm.reason == .uiStateOnly)
+        #expect(cgm.nextState.lastDeliveredAt["cgmDataLoss"] == nil)
+        #expect(cgm.nextState.notifiedEpisodes.isEmpty)
         // The non-configurable never-suppressible category (`pumpConnectionUnstable`) has no
         // acknowledged-disable path — even a paired ack cannot suppress it.
         for c in C.allCases where c.neverSuppressible && !c.isUserConfigurable {
@@ -312,11 +330,15 @@ import Foundation
         let forged = B.State(snoozedUntil: [
             "pumpDisconnect": at(10, 0), "cgmDataLoss": at(10, 0), "bolusReconciliation": at(10, 0)
         ])
-        for c in C.allCases where c.neverSuppressible {
+        for c in C.allCases where c.neverSuppressible && c.deliversAsNotification {
             #expect(
                 B.decide(msg(c), settings: [:], state: forged, now: at(9, 0), calendar: cal).deliver,
                 "a transient snooze — even hand-forged — can never silence a trio")
         }
+        // `.cgmDataLoss` is excluded from the loop only because it no longer notifies at all — the forged
+        // snooze is still not what stops it.
+        let forgedCgm = B.decide(msg(.cgmDataLoss), settings: [:], state: forged, now: at(9, 0), calendar: cal)
+        #expect(forgedCgm.reason == .uiStateOnly, "refused as UI-state-only, never as `.snoozed`")
         // NEW arm: the SAME forged-snooze state, but now with the deliberate acknowledged disable ALSO
         // set — THIS is the one path that suppresses, proving snooze and acknowledged-disable are
         // distinct mechanisms (a transient snooze is refused; a deliberate acknowledgment is honored).
@@ -324,7 +346,7 @@ import Foundation
             uniqueKeysWithValues: C.allCases.map {
                 ($0, B.CategorySettings(enabled: false, userAcknowledgedSafetyDisable: true))
             })
-        for c in C.allCases where c.neverSuppressible && c.isUserConfigurable {
+        for c in C.allCases where c.neverSuppressible && c.isUserConfigurable && c.deliversAsNotification {
             let d = B.decide(msg(c), settings: ackedWhileForged, state: forged, now: at(9, 0), calendar: cal)
             #expect(
                 !d.deliver && d.reason == .categoryDisabled,
@@ -525,7 +547,10 @@ import Foundation
     /// For every user-configurable never-suppressible category, suppression requires BOTH
     /// `enabled == false` AND `userAcknowledgedSafetyDisable == true`; either alone still delivers.
     @Test func trioSuppressedOnlyByAcknowledgedDisable() {
-        for c in C.allCases where c.neverSuppressible && c.isUserConfigurable {
+        // `.cgmDataLoss` is excluded: since 2026-08-30 it never delivers regardless of the ack flag, so
+        // the AND-gate this test is about is not observable on it. `CgmGapIsUiStateNotANotificationTests`
+        // owns its behaviour.
+        for c in C.allCases where c.neverSuppressible && c.isUserConfigurable && c.deliversAsNotification {
             // enabled:false, ack:nil → delivers (the mandatory gate is unmet).
             let notAcked = B.decide(
                 msg(c), settings: [c: B.CategorySettings(enabled: false)],
