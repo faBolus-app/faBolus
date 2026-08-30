@@ -1,0 +1,24 @@
+# Extra Swift security queries that NO built-in suite runs.
+#
+# `swift-code-scanning` (the default) and `swift-security-and-quality` both require
+# `precision: high|very-high`, or `medium` at error/warning severity. Swift ships exactly two
+# `precision: low` security queries, so neither suite ever selects them:
+#
+#   swift/constant-password  CWE-259, security-severity 6.8
+#   swift/hardcoded-key      CWE-321, security-severity 8.1
+#
+# Both are directly on point for this workspace: TandemKit performs EC-JPAKE pairing with a 6-digit
+# code and an HMAC key, and faBolus persists a derived pairing secret plus a bolus passcode. A
+# hard-coded key or constant password on that path is worth hearing about even at low precision.
+#
+# LOW PRECISION MEANS EXPECT FALSE POSITIVES. Test fixtures and the bench harness use literal
+# pairing codes on purpose (the JPAKE interop test drives the reference server with "123456"), and
+# those are correct. Triage each alert and dismiss it with a reason. Never weaken a real
+# derivation, a constant-time compare, or a fail-closed path to silence a query.
+- description: Low-precision Swift credential queries, which no built-in suite selects
+- queries: .
+  from: codeql/swift-queries
+- include:
+    id:
+      - swift/constant-password
+      - swift/hardcoded-key
