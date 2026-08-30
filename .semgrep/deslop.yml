@@ -36,24 +36,24 @@ rules:
       (a display-width budget) or "22-23" — those are measurements, not tickets. Check before deleting.
     paths:
       include:
-        - "ios/**/*.swift"
-        - "Packages/faBolusCore/**/*.swift"
-        - "Packages/faBolusDesign/**/*.swift"
-        - "Packages/*/Package.swift"
-        - "Shared/**/*.swift"
-        - "Sources/**/*.swift"
-        - "Tests/**/*.swift"
-        - "source/app/*.mc"
-        - "tests/*.mc"
-        - "datafield/*.mc"
+        - "/ios/**/*.swift"
+        - "/Packages/faBolusCore/**/*.swift"
+        - "/Packages/faBolusDesign/**/*.swift"
+        - "/Packages/*/Package.swift"
+        - "/Shared/**/*.swift"
+        - "/Sources/**/*.swift"
+        - "/Tests/**/*.swift"
+        - "/source/app/*.mc"
+        - "/tests/*.mc"
+        - "/datafield/*.mc"
       exclude:
         - "**/Vendor/**"
-        - "vendor/**"
+        - "**/vendor/**"
         - "**/ShareClient/**"
         - "**/G7SensorKit/**"
         - "**/DexcomG6Kit/**"
         - "**/HistoryStore/**"
-        - "cliparser/**"
+        - "**/cliparser/**"
     # `(?<!bytes )` / `(?<!byte )` fence the wire-offset form ("carbs 13 g @ bytes 17-18"), which is
     # a field position, not a ticket — pervasive in TandemKit's oracle byte-locks. The `"` fences fence
     # a QUOTED `NN-NN`, which is a data value rather than a reference — Garmin's alert identities are
@@ -77,24 +77,24 @@ rules:
       "git rm'd", "carved out of"). That history lives in git, not in the source.
     paths:
       include:
-        - "ios/**/*.swift"
-        - "Packages/faBolusCore/**/*.swift"
-        - "Packages/faBolusDesign/**/*.swift"
-        - "Packages/*/Package.swift"
-        - "Shared/**/*.swift"
-        - "Sources/**/*.swift"
-        - "Tests/**/*.swift"
-        - "source/app/*.mc"
-        - "tests/*.mc"
-        - "datafield/*.mc"
+        - "/ios/**/*.swift"
+        - "/Packages/faBolusCore/**/*.swift"
+        - "/Packages/faBolusDesign/**/*.swift"
+        - "/Packages/*/Package.swift"
+        - "/Shared/**/*.swift"
+        - "/Sources/**/*.swift"
+        - "/Tests/**/*.swift"
+        - "/source/app/*.mc"
+        - "/tests/*.mc"
+        - "/datafield/*.mc"
       exclude:
         - "**/Vendor/**"
-        - "vendor/**"
+        - "**/vendor/**"
         - "**/ShareClient/**"
         - "**/G7SensorKit/**"
         - "**/DexcomG6Kit/**"
         - "**/HistoryStore/**"
-        - "cliparser/**"
+        - "**/cliparser/**"
     # Two fixes over the naive pattern, both from real false positives in this tree:
     #  * `\bmoved` — without the word boundary, `moved from` matched inside "REmoved from", so
     #    "peer mode is removed from narrow main" read as a migration breadcrumb. 4 of 5 hits.
@@ -112,24 +112,24 @@ rules:
       name the symbol instead.
     paths:
       include:
-        - "ios/**/*.swift"
-        - "Packages/faBolusCore/**/*.swift"
-        - "Packages/faBolusDesign/**/*.swift"
-        - "Packages/*/Package.swift"
-        - "Shared/**/*.swift"
-        - "Sources/**/*.swift"
-        - "Tests/**/*.swift"
-        - "source/app/*.mc"
-        - "tests/*.mc"
-        - "datafield/*.mc"
+        - "/ios/**/*.swift"
+        - "/Packages/faBolusCore/**/*.swift"
+        - "/Packages/faBolusDesign/**/*.swift"
+        - "/Packages/*/Package.swift"
+        - "/Shared/**/*.swift"
+        - "/Sources/**/*.swift"
+        - "/Tests/**/*.swift"
+        - "/source/app/*.mc"
+        - "/tests/*.mc"
+        - "/datafield/*.mc"
       exclude:
         - "**/Vendor/**"
-        - "vendor/**"
+        - "**/vendor/**"
         - "**/ShareClient/**"
         - "**/G7SensorKit/**"
         - "**/DexcomG6Kit/**"
         - "**/HistoryStore/**"
-        - "cliparser/**"
+        - "**/cliparser/**"
     pattern-regex: '(?://|/\*|^\s*\*)[^\n]*\b[A-Za-z][A-Za-z0-9+]*\.(?:swift|mc):\d+'
 
   - id: vacuous-expect-literal
@@ -195,7 +195,7 @@ rules:
       Co-Authored-By trailer. Both rules generate process residue; remove them from the doc.
     paths:
       include:
-        - "AGENTS.md"
+        - "/AGENTS.md"
         - "llms.txt"
         - "CONTRIBUTING.md"
     pattern-regex: '(?i)(?:every file (?:opens|begins|starts) with|file[- ]header doc[- ]comment|keep (?:this|the header) current|Co-Authored-By)'
