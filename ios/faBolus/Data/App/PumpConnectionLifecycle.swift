@@ -298,18 +298,24 @@ final class PumpConnectionLifecycle {
     /// exactly when polling begins — never at bare BLE `.ready` (which now maps to `.connecting`).
     private func markUsableAndStartPolling() {
         snapshot.connection = .connected
-        // A genuine, application-usable reconnect resolves any flap storm — clear the flap window
-        // + latch so a FRESH storm can escalate again. The non-muteable "can't hold a connection"
-        // alert is WITHDRAWN on the SAME `.clear` connection edge that withdraws `pumpDisconnect`
-        // (RefreshEffectsCoordinator), so no separate withdraw event is needed here.
-        flapDetector.reset()
+        // Deliberately NO `flapDetector.reset()` here. A reconnect is the SECOND HALF of every flap
+        // cycle, so clearing the window at this exact point put exactly one clear between any two
+        // `recordFlap` calls, pinned `flapTimes.count` at 1 against a `threshold` of 5, and made
+        // escalation unreachable — this detector shipped inert (`2443fd6`) for precisely that reason.
+        // A genuine recovery now needs no call at all: the window, and with it the `escalated` latch,
+        // decays by AGE inside `recordFlap`, so the arithmetic cannot be defeated by what this path
+        // does or forgets to do. The user-visible alert is still withdrawn on the `.clear` connection
+        // edge in `RefreshEffectsCoordinator` (verified: it withdraws `pumpConnectionUnstableKey`
+        // alongside `pumpDisconnectKey`) — see the KNOWN LIMITATION on that withdraw in the
+        // `pump-link-thrash-190-connects` debug session.
         onChange?()
         readScheduler.startPolling()
     }
 
     /// Counts live→`.connecting` re-pair/re-drop flap cycles (fed from `applyClientState`) and
-    /// escalates ONCE per storm past the threshold within the window. Reset on a genuine reconnect
-    /// (`markUsableAndStartPolling`).
+    /// escalates ONCE per storm past the threshold within the window. NOT reset on reconnect (that is
+    /// the second half of a flap cycle and clearing it there is what shipped this inert); the window
+    /// self-decays by age. Force-cleared only on a pump IDENTITY change, in `applyDidDiscover`.
     private var flapDetector = ConnectionFlapDetector()
 
     // MARK: - Pairing-handshake watchdog
@@ -432,6 +438,16 @@ final class PumpConnectionLifecycle {
             // this only ever fires on an isMobi-misdetection). apiVersion stays nil → API dimension
             // stays fail-open. trusted: true — BLE-name detection is the authoritative, TRUSTED source.
             c.setDeviceContext(model: isMobi ? .mobi : .tslim, apiVersion: nil, trusted: true)
+        }
+        // A DIFFERENT physical pump: abandon the previous link's flap history outright rather than
+        // letting it decay, so pump B is never escalated for pump A's instability (four stale flaps from
+        // the old pump plus one from the new one would otherwise cross the threshold and blame the wrong
+        // pump — a false "can't hold a connection" alert on a healthy pump). An identity change, NOT a
+        // recovery, is the one place the unconditional `reset()` is correct. Safe here: this delegate is
+        // guarded on `snapshot.connection == .scanning` above, so it cannot run mid-storm against the
+        // pump currently being measured.
+        if let previous = PumpPeripheralStore.id(), previous != peripheral.identifier {
+            flapDetector.reset()
         }
         // C1: remember this peripheral so a future cold launch can retrieve-before-scan (see connect()).
         // The scan is service-UUID-filtered to the pump, so the discovered peripheral IS the pump.

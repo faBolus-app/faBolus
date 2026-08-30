@@ -745,21 +745,40 @@ struct ConnectionFlapDetector: Equatable {
     private(set) var escalated = false
 
     /// Record one live-link (`.connected`/`.bolusing`) → `.connecting` re-pair/re-drop flap cycle observed
-    /// at `at`. Prunes the window to `[at - window, at]` and returns `true` EXACTLY ONCE (latched via
-    /// `escalated`) when the count reaches `threshold` within the window — so a sustained storm raises the
-    /// alarm a single time, not on every subsequent cycle.
+    /// at `at`. Prunes the window to `[at - window, at]` FIRST, then returns `true` EXACTLY ONCE (latched
+    /// via `escalated`) when the count reaches `threshold` within the window — so a sustained storm raises
+    /// the alarm a single time, not on every subsequent cycle.
+    ///
+    /// The latch is released HERE, by the passage of time, and nowhere else on the live path: when the
+    /// prune leaves the window EMPTY the link held a full `window` without a single flap, so the previous
+    /// storm is over and this flap opens a fresh one. Releasing by decay rather than on the owner's
+    /// reconnect is deliberate and load-bearing — a reconnect is the SECOND HALF of every flap cycle, so an
+    /// owner that cleared the window on reconnect (which `markUsableAndStartPolling()` used to do) left
+    /// exactly one clear between any two `recordFlap` calls, capped the count at 1 against a `threshold` of
+    /// 5, and made escalation unreachable. Nothing the owner does — or forgets to do — can defeat the
+    /// arithmetic now.
     mutating func recordFlap(at: Date) -> Bool {
-        flapTimes.append(at)
         let cutoff = at.addingTimeInterval(-Self.window)
         flapTimes.removeAll { $0 < cutoff }
+        // A full quiet window ⇒ the previous storm has fully decayed: re-arm so it can escalate again.
+        if flapTimes.isEmpty { escalated = false }
+        flapTimes.append(at)
         guard flapTimes.count >= Self.threshold, !escalated else { return false }
         escalated = true
         return true
     }
 
-    /// The link genuinely recovered (reached a stable `.connected`) or reached a terminal state — clear the
-    /// window AND the latch so a FRESH storm can escalate again. Returns whether it had been escalated, so
-    /// the caller can withdraw the alarm only when there was one to withdraw.
+    /// Unconditional teardown of the window AND the latch, for an owner abandoning this link's flap history
+    /// outright. Returns whether it had been escalated, so such an owner can withdraw the alarm only when
+    /// there was one to withdraw. Its ONE production caller is the pump-IDENTITY-change branch of
+    /// `PumpConnectionLifecycle.applyDidDiscover` — a newly discovered peripheral must not inherit the
+    /// previous pump's flap history, or four stale flaps plus one fresh one would escalate against a
+    /// healthy pump.
+    ///
+    /// **NOT the recovery path, and it must never be called from one.** Every flap cycle ENDS in a
+    /// reconnect, so clearing the window there is what shipped this detector inert. A genuine recovery needs
+    /// no call at all: the window (and with it the latch) decays by age in `recordFlap`, and the
+    /// user-visible alert is withdrawn on the `.clear` connection edge in `RefreshEffectsCoordinator`.
     @discardableResult
     mutating func reset() -> Bool {
         let was = escalated
