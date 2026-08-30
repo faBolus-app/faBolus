@@ -396,6 +396,28 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var iobEpochSec: Int?
     public var therapyEpochSec: Int?
 
+    /// Immutable source timestamps (Unix seconds) of the reservoir (op-37) and battery (op-145) reads the
+    /// host relayed, completing the **value-plus-age** contract for those two fields. Same convention as
+    /// `glucoseEpochSec`/`iobEpochSec` in every respect: an EPOCH, not an age (an age computed at compose
+    /// time is already wrong by however long the message is in flight); set once at origin from the pump's
+    /// own read time; propagated unchanged; a receiver computes `now − epoch` at DISPLAY time. Same
+    /// `Int32.max` (2038-01-19) ceiling for the same reason (32-bit watchOS `Int` / Monkey C
+    /// `Lang.Number`). Swift-only additive fields set post-init, like the two above.
+    ///
+    /// Absent ⇒ the value's age is UNKNOWN, and a receiver MUST render that as stale/no-data, never as
+    /// fresh. Absence also covers "never read" (in which case `reservoirUnits`/`batteryPercent` are absent
+    /// too) and "legacy host".
+    ///
+    /// **Why these exist at all** (owner decision, debug session `pump-value-decay-to-unknown`): the phone
+    /// decays its OWN screens once a pump read goes quiet, but the wire deliberately does NOT gate on
+    /// freshness. Wire gating was implemented and reverted, because `faBolusGarmin`'s statusRead handler
+    /// keeps the last value on an absent key (absent also means legacy host / partial reply), so omitting
+    /// an aged value cannot decay the receiver — it only strips information from a number the receiver goes
+    /// on displaying. Sending the value together with its age is what lets each receiver apply its own
+    /// policy. Adding these was the enabling half of that decision.
+    public var reservoirEpochSec: Int?
+    public var batteryEpochSec: Int?
+
     /// The pump's live Control-IQ action zone as a FROZEN wire token
     /// (`ControlIQZone.rawValue`: increases/decreases/maintains/stops/delivers), derived from op-179
     /// `PumpSnapshot.ciqZone`. A remote decodes the token and renders Tandem's own zone word + icon
@@ -736,6 +758,14 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         }
         if let e = therapyEpochSec, e <= 0 || e > Int(Int32.max) {
             throw ValidationError.outOfRange("therapyEpochSec")
+        }
+        // Identical rule to the three epochs above — a zero/negative stamp reads as "absent" to a
+        // receiver, and anything past Int32.max cannot be represented by every consumer.
+        if let e = reservoirEpochSec, e <= 0 || e > Int(Int32.max) {
+            throw ValidationError.outOfRange("reservoirEpochSec")
+        }
+        if let e = batteryEpochSec, e <= 0 || e > Int(Int32.max) {
+            throw ValidationError.outOfRange("batteryEpochSec")
         }
         // The CIQ-suspend start is an immutable source epoch — same
         // rule as glucoseEpochSec/iobEpochSec/therapyEpochSec above (a zero/negative value reads as

@@ -37,11 +37,26 @@ enum RemoteStatusComposer {
             // `Double?` and `validate()`'s range check passes nil through. A remote cannot tell a real
             // 0.00 U (no active insulin, the common case) from a filled-in one.
             //
+            // Presence-gated, NOT freshness-gated — deliberately, and this differs from the phone's own
+            // screens. OWNER DECISION (debug `pump-value-decay-to-unknown`): the wire sends the VALUE
+            // PLUS ITS AGE and lets each receiver decide. Age-gating here was tried and reverted, because
+            // omitting an aged value removes information without achieving anything: the watch keeps its
+            // last-known number on an absent key (see the note on `reservoirUnits` below), so the receiver
+            // ends up showing the same stale figure with LESS information about it. The age travels in
+            // `iobEpochSec` immediately below.
+            //
             // Dose-direction note: on the Garmin side `iob` is a dose input (`AppState.computeUnits`
             // subtracts it), so this was checked in the fail-closed direction before changing. Absent ⇒
             // the watch keeps its last-known `iob`, whose cold-launch default is `0.0` — byte-identical
             // to what the fabricated `0` produced — and any retained real value subtracts MORE insulin,
             // i.e. a smaller suggestion. Sending a fabricated `0` was the fail-OPEN choice.
+            //
+            // ⚠️ The corollary matters for whoever implements watch-side decay: on the WATCH, dropping a
+            // retained `iob` REMOVES a subtraction and therefore INCREASES the suggested dose — the
+            // fail-OPEN direction, the exact opposite of the phone. So the watch must decay the IOB
+            // DISPLAY without letting that decay reach `carbCorrectionTotal`'s `fromIOB` term. Display
+            // decay and dose behaviour have to be separated there; treating them as one change would
+            // silently raise suggestions on a quiet link.
             kind: .statusRead, units: s.iobUnitsIfRead,
             bgMgdl: s.glucose.map(Double.init), message: s.connection.rawValue,
             // No glucose reading ⇒ no trend to report. `PumpSnapshot.trend` defaults to
@@ -51,16 +66,38 @@ enum RemoteStatusComposer {
             // `bgMgdl` is the display-side fix; the zero-value DEFAULT itself is recorded as a separate
             // proposal (it also silently disables the derived-arrow backfill in `PumpResponseApplier`).
             trend: s.glucose == nil ? nil : GlucoseTrend.token(from: s.trend),
+            // Therapy trio on the `> 0` PRESENCE idiom (a carb ratio / ISF / target of `0` is physically
+            // impossible, so `0` has always meant unread here). Presence-gated, not freshness-gated —
+            // same owner decision as `units` above: the age travels separately in `therapyEpochSec` and
+            // the receiver decides. One op-115 frame resolves all three, so the set is coherent.
             carbRatio: s.carbRatio > 0 ? s.carbRatio : nil,
             isf: s.isf > 0 ? Double(s.isf) : nil,
             targetBg: s.targetBg > 0 ? Double(s.targetBg) : nil,
             // Pump max clamped to the optional remote-only ceiling. Computed by
             // `AppModel.remoteBolusMaximum` and passed in — never re-derived here.
             maxBolusUnits: inputs.remoteMax,
-            // `…IfRead`, so an UNREAD reservoir/battery is ABSENT on the wire rather than a
-            // fabricated 0 — these `RemoteCommand` fields are already `Double?`, and a remote cannot
+            // `…IfRead`, so a reservoir/battery the pump never answered is ABSENT on the wire rather than
+            // a fabricated 0. These `RemoteCommand` fields are already `Double?`, and a remote cannot
             // tell a real 0 (empty cartridge / dead battery) from a filled-in one. Same shape as
             // `carbRatio`/`isf`/`targetBg` immediately above. Debug `tslim-reservoir-battery-zero`.
+            //
+            // ⚠️ THE WIRE IS PRESENCE-GATED, NEVER FRESHNESS-GATED. This is the opposite of what the
+            // phone's own screens do, and the asymmetry is deliberate — OWNER DECISION, debug
+            // `pump-value-decay-to-unknown`. Freshness gating was implemented here and then REVERTED,
+            // for a concrete reason: `faBolusGarmin`'s `AppState.mc` statusRead handler is
+            // `if (rv != null) { reservoir = rv; }` — keep-last on an absent key, because absent also
+            // means "legacy host" and "partial reply". So omitting an aged value does NOT decay the
+            // receiver; it just stops re-asserting a number the receiver keeps showing anyway, now with
+            // LESS information attached. Omission is the wrong lever.
+            //
+            // The right lever is VALUE PLUS AGE: send whatever was read, send when it was read
+            // (`reservoirEpochSec` / `batteryEpochSec`, set post-init below, exactly as
+            // `glucoseEpochSec` already works), and let each receiver apply its own policy. The phone
+            // decides for the phone; the watch decides for the watch.
+            //
+            // Do NOT reintroduce freshness gating here, and do NOT "fix" the watch by making it clear on
+            // absence — that would blank a real value on every legacy or partial reply. The watch-side
+            // change is local aging off these epochs, the way `glucoseStale()` already ages glucose.
             reservoirUnits: s.reservoirUnitsIfRead,
             batteryPercent: s.batteryPercentIfRead.map(Double.init),
             lastBolusUnits: s.lastBolusUnits,
@@ -161,6 +198,16 @@ enum RemoteStatusComposer {
         // dose gate; remotes never dose off these.
         cmd.iobEpochSec = s.iobDate.map { Int($0.timeIntervalSince1970) }
         cmd.therapyEpochSec = s.therapyParamsDate.map { Int($0.timeIntervalSince1970) }
+        // Read receipts for the reservoir (op-37) and battery (op-145) values sent above, completing the
+        // value-plus-age contract the owner chose over wire-side freshness gating. Same epoch-not-age
+        // convention as `glucoseEpochSec`/`iobEpochSec`: the pump's own read time, set once at origin and
+        // propagated unchanged, so a receiver computes `now − epoch` at DISPLAY time. An age computed here
+        // would already be wrong by however long the message is in flight.
+        //
+        // Absent ⇒ the value's age is UNKNOWN, which a receiver must treat as stale/no-data — never as
+        // fresh. Absent also covers "never read" (the value itself is absent too) and "legacy host".
+        cmd.reservoirEpochSec = s.reservoirDate.map { Int($0.timeIntervalSince1970) }
+        cmd.batteryEpochSec = s.batteryDate.map { Int($0.timeIntervalSince1970) }
         // Latest instant of each as a source epoch. Absent ⇒ remote renders the marker
         // absent, never a synthesized age. Display-only.
         cmd.lastAutoCorrectionEpochSec = s.lastAutoCorrectionDate.map { Int($0.timeIntervalSince1970) }

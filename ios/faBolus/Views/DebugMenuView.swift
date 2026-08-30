@@ -66,7 +66,14 @@ struct DebugMenuView: View {
                 // where a support diagnosis starts, so a read the pump never answered must read "—",
                 // never a confident `0.00 U` / `0.00 U/hr`. A real 0 (no active insulin, a suspend)
                 // still prints as 0.
-                row("IOB", PumpValuePresentation.text(model.snapshot.iobUnitsIfRead, format: "%.2f U"))
+                // Age-gated on the IOB dose gate's own window; own `TimelineView` for the same
+                // one-row-per-cell reason as the Reservoir/Battery rows below.
+                TimelineView(.periodic(from: .now, by: 20)) { ctx in
+                    row(
+                        "IOB",
+                        PumpValuePresentation.text(
+                            model.snapshot.iobUnitsIfFresh(now: ctx.date), format: "%.2f U"))
+                }
                 row(
                     "Basal",
                     PumpValuePresentation.text(model.snapshot.basalRateUnitsPerHourIfRead, format: "%.2f U/hr"))
@@ -74,16 +81,29 @@ struct DebugMenuView: View {
                 row(
                     "Control-IQ",
                     "\(model.snapshot.controlIQEnabled ? "on" : "off") mode \(model.snapshot.controlIQMode)")
-                // `…IfRead` funnel: the Debug menu is where a support diagnosis starts, so it must
-                // never show a fabricated 0 for a read the pump never answered
-                // (debug `tslim-reservoir-battery-zero`).
-                row("Reservoir", ReservoirPresentation.make(units: model.snapshot.reservoirUnitsIfRead).valueText)
-                row(
-                    "Battery",
-                    BatteryChargingPresentation.make(
-                        percent: model.snapshot.batteryPercentIfRead,
-                        charging: model.snapshot.batteryCharging
-                    ).valueText)
+                // Age-gated `…IfFresh(now:)` funnel: the Debug menu is where a support diagnosis
+                // starts, so it must never show a fabricated 0 for a read the pump never answered
+                // (debug `tslim-reservoir-battery-zero`) NOR a number the pump stopped confirming
+                // however long ago (debug `pump-value-decay-to-unknown`). An aged reading presented
+                // without qualification is the same class of false certainty as a fabricated one, and a
+                // support diagnosis is exactly where that misleads hardest. The `TimelineView` wrapper
+                // supplies `ctx.date` so these decay on a tick, not only on the next pump read.
+                // One `TimelineView` PER ROW, not one around both: inside a `Form`, a container holding
+                // two rows collapses them into a single list cell and loses the row separator.
+                TimelineView(.periodic(from: .now, by: 20)) { ctx in
+                    row(
+                        "Reservoir",
+                        ReservoirPresentation.make(units: model.snapshot.reservoirUnitsIfFresh(now: ctx.date))
+                            .valueText)
+                }
+                TimelineView(.periodic(from: .now, by: 20)) { ctx in
+                    row(
+                        "Battery",
+                        BatteryChargingPresentation.make(
+                            percent: model.snapshot.batteryPercentIfFresh(now: ctx.date),
+                            charging: model.snapshot.batteryCharging
+                        ).valueText)
+                }
                 row("Max bolus", String(format: "%.2f U", model.snapshot.maxBolusUnits))
             }
 

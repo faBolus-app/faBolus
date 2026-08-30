@@ -192,6 +192,123 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// Battery percent ONLY when the pump has actually reported it; `nil` when unread. Display funnel,
     /// mirroring `reservoirUnitsIfRead`.
     public var batteryPercentIfRead: Int? { batteryDate == nil ? nil : batteryPercent }
+
+    // MARK: - Decay to unknown (age-gated display funnels)
+
+    /// Reservoir units ONLY while the pump's last report is still CURRENT; `nil` once the read has gone
+    /// quiet past the staleness window — and `nil` when never read, so this strictly subsumes
+    /// `reservoirUnitsIfRead`.
+    ///
+    /// **Why this exists.** `reservoirUnitsIfRead` answers "did the pump ever report this"; it keeps
+    /// returning a value forever once a single reply has landed, which is this codebase's documented
+    /// live-field convention (see `faBolusGarmin/source/app/AppState.mc`, the "every other live field
+    /// here" note). The owner's decision in debug session `pump-value-decay-to-unknown` replaced that
+    /// convention for pump-derived DISPLAY values: past a threshold the value stops being presented and
+    /// the surface renders unknown. This funnel is the single place that decision lives.
+    ///
+    /// **The threshold is the app's existing CGM staleness window** — `GlucoseFreshness.staleAfter`,
+    /// written from the one place it is already configured (`AppSettings.glucoseStaleMinutes` →
+    /// `applyFreshness()`), already mirrored into the widget process as `WidgetSnapshot.staleAfterSec`
+    /// and onto the remote wire as `RemoteCommand.glucoseStaleMinutes`. Deliberately NOT a new constant
+    /// and NOT a new setting: the point of the decision was ONE staleness concept, not a second one that
+    /// can drift. Delegating to `GlucoseFreshness.isStale` (rather than re-deriving `now - date >
+    /// threshold`) also inherits its future-dated-clock guard for free — without that, a receipt from a
+    /// fast pump clock has a negative age and would never decay.
+    ///
+    /// **The gate is AGE, never VALUE.** `0 U` is an empty cartridge — a real, clinically meaningful
+    /// reading — and still returns `0` while fresh.
+    ///
+    /// **Never consult this from the dose path.** Use `reservoirUnits`, whose semantics are frozen:
+    /// `StackingGuard.insufficientReservoir` treats `0` as a valid empty reading and only a NEGATIVE
+    /// value as "no reading", so letting an aged read read as absent THERE would flip its
+    /// out-of-insulin disclosure fail-OPEN.
+    public func reservoirUnitsIfFresh(now: Date = Date()) -> Double? {
+        GlucoseFreshness.isStale(reservoirDate, now: now) ? nil : reservoirUnits
+    }
+
+    /// Battery percent ONLY while the pump's last report is still current; `nil` once the read has gone
+    /// quiet or was never answered. Same window, same age-not-value rule and same reasoning as
+    /// `reservoirUnitsIfFresh` — a genuinely dead `0 %` still returns `0` while fresh.
+    public func batteryPercentIfFresh(now: Date = Date()) -> Int? {
+        GlucoseFreshness.isStale(batteryDate, now: now) ? nil : batteryPercent
+    }
+
+    /// Active insulin ONLY while the pump's last op-109 report is still current; `nil` once it has gone
+    /// quiet or was never answered.
+    ///
+    /// **This one is NOT bound to the CGM window** — it is bound to `CalcInputFreshness.staleAfterIob`,
+    /// via `isIobStale(now:)`, which is the SAME predicate the dose path already gates on. Owner
+    /// decision (debug `pump-value-decay-to-unknown`), and the reason is a guarantee rather than a
+    /// preference: display decay and the dose gate now fire on one predicate, so they cannot disagree for
+    /// ANY user setting. Had this used the CGM window instead, `glucoseStaleMinutes` (selectable 4…20
+    /// min, i.e. either side of the 5-min IOB window) would let a user create a span in which this row
+    /// reads "—" while the bolus calculator silently still uses the value with no prompt. That cost three
+    /// staleness windows app-wide instead of one, which the owner accepted — and neither window is new,
+    /// both already gated the calculator before this change. `PumpValueDecayWindowTests`'
+    /// `theCgmWindowCanBeConfiguredEitherSideOfTheIobDoseGate` is the pin that stops a later
+    /// "simplification" back to one window from reintroducing the divergence.
+    ///
+    /// The gate is AGE, never VALUE: `0.00 U` — the common state between boluses — still returns `0`.
+    ///
+    /// **Never consult this from the dose path.** Use `iobUnits` with `isIobStale()` / `CalcInputGate`,
+    /// whose semantics are frozen.
+    public func iobUnitsIfFresh(now: Date = Date()) -> Double? {
+        isIobStale(now: now) ? nil : iobUnits
+    }
+
+    /// Carb ratio (g/U) ONLY while the pump's last op-115 report is still current; `nil` once it has gone
+    /// quiet, was never answered, or is non-positive.
+    ///
+    /// Bound to `CalcInputFreshness.staleAfterTherapy` via `isTherapyStale(now:)` — the dose gate's own
+    /// predicate, for the same guarantee as `iobUnitsIfFresh`. One op-115 frame resolves the active
+    /// profile+segment to a self-consistent set, so all three therapy funnels share one stamp and decay
+    /// together; they can never present a half-updated triple.
+    ///
+    /// **The genuine-zero rule deliberately does NOT extend to these three.** A carb ratio, a correction
+    /// factor and a target of `0` are physically impossible, so `0` here has always meant "unread" — the
+    /// pre-existing `> 0` idiom every surface and the wire already used, preserved exactly. Contrast
+    /// `reservoirUnitsIfFresh`, where `0` IS a real reading (an empty cartridge) and must never be
+    /// suppressed. Both conventions are pinned in `DoseInputDecayTests`.
+    public func carbRatioIfFresh(now: Date = Date()) -> Double? {
+        (carbRatio > 0 && !isTherapyStale(now: now)) ? carbRatio : nil
+    }
+
+    /// Correction factor (ISF, mg/dL per U) ONLY while the op-115 report is still current. Same window,
+    /// same shared stamp and the same "0 means unread" convention as `carbRatioIfFresh`.
+    public func isfIfFresh(now: Date = Date()) -> Int? {
+        (isf > 0 && !isTherapyStale(now: now)) ? isf : nil
+    }
+
+    /// Target glucose (mg/dL) ONLY while the op-115 report is still current. Same window, same shared
+    /// stamp and the same "0 means unread" convention as `carbRatioIfFresh`.
+    public func targetBgIfFresh(now: Date = Date()) -> Int? {
+        (targetBg > 0 && !isTherapyStale(now: now)) ? targetBg : nil
+    }
+
+    // `basalRateUnitsPerHourIfFresh` is DELIBERATELY ABSENT — an owner decision, not an oversight.
+    // Recorded here so the next reader does not rediscover the obstacle from scratch and then
+    // "complete the set" without re-deciding.
+    //
+    // The obstacle: there is no age to gate on. `basalRateKnown` is a Bool, not a date — the only pump
+    // value in this struct whose receipt records THAT a reply arrived but not WHEN. Every other
+    // decayable field has a `Date?`.
+    //
+    // Why basal is the right field to leave out: it is the one where an old value misleads least,
+    // because it changes slowly and on discrete events (a profile time-segment boundary, a temp rate
+    // starting or ending, a suspend) rather than continuously like IOB. A basal rate read 20 minutes ago
+    // is very probably still the rate running now, whereas a 20-minute-old reservoir or IOB figure is
+    // simply wrong. The genuinely dangerous basal claim — asserting `0.00 U/hr`, which reads as
+    // "delivery stopped", from a pump that never answered op-41 — is ALREADY closed by
+    // `basalRateUnitsPerHourIfRead`. Decay would add much less here than it does elsewhere.
+    //
+    // If it is ever wanted, the whole recipe is: add `basalRateDate: Date?` to this struct; stamp it
+    // (`$0.basalRateDate = Date()`) next to `$0.basalRateKnown = true` in `PumpResponseApplier`, and in
+    // `MockBackend`'s seed beside `snapshot.basalRateKnown = true`; add
+    // `basalRateUnitsPerHourIfFresh(now:)` gating on `GlucoseFreshness.isStale(basalRateDate)` (the CGM
+    // window — basal is display-only and has no dose gate of its own, so it belongs with reservoir and
+    // battery, not with the two dose inputs); then swap the four call sites off
+    // `basalRateUnitsPerHourIfRead`. Keep `basalRateKnown` and the `…IfRead` funnel: a real 0.00 U/hr
+    // suspend must still render as `0`, so an always-nil receipt would be a REGRESSION, not a no-op.
     /// The pump POSITIVELY reported it is charging (op-145 `CurrentBatteryV2Response.chargingStatus
     /// == 1`). Fail-closed default `false`: any other/unknown value AND "never read this op-145 reply
     /// yet" both read identically as not-charging — never a false charging badge (mirrors

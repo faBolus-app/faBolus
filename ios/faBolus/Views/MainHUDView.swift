@@ -283,56 +283,75 @@ struct PumpDetailsCard: View {
     let snapshot: PumpSnapshot
     private var order: [String] { AppSettings.shared.detailsOrder }
 
-    /// Value string for a detail field id, or nil to skip the row (no data).
-    private func value(_ id: String) -> String? {
+    /// Value string for a detail field id, or nil to skip the row (no data). `now` is the display
+    /// instant supplied by the `TimelineView` in `body`, so the age-gated rows re-evaluate on the tick
+    /// rather than waiting for the next pump read to mutate the snapshot.
+    private func value(_ id: String, now: Date) -> String? {
         switch id {
         // `…IfRead` funnel, same reason as the reservoir/battery rows below: `iobUnits` is a
         // non-optional `0`, so a pump that never answered op-109 asserted a confident `0.00 U` of
         // active insulin here. A real 0.00 U still shows `0.00 U`; only never-reported shows "—".
-        case "iob": return PumpValuePresentation.text(snapshot.iobUnitsIfRead, format: "%.2f U")
-        // Both rows go through the shared presentation helpers on the `…IfRead` funnel, so an
-        // unread pump read shows "—" (like `carbRatio`/`isf` below) instead of a confident 0
-        // (debug `tslim-reservoir-battery-zero`).
-        case "reservoir": return ReservoirPresentation.make(units: snapshot.reservoirUnitsIfRead).valueText
+        // Age-gated on `CalcInputFreshness.staleAfterIob` — the IOB dose gate's OWN window, not the CGM
+        // one the reservoir/battery rows below use, so this row can never show a figure the bolus
+        // calculator has already stopped trusting (`PumpSnapshot.iobUnitsIfFresh`).
+        case "iob": return PumpValuePresentation.text(snapshot.iobUnitsIfFresh(now: now), format: "%.2f U")
+        // Both rows go through the shared presentation helpers on the age-gated `…IfFresh(now:)` funnel,
+        // so a read the pump never answered — OR answered once and has not re-answered inside the CGM
+        // staleness window — shows "—" (like `carbRatio`/`isf` below) instead of a confident, and by now
+        // possibly hours-old, number. Debug `tslim-reservoir-battery-zero` (presence) and
+        // `pump-value-decay-to-unknown` (age). A genuine 0 still prints as 0 while fresh.
+        case "reservoir":
+            return ReservoirPresentation.make(units: snapshot.reservoirUnitsIfFresh(now: now)).valueText
         case "battery":
             // Reuse BatteryChargingPresentation (same as the battery pill); don't re-interpolate.
             let battery = BatteryChargingPresentation.make(
-                percent: snapshot.batteryPercentIfRead, charging: snapshot.batteryCharging)
+                percent: snapshot.batteryPercentIfFresh(now: now), charging: snapshot.batteryCharging)
             return battery.valueText
         case "cgm": return snapshot.cgmActive ? "Active" : "Inactive"
         case "lastBolus":
             guard let u = snapshot.lastBolusUnits, let d = snapshot.lastBolusDate else { return nil }
             return "\(String(format: "%.2f U", u)) · \(d.formatted(.relative(presentation: .named)))"
-        case "carbRatio": return snapshot.carbRatio > 0 ? String(format: "%.0f g/U", snapshot.carbRatio) : "—"
+        // The three therapy rows age on `CalcInputFreshness.staleAfterTherapy` (the therapy dose gate's
+        // own window) via the `…IfFresh(now:)` funnels. Those funnels also SUBSUME the pre-existing
+        // `> 0` unread test — a carb ratio / correction factor / target of `0` is physically impossible,
+        // so `0` has always meant unread here, and the funnel keeps that meaning. Hence `guard let`
+        // replaces `guard … > 0` with no change to the unread case.
+        case "carbRatio":
+            return snapshot.carbRatioIfFresh(now: now).map { String(format: "%.0f g/U", $0) } ?? "—"
         // ISF + target through the display-unit funnel. Pump / BolusMath still get mg/dL Int.
         case "isf":
-            guard snapshot.isf > 0 else { return "—" }
+            guard let isf = snapshot.isfIfFresh(now: now) else { return "—" }
             let unit = AppSettings.shared.glucoseDisplayUnit
             // "mmol/L/U" matches catalog / PumpWizard / Garmin — not "mmol/L·U⁻¹".
-            guard AppSettings.shared.showGlucoseUnitLabels else { return unit.format(mgdl: snapshot.isf) }
-            return "\(unit.format(mgdl: snapshot.isf)) \(unit == .mmol ? "mmol/L/U" : "mg/dL/U")"
+            guard AppSettings.shared.showGlucoseUnitLabels else { return unit.format(mgdl: isf) }
+            return "\(unit.format(mgdl: isf)) \(unit == .mmol ? "mmol/L/U" : "mg/dL/U")"
         case "target":
-            guard snapshot.targetBg > 0 else { return "—" }
+            guard let target = snapshot.targetBgIfFresh(now: now) else { return "—" }
             let unit = AppSettings.shared.glucoseDisplayUnit
             // Bare value when labels are hidden (ambient dashboard row).
-            guard AppSettings.shared.showGlucoseUnitLabels else { return unit.format(mgdl: snapshot.targetBg) }
-            return "\(unit.format(mgdl: snapshot.targetBg)) \(unit == .mmol ? "mmol/L" : "mg/dL")"
+            guard AppSettings.shared.showGlucoseUnitLabels else { return unit.format(mgdl: target) }
+            return "\(unit.format(mgdl: target)) \(unit == .mmol ? "mmol/L" : "mg/dL")"
         case "maxBolus": return String(format: "%.1f U", snapshot.maxBolusUnits)
         default: return nil
         }
     }
 
     var body: some View {
-        let rows: [(id: String, value: String)] = order.compactMap { id in
-            value(id).map { (id, $0) }
-        }
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(rows.enumerated()), id: \.element.id) { idx, r in
-                row(AppSettings.detailFieldLabel(r.id), r.value, last: idx == rows.count - 1)
+        // Same 20 s cadence as `StatusPillsView`, and for the same reason: the age-gated rows must be
+        // able to decay to "—" on their own. Without a tick this card only re-rendered when the
+        // snapshot VALUE changed — which is exactly what stops happening when a read goes quiet.
+        TimelineView(.periodic(from: .now, by: 20)) { ctx in
+            let rows: [(id: String, value: String)] = order.compactMap { id in
+                value(id, now: ctx.date).map { (id, $0) }
             }
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(rows.enumerated()), id: \.element.id) { idx, r in
+                    row(AppSettings.detailFieldLabel(r.id), r.value, last: idx == rows.count - 1)
+                }
+            }
+            .padding(.vertical, 4)
+            .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 14))
         }
-        .padding(.vertical, 4)
-        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 14))
     }
 
     @ViewBuilder private func row(_ title: String, _ value: String, last: Bool = false) -> some View {

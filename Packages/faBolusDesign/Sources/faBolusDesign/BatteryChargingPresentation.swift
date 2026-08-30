@@ -34,7 +34,10 @@ public enum BatteryChargingPresentation {
     /// Added for debug session `tslim-reservoir-battery-zero`. `PumpSnapshot.batteryPercent` is a
     /// non-optional `Int` defaulting to `0`, and op-144 had been durably excluded on the owner's
     /// brand-new t:slim X2 — so a fully-charged pump rendered as `0%` with the EMPTY-battery glyph and
-    /// the low-battery tint. Pass `PumpSnapshot.batteryPercentIfRead`, never the raw `batteryPercent`.
+    /// the low-battery tint. Pass `PumpSnapshot.batteryPercentIfFresh(now:)` (or the widget carrier's
+    /// `batteryPercentIfFresh(asOf:)`), never the raw `batteryPercent` and — on any surface that reads as
+    /// live data — never the presence-only `batteryPercentIfRead`, which keeps returning a value forever
+    /// once a single reply has landed.
     public static func make(percent: Int?, charging: Bool) -> BatteryPresentation {
         guard let percent else {
             return BatteryPresentation(

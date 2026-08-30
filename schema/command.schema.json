@@ -137,6 +137,18 @@
       "maximum": 2147483647,
       "description": "DIF-ux — immutable source timestamp (Unix seconds) of the therapy-params (carb ratio / ISF / target, op-115) read the host relayed. A remote computes age as now - therapyEpochSec to grey/age its carb-ratio/ISF/target rows and PRE-WARN. Absent ⇒ age UNKNOWN ⇒ render stale, never fresh. Same Int32.max (2038-01-19) ceiling as glucoseEpochSec (32-bit watchOS Int / Monkey C Lang.Number). View/pre-warn only on remotes; the host stays the authoritative dose gate."
     },
+    "reservoirEpochSec": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647,
+      "description": "Immutable source timestamp (Unix seconds) of the reservoir (op-37 InsulinStatusResponse) read the host relayed, set once at origin from the pump's own read time and propagated unchanged. A receiver computes age as now - reservoirEpochSec at DISPLAY time (an age computed at compose time is already wrong by however long the message was in flight). Absent ⇒ the value's age is UNKNOWN and must render as stale/no-data, never as fresh; absent also covers never-read and legacy-host. Same Int32.max (2038-01-19) ceiling as glucoseEpochSec (32-bit watchOS Int / Monkey C Lang.Number). Pairs with reservoirUnits: the wire is deliberately presence-gated, NOT freshness-gated, so it carries the value AND its age and each receiver applies its own policy. Omitting an aged value cannot decay a receiver that keeps the last value on an absent key — it only strips information from a number the receiver goes on showing."
+    },
+    "batteryEpochSec": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647,
+      "description": "Immutable source timestamp (Unix seconds) of the pump battery (op-145 CurrentBatteryV2Response) read the host relayed, set once at origin from the pump's own read time and propagated unchanged. A receiver computes age as now - batteryEpochSec at DISPLAY time (an age computed at compose time is already wrong by however long the message was in flight). Absent ⇒ the value's age is UNKNOWN and must render as stale/no-data, never as fresh; absent also covers never-read and legacy-host. Same Int32.max (2038-01-19) ceiling as glucoseEpochSec (32-bit watchOS Int / Monkey C Lang.Number). Pairs with batteryPercent: the wire is deliberately presence-gated, NOT freshness-gated, so it carries the value AND its age and each receiver applies its own policy. Omitting an aged value cannot decay a receiver that keeps the last value on an absent key — it only strips information from a number the receiver goes on showing."
+    },
     "history": {
       "type": "array",
       "items": { "type": "integer" },

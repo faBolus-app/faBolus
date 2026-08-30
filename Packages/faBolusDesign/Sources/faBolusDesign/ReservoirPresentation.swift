@@ -26,9 +26,12 @@ public enum ReservoirPresentation {
     /// `PumpDetailsCard`'s existing unknown treatment for `carbRatio`/`isf`/`targetBg`.
     public static let unknownText = "—"
 
-    /// - Parameter units: `PumpSnapshot.reservoirUnitsIfRead` — the units the pump reported, or `nil`
-    ///   when it has never answered the reservoir read. Pass the `…IfRead` funnel, never the raw
-    ///   `reservoirUnits`, or the absent case collapses back into `0 U`.
+    /// - Parameter units: `PumpSnapshot.reservoirUnitsIfFresh(now:)` — the units the pump reported, or
+    ///   `nil` when it has never answered the reservoir read OR has not re-answered it inside the
+    ///   staleness window (debug `pump-value-decay-to-unknown`). Pass one of the model's optional
+    ///   funnels, never the raw `reservoirUnits`, or the absent case collapses back into `0 U`. The
+    ///   presence-only `reservoirUnitsIfRead` is the weaker gate — prefer `…IfFresh` on any surface
+    ///   that reads as live data.
     public static func make(units: Double?) -> ReservoirDisplay {
         guard let units else { return ReservoirDisplay(valueText: unknownText, isKnown: false) }
         return ReservoirDisplay(valueText: String(format: "%.0f U", units), isKnown: true)

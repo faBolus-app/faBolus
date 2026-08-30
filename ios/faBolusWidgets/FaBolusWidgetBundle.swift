@@ -48,6 +48,10 @@ struct FaBolusProvider: TimelineProvider {
                 if hideAt > now { dates.append(hideAt) }
             }
         }
+        // Same reasoning for the pump values that now age off their OWN read receipts (reservoir,
+        // battery): without a crossing entry the tile keeps rendering its last fresh state until the
+        // next app-driven reload, so the decay would be invisible for up to the fallback interval.
+        dates.append(contentsOf: snap.pumpValueDecayCrossings(asOf: now).filter { $0 > now })
         let fallback = now.addingTimeInterval(15 * 60)
         dates.append(fallback)
         let entries = Set(dates).sorted().map { FaBolusEntry(date: $0, snap: snap) }

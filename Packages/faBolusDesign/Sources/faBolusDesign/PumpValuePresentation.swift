@@ -24,10 +24,17 @@ public struct PumpValueDisplay: Equatable, Sendable {
 ///
 /// The rule this type enforces: **absence and zero are different facts.** `0.00 U` of active insulin,
 /// `0.00 U/hr` of basal (a suspend, or a 0 U/hr temp rate) and an empty cartridge are all legitimate,
-/// clinically meaningful readings and MUST still render as `0`. Only a value the pump has never reported
-/// renders as the placeholder. Pass the model's `…IfRead` funnel (`PumpSnapshot.iobUnitsIfRead`,
-/// `basalRateUnitsPerHourIfRead`, `reservoirUnitsIfRead`), never the raw non-optional field — passing the
-/// raw field collapses the absent case straight back into a fabricated `0`.
+/// clinically meaningful readings and MUST still render as `0`. Only a value we do not have renders as
+/// the placeholder.
+///
+/// Pass one of the model's optional funnels, never the raw non-optional field — the raw field collapses
+/// the absent case straight back into a fabricated `0`. Two kinds of funnel exist and they answer
+/// different questions:
+///   • `…IfRead` (`PumpSnapshot.iobUnitsIfRead`, `basalRateUnitsPerHourIfRead`) — "did the pump EVER
+///     report this". Keeps returning a value forever after one reply.
+///   • `…IfFresh(now:)` (`PumpSnapshot.reservoirUnitsIfFresh(now:)`, `batteryPercentIfFresh(now:)`) —
+///     "is that report still CURRENT". Strictly stronger; prefer it on any surface that reads as live
+///     data (debug `pump-value-decay-to-unknown`).
 public enum PumpValuePresentation {
     /// What every surface shows when a pump-sourced value has never been reported. Deliberately an alias
     /// rather than a second `"—"` literal: `ReservoirPresentation` declared it first and

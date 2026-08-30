@@ -84,19 +84,30 @@ struct StatusWidgetView: View {
 
             // Right: pump metrics.
             VStack(alignment: .leading, spacing: 6) {
-                // Receipt-gated, exactly like the reservoir row below: `iobUnits` is a non-optional `0`,
-                // and `connectionStale` only answers "did the host stop publishing?" — a LIVE snapshot
-                // whose pump never answered op-109 sailed past it and rendered a confident `0.00 U`.
-                // A real 0.00 U (no active insulin) still shows `0.00 U`.
+                // AGE-gated, exactly like the reservoir row below: `iobUnits` is a non-optional `0`, and
+                // `connectionStale` only answers "did the host stop publishing?" — a LIVE snapshot whose
+                // pump never answered op-109 sailed past it and rendered a confident `0.00 U`, and one
+                // whose pump answered once and then went quiet did the same forever. A real 0.00 U (no
+                // active insulin) still shows `0.00 U` while fresh.
+                //
+                // Gated on the PUBLISHED IOB window (`iobStaleAfterSec`), not the glucose one, so the
+                // widget decays IOB at exactly the moment the phone and the bolus calculator do.
                 let iob = PumpValuePresentation.make(
-                    snap.iobDate == nil ? nil : snap.iobUnits, format: "%.2f U")
+                    snap.iobUnitsIfFresh(asOf: now), format: "%.2f U")
                 metric("syringe", "Active Insulin", connectionStale ? "--" : iob.valueText)
-                // Through `ReservoirPresentation` on the receipt-gated value, so a reservoir read the
-                // pump never answered shows the unknown placeholder rather than a fabricated "0 U"
-                // (debug `tslim-reservoir-battery-zero`). Kept distinct from `connectionStale`'s "--":
-                // that means "the host stopped publishing", this means "the pump never told us".
+                // Through `ReservoirPresentation` on the AGE-gated value, so a reservoir read the pump
+                // never answered — or answered once and has not re-answered inside the published
+                // staleness window — shows the unknown placeholder rather than a fabricated or
+                // long-expired "0 U" (debug `tslim-reservoir-battery-zero`, then
+                // `pump-value-decay-to-unknown`). Evaluated at the ENTRY's date, never wall-clock:
+                // a widget renders ahead of time.
+                //
+                // Kept distinct from `connectionStale`'s "--": that means "the host stopped
+                // publishing", this means "the pump has not told us lately". The two are independent —
+                // an app that is alive and publishing every ~20 s with a dead pump link keeps
+                // `connectionStale` false forever, which is exactly the gap this closes.
                 let reservoir = ReservoirPresentation.make(
-                    units: snap.reservoirDate == nil ? nil : snap.reservoirUnits)
+                    units: snap.reservoirUnitsIfFresh(asOf: now))
                 metric("drop", "Reservoir", connectionStale ? "--" : reservoir.valueText)
                 if let u = snap.lastBolusUnits, let d = snap.lastBolusDate {
                     metric(
@@ -107,9 +118,10 @@ struct StatusWidgetView: View {
                     // helper every other battery-rendering surface uses, so a not-charging medium widget
                     // renders the level-appropriate glyph (`battery.0/.25/.50/.75/.100`) instead of always
                     // showing a full battery. Charging is never shown as a warning.
-                    // Receipt-gated percent — an unread battery must not render as a dead one.
+                    // Age-gated percent — neither an unread NOR a gone-quiet battery may render as a
+                    // dead one. A real 0 % still renders 0 % while fresh.
                     let battery = BatteryChargingPresentation.make(
-                        percent: snap.batteryDate == nil ? nil : snap.batteryPercent,
+                        percent: snap.batteryPercentIfFresh(asOf: now),
                         charging: snap.batteryCharging)
                     // Consume the centralized `valueText` instead of re-interpolating the
                     // "N% · Charging" string here. Once the snapshot's publish time is stale (host

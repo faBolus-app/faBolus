@@ -40,13 +40,17 @@ struct GlucoseWidgetView: View {
         return unit.format(mgdl: g)
     }
     private var arrow: String { WidgetUI.isStale(snap, now: now) ? "" : snap.trendArrow }
-    /// Active insulin, receipt-gated on `iobDate` so a pump that has never answered op-109 shows the
-    /// unknown placeholder rather than a confident `0.0 U` (`iobUnits` is a non-optional `0`). ONE
-    /// definition for both families below, so the two tiles can't drift apart. A real 0.0 U of active
-    /// insulin — the common case between boluses — still renders `0.0 U`. Sibling of the
-    /// reservoir/battery receipt gating on `StatusWidget` (debug `tslim-reservoir-battery-zero`).
+    /// Active insulin, AGE-gated on `iobDate` against the published IOB window, so a pump that has never
+    /// answered op-109 — or answered once and then went quiet — shows the unknown placeholder rather than
+    /// a confident `0.0 U` (`iobUnits` is a non-optional `0`). ONE definition for both families below, so
+    /// the two tiles can't drift apart. A real 0.0 U of active insulin — the common case between boluses —
+    /// still renders `0.0 U` while fresh. Debug `tslim-reservoir-battery-zero` (presence), then
+    /// `pump-value-decay-to-unknown` (age).
+    ///
+    /// Evaluated at the timeline ENTRY's date, like every other freshness decision in this file: in a
+    /// widget, wall-clock is prep time, not display time.
     private var iobText: String {
-        PumpValuePresentation.text(snap.iobDate == nil ? nil : snap.iobUnits, format: "%.1f U")
+        PumpValuePresentation.text(snap.iobUnitsIfFresh(asOf: now), format: "%.1f U")
     }
     /// The classified band, kept ONLY to restore the VoiceOver zone word that
     /// `BandIndicator` used to speak via its own `.accessibilityLabel(shortLabel)` —

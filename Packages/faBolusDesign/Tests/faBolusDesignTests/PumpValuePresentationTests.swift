@@ -115,4 +115,89 @@ struct PumpValuePresentationTests {
         #expect(fresh.reservoirUnits == 0)
         #expect(fresh.batteryPercent == 0)
     }
+
+    // MARK: - the DECAYED case (debug `pump-value-decay-to-unknown`)
+
+    /// The full display chain for an aged read: snapshot funnel → presentation helper → rendered string.
+    /// The unit tests in `faBolusCoreTests/PumpValueDecayTests` pin the funnel; these pin that the string
+    /// a surface actually shows is the SAME placeholder as the never-read case, so a user cannot tell
+    /// "the pump never told us" from "the pump stopped telling us" by glyph alone — both are "we do not
+    /// know", and that is the whole claim.
+    @Test func anAgedReservoirRendersTheSamePlaceholderAsANeverReadOne() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        var aged = PumpSnapshot()
+        aged.reservoirUnits = 142
+        aged.reservoirDate = now.addingTimeInterval(-24 * 3600)
+
+        #expect(ReservoirPresentation.make(units: aged.reservoirUnitsIfFresh(now: now)).valueText == "—")
+        #expect(!ReservoirPresentation.make(units: aged.reservoirUnitsIfFresh(now: now)).isKnown)
+        // Same string the never-read case produces.
+        #expect(ReservoirPresentation.make(units: PumpSnapshot().reservoirUnitsIfFresh(now: now)).valueText == "—")
+    }
+
+    @Test func aFreshReservoirStillRendersItsNumber() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        var fresh = PumpSnapshot()
+        fresh.reservoirUnits = 142
+        fresh.reservoirDate = now.addingTimeInterval(-10)
+        #expect(ReservoirPresentation.make(units: fresh.reservoirUnitsIfFresh(now: now)).valueText == "142 U")
+        #expect(ReservoirPresentation.make(units: fresh.reservoirUnitsIfFresh(now: now)).isKnown)
+    }
+
+    @Test func aFreshGenuinelyEmptyCartridgeStillRendersZeroUnits() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        var empty = PumpSnapshot()
+        empty.reservoirUnits = 0
+        empty.reservoirDate = now.addingTimeInterval(-10)
+        #expect(
+            ReservoirPresentation.make(units: empty.reservoirUnitsIfFresh(now: now)).valueText == "0 U",
+            "an empty cartridge is the reading a user most needs to see — decay gates AGE, never value")
+    }
+
+    @Test func anAgedBatteryNeitherShowsAPercentNorTheLowBatteryTint() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        var aged = PumpSnapshot()
+        aged.batteryPercent = 84
+        aged.batteryDate = now.addingTimeInterval(-24 * 3600)
+        let p = BatteryChargingPresentation.make(percent: aged.batteryPercentIfFresh(now: now), charging: false)
+        #expect(p.valueText == "—")
+        #expect(!p.usesLowTint, "unknown is neither live nor a warning — never a false low-battery tint")
+    }
+
+    @Test func aFreshGenuinelyDeadBatteryStillRendersZeroPercentAndWarns() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        var dead = PumpSnapshot()
+        dead.batteryPercent = 0
+        dead.batteryDate = now.addingTimeInterval(-10)
+        let p = BatteryChargingPresentation.make(percent: dead.batteryPercentIfFresh(now: now), charging: false)
+        #expect(p.valueText != "—", "a real 0 % is the alarm, not the absence of one")
+        #expect(p.usesLowTint)
+        #expect(p.symbolName == "battery.0")
+    }
+
+    @Test func anAgedActiveInsulinRendersThePlaceholderNotAFabricatedZero() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        var aged = PumpSnapshot()
+        aged.iobUnits = 1.4
+        aged.iobDate = now.addingTimeInterval(-24 * 3600)
+        #expect(PumpValuePresentation.text(aged.iobUnitsIfFresh(now: now), format: "%.2f U") == "—")
+    }
+
+    @Test func aFreshActiveInsulinRendersItsNumber() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        var fresh = PumpSnapshot()
+        fresh.iobUnits = 1.4
+        fresh.iobDate = now.addingTimeInterval(-10)
+        #expect(PumpValuePresentation.text(fresh.iobUnitsIfFresh(now: now), format: "%.2f U") == "1.40 U")
+    }
+
+    @Test func aFreshGenuineZeroActiveInsulinStillRendersZeroUnits() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        var zero = PumpSnapshot()
+        zero.iobUnits = 0
+        zero.iobDate = now.addingTimeInterval(-10)
+        #expect(
+            PumpValuePresentation.text(zero.iobUnitsIfFresh(now: now), format: "%.2f U") == "0.00 U",
+            "no active insulin is the common state between boluses — a reading, not an absence")
+    }
 }

@@ -25,17 +25,29 @@ struct StatusPillsView: View {
             // Grey + age when IOB is stale (`CalcInputFreshness`). Missing date ⇒ no age, never
             // invented as fresh on the dose path.
             let iobStale = CalcInputFreshness.iobPresentation(of: snapshot.iobDate, now: now) == .stale
-            // `…IfRead` funnel: a pump that has never answered op-109 has NO active-insulin value, and
-            // `iobUnits` is a non-optional `0`, so this used to render a confident `0.00 U` — with the
-            // FRESH insulin tint, because `iobPresentation(of: nil)` is `.hidden`, not `.stale`, so the
-            // `== .stale` test above read the absent case as fresh. A real 0.00 U IOB (very common) still
-            // renders `0.00 U`; only "never reported" renders "—". Sibling of the reservoir/battery fix
-            // from debug `tslim-reservoir-battery-zero`.
-            let iob = PumpValuePresentation.make(snapshot.iobUnitsIfRead, format: "%.2f U")
+            // `…IfFresh(now:)` funnel. Two defects closed here in sequence. First
+            // (`tslim-reservoir-battery-zero`): `iobUnits` is a non-optional `0`, so a pump that never
+            // answered op-109 rendered a confident `0.00 U` — with the FRESH insulin tint, because
+            // `iobPresentation(of: nil)` is `.hidden`, not `.stale`, so the `== .stale` test above read
+            // the absent case as fresh. Second (`pump-value-decay-to-unknown`): a value received once was
+            // then shown as current forever. A real 0.00 U IOB — the common state between boluses — still
+            // renders `0.00 U` while fresh.
+            //
+            // The window here is `CalcInputFreshness.staleAfterIob`, NOT the CGM window the reservoir and
+            // battery pills use, so `iob.isKnown == false` and `iobStale == true` are the SAME condition
+            // by construction (see `PumpSnapshot.iobUnitsIfFresh`). That is deliberate: this row and the
+            // bolus calculator's own gate can never disagree. It also means the value and the age come
+            // from different places on purpose — the value decays to "—" while `calcAgedLabel` keeps
+            // showing "Active Insulin · 7 min ago" off `iobDate`, so the user is told WHY it is unknown
+            // rather than just that it is.
+            let iob = PumpValuePresentation.make(snapshot.iobUnitsIfFresh(now: now), format: "%.2f U")
             pill(
                 icon: "drop.fill",
                 // Unknown is neither live nor a warning: grey, exactly like the unknown reservoir below.
-                tint: !iob.isKnown ? .gray : (iobStale ? AppTheme.low : AppTheme.insulin),
+                // No `iobStale ? AppTheme.low` branch — it would be unreachable now that decay and
+                // staleness are one predicate, and a warning tint on a value we do not have would assert
+                // something we cannot know.
+                tint: iob.isKnown ? AppTheme.insulin : .gray,
                 value: iob.valueText,
                 label: calcAgedLabel("Active Insulin", date: snapshot.iobDate, stale: iobStale, now: now),
                 stale: iobStale)
@@ -43,15 +55,22 @@ struct StatusPillsView: View {
             // Through `ReservoirPresentation` so an UNREAD reservoir shows "—", never a fabricated
             // "0 U" (debug `tslim-reservoir-battery-zero`). Greyed while unknown, like the stale-IOB
             // treatment above — an absent reading is not live data.
-            let reservoir = ReservoirPresentation.make(units: snapshot.reservoirUnitsIfRead)
+            //
+            // `…IfFresh(now:)` rather than `…IfRead`: a value the pump reported once but has not
+            // re-reported inside the CGM staleness window has stopped being current, and this pill is
+            // the surface that most looks like a live gauge (debug `pump-value-decay-to-unknown`). The
+            // `TimelineView` above ticks every 20 s, so the decay appears without a new pump read. A
+            // genuinely empty cartridge still reads "0 U" while fresh — the gate is age, not value.
+            let reservoir = ReservoirPresentation.make(units: snapshot.reservoirUnitsIfFresh(now: now))
             pill(
                 icon: "cross.vial.fill", tint: reservoir.isKnown ? .teal : .gray,
                 value: reservoir.valueText, label: "Reservoir")
         case "battery":
             // Single glyph/"Charging"/tint decision — don't fork a second level→glyph switch.
-            // `…IfRead` (not the raw percent) so an unread battery can't render as a dead one.
+            // `…IfFresh(now:)` (not the raw percent, and not the presence-only `…IfRead`) so neither an
+            // unread NOR a gone-quiet battery can render as a dead one. A real 0 % still shows 0 %.
             let battery = BatteryChargingPresentation.make(
-                percent: snapshot.batteryPercentIfRead,
+                percent: snapshot.batteryPercentIfFresh(now: now),
                 charging: snapshot.batteryCharging)
             pill(
                 icon: battery.symbolName,
@@ -82,25 +101,39 @@ struct StatusPillsView: View {
             pill(
                 icon: "drop.triangle.fill", tint: AppTheme.insulin,
                 value: snapshot.lastBolusUnits.map { String(format: "%.2f U", $0) } ?? "—", label: "Last bolus")
+        // The three therapy rows all decay on `CalcInputFreshness.staleAfterTherapy` via the
+        // `…IfFresh(now:)` funnels — the therapy dose gate's own window, so these rows can never claim a
+        // carb ratio the calculator has already stopped trusting (`pump-value-decay-to-unknown`). One
+        // op-115 frame resolves all three, so they share a stamp and decay together. As with IOB, the
+        // value goes to "—" while `calcAgedLabel` keeps showing the age off `therapyParamsDate`, and the
+        // tint greys rather than warning: `thStale` and `!isKnown` are one predicate here by
+        // construction, so the old `AppTheme.low` branch was unreachable.
+        //
+        // Note these three have NO genuine-zero case, unlike reservoir/battery: a carb ratio, correction
+        // factor or target of `0` is physically impossible, so `0` has always meant unread. The funnels
+        // preserve that exactly.
         case "carbRatio":
             let thStale = therapyStale(now)
+            let cr = snapshot.carbRatioIfFresh(now: now)
             pill(
-                icon: "fork.knife", tint: thStale ? AppTheme.low : .orange,
-                value: snapshot.carbRatio > 0 ? String(format: "%.0f g/U", snapshot.carbRatio) : "—",
+                icon: "fork.knife", tint: cr == nil ? .gray : .orange,
+                value: cr.map { String(format: "%.0f g/U", $0) } ?? PumpValuePresentation.unknownText,
                 label: calcAgedLabel("Carb ratio", date: snapshot.therapyParamsDate, stale: thStale, now: now),
                 stale: thStale)
         case "isf":
             let thStale = therapyStale(now)
+            let isf = snapshot.isfIfFresh(now: now)
             pill(
-                icon: "arrow.down.right.circle", tint: thStale ? AppTheme.low : .purple,
-                value: snapshot.isf > 0 ? "\(snapshot.isf)" : "—",
+                icon: "arrow.down.right.circle", tint: isf == nil ? .gray : .purple,
+                value: isf.map { "\($0)" } ?? PumpValuePresentation.unknownText,
                 label: calcAgedLabel("ISF", date: snapshot.therapyParamsDate, stale: thStale, now: now),
                 stale: thStale)
         case "target":
             let thStale = therapyStale(now)
+            let target = snapshot.targetBgIfFresh(now: now)
             pill(
-                icon: "target", tint: thStale ? AppTheme.low : AppTheme.inRange,
-                value: snapshot.targetBg > 0 ? "\(snapshot.targetBg)" : "—",
+                icon: "target", tint: target == nil ? .gray : AppTheme.inRange,
+                value: target.map { "\($0)" } ?? PumpValuePresentation.unknownText,
                 label: calcAgedLabel("Target", date: snapshot.therapyParamsDate, stale: thStale, now: now),
                 stale: thStale)
         case "maxBolus":

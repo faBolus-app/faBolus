@@ -18,6 +18,12 @@ enum WidgetPublisher {
     static func makeSnapshot(
         _ s: PumpSnapshot, history: [GlucoseReading], alerts: [String],
         staleAfterSec: TimeInterval, hideAfterSec: TimeInterval?,
+        // DEFAULTED, unlike the pair above, and deliberately: nine existing call sites (all in tests)
+        // predate this parameter, and the default is exactly what `publish` passes. A test that cares
+        // about the IOB boundary pins it explicitly. Nothing in the app mutates
+        // `CalcInputFreshness.staleAfterIob` at runtime — there is no Settings binding for it — so the
+        // default cannot vary underneath a caller.
+        iobStaleAfterSec: TimeInterval = CalcInputFreshness.staleAfterIob,
         hasSnoozeEligibleAlert: Bool = false
     ) -> WidgetSnapshot {
         // ~8h of 5-min-cadence points so the App-Group snapshot carries enough raw history for a
@@ -54,6 +60,12 @@ enum WidgetPublisher {
             // exactly like the app — instead of silently falling back to the 6-min hardcode
             // regardless of the user's setting.
             staleAfterSec: staleAfterSec, hideAfterSec: hideAfterSec,
+            // And the ACTIVE-INSULIN window, which is deliberately a different one: IOB decays on the
+            // same window the bolus calculator gates on, so the widget can never disagree with the phone
+            // about whether an IOB reading is current (owner decision, debug
+            // `pump-value-decay-to-unknown`). Passed in from the call site like the pair above, so a test
+            // can pin it without touching the global.
+            iobStaleAfterSec: iobStaleAfterSec,
             // The active display unit, as the wire token ("mgdl"|"mmol") — never GlucoseUnit itself.
             // The widget island resolves it via the WidgetGlucoseUnit mirror; nil ⇒ mgdl.
             displayUnit: AppSettings.shared.glucoseDisplayUnit.wireToken,
@@ -95,6 +107,7 @@ enum WidgetPublisher {
         let snap = makeSnapshot(
             s, history: history, alerts: alerts,
             staleAfterSec: GlucoseFreshness.staleAfter, hideAfterSec: GlucoseFreshness.hideAfter,
+            iobStaleAfterSec: CalcInputFreshness.staleAfterIob,
             hasSnoozeEligibleAlert: hasSnoozeEligibleAlert)
         WidgetStore.save(snap)
         // Same choke point drives the opt-in app-icon badge. The opt-in gate + freshness live

@@ -107,6 +107,22 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     // exactly like the app instead of assuming the 6-min default. Optional for back-compat / iOS.
     public var staleAfterSec: TimeInterval?  // grey after this age
     public var hideAfterSec: TimeInterval?  // hide ("--") after this age; nil = never hide
+    /// The publisher's ACTIVE-INSULIN staleness window (`faBolusCore.CalcInputFreshness.staleAfterIob`),
+    /// carried for exactly the reason `staleAfterSec` is: the widget must decide freshness at its own
+    /// render time, so it needs the threshold, not a precomputed boolean.
+    ///
+    /// A SEPARATE field rather than reusing `staleAfterSec`, because IOB deliberately does not share the
+    /// glucose window — it is bound to the same window the bolus calculator gates on, so the row and the
+    /// dose gate can never disagree (owner decision, debug `pump-value-decay-to-unknown`; see
+    /// `PumpSnapshot.iobUnitsIfFresh`). Reusing the glucose window here would silently reintroduce that
+    /// divergence in the widget process only, which is the worst place to have it — nobody would look.
+    ///
+    /// Additive-optional in the FAIL-SAFE direction, like `reservoirDate`/`batteryDate`: absent (a
+    /// pre-fix payload already on disk) ⇒ the IOB age cannot be judged ⇒ render unknown until the app
+    /// republishes, which the ~20 s publish heartbeat does almost immediately. Showing "—" for one cycle
+    /// is correct; showing a reading whose freshness cannot be established is not. Deliberately NOT
+    /// defaulted to a literal `300` — that would be a second copy of the constant, free to drift.
+    public var iobStaleAfterSec: TimeInterval?  // active-insulin decay window; nil = age unknowable
     /// The active glucose display unit, mirrored from `AppSettings.glucoseDisplayUnit`. A wire token
     /// ("mgdl"|"mmol"), never `WidgetGlucoseUnit` itself. `nil` ⇒ mgdl — an older app version's snapshot
     /// (before this field existed) decodes fine via `Codable`'s default-on-missing-key behavior and
@@ -176,6 +192,7 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         recentPoints: [Point] = [], activeAlerts: [String] = [], cgmActive: Bool = false,
         carbRatio: Double = 0, isf: Int = 0, targetBg: Int = 0, maxBolusUnits: Double = 0,
         staleAfterSec: TimeInterval? = nil, hideAfterSec: TimeInterval? = nil,
+        iobStaleAfterSec: TimeInterval? = nil,
         displayUnit: String? = nil, iobDate: Date? = nil, basalRateUnitsPerHour: Double = 0,
         basalRateKnown: Bool? = nil,
         deliverySuspended: Bool = false, controlIQMode: Int = 0, controlIQEnabled: Bool = false,
@@ -204,6 +221,7 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         self.maxBolusUnits = maxBolusUnits
         self.staleAfterSec = staleAfterSec
         self.hideAfterSec = hideAfterSec
+        self.iobStaleAfterSec = iobStaleAfterSec
         self.displayUnit = displayUnit
         self.iobDate = iobDate
         self.basalRateUnitsPerHour = basalRateUnitsPerHour
@@ -221,7 +239,7 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
             reservoirDate, batteryDate,
             lastBolusUnits,
             lastBolusDate, connected, updatedAt, recentPoints, activeAlerts, cgmActive, carbRatio, isf,
-            targetBg, maxBolusUnits, staleAfterSec, hideAfterSec, displayUnit, iobDate,
+            targetBg, maxBolusUnits, staleAfterSec, hideAfterSec, iobStaleAfterSec, displayUnit, iobDate,
             basalRateUnitsPerHour, basalRateKnown,
             deliverySuspended, controlIQMode, controlIQEnabled, hasSnoozeEligibleAlert,
             showUnitLabel, cartridgeReady
@@ -264,6 +282,9 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         maxBolusUnits = try c.decodeIfPresent(Double.self, forKey: .maxBolusUnits) ?? 0
         staleAfterSec = try c.decodeIfPresent(TimeInterval.self, forKey: .staleAfterSec)
         hideAfterSec = try c.decodeIfPresent(TimeInterval.self, forKey: .hideAfterSec)
+        // No `??` fallback, deliberately: absent means "freshness cannot be judged", which
+        // `iobUnitsIfFresh(asOf:)` treats as unknown. See the field's own doc comment.
+        iobStaleAfterSec = try c.decodeIfPresent(TimeInterval.self, forKey: .iobStaleAfterSec)
         displayUnit = try c.decodeIfPresent(String.self, forKey: .displayUnit)
         iobDate = try c.decodeIfPresent(Date.self, forKey: .iobDate)
         basalRateUnitsPerHour = try c.decodeIfPresent(Double.self, forKey: .basalRateUnitsPerHour) ?? 0
@@ -337,12 +358,79 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         if elapsed < -Self.futureSkewTolerance { return false }  // future-dated → stale, not hidden
         return elapsed >= Swift.max(hide, staleLimit)
     }
-    /// TTL for the `connected` flag + the dateless pump metrics (iob/reservoir/battery/
-    /// basal). Unlike glucose (keyed off `glucoseDate`, the sample time), those values carry no intrinsic
-    /// timestamp — they age ONLY against `updatedAt` (publish time). If the host is killed, no publish
-    /// re-stamps `updatedAt`, so past this TTL the persisted snapshot's connection state is no longer
-    /// trustworthy. Chosen to mirror the glucose stale window (well beyond the ~20 s publish heartbeat, so
-    /// normal operation never trips it) while greying a host-killed snapshot within a few minutes.
+
+    /// Whether a pump READ RECEIPT is too old for its value to be presented as current at `now`. The
+    /// widget island's mirror of `faBolusCore.GlucoseFreshness.isStale` — same window (the PUBLISHED
+    /// `staleAfterSec`, so the widget decays exactly when the phone does instead of assuming the 6-min
+    /// default), same nil-is-unknown rule, same future-dated-clock guard. Kept as a mirror for the same
+    /// reason `isStale(asOf:)` is: the widget/complication extensions do not link faBolusCore directly,
+    /// and the app test target pins the two equal.
+    private func receiptIsStale(_ date: Date?, asOf now: Date, window: TimeInterval? = nil) -> Bool {
+        guard let date else { return true }  // never read ⇒ unknown ⇒ never presented as current
+        let elapsed = now.timeIntervalSince(date)
+        if elapsed < -Self.futureSkewTolerance { return true }  // future-dated beyond skew → untrusted
+        return elapsed > (window ?? staleLimit)
+    }
+
+    /// Reservoir units ONLY while the pump's last report is still current at `now`; `nil` once the read
+    /// has gone quiet (or was never answered). Mirror of `PumpSnapshot.reservoirUnitsIfFresh` — see that
+    /// funnel for the decision and the threshold rationale.
+    ///
+    /// This is evaluated against the widget ENTRY's date, not wall-clock `Date()`: a widget renders
+    /// ahead of time, so wall-clock here is prep time, not display time. `FaBolusProvider.getTimeline`
+    /// adds an entry at each decay crossing so the tile actually re-renders at the right moment.
+    ///
+    /// The gate is AGE, never value: a genuinely empty `0 U` cartridge still returns `0` while fresh.
+    public func reservoirUnitsIfFresh(asOf now: Date) -> Double? {
+        receiptIsStale(reservoirDate, asOf: now) ? nil : reservoirUnits
+    }
+
+    /// Battery percent ONLY while the pump's last report is still current at `now`. Same window and same
+    /// age-not-value rule as `reservoirUnitsIfFresh(asOf:)`; a genuinely dead `0 %` still returns `0`.
+    public func batteryPercentIfFresh(asOf now: Date) -> Int? {
+        receiptIsStale(batteryDate, asOf: now) ? nil : batteryPercent
+    }
+
+    /// Active insulin ONLY while the pump's last report is still current at `now`; `nil` once it has gone
+    /// quiet, was never answered, or the publisher did not carry the IOB window (see `iobStaleAfterSec`).
+    ///
+    /// Gated on `iobStaleAfterSec`, NOT on the glucose `staleLimit`: IOB decays on the window the bolus
+    /// calculator gates on, and the widget must not be the one surface that disagrees. A genuine `0 U` —
+    /// the common state between boluses — still returns `0` while fresh; the gate is age, never value.
+    public func iobUnitsIfFresh(asOf now: Date) -> Double? {
+        guard let window = iobStaleAfterSec else { return nil }
+        return receiptIsStale(iobDate, asOf: now, window: window) ? nil : iobUnits
+    }
+
+    /// The instant each decayable pump value stops being presentable, for timeline scheduling. Only
+    /// receipts that are present AND not future-dated produce a crossing; a never-read value has no
+    /// crossing because it is already unknown. IOB uses its own window, so its crossing is computed
+    /// against `iobStaleAfterSec` rather than the glucose one.
+    public func pumpValueDecayCrossings(asOf now: Date) -> [Date] {
+        var out: [Date] = [reservoirDate, batteryDate].compactMap { d -> Date? in
+            guard let d, now.timeIntervalSince(d) > -Self.futureSkewTolerance else { return nil }
+            return d.addingTimeInterval(staleLimit)
+        }
+        if let d = iobDate, let window = iobStaleAfterSec,
+            now.timeIntervalSince(d) > -Self.futureSkewTolerance
+        {
+            out.append(d.addingTimeInterval(window))
+        }
+        return out
+    }
+
+    /// TTL for the `connected` flag + the pump metrics that still carry no receipt (basal). Unlike
+    /// glucose (keyed off `glucoseDate`, the sample time), those values have no intrinsic timestamp —
+    /// they age ONLY against `updatedAt` (publish time). If the host is killed, no publish re-stamps
+    /// `updatedAt`, so past this TTL the persisted snapshot's connection state is no longer trustworthy.
+    /// Chosen to mirror the glucose stale window (well beyond the ~20 s publish heartbeat, so normal
+    /// operation never trips it) while greying a host-killed snapshot within a few minutes.
+    ///
+    /// This is a HOST-LIVENESS TTL, not a pump-read TTL, and it is not a substitute for the per-value
+    /// decay: an app that is alive and publishing every ~20 s keeps `updatedAt` fresh even while the pump
+    /// link is dead, so this alone left reservoir/battery/IOB showing their last received value forever.
+    /// Reservoir and battery now age against their OWN receipts via `reservoirUnitsIfFresh(asOf:)` /
+    /// `batteryPercentIfFresh(asOf:)`; both gates apply (host-liveness AND read age).
     public static let connectionStaleAfter: TimeInterval = 6 * 60
 
     /// True when the snapshot's publish time (`updatedAt`) is older than `connectionStaleAfter` at `now` —
@@ -369,11 +457,15 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         recentPoints: (0..<24).map {
             .init(t: Date().addingTimeInterval(Double($0 - 24) * 300), mgdl: 110 + ($0 % 6) * 8)
         },
-        // Same reason as `reservoirDate`/`batteryDate` above, and the reason it must be declared HERE:
-        // `iobDate` sits after `recentPoints` in `init`, and Swift requires call order to match. Without
-        // it the widget gallery/preview would show the sample `iobUnits: 1.2` as "—", because the
-        // widgets now gate IOB on this receipt (the previous placeholder relied on `iobUnits` being
-        // rendered unconditionally).
+        // A generous SAMPLE window, not a copy of the policy constant: the placeholder is fake data whose
+        // only job is to render, and `Shared/` cannot see `CalcInputFreshness.staleAfterIob` (the widget
+        // island does not link faBolusCore). Deliberately not `300` — a second copy of the real constant
+        // here would be free to drift from it. Declared before `iobDate` because `iobStaleAfterSec` sits
+        // earlier in `init` and Swift requires call order to match.
+        iobStaleAfterSec: 3600,
+        // Same reason as `reservoirDate`/`batteryDate` above: without a receipt the widget gallery/preview
+        // would show the sample `iobUnits: 1.2` as "—", because the widgets now gate IOB on it (the
+        // previous placeholder relied on `iobUnits` being rendered unconditionally).
         iobDate: Date())
 }
 
