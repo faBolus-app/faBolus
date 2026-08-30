@@ -482,7 +482,14 @@ final class PumpConnectionLifecycle {
                 coord = full
                 schemeName = "JPAKE (fresh)"
                 onFirstPair = { [weak self] in
-                    PairingStore.save(full.derivedSecret)
+                    // A failed Keychain write means "paired, but not persisted": the next silent
+                    // reconnect finds no material and the code has to be re-entered. `save` returns
+                    // false having deleted NOTHING, so this can never be worse than the prior state —
+                    // but it is invisible otherwise, and no unit test can reach it (the xctest host has
+                    // no functional Keychain), so it is logged. Scheme name only, never the material.
+                    if !PairingStore.save(full.derivedSecret) {
+                        Self.pairingLog.log("pairing material persist → FAILED (JPAKE derived secret)")
+                    }
                     self?.pairingCode = ""
                 }
             case .long16Char:  // legacy V1 — no resume, persist the code
@@ -493,26 +500,48 @@ final class PumpConnectionLifecycle {
                 coord = v1
                 schemeName = "V1/legacy (fresh)"
                 onFirstPair = { [weak self] in
-                    PairingStore.saveV1Code(code)
+                    // Same contract as the JPAKE branch above: false ⇒ nothing written AND nothing
+                    // deleted, so a failed persist degrades to "re-enter the code", never to an
+                    // un-paired pump. Logged because it is otherwise silent and untestable here.
+                    if !PairingStore.saveV1Code(code) {
+                        Self.pairingLog.log("pairing material persist → FAILED (legacy V1 code)")
+                    }
                     self?.pairingCode = ""
                 }
             }
-        } else if let v1Code = PairingStore.loadV1Code() {  // legacy reconnect: silent full re-challenge
-            guard let v1 = try? LegacyPairingCoordinator(pairingCode: v1Code) else {
-                PairingStore.clear()
-                markUsableAndStartPolling()
-                return
-            }
-            coord = v1
-            onFirstPair = nil
-            schemeName = "V1/legacy (resume re-challenge)"
-        } else if let stored = PairingStore.load() {  // modern reconnect: JPAKE quick-pair resume
-            coord = PairingCoordinator(resumeDerivedSecret: stored)
-            onFirstPair = nil
-            schemeName = "JPAKE (quick-pair resume)"
         } else {
-            markUsableAndStartPolling()
-            return  // no code and no saved pairing — reads will be rejected
+            // No typed code ⇒ a silent reconnect on SAVED material. `loadActivePairing()` decides which
+            // stored credential is current, replacing a fixed `loadV1Code()`-then-`load()` chain that
+            // made a stale entry WIN rather than merely linger: on an install left holding both kinds
+            // (a pump swap without "Forget pairing", back when neither writer removed the other), the
+            // 16-char code from the OLD pump forced a legacy-V1 re-challenge against the NEW pump on
+            // every single reconnect. The store now resolves it by write recency — with one global
+            // record the most-recently-written credential IS the most-recently-paired pump. Single-entry
+            // resolution, i.e. essentially every install, is unchanged. See PairingStore's type doc.
+            guard let active = PairingStore.loadActivePairing() else {
+                markUsableAndStartPolling()
+                return  // no code and no saved pairing — reads will be rejected
+            }
+            switch active {
+            case .legacyV1(let v1Code):  // legacy reconnect: silent full re-challenge
+                guard let v1 = try? LegacyPairingCoordinator(pairingCode: v1Code) else {
+                    // The stored code will not even construct a coordinator, so it is unusable. Drop
+                    // ONLY it — this used to be `PairingStore.clear()`, which also destroyed any JPAKE
+                    // derived secret and so turned one bad legacy entry into a forced manual re-pair.
+                    // A credential we cannot use is a reason to discard THAT credential, never a reason
+                    // to un-pair the pump; the next reconnect resumes on the surviving secret.
+                    PairingStore.clearLegacyV1Code()
+                    markUsableAndStartPolling()
+                    return
+                }
+                coord = v1
+                onFirstPair = nil
+                schemeName = "V1/legacy (resume re-challenge)"
+            case .jpake(let stored):  // modern reconnect: JPAKE quick-pair resume
+                coord = PairingCoordinator(resumeDerivedSecret: stored)
+                onFirstPair = nil
+                schemeName = "JPAKE (quick-pair resume)"
+            }
         }
         Self.pairingLog.log("pairing scheme selected → \(schemeName, privacy: .public)")
 
