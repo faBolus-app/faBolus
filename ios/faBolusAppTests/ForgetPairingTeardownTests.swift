@@ -95,6 +95,6 @@ struct ForgetPairingTeardownTests {
 
         #expect(
             TrustedPumpIdentityStore.isMobi(for: uuid) == nil,
-            "WR-02: forgetPairing() must clear the trusted-identity record, leaving no stale trust behind")
+            "forgetPairing() must clear the trusted-identity record, leaving no stale trust behind")
     }
 }

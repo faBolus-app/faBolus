@@ -29,7 +29,7 @@ struct ShortcutsAbsenceGuardTests {
         let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
         #expect(
             !exists,
-            "ios/faBolus/Intents must be absent from narrow main (git rm'd, FEAT-05, preserved on dev/siri-shortcuts)")
+            "ios/faBolus/Intents must be absent from narrow main (git rm'd, preserved on dev/siri-shortcuts)")
     }
 
     // MARK: - No file under ios/faBolus conforms to AppShortcutsProvider (FaBolusShortcuts is fully gone)
@@ -54,7 +54,7 @@ struct ShortcutsAbsenceGuardTests {
             let source = try String(contentsOf: fileURL, encoding: .utf8)
             #expect(
                 !source.contains("AppShortcutsProvider"),
-                "\(fileURL.lastPathComponent) must not conform to AppShortcutsProvider — FaBolusShortcuts is removed in full (FEAT-05)"
+                "\(fileURL.lastPathComponent) must not conform to AppShortcutsProvider — FaBolusShortcuts is removed in full"
             )
         }
     }

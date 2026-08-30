@@ -299,10 +299,10 @@ struct PhoneWidgetDoubleDoseTests {
             #expect(wireKey != resolvedKey)  // the two bases really do produce different keys
             #expect(
                 snap.hasRecentlyDeliveredDuplicate(peerId: "garmin", doseKey: wireKey),
-                "confirm-path doseKey must match remoteDeliver's raw-wire doseKey (WR-01)")
+                "confirm-path doseKey must match remoteDeliver's raw-wire doseKey")
             #expect(
                 !snap.hasRecentlyDeliveredDuplicate(peerId: "garmin", doseKey: resolvedKey),
-                "confirm-path doseKey must NOT be keyed on the resolved correction basis (WR-01)")
+                "confirm-path doseKey must NOT be keyed on the resolved correction basis")
         }
     }
 
@@ -320,7 +320,7 @@ struct PhoneWidgetDoubleDoseTests {
             await model.deliverBolus(units: 1.0)
             #expect(model.lastError == AppModel.indeterminateOutcomeLockedCopy)  // genuinely indeterminate
             #expect(
-                model.lastHostDeliveryAt != nil, "an indeterminate local bolus must stamp lastHostDeliveryAt (IN-02)")
+                model.lastHostDeliveryAt != nil, "an indeterminate local bolus must stamp lastHostDeliveryAt")
         }
     }
 
@@ -339,7 +339,7 @@ struct PhoneWidgetDoubleDoseTests {
                 from: .garmin, peerId: "garmin")
             #expect(rec.last?.status == .unknown)  // indeterminate echo
             #expect(
-                model.lastHostDeliveryAt != nil, "an indeterminate remote bolus must stamp lastHostDeliveryAt (IN-02)")
+                model.lastHostDeliveryAt != nil, "an indeterminate remote bolus must stamp lastHostDeliveryAt")
         }
     }
 
@@ -356,7 +356,7 @@ struct PhoneWidgetDoubleDoseTests {
             #expect(w.delivered == 0)  // indeterminate → no confirmed delivery
             #expect(w.error != nil)
             #expect(
-                model.lastHostDeliveryAt != nil, "an indeterminate widget bolus must stamp lastHostDeliveryAt (IN-02)")
+                model.lastHostDeliveryAt != nil, "an indeterminate widget bolus must stamp lastHostDeliveryAt")
         }
     }
 
@@ -369,7 +369,7 @@ struct PhoneWidgetDoubleDoseTests {
             await model.deliverExtendedBolus(totalUnits: 2.0, nowUnits: 1.0, durationMinutes: 30)
             #expect(model.lastError == AppModel.indeterminateOutcomeLockedCopy)  // genuinely indeterminate
             #expect(
-                model.lastHostDeliveryAt != nil, "an indeterminate extended bolus must stamp lastHostDeliveryAt (IN-02)"
+                model.lastHostDeliveryAt != nil, "an indeterminate extended bolus must stamp lastHostDeliveryAt"
             )
         }
     }

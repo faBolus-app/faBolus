@@ -353,7 +353,7 @@ public final class TandemBackend: NSObject, PumpBackend {
         guard bits & Self.pumpCommunicationsSuspendedBit != 0 else {
             if bits != 0 {
                 Self.pairingLog.log(
-                    "qualifying-event bits=\(bits, privacy: .public) ignored (fail-closed, CC-03 app-side consumer recognizes only the comms-suspension bit)"
+                    "qualifying-event bits=\(bits, privacy: .public) ignored (fail-closed, the app-side consumer recognizes only the comms-suspension bit)"
                 )
             }
             return
@@ -796,7 +796,7 @@ public final class TandemBackend: NSObject, PumpBackend {
                 // Read-domain error, NOT `BolusError` — this is a held routine READ, never a bolus
                 // rejection. `sendStatusRead`'s generic catch handles it identically (inert-today: the gate
                 // is never paused in production).
-                throw PumpReadError.heldDuringCommsSuspension("CC-03 app-side pause")
+                throw PumpReadError.heldDuringCommsSuspension("app-side comms-suspension pause")
             }
             return try self.tx.send(msg, authenticationKey: [], pumpTimeSinceReset: 0, allowInsulinDelivery: false)
         }

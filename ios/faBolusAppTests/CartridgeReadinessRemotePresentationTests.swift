@@ -32,7 +32,7 @@ struct CartridgeReadinessRemotePresentationTests {
             history: [], alerts: [], staleAfterSec: 300, hideAfterSec: nil)
         #expect(
             unknown.cartridgeReady == false,
-            "an unknown/auto-excluded cartridge must NOT present a fail-open 'ready' on the widget (WR-04)")
+            "an unknown/auto-excluded cartridge must NOT present a fail-open 'ready' on the widget")
     }
 
     @Test func widgetPresentsNotReadyForAConfirmedLoadingState() {
@@ -53,7 +53,7 @@ struct CartridgeReadinessRemotePresentationTests {
             "confirmed loading → false")
         #expect(
             snapshot(loadState: 6, confirmed: false).cartridgeReadyRemoteWire == nil,
-            "unknown/auto-excluded → nil (NO SIGNAL, never a fail-open 'ready') (WR-04)")
+            "unknown/auto-excluded → nil (NO SIGNAL, never a fail-open 'ready')")
     }
 
     // MARK: - End-to-end statusCommand wiring
@@ -73,7 +73,7 @@ struct CartridgeReadinessRemotePresentationTests {
         let cmd = model.statusCommand(includeHistory: false)
         #expect(
             cmd.cartridgeReady == nil,
-            "an unknown cartridge state must relay NO signal to remotes, not a fail-open 'ready' (WR-04)")
+            "an unknown cartridge state must relay NO signal to remotes, not a fail-open 'ready'")
     }
 
     /// A CONFIRMED loading state still relays an explicit `false` (the not-ready block still propagates).

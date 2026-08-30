@@ -96,7 +96,7 @@ import faBolusCore
         model.handle(droppedKeyCmd)
         #expect(
             model.batteryCharging == false,
-            "an absent key must NOT keep the last-known 'Charging' claim (WR-01 fail-closed fix)")
+            "an absent key must NOT keep the last-known 'Charging' claim (fail-closed fix)")
     }
 
     /// A fresh model that never received the field stays fail-closed `false`.

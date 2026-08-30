@@ -76,7 +76,7 @@ import TandemMessages
         // CGM loss reported on the ALERT bitmap.
         #expect(TandemBackend.safetyClass(kind: K.alert, id: 48) == .cgmDataLoss)  // CGM unavailable
         #expect(TandemBackend.safetyClass(kind: K.alert, id: 40) == .cgmDataLoss)  // CGM error
-        // CC-09: the previously-missing loss-of-coverage variants (upstream AlertStatusResponse.java:107)
+        // The previously-missing loss-of-coverage variants (upstream AlertStatusResponse.java:107)
         // — these fell through to `.other` (auto-snooze/dismiss-eligible) before this fix.
         #expect(TandemBackend.safetyClass(kind: K.alert, id: 41) == .cgmDataLoss)
         #expect(TandemBackend.safetyClass(kind: K.alert, id: 42) == .cgmDataLoss)

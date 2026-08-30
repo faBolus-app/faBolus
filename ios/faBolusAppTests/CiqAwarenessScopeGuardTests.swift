@@ -148,7 +148,7 @@ struct CiqAwarenessScopeGuardTests {
                 totalSignaturesChecked += 1
                 #expect(
                     Self.isCiqAllowedReturnShape(sig),
-                    "'\(marker)': signature '\(sig)' returns a shape outside {Double?, String?, String, Bool, ControlIQZone?} — possible dose-shaped return (D-06 guardrail #1)"
+                    "'\(marker)': signature '\(sig)' returns a shape outside {Double?, String?, String, Bool, ControlIQZone?} — possible dose-shaped return (guardrail #1)"
                 )
             }
         }
@@ -239,7 +239,7 @@ struct CiqAwarenessScopeGuardTests {
                 "TandemBackend.\(name) region resolved suspiciously short — path/region resolution likely broke")
             #expect(
                 Self.regionContainsAnyForbiddenSymbol(region) == nil,
-                "TandemBackend.\(name) references forbidden CIQ-awareness symbol '\(Self.regionContainsAnyForbiddenSymbol(region) ?? "?")' (D-06 guardrail #2)"
+                "TandemBackend.\(name) references forbidden CIQ-awareness symbol '\(Self.regionContainsAnyForbiddenSymbol(region) ?? "?")' (guardrail #2)"
             )
         }
 
@@ -251,7 +251,7 @@ struct CiqAwarenessScopeGuardTests {
         }
         #expect(
             Self.regionContainsAnyForbiddenSymbol(bolusMathSource) == nil,
-            "BolusMath.swift references forbidden CIQ-awareness symbol '\(Self.regionContainsAnyForbiddenSymbol(bolusMathSource) ?? "?")' (D-06 guardrail #2)"
+            "BolusMath.swift references forbidden CIQ-awareness symbol '\(Self.regionContainsAnyForbiddenSymbol(bolusMathSource) ?? "?")' (guardrail #2)"
         )
 
         guard let gatedWriteSource = Self.readSource("Packages/faBolusCore/Sources/faBolusCore/GatedPumpWrite.swift")
@@ -263,7 +263,7 @@ struct CiqAwarenessScopeGuardTests {
         }
         #expect(
             Self.regionContainsAnyForbiddenSymbol(gatedWriteSource) == nil,
-            "GatedPumpWrite.swift references forbidden CIQ-awareness symbol '\(Self.regionContainsAnyForbiddenSymbol(gatedWriteSource) ?? "?")' (D-06 guardrail #2)"
+            "GatedPumpWrite.swift references forbidden CIQ-awareness symbol '\(Self.regionContainsAnyForbiddenSymbol(gatedWriteSource) ?? "?")' (guardrail #2)"
         )
     }
 

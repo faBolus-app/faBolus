@@ -197,7 +197,7 @@ struct PumpHistorySyncCharacterizationTests {
                 Issue.record("expected .idle after a fully-covered diff, got \(backend.historySyncState)")
                 return
             }
-            #expect(lastSynced != nil, "a confirmed-up-to-date check is still a completed sync (D-05)")
+            #expect(lastSynced != nil, "a confirmed-up-to-date check is still a completed sync")
             #expect(
                 !fake.sent.contains { $0.opCode == HistoryLogRequest.props.opCode },
                 "a fully-covered diff must never issue a page request")

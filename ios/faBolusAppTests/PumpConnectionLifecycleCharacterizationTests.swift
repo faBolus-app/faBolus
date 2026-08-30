@@ -184,8 +184,8 @@ struct PumpConnectionLifecycleCharacterizationTests {
     // MARK: - CRC gate + ResponseParser.parse + HMAC handoff MUST STAY in TandemBackend
 
     /// Static source scan: `didReceiveFrame`'s `.authorization` CRC gate + `ResponseParser.parse` + HMAC
-    /// handoff (the parse-authentication seam) must remain physically inside `TandemBackend.swift` — this
-    /// plan moves the connection/pairing-lifecycle ORCHESTRATION out, never this seam.
+    /// handoff (the parse-authentication seam) must remain physically inside `TandemBackend.swift` — the
+    /// lifecycle extraction moves the connection/pairing-lifecycle ORCHESTRATION out, never this seam.
     @Test func crcGateAndResponseParserStayPhysicallyInTandemBackend() throws {
         let source = try Self.readSource(relativeTo: "ios/faBolus/Data/TandemBackend.swift")
         let body = try Self.balancedFunctionBody(
@@ -207,16 +207,16 @@ struct PumpConnectionLifecycleCharacterizationTests {
         let applierSource = try Self.readSource(relativeTo: "ios/faBolus/Data/Tandem/PumpResponseApplier.swift")
         #expect(
             applierSource.contains("ApiVersion(major: m.majorVersion, minor: m.minorVersion)"),
-            "VA-06: the op33 case must build the REAL negotiated ApiVersion from the frame's major.minor")
+            "the op33 case must build the REAL negotiated ApiVersion from the frame's major.minor")
 
         let backendSource = try Self.readSource(relativeTo: "ios/faBolus/Data/TandemBackend.swift")
         #expect(
             backendSource.contains(
                 "client.setDeviceContext(model: isMobi ? .mobi : .tslim, apiVersion: apiVersion, trusted: trusted)"),
-            "VA-06: the op33 device-context binding must forward the real apiVersion (NOT nil) into the send gate")
+            "the op33 device-context binding must forward the real apiVersion (NOT nil) into the send gate")
         #expect(
             !backendSource.contains("apiVersion: nil"),
-            "VA-06: the op33 device-context binding must no longer pass apiVersion: nil")
+            "the op33 device-context binding must no longer pass apiVersion: nil")
     }
 
     /// The pre-op33 identity BRIDGES in `PumpConnectionLifecycle` (a fresh `didDiscover`, and the C8
@@ -229,7 +229,7 @@ struct PumpConnectionLifecycleCharacterizationTests {
         #expect(
             lifecycleSource.contains(
                 "setDeviceContext(model: isMobi ? .mobi : .tslim, apiVersion: nil, trusted: true)"),
-            "the pre-op33 bridges (didDiscover + C8 reapply) stay MODEL-only (apiVersion nil) — op33 supplies the real version this cycle"
+            "the pre-op33 bridges (didDiscover + trusted-record reapply) stay MODEL-only (apiVersion nil) — op33 supplies the real version this cycle"
         )
     }
 

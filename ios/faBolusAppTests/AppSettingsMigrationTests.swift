@@ -50,7 +50,7 @@ struct AppSettingsMigrationTests {
 
         #expect(
             settings.criticalAlertsEnabled == false,
-            "a persisted true from a pre-Phase-9 install must be force-reset to false on the first post-upgrade launch")
+            "a persisted true from an older install must be force-reset to false on the first post-upgrade launch")
         #expect(
             defaults.bool(forKey: Self.forceResetKey) == true,
             "the guard key must be set after the one-time force-reset fires")

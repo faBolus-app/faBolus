@@ -52,19 +52,19 @@ struct StackingGuardNoticeAckTests {
         // the notice cannot present because its presentation-state variable no longer exists.
         #expect(
             !Self.bolusEntryViewSource.contains("showStackingGuardNotice"),
-            "showStackingGuardNotice must be fully removed — the notice never presents (LOCK-06)")
+            "showStackingGuardNotice must be fully removed — the notice never presents")
     }
 
     @Test func noStackingGuardNoticeAlertRendersInBolusEntryView() {
         #expect(
             !Self.bolusEntryViewSource.contains("New: Insulin Stacking Guard"),
-            "the one-shot stacking-guard notice alert must not render (LOCK-06)")
+            "the one-shot stacking-guard notice alert must not render")
     }
 
     @Test func noOrphanedNoticeCopyConstantRemainsInBolusEntryView() {
         #expect(
             !Self.bolusEntryViewSource.contains("stackingGuardNoticeCopy ="),
-            "stackingGuardNoticeCopy must be removed — it described a friction path that cannot fire with friction permanently off (LOCK-06)"
+            "stackingGuardNoticeCopy must be removed — it described a friction path that cannot fire with friction permanently off"
         )
         #expect(
             !Self.bolusEntryViewSource.contains("an extra confirmation or a re-type step"),

@@ -56,7 +56,7 @@ struct CgmConnectionKindTests {
     /// `.localOnDevice` source (HealthKit) is compiled in.
     @Test func allThreeConnectionKindsArePresentAcrossTheRegistry() {
         let kinds = GlucoseSourceRegistry.enabled.compactMap { GlucoseSourceRegistry.make(id: $0.id)?.connectionKind }
-        #expect(!kinds.contains(.localBLE), "no direct-BLE CGM source remains on narrow main (D-03)")
+        #expect(!kinds.contains(.localBLE), "no direct-BLE CGM source remains on narrow main")
         #expect(kinds.contains(.cloudPoll))
     }
 }

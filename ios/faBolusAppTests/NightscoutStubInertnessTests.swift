@@ -74,14 +74,14 @@ import faBolusCore
         for declaration in deletedDeclarations {
             #expect(
                 !source.contains(declaration),
-                "D4-07 violated — '\(declaration)' still present in AppModel.swift; the vestigial Nightscout backfill must be DELETED, not merely gated"
+                "'\(declaration)' still present in AppModel.swift; the vestigial Nightscout backfill must be DELETED, not merely gated"
             )
         }
 
         // The remaining `NightscoutUploader.shared.sync(...)` call site is the inert stub, not a backfill — confirm it is still present so this test does not silently start asserting something else.
         #expect(
             source.contains("NightscoutUploader.shared.sync("),
-            "NightscoutUploader.shared.sync(...) call site unexpectedly missing — see the D4-07 rationale for why it stays"
+            "NightscoutUploader.shared.sync(...) call site unexpectedly missing — see the inert-stub rationale for why it stays"
         )
     }
 }

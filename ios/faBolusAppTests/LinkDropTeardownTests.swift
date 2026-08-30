@@ -133,7 +133,7 @@ struct LinkDropTeardownTests {
         // The exit defer re-arms polling ONLY on a live link. The link is down, so nothing re-arms.
         #expect(
             b.pollTimerIsActiveForTesting == false,
-            "WR-04: the perform defer must NOT re-arm a fresh poll timer on a dead link")
+            "the perform defer must NOT re-arm a fresh poll timer on a dead link")
     }
 
     // MARK: - Shared teardown stops the predictive machinery on a drop

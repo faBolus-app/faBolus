@@ -17,7 +17,7 @@ struct ChildModeFreezeGuardTests {
         AppSettings.shared.applyBackup(["childModeEnabled": .bool(true)])
         #expect(
             AppSettings.shared.childModeEnabled == false,
-            "a restored backup carrying childModeEnabled=true must never resurrect Child Mode (FEAT-04, D-05, SAFETY)")
+            "a restored backup carrying childModeEnabled=true must never resurrect Child Mode (SAFETY)")
     }
 
     // MARK: - childModeEnabled: no direct setter call can arm it either
@@ -26,7 +26,7 @@ struct ChildModeFreezeGuardTests {
         AppSettings.shared.childModeEnabled = true
         #expect(
             AppSettings.shared.childModeEnabled == false,
-            "childModeEnabled's getter-level freeze must reject a direct setter call too, not just applyBackup (FEAT-04, D-05, SAFETY)"
+            "childModeEnabled's getter-level freeze must reject a direct setter call too, not just applyBackup (SAFETY)"
         )
     }
 
@@ -36,7 +36,7 @@ struct ChildModeFreezeGuardTests {
         AppSettings.shared.applyBackup(["requireRemoteBolusApproval": .bool(true)])
         #expect(
             AppSettings.shared.requireRemoteBolusApproval == false,
-            "a restored backup carrying requireRemoteBolusApproval=true must never re-arm a no-approver bolus-approval gate (FEAT-04, D-05, SAFETY)"
+            "a restored backup carrying requireRemoteBolusApproval=true must never re-arm a no-approver bolus-approval gate (SAFETY)"
         )
     }
 
@@ -46,7 +46,7 @@ struct ChildModeFreezeGuardTests {
         AppSettings.shared.requireRemoteBolusApproval = true
         #expect(
             AppSettings.shared.requireRemoteBolusApproval == false,
-            "requireRemoteBolusApproval's getter-level freeze must reject a direct setter call too, not just applyBackup (FEAT-04, D-05, SAFETY)"
+            "requireRemoteBolusApproval's getter-level freeze must reject a direct setter call too, not just applyBackup (SAFETY)"
         )
     }
 

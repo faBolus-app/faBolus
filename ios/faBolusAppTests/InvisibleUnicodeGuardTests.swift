@@ -93,7 +93,7 @@ struct InvisibleUnicodeGuardTests {
 
         #expect(
             violations.isEmpty,
-            "Invisible-Unicode guard violated (C6-03):\n\(violations.joined(separator: "\n"))")
+            "Invisible-Unicode guard violated:\n\(violations.joined(separator: "\n"))")
         #expect(
             filesScanned > 0,
             "expected to scan at least one .swift file across ios/faBolus, Shared, Packages/faBolusCore — walk broke (would otherwise pass vacuously)"

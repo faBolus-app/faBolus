@@ -126,7 +126,7 @@ struct QuickBolusWidgetA11yTests {
         #expect(
             !source.contains("Color(red: 0.24, green: 0.28, blue: 0.75)"),
             "the activated/insulin accent should no longer be a raw Color(red:) literal")
-        #expect(source.contains("AppTheme.insulin"), "widget accent should route through AppTheme.insulin (D2-07)")
+        #expect(source.contains("AppTheme.insulin"), "widget accent should route through AppTheme.insulin")
     }
 
     @Test func deliveringAndDoneReadoutsApplyMinimumScaleFactor() throws {
@@ -134,11 +134,11 @@ struct QuickBolusWidgetA11yTests {
         let delivering = try Self.functionSlice(signaturePrefix: "var deliveringBody:", in: source)
         #expect(
             delivering.contains(".minimumScaleFactor("),
-            "deliveringBody's numeric dose readout should scale instead of truncating (D2-10)")
+            "deliveringBody's numeric dose readout should scale instead of truncating")
         let done = try Self.functionSlice(signaturePrefix: "func doneBody(", in: source)
         #expect(
             done.contains(".minimumScaleFactor("),
-            "doneBody's numeric dose readout should scale instead of truncating (D2-10)")
+            "doneBody's numeric dose readout should scale instead of truncating")
     }
 
     @Test func fileResolutionActuallyFoundTheWidgetSource() throws {

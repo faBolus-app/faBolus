@@ -68,7 +68,8 @@ struct DiagnosticsGatingGuardTests {
         }
         #expect(
             !Self.isInsideDebugOnlyDirective(lines: lines, targetLineIndex: recordLine),
-            "BLESessionLog.record is wrapped in a debug-only compilation gate — D-01 requires it permanent")
+            "BLESessionLog.record is wrapped in a debug-only compilation gate — first-class diagnostics require it permanent"
+        )
     }
 
     // MARK: - The export-write path is never debug-only gated
@@ -87,7 +88,8 @@ struct DiagnosticsGatingGuardTests {
         }
         #expect(
             !Self.isInsideDebugOnlyDirective(lines: lines, targetLineIndex: writeLine),
-            "writeDiagnosticsExportFile is wrapped in a debug-only compilation gate — D-01 requires it permanent")
+            "writeDiagnosticsExportFile is wrapped in a debug-only compilation gate — first-class diagnostics require it permanent"
+        )
     }
 
     // MARK: - A path-resolution bug must fail loudly, not pass vacuously

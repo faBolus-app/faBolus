@@ -36,7 +36,7 @@ import Foundation
         #expect(!source.isEmpty, "NotificationSettingsView.swift read as empty — scan would pass vacuously")
         #expect(
             !source.contains(Self.staleDraftMarker),
-            "NotificationSettingsView.swift still carries the stale clinical-review draft-marker prefix (§13 is recorded cleared — this is leaked internal process jargon, D1-05/D3-02)"
+            "NotificationSettingsView.swift still carries the stale clinical-review draft-marker prefix (§13 is recorded cleared — this is leaked internal process jargon)"
         )
     }
 
@@ -49,7 +49,7 @@ import Foundation
         #expect(!source.isEmpty, "ConnectPumpOnboardingView.swift read as empty — scan would pass vacuously")
         #expect(
             source.contains("RegulatoryCopy.firstRun"),
-            "ConnectPumpOnboardingView.swift does not surface RegulatoryCopy.firstRun — the first-run experimental/not-FDA-cleared framing is missing from the actual first-run screen (D1-04)"
+            "ConnectPumpOnboardingView.swift does not surface RegulatoryCopy.firstRun — the first-run experimental/not-FDA-cleared framing is missing from the actual first-run screen"
         )
     }
 
@@ -74,7 +74,7 @@ import Foundation
         let window = source[symbolRange.upperBound...].prefix(200)
         #expect(
             window.contains(".accessibilityHidden(true)"),
-            "ConnectPumpOnboardingView.swift's decorative hero antenna icon is not .accessibilityHidden(true) — VoiceOver would announce its raw SF Symbol name (D2-08, WINDOWS ledger #24)"
+            "ConnectPumpOnboardingView.swift's decorative hero antenna icon is not .accessibilityHidden(true) — VoiceOver would announce its raw SF Symbol name"
         )
     }
 }

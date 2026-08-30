@@ -77,20 +77,20 @@ struct StackingGuardDisclosureHiddenBoundaryTests {
         let source = Self.bolusEntryViewSource
         #expect(
             !source.contains("sg2Message: sg2Disclosure?.message"),
-            "the rankedWarnings call must not pass sg2Disclosure's live message (LOCK-06)")
+            "the rankedWarnings call must not pass sg2Disclosure's live message")
         #expect(
             !source.contains("sg1Message: sg1Disclosure?.message"),
-            "the rankedWarnings call must not pass sg1Disclosure's live message (LOCK-06)")
+            "the rankedWarnings call must not pass sg1Disclosure's live message")
         #expect(
             !source.contains("sg3aMessage: sg3aDisclosure?.message"),
-            "the rankedWarnings call must not pass sg3aDisclosure's live message (LOCK-06)")
+            "the rankedWarnings call must not pass sg3aDisclosure's live message")
     }
 
     @Test func confirmMessageNoLongerAppendsTheSG3aDisclosureMessage() {
         let source = Self.bolusEntryViewSource
         #expect(
             !source.contains("let sg3a = sg3aDisclosure, let message = sg3a.message"),
-            "confirmMessage must not append the SG3a disclosure message (LOCK-06, the separate SG3a render site)")
+            "confirmMessage must not append the SG3a disclosure message (the separate SG3a render site)")
     }
 
     @Test func sg3aDisclosureComputationAndFrictionRoutingAreUntouched() {

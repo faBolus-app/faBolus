@@ -74,7 +74,7 @@ import Foundation
         let c3 = await postDarwinAndSettle(WidgetBolusStore.darwinPending, counter: counter)
         #expect(
             c3 - c2 == ambientDelta + 1,
-            "a stale (deallocated) receiver's un-removed Darwin observer would add a SECOND extra repost here — the exact C6-02 duplicate-dispatch bug"
+            "a stale (deallocated) receiver's un-removed Darwin observer would add a SECOND extra repost here — the exact duplicate-dispatch bug"
         )
         _ = receiver2
     }

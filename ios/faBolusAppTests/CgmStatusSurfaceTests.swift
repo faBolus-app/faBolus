@@ -65,7 +65,7 @@ struct CgmStatusSurfaceTests {
 
         #expect(
             rows.first { $0.id == "dexcom-share" }?.classification == .selectedNotArmed,
-            "the newly-selected-but-unarmed source must read as selected-not-armed (F-18)")
+            "the newly-selected-but-unarmed source must read as selected-not-armed")
         #expect(
             rows.first { $0.id == "dexcom-g7-ble" }?.classification == .activeFailover,
             "the still-running source keeps driving the live failover")
@@ -137,7 +137,7 @@ struct CgmStatusSurfaceTests {
         #expect(result.text == "Pump only — no failover source selected")
         #expect(
             !result.text.localizedCaseInsensitiveContains("selected —"),
-            "a nil (stale/invalid) selection must never render as 'Selected — …' — the WR-01 contradiction")
+            "a nil (stale/invalid) selection must never render as 'Selected — …'")
         #expect(result.isActive == false)
     }
 

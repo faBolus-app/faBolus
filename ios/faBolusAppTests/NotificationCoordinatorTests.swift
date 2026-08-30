@@ -224,7 +224,7 @@ import UserNotifications
         NotificationPoster.post(protectedWarning, runtime: rt, allowCritical: false, now: at(9, 0)) { reqs.append($0) }
         #expect(
             reqs.first?.content.interruptionLevel == .timeSensitive,
-            "CX-F-08: a protected alert ID must break through even at plain .warning severity")
+            "a protected alert ID must break through even at plain .warning severity")
         // An ordinary pump alert (no safetyClass, non-critical severity) is unaffected — still `.active`.
         reqs.removeAll()
         NotificationPoster.post(msg(.pumpAlert, key: "ordinary1"), runtime: rt, allowCritical: true, now: at(9, 0)) {
@@ -592,7 +592,7 @@ import UserNotifications
         let coordinator = NotificationCoordinator(model: model, runtime: rt, safetyAlertStore: store)
         #expect(
             store.entries["safety.cgmDataLoss"] == nil,
-            "a replay decision of .categoryDisabled must prune the dead durable entry (MD-02)")
+            "a replay decision of .categoryDisabled must prune the dead durable entry")
         #expect(
             store.entries["safety.pumpDisconnect"] != nil,
             "an entry that still delivers on replay must NOT be pruned")

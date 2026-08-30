@@ -169,7 +169,7 @@ final class CommsSuspensionGate {
         guard !isPaused else { return }
         isPaused = true
         pausedAt = now()
-        Self.log.log("comms-suspension pause armed (CC-03 app-side consumer)")
+        Self.log.log("comms-suspension pause armed (app-side consumer)")
     }
 
     /// Communications resumed: release the hold. Clears the deduped-opcode record (a fresh pause starts

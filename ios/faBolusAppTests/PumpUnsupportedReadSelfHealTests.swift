@@ -144,10 +144,10 @@ struct PumpUnsupportedReadSelfHealTests {
         b.startPollingForTesting()
         #expect(
             !b.badOpcodesForTesting.contains(iob),
-            "op108 must be dropped from badOpcodes on the next connection — re-probed, never durably skipped (R2-10)")
+            "op108 must be dropped from badOpcodes on the next connection — re-probed, never durably skipped")
         #expect(
             !b.badOpcodesForTesting.contains(therapy),
-            "op115 must be dropped from badOpcodes on the next connection — re-probed, never durably skipped (R2-10)")
+            "op115 must be dropped from badOpcodes on the next connection — re-probed, never durably skipped")
         #expect(dispatched.contains(iob), "op108 must be RE-SENT on connection N+1")
         #expect(dispatched.contains(therapy), "op115 must be RE-SENT on connection N+1")
         #expect(

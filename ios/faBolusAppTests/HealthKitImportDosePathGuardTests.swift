@@ -57,7 +57,7 @@ struct HealthKitImportDosePathGuardTests {
             for symbol in Self.forbiddenSymbols {
                 #expect(
                     !source.contains(symbol),
-                    "D-05 violated — forbidden HealthKit import/export symbol '\(symbol)' found in \(relativePath). Imported HealthKit history must land ONLY in GlucoseHistoryStore.ingest*, never the signed dose path."
+                    "forbidden HealthKit import/export symbol '\(symbol)' found in \(relativePath). Imported HealthKit history must land ONLY in GlucoseHistoryStore.ingest*, never the signed dose path."
                 )
             }
         }
