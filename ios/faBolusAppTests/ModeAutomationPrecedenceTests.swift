@@ -55,12 +55,6 @@ import faBolusCore
         model.settingChangeStore = StoredSettingChangeStore(
             url: URL(fileURLWithPath: NSTemporaryDirectory())
                 .appendingPathComponent("s3-mode-test-\(UUID().uuidString).json"))
-        // Make this a deterministic FIRST connect. `PumpSwitchStore` is global App-Group state that other
-        // suites write, so without this the connect can be judged a pump SWITCH — which now automatically
-        // resets the mode opt-ins this suite just configured (`resetPumpRelevantSettings`, formerly behind
-        // a user prompt). That was a latent cross-suite order dependency: it only became observable once
-        // the switch path gained a side effect. This suite tests mode automation, not pump switching.
-        PumpSwitchStore.clear()
         await backend.connect()
         return (model, backend)
     }

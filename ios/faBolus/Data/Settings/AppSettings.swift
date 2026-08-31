@@ -1337,23 +1337,13 @@ public final class AppSettings {
     /// auto-rules. Deliberately KEEPS display preferences, app mode, child/read-only, and CGM setup
     /// (pump-independent). Each assignment goes through the property's `didSet` so it persists +
     /// updates the live singleton.
-    /// Reset the pump-SPECIFIC automation opt-ins to their off state after a confirmed pump switch, so a
-    /// prior pump's opt-in can never carry onto a different pump. `advancedControlEnabled` is the one that
-    /// matters: it is `AccessPolicy` **Gate 5**'s input (`advancedControlOptIn`), so carrying it across
-    /// pumps would carry an advanced-write authorization the user granted for a DIFFERENT device. The other
-    /// four are inert on a t:slim-only build but reset together with it, because they are the same
-    /// advanced-control cluster and would revive together (see `dev/mobi`).
-    ///
-    /// ⚠ `remoteBolusCeiling` is deliberately NOT reset (owner decision 2026-08-30): it is a user-set dose
-    /// CAP, i.e. a safety preference the user chose, and it survives a pump swap. Clearing it used to be
-    /// this function's only observable effect on `main` and it was never disclosed in the prompt that
-    /// invoked it — the prompt has since been removed and this reset made automatic.
     public func resetPumpRelevantSettings() {
         advancedControlEnabled = false
         autoSyncPumpTime = false
         autoSleepMode = false
         autoExerciseMode = false
         modeReminders = false
+        remoteBolusCeiling = nil
         alertRules = []
     }
 }

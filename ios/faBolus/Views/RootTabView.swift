@@ -22,16 +22,18 @@ struct RootTabView: View {
 
     /// SwiftUI presents at most one `.alert` per view. Pick one by priority so the remote-bolus
     /// confirm is never the alert that gets dropped.
-    enum RootAlert { case remoteBolus, remoteControl }
-    static func activeAlert(hasRemoteBolus: Bool, hasRemoteControl: Bool) -> RootAlert? {
+    enum RootAlert { case remoteBolus, remoteControl, pumpSwitch }
+    static func activeAlert(hasRemoteBolus: Bool, hasRemoteControl: Bool, pumpSwitch: Bool) -> RootAlert? {
         if hasRemoteBolus { return .remoteBolus }
         if hasRemoteControl { return .remoteControl }
+        if pumpSwitch { return .pumpSwitch }
         return nil
     }
     private var active: RootAlert? {
         Self.activeAlert(
             hasRemoteBolus: model.pendingRemoteBolus != nil,
-            hasRemoteControl: model.pendingRemoteControl != nil)
+            hasRemoteControl: model.pendingRemoteControl != nil,
+            pumpSwitch: model.pendingPumpSwitch)
     }
 
     var body: some View {
@@ -116,6 +118,21 @@ struct RootTabView: View {
         } message: {
             Text(
                 "A remote requested to \(model.pendingRemoteControl?.action == .suspend ? "suspend" : "resume") insulin delivery. Confirm on the phone to proceed."
+            )
+        }
+        // A DIFFERENT pump connected. Its therapy values were already refreshed automatically;
+        // offer to also reset pump-specific app settings so two pumps' configs don't mix.
+        .alert(
+            "A different pump is connected",
+            isPresented: Binding(
+                get: { active == .pumpSwitch },
+                set: { if !$0 { model.pendingPumpSwitch = false } })
+        ) {
+            Button("Reset pump settings", role: .destructive) { model.resetPumpRelevantSettingsAfterSwitch() }
+            Button("Keep everything", role: .cancel) { model.keepSettingsAfterPumpSwitch() }
+        } message: {
+            Text(
+                "This pump is different from the one faBolus last used, so its therapy values were refreshed automatically. Reset pump-specific app settings too — Control-IQ automation, pump time-sync, alert rules, and the therapy change history — back to defaults? Your display preferences and CGM setup are kept either way."
             )
         }
     }
