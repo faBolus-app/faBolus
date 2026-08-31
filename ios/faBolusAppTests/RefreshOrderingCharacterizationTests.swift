@@ -90,7 +90,8 @@ struct RefreshOrderingCharacterizationTests {
 
         await backend.connect()  // a genuine switch (marker says a real pump) → maybeHandlePumpSwitch resets
 
-        #expect(model.pendingPumpSwitch == true, "precondition: a genuine pump switch was detected")
+        #expect(
+            PumpSwitchStore.lastHandled() != nil, "precondition: a genuine pump switch was detected and handled")
         // The published snapshot (produced by merge, which read source.snapshot AFTER the reset) shows the
         // PumpSnapshot() defaults — proving maybeHandlePumpSwitch mutated source.snapshot before merge.
         #expect(model.snapshot.carbRatio == 0, "carbRatio must be reset to the PumpSnapshot() default before merge")

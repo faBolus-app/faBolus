@@ -33,38 +33,56 @@ struct PumpSwitchTests {
         return (model, backend)
     }
 
-    @Test func firstConnectRecordsIdentityWithoutPrompting() async {
+    /// `advancedControlEnabled` is the observable for "did the pump-switch reset run?": it is the one
+    /// assignment in `resetPumpRelevantSettings()` with an observable effect (`AccessPolicy` Gate 5's
+    /// input). It replaces the old `pendingPumpSwitch` flag, which existed only to drive a prompt that has
+    /// since been removed — so a reset that fired spuriously would now be SILENT, and these two tests are
+    /// the only thing standing between that and a shipped regression.
+    @Test func firstConnectRecordsIdentityWithoutResetting() async {
         PumpSwitchStore.clear()
         defer { PumpSwitchStore.clear() }
+        let s = AppSettings.shared
+        let saved = s.advancedControlEnabled
+        defer { s.advancedControlEnabled = saved }
         let (model, backend) = await makeModel()
+        _ = model
         defer { backend.disconnect() }
+        s.advancedControlEnabled = true
         await backend.connect()
-        #expect(model.pendingPumpSwitch == false)  // no prior pump ⇒ nothing to reset
+        #expect(s.advancedControlEnabled == true)  // no prior pump ⇒ nothing to reset
         #expect(PumpSwitchStore.lastHandled() != nil)  // …but the identity is now recorded
     }
 
-    @Test func sameIdentityReconnectDoesNotPrompt() async {
+    @Test func sameIdentityReconnectDoesNotReset() async {
         PumpSwitchStore.clear()
         defer { PumpSwitchStore.clear() }
+        let s = AppSettings.shared
+        let saved = s.advancedControlEnabled
+        defer { s.advancedControlEnabled = saved }
         let (model, backend) = await makeModel()
+        _ = model
         defer { backend.disconnect() }
         await backend.connect()  // firstConnect records identity
         backend.disconnect()
+        s.advancedControlEnabled = true
         await backend.connect()  // same pump reconnect → not a switch
-        #expect(model.pendingPumpSwitch == false)
+        #expect(s.advancedControlEnabled == true)
     }
 
-    @Test func differentPumpRaisesThePrompt() async {
+    @Test func differentPumpIsDetectedAndHandled() async {
         PumpSwitchStore.setHandled("real|SOME-OLD-PUMP-UUID")
         defer { PumpSwitchStore.clear() }
         let (model, backend) = await makeModel()
         defer { backend.disconnect() }
         await backend.connect()  // a sim now, but the marker says a real pump ⇒ switch
-        #expect(model.pendingPumpSwitch == true)
         #expect(PumpSwitchStore.lastHandled() != "real|SOME-OLD-PUMP-UUID")  // marker advanced to current
     }
 
-    @Test func resetTurnsOffPumpPrefsAndClearsTheChangeLog() async {
+    /// The reset runs AUTOMATICALLY on a confirmed switch (the "Keep everything" prompt was removed —
+    /// both effects are safety defaults the user should not be able to decline). ⚠ `remoteBolusCeiling` is
+    /// deliberately EXCLUDED: it is a user-set dose cap that survives a pump swap (owner decision
+    /// 2026-08-30), and clearing it used to be this function's only observable effect.
+    @Test func resetTurnsOffPumpPrefsAndClearsTheChangeLogButKeepsTheDoseCeiling() async {
         let s = AppSettings.shared
         let saved = (
             s.advancedControlEnabled, s.autoSyncPumpTime, s.autoSleepMode,
@@ -99,9 +117,9 @@ struct PumpSwitchTests {
 
         #expect(!s.advancedControlEnabled && !s.autoSyncPumpTime && !s.autoSleepMode)
         #expect(!s.autoExerciseMode && !s.modeReminders)
-        #expect(s.remoteBolusCeiling == nil)
         #expect(s.alertRules.isEmpty)
         #expect(model.settingChangeStore.load().log.isEmpty)  // old pump's revert targets cleared
-        #expect(model.pendingPumpSwitch == false)
+        // The user's dose CAP survives the switch — it is their safety preference, not pump-derived state.
+        #expect(s.remoteBolusCeiling == 5)
     }
 }
