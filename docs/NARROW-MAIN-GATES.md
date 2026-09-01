@@ -4,19 +4,19 @@
 gates below. Later phases (1–9.5) implement removals against this single convention instead of
 inventing their own shapes.
 
-> **⛔ RETIRED — the cross-branch dose/signed byte-identity freeze does not resume.**
+> **⏸ PAUSED — cross-branch dose/signed byte-identity FREEZE (owner-directed 2026-08-23).**
 > The requirement that `Packages/faBolusCore`, `ios/faBolus/Data/AppModel.swift`, and
 > `ios/faBolus/Data/TandemBackend.swift` stay **byte-identical between `main` and every `dev/<surface>`
-> sub-branch** was paused in 2026-08 for the `AppModel` / `TandemBackend` god-object refactor, and it is
-> now retired outright. It was never a byte-parity oracle — the enforced mode is a cross-branch
-> `git diff` — and it is unrecoverably red: 21 sub-branches, 18 of them at 132 files / 6132+ / 9130−
-> and 3 more at 129 files with different totals, so a re-baseline would be per-branch and would prove
-> nothing about wire bytes. Nothing should be replayed across the sub-branches to satisfy it.
+> sub-branch** (INV-01/INV-03) is **paused** to unblock the `AppModel` / `TandemBackend` god-object
+> refactor — splitting those files necessarily makes the sub-branches diverge in these paths.
+> `scripts/check-dose-byte-identity.sh` is now non-blocking by default (prints a PAUSED banner, exits 0);
+> run it with `ENFORCE_BYTE_IDENTITY=1` to perform the legacy hard check / measure drift.
 >
-> **The dose re-proof that replaces it, for every phase:** the TandemKit **JDK-21 cliparser-JAR oracle
-> byte-parity** run (INV-03) plus the named suites — `BolusMathParity`, `GatedPumpWrite`, `AccessPolicy`,
-> `StackingGuard`, `DeliverySurfaceOutcomeGuard`, `LedgerBlockPrecedence`, `R3CLedgerFault`,
-> `PhoneWidgetDoubleDose`, `TandemDeliveryOutcome` — and `check-schema-drift.sh`. See the list at the end.
+> **This does NOT relax dose-to-pump safety.** The real dose-wire correctness net is *separate* and
+> stays fully in force: the TandemKit **oracle byte-parity** fixtures, the `BolusMathParity`/`GatedPumpWrite`/
+> gate test suites, and `check-schema-drift.sh`. Any refactor touching delivery code must still keep those
+> green. **To resume the freeze:** revert this notice + the `ENFORCE_BYTE_IDENTITY` guard in the script, and
+> replay the dose/signed sources across the `dev/*` sub-branches so they are byte-identical to `main` again.
 
 The v0.5.0 "narrow main" milestone subtracts surfaces from `main` one at a time. Every removal takes
 **exactly one of two shapes**, and which shape is allowed is decided by whether the surface is
@@ -25,14 +25,14 @@ dose-adjacent:
 | Shape | Used for | Mechanism | The invariant it must preserve |
 |-------|----------|-----------|--------------------------------|
 | **Compile gate** (`FABOLUS_*` + `# >>> TAG … # <<< TAG`) | Self-contained, **non**-dose surfaces (a whole target, package, or source-dir set) | `scripts/generate-project.sh` strips the block from a copy of `project.yml` before `xcodegen` runs | The surface is absent at `=0`, present at default; the default spec stays byte-identical to today |
-| **Runtime gate** (settings-forced-value + UI-hide) | **Dose-adjacent** surfaces | Force the existing setting to its safe value + hide the UI; the evaluator/core is **NOT touched** | The dose/signed evaluator/core is **not edited at all**; the oracle + named suites re-prove it (INV-03) |
+| **Runtime gate** (settings-forced-value + UI-hide) | **Dose-adjacent** surfaces | Force the existing setting to its safe value + hide the UI; the evaluator/core is **NOT touched** | The dose/signed evaluator/core is **byte-identical across every branch** (INV-01/INV-03) |
 
 **Why dose-adjacent surfaces get a runtime gate, never a compile-deletion (D-03):** every one of the
-7 hides below touches a file in the dose-path set at the end of this document (`AccessPolicy`,
+7 hides below touches code the `check-dose-byte-identity.sh` invariant protects (`AccessPolicy`,
 `GatedPumpWrite`, `StackingGuard`, `deliverExtendedBolus`, the `PumpResponseApplier` time anchor). A
-`#if FABOLUS_*` around any of it edits the dose/signed core in order to remove a *surface*, which is the
-one mechanism these gates exist to avoid. So a dose-adjacent surface is removed by **forcing its setting
-off and hiding its UI**, leaving the evaluator untouched and its named test suite green. Compile-deleting
+`#if FABOLUS_*` around any of it would make the dose/signed core diverge between branches, the exact
+drift the exit gate forbids. So a dose-adjacent surface is removed by **forcing its setting off and
+hiding its UI**, leaving the evaluator byte-identical and its named test suite green. Compile-deleting
 dose-adjacent code before its dedicated, oracle-re-run phase is Pitfall 5.
 
 ---
@@ -91,7 +91,7 @@ delivery path.
 
 ---
 
-## The assembled phase exit gate (INV-02 / INV-03; D-09 — INV-01 retired, see the banner)
+## The assembled phase exit gate (INV-01 / INV-02 / INV-03; D-09)
 
 Every phase (0 through 9.5) runs this **identical** sequence at its exit gate, assembled from the
 reusable pieces this capstone stood up. Run from the faBolus repo root:
@@ -100,10 +100,10 @@ reusable pieces this capstone stood up. Run from the faBolus repo root:
 # (1) TAG CURRENCY: baseline annotated + ancestor + not-behind on all 3 repos
 ./scripts/verify-pre-narrow-tags.sh
 
-# (2) DOSE RE-PROOF: the TandemKit JDK-21 cliparser-JAR oracle byte-parity run (INV-03) plus the named
-#     dose suites listed at the end of this doc. There is no cross-branch byte-identity step any more —
-#     see the RETIRED banner at the top. Run in the TandemKit repo, with the cliparser JAR built:
-#       ./gradlew :cliparser:shadowJar   (in vendor/pumpx2-oracle)   &&   swift test
+# (2) DOSE/SIGNED BYTE-IDENTICAL: main vs every dev/<surface> sub-branch (empty diff)
+#     ⏸ PAUSED (owner-directed 2026-08-23, for the god-object refactor) — now non-blocking by default.
+#     Use ENFORCE_BYTE_IDENTITY=1 to run the legacy hard check. See the PAUSED banner at the top of this doc.
+./scripts/check-dose-byte-identity.sh
 
 # (3) GREEN MAIN + full safety suite
 swift test --package-path Packages/faBolusCore            # BolusMathParity + oracle-parity + guards
@@ -131,39 +131,3 @@ create `refs/heads/experimental/mac` while the `experimental` integration branch
 file-vs-directory conflict), so the owner ratified the `dev/` namespace in 00-01. The scripts and the
 CI trigger glob (`dev/**`) both use it. The operative baseline tag is `pre-narrow/2026-08-20` (annotated;
 supersedes the lightweight, ~130-commit-stale `pre-narrow/2026-08-18`).
-
----
-
-## The dose-path file set (the membership marker)
-
-Every removal or simplification phase decides **how hard its re-proof has to be** by asking one question:
-does the change touch a dose-path file? This list is the answer and it is the canonical definition. It was
-previously buried inside `scripts/check-dose-byte-identity.sh`, which the cleanup programme removes along
-with the retired freeze; the list moves here so the marker outlives the script.
-
-- **`Packages/faBolusCore/`** — the whole package: `BolusMath`, the oracle-parity fixtures,
-  `GatedPumpWrite`, `AccessPolicy`, `StackingGuard`, `RemoteCommand` — the signed/dose core.
-- **`ios/faBolus/Data/AppModel.swift`** — the app-side dose and delivery paths.
-- **`ios/faBolus/Data/TandemBackend.swift`** — the signed pump-write backend.
-
-**Membership is by file, not by symbol.** Any edit inside one of the three gets the full dose re-proof —
-the JDK-21 oracle run plus the named suites in the banner at the top — whether or not the edited lines
-look dose-adjacent. That is deliberately over-inclusive: `Packages/faBolusCore` is the whole signed/dose
-core plus everything filed alongside it. Narrowing the rule to *"any file declaring a type read by
-`AccessPolicy.evaluate`, `GatedPumpWrite`, `BolusMath`, `StackingGuard` or `RemoteBolusLedger`"* is the
-right shape but is **an open owner question**, not something a phase may assume; until it is answered, the
-three entries above are the rule.
-
-⚠ **The oracle is version-blind today, and it is now the only dose proof there is.** In TandemKit,
-`Tests/TandemMessagesTests/OracleRunner.swift:53-56` computes `isAvailable` as "the JAR exists **and** a
-`java` binary is executable" — with no version check — while `:44-49` prefers an unpinned homebrew
-`openjdk@21` path and otherwise falls back to `/usr/bin/java`. The JAR's `Main.class` is class-file major
-58 (Java 14), so on an older JVM every parity suite throws and is misattributed as a byte-parity failure;
-and `Tests/TandemMessagesTests/OracleAvailabilityGateTests.swift:12-13` opens with
-`if OracleRunner.isAvailable { return }`, so the gate that exists to catch an unavailable oracle cannot see
-a present-but-wrong one.
-**That fix runs FIRST, before any phase of the cleanup programme** — `isAvailable` gains a JVM-version
-requirement (≥ 21, or an assertion on the loaded class-file version), the availability gate gains a case
-that fails on a present-but-wrong Java, and the CI workflow asserts the version too so a runner without the
-unpinned homebrew path fails loudly instead of silently skipping parity. Until that lands, an oracle pass is
-not a dose re-proof unless the JVM was confirmed by hand.
