@@ -136,25 +136,35 @@ file-vs-directory conflict), so per-surface branches live under a fresh `dev/` n
 all-features integration branch is unchanged. Each sub-branch is code-identical to the baseline at cut time
 (no surface relocated in Phase 0); the owning per-surface phase (1–9) later moves its surface onto it.
 
-| Repo | Sub-branches (`dev/…`) | Count |
+| Repo | Sub-branches (`dev/…`) at Phase 0 cut (2026-08-20) | Count at cut |
 |------|------------------------|-------|
 | faBolus | `mac`, `phone-remote`, `watch-remote`, `watch-host`, `nudge`, `cgm-extra`, `mobi` | 7 |
 | faBolusGarmin | `garmin-devices` | 1 |
 | TandemKit | — (none: the protocol layer is pump-model-agnostic and ships `.mobi`-tagged messages unconditionally; Mobi removal is faBolus-side capability surgery) | 0 |
 
+⚠ **The table above is the Phase-0 snapshot only — every repo has grown its `dev/*` roster since.**
+Current counts (see §1.2c's "later removals" table for what each one preserves): faBolus **21**
+(`git branch --list 'dev/*'`), faBolusGarmin **5**, TandemKit **1** (`dev/loopkit`, cut 2026-08-25).
+
 **Branch-aware CI (TOPO-04):** `on.push.branches` widened to include `'dev/**'` on faBolus + faBolusGarmin so a
 per-surface sub-branch push fires CI (the `resolve-refs`/`fbref` resolver already matches any branch name —
-the gap was only the trigger key). **TandemKit's `ci.yml` trigger widening is DEFERRED** — TandemKit has no
-`dev/*` sub-branch (so it is non-functional now) and TandemKit changes go via PR → merge-after-green-CI (kit
-discipline); open a kit PR if TandemKit ever needs a `dev/*` branch. `watch-host` builds Simulator-only
-(hardware → Phase-11 bench).
+the gap was only the trigger key). **TandemKit's `ci.yml` trigger widening is DEFERRED — and the gap is now
+FUNCTIONAL, not moot:** TandemKit's premise at the Phase-0 cut ("no `dev/*` sub-branch, so this is
+non-functional now") is no longer true — `dev/loopkit` exists (locally and on `origin`) and its own
+`loopkit-driver.yml` workflow already had to be re-pointed at it directly (`20b25f9`) because the repo-wide
+`ci.yml` trigger still does not cover `dev/**`. TandemKit changes still go via PR → merge-after-green-CI
+(kit discipline) as the primary gate, but the widening this section deferred is now due, not merely
+hypothetical; open a kit PR to add it. `watch-host` builds Simulator-only (hardware → Phase-11 bench).
 
-## §1.2c — v0.5.0 narrow-main removal roster (final, 2026-08-22)
+## §1.2c — narrow-main removal roster (v0.5.0 set final 2026-08-22; later removals appended below)
 
-Phases 1–9 landed the full narrow-main subtraction set decided at 999.5-D1 (below). This is the FINAL
-roster: every surface removed from `main` this milestone, its preservation location, and why. Every
+Phases 1–9 landed the full narrow-main subtraction set decided at 999.5-D1 (below) — that FIRST block
+of rows is still final as of 2026-08-22. Removals made after that date (Phases 21–23, and the
+tslim-reconnect-loop AAM cleanup) are NOT part of 999.5-D1; they are appended as their own rows below
+the v0.5.0 set, each with its own specific rationale rather than the 999.5-D1 citation. Every
 `dev/<surface>` branch named below is a real, existing branch (`git branch --list 'dev/<name>'` is
-non-empty) — a docs edit does not create, rename, or move any of them.
+non-empty, and for the faBolusGarmin/TandemKit rows, the equivalent check in that repo) — a docs edit
+does not create, rename, or move any of them.
 
 | Surface | Preserved on | Why `experimental`, not `main` |
 |---|---|---|
@@ -187,8 +197,22 @@ non-empty) — a docs edit does not create, rename, or move any of them.
 | Pump clock-sync | runtime-locked/hidden on `main`, full feature on `experimental` | scope-narrowing per 999.5-D1 (the read-side time-anchor stays) |
 | Insulin Stacking Guard disclosures (SG1/SG2/SG3a) | runtime-locked/hidden on `main`, full feature on `experimental` | scope-narrowing per 999.5-D1 (the `StackingGuard` core stays byte-identical) |
 
-No surface in this table is on `main`. See DECISION 999.5-D1/D2 (`.planning/intel/decisions.md`) for the
-ratified as-built record, and each `dev/<surface>` branch's own `REINTEGRATION.md` for reintegration steps.
+**Later removals (not part of 999.5-D1; appended as each landed):**
+
+| Surface | Preserved on | Why `experimental`/branch-only, not `main` |
+|---|---|---|
+| AAM (Active Alert Malfunction) read fan-in — op120/op146, confirmed dead plumbing (no live/decision consumer) | `dev/aam-malfunction-code` | tslim-reconnect-loop Phase B (`f2be9179`) — auto-polling it also provoked an op-77 + deliberate BLE teardown on Control-IQ-off/no-CGM API-2.5 t:slim X2 |
+| Control-IQ auto-correction awareness display, phone half (`AutoCorrectionDisclosure.swift`'s `ambientIndicator`/`lockoutMessage`) | `dev/control-iq-awareness` | Phase 23 Plan 01 (`NARROW-CIQ-23`, W1) |
+| Control-IQ auto-correction awareness display, Garmin half (`AppState.mc` controller-display helpers) | `dev/control-iq-awareness` (faBolusGarmin repo) | Phase 23 Plan 02 (`NARROW-CIQ-23`, W1) |
+| Ambient heart-rate relay, phone/consumer half (`AppModel`/`GarminRemoteBridge` relay members) | `dev/garmin-hr-relay` | Phase 22 (`NARROW-HR-22`) |
+| Ambient heart-rate relay, Garmin/producer half (`HeartRateRelay.mc`) | `dev/garmin-hr-relay` (faBolusGarmin repo) | Phase 22 (`NARROW-HR-22`) |
+| Paused direct-to-pump + direct-to-CGM (Dexcom G7) BLE engines (probe-only, never shipped) | `dev/direct-ble` (faBolusGarmin repo) | narrow-main, owner decision 2026-08-27 (`f0a0fc3`) — auditability/reliability; preserved WITH 7 additional Phase-21 hardening commits on top |
+| Garmin-only Insulin Stacking Guard dose-magnitude disclosure (W2) | `dev/stacking-guard-disclosure` (faBolusGarmin repo) | Phase 23 Plan 02 (`NARROW-CIQ-23`, W2) — the app-side SG1/SG2/SG3a row above is the phone half (runtime-locked, no branch needed); Monkey C has no runtime flag mechanism, so the Garmin-only half needs its own branch |
+| `TandemLoopKit` — the optional LoopKit `PumpManager` adapter | `dev/loopkit` (TandemKit repo) | narrow-main (`cd7eec7`) — LoopKit is iOS-only/HealthKit-bearing; the adapter is a separate SwiftPM package that depends on the core, never the reverse, so it never entered the oracle-parity dependency graph |
+
+No surface in either table is on `main`. See DECISION 999.5-D1/D2 (`.planning/intel/decisions.md`) for the
+ratified v0.5.0 as-built record, and each `dev/<surface>` branch's own `REINTEGRATION.md` for
+reintegration steps (every branch above now has one).
 
 ## §1.3 — versioning and the cross-repo contract
 
