@@ -38,3 +38,6 @@ project.generated.yml
 # the exact pinned TandemKit + faBolusNudge/LoopAlgorithm graph (D-04). Only negates the root copy —
 # it cannot and must not reach the generated copy under the still-excluded *.xcodeproj/ tree.
 !/Package.resolved
+
+# Local dispatch-isolation runtime state — re-created per session, never a repo artifact.
+.gsd/
