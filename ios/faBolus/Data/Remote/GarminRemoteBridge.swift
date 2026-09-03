@@ -1181,8 +1181,22 @@ final class GarminRemoteBridge: NSObject {
                         kind: .bolusStatus, requestId: cmd.requestId, status: .failed, message: "Read-only mode"))
                 return
             }
-            // Host recomputes carbs→units, runs the divergence guard, records carbs.
-            guard cmd.units != nil || (cmd.carbsGrams ?? 0) > 0 else { return }
+            // Host recomputes carbs→units, runs the divergence guard, records carbs. Gate on
+            // PRESENCE of carbsGrams, not its magnitude: a carbs-mode request (a wrist correction
+            // dose) is signalled by carbsGrams being present at all — INCLUDING 0 — and
+            // AppModel.resolveRemoteDose already treats a present-including-0 carbsGrams as a real
+            // carbs-mode request. Gating on magnitude here would route a genuine zero-carb
+            // correction back to the units path before resolveRemoteDose ever saw it. A request
+            // with neither `units` nor `carbsGrams` present is genuinely un-actionable — echo an
+            // explicit failure instead of returning silently, so the watch is told something rather
+            // than left to time out its send watchdog.
+            guard cmd.units != nil || cmd.carbsGrams != nil else {
+                send(
+                    RemoteCommand(
+                        kind: .bolusStatus, requestId: cmd.requestId, status: .failed,
+                        message: "No dose specified"))
+                return
+            }
             // Forward the entered bolus passcode so the host verifies it against the salted hash.
             // When a passcode is required and this is absent/wrong, `remoteDeliver` denies and
             // echoes `.failed` — the watch never verifies or stores it.
@@ -1230,7 +1244,16 @@ final class GarminRemoteBridge: NSObject {
             } else {
                 send(model.statusCommand(includeHistory: true, replyingTo: cmd.requestId))
             }
-        default: break
+        default:
+            // An inbound kind this bridge does not recognise or does not accept from a Garmin peer
+            // (e.g. a BLE/Mac-only kind arriving here, or a future firmware sending something this
+            // build predates). The same misinformation shape as the guard above: swallowing it with
+            // no echo leaves the watch's send watchdog to time out with no signal at all. Echo an
+            // explicit failure so the watch is told, not left guessing.
+            send(
+                RemoteCommand(
+                    kind: .bolusStatus, requestId: cmd.requestId, status: .failed,
+                    message: "Unsupported request"))
         }
     }
 
