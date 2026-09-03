@@ -113,17 +113,17 @@ struct PumpBadOpcodeStore: @unchecked Sendable {
         var p = map[pumpKey] ?? Persisted(fw: firmware, ops: [])
         if let firmware, let existing = p.fw, existing != firmware {
             p.ops = []  // firmware changed since these were learned → re-test from scratch
-            p.stk = nil  // …and the strikes were earned under that stale firmware too
+            p.stk = [:]  // …and the strikes were earned under that stale firmware too
         }
         if let firmware { p.fw = firmware }
         let slot = String(opcode)
-        var strikes = p.stk ?? [:]
+        var strikes = p.stk
         let count = (strikes[slot] ?? 0) + 1
         strikes[slot] = count
         p.stk = strikes
         let reachedThreshold = count >= Self.durableStrikeThreshold
         if reachedThreshold, !p.ops.contains(Int(opcode)) { p.ops.append(Int(opcode)) }
-        p.seq = (map.values.compactMap { $0.seq }.max() ?? 0) + 1
+        p.seq = (map.values.map { $0.seq }.max() ?? 0) + 1
         map[pumpKey] = p
         map = prunedToCap(map)
         saveMap(map)
@@ -133,7 +133,7 @@ struct PumpBadOpcodeStore: @unchecked Sendable {
     #if DEBUG
     /// Test accessor: corroborating strikes counted so far for one opcode on one pump.
     func strikeCountForTesting(_ opcode: UInt8, for pumpKey: String) -> Int {
-        loadMap()[pumpKey]?.stk?[String(opcode)] ?? 0
+        loadMap()[pumpKey]?.stk[String(opcode)] ?? 0
     }
     #endif
 
@@ -153,23 +153,22 @@ struct PumpBadOpcodeStore: @unchecked Sendable {
         var p = map[pumpKey] ?? Persisted(fw: firmware, ops: [])
         if let firmware, let existing = p.fw, existing != firmware {
             p.ops = []  // firmware changed since these were learned → re-test from scratch
-            p.stk = nil  // …and so were any corroborating strikes
+            p.stk = [:]  // …and so were any corroborating strikes
         }
         if let firmware { p.fw = firmware }
         if !p.ops.contains(Int(opcode)) { p.ops.append(Int(opcode)) }
         // Stamp this pump as most-recently-updated (monotonic, deterministic) and evict the
         // least-recently-updated pumps if we now exceed the cap.
-        p.seq = (map.values.compactMap { $0.seq }.max() ?? 0) + 1
+        p.seq = (map.values.map { $0.seq }.max() ?? 0) + 1
         map[pumpKey] = p
         map = prunedToCap(map)
         saveMap(map)
     }
 
-    /// Keep at most `maxRetainedPumps` entries, evicting the lowest `seq` (least-recently-updated)
-    /// first. A missing `seq` (a legacy persisted entry) sorts oldest, so those are shed first.
+    /// Keep at most `maxRetainedPumps` entries, evicting the lowest `seq` (least-recently-updated) first.
     private func prunedToCap(_ map: [String: Persisted]) -> [String: Persisted] {
         guard map.count > Self.maxRetainedPumps else { return map }
-        let keep = map.sorted { ($0.value.seq ?? 0) > ($1.value.seq ?? 0) }
+        let keep = map.sorted { $0.value.seq > $1.value.seq }
             .prefix(Self.maxRetainedPumps)
         return Dictionary(uniqueKeysWithValues: keep.map { ($0.key, $0.value) })
     }
@@ -192,19 +191,25 @@ struct PumpBadOpcodeStore: @unchecked Sendable {
 
     // MARK: - Codable persistence
 
-    /// `seq`: a monotonic last-updated stamp for LRU eviction. Optional so a legacy persisted payload
-    /// decodes cleanly (nil ⇒ sorts oldest ⇒ evicted first). `fw`/`ops` unchanged.
+    /// `seq`: a monotonic last-updated stamp for LRU eviction. `stk`: corroborating strike counts,
+    /// keyed by the opcode's decimal string (JSON object keys must be strings) — only
+    /// `.afterCorroboratingStrikes` rejections land here, an `.immediate` one goes straight to `ops`,
+    /// and it is cleared alongside `ops` on a firmware change. Both non-optional (defaulted) rather
+    /// than decoded leniently: `loadMap()` decodes the whole dictionary at once, so an entry written
+    /// under an older, incompatible shape fails that decode and the map comes back empty rather than
+    /// half-trusted — the store re-learns from a clean slate instead of running on a stale mix.
     private struct Persisted: Codable {
         var fw: String?
         var ops: [Int]
-        var seq: Int?
-        /// Corroborating strike counts, keyed by the opcode's decimal string (JSON object keys must be
-        /// strings). Optional so a legacy persisted payload decodes cleanly (nil ⇒ no strikes yet).
-        /// Only `.afterCorroboratingStrikes` rejections land here; an `.immediate` one goes straight to
-        /// `ops`. Cleared alongside `ops` on a firmware change.
-        var stk: [String: Int]?
+        var seq: Int = 0
+        var stk: [String: Int] = [:]
     }
 
+    // One entry decoded under an older shape empties this whole map on the app's first launch after this
+    // change ships — every pump's learned skip set resets, so on each pump's next connect up to 5
+    // previously-skipped reads are re-attempted. On an API-2.5 t:slim that means up to 5 opcode-less
+    // rejections and the associated link-drop risk, then re-convergence over up to 3 connection cycles
+    // (see `durableStrikeThreshold`) before the durable skip is relearned.
     private func loadMap() -> [String: Persisted] {
         guard let data = defaults.data(forKey: storageKey),
             let map = try? JSONDecoder().decode([String: Persisted].self, from: data)

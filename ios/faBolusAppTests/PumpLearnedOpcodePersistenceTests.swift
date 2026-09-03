@@ -31,6 +31,30 @@ struct PumpLearnedOpcodePersistenceTests {
         #expect(store.entry(for: "A").firmware == "2.5")
     }
 
+    /// A legacy-shaped persisted blob (an entry missing the LRU/strike fields a current write always
+    /// includes) must fail the whole-dictionary decode, so the store comes back empty rather than
+    /// partially trusting stale data under a shape it no longer writes.
+    @Test func aLegacyBlobMissingTheNewerFieldsSelfClearsOnLoad() {
+        let (store, suite, defaults) = isolatedStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let legacyBlob = Data(#"{"A":{"fw":"2.5","ops":[20]}}"#.utf8)
+        defaults.set(legacyBlob, forKey: "learnedBadOpcodesByPump.test")
+        #expect(
+            store.learnedOpcodes(for: "A").isEmpty,
+            "a legacy entry decodes against the whole dictionary; one incompatible entry must empty the map")
+    }
+
+    /// A freshly-written entry carries every field a current write includes and round-trips exactly.
+    @Test func aCurrentShapeEntryRoundTripsEveryField() {
+        let (store, suite, defaults) = isolatedStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        store.recordStrike(loadStatusOpcode, for: "A", firmware: "2.5")
+        store.recordStrike(loadStatusOpcode, for: "A", firmware: "2.5")
+        store.recordStrike(loadStatusOpcode, for: "A", firmware: "2.5")
+        #expect(store.learnedOpcodes(for: "A") == [loadStatusOpcode])
+        #expect(store.strikeCountForTesting(loadStatusOpcode, for: "A") == 3)
+    }
+
     /// KEY ISOLATION (store level): a different pump key never sees another pump's learned opcodes.
     @Test func aDifferentKeyNeverSeesAnotherPumpsOpcodes() {
         let (store, suite, defaults) = isolatedStore()
