@@ -67,6 +67,14 @@ struct AppModelAccessWideningGuardTests {
     /// Thin read-only seam so backup export can read the ledger snapshot without widening `deliveryLedgerCoordinator`.
     static let newInternalSeamDeclaration = "internal var privacyExportLedgerSnapshot: RemoteBolusLedger"
 
+    /// Member names that must NEVER appear as an explicit `internal` declaration in `AppModel.swift` —
+    /// dose/gate-adjacent members whose visibility must stay `private`. A denylist, not the closed
+    /// allowlist below: widening one of these would put a safety-adjacent seam on an extension-visible
+    /// surface even if the allowlist were (incorrectly) widened to accommodate it.
+    static let neverInternalDeclarationNames: [String] = [
+        "deliveryLedgerCoordinator"
+    ]
+
     /// Every literal `internal var`/`internal let`/`internal lazy var` occurrence in `AppModel.swift`
     /// (stored-property or computed-property declarations using the explicit keyword). Per the type
     /// doc comment's baseline fact, 100% of these are attributable to this carve.
@@ -80,10 +88,10 @@ struct AppModelAccessWideningGuardTests {
 
     // MARK: - Tests
 
-    /// The widened set is EXACTLY the enumerated 17 stored properties — every enumerated declaration
-    /// is present, and no OTHER explicit-`internal` stored-property declaration exists beyond the one
-    /// new computed seam (`privacyExportLedgerSnapshot`). Fails loudly (not vacuously) if the source
-    /// resolves implausibly short.
+    /// The widened set matches a closed allowlist — every enumerated declaration is present, no
+    /// denylisted dose/gate member is ever widened, and no OTHER explicit-`internal` declaration exists
+    /// beyond the enumerated set plus the one new computed seam (`privacyExportLedgerSnapshot`). Fails
+    /// loudly (not vacuously) if the source resolves implausibly short.
     @Test func widenedSetIsExactlyTheEnumeratedAdvisoryProperties() throws {
         let source = try Self.appModelSource()
         #expect(source.count > 10_000, "AppModel.swift resolved implausibly short — path resolution likely broke")
@@ -95,11 +103,32 @@ struct AppModelAccessWideningGuardTests {
         }
 
         let allLines = Self.allExplicitInternalDeclarationLines(in: source)
-        let expectedCount = Self.widenedStoredPropertyDeclarations.count + 1  // +1 for the new seam
-        #expect(
-            allLines.count == expectedCount,
-            "Found \(allLines.count) explicit-`internal` declaration lines in AppModel.swift, expected exactly \(expectedCount) (the enumerated 17 widened + the 1 new seam). Extra or missing lines:\n\(allLines.joined(separator: "\n"))"
-        )
+        let allowlist = Self.widenedStoredPropertyDeclarations + [Self.newInternalSeamDeclaration]
+
+        // DENYLIST: a dose/gate-adjacent member must never be DECLARED `internal` — checked independently
+        // of the allowlist below, so a future allowlist edit can never silently re-permit one. Matches on
+        // the DECLARATION form (`internal var <name>`/`internal let <name>`/`internal lazy var <name>`),
+        // not a bare substring of the whole line — a computed property's body may legitimately mention a
+        // denylisted name (e.g. `privacyExportLedgerSnapshot`'s body reads `deliveryLedgerCoordinator`)
+        // without that being the widening this denylist forbids.
+        for name in Self.neverInternalDeclarationNames {
+            let forbiddenForms = ["internal var \(name)", "internal let \(name)", "internal lazy var \(name)"]
+            #expect(
+                !allLines.contains(where: { line in forbiddenForms.contains(where: { line.contains($0) }) }),
+                "Found a denylisted member widened to `internal` in AppModel.swift: '\(name)' must stay `private`"
+            )
+        }
+
+        // CLOSED ALLOWLIST: every found explicit-`internal` declaration line must match an allowlist
+        // entry. An unlisted `internal var`/`internal let`/`internal lazy var` fails this — the check is
+        // over the SET, not a count, so it stays red-provable regardless of how many entries the
+        // allowlist eventually holds.
+        for line in allLines {
+            #expect(
+                allowlist.contains(where: { line.contains($0) }),
+                "Found an explicit-`internal` declaration line in AppModel.swift that is not in the closed allowlist: '\(line)'"
+            )
+        }
 
         #expect(
             source.contains(Self.newInternalSeamDeclaration),
