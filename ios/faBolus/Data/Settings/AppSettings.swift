@@ -460,16 +460,6 @@ public final class AppSettings {
         set {}  // swiftlint:disable:this unused_setter_value
     }
 
-    /// User-defined auto-rules for pump alerts. **Alarms are never auto-acted** regardless of rules.
-    /// FROZEN to always-`[]` so neither a setter nor a restored backup can re-arm the engine; no
-    /// production code reads this property. See `AlertRulesFreezeGuardTests`.
-    public var alertRules: [AlertRule] {
-        get { [] }
-        // The empty setter IS the freeze: swallowing the write is what makes this
-        // unreachable by any means, including restore-from-backup.
-        set {}  // swiftlint:disable:this unused_setter_value
-    }
-
     /// Opt-in (default OFF) for local notification telemetry — per-category delivered/dismissed/
     /// acted-upon counts the broker uses to tune defaults. Stored in the **App Group** (not `d`) so the
     /// broker, incl. the out-of-process mode-reminder intent, reads the same choice. Local-only, never
@@ -536,7 +526,7 @@ public final class AppSettings {
     /// launches and devices, producing spurious backup/iCloud diffs (and a flaky `backupSnapshot` round-trip
     /// equality check). Sorting by `rawValue` first makes the encoding canonical and seed-independent;
     /// decoding `Set<ChildFeature>` from the array is unaffected, so old blobs still load and no migration is
-    /// needed. This is the only `Set`-backed persisted value; `alertRules` is an ordered array already.
+    /// needed. This is the only `Set`-backed persisted value.
     nonisolated static func canonicalChildAllowedData(_ set: Set<ChildFeature>) -> Data {
         (try? JSONEncoder().encode(set.sorted { $0.rawValue < $1.rawValue })) ?? Data()
     }

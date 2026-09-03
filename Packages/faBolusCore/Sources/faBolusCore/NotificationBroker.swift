@@ -6,10 +6,8 @@ import Foundation
 /// hard-wired so no setting, rule, quiet-hour, or budget can ever suppress them.
 ///
 /// This is the analog of P8's `AccessPolicy`: a **pure function over explicit state** (faBolusCore reads no
-/// app globals and calls no clock — `now` is passed in, matching `AlertRuleEngine`). It is INERT until the
-/// app-side broker routes its posters through it; this file changes no behavior on its own. It is distinct
-/// from, and composes with, `AlertRuleEngine`: that decides whether a user *rule* auto-snoozes/dismisses a
-/// pump alert; this decides delivery governance for whatever becomes a notification.
+/// app globals and calls no clock — `now` is passed in). It is INERT until the app-side broker routes its
+/// posters through it; this file changes no behavior on its own.
 ///
 /// The rate-limit / quiet-hours logic is reimplemented here (pure, in faBolusCore) rather than depending on
 /// an optional external package — a safety-adjacent governance layer must not be gated on an optional
@@ -225,7 +223,7 @@ public enum NotificationBroker {
 
     // MARK: - Per-category settings
 
-    /// User-configurable governance for one category. Quiet-hours use minutes past midnight like `AlertRule`
+    /// User-configurable governance for one category. Quiet-hours use minutes past midnight
     /// (`start == end` ⇒ no quiet window). `minIntervalSeconds` rate-limits repeats of the SAME category.
     public struct CategorySettings: Sendable, Equatable, Codable {
         public var enabled: Bool
@@ -269,8 +267,8 @@ public enum NotificationBroker {
         public static func defaults(for category: Category) -> CategorySettings {
             CategorySettings(enabled: category.defaultEnabled)
         }
-        /// True when `minute` (minutes past midnight) is inside the quiet window. Reuses `AlertRule`'s
-        /// window semantics (same-day / midnight-wrap / none-when-equal).
+        /// True when `minute` (minutes past midnight) is inside the quiet window
+        /// (same-day / midnight-wrap / none-when-equal).
         public func inQuietHours(minute: Int) -> Bool {
             guard quietStartMinuteOfDay != quietEndMinuteOfDay else { return false }
             if quietStartMinuteOfDay < quietEndMinuteOfDay {
@@ -554,31 +552,15 @@ public enum NotificationBroker {
 
     // MARK: - Force-protection (§6: safety alerts a user auto-rule must never suppress)
 
-    /// Safety classification of a pump alert, for force-protection against user auto-rules. Computed by the
-    /// backend from the pump's OWN alert identity — the pump notification-bit → semantics mapping lives at
-    /// the decode boundary (`TandemBackend`), NOT here, so faBolusCore never hard-codes pump bit values.
-    /// `.other` alerts follow the user's `AlertRule`s normally; every protected class is NEVER auto-snoozed
-    /// or auto-dismissed by a rule.
+    /// Safety classification of a pump alert. Computed by the backend from the pump's OWN alert identity —
+    /// the pump notification-bit → semantics mapping lives at the decode boundary (`TandemBackend`), NOT
+    /// here, so faBolusCore never hard-codes pump bit values. Read by `requiresBreakthrough` to decide OS
+    /// interruption level for a protected class.
     public enum AlertSafetyClass: String, Sendable, Codable, CaseIterable {
         case occlusion  // occlusion / pump malfunction (already an alarm, protected here independently)
         case cgmDataLoss  // CGM unavailable / sensor failed / out-of-range / failed connection
         case lowInsulin  // low insulin / empty reservoir
         case other
         public var isForceProtected: Bool { self != .other }
-    }
-
-    /// The auto-rule action for `alert`, with safety force-protection applied ON TOP of `AlertRuleEngine`.
-    /// Returns `nil` (never auto-act) for any force-protected class REGARDLESS of a matching user rule —
-    /// closing the hole where only alarms were protected, so a user rule could auto-snooze/dismiss a
-    /// CGM-loss or low-insulin alert (kinds 1/3). For `.other`, delegates to the pure, tested
-    /// `AlertRuleEngine.action`. The backend calls THIS instead of `AlertRuleEngine` directly at its
-    /// notification-merge chokepoint.
-    public static func autoSuppression(
-        for alert: PumpAlert, safetyClass: AlertSafetyClass,
-        rules: [AlertRule], now: Date, calendar: Calendar = .current,
-        glucose: Int?
-    ) -> AlertAction? {
-        if safetyClass.isForceProtected { return nil }
-        return AlertRuleEngine.action(for: alert, rules: rules, now: now, calendar: calendar, glucose: glucose)
     }
 }

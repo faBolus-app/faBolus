@@ -141,9 +141,8 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// Classify a pump notification into a `NotificationBroker.AlertSafetyClass` from its OWN identity
     /// (the PumpX2 kind + bit id, per `AlertStatusResponse`/`AlarmStatusResponse`/`CGMAlertStatusResponse`
     /// name tables). This bit→semantics mapping is deliberately here at the decode boundary — faBolusCore
-    /// never hard-codes PumpX2 bit values — and feeds `autoSuppression` so a user auto-rule can never
-    /// snooze the loss-of-coverage set. Glucose-LEVEL CGM alerts (high / low / rising) stay `.other`, so
-    /// the user's conditional rules still apply to them.
+    /// never hard-codes PumpX2 bit values — and feeds `requiresBreakthrough`'s force-protection check.
+    /// Glucose-LEVEL CGM alerts (high / low / rising) stay `.other`.
     static func safetyClass(kind: NotificationKind, id: Int) -> NotificationBroker.AlertSafetyClass {
         switch kind {
         case .alarm:
@@ -152,14 +151,14 @@ public final class TandemBackend: NSObject, PumpBackend {
             if id == 0 || id == 17 { return .lowInsulin }  // Low insulin in the cartridge
             // The full upstream loss-of-coverage taxonomy (pumpX2 AlertStatusResponse.java:107) —
             // 40 (CGM error) / 41 / 42 / 48 (CGM unavailable) all mean the app has lost CGM coverage. IDs
-            // 41/42 previously fell through to `.other` (auto-snooze/dismiss-eligible), delaying CGM-loss
-            // awareness; classifying them here protects them before any user auto-rule runs.
+            // 41/42 previously fell through to `.other` (not force-protected), delaying CGM-loss
+            // awareness; classifying them here force-protects them.
             if id == 40 || id == 41 || id == 42 || id == 48 { return .cgmDataLoss }
             return .other
         case .cgmAlert:
             switch id {
             case 11, 13, 14, 27, 39: return .cgmDataLoss  // sensor failed/expired, out of range, failed connection, transmitter expired
-            default: return .other  // high/low/rising/calibration → user-ruleable
+            default: return .other  // high/low/rising/calibration → not force-protected
             }
         case .reminder:
             return .other

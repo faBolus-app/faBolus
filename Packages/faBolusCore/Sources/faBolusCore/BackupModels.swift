@@ -61,7 +61,7 @@ public enum BackupValue: Codable, Sendable, Equatable {
     case string(String)
     case stringArray([String])
     case intArray([Int])
-    case data(Data)  // JSON blobs like alertRules / childAllowed (base64 in JSON)
+    case data(Data)  // JSON blobs like childAllowed (base64 in JSON)
 
     private enum CodingKeys: String, CodingKey { case type, value }
 

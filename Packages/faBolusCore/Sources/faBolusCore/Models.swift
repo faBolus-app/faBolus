@@ -866,16 +866,6 @@ public enum CiqCeilingFlags {
 public enum PumpAlertKind: Int, Sendable, Equatable, Hashable, Codable, CaseIterable {
     case reminder = 0, alert = 1, alarm = 2, cgmAlert = 3
 
-    /// Human label for the alert-rule editor.
-    public var label: String {
-        switch self {
-        case .reminder: return "Reminder"
-        case .alert: return "Alert"
-        case .alarm: return "Alarm"
-        case .cgmAlert: return "CGM alert"
-        }
-    }
-
     /// The salience tier this alert kind maps to on the Garmin alert-intensity wire
     /// (`RemoteAlert.severity`), consumed by the watch's F3/R4 gate. Pure. Alarms are the pump's most-
     /// severe, safety-critical notifications ⇒ "critical"; a plain alert or a CGM low/high alert ⇒ "high";

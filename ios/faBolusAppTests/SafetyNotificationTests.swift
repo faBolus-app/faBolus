@@ -62,7 +62,7 @@ import TandemMessages
         #expect(SafetyEdge.freshness(wasFresh: true, isFresh: true) == .none)  // steady
     }
 
-    // MARK: Pump-identity → safety class (increment 5 — the reroute through autoSuppression)
+    // MARK: Pump-identity → safety class
 
     @Test func safetyClassMapsPumpIdentitiesToTheForceProtectedSet() {
         typealias K = NotificationKind
@@ -77,7 +77,7 @@ import TandemMessages
         #expect(TandemBackend.safetyClass(kind: K.alert, id: 48) == .cgmDataLoss)  // CGM unavailable
         #expect(TandemBackend.safetyClass(kind: K.alert, id: 40) == .cgmDataLoss)  // CGM error
         // The previously-missing loss-of-coverage variants (upstream AlertStatusResponse.java:107)
-        // — these fell through to `.other` (auto-snooze/dismiss-eligible) before this fix.
+        // — these fell through to `.other` (not force-protected) before this fix.
         #expect(TandemBackend.safetyClass(kind: K.alert, id: 41) == .cgmDataLoss)
         #expect(TandemBackend.safetyClass(kind: K.alert, id: 42) == .cgmDataLoss)
         #expect(TandemBackend.safetyClass(kind: K.alert, id: 6) == .other)  // Max basal rate
@@ -85,7 +85,7 @@ import TandemMessages
         for id in [11, 13, 14, 27, 39] {
             #expect(TandemBackend.safetyClass(kind: K.cgmAlert, id: id) == .cgmDataLoss)
         }
-        // Glucose-LEVEL CGM alerts stay user-ruleable (.other) — force-protection is loss-of-coverage only.
+        // Glucose-LEVEL CGM alerts stay `.other` — force-protection is loss-of-coverage only.
         #expect(TandemBackend.safetyClass(kind: K.cgmAlert, id: 2) == .other)  // High glucose
         #expect(TandemBackend.safetyClass(kind: K.cgmAlert, id: 3) == .other)  // Low glucose
         #expect(TandemBackend.safetyClass(kind: K.cgmAlert, id: 12) == .other)  // Sensor expiring (data still flows)
