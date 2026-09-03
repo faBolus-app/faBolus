@@ -600,6 +600,17 @@ public final class AppModel {
     /// comment. Test scaffolding only; compiles to nothing in Release and never changes production
     /// dose/delivery/wire behavior.
     func retryTerminalPersistForTesting() { deliveryLedgerCoordinator.retryTerminalPersistForTesting() }
+    /// Test seam: forwards to `DeliveryLedgerCoordinator.periodicReconcileIntervalOverride` — the
+    /// bounded periodic re-reconcile driver's test-only interval, so a test can drive several ticks
+    /// without a real multi-second wait. Test scaffolding only; compiles to nothing in Release.
+    var periodicReconcileIntervalOverrideForTesting: TimeInterval? {
+        get { deliveryLedgerCoordinator.periodicReconcileIntervalOverride }
+        set { deliveryLedgerCoordinator.periodicReconcileIntervalOverride = newValue }
+    }
+    /// Test seam: forwards to `DeliveryLedgerCoordinator.periodicReconcileCallCountForTesting` — counts
+    /// only the driver's SELF-scheduled ticks, never an edge-triggered call, so a test can prove a
+    /// retry fired with no connect edge and no BLE.
+    var periodicReconcileCallCountForTesting: Int { deliveryLedgerCoordinator.periodicReconcileCallCountForTesting }
     #endif
 
     /// Escape hatch: the user has checked the pump/t:connect and confirms there is no unconfirmed
@@ -833,6 +844,9 @@ public final class AppModel {
             self?.currentPumpIdentity() ?? RemoteBolusLedger.unpairedPumpKeySentinel
         }
         deliveryLedgerCoordinator.clearUnknownOutcome = { source.clearUnknownOutcomeAfterManualVerification() }
+        // Bounded periodic re-reconcile: read the LIVE published snapshot, never a value
+        // captured at wiring time — `AppModel.snapshot` is the merged façade `refresh()` maintains.
+        deliveryLedgerCoordinator.currentConnection = { [weak self] in self?.snapshot.connection ?? .disconnected }
         // The CGM Test-flow coordinator depends ONLY on closures bound to `self` — never a whole-
         // AppModel back-pointer. `probe` reads `glucoseSourceProbe` (itself already the private-
         // `glucoseSource`-guarded read), so the coordinator never touches `glucoseSource` directly.

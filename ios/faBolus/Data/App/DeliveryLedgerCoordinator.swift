@@ -49,6 +49,10 @@ final class DeliveryLedgerCoordinator {
     /// fail-closed flag, independent of this coordinator's durable ledger block. Manual verification
     /// must release both together (never one alone); see `clearDeliveryBlockAfterVerification()`.
     var clearUnknownOutcome: () -> Void = {}
+    /// Bound to `AppModel.snapshot.connection` — read LIVE at each periodic-retry decision (never
+    /// captured once), so a link that drops between arming and firing stops the bounded retry
+    /// driver below rather than asking a pump that is no longer there.
+    var currentConnection: () -> PumpConnectionState = { .disconnected }
 
     // MARK: - Ledger + store
 
@@ -75,6 +79,27 @@ final class DeliveryLedgerCoordinator {
     /// `commitBolusId` handshake lands the assigned bolus id on the right entry. Deliveries are
     /// serialized (one at a time), so a single slot suffices.
     private var inFlightDeliveryKey: (peerId: String, requestId: String)?
+
+    // MARK: - Bounded periodic re-reconcile
+    //
+    // Reconciliation otherwise fires on EDGES only: launch, the disconnect→connect edge, and
+    // `onPaired`. While an unresolved entry exists AND the link stays connected, this re-enters the
+    // SAME `reconcileUnresolvedDeliveries()` funnel below on a fixed interval, capped at a bounded
+    // number of attempts, then stays silent until the next genuine (non-periodic) call resets the
+    // budget. Never a second search body — every tick calls this one function again.
+    private static let periodicReconcileInterval: TimeInterval = 20
+    private static let periodicReconcileMaxAttempts = 5
+    /// Test seam, mirroring `TandemBackend.historySearchPageTimeoutOverride` /
+    /// `deliveryPollTimeoutOverride` — lets a test drive several ticks without a real multi-second wait.
+    var periodicReconcileIntervalOverride: TimeInterval?
+    private var periodicReconcileTask: Task<Void, Never>?
+    private var periodicReconcileAttempts = 0
+    #if DEBUG
+    /// Test seam, mirroring `TandemBackend.reconcileIndeterminateDeliveryCallCountForTesting` —
+    /// counts only the SELF-scheduled ticks below (never the edge-triggered calls this function's
+    /// caller already makes), so a test can prove a retry fired with no connect edge and no BLE.
+    private(set) var periodicReconcileCallCountForTesting = 0
+    #endif
 
     /// - Parameter ledgerStoreURL: overrides the durable idempotency-ledger file. Tests inject a
     ///   unique temp URL so instances don't share the App Group ledger; production uses the default.
@@ -368,7 +393,21 @@ final class DeliveryLedgerCoordinator {
     /// every reconnect. An entry with NO pump bolus id was interrupted before the pump granted permission
     /// (so nothing could have been delivered) → safe to settle as not-delivered. An entry WITH an id is
     /// reconciled by that id; a mismatch/`.unavailable` keeps it blocked (verify on the pump).
-    func reconcileUnresolvedDeliveries() async {
+    ///
+    /// - Parameter viaPeriodicRetry: true only when THIS call is a self-scheduled bounded-retry tick
+    ///   (see the periodic-retry block below); every other caller (launch / connect edge / manual
+    ///   verification flows) leaves the default `false`, which re-arms the retry budget below.
+    func reconcileUnresolvedDeliveries(viaPeriodicRetry: Bool = false) async {
+        if !viaPeriodicRetry {
+            // A genuine (non-periodic) call supersedes any tick already scheduled and resets the
+            // bounded budget — it is the "next connect edge" the driver waits for after cap exhaustion.
+            periodicReconcileTask?.cancel()
+            periodicReconcileTask = nil
+            periodicReconcileAttempts = 0
+        }
+        // Decide, on every exit path (including the empty-ledger early return below), whether one
+        // more bounded retry is owed — never only on the path that found work to do.
+        defer { scheduleNextPeriodicReconcileIfNeeded() }
         // Collapse a legacy ledger holding more than one unresolved id-bearing entry — written before
         // the global block existed, when the two fresh-connect triggers could still diverge onto
         // distinct ids. Must run before the read below: the block guarantees at most one going forward,
@@ -446,5 +485,34 @@ final class DeliveryLedgerCoordinator {
         if changed { persistTerminalOrBlock() }
         refreshDeliveryBlock()
         refresh()
+    }
+
+    /// While an unresolved entry still exists AND the link is STILL connected, arm one more bounded
+    /// retry through the SAME `reconcileUnresolvedDeliveries()` funnel above — never a second search
+    /// body. Trigger on the unresolved-entries predicate + a LIVE connection read, never on
+    /// `computeDeliveryBlockReason()`, which is also non-nil for a missing store, an unreadable
+    /// ledger, or a failed terminal save — none of which a history search can fix, and none of which
+    /// leave an entry in `unreconciled()` to begin with. Past the hard cap, this stays a no-op until
+    /// the next non-periodic call resets `periodicReconcileAttempts` above.
+    private func scheduleNextPeriodicReconcileIfNeeded() {
+        guard !remoteBolusLedger.unreconciled().isEmpty,
+            currentConnection() == .connected,
+            periodicReconcileAttempts < Self.periodicReconcileMaxAttempts
+        else {
+            periodicReconcileTask?.cancel()
+            periodicReconcileTask = nil
+            return
+        }
+        periodicReconcileAttempts += 1
+        let interval = periodicReconcileIntervalOverride ?? Self.periodicReconcileInterval
+        periodicReconcileTask?.cancel()
+        periodicReconcileTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(max(0, interval) * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            #if DEBUG
+            self?.periodicReconcileCallCountForTesting += 1
+            #endif
+            await self?.reconcileUnresolvedDeliveries(viaPeriodicRetry: true)
+        }
     }
 }

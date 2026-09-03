@@ -618,4 +618,132 @@ struct ReconcileByHistoryTests {
             )
         }
     }
+
+    // MARK: - Bounded periodic re-reconcile
+    //
+    // Reconciliation otherwise fires on EDGES only. These prove the bounded driver
+    // (`DeliveryLedgerCoordinator.scheduleNextPeriodicReconcileIfNeeded`, exercised here via
+    // `AppModel`'s forwarding test seams) re-enters the SAME `reconcileUnresolvedDeliveries()` funnel
+    // while an unresolved entry exists and the link stays connected — never a second search body.
+
+    /// Mirrors `LedgerBlockPrecedenceGuardTests.withCleanSettings` — `AppModel.remoteDeliver` routes
+    /// through `accessDecision`, which these tests never intend to exercise.
+    private func withCleanSettings(_ body: () async throws -> Void) async rethrows {
+        let s = AppSettings.shared
+        let ro = s.phoneReadOnly, child = s.childModeEnabled
+        s.phoneReadOnly = false
+        s.childModeEnabled = false
+        defer {
+            s.phoneReadOnly = ro
+            s.childModeEnabled = child
+        }
+        try await body()
+    }
+
+    /// Seed a genuinely unresolved, id-bearing ledger entry (no `reconcileResultsById` entry ⇒ every
+    /// `reconcile(bolusId:)` call returns `.unavailable`, exactly like a pump whose history hasn't
+    /// caught up yet) and return the wired `AppModel` + backend.
+    private func makeModelWithOneUnresolvedEntry() async -> (AppModel, MockBackend) {
+        let backend = MockBackend()
+        await backend.connect()
+        backend.forceIndeterminateNextDelivery = true
+        let model = AppModel(
+            source: backend,
+            ledgerStoreURL: URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("periodic-reconcile-\(UUID().uuidString).json"))
+        await model.remoteDeliver(requestId: "periodic-1", units: 1.0, peerId: "watch")
+        return (model, backend)
+    }
+
+    /// The driver must invoke `reconcileUnresolvedDeliveries()` again after the (overridden, short)
+    /// interval with NO connect edge in between — provable via the DEBUG call counter alone.
+    @Test func periodicRetryFiresAgainWithNoConnectEdgeWhileLinkStaysConnected() async {
+        await withCleanSettings {
+            let (model, _) = await makeModelWithOneUnresolvedEntry()
+            model.periodicReconcileIntervalOverrideForTesting = 0.05
+            // The edge trigger every real launch/reconnect already makes — arms the driver.
+            await model.reconcileUnresolvedDeliveries()
+            #expect(model.deliveryGloballyBlocked)  // still unavailable — stays unresolved
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            #expect(
+                model.periodicReconcileCallCountForTesting >= 1,
+                "a bounded retry must fire on its own while the link stays connected, with no connect edge")
+        }
+    }
+
+    /// The driver stops after a hard attempt cap and does not fire again until the next connect edge
+    /// re-arms it (never an unbounded loop against a pump that will never answer).
+    @Test func periodicRetryStopsAtTheHardCapThenResumesOnTheNextConnectEdge() async {
+        await withCleanSettings {
+            let (model, _) = await makeModelWithOneUnresolvedEntry()
+            model.periodicReconcileIntervalOverrideForTesting = 0.03
+            await model.reconcileUnresolvedDeliveries()
+            try? await Task.sleep(nanoseconds: 1_500_000_000)  // generously past 5 ticks at 30ms each
+            let plateaued = model.periodicReconcileCallCountForTesting
+            #expect(plateaued == 5, "the hard cap must stop the driver at a bounded number of attempts")
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            #expect(
+                model.periodicReconcileCallCountForTesting == plateaued,
+                "past the cap the driver must stay silent, not keep retrying, until the next connect edge")
+
+            // Simulate the next connect edge: a genuine (non-periodic) call re-arms the budget.
+            await model.reconcileUnresolvedDeliveries()
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            #expect(
+                model.periodicReconcileCallCountForTesting > plateaued,
+                "a fresh connect edge must reset the cap and let the driver fire again")
+        }
+    }
+
+    /// A second call into the SAME funnel while the FIRST is still in flight — representative of a
+    /// periodic tick racing a connect edge — must fail closed on `TandemBackend`'s reentrancy guard
+    /// rather than queue behind or corrupt the in-flight search; the in-flight search must still
+    /// resolve cleanly once fed a match. `AppModel.init` itself fires the launch reconcile
+    /// unconditionally (the same edge trigger a real launch relies on), so THAT is the search this
+    /// test races against — never a second, redundant search started by the test itself.
+    @Test func overlappingCallIntoTheSameFunnelFailsClosedAndNeverCorruptsTheInFlightSearch() async {
+        await withNoCompetingBackfill {
+            let (backend, fake) = makeBackend()
+            let unresolvedId = 700, newerId = 1100
+            scriptLastBolus(fake, bolusId: newerId)
+            scriptHistoryStatus(fake, numEntries: 1000, first: 1, last: 1000)
+
+            // Seed a durable, id-bearing unresolved entry directly — exactly what a crash-recovery
+            // relaunch would read back.
+            let ledgerURL = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("periodic-overlap-\(UUID().uuidString).json")
+            var ledger = RemoteBolusLedger()
+            _ = ledger.begin(peerId: "watch", requestId: "overlap-1", doseKey: "u:overlap")
+            ledger.markDelivering(peerId: "watch", requestId: "overlap-1", bolusId: unresolvedId)
+            try? RemoteBolusLedgerStore(url: ledgerURL).save(ledger)
+
+            // Construction alone fires `AppModel.init`'s own launch-time
+            // `reconcileUnresolvedDeliveries()` in the background — the edge trigger this test races
+            // an overlapping call against, same timing this file's other in-flight tests use.
+            let model = AppModel(source: backend, ledgerStoreURL: ledgerURL)
+            try? await Task.sleep(nanoseconds: 150_000_000)
+
+            // A second, overlapping call into the SAME shared primitive the periodic driver would
+            // eventually call — direct, so this doesn't also start a redundant SECOND
+            // `reconcileUnresolvedDeliveries()` pass through `AppModel`.
+            let overlappingResult = await backend.reconcile(bolusId: unresolvedId)
+            #expect(
+                overlappingResult == .unavailable,
+                "the overlapping call must fail closed on the entry guard, never settle the entry itself")
+
+            // Let the launch call's own in-flight search actually find the match, then give it time
+            // to resume from its per-page wait and settle.
+            backend.injectHistoryLogFrameForTesting(
+                FakePumpTransport.historyLogStream(bolusRecordsById: [
+                    (
+                        seq: 995, pumpTimeSec: 900_000, bolusId: unresolvedId, delivered: 1.5, iob: 0.5,
+                        completionStatusId: 3, insulinRequested: nil
+                    )
+                ]))
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            #expect(
+                !model.deliveryGloballyBlocked,
+                "the in-flight search must still resolve cleanly despite the overlapping call")
+        }
+    }
 }
