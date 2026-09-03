@@ -832,6 +832,7 @@ public final class AppModel {
         deliveryLedgerCoordinator.currentPumpIdentity = { [weak self] in
             self?.currentPumpIdentity() ?? RemoteBolusLedger.unpairedPumpKeySentinel
         }
+        deliveryLedgerCoordinator.clearUnknownOutcome = { source.clearUnknownOutcomeAfterManualVerification() }
         // The CGM Test-flow coordinator depends ONLY on closures bound to `self` — never a whole-
         // AppModel back-pointer. `probe` reads `glucoseSourceProbe` (itself already the private-
         // `glucoseSource`-guarded read), so the coordinator never touches `glucoseSource` directly.

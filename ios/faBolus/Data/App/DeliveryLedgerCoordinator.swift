@@ -45,6 +45,10 @@ final class DeliveryLedgerCoordinator {
     /// Used to scope a ledger entry's outcome to the pump that wrote it: no new
     /// pump-protocol read, and the identity concept `PumpSwitchStore.decide` already compares.
     var currentPumpIdentity: () -> String = { RemoteBolusLedger.unpairedPumpKeySentinel }
+    /// Bound to `source.clearUnknownOutcomeAfterManualVerification()` — the backend's OWN in-memory
+    /// fail-closed flag, independent of this coordinator's durable ledger block. Manual verification
+    /// must release both together (never one alone); see `clearDeliveryBlockAfterVerification()`.
+    var clearUnknownOutcome: () -> Void = {}
 
     // MARK: - Ledger + store
 
@@ -199,11 +203,15 @@ final class DeliveryLedgerCoordinator {
                 status: RemoteCommand.Status.delivered.rawValue,
                 message: "Cleared after manual verification on the pump.")
         }
-        // Only release the block once the clean ledger is durably saved.
+        // Only release the block once the clean ledger is durably saved. The backend's own in-memory
+        // unknown-outcome flag is a SECOND, independent fail-closed layer guarding the same delivery
+        // path (`validateDeliver`) — clear it together with the durable block, never separately, so a
+        // successful manual clear doesn't leave the other layer re-refusing the dose it just unblocked.
         do {
             try remoteBolusLedgerStore.save(remoteBolusLedger)
             ledgerFailedClosed = false
             terminalSaveFailed = false
+            clearUnknownOutcome()
         } catch {
             terminalSaveFailed = true
         }

@@ -123,6 +123,13 @@ public protocol PumpBackend: AnyObject {
     /// history, by its pump-assigned id. Returns `.resolved` only on an authoritative id match; otherwise
     /// `.unavailable` so the host keeps the delivery blocked and asks the user to verify on the pump.
     func reconcile(bolusId: Int) async -> BolusReconciliation
+    /// Release a backend's OWN in-memory "an unknown-outcome bolus blocks new deliveries" flag, called
+    /// ONLY from the host's manual verification affordance. This is a SECOND fail-closed layer,
+    /// independent of the host's durable ledger block — a backend that has no such flag (the default
+    /// below) is unaffected. The host must call this together with releasing its own block, never one
+    /// without the other, so a manual clear can't leave a backend-side flag re-refusing the exact
+    /// delivery the user just unblocked.
+    func clearUnknownOutcomeAfterManualVerification()
 
     /// Decoded history-log events for the Logbook (B2), newest first. Backends that don't decode
     /// history return `[]` (see the default). Populated from the pump's history backfill.
@@ -375,6 +382,8 @@ public extension PumpBackend {
     /// Default: a backend that can't query its bolus history can never auto-reconcile, so a lost outcome
     /// stays blocked until manual verification (fail closed).
     func reconcile(bolusId: Int) async -> BolusReconciliation { .unavailable }
+    /// Default no-op: a backend with no in-memory unknown-outcome flag has nothing to clear.
+    func clearUnknownOutcomeAfterManualVerification() {}
 
     /// Units-only convenience — forwards with no carb/BG/IOB metadata. Keeps existing call sites terse.
     func deliverBolus(units: Double) async throws -> Double {

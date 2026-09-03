@@ -2,6 +2,8 @@ import Testing
 import Foundation
 @testable import faBolus
 import faBolusCore
+import TandemMessages
+import TandemBLE
 
 /// Pins that a durable-ledger save failure never lets a dose reach the pump and never releases the
 /// global block on an unsaved outcome. `failSaveOnCall` targets markDelivering (before any pump write), markSent (id commit), then terminal settle.
@@ -133,6 +135,57 @@ struct R3CLedgerFaultTests {
             await model.remoteDeliver(requestId: "f5", units: 2.0, peerId: "watch")
             #expect(model.deliveryGloballyBlocked)
             #expect(backend.lastAssignedBolusId == nil)
+        }
+    }
+
+    // MARK: - Manual clear releases BOTH fail-closed layers together
+
+    /// A `TandemBackend` whose time-sync + permission already succeed; the caller scripts the
+    /// initiate response. Mirrors `TandemDeliveryOutcomeTests.make()`.
+    private func makeTandemBackend(bolusId: Int) -> (TandemBackend, FakePumpTransport) {
+        let fake = FakePumpTransport()
+        let backend = TandemBackend(testTransport: fake)
+        fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
+        fake.script(BolusPermissionResponse.props.opCode, .frame(FakePumpTransport.permissionGranted(bolusId: bolusId)))
+        return (backend, fake)
+    }
+
+    // #6 — an indeterminate exit sets the backend's OWN in-memory `deliveryOutcomeUnknown` flag — a
+    // SECOND fail-closed layer, independent of the durable ledger block. The manual clear must
+    // release both together (same process lifetime): otherwise `validateDeliver` re-refuses the
+    // exact dose the user just verified on the pump.
+    @Test func manualClearAlsoReleasesTheBackendsInMemoryUnknownOutcomeFlag() async {
+        await withCleanSettings {
+            let (backend, fake) = makeTandemBackend(bolusId: 4242)
+            let initiateOp = InitiateBolusResponse.props.opCode
+            fake.script(initiateOp, .tx(.timedOut(characteristic: .control, opCode: initiateOp)))
+            let store = FakeLedgerStore()
+            let model = AppModel(source: backend, ledgerStore: store)
+
+            // Go through the real ledgered-delivery funnel (not a bare `backend.deliverBolus`) so the
+            // pump-assigned id is durably committed and the initiate write actually reaches the fake
+            // transport's scripted drop, same as a real remote delivery.
+            await model.remoteDeliver(requestId: "f6", units: 2.0, peerId: "watch")
+            #expect(backend.deliveryOutcomeUnknown)  // the indeterminate exit set the in-memory flag
+            #expect(model.deliveryGloballyBlocked)  // …and the durable ledger block too
+
+            model.clearDeliveryBlockAfterVerification()
+
+            #expect(!backend.deliveryOutcomeUnknown)  // both layers released together
+            #expect(!model.deliveryGloballyBlocked)
+        }
+    }
+
+    // #7 — a manual clear that saves the durable ledger cleanly still releases the block when there
+    // was no in-memory unknown outcome to begin with (today's behavior, unchanged).
+    @Test func manualClearBehavesAsBeforeWhenNoBackendFlagWasSet() async {
+        await withCleanSettings {
+            let backend = MockBackend()
+            await backend.connect()
+            let store = FakeLedgerStore()
+            let model = AppModel(source: backend, ledgerStore: store)
+            model.clearDeliveryBlockAfterVerification()
+            #expect(!model.deliveryGloballyBlocked)
         }
     }
 }

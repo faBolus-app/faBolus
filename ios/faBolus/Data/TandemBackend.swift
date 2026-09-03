@@ -738,6 +738,18 @@ public final class TandemBackend: NSObject, PumpBackend {
         return BolusError.indeterminate(reason)
     }
 
+    /// Release the in-memory "an unknown-outcome bolus blocks new deliveries" flag from a manual
+    /// verification affordance — the coordinator's own durable ledger block is a SEPARATE fail-closed
+    /// layer guarding the same `validateDeliver` chokepoint, and the two must be released TOGETHER.
+    /// Never called from an authoritative pump reconciliation (`resolved(_:)` inside
+    /// `findBolusInHistory` clears this itself, gated on the exact bolus id matching); this entry
+    /// point exists only for the host's manual-clear affordance and clears unconditionally.
+    public func clearUnknownOutcomeAfterManualVerification() {
+        deliveryOutcomeUnknown = false
+        unknownOutcomeBolusId = 0
+        onChange?()
+    }
+
     private func acquirePumpTx() async {
         while pumpTxBusy {
             await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in pumpTxWaiters.append(c) }
