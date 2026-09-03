@@ -649,8 +649,8 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
             let k = key(n)
             postedPumpAlerts.insert(k)
             // Populate the TYPED safety marker from the pump's OWN alert identity
-            // (`TandemBackend.safetyClass`, the same classification `applyAutoRules` force-protects on) so
-            // `requiresBreakthrough` can decide interruption level from it — never from untyped userInfo.
+            // (`TandemBackend.safetyClass`) so `requiresBreakthrough` can decide interruption level from
+            // it — never from untyped userInfo.
             // `.other` maps to `nil` (no marker) so an un-classified alert is unaffected.
             let klass = TandemBackend.safetyClass(kind: NotificationKind(rawValue: n.kind.rawValue) ?? .alert, id: n.id)
             let msg = NotificationBroker.Message(

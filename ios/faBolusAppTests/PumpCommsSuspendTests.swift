@@ -302,8 +302,8 @@ struct PumpCommsSuspendTests {
     }
 
     /// MEDIUM-D: the single op-184 call graph holds through BOTH entry points — the LEGACY void
-    /// `dismissNotification(_:)` (auto-rules' entry point, TandemBackend.swift `applyAutoRules`) calls
-    /// the typed method exactly once and discards its outcome; no double-send, no recursion.
+    /// `dismissNotification(_:)` calls the typed method exactly once and discards its outcome; no
+    /// double-send, no recursion.
     @Test func legacyVoidDismissCallsTypedMethodExactlyOnceNoDoubleSend() async throws {
         let setup = try #require(makeMobiBackendWithActiveAlert())
         let (b, fake, alert) = setup

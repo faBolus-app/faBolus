@@ -22,7 +22,7 @@ struct AlertRulesFreezeGuardTests {
     @Test func alertRulesIsAlwaysEmptyByDefault() {
         #expect(
             AppSettings.shared.alertRules.isEmpty,
-            "alertRules must be frozen to always-empty so applyAutoRules early-returns unconditionally (SAFETY)"
+            "alertRules must be frozen to always-empty — no production code reads it (SAFETY)"
         )
     }
 

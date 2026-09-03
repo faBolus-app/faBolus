@@ -190,48 +190,10 @@ public final class TandemBackend: NSObject, PumpBackend {
         acknowledged = acknowledged.filter {
             present.contains($0.key) && now.timeIntervalSince($0.value) < Self.snoozeWindow
         }
-        applyAutoRules(raw, now: now)
         activeNotifications = raw.filter { !acknowledged.keys.contains(noteKey($0)) }.map { Self.toAlert($0) }
         // The TRUE raw set, published atomically alongside the filtered
         // `activeNotifications` above (same poll — the composer's same-poll invariant depends on this).
         rawActiveNotifications = raw.map { Self.toAlert($0) }
-    }
-
-    /// Apply the user's conditional auto-rules (time-of-day / kind / glucose → auto-snooze or
-    /// auto-dismiss). `autoSnooze` (and `autoDismiss` on a pump that can't honor a remote dismiss)
-    /// records a local ack immediately (hide + stop notifying) — a PURE local snooze never claims the
-    /// alert is actually gone on the pump, so hiding it immediately is honest. `autoDismiss` on a pump
-    /// that DOES support remote dismissal instead defers to `dismissNotification(_:)`, which
-    /// hides the alert only after an authenticated status-zero proof the pump actually cleared it — this
-    /// function must NOT pre-ack that case, or it would hide an alert the pump never confirmed.
-    /// SAFETY: alarms **and** malfunctions are never auto-acted — the malfunction list is excluded here,
-    /// and the engine additionally refuses the `.alarm` kind.
-    private func applyAutoRules(_ raw: [PumpNotification], now: Date) {
-        let rules = AppSettings.shared.alertRules
-        guard !rules.isEmpty else { return }
-        let protectedKeys = Set((malfunctionList + alarmList).map(noteKey))
-        for n in raw {
-            let key = noteKey(n)
-            if acknowledged[key] != nil || protectedKeys.contains(key) { continue }
-            let alert = Self.toAlert(n)
-            // Force-protection: `autoSuppression` returns nil (never auto-acted) for the loss-of-coverage
-            // safety set — occlusion / CGM-data-loss / low-insulin — regardless of a matching rule, and
-            // delegates `.other` to `AlertRuleEngine` exactly as before. This closes the hole where a
-            // user auto-rule could snooze a CGM-loss (kind 3) or low-insulin (kind 1) alert.
-            let klass = Self.safetyClass(kind: n.kind, id: n.id)
-            guard
-                let action = NotificationBroker.autoSuppression(
-                    for: alert, safetyClass: klass, rules: rules,
-                    now: now, glucose: snapshot.glucose)
-            else { continue }
-            if action == .autoDismiss, capabilities.supportsRemoteAlertDismiss {
-                // Don't pre-ack — `dismissNotification` itself gates the hide on the pump's
-                // authenticated response, never on this send attempt.
-                Task { [weak self] in await self?.dismissNotification(alert) }
-            } else {
-                acknowledged[key] = now  // pure local snooze (or a pump that can't remote-dismiss): hide now
-            }
-        }
     }
     // Diagnostic: raw bitmaps + how many alert responses we've received (surfaced on the HUD to
     // confirm the pump is actually answering the alert polls).
@@ -2096,8 +2058,8 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// guard branch just below, for pumps that don't honor remote dismissal) is UNCHANGED and stays a
     /// distinct, explicitly LOCAL action — it never claims the pump-side alert is gone.
     /// LEGACY void entry point: calls the typed method ONCE and discards the outcome. Keeps
-    /// existing callers (auto-rules `applyAutoRules`, `PumpBackend.dismissNotification(_:)` call sites)
-    /// unchanged. The single op-184 body lives EXCLUSIVELY in `dismissNotificationTyped` below.
+    /// existing `PumpBackend.dismissNotification(_:)` call sites unchanged. The single op-184 body
+    /// lives EXCLUSIVELY in `dismissNotificationTyped` below.
     public func dismissNotification(_ alert: PumpAlert) async {
         _ = await dismissNotificationTyped(alert)
     }

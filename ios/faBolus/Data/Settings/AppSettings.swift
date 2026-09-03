@@ -473,8 +473,8 @@ public final class AppSettings {
     }
 
     /// User-defined auto-rules for pump alerts. **Alarms are never auto-acted** regardless of rules.
-    /// FROZEN to always-`[]` so neither a setter nor a restored backup can re-arm the engine;
-    /// `TandemBackend.applyAutoRules` then early-returns. See `AlertRulesFreezeGuardTests`.
+    /// FROZEN to always-`[]` so neither a setter nor a restored backup can re-arm the engine; no
+    /// production code reads this property. See `AlertRulesFreezeGuardTests`.
     public var alertRules: [AlertRule] {
         get { [] }
         // The empty setter IS the freeze: swallowing the write is what makes this
