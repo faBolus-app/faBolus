@@ -140,10 +140,6 @@ struct StatusPillsView: View {
             pill(
                 icon: "gauge.with.dots.needle.67percent", tint: .teal,
                 value: String(format: "%.1f U", snapshot.maxBolusUnits), label: "Max bolus")
-        case "cob":
-            pill(
-                icon: "leaf.fill", tint: .green,
-                value: snapshot.cobGrams > 0 ? "\(Int(snapshot.cobGrams)) g" : "—", label: "Active carbs")
         default:
             EmptyView()
         }

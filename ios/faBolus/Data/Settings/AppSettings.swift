@@ -808,7 +808,7 @@ public final class AppSettings {
     public static let pillItems: [String] =
         [
             "iob", "reservoir", "battery", "cgm", "basal", "controlIQ", "lastBolus", "carbRatio", "isf", "target",
-            "maxBolus", "cob"
+            "maxBolus"
         ]
     public static func pillLabel(_ id: String) -> String {
         switch id {
@@ -823,7 +823,6 @@ public final class AppSettings {
         case "isf": return "Correction (ISF)"
         case "target": return "Target glucose"
         case "maxBolus": return "Max bolus"
-        case "cob": return "Active carbs (COB)"
         default: return id
         }
     }
