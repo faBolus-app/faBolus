@@ -160,9 +160,9 @@ struct HistoryPersistenceRoundTripTests {
         #expect(after.first?.mgdl == 130)
     }
 
-    // MARK: - recordCarbs / therapyInsights stay wired to the same store
+    // MARK: - recordCarbs stays wired to the same store
 
-    @Test func recordCarbsPersistsAndTherapyInsightsRuns() {
+    @Test func recordCarbsPersists() {
         let backend = MockBackend()
         let model = AppModel(source: backend)
         let store = try! GlucoseHistoryStore(inMemory: true)
@@ -171,8 +171,5 @@ struct HistoryPersistenceRoundTripTests {
         model.recordCarbs(grams: 45)
         let carbs = model.sharedHistoryStore?.carbs(in: Date(timeIntervalSince1970: 0)...Date()) ?? []
         #expect(carbs.contains { $0.grams == 45 }, "recordCarbs must reach the persistent store")
-
-        // Never crashes / always returns an array, even over a sparse persisted history.
-        _ = model.therapyInsights()
     }
 }

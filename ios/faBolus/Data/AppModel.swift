@@ -1257,11 +1257,6 @@ public final class AppModel {
     /// have carb context. Source = faBolus (its own entry).
     public func recordCarbs(grams: Double) { historyPersistence.recordCarbs(grams: grams) }
 
-    /// Retrospective pattern insights over persisted history (dawn phenomenon, recurring lows, TIR).
-    public func therapyInsights() -> [TherapyInsightItem] {
-        historyPersistence.therapyInsights(cgmFallback: glucoseHistory, unit: AppSettings.shared.glucoseDisplayUnit)
-    }
-
     // MARK: - Apple Health (HealthKit) import/export — gated: the whole hook compiles out of the
     // free/CI build. Stored properties stay HERE (a separate-file extension can't declare them);
     // methods live in `AppModel+HealthKit.swift`. `maybeAutoImportAppleHealth`/`maybeAutoExportAppleHealth`

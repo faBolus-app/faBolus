@@ -6,13 +6,13 @@ import os
 /// Persistent-history write-through + identity-diff bookkeeping, extracted from `AppModel` behind
 /// the unchanged `GlucoseHistoryStore` seam. Owns the store, the two identity-diff key sets, and
 /// every read/write that touches them (`persist`, `storedStatistics`, `clearStoredHistory`,
-/// `applyRetention`, `recordCarbs`, `therapyInsights`, `storedHistoryApproxBytes`, plus the
+/// `applyRetention`, `recordCarbs`, `storedHistoryApproxBytes`, plus the
 /// `#if DEBUG` test seams).
 ///
 /// Needs no injected closures — every method takes its inputs as plain values
-/// (`persist(glucose:boluses:provenance:)`, `therapyInsights(cgmFallback:unit:)`) and returns
-/// plain values. Zero back-pointer either direction; `AppModel` never hands this coordinator a
-/// reference to itself, and this coordinator never reaches back into `AppModel`.
+/// (`persist(glucose:boluses:provenance:)`) and returns plain values. Zero back-pointer either
+/// direction; `AppModel` never hands this coordinator a reference to itself, and this coordinator
+/// never reaches back into `AppModel`.
 ///
 /// `AppModel` exposes a forwarding `history` computed property (`historyPersistence.store`) so
 /// `AppModel+Backup.swift` and `AppModel+HealthKit.swift` keep compiling unchanged.
@@ -107,17 +107,6 @@ final class HistoryPersistenceCoordinator {
     func recordCarbs(grams: Double) {
         guard grams > 0 else { return }
         store?.ingestCarbs([(date: Date(), grams: grams)], sourceID: "fabolus")
-    }
-
-    /// Retrospective pattern insights over persisted history (dawn phenomenon, recurring lows, TIR).
-    /// - Parameter cgmFallback: `AppModel.glucoseHistory` (the in-memory rolling buffer) — used only if
-    ///   no persisted store exists. `unit` (`AppSettings.shared.glucoseDisplayUnit`) is passed IN rather
-    ///   than read here — no direct `AppModel` / global-singleton read from inside the coordinator.
-    func therapyInsights(cgmFallback: [GlucoseReading], unit: GlucoseUnit) -> [TherapyInsightItem] {
-        let range = Date().addingTimeInterval(-90 * 86400)...Date()
-        let cgm = store?.glucose(in: range) ?? cgmFallback
-        return SmartAssist.insights(cgm: cgm, carbs: store?.carbs(in: range) ?? [], unit: unit)
-            .map { TherapyInsightItem(title: $0.title, detail: $0.detail) }
     }
 
     #if DEBUG

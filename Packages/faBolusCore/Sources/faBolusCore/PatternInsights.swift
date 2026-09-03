@@ -43,8 +43,8 @@ public final class PatternInsights {
 
     /// - Parameter unit: the ACTIVE DISPLAY unit for the generated prose.
     ///   `PatternInsights` is a `faBolusCore` type and must stay app-independent — it cannot read
-    ///   `AppSettings.shared` — so the caller (`SmartAssist`/`AppModel.therapyInsights()`) passes the
-    ///   unit through. Defaults to `.mgdl` so every pre-existing call site (and this method's own
+    ///   `AppSettings.shared` — so the caller passes the unit through. Defaults to `.mgdl` so every
+    ///   pre-existing call site (and this method's own
     ///   mg/dL-mode wording) is byte-identical to before this parameter was added. The underlying
     ///   `Config.low`/`Config.high`/derived values this method reasons about stay mg/dL `Double` —
     ///   only the rendered `detail` text changes.
