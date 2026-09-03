@@ -478,6 +478,10 @@ public final class TandemBackend: NSObject, PumpBackend {
     private static let historySearchMaxPages = 4  // ≤ 1020 records — a reconciliation probe, not a full sync
     private static let historySearchMaxRecords = 1024
     private static let historySearchPerPageTimeout: TimeInterval = 2.0
+    /// The pump's own delivery increment — the bench tolerance for telling a genuinely complete bolus
+    /// from a partial one without tripping on float noise
+    /// (`TandemKit/Tests/TandemHardwareTests/BenchCases.swift`'s identical comparison).
+    private static let terminalEvidenceToleranceUnits = 0.05
     /// Test override for the per-page settle wait (production default `historySearchPerPageTimeout`),
     /// mirroring `deliveryPollTimeoutOverride`'s existing pattern — keeps the NEGATIVE (exhausted, no
     /// match) test path from needing several real seconds per page.
@@ -1670,19 +1674,54 @@ public final class TandemBackend: NSObject, PumpBackend {
         // in-flight search's own `historySearchTarget`/`historySearchMatch`/`historySearchRecordsScanned`
         // bookkeeping — see the doc comment above those properties.
         guard historySearchTarget == nil else { return .unavailable }
-        func resolved(_ deliveredUnits: Double) -> BolusReconciliation {
-            // The pump's last-bolus/history record reports the delivered amount authoritatively. Neither
-            // exposes a distinct "cancelled" flag, so a partial amount simply reports fewer delivered units.
+        // The pump's own requested-vs-delivered amounts settle a bolus — never the upstream
+        // completion-status enum (its own author labels it guesswork, and it "seems to be equal to 1
+        // even when partially valid data is returned"). `completionStatusId` (history branch only,
+        // already decoded) is consulted purely to choose cancelled-vs-partial WORDING once the amounts
+        // have already established the delivery was incomplete — it never decides completeness itself.
+        struct TerminalEvidence {
+            let deliveredUnits: Double
+            let requestedUnits: Double
+            /// Present on the history branch only; nil on the op-165 fast path.
+            let completionStatusId: Int?
+        }
+        func resolved(_ evidence: TerminalEvidence) -> BolusReconciliation {
             if deliveryOutcomeUnknown && unknownOutcomeBolusId == bolusId {
                 deliveryOutcomeUnknown = false
                 unknownOutcomeBolusId = 0
                 onChange?()
             }
-            return .resolved(deliveredUnits: deliveredUnits, cancelled: false)
+            // A requested amount of 0 alongside delivered > 0 means the field isn't populated on this
+            // pump, not that zero units were genuinely requested — completeness is then unverifiable, so
+            // settle with no completeness claim either way.
+            let requestedKnown = evidence.requestedUnits > 0
+            let complete =
+                !requestedKnown
+                || abs(evidence.deliveredUnits - evidence.requestedUnits) <= Self.terminalEvidenceToleranceUnits
+            // Only a user-terminated stop is worded "cancelled" — every other stop reason (alarm,
+            // malfunction, a wireless drop, a rejection, PLGS) and the fast path (no status decoded at
+            // all) report the truthful delivered amount without a cancellation label.
+            let cancelled = !complete && evidence.completionStatusId == 0
+            return .resolved(deliveredUnits: evidence.deliveredUnits, cancelled: cancelled)
         }
-        // Fast path (unchanged): the pump's LAST bolus record matches exactly.
-        if let last = try? await lastBolusStatus(), last.bolusId == bolusId {
-            return resolved(last.deliveredUnits)
+        // Fast path: the pump's LAST bolus record matches exactly — but only once op-45 proves this
+        // exact id is no longer active. An indeterminate exit already unwound
+        // `.bolusing → .connected` above while the pump may still be infusing, so op-165 alone can
+        // answer with a partial mid-delivery. A refusal (unusable op-44/45 on this pump) or op-45
+        // reporting this id still active both fall through to the bounded history page walk instead —
+        // slower, never unsound. The history branch below needs no equivalent gate: a completed-bolus
+        // history record cannot exist before the bolus finishes.
+        let fastPathIdStillActive: Bool
+        if let status = try? await currentBolusStatus() {
+            fastPathIdStillActive = status.bolusId == bolusId && status.isActive
+        } else {
+            fastPathIdStillActive = true  // op-45 refused/unavailable — the fast path is unusable here
+        }
+        if !fastPathIdStillActive, let last = try? await lastBolusStatus(), last.bolusId == bolusId {
+            return resolved(
+                TerminalEvidence(
+                    deliveredUnits: last.deliveredUnits, requestedUnits: Double(last.requestedVolume) / 1000.0,
+                    completionStatusId: nil))
         }
         // The fast path missed — possibly a newer bolus intervened. Query recent HISTORY by exact
         // id instead of giving up. `awaitResponse` also reaches the SAME passive dispatch the routine
@@ -1729,7 +1768,10 @@ public final class TandemBackend: NSObject, PumpBackend {
                 // a stale/mismatched target must fall through to fail-closed rather than resolve the
                 // wrong id.
                 guard match.bolusId == bolusId else { return .unavailable }
-                return resolved(match.deliveredUnits)
+                return resolved(
+                    TerminalEvidence(
+                        deliveredUnits: match.deliveredUnits, requestedUnits: match.insulinRequested,
+                        completionStatusId: match.completionStatusId))
             }
             if startLog <= range.firstSequenceNum { break }  // reached the bottom of the available range
             nextEnd = startLog - 1
