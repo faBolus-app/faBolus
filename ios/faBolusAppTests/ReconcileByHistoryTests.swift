@@ -67,7 +67,7 @@ struct ReconcileByHistoryTests {
                 FakePumpTransport.historyLogStream(bolusRecordsById: [
                     (
                         seq: 995, pumpTimeSec: 900_000, bolusId: unresolvedId, delivered: 1.5, iob: 0.5,
-                        completionStatusId: 3
+                        completionStatusId: 3, insulinRequested: nil
                     )
                 ]))
             let result = await task.value
@@ -75,9 +75,11 @@ struct ReconcileByHistoryTests {
         }
     }
 
-    /// A 0U/partial completed record for the target id must still resolve the hold (TandemKit's
-    /// accept-0U decode) — a cancelled-before-any-insulin bolus is a real, known outcome, not an
-    /// unresolvable one.
+    /// A 0U completed record for the target id must still resolve the hold (TandemKit's accept-0U
+    /// decode) — a cancelled-before-any-insulin bolus is a real, known outcome, not an unresolvable one.
+    /// `insulinRequested: 0` alongside `delivered: 0` means the requested amount is unpopulated as much
+    /// as it means "0 of 0" — either reading settles the same honest way, with no completeness claim
+    /// asserted either way.
     @Test func zeroUnitHistoryRecordStillResolves() async {
         await withNoCompetingBackfill {
             let (backend, fake) = makeBackend()
@@ -91,11 +93,133 @@ struct ReconcileByHistoryTests {
                 FakePumpTransport.historyLogStream(bolusRecordsById: [
                     (
                         seq: 994, pumpTimeSec: 900_100, bolusId: unresolvedId, delivered: 0, iob: 0.1,
-                        completionStatusId: 5
+                        completionStatusId: 5, insulinRequested: 0
                     )
                 ]))
             let result = await task.value
             #expect(result == .resolved(deliveredUnits: 0, cancelled: false))
+        }
+    }
+
+    // MARK: - Terminal-evidence rule — classify from requested-vs-delivered amounts, never the status enum
+
+    /// A proven-terminal record whose delivered amount matches the requested amount (within the pump's
+    /// own 0.05 U increment tolerance) resolves complete — `cancelled: false`.
+    @Test func completeDeliveryWithinToleranceResolvesNotCancelled() async {
+        await withNoCompetingBackfill {
+            let (backend, fake) = makeBackend()
+            let unresolvedId = 510, newerId = 910
+            scriptLastBolus(fake, bolusId: newerId)
+            scriptHistoryStatus(fake, numEntries: 1000, first: 1, last: 1000)
+
+            let task = Task { await backend.reconcile(bolusId: unresolvedId) }
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            backend.injectHistoryLogFrameForTesting(
+                FakePumpTransport.historyLogStream(bolusRecordsById: [
+                    (
+                        seq: 995, pumpTimeSec: 900_000, bolusId: unresolvedId, delivered: 2.0, iob: 0.5,
+                        completionStatusId: 3, insulinRequested: 2.0
+                    )
+                ]))
+            let result = await task.value
+            #expect(result == .resolved(deliveredUnits: 2.0, cancelled: false))
+        }
+    }
+
+    /// A genuinely complete bolus differing from its requested amount only in the last float bit
+    /// (well inside the 0.05 U tolerance) must classify complete, not partial.
+    @Test func completeDeliveryDifferingInLastFloatBitStillResolvesComplete() async {
+        await withNoCompetingBackfill {
+            let (backend, fake) = makeBackend()
+            let unresolvedId = 511, newerId = 911
+            scriptLastBolus(fake, bolusId: newerId)
+            scriptHistoryStatus(fake, numEntries: 1000, first: 1, last: 1000)
+
+            let task = Task { await backend.reconcile(bolusId: unresolvedId) }
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            backend.injectHistoryLogFrameForTesting(
+                FakePumpTransport.historyLogStream(bolusRecordsById: [
+                    (
+                        seq: 995, pumpTimeSec: 900_000, bolusId: unresolvedId, delivered: 2.0, iob: 0.5,
+                        completionStatusId: 3, insulinRequested: 2.0 + 1e-6
+                    )
+                ]))
+            let result = await task.value
+            #expect(result == .resolved(deliveredUnits: 2.0, cancelled: false))
+        }
+    }
+
+    /// A record proving a partial delivery beyond tolerance, whose `completionStatusId` marks a
+    /// user-terminated stop (0), settles TERMINAL — released from the block — with the cancelled
+    /// wording, never staying blocked.
+    @Test func partialDeliveryWithUserTerminatedStatusResolvesCancelled() async {
+        await withNoCompetingBackfill {
+            let (backend, fake) = makeBackend()
+            let unresolvedId = 512, newerId = 912
+            scriptLastBolus(fake, bolusId: newerId)
+            scriptHistoryStatus(fake, numEntries: 1000, first: 1, last: 1000)
+
+            let task = Task { await backend.reconcile(bolusId: unresolvedId) }
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            backend.injectHistoryLogFrameForTesting(
+                FakePumpTransport.historyLogStream(bolusRecordsById: [
+                    (
+                        seq: 995, pumpTimeSec: 900_000, bolusId: unresolvedId, delivered: 1.0, iob: 0.5,
+                        completionStatusId: 0, insulinRequested: 2.0
+                    )
+                ]))
+            let result = await task.value
+            #expect(result == .resolved(deliveredUnits: 1.0, cancelled: true))
+        }
+    }
+
+    /// A record proving the SAME partial delivery, but whose `completionStatusId` is a stop reason other
+    /// than user-terminated (here: `STOPPED_WIRELESS`), still settles TERMINAL — released, never staying
+    /// blocked — but without the cancelled label: the defect this rule closes was releasing over a
+    /// RUNNING bolus, not over a genuinely-finished partial one, and the delivered amount is reported
+    /// either way with no completeness claim attached.
+    @Test func partialDeliveryWithNonUserTerminatedStatusResolvesWithoutCancelledLabel() async {
+        await withNoCompetingBackfill {
+            let (backend, fake) = makeBackend()
+            let unresolvedId = 513, newerId = 913
+            scriptLastBolus(fake, bolusId: newerId)
+            scriptHistoryStatus(fake, numEntries: 1000, first: 1, last: 1000)
+
+            let task = Task { await backend.reconcile(bolusId: unresolvedId) }
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            backend.injectHistoryLogFrameForTesting(
+                FakePumpTransport.historyLogStream(bolusRecordsById: [
+                    (
+                        seq: 995, pumpTimeSec: 900_000, bolusId: unresolvedId, delivered: 1.0, iob: 0.5,
+                        completionStatusId: 4, insulinRequested: 2.0
+                    )
+                ]))
+            let result = await task.value
+            #expect(result == .resolved(deliveredUnits: 1.0, cancelled: false))
+        }
+    }
+
+    /// A requested amount reported as 0 alongside a non-zero delivered amount means the field isn't
+    /// populated on this pump, not that zero units were genuinely requested. Settle as today
+    /// (`cancelled: false`) — completeness is unverifiable and must never be asserted either way.
+    @Test func requestedAmountUnknownSettlesWithoutCancelledLabel() async {
+        await withNoCompetingBackfill {
+            let (backend, fake) = makeBackend()
+            let unresolvedId = 514, newerId = 914
+            scriptLastBolus(fake, bolusId: newerId)
+            scriptHistoryStatus(fake, numEntries: 1000, first: 1, last: 1000)
+
+            let task = Task { await backend.reconcile(bolusId: unresolvedId) }
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            backend.injectHistoryLogFrameForTesting(
+                FakePumpTransport.historyLogStream(bolusRecordsById: [
+                    (
+                        seq: 995, pumpTimeSec: 900_000, bolusId: unresolvedId, delivered: 1.5, iob: 0.5,
+                        completionStatusId: 0, insulinRequested: 0
+                    )
+                ]))
+            let result = await task.value
+            #expect(result == .resolved(deliveredUnits: 1.5, cancelled: false))
         }
     }
 
@@ -140,6 +264,9 @@ struct ReconcileByHistoryTests {
         await withNoCompetingBackfill {
             let (backend, fake) = makeBackend()
             let bolusId = 504
+            // op-45 must show this exact id NOT active for the fast path to be eligible at all.
+            fake.script(
+                CurrentBolusStatusResponse.props.opCode, .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: bolusId)))
             scriptLastBolus(fake, bolusId: bolusId, deliveredMilliunits: 3250)
             let result = await backend.reconcile(bolusId: bolusId)
             #expect(result == .resolved(deliveredUnits: 3.25, cancelled: false))
@@ -149,6 +276,77 @@ struct ReconcileByHistoryTests {
             #expect(
                 !fake.sent.contains { $0.opCode == HistoryLogStatusRequest.props.opCode },
                 "the unchanged fast path must never even probe the history range")
+        }
+    }
+
+    // MARK: - Fast-path op-45 liveness gate
+
+    /// When op-45 reports the queried id STILL active, the fast path must never settle from op-165 —
+    /// it falls through to the bounded history page walk instead, never returning a partial over a
+    /// running bolus.
+    @Test func fastPathDoesNotSettleWhileOp45ShowsTheExactIdStillActive() async {
+        await withNoCompetingBackfill {
+            let (backend, fake) = makeBackend()
+            let bolusId = 520
+            fake.script(
+                CurrentBolusStatusResponse.props.opCode, .frame(FakePumpTransport.currentBolusStatus(statusId: 1, bolusId: bolusId)))
+            scriptLastBolus(fake, bolusId: bolusId, deliveredMilliunits: 1000)  // would be a partial if trusted
+            scriptHistoryStatus(fake, numEntries: 1000, first: 1, last: 1000)
+
+            let task = Task { await backend.reconcile(bolusId: bolusId) }
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            backend.injectHistoryLogFrameForTesting(
+                FakePumpTransport.historyLogStream(bolusRecordsById: [
+                    (
+                        seq: 995, pumpTimeSec: 900_000, bolusId: bolusId, delivered: 2.0, iob: 0.5,
+                        completionStatusId: 3, insulinRequested: 2.0
+                    )
+                ]))
+            let result = await task.value
+            #expect(
+                result == .resolved(deliveredUnits: 2.0, cancelled: false),
+                "an active id at op-45 must fall through to history, never settle the still-running bolus from op-165")
+            #expect(fake.sent.contains { $0.opCode == HistoryLogRequest.props.opCode })
+        }
+    }
+
+    /// A refused/unavailable op-45 makes the fast path unusable — it falls through to the bounded
+    /// history page walk unconditionally, never treating a refusal as "not active."
+    @Test func fastPathFallsThroughToHistoryWhenOp45IsRefused() async {
+        await withNoCompetingBackfill {
+            let (backend, fake) = makeBackend()
+            let bolusId = 521
+            // No CurrentBolusStatusResponse script → defaults to a dropped/timed-out response (refused).
+            scriptLastBolus(fake, bolusId: bolusId, deliveredMilliunits: 2000)
+            scriptHistoryStatus(fake, numEntries: 1000, first: 1, last: 1000)
+
+            let task = Task { await backend.reconcile(bolusId: bolusId) }
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            backend.injectHistoryLogFrameForTesting(
+                FakePumpTransport.historyLogStream(bolusRecordsById: [
+                    (
+                        seq: 995, pumpTimeSec: 900_000, bolusId: bolusId, delivered: 2.0, iob: 0.5,
+                        completionStatusId: 3, insulinRequested: 2.0
+                    )
+                ]))
+            let result = await task.value
+            #expect(result == .resolved(deliveredUnits: 2.0, cancelled: false))
+            #expect(fake.sent.contains { $0.opCode == HistoryLogRequest.props.opCode })
+        }
+    }
+
+    /// When op-45 reports the queried id is NOT active, the fast path settles from the matching op-165
+    /// record exactly as before — no history request issued.
+    @Test func fastPathSettlesFromOp165WhenOp45ShowsTheExactIdNotActive() async {
+        await withNoCompetingBackfill {
+            let (backend, fake) = makeBackend()
+            let bolusId = 522
+            fake.script(
+                CurrentBolusStatusResponse.props.opCode, .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: bolusId)))
+            scriptLastBolus(fake, bolusId: bolusId, deliveredMilliunits: 2000)
+            let result = await backend.reconcile(bolusId: bolusId)
+            #expect(result == .resolved(deliveredUnits: 2.0, cancelled: false))
+            #expect(!fake.sent.contains { $0.opCode == HistoryLogRequest.props.opCode })
         }
     }
 
@@ -174,9 +372,12 @@ struct ReconcileByHistoryTests {
                 FakePumpTransport.historyLogStream(bolusRecordsById: [
                     (
                         seq: 100, pumpTimeSec: 100_000, bolusId: reusedId, delivered: 1.0, iob: 0.3,
-                        completionStatusId: 3
+                        completionStatusId: 3, insulinRequested: nil
                     ),
-                    (seq: 990, pumpTimeSec: 900_000, bolusId: reusedId, delivered: 2.5, iob: 0.9, completionStatusId: 3)
+                    (
+                        seq: 990, pumpTimeSec: 900_000, bolusId: reusedId, delivered: 2.5, iob: 0.9,
+                        completionStatusId: 3, insulinRequested: nil
+                    ),
                 ]))
             let result = await task.value
             #expect(
@@ -217,7 +418,7 @@ struct ReconcileByHistoryTests {
                 FakePumpTransport.historyLogStream(bolusRecordsById: [
                     (
                         seq: 1990, pumpTimeSec: 900_500, bolusId: assignedId, delivered: 2.0, iob: 1.0,
-                        completionStatusId: 3
+                        completionStatusId: 3, insulinRequested: nil
                     )
                 ]))
             let delivered = await task.value
@@ -280,7 +481,7 @@ struct ReconcileByHistoryTests {
                 FakePumpTransport.historyLogStream(bolusRecordsById: [
                     (
                         seq: 995, pumpTimeSec: 900_000, bolusId: firstId, delivered: 1.25, iob: 0.5,
-                        completionStatusId: 3
+                        completionStatusId: 3, insulinRequested: nil
                     )
                 ]))
             let firstResult = await firstTask.value
@@ -297,6 +498,11 @@ struct ReconcileByHistoryTests {
         await withNoCompetingBackfill {
             let (backend, fake) = makeBackend()
             let firstId = 601, secondId = 701, newerId = 907
+            // op-45 must show each queried id NOT active for its fast path to even be attempted —
+            // otherwise the fast path is skipped closed and `lastBolusStatus()` (below) is never called,
+            // leaving this queued reply stuck for a LATER call to consume out of order.
+            fake.script(
+                CurrentBolusStatusResponse.props.opCode, .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: firstId)))
             scriptLastBolus(fake, bolusId: newerId)
             scriptHistoryStatus(fake, numEntries: 1000, first: 1, last: 1000)
 
@@ -309,11 +515,14 @@ struct ReconcileByHistoryTests {
                 FakePumpTransport.historyLogStream(bolusRecordsById: [
                     (
                         seq: 995, pumpTimeSec: 900_000, bolusId: firstId, delivered: 1.0, iob: 0.5,
-                        completionStatusId: 3
+                        completionStatusId: 3, insulinRequested: nil
                     )
                 ]))
             _ = await firstTask.value  // the first search settles, clearing historySearchTarget via its defer
 
+            fake.script(
+                CurrentBolusStatusResponse.props.opCode,
+                .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: secondId)))
             scriptLastBolus(fake, bolusId: secondId, deliveredMilliunits: 4000)
             let retried = await backend.reconcile(bolusId: secondId)
             #expect(
