@@ -181,14 +181,6 @@ struct AppSettingsStoredMigrationTests {
         assertBoolStoredRoundTrip(
             key: "garminClockAnalog", backingLabel: "__garminClockAnalog", defaultValue: false, \.garminClockAnalog)
     }
-    // MARK: - Bool property WITH a side effect (GlucoseBadge.clear())
-
-    @Test func glucoseBadgeEnabledStoredRoundTrip() {
-        assertBoolStoredRoundTrip(
-            key: "glucoseBadgeEnabled", backingLabel: "__glucoseBadgeEnabled", defaultValue: false,
-            \.glucoseBadgeEnabled)
-    }
-
     // MARK: - Int properties
 
     @Test func glucosePlotFloorStoredRoundTrip() {
@@ -307,7 +299,7 @@ struct AppSettingsStoredMigrationTests {
     @Test func sideEffectHooksAreWiredOnlyAfterInitCompletes() {
         let d = freshSuite("sideEffectWiring")
         let settings = AppSettings(defaults: d)
-        for label in ["__defaultBolusMode", "__carbIncrement", "__glucoseStaleMinutes", "__glucoseBadgeEnabled"] {
+        for label in ["__defaultBolusMode", "__carbIncrement", "__glucoseStaleMinutes"] {
             let mirror = Mirror(reflecting: settings)
             guard let backing = mirror.children.first(where: { $0.label == label }) else {
                 Issue.record("missing backing field \(label)")

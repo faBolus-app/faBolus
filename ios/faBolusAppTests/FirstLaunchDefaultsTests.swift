@@ -26,8 +26,6 @@ struct FirstLaunchDefaultsTests {
 
         #expect(settings.garminBolusEnabled == false)
         #expect(settings.autoSyncPumpTime == false)  // E2: no silent pump-clock write without opt-in
-        // App-icon glucose badge is opt-in — OFF on a fresh install.
-        #expect(settings.glucoseBadgeEnabled == false)
 
         // Remote-bolus passcode: route through the DEBUG in-memory backing (the app-hosted test target
         // can't write the Keychain) and assert nothing is required on a fresh install.

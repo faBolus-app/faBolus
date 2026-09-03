@@ -311,9 +311,8 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         // critical-alerts entitlement — iOS itself downgrades a `.critical` notification to a normal one
         // when the app isn't entitled, so gating `NotificationPoster.post`'s content on the user's
         // `criticalAlertsEnabled` alone is correct and degrades gracefully at the OS level.
-        // `.badge` so `UNUserNotificationCenter.setBadgeCount` (the app-icon glucose badge,
-        // `GlucoseBadge.apply`) is actually honored — without it iOS silently ignores every
-        // `setBadgeCount` call regardless of the user's opt-in.
+        // `.badge` so `UNUserNotificationCenter.setBadgeCount` is actually honored — without it
+        // iOS silently ignores every `setBadgeCount` call, regardless of any future opt-in.
         center.requestAuthorization(options: [.alert, .sound, .criticalAlert, .badge]) { _, _ in }
         // Query the OS grant state for the honest-status UI (AlertRulesView). Uses ONLY the async
         // `notificationSettings()` API — the older completion-handler form runs its block on a background

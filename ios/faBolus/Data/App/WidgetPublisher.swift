@@ -110,11 +110,6 @@ enum WidgetPublisher {
             iobStaleAfterSec: CalcInputFreshness.staleAfterIob,
             hasSnoozeEligibleAlert: hasSnoozeEligibleAlert)
         WidgetStore.save(snap)
-        // Same choke point drives the opt-in app-icon badge. The opt-in gate + freshness live
-        // inside GlucoseBadge (currently an inert stub). The arbiter timer re-runs
-        // refresh()->publish every ~20s for EVERY config, so a pump-only user's badge would still
-        // age past stale even with no new pump data.
-        GlucoseBadge.apply(snap)
         // Keep the Quick-Bolus widget's amount picker in sync with the pump's max + the increment.
         if s.maxBolusUnits > 0 { WidgetBolusStore.maxBolus = s.maxBolusUnits }
         WidgetBolusStore.increment = AppSettings.shared.bolusIncrement

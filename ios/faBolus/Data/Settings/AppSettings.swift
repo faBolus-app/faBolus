@@ -682,21 +682,6 @@ public final class AppSettings {
     public var watchDetailsOrder: [String] { didSet { d.set(watchDetailsOrder, forKey: "watchDetailsOrder") } }
     /// Which status pills show, and in what order, on the phone dashboard.
     public var pillsOrder: [String] { didSet { d.set(pillsOrder, forKey: "pillsOrder") } }
-    /// Orphaned-but-compiled glucose-badge flag. Settings UI, catalog row, and backup participation
-    /// are all removed — nothing in the app can set this to `true` anymore, and even if a value
-    /// somehow persisted, `GlucoseBadge` is a main-only inert stub whose `apply(_:now:)` does nothing
-    /// regardless of this value. The `onChange` still calls the stub's no-op `clear()` for interface
-    /// symmetry. The real opt-in lives on `dev/glucose-badge`.
-    // `GlucoseBadge.clear()` is preserved via the post-init `onChange` hook
-    // (`if !value { GlucoseBadge.clear() }`).
-    private var _glucoseBadgeEnabled = Stored<Bool>(wrappedValue: false, "glucoseBadgeEnabled")
-    public var glucoseBadgeEnabled: Bool {
-        get { _glucoseBadgeEnabled.wrappedValue }
-        set {
-            _glucoseBadgeEnabled.wrappedValue = newValue
-            _glucoseBadgeEnabled.onChange?(newValue)  // two statements — see Stored.swift's onChange doc comment (exclusivity)
-        }
-    }
     /// Which time ranges the watch history chart cycles through when tapped (subset of 3/6/12/24 h).
     /// Mirrored to the watch. At least one is always kept.
     public var watchChartRanges: [Int] { didSet { d.set(watchChartRanges, forKey: "watchChartRanges") } }
@@ -949,7 +934,6 @@ public final class AppSettings {
         _garminAlertIntensityMode.store = defaults
         _garminAlertAudibleMinSeverity.store = defaults
         _garminAlertCriticalOverridesDnd.store = defaults
-        _glucoseBadgeEnabled.store = defaults
         _watchDefaultBolusMode.store = defaults
         _bolusIncrement.store = defaults
         _watchBolusIncrement.store = defaults
@@ -999,8 +983,6 @@ public final class AppSettings {
         showBolusReasoning = (d.object(forKey: "showBolusReasoning") as? Bool) ?? true
         garminComplicationDisplay = Self.complicationDisplayOptions.contains(cd) ? cd : "numericColor"
         garminClockAnalog = (d.object(forKey: "garminClockAnalog") as? Bool) ?? false
-        // OFF by default — the app-icon badge is opt-in.
-        glucoseBadgeEnabled = (d.object(forKey: "glucoseBadgeEnabled") as? Bool) ?? false
 
         // Remaining scalar assignments (deferred for the same two-phase-init reason). Locals they
         // consume (`bi`, `ci`, `order`, `def`, `gt`) were computed earlier.
@@ -1066,7 +1048,6 @@ public final class AppSettings {
         _carbIncrement.onChange = { [weak self] _ in self?.syncWidgetConfig() }
         _bolusIncrement.onChange = { [weak self] _ in self?.syncWidgetConfig() }
         _glucoseStaleMinutes.onChange = { [weak self] _ in self?.applyFreshness() }
-        _glucoseBadgeEnabled.onChange = { value in if !value { GlucoseBadge.clear() } }
         _showGlucoseUnitLabels.onChange = { _ in WidgetPublisher.republishShowUnitLabel() }
     }
 

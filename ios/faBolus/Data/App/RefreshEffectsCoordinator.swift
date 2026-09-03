@@ -26,8 +26,6 @@ final class RefreshEffectsCoordinator {
     var onConnectionDropped: (String?) -> Void = { _ in }
     /// Reconnect (`.clear`) connection telemetry + BLE session-log.
     var onConnectionRestored: () -> Void = {}
-    /// Defensive app-icon-badge clear the instant a previously-fresh feed goes stale.
-    var onGlucoseBadgeClear: () -> Void = {}
     /// Fused write+dispatch sink for the staleness watchdog: `AppModel` writes its own
     /// `lastArmedGlucoseDate` AND calls `notificationStalenessSink`. This is the ONE bookkeeping
     /// field whose new value only exists inside this coordinator's `StalenessWatchdogEdge.decide` call.
@@ -101,7 +99,6 @@ final class RefreshEffectsCoordinator {
                 .cgmDataLoss, .warning, "CGM data lost",
                 "faBolus stopped receiving CGM readings. Check your sensor and transmitter.",
                 cgmDataLossKey)
-            onGlucoseBadgeClear()
         case .clear: withdrawNotifications([cgmDataLossKey])
         case .none: break
         }

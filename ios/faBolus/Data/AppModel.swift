@@ -848,7 +848,6 @@ public final class AppModel {
             self?.connectionTelemetry.recordConnected()  // connect count + start the uptime clock
             self?.bleSessionLog.record(.reconnect)  // link returned to connected (prev was not)
         }
-        refreshEffectsCoordinator.onGlucoseBadgeClear = { GlucoseBadge.clear() }
         // Fused write+dispatch: the ONE bookkeeping field whose new value exists only inside the
         // coordinator's StalenessWatchdogEdge.decide — AppModel stays its sole owner.
         refreshEffectsCoordinator.onStalenessWatchdogArm = { [weak self] date in
