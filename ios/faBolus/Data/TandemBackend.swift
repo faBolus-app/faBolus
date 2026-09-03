@@ -1634,9 +1634,6 @@ public final class TandemBackend: NSObject, PumpBackend {
         guard case .resolved(let delivered, _) = await findBolusInHistory(bolusId: target) else {
             return nil  // pump hasn't caught up / no exact-id match yet — stay blocked, try again later
         }
-        NotificationCenter.default.post(
-            name: .faBolusIndeterminateResolved, object: nil,
-            userInfo: ["bolusId": target, "delivered": delivered])
         return delivered
     }
 
@@ -2838,12 +2835,6 @@ extension TandemBackend: PumpBLEClientDelegate {
         readScheduler.completeCalcInputRead()
         failPumpWaiters(error)
     }
-}
-
-extension Notification.Name {
-    /// Posted when an indeterminate bolus outcome is reconciled against the pump. userInfo:
-    /// `bolusId` (Int) and `delivered` (Double, units actually delivered).
-    static let faBolusIndeterminateResolved = Notification.Name("faBolusIndeterminateResolved")
 }
 
 // MARK: - TandemOnlyOps conformance
