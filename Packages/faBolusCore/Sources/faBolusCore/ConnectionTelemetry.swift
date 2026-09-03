@@ -23,6 +23,11 @@ public struct ConnectionTelemetry: Sendable, Equatable, Codable {
     /// Purely observational — a distribution of how long pump responses take, so a laggy radio is
     /// distinguishable from a healthy one. Never on any decision path.
     public var commandLatency: [String: Int]
+    /// When accrual into this blob began — set once, on the first mutate after the counters were last
+    /// zero (a fresh opt-in, or the first event after an erase); nil means "no event has landed yet" or
+    /// "this blob predates the field." Never backfilled: an absent window start renders as an explicit
+    /// unknown, never today's date standing in for however long the counters actually span.
+    public var windowStart: Date?
 
     public enum ReconcileOutcome: String, Sendable, CaseIterable, Codable {
         case delivered, cancelled, notDelivered, unavailable, indeterminate
@@ -31,22 +36,24 @@ public struct ConnectionTelemetry: Sendable, Equatable, Codable {
     public init(
         connectCount: Int = 0, totalUptimeSeconds: Double = 0,
         disconnects: [String: Int] = [:], reconcile: [String: Int] = [:],
-        commandLatency: [String: Int] = [:]
+        commandLatency: [String: Int] = [:], windowStart: Date? = nil
     ) {
         self.connectCount = connectCount
         self.totalUptimeSeconds = totalUptimeSeconds
         self.disconnects = disconnects
         self.reconcile = reconcile
         self.commandLatency = commandLatency
+        self.windowStart = windowStart
     }
 
-    // Back-compat decode (B3a): a P12 blob persisted BEFORE `commandLatency` existed has no such key, and
-    // Swift's synthesized decoder would THROW on the missing non-optional key → the store's `try? decode`
-    // would fall back to a zeroed telemetry, silently wiping the shipped connect/uptime/disconnect/reconcile
-    // counters. Decode every field with `decodeIfPresent` (defaulting to empty/zero) so an old blob upgrades
-    // in place, preserving those counters. Encoding stays the default (all keys written).
+    // Back-compat decode: every persisted blob predates at least one of these fields (`commandLatency`,
+    // then `windowStart`), and Swift's synthesized decoder would THROW on a missing non-optional key →
+    // the store's `try? decode` would fall back to a zeroed telemetry, silently wiping the shipped
+    // connect/uptime/disconnect/reconcile counters. Decode every field with `decodeIfPresent` (defaulting
+    // to empty/zero/nil) so an old blob upgrades in place, preserving those counters. Encoding stays the
+    // default (all keys written).
     private enum CodingKeys: String, CodingKey {
-        case connectCount, totalUptimeSeconds, disconnects, reconcile, commandLatency
+        case connectCount, totalUptimeSeconds, disconnects, reconcile, commandLatency, windowStart
     }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -55,6 +62,7 @@ public struct ConnectionTelemetry: Sendable, Equatable, Codable {
         disconnects = try c.decodeIfPresent([String: Int].self, forKey: .disconnects) ?? [:]
         reconcile = try c.decodeIfPresent([String: Int].self, forKey: .reconcile) ?? [:]
         commandLatency = try c.decodeIfPresent([String: Int].self, forKey: .commandLatency) ?? [:]
+        windowStart = try c.decodeIfPresent(Date.self, forKey: .windowStart)
     }
 
     /// B3a (§5.2.8): bucket a command round-trip time into a stable token. Fixed edges so the distribution

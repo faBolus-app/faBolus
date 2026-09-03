@@ -5,9 +5,10 @@ import Foundation
 /// the BLE-session-log line-builder, and this type's own identity/telemetry helpers). Never
 /// re-derives or reformats any surface's own state, and performs no I/O of its own.
 ///
-/// PHI: `DiagnosticsBundle` adds exactly one non-PHI provenance value of its own — a build-commit
-/// stamp (`buildProvenanceSection`) naming which binary produced the export. Every other section
-/// still only contains what each already-reviewed surface emits.
+/// PHI: `DiagnosticsBundle` adds exactly two non-PHI provenance values of its own — a build-commit
+/// stamp (`buildProvenanceSection`) naming which binary produced the export, and a connection-telemetry
+/// window-start timestamp (`connectionTelemetrySection`) dating how far back its counters reach. Every
+/// other section still only contains what each already-reviewed surface emits.
 enum DiagnosticsBundle {
     /// Concatenates already-formatted section strings into the single shareable bundle, in the SAME
     /// stable order they are supplied. Pure: no I/O, no async, no re-derivation — identical inputs
@@ -48,13 +49,17 @@ enum DiagnosticsBundle {
     }
 
     /// `[Connection telemetry]` — always present; counters simply read 0/— before any connection
-    /// event has ever been recorded.
+    /// event has ever been recorded. `windowStartFormatted` is already-rendered (a formatted date, or
+    /// the explicit "unknown — accrued across an unknown set of builds" marker) — this helper never
+    /// derives it and never substitutes today's date for an absent value.
     static func connectionTelemetrySection(
         connectCount: Int, totalUptimeFormatted: String,
         disconnects: [(key: String, count: Int)],
-        reconcile: [(key: String, count: Int)]
+        reconcile: [(key: String, count: Int)],
+        windowStartFormatted: String
     ) -> String {
         var lines: [String] = ["", "[Connection telemetry]"]
+        lines.append("Window start: \(windowStartFormatted)")
         lines.append("Connects: \(connectCount)")
         lines.append("Total uptime: \(totalUptimeFormatted)")
         for d in disconnects { lines.append("Disconnect \(d.key): \(d.count)") }

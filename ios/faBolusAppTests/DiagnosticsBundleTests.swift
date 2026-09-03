@@ -67,4 +67,25 @@ struct DiagnosticsBundleTests {
         #expect(block.contains("Commit: abc1234+"))
     }
 
+    // MARK: - Connection telemetry: accrual window
+
+    /// An already-formatted window-start string is rendered verbatim — the helper never derives it.
+    @Test func connectionTelemetrySectionRendersSuppliedWindowStart() {
+        let block = DiagnosticsBundle.connectionTelemetrySection(
+            connectCount: 5, totalUptimeFormatted: "3h 12m", disconnects: [], reconcile: [],
+            windowStartFormatted: "Sep 1, 2026 at 3:04 PM")
+
+        #expect(block.contains("Window start: Sep 1, 2026 at 3:04 PM"))
+    }
+
+    /// The absent-window-start marker is rendered exactly as supplied — never substituted for a
+    /// backfilled date.
+    @Test func connectionTelemetrySectionRendersAbsentWindowStartMarkerVerbatim() {
+        let block = DiagnosticsBundle.connectionTelemetrySection(
+            connectCount: 0, totalUptimeFormatted: "—", disconnects: [], reconcile: [],
+            windowStartFormatted: "unknown — accrued across an unknown set of builds")
+
+        #expect(block.contains("Window start: unknown — accrued across an unknown set of builds"))
+    }
+
 }

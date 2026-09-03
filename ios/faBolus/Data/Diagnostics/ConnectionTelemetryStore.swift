@@ -30,7 +30,7 @@ final class ConnectionTelemetryStore {
     /// The pump link came up: count the connect and start the uptime clock.
     func recordConnected(at now: Date = Date()) {
         connectedAt = now
-        bump { $0.connectCount += 1 }
+        bump(now: now) { $0.connectCount += 1 }
     }
 
     /// The pump link went down for `reason` (a token from `reasonToken(from:)`): accrue the elapsed
@@ -38,7 +38,7 @@ final class ConnectionTelemetryStore {
     func recordDisconnected(reason: String, at now: Date = Date()) {
         let up = connectedAt.map { max(0, now.timeIntervalSince($0)) }
         connectedAt = nil
-        bump {
+        bump(now: now) {
             if let up { $0.totalUptimeSeconds += up }
             $0.disconnects[reason, default: 0] += 1
         }
@@ -113,9 +113,14 @@ final class ConnectionTelemetryStore {
         18: "LE GATT near background notification limit"
     ]
 
-    private func bump(_ mutate: (inout ConnectionTelemetry) -> Void) {
+    /// `now` seeds `windowStart` on the first mutate that finds it nil (a fresh opt-in, or the first
+    /// event after `clearStoredData()` erased the blob) and is left untouched on every later call —
+    /// the accrual window, not a per-event timestamp. `recordConnected`/`recordDisconnected` pass their
+    /// own event time through; the other recorders default to the call's wall-clock time.
+    private func bump(now: Date = Date(), _ mutate: (inout ConnectionTelemetry) -> Void) {
         guard enabled else { return }
         var t = Self.load(store, key)  // read-modify-write (sibling processes)
+        if t.windowStart == nil { t.windowStart = now }
         mutate(&t)
         if let data = try? JSONEncoder().encode(t) { store.set(data, forKey: key) }
     }

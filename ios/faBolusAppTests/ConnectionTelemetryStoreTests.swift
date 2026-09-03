@@ -191,6 +191,58 @@ struct ConnectionTelemetryStoreTests {
         #expect(t2.commandLatency["lt250ms"] == 1)
     }
 
+    // MARK: - Accrual window
+
+    /// The FIRST event after opt-in sets `windowStart`; a later event does not move it. Erasing the
+    /// blob (`clearStoredData`) then a fresh event restarts the window — no sibling key survives an
+    /// erase, so the window and the counters it labels always erase together.
+    @Test func windowStartSetOnceThenErasedAndRestarted() {
+        let (s, _) = makeStore(enabled: true)
+        #expect(s.snapshot.windowStart == nil)
+
+        let first = Date(timeIntervalSince1970: 1_000_000)
+        s.recordConnected(at: first)
+        #expect(s.snapshot.windowStart == first)
+
+        let second = first.addingTimeInterval(3600)
+        s.recordDisconnected(reason: "btOff", at: second)
+        #expect(s.snapshot.windowStart == first)  // unmoved by the second event
+
+        s.clearStoredData()
+        #expect(s.snapshot.windowStart == nil)
+
+        let restarted = second.addingTimeInterval(7200)
+        s.recordConnected(at: restarted)
+        #expect(s.snapshot.windowStart == restarted)
+    }
+
+    /// A blob persisted before `windowStart` existed (no such key) upgrades in place: it reads nil,
+    /// not throwing and not zeroing the pre-existing counters — the same migration guard as
+    /// `oldBlobWithoutCommandLatencyPreservesCounters`, one field newer.
+    @Test func oldBlobWithoutWindowStartPreservesCountersAndReadsNil() throws {
+        let suite = "ct-test-\(UUID().uuidString)"
+        let d = UserDefaults(suiteName: suite)!
+        d.removePersistentDomain(forName: suite)
+        d.set(true, forKey: NotificationRuntime.telemetryEnabledKey)
+        // An older JSON payload with `commandLatency` but NO `windowStart` key.
+        let old =
+            #"{"connectCount":3,"totalUptimeSeconds":600,"disconnects":{"btOff":2},"reconcile":{"delivered":1},"commandLatency":{}}"#
+        d.set(Data(old.utf8), forKey: "connectionTelemetry.v1")
+
+        let t = ConnectionTelemetryStore(store: d).snapshot
+        #expect(t.connectCount == 3)
+        #expect(t.totalUptimeSeconds == 600)
+        #expect(t.windowStart == nil)
+
+        // The first event on the migrated blob sets the window, coherent with a fresh opt-in.
+        let s = ConnectionTelemetryStore(store: d)
+        let now = Date(timeIntervalSince1970: 2_000_000)
+        s.recordConnected(at: now)
+        let t2 = s.snapshot
+        #expect(t2.connectCount == 4)  // preserved, then incremented
+        #expect(t2.windowStart == now)
+    }
+
     /// Two stores on the same suite must not clobber each other's counters (read-modify-write).
     @Test func readModifyWriteDoesNotClobberAcrossStores() {
         let suite = "ct-test-\(UUID().uuidString)"

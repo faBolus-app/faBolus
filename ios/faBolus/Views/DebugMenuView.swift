@@ -183,6 +183,7 @@ struct DebugMenuView: View {
     @ViewBuilder private var connectionTelemetrySection: some View {
         let t = model.connectionTelemetry.snapshot
         Section {
+            row("Window start", Self.formatWindowStart(t.windowStart))
             row("Connects", "\(t.connectCount)")
             row("Total uptime", Self.formatUptime(t.totalUptimeSeconds))
             if t.disconnects.isEmpty {
@@ -310,6 +311,13 @@ struct DebugMenuView: View {
         AppRevision.dirty ? AppRevision.short + "+" : AppRevision.short
     }
 
+    /// Renders `ConnectionTelemetry.windowStart` for both surfaces. Never backfills `now` for an
+    /// absent value — an absent window start means "unknown," not "today."
+    static func formatWindowStart(_ date: Date?) -> String {
+        guard let date else { return "unknown — accrued across an unknown set of builds" }
+        return date.formatted(date: .abbreviated, time: .shortened)
+    }
+
     /// Compact uptime string (e.g. "3h 12m", "45s"). Cumulative across sessions.
     static func formatUptime(_ seconds: Double) -> String {
         let s = Int(seconds.rounded())
@@ -383,7 +391,8 @@ struct DebugMenuView: View {
                 connectCount: t.connectCount,
                 totalUptimeFormatted: Self.formatUptime(t.totalUptimeSeconds),
                 disconnects: t.disconnects.sorted(by: { $0.key < $1.key }).map { (key: $0.key, count: $0.value) },
-                reconcile: t.reconcile.sorted(by: { $0.key < $1.key }).map { (key: $0.key, count: $0.value) }),
+                reconcile: t.reconcile.sorted(by: { $0.key < $1.key }).map { (key: $0.key, count: $0.value) },
+                windowStartFormatted: Self.formatWindowStart(t.windowStart)),
             DiagnosticsBundle.notificationTelemetrySection(
                 counts: notif.sorted(by: { $0.key < $1.key }).map {
                     (
