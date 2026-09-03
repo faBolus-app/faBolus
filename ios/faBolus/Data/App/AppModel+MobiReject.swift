@@ -6,8 +6,7 @@ import faBolusCore
 /// the instant a real Mobi is BLE-discovered — before pairing completes — so this tears that
 /// momentary link down. No hand-rolled BLE/Keychain unwind.
 extension AppModel {
-    /// Reject a detected Mobi before any pairing-completion-gated code (`evaluateSavePinOffer()`, which
-    /// only fires on `.connected`/`.bolusing`) can run. A no-op when the current model identity isn't
+    /// Reject a detected Mobi before pairing completes. A no-op when the current model identity isn't
     /// Mobi — safe to call unconditionally from every trigger, and safe to call more than once
     /// (idempotent: `disconnect()`/`forgetPairing()` are cheap no-ops once already torn down).
     ///

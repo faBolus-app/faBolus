@@ -68,15 +68,13 @@ enum PairingStore {
     nonisolated(unsafe) static var useInMemoryBackingForTests = false
     /// In-memory stand-in for the two pairing accounts, keyed by the same account strings the Keychain
     /// uses, so ONE `upsert`/`deleteAccount` code path serves both backings — the cross-delete invariant
-    /// cannot drift between "what the test exercises" and "what ships". The saved PIN is deliberately
-    /// NOT in here: it is a separate account with separate lifetime rules (see `clearPin`).
+    /// cannot drift between "what the test exercises" and "what ships".
     nonisolated(unsafe) private static var memValues: [String: Data] = [:]
     /// Per-account write ORDER for the in-memory backing — the stand-in for the Keychain's
     /// `kSecAttrModificationDate`, which `loadActivePairing()` uses to break a both-present tie. A
     /// monotonic counter rather than a `Date` so consecutive writes in one test are always distinguishable.
     nonisolated(unsafe) private static var memWriteOrders: [String: Double] = [:]
     nonisolated(unsafe) private static var memWriteSequence: Double = 0
-    nonisolated(unsafe) private static var memPin: String?
 
     /// Test seam: which raw op the last write actually took. Lets a test assert that REPLACING a
     /// credential used `SecItemUpdate` (never a delete plus a second `SecItemAdd`, which is the
@@ -327,52 +325,12 @@ enum PairingStore {
         }
     }
 
-    // MARK: - Saved pump PIN (Tandem Mobi)
-    // The Mobi's 6-digit PIN is fixed (printed behind the cartridge), so it can be saved to skip
-    // re-typing on a re-pair. (The t:slim X2 shows a new code each time, so saving is pointless
-    // there.) It's pairing material, so it lives in the Keychain like the derived secret. Stored
-    // separately (its own account) so "Forget pairing" — which drops the derived secret to force a
-    // re-pair — leaves the saved PIN intact for convenience. It is NOT one of the two mutually
-    // exclusive schemes above: it is a convenience copy of an input, not a pairing credential, so
-    // nothing here participates in the one-scheme invariant.
-    private static let pinAccount = "mobiPin"
+    // MARK: - Saved pump PIN purge (Tandem Mobi, erase-only)
+    // The save-PIN feature itself is retired — this build rejects a Mobi at pairing. The one-shot
+    // purge stays: an install from before that retirement may still hold the "mobiPin" Keychain
+    // entry, and "Erase everything" must never leave a pump secret behind.
 
-    static func savePin(_ pin: String) {
-        #if DEBUG
-        if useInMemoryBackingForTests {
-            memPin = pin
-            return
-        }
-        #endif
-        let base: [String: Any] = keychainBase(pinAccount)
-        SecItemDelete(base as CFDictionary)
-        var add = base
-        add[kSecValueData as String] = Data(pin.utf8)
-        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        SecItemAdd(add as CFDictionary, nil)
-    }
-
-    static func loadPin() -> String? {
-        #if DEBUG
-        if useInMemoryBackingForTests { return memPin }
-        #endif
-        var query = keychainBase(pinAccount)
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-        var out: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &out) == errSecSuccess,
-            let data = out as? Data, let s = String(data: data, encoding: .utf8), !s.isEmpty
-        else { return nil }
-        return s
-    }
-
-    static func clearPin() {
-        #if DEBUG
-        if useInMemoryBackingForTests {
-            memPin = nil
-            return
-        }
-        #endif
-        SecItemDelete(keychainBase(pinAccount) as CFDictionary)
+    static func purgeSavedPinForErase() {
+        SecItemDelete(keychainBase("mobiPin") as CFDictionary)
     }
 }

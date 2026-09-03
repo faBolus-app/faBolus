@@ -367,14 +367,11 @@ struct PumpDetailsCard: View {
     }
 }
 
-/// Enter the pump's 6-digit pairing code, then connect + JPAKE-pair. A saved Mobi PIN (if any) is
-/// prefilled; you can edit it to pair a different pump, or clear it. Saving is *offered after
-/// connecting* once we recognize a Mobi (see AppModel.savePinPrompt) — not decided up front.
+/// Enter the pump's 6-digit (or legacy 16-character) pairing code, then connect + JPAKE-pair.
 struct PairingSheet: View {
     @Bindable var model: AppModel
     let onDone: () -> Void
     @State private var code = ""
-    @State private var hadSavedPin = false
 
     var body: some View {
         NavigationStack {
@@ -387,13 +384,6 @@ struct PairingSheet: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .font(.title2.monospaced())
-                    if hadSavedPin {
-                        Button("Clear saved PIN", role: .destructive) {
-                            model.clearSavedPin()
-                            code = ""
-                            hadSavedPin = false
-                        }
-                    }
                 }
                 Section {
                     Button {
@@ -418,12 +408,6 @@ struct PairingSheet: View {
             }
             .navigationTitle("Connect to pump")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel", action: onDone) } }
-            .onAppear {
-                if let pin = model.savedPin {
-                    code = pin
-                    hadSavedPin = true
-                }
-            }
         }
     }
 }

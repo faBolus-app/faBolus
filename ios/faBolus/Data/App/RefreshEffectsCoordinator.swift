@@ -35,7 +35,6 @@ final class RefreshEffectsCoordinator {
     // MARK: - Cross-surface fan-out sinks
     var onWidgetPublish: (PumpSnapshot, [GlucoseReading], [PumpAlert], Bool, String) -> Void = { _, _, _, _, _ in }
     var onHistoryPersist: ([GlucoseReading], [BolusMarker], GlucoseProvenance) -> Void = { _, _, _ in }
-    var onEvaluateSavePinOffer: () -> Void = {}
     /// Gated by the `canControlModes` input (`ModeAutomation.applyPendingIfDue(using:)` takes the concrete
     /// `AppModel`, so it can only be reached through a sink `AppModel` binds to itself — never a back-pointer).
     var onApplyModeAutomation: () -> Void = {}
@@ -134,8 +133,6 @@ final class RefreshEffectsCoordinator {
         recordStep("widgetPublish")
         onHistoryPersist(glucoseHistory, bolusMarkers, provenance)
         recordStep("historyPersist")
-        onEvaluateSavePinOffer()
-        recordStep("evaluateSavePinOffer")
         if canControlModes {
             onApplyModeAutomation()
             recordStep("modeAutomation")

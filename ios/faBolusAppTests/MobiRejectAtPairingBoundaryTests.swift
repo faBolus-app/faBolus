@@ -36,10 +36,6 @@ struct MobiRejectAtPairingBoundaryTests {
 
         // The OUTCOME: torn down, not a pending/connected/bolusing state a UI could act on.
         #expect(model.snapshot.connection == .disconnected)
-        // No pairing-completion-gated code ever ran (`evaluateSavePinOffer()` only fires on
-        // `.connected`/`.bolusing`), so no save-PIN offer / new PairingStore secret exists.
-        #expect(model.savePinPrompt == nil)
-        #expect(model.savedPin == nil)
         // The DRAFT reject message is surfaced through the existing `lastError` display path.
         #expect(model.lastError == MobiRejectCopy.mobiNotSupported)
 

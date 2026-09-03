@@ -714,54 +714,10 @@ public final class AppModel {
     /// charging-base warning) — the only step the shipping unpair flow presents.
     public var unpairConfirmation: String { UnpairAdvisory.confirmationMessage(for: lastKnownPumpModel) }
 
-    // MARK: - Mobi PIN saving
-    // The Tandem Mobi's 6-digit PIN is fixed. After a full pairing (a typed code) completes on a
-    // pump detected as a Mobi, offer to save that PIN so re-pairing skips re-typing. Users can pair
-    // a different device with a different PIN anytime by editing the code or clearing the saved one.
-
-    /// The saved Mobi PIN, if any (prefilled into the pairing screen). Editable/clearable there.
-    public var savedPin: String? { PairingStore.loadPin() }
-    public func clearSavedPin() { PairingStore.clearPin() }
-
-    /// Non-nil ⇒ the app should ask the user whether to save this just-used PIN (a Mobi was
-    /// recognized). Holds the PIN to save.
-    public var savePinPrompt: String?
-    public func saveOfferedPin() {
-        if let c = savePinPrompt { PairingStore.savePin(c) }
-        savePinPrompt = nil
-    }
-    public func dismissSavePinPrompt() { savePinPrompt = nil }
-
-    /// The code the user just typed for a full pairing (nil once consumed / on a resume connect),
-    /// so we can offer to save it once the pairing succeeds and we know it's a Mobi.
-    private var enteredPairCode: String?
-
-    /// Connect using a freshly-typed pairing code (full pairing). Remembers the code so a Mobi
-    /// save-PIN offer can fire on success.
+    /// Connect using a freshly-typed pairing code (full pairing). The only pairing entry point.
     public func connectWithCode(_ code: String) async {
-        enteredPairCode = code
         pairingCode = code
         await connect()
-    }
-
-    /// After a full pairing completes on a Mobi, raise the save-PIN offer (once).
-    private func evaluateSavePinOffer() {
-        switch snapshot.connection {
-        case .connected, .bolusing:
-            guard enteredPairCode != nil else { return }
-            // Wait until the pump model is known — it comes from ApiVersionResponse (authoritative),
-            // which arrives shortly after connect, not at discovery. pumpModelName is empty until then.
-            guard !snapshot.pumpModelName.isEmpty else { return }
-            let code = enteredPairCode!
-            enteredPairCode = nil
-            // A pairing-mechanism fact of the model (only Mobi has a savable fixed PIN), read from
-            // the typed `PumpModel` identity rather than a raw `isMobi` check — not a capability gate.
-            if snapshot.pumpModel.hasSavablePairingPin, code != PairingStore.loadPin() { savePinPrompt = code }
-        case .disconnected, .error:
-            enteredPairCode = nil  // pairing didn't complete — drop the pending offer
-        default:
-            break
-        }
     }
 
     /// Set by the Garmin bridge; presents Garmin device selection.
@@ -870,7 +826,6 @@ public final class AppModel {
         refreshEffectsCoordinator.onHistoryPersist = { [weak self] glucose, boluses, provenance in
             self?.historyPersistence.persist(glucose: glucose, boluses: boluses, provenance: provenance)
         }
-        refreshEffectsCoordinator.onEvaluateSavePinOffer = { [weak self] in self?.evaluateSavePinOffer() }
         refreshEffectsCoordinator.onApplyModeAutomation = { [weak self] in
             guard let self else { return }
             ModeAutomation.applyPendingIfDue(using: self)  // takes the concrete AppModel — sink, not back-pointer
@@ -1173,7 +1128,7 @@ public final class AppModel {
         // `forgetPairing` may be a no-op (e.g. the simulator), and the pairing secret lives in the global
         // Keychain regardless of which backend is active, so we must clear it here, not only via the backend.
         PairingStore.clear()  // pump JPAKE derived secret + legacy V1 code
-        clearSavedPin()  // fixed PIN (PairingStore.clearPin)
+        PairingStore.purgeSavedPinForErase()  // any pre-retirement saved fixed PIN
         PumpPeripheralStore.clear()  // persisted peripheral id (the cold-launch retrieve target)
         for account in CredentialStore.cgmSecretAccounts { CredentialStore.set(nil, account: account) }  // CGM logins
         // Also tell the active backend to drop its in-memory pairing/auth state + run its own cleanup.

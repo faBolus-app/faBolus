@@ -41,8 +41,6 @@ struct MobiRejectBackstopBoundaryTests {
         // OUTCOME: torn down by the backstop alone — no `.onChange`, no view, no foreground trigger.
         #expect(model.lastError == MobiRejectCopy.mobiNotSupported)
         #expect(model.snapshot.connection == .disconnected)
-        #expect(model.savePinPrompt == nil)
-        #expect(model.savedPin == nil)
     }
 
     /// A Mobi that is already the current identity before `start()` must still be rejected — observation
@@ -62,8 +60,6 @@ struct MobiRejectBackstopBoundaryTests {
         // OUTCOME: torn down against the ALREADY-CURRENT value, purely by `start()`'s pre-arm reject.
         #expect(model.lastError == MobiRejectCopy.mobiNotSupported)
         #expect(model.snapshot.connection == .disconnected)
-        #expect(model.savePinPrompt == nil)
-        #expect(model.savedPin == nil)
     }
 
     /// Companion negative check: a backend that never becomes Mobi never trips the backstop — it must

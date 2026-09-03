@@ -73,7 +73,8 @@ import faBolusCore
     // persist here — the existing health-erase test sidesteps this by comparing before==after. We therefore
     // assert the full reset's effect on the TESTABLE signals: the file-based setting-change store (health
     // data) and the UserDefaults-based PumpPeripheralStore (the unpair target). The Keychain-clearing calls
-    // (PairingStore.clear / clearPin / CredentialStore.set(nil)) are code-verified and run on the same path.
+    // (PairingStore.clear / purgeSavedPinForErase / CredentialStore.set(nil)) are code-verified and run on
+    // the same path.
 
     /// The FULL reset must honor the SAME in-flight/unresolved-delivery refusal gate, and on refusal must
     /// clear NOTHING — health data AND the persisted pairing/peripheral stay intact (the safety-critical
