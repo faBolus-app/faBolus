@@ -160,18 +160,26 @@ final class DeliveryLedgerCoordinator {
 
     private func computeDeliveryBlockReason() -> String? {
         // Evaluate `unreconciled()` first so the lazy ledger load runs (which sets `ledgerFailedClosed`).
-        // `blockReason`'s `unresolved:` parameter predates the ledger's `pumpKey` field, so narrow to the
-        // shape it still expects — the precedence itself is a pure faBolusCore function
-        // (`RemoteBolusLedger.blockReason`), this is the ONLY caller in the app target, so the strings
-        // have one source of truth with zero-`AppModel` unit coverage in `RemoteBolusLedgerTests`.
         let unresolved = remoteBolusLedger.unreconciled()
+        // A different-pump key takes precedence over the live-in-flight/genuinely-unresolved split —
+        // `blockReason`'s `unresolved:` parameter predates the ledger's `pumpKey` field, so the
+        // comparison is done here and only its RESULT (a reason string, or nil) is passed through.
+        let current = currentPumpIdentity()
+        let pumpMismatchReason =
+            unresolved.contains { RemoteBolusLedger.comparePumpKey($0.pumpKey, to: current) == .mismatch }
+            ? RemoteBolusLedger.pumpMismatchBlockReason
+            : nil
+        // The precedence itself is a pure faBolusCore function (`RemoteBolusLedger.blockReason`) —
+        // this is the ONLY caller in the app target, so the strings have one source of truth with
+        // zero-`AppModel` unit coverage in `RemoteBolusLedgerTests`.
         let narrowed = unresolved.map {
             (peerId: $0.peerId, requestId: $0.requestId, bolusId: $0.bolusId, sentToPump: $0.sentToPump)
         }
         return RemoteBolusLedger.blockReason(
             noDurableStore: noDurableStore, ledgerFailedClosed: ledgerFailedClosed,
             terminalSaveFailed: terminalSaveFailed, unresolved: narrowed,
-            inFlightDeliveryKey: inFlightDeliveryKey)
+            inFlightDeliveryKey: inFlightDeliveryKey,
+            pumpMismatchReason: pumpMismatchReason)
     }
     /// Recompute the current block reason and push it through `onDeliveryBlockChanged`. Exposed
     /// (not `private`) so `AppModel.init` can force one SYNCHRONOUS publish of any ledger state restored
@@ -389,12 +397,25 @@ final class DeliveryLedgerCoordinator {
                 continue
             }
             guard let bolusId = entry.bolusId else { continue }  // sent but no id (rare) → stay blocked
+            // Scope reconciliation to the pump that wrote the entry: a nil key is GRANDFATHERED
+            // (identity unknown, not a mismatch — settle as today, note it in the record); a DIFFERENT
+            // key is refused — never search THIS pump's history for an id another pump minted.
+            // `computeDeliveryBlockReason()` already surfaces the durable mismatch reason, so this just
+            // avoids the pointless per-reconnect history search.
+            let pumpKeyComparison = RemoteBolusLedger.comparePumpKey(entry.pumpKey, to: currentPumpIdentity())
+            if pumpKeyComparison == .mismatch {
+                recordReconciliation(.unavailable)
+                continue
+            }
             switch await reconcile(bolusId) {
             case .resolved(let delivered, let cancelled):
                 remoteBolusLedger.settle(
                     peerId: entry.peerId, requestId: entry.requestId,
                     status: (cancelled ? RemoteCommand.Status.cancelled : .delivered).rawValue,
-                    message: "Reconciled from pump history.", deliveredUnits: delivered)
+                    message: pumpKeyComparison == .grandfathered
+                        ? "Reconciled from pump history. Pump identity unknown for this entry."
+                        : "Reconciled from pump history.",
+                    deliveredUnits: delivered)
                 let f = formatUnits(delivered)
                 // Same key constructor, and again emitted immediately AFTER `settle(…)` — see the note on
                 // the not-delivered post above.

@@ -543,6 +543,40 @@ final class RemoteBolusLedgerTests: XCTestCase {
         XCTAssertNil(entry?.pumpKey)
     }
 
+    /// A nil key means "identity unknown" — GRANDFATHERED, not a mismatch.
+    func testComparePumpKeyGrandfathersANilKey() {
+        XCTAssertEqual(
+            RemoteBolusLedger.comparePumpKey(nil, to: "real|ABCD-1234"), .grandfathered)
+    }
+
+    /// A key equal to the currently-connected pump's identity reconciles normally.
+    func testComparePumpKeyMatchesTheSameIdentity() {
+        XCTAssertEqual(
+            RemoteBolusLedger.comparePumpKey("real|ABCD-1234", to: "real|ABCD-1234"), .matches)
+    }
+
+    /// A key naming a DIFFERENT pump than the one connected now is a mismatch — refused, never settled
+    /// across pumps.
+    func testComparePumpKeyDetectsAMismatchedIdentity() {
+        XCTAssertEqual(
+            RemoteBolusLedger.comparePumpKey("real|OLD-PUMP", to: "real|NEW-PUMP"), .mismatch)
+    }
+
+    /// `blockReason`'s existing precedence (all 8 tests above this MARK) is untouched by the new
+    /// `pumpMismatchReason` parameter's default — this test proves the parameter itself takes effect
+    /// (and outranks the live-in-flight/genuinely-unresolved split) only when a caller supplies it.
+    func testBlockReasonPumpMismatchReasonOutranksTheLiveInFlightSplit() {
+        let unresolved: [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool)] =
+            [("local", "r1", 42, true)]
+        XCTAssertEqual(
+            RemoteBolusLedger.blockReason(
+                noDurableStore: false, ledgerFailedClosed: false,
+                terminalSaveFailed: false, unresolved: unresolved,
+                inFlightDeliveryKey: (peerId: "local", requestId: "r1"),
+                pumpMismatchReason: RemoteBolusLedger.pumpMismatchBlockReason),
+            RemoteBolusLedger.pumpMismatchBlockReason)
+    }
+
     /// Pre-permission entries (`sentToPump == false`, no bolus id) are the not-delivered loop's
     /// business, not the collapse's — it must scope strictly to id-bearing entries.
     func testCollapseDoesNotTouchPrePermissionEntriesWithoutABolusId() {
