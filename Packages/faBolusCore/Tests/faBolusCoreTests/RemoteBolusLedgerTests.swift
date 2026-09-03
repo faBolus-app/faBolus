@@ -309,6 +309,37 @@ final class RemoteBolusLedgerTests: XCTestCase {
         XCTAssertTrue(l.terminalOutcomes(peerId: "garmin").isEmpty)
     }
 
+    // MARK: - A manual clear settles with its OWN status, never a confirmed delivery
+    //
+    // A human verifying on the pump is not the same fact as the pump authoritatively confirming
+    // delivery. `.manuallyCleared` records that a person attested to checking; it must round-trip
+    // distinctly from `.delivered` through both the raw-value encoding and the re-echo query.
+
+    func testManuallyClearedStatusHasItsOwnStableRawValue() {
+        XCTAssertEqual(RemoteCommand.Status.manuallyCleared.rawValue, "manuallyCleared")
+        XCTAssertNotEqual(RemoteCommand.Status.manuallyCleared.rawValue, RemoteCommand.Status.delivered.rawValue)
+    }
+
+    func testExistingStatusRawValuesAreUnchangedByTheNewCase() {
+        XCTAssertEqual(RemoteCommand.Status.delivered.rawValue, "delivered")
+        XCTAssertEqual(RemoteCommand.Status.cancelled.rawValue, "cancelled")
+        XCTAssertEqual(RemoteCommand.Status.failed.rawValue, "failed")
+        XCTAssertEqual(RemoteCommand.Status.unknown.rawValue, "unknown")
+    }
+
+    func testTerminalOutcomesEchoesAManualClearHonestlyNeverAsDelivered() {
+        var l = RemoteBolusLedger()
+        _ = l.begin(peerId: "garmin", requestId: "mc1", doseKey: key(2.0))
+        l.settle(
+            peerId: "garmin", requestId: "mc1",
+            status: RemoteCommand.Status.manuallyCleared.rawValue,
+            message: "Manually cleared after checking the pump — the app did not confirm delivery.")
+        let outcomes = l.terminalOutcomes(peerId: "garmin")
+        XCTAssertEqual(outcomes.count, 1)
+        XCTAssertEqual(outcomes.first?.status, RemoteCommand.Status.manuallyCleared.rawValue)
+        XCTAssertNotEqual(outcomes.first?.status, RemoteCommand.Status.delivered.rawValue)
+    }
+
     // MARK: - Additive content+time duplicate-recency guard
     //
     // A doseKey recently recorded as delivered-or-maybe-delivered is flagged as a recent duplicate

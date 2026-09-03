@@ -200,8 +200,8 @@ final class DeliveryLedgerCoordinator {
         for entry in remoteBolusLedger.unreconciled() {
             remoteBolusLedger.settle(
                 peerId: entry.peerId, requestId: entry.requestId,
-                status: RemoteCommand.Status.delivered.rawValue,
-                message: "Cleared after manual verification on the pump.")
+                status: RemoteCommand.Status.manuallyCleared.rawValue,
+                message: "Manually cleared after checking the pump — the app did not confirm delivery.")
         }
         // Only release the block once the clean ledger is durably saved. The backend's own in-memory
         // unknown-outcome flag is a SECOND, independent fail-closed layer guarding the same delivery

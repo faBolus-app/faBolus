@@ -98,6 +98,11 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         /// The bolus was sent but its outcome is UNKNOWN (lost response). NOT a failure — the
         /// remote must show "verify on the pump", and a retry of the same request is blocked, not redosed.
         case unknown
+        /// A previously-unresolved outcome was released by a HUMAN's manual verification on the pump —
+        /// never a pump-confirmed delivery. The app itself never learned how much (if any) insulin the
+        /// pump delivered; this only records that a person attested to having checked. Must never be
+        /// treated as `.delivered` by any consumer (re-echo, tally, or UI).
+        case manuallyCleared
     }
 
     public var version: Int
