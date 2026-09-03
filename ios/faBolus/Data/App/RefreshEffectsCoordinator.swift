@@ -34,7 +34,6 @@ final class RefreshEffectsCoordinator {
 
     // MARK: - Cross-surface fan-out sinks
     var onWidgetPublish: (PumpSnapshot, [GlucoseReading], [PumpAlert], Bool, String) -> Void = { _, _, _, _, _ in }
-    var onNightscoutSync: (PumpSnapshot, [GlucoseReading], [BolusMarker]) -> Void = { _, _, _ in }
     var onHistoryPersist: ([GlucoseReading], [BolusMarker], GlucoseProvenance) -> Void = { _, _, _ in }
     var onEvaluateSavePinOffer: () -> Void = {}
     var onAutoSyncPumpTime: () -> Void = {}
@@ -134,8 +133,6 @@ final class RefreshEffectsCoordinator {
         // Cross-surface fan-out (no dose/therapy logic).
         onWidgetPublish(snapshot, glucoseHistory, activeNotifications, widgetBolusLocked, widgetBolusLockReason)
         recordStep("widgetPublish")
-        onNightscoutSync(snapshot, glucoseHistory, bolusMarkers)
-        recordStep("nightscoutSync")
         onHistoryPersist(glucoseHistory, bolusMarkers, provenance)
         recordStep("historyPersist")
         onEvaluateSavePinOffer()

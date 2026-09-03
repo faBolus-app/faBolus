@@ -867,11 +867,6 @@ public final class AppModel {
                 bolusLocked: locked, bolusLockReason: reason,
                 hasSnoozeEligibleAlert: FailoverBadgePresenter.snoozeGateAllows(alerts))
         }
-        refreshEffectsCoordinator.onNightscoutSync = { snap, hist, boluses in
-            // The `main`-only Nightscout stub — a proven-inert no-op, never a network call or a write
-            // to history/dose state.
-            NightscoutUploader.shared.sync(snapshot: snap, glucose: hist, boluses: boluses)
-        }
         refreshEffectsCoordinator.onHistoryPersist = { [weak self] glucose, boluses, provenance in
             self?.historyPersistence.persist(glucose: glucose, boluses: boluses, provenance: provenance)
         }

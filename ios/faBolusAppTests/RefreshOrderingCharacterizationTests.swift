@@ -29,7 +29,7 @@ struct RefreshOrderingCharacterizationTests {
     private static let spine: [String] = [
         "maybeHandlePumpSwitch", "merge", "facadeAssign",
         "connectionEdge:", "freshnessEdge:", "stalenessWatchdog:", "urgentLowEdge:",
-        "widgetPublish", "nightscoutSync", "historyPersist",
+        "widgetPublish", "historyPersist",
         "evaluateSavePinOffer", "maybeAutoSyncPumpTime",
         "statusPush"
     ]

@@ -482,17 +482,6 @@ public final class AppSettings {
         set {}  // swiftlint:disable:this unused_setter_value
     }
 
-    /// Upload glucose + boluses + pump status to a Nightscout site. Nightscout is not in
-    /// this build — this accessor STAYS (a hidden, unregistered device-local flag, no migration)
-    /// but its `SettingsCatalog` row, `backupSnapshot`/`applyBackup` participation, and
-    /// `SettingsView` UI are removed (same hidden-flag pattern as `requireRemoteBolusApproval`).
-    /// See dev/nightscout's REINTEGRATION.md.
-    private var _nightscoutUploadEnabled = Stored<Bool>(wrappedValue: false, "nightscoutUploadEnabled")
-    public var nightscoutUploadEnabled: Bool {
-        get { _nightscoutUploadEnabled.wrappedValue }
-        set { _nightscoutUploadEnabled.wrappedValue = newValue }
-    }
-
     /// Opt-in (default OFF) for local notification telemetry — per-category delivered/dismissed/
     /// acted-upon counts the broker uses to tune defaults. Stored in the **App Group** (not `d`) so the
     /// broker, incl. the out-of-process mode-reminder intent, reads the same choice. Local-only, never
@@ -948,7 +937,6 @@ public final class AppSettings {
         _ciqPlusTempRateEnabled.store = defaults
         _ciqCeilingFlagsEnabled.store = defaults
         _criticalAlertsEnabled.store = defaults
-        _nightscoutUploadEnabled.store = defaults
         _stackingGuardFrictionEnabled.store = defaults
         _autoExerciseMode.store = defaults
         _autoSleepMode.store = defaults
@@ -1030,7 +1018,6 @@ public final class AppSettings {
             for key in Self.retiredEatingResidueKeys { d.removeObject(forKey: key) }
             d.set(true, forKey: "eatingResiduePurgeV1")
         }
-        nightscoutUploadEnabled = (d.object(forKey: "nightscoutUploadEnabled") as? Bool) ?? false
         // Force-set OFF — a restored/legacy `true` must not re-arm the extra-confirmation step.
         // Never disables `StackingGuard.escalation`'s own disclosure computation.
         stackingGuardFrictionEnabled = false

@@ -355,11 +355,6 @@ struct AppSettingsStoredMigrationTests {
             key: "ciqCeilingFlagsEnabled", backingLabel: "__ciqCeilingFlagsEnabled", defaultValue: false,
             \.ciqCeilingFlagsEnabled)
     }
-    @Test func nightscoutUploadEnabledStoredRoundTrip() {
-        assertBoolStoredRoundTrip(
-            key: "nightscoutUploadEnabled", backingLabel: "__nightscoutUploadEnabled", defaultValue: false,
-            \.nightscoutUploadEnabled)
-    }
     @Test func autoExerciseModeStoredRoundTrip() {
         assertBoolStoredRoundTrip(
             key: "autoExerciseMode", backingLabel: "__autoExerciseMode", defaultValue: false, \.autoExerciseMode)

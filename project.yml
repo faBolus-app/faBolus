@@ -161,10 +161,6 @@ targets:
         #   are dropped, leaving the =0 surface excluded. Phase 0 AUTHORS these gates and flips NOTHING off — the
         #   removal flip is the owning per-surface phase's job (CGM → Phase 1).)
         excludes:
-          # >>> CGM_NIGHTSCOUT (kept only when FABOLUS_CGM_NIGHTSCOUT=0 → excludes the Nightscout source + backfill; stripped by default)
-          - Data/Sources/NightscoutSource.swift
-          - Data/Sources/NightscoutBackfill.swift
-          # <<< CGM_NIGHTSCOUT
           # Phase 3 (03-02, REMOTE-02): the PHONE_PEER gate is retired — the iPhone-to-iPhone peer remote
           # is now physically git rm'd from main (delete-on-main, D-01), preserved on dev/phone-remote,
           # not a compile-gated exclude. PeerRemoteHost.swift/PhoneRemoteClientModel.swift/

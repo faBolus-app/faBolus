@@ -81,14 +81,12 @@ TIME_SENSITIVE="${FABOLUS_TIME_SENSITIVE:-0}"
 # version-pin, D-01). FABOLUS_TANDEM_LOCAL=1 swaps in the sibling path (../TandemKit) for day-to-day
 # co-development (never for a build you keep — see project.yml comment on the TandemKit package).
 TANDEM_LOCAL="${FABOLUS_TANDEM_LOCAL:-0}"
-# Phase-0 (v0.5.0) per-CGM-source compile gates (TOPO-03/D-03). Nightscout is the only CGM source that
-# still ships behind an APP_SOURCE_EXCLUDES file-exclude gate (see the app-source strip logic below).
 # G6, LibreLinkUp, G7, and xDrip were Phase-1 flag-excluded, then Phase 2.5 retro-cleaned to a physical
 # `git rm` from main (D-01/D-07, CLEAN-03) — their source files no longer exist here at all; they are
 # preserved on origin/dev/cgm-extra. CGM_LIBRELINKUP is fully retired (no companion vendored package).
 # The vendored DexcomG6Kit/G7SensorKit packages themselves are gone too, so there is no longer a
-# CGM_G6/CGM_G7 gate at all — only Nightscout still has a compile gate below.
-CGM_NIGHTSCOUT="${FABOLUS_CGM_NIGHTSCOUT:-1}"
+# CGM_G6/CGM_G7 gate at all, and Nightscout's own compile gate is retired too (its upload/backfill stub
+# is a permanent no-op — see NightscoutStubInertnessTests). Only the BACKUP app-source gate remains below.
 # Phase 3 (03-02, REMOTE-02): the phone-peer PHONE_PEER compile gate is retired — the iPhone-to-iPhone
 # peer remote is git rm'd from main outright (delete-on-main, D-01), preserved on dev/phone-remote, the
 # same posture as the Phase 2.5 CGM retro-clean. The SHARED PhoneRemoteHost.swift Garmin/widget receiver
@@ -179,24 +177,18 @@ if [ "$TIME_SENSITIVE" = 0 ]; then
   strip_block TIME_SENSITIVE
 fi
 
-# Phase-0 per-surface app-source compile gates (TOPO-03/D-03). Only Nightscout still gates a source
-# FILE via this APP_SOURCE_EXCLUDES excludes: list — G6/LibreLinkUp/G7/xDrip's file-exclude entries were
-# retired in Phase 2.5 (their source files are git rm'd outright, D-01/D-07); PHONE_PEER's were retired
-# in Phase 3 (03-02, same posture — the peer files are git rm'd outright, not excluded); FoodFinder's
-# gate was retired in Phase 7 (07-01, same posture — the FoodFinder dirs are git rm'd outright, not
-# excluded).
-# When EVERY remaining gate is at its default (=1, surface PRESENT) the entire excludes: block is
-# removed; otherwise the block is kept and only the still-present (=1) surfaces' exclude lines are
-# dropped, leaving the =0 surface(s) excluded.
-if [ "$CGM_NIGHTSCOUT" = 1 ] && [ "$BACKUP" = 1 ]; then
-  strip_block APP_SOURCE_EXCLUDES   # all remaining app-source surfaces present → drop the whole excludes: block
-else
-  [ "$CGM_NIGHTSCOUT" = 1 ]  && strip_block CGM_NIGHTSCOUT
-  [ "$BACKUP" = 1 ]          && strip_block BACKUP            # present → drop the Backup/SiteAtlas exclude lines
+# Per-surface app-source compile gates. Only BACKUP still gates a source FILE via this
+# APP_SOURCE_EXCLUDES excludes: list — G6/LibreLinkUp/G7/xDrip/PHONE_PEER/FoodFinder's file-exclude
+# entries were all retired to a physical `git rm` from main (their source files no longer exist here at
+# all, not even excluded); Nightscout's upload/backfill is a permanent no-op stub, not a file-exclude
+# gate, so it needs none either.
+# When the remaining gate is at its default (=1, surface PRESENT) the entire excludes: block is
+# removed; otherwise the block is kept so the =0 surface's exclude lines take effect.
+if [ "$BACKUP" = 1 ]; then
+  strip_block APP_SOURCE_EXCLUDES   # only remaining app-source surface present → drop the whole excludes: block
 fi
 echo "generate-project: Garmin=$GARMIN DataProtection=$DATA_PROTECTION TimeSensitive=$TIME_SENSITIVE TandemLocal=$TANDEM_LOCAL TempRateCiqExperimental=$TEMPRATE_CIQ_EXPERIMENTAL"
-echo "generate-project (Phase-0 app-source gates): CgmNightscout=$CGM_NIGHTSCOUT Backup=$BACKUP (G6/LibreLinkUp/G7/xDrip sources git rm'd from main outright — Phase 2.5 retro-clean, D-07; phone-peer git rm'd from main outright — Phase 3, 03-02; FoodFinder git rm'd from main outright — Phase 7, 07-01; backup/restore+PrivacyData-export+SiteAtlas sources git rm'd from main outright — Phase 6, 06-02; the vendored DexcomG6Kit/G7SensorKit packages are gone outright; Nightscout still default-present)"
-[ "$CGM_NIGHTSCOUT" = 0 ] && echo "  → building WITHOUT the Nightscout CGM source + backfill (FABOLUS_CGM_NIGHTSCOUT=0)"
+echo "generate-project (app-source gates): Backup=$BACKUP (G6/LibreLinkUp/G7/xDrip sources git rm'd from main outright; phone-peer git rm'd from main outright; FoodFinder git rm'd from main outright; backup/restore+PrivacyData-export+SiteAtlas sources git rm'd from main outright; the vendored DexcomG6Kit/G7SensorKit packages are gone outright; Nightscout's upload/backfill is a permanent inert stub)"
 [ "$BACKUP" = 0 ] && echo "  → building WITHOUT backup/restore + PrivacyData export + SiteAtlas (FABOLUS_BACKUP=0, default on main) — 7 source files/dirs are physically absent (git rm'd, Phase 6 06-02); the on-device erase/full-reset path (Delete all on-device data / Full reset) STAYS present"
 [ "$BACKUP" = 1 ] && echo "  → FABOLUS_BACKUP=1 env-override requested on main — a genuine no-op: the 7 backup/restore/SiteAtlas source files no longer exist here to include (git rm'd, Phase 6 06-02; see dev/backup), and FABOLUS_BACKUP is no longer a declared compile-condition token at all — the #if FABOLUS_BACKUP guards it used to gate are deleted outright, not merely compiled out"
 echo "  → FABOLUS_MOBI=$MOBI (placeholder plumbing — documented NO-OP this milestone; zero #if FABOLUS_MOBI call sites; Mobi capability-model surgery is Phase 9's job, dev/mobi sub-branch)"
