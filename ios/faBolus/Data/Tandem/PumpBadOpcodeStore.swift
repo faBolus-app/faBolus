@@ -186,9 +186,6 @@ struct PumpBadOpcodeStore: @unchecked Sendable {
         saveMap(map)
     }
 
-    /// Wipe every pump's learned set (test hygiene / a full reset).
-    func clearAll() { defaults.removeObject(forKey: storageKey) }
-
     // MARK: - Codable persistence
 
     /// `seq`: a monotonic last-updated stamp for LRU eviction. `stk`: corroborating strike counts,
