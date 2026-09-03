@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import faBolusCore
 @testable import faBolus
 
 /// Pins that launch re-seeds one bolusStatus echo per durable terminal outcome that was never watch-acked,
@@ -74,5 +75,67 @@ struct GarminEchoSeedTests {
         #expect(
             garminEchoesToSeed(terminalOutcomes: outcomes, alreadyEchoed: ["2"]).map(\.requestId) == ["1", "3"],
             "filtering an interior outcome must not reorder the survivors")
+    }
+
+    // MARK: - Launch-seed ordering (App.swift): seed AFTER reconciliation, not synchronously before it
+
+    /// A durable store preloaded with a fixed ledger, mirroring `SafetyNotificationTests.SeedLedgerStore`
+    /// — seeds the reconcile state directly, no delivery path, no gating dependency.
+    private final class SeedLedgerStore: RemoteBolusLedgerPersisting, @unchecked Sendable {
+        private var persisted: Data?
+        init(seed: RemoteBolusLedger) { persisted = try? JSONEncoder().encode(seed) }
+        func loadOutcome() -> RemoteBolusLedgerStore.LoadOutcome {
+            if let persisted, let l = try? JSONDecoder().decode(RemoteBolusLedger.self, from: persisted) {
+                return .init(ledger: l, failedClosed: false)
+            }
+            return .init(ledger: RemoteBolusLedger(), failedClosed: false)
+        }
+        func save(_ ledger: RemoteBolusLedger) throws { persisted = try JSONEncoder().encode(ledger) }
+        func saveBestEffort(_ ledger: RemoteBolusLedger) { try? save(ledger) }
+    }
+
+    /// Reading `garminTerminalOutcomes()` with NO await at all, immediately after construction, mirrors
+    /// exactly what the OLD (buggy) `App.init()` did: `AppModel`'s own launch reconciliation is fired as
+    /// an unawaited `Task` inside its init, which cannot run even one line of its body until the current
+    /// (synchronous) code yields. A read with no intervening suspension point therefore always races
+    /// ahead of it — this is the hazard `App.swift`'s reorder exists to close, not a flaky assertion.
+    @Test @MainActor func readingOutcomesWithNoAwaitMissesTheLaunchPromotableEntry() {
+        var ledger = RemoteBolusLedger()
+        _ = ledger.begin(peerId: "garmin", requestId: "seed-1", doseKey: "garmin:seed-1:2.0")
+        ledger.markDelivering(peerId: "garmin", requestId: "seed-1")
+        let model = AppModel(source: MockBackend(), ledgerStore: SeedLedgerStore(seed: ledger))
+
+        // No `await` anywhere above or here — the internal launch-reconcile Task has not run yet.
+        #expect(
+            model.garminTerminalOutcomes().isEmpty,
+            "a synchronous read must not observe a still-in-flight launch reconciliation")
+    }
+
+    /// The fix: awaiting the SAME idempotent entry point `App.swift` now awaits before seeding makes an
+    /// entry promoted to `.terminal` during launch reconciliation visible to the seed — entries already
+    /// terminal before launch are unaffected (no regression to the pre-existing seed behavior).
+    @Test @MainActor func awaitingReconciliationFirstIncludesTheLaunchPromotedEntry() async {
+        var ledger = RemoteBolusLedger()
+        _ = ledger.begin(peerId: "garmin", requestId: "seed-2", doseKey: "garmin:seed-2:2.0")
+        ledger.markDelivering(peerId: "garmin", requestId: "seed-2")
+        let model = AppModel(source: MockBackend(), ledgerStore: SeedLedgerStore(seed: ledger))
+
+        await model.reconcileUnresolvedDeliveries()
+
+        #expect(model.garminTerminalOutcomes().map(\.requestId) == ["seed-2"])
+        #expect(model.garminTerminalOutcomes().first?.status == "failed")
+    }
+
+    /// No regression: an entry already terminal BEFORE launch (settled by a previous session) is seeded
+    /// exactly as before — reconciliation is a no-op on an already-empty `unreconciled()` set.
+    @Test @MainActor func alreadyTerminalEntryStillIncludedAfterReconciling() async {
+        var ledger = RemoteBolusLedger()
+        _ = ledger.begin(peerId: "garmin", requestId: "seed-3", doseKey: "garmin:seed-3:1.0")
+        ledger.settle(peerId: "garmin", requestId: "seed-3", status: "delivered", deliveredUnits: 1.0)
+        let model = AppModel(source: MockBackend(), ledgerStore: SeedLedgerStore(seed: ledger))
+
+        await model.reconcileUnresolvedDeliveries()
+
+        #expect(model.garminTerminalOutcomes().map(\.requestId) == ["seed-3"])
     }
 }

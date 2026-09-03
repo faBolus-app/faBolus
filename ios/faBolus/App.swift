@@ -26,13 +26,20 @@ struct FaBolusApp: App {
         let bridge = GarminRemoteBridge(model: model)
         _garmin = State(initialValue: bridge)
         #if GARMIN
-        // Re-seed the terminal-echo outbox from the durable ledger at launch, so a bolus outcome
-        // recorded but never echoed to the watch across an app kill/relaunch is replayed once the watch is
-        // message-ready. Called right after the bridge is built.
-        bridge.seedTerminalEchoesFromLedger()
+        // Re-seed the terminal-echo outbox from the durable ledger, so a bolus outcome recorded but
+        // never echoed to the watch across an app kill/relaunch is replayed once the watch is
+        // message-ready. `model`'s own launch reconciliation (fired inside its init, above) is an
+        // unawaited `Task` — a synchronous call here would always outrun it and read the ledger before
+        // an entry it could promote to `.terminal` ever settled. Awaiting the SAME idempotent entry
+        // point ourselves makes "after" true by construction instead of by scheduling luck; entries
+        // already terminal before launch are unaffected (they seed exactly as before).
+        Task { @MainActor in
+            await model.reconcileUnresolvedDeliveries()
+            bridge.seedTerminalEchoesFromLedger()
+        }
         // Re-seed any authenticated dismiss receipt whose ack was never transport-confirmed across an
         // app kill/relaunch — same launch-time idea as the terminal-echo re-seed, on its own durable
-        // lane so the two cannot collide.
+        // lane so the two cannot collide. Unaffected by the reconciliation ordering above.
         bridge.seedUnsentDismissAcksFromReceiptStore()
         #endif
         // Construct + retain the safety-notification pipeline at process launch too — including a
