@@ -37,18 +37,27 @@ pre-removal tip, identical to `main` before Phase 7 Plan 02 (07-02, P-B) ran. `m
    KEPT `heartRateContextEnabled` SETTING and the `endoReportEnabled` property) that cross-referenced
    `graphDetailEnabled`/`GraphDetailView` by name were reworded to drop the now-dangling mention — purely
    textual, no behavior change; this branch's copies still say the original text.
-5. Left `Packages/faBolusCore/Sources/faBolusCore/GraphDetailReadout.swift` (72 lines) COMPLETELY
-   byte-identical — it is inside `Packages/faBolusCore`, a `DOSE_PATHS` entry, so the whole package must
-   stay byte-identical across every branch even though its only 2 consumers (the deleted view + the
-   carved scrubber section) are both gone on `main`. It is orphaned-but-compiled on `main`, exactly as
-   it is on this branch.
+5. **Superseded by Phase 31 unit 3 (31-03), owner decision 2026-08-31, D-21:**
+   `Packages/faBolusCore/Sources/faBolusCore/GraphDetailReadout.swift` (72 lines) is **no longer on
+   `main`** — it was deleted outright, with no compile shim, once its last consumer on `main` (the
+   `FeatureSurfaceAbsenceGuardTests.swift` string reference alone does not count as a consumer) was
+   confirmed to be zero. The earlier version of this note said the file was kept "COMPLETELY
+   byte-identical" as a `DOSE_PATHS` entry that must never diverge across branches; that byte-identity
+   freeze itself was retired for a different reason first (Phase 34 wave 1's D-47 deleted
+   `scripts/check-dose-byte-identity.sh` and rehomed the dose-path membership marker into
+   `docs/NARROW-MAIN-GATES.md`), and then Phase 31 unit 3 deleted the file itself — a branch existing to
+   preserve it is exactly the argument FOR deleting it, not a reason to keep a compile shim. This
+   branch's own copy of `GraphDetailReadout.swift` (+ its tests) is unaffected and is now the sole
+   place the file survives outside `git show <pre-31-03-commit>:<path>`, alongside `dev/retrospective`.
 6. Left `AppSettings.shared.heartRateContextEnabled` the SETTING (distinct from the deleted view PARAM
    of the same name) and its `AppModel.swift:115` reader (background HR sensing) COMPLETELY untouched —
    that is HEALTH-01/Phase-5 territory, not FEAT-02.
 7. Authored a new `FeatureSurfaceAbsenceGuardTests.swift` on `main` (source-scans `GlucoseChartView.swift`
    for the absence of `scrubber`/`GraphDetailReadout` and confirms `GraphDetailView.swift` is absent) —
    this branch has no such file (it predates the removal); do not port it over on reintegration, it
-   asserts the opposite of what this branch's tree looks like.
+   asserts the opposite of what this branch's tree looks like. **As of Phase 31 unit 3 (D-23), this same
+   test file gained a second assertion that `GraphDetailReadout.swift` itself does not exist on disk —
+   also do not port that assertion over; reintegration is exactly what makes it false.**
 
 ## Reintegration path
 
@@ -61,11 +70,18 @@ pre-removal tip, identical to `main` before Phase 7 Plan 02 (07-02, P-B) ran. `m
 4. Re-apply the `graphDetailEnabled` property declaration + its `init`-restore line into `AppSettings.swift`,
    and revert the two doc-comment rewordings on `heartRateContextEnabled`/`endoReportEnabled` if desired
    (cosmetic only, safe to leave either way).
-5. Delete the post-removal `FeatureSurfaceAbsenceGuardTests.swift` FEAT-02 case (it asserts absence).
-6. Do NOT touch `Packages/faBolusCore/Sources/faBolusCore/GraphDetailReadout.swift` — it was never
-   removed from `main`, only its consumers were; reintegration needs no change there.
-7. Run the full exit gate (`check-dose-byte-identity.sh`, `xcodebuild build`, full test suite) to confirm
-   the re-added surface compiles and nothing else regressed.
+5. Delete the post-removal `FeatureSurfaceAbsenceGuardTests.swift` FEAT-02 case (it asserts absence),
+   including the D-23 GraphDetailReadout-file-absence assertion added in Phase 31 unit 3 — both assert
+   the opposite of what reintegration restores.
+6. **Re-apply `Packages/faBolusCore/Sources/faBolusCore/GraphDetailReadout.swift` (+ its tests) from
+   this branch's tip.** ⚠ This step CHANGED as of Phase 31 unit 3 (D-21): the file was previously never
+   removed from `main` (only its consumers were), so this step used to be a no-op. It is no longer a
+   no-op — the file itself is gone from `main` and must be restored here, before or alongside the rest
+   of this branch's scrubber surface, or the reintegrated `GlucoseChartView.swift`/`GraphDetailView.swift`
+   will not compile.
+7. Run the full exit gate (`xcodebuild build`, full test suite, TandemKit JDK-21 oracle) to confirm the
+   re-added surface compiles and nothing else regressed. `check-dose-byte-identity.sh` no longer exists
+   on `main` (Phase 34 wave 1, D-47) — it is not part of the gate to re-run.
 
 ## Prerequisite (added by Phase 22, NARROW-HR-22, 2026-08-28)
 
