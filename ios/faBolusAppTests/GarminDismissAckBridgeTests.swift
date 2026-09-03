@@ -219,7 +219,7 @@ struct GarminDismissAckBridgeTests {
     }
 
     /// An id-bearing entry that stays `.unavailable` (the pump's history hasn't caught up) must NOT echo
-    /// anything — D-22's invariant is "never announce a non-terminal entry," and the echo seam must honor
+    /// anything — the invariant is "never announce a non-terminal entry," and the echo seam must honor
     /// it exactly like `postSafety` already does.
     @Test @MainActor func stillUnresolvedEntryNeverInvokesTheEchoSeam() async {
         var ledger = RemoteBolusLedger()

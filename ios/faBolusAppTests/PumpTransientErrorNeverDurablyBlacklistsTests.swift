@@ -131,7 +131,7 @@ struct PumpTransientErrorNeverDurablyBlacklistsTests {
     }
 
     /// A transient error still suppresses IN-MEMORY for the rest of the connection (so the same bad
-    /// exchange is not re-thrashed every 15 s poll and the ~70-90 ms teardown risk is not re-run) —
+    /// exchange is not re-thrashed every 15 s poll and the ~70 to 90 ms teardown risk is not re-run) —
     /// and the read is RE-PROBED on the next connection cycle. Exactly the treatment op-72..76 and
     /// op-108/115 already get.
     @Test func aTransientlyErroredReservoirReadIsSuppressedThisCycleThenReProbedNextCycle() {

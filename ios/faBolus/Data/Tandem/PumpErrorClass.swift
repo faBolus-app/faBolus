@@ -76,7 +76,7 @@ enum PumpOpcodeCorrelation: Equatable {
 
 /// Whether a resolved rejection may be written to the DURABLE per-pump store, and on what terms.
 /// The in-memory, connection-scoped skip is applied in every case — it is what prevents re-thrashing a
-/// bad exchange every 15 s poll and re-running the ~70-90 ms teardown risk. Only the DURABLE write,
+/// bad exchange every 15 s poll and re-running the ~70 to 90 ms teardown risk. Only the DURABLE write,
 /// which is what makes a mistake permanent, is rationed here.
 enum PumpBadOpcodeDurability: Equatable {
     /// Persist on this single observation (today's behaviour, preserved for the authoritative cases).
