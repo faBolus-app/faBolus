@@ -5,8 +5,8 @@
 # any suite's INTERNAL parallelism — it adds no new flake surface.
 #
 # Usage:
-#   scripts/test-all.sh              # all three: core + schema + ios
-#   scripts/test-all.sh core schema  # a subset (names: core | schema | ios)
+#   scripts/test-all.sh                  # all three: packages + schema + ios
+#   scripts/test-all.sh packages schema  # a subset (names: packages | schema | ios)
 #
 # Exit code is non-zero if ANY selected job failed; the failing jobs' logs are tailed at the end. This
 # is a developer convenience — CI still runs the jobs as separate, independently-attributable steps, so
@@ -15,7 +15,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 JOBS=("$@")
-[ "$#" -eq 0 ] && JOBS=(core schema ios)
+[ "$#" -eq 0 ] && JOBS=(packages schema ios)
 
 LOGDIR="$(mktemp -d)"
 names=()
@@ -30,12 +30,21 @@ start() {  # start <name> <command...>
     echo "▶︎ started $name (pid $!) → $log"
 }
 
+# All three local Swift packages (faBolusCore, HistoryStore, faBolusDesign) run here as one job, so
+# none of them is left unrun locally the way HistoryStore/faBolusDesign previously were — CI still
+# runs each as its own separately-attributable step (D-11).
+run_packages() {
+    swift test --package-path Packages/faBolusCore \
+        && swift test --package-path Packages/HistoryStore \
+        && swift test --package-path Packages/faBolusDesign
+}
+
 for job in "${JOBS[@]}"; do
     case "$job" in
-        core)   start core   swift test --package-path Packages/faBolusCore ;;
-        schema) start schema ./scripts/check-schema-drift.sh ;;
-        ios)    start ios    ./scripts/test-ios.sh ;;
-        *) echo "unknown job: $job (want: core | schema | ios)"; exit 2 ;;
+        packages) start packages run_packages ;;
+        schema)   start schema   ./scripts/check-schema-drift.sh ;;
+        ios)      start ios      ./scripts/test-ios.sh ;;
+        *) echo "unknown job: $job (want: packages | schema | ios)"; exit 2 ;;
     esac
 done
 

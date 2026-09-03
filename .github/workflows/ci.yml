@@ -82,11 +82,15 @@ jobs:
       - name: faBolusCore unit tests
         run: swift test --package-path Packages/faBolusCore
 
-      # HistoryStore (the persistence layer the settings-change log and bolus history sit on) is a
-      # pure-logic package with no pump or UI dependency, so there was no reason for it to be unrun —
-      # it was simply missed. ShareClient has no test target; nothing to add there.
+      # HistoryStore (the persistence layer the settings-change log and bolus history sit on) and
+      # faBolusDesign (the shared §13 band-color tokens) are both pure-logic packages with no pump or
+      # UI dependency, so there was no reason for either to be unrun — they were simply missed.
+      # ShareClient has no test target; nothing to add there.
       - name: HistoryStore unit tests
         run: swift test --package-path Packages/HistoryStore
+
+      - name: faBolusDesign unit tests
+        run: swift test --package-path Packages/faBolusDesign
 
   ios-build:
     name: iOS app build (TandemBackend / AppModel / widgets)
