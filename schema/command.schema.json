@@ -114,6 +114,11 @@
       "minimum": 0,
       "description": "Units of the most recent bolus (statusRead reply, for a remote's detail screen)."
     },
+    "basalRate": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Current basal delivery rate (units/hr), so a remote's basal pill matches the host (statusRead reply). Absent means the pump has never answered the basal read; a real 0 U/hr (a 0 U/hr temp rate, or a suspend) still travels as 0 — that distinction is why the host gates emission on having read the rate at all, rather than sending 0 for both cases."
+    },
     "glucoseAgeSec": {
       "type": "number",
       "minimum": 0,
@@ -295,6 +300,14 @@
       "enum": ["remoteUnreachable", "pumpNotLinked", "bolusInFlight", "belowMinimum", "aboveMax", "accessDenied"],
       "description": "statusRead reply — the reason `canBolus` is false, as a stable locale-independent token (BolusBlockReason.wireToken), so a remote can show WHY its bolus affordance is disabled. Over the wire the host emits only pumpNotLinked / bolusInFlight / accessDenied (reachability + bounds are judged locally by each remote). Absent when canBolus is true or absent."
     },
+    "cartridgeReady": {
+      "type": "boolean",
+      "description": "statusRead reply — the pump's cartridge-ready status, pushed on every reply so watch/Garmin/Mac can show cartridge state even when no bolus is being attempted; a first-class DISPLAY signal, distinct from canBolus/bolusBlockReason (which only surface the block at bolus-attempt time). Absent means a legacy remote/host predating the field — NO SIGNAL, never a fabricated 'not ready'; a remote must only treat an explicit false as 'cartridge not ready', never infer one from a missing key."
+    },
+    "batteryCharging": {
+      "type": "boolean",
+      "description": "statusRead reply — the pump's charging state (op-145 chargingStatus == 1; the on-wire semantics are unconfirmed live). Absent means a legacy host/remote that predates the field; a remote maps absent to NOT charging (fail-closed, never a fabricated charging state). Display-only, never a dose input."
+    },
     "supportsRemoteAlertDismiss": {
       "type": "boolean",
       "description": "statusRead reply — whether the pump firmware actually honors a REMOTE alert dismissal (P13 capability channel). t:slim X2 silently rejects it, so on t:slim a remote's alert action only snoozes the alert locally; Mobi clears it on the pump. A remote uses this to label its alert action 'Clear' (true) vs 'Snooze' (false), matching the phone. Absent ⇒ the remote keeps its safe default (Snooze); the host stays the enforcement point on the actual dismiss."
@@ -346,6 +359,49 @@
     "controlIQEnabled": {
       "type": "boolean",
       "description": "statusRead reply (B2 / S1+O3) — whether the pump's Control-IQ is turned ON at runtime (PumpSnapshot.controlIQEnabled), distinct from controllerVariant (which is firmware capability/identity). The auto-correction disclosure renders only when BOTH the variant can auto-correct AND it is enabled here, so a remote needs both. Display-only. Absent ⇒ a legacy host; the remote treats it as false (renders no disclosure) — a safe, non-misleading default."
+    },
+    "ciqZone": {
+      "type": "string",
+      "enum": ["increases", "decreases", "maintains", "stops", "delivers"],
+      "description": "statusRead reply — the pump's live Control-IQ action zone as a FROZEN wire token (derived from op-179), mirroring controllerVariant exactly: a remote decodes the token and renders Tandem's own zone word/icon locally, no prose crosses the wire. Display-only, never a dose input. Absent means a legacy host, or the zone is unread/unmapped; the remote renders the chip/row/field absent, never a stale or fabricated word."
+    },
+    "ciqSuspendedForLow": {
+      "type": "boolean",
+      "description": "statusRead reply — whether the pump's own control-state currently attributes an active basal suspend to Control-IQ. A frozen fail-closed fact, never a rendered string. Emitted unconditionally (nil only before the first read; false is a fully-known 'not CIQ-attributed' state). Absent or false means the remote falls back to its own generic-suspend indicator, never a fabricated 'Control-IQ paused' claim."
+    },
+    "ciqSuspendStartEpochSec": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647,
+      "description": "The immutable source epoch (Unix seconds) of the moment ciqSuspendedForLow first became true, propagated unchanged so a receiver computes elapsed time at display time. Absent means unknown / not currently attributed. Same Int32.max (2038-01-19) ceiling as glucoseEpochSec."
+    },
+    "lastAutoCorrectionEpochSec": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647,
+      "description": "The immutable source epoch (Unix seconds) of the most-recent Control-IQ auto-correction, propagated unchanged so a receiver computes age at display time. Display-only, never a dose input. Absent means a legacy host or no auto-correction has been seen yet — the marker renders absent, never a synthesized time. Same Int32.max (2038-01-19) ceiling as glucoseEpochSec."
+    },
+    "ciqLastCouldNotDeliverEpochSec": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647,
+      "description": "The immutable source epoch of the most-recent 'Control-IQ tried and couldn't deliver an automatic correction' event. Remote marker only — the full timeline stays phone-only. Absent means the marker renders absent, never a synthesized recency claim. Same Int32.max (2038-01-19) ceiling as glucoseEpochSec."
+    },
+    "lockoutUntilEpochSec": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647,
+      "description": "The immutable source epoch (Unix seconds) of the instant Control-IQ's automatic correction becomes available again, propagated unchanged so a receiver reverses the arithmetic and computes a lockout-remaining fraction locally — the fraction itself is never transmitted. Emitted unconditionally (nil only when there's no known auto-correction yet, the controller can't auto-correct, or the window is unknown). Absent, or a value already in the past, means the bar/ring renders absent — never a frozen bar or negative countdown. Display-only, never a dose input. Same Int32.max (2038-01-19) ceiling as glucoseEpochSec."
+    },
+    "maxBasalUnitsPerHour": {
+      "type": "number",
+      "minimum": 0,
+      "description": "The pump's configured max-basal delivery limit, propagated alongside basalRate so each remote computes its own 'percent of configured max basal' readout locally — the percentage itself is never transmitted. Display-only, never a dose input. Absent or <= 0 means the readout renders absent on every surface (fail-closed: hidden, not zero/dash)."
+    },
+    "controlIQMode": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "The pump's live Sleep/Exercise activity mode (0 normal / 1 sleep / 2 exercise). Emitted unconditionally — 0 (normal) is a fully-known fact, not absent — so a stale Sleep/Exercise mode never survives past the moment the pump's own state changed. Display-only, never a dose input. Absent means a legacy host, which the remote treats as 0 (no card)."
     }
   },
   "additionalProperties": false

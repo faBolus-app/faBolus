@@ -24,27 +24,39 @@ with open(SCHEMA_PATH) as f:
 
 # --- Representative VALID payloads (must pass) ------------------------------------------------
 VALID = [
-    # Full statusRead reply: every field, incl. the new screens + 'unknown' status.
+    # Full statusRead reply: every field RemoteStatusComposer.compose actually emits and declares,
+    # incl. the new screens + 'unknown' status. Validates a whole payload against
+    # additionalProperties:false, not a sliver, so a future undeclared-emit is caught here.
     {
         "version": 1, "kind": "statusRead", "requestId": "r1",
         "status": "unknown", "message": "Outcome unknown — check pump history.",
         "trend": "flat", "bgMgdl": 120, "glucoseAgeSec": 60,
         "glucoseEpochSec": 1700000000, "iobEpochSec": 1700000000, "therapyEpochSec": 1700000000,
+        "reservoirEpochSec": 1700000000, "batteryEpochSec": 1700000000,
         "history": [100, 110, 120], "alerts": [{"id": 1, "kind": 1, "title": "Low insulin"}],
-        "lastBolusUnits": 1.0, "reservoirUnits": 100, "batteryPercent": 80,
+        "lastBolusUnits": 1.0, "reservoirUnits": 100, "batteryPercent": 80, "basalRate": 0.8,
         "carbRatio": 10, "isf": 40, "targetBg": 110, "maxBolusUnits": 25,
         "bolusMode": "carbs", "bolusIncrement": 0.05, "carbIncrement": 5,
         "screenOrder": ["glance", "glucose", "clock", "bolusonly", "alerts", "history", "details"],
         "defaultScreen": "clock",
         "glucoseStaleMinutes": 6, "glucoseHideDelayMinutes": 0,
         "detailsOrder": ["iob", "reservoir", "cgm"], "watchChartRanges": [3, 6, 12, 24],
-        "garminComplicationDisplay": "stringTrend", "clockAnalog": True, "remotesReadOnly": False,
+        "garminComplicationDisplay": "stringTrend", "garminComplicationSlots": ["iob", "reservoir", "battery"],
+        "clockAnalog": True, "remotesReadOnly": False,
         "glucoseDisplayUnit": "mmol",
+        "glucosePlotFloor": 40, "glucosePlotCeiling": 300,
+        "glucosePlotFloorSmall": 40, "glucosePlotCeilingSmall": 300,
+        "canBolus": True, "cartridgeReady": True, "batteryCharging": False,
         "supportsRemoteAlertDismiss": True, "supportsDismissAck": True,
         "rawAlerts": [{"id": 1, "kind": 1, "title": "Low insulin"}], "supportsRawAlertSnapshot": True,
         "activeMode": "advanced",
         "garminBolusEnabled": False, "bolusPasscodeRequired": False,
         "controllerVariant": "controlIQPro", "controlIQEnabled": True,
+        "ciqZone": "maintains", "ciqSuspendedForLow": True, "ciqSuspendStartEpochSec": 1699998000,
+        "lastAutoCorrectionEpochSec": 1699999000, "ciqLastCouldNotDeliverEpochSec": 1699990000,
+        "lockoutUntilEpochSec": 1700003600, "maxBasalUnitsPerHour": 3.0, "controlIQMode": 0,
+        "alertIntensityMode": "vibrate", "alertAudibleMinSeverity": "critical",
+        "alertCriticalOverridesDnd": False,
     },
     {"version": 1, "kind": "bolusRequest", "requestId": "r2", "units": 2.5},
     # C2 §2.3: a Garmin bolusRequest may carry the entered passcode (remote → host).
@@ -78,6 +90,7 @@ INVALID = [
     {"version": 1, "kind": "bolusRequest", "requestId": "b5d", "carbsGrams": 30, "includeStaleBG": "yes"}, # Addendum B: include-stale intent must be a boolean, not a string
     {"version": 1, "kind": "statusRead", "requestId": "b5", "surpriseKey": 1},                # additionalProperties
     {"version": 1, "kind": "statusRead"},                                                     # missing required requestId
+    {"version": 1, "kind": "statusRead", "requestId": "b6", "exerciseTimeRemainingSec": 120}, # emitted-but-undeclared: not a schema property today
 ]
 
 
