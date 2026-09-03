@@ -82,18 +82,11 @@ jobs:
       - name: faBolusCore unit tests
         run: swift test --package-path Packages/faBolusCore
 
-      # Three suites that EXISTED but were never invoked by CI: HistoryStore (the persistence layer
-      # the settings-change log and bolus history sit on) and the two vendored CGM decoders. All three
-      # are pure-logic packages with no pump or UI dependency, so there was no reason for them to be
-      # unrun — they were simply missed. ShareClient has no test target; nothing to add there.
+      # HistoryStore (the persistence layer the settings-change log and bolus history sit on) is a
+      # pure-logic package with no pump or UI dependency, so there was no reason for it to be unrun —
+      # it was simply missed. ShareClient has no test target; nothing to add there.
       - name: HistoryStore unit tests
         run: swift test --package-path Packages/HistoryStore
-
-      - name: G7SensorKit unit tests
-        run: swift test --package-path Packages/G7SensorKit
-
-      - name: DexcomG6Kit unit tests
-        run: swift test --package-path Packages/DexcomG6Kit
 
   ios-build:
     name: iOS app build (TandemBackend / AppModel / widgets)

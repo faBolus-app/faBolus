@@ -91,11 +91,9 @@ TANDEM_LOCAL="${FABOLUS_TANDEM_LOCAL:-0}"
 # G6, LibreLinkUp, G7, and xDrip were Phase-1 flag-excluded, then Phase 2.5 retro-cleaned to a physical
 # `git rm` from main (D-01/D-07, CLEAN-03) — their source files no longer exist here at all; they are
 # preserved on origin/dev/cgm-extra. CGM_LIBRELINKUP is fully retired (no companion vendored package).
-# CGM_G6/CGM_G7 remain ONLY to drive the CGM_G6_KIT/CGM_G7_KIT project.yml PACKAGE-block strip (D-02) —
-# they no longer gate any source FILE (the files they used to gate are gone unconditionally now).
-CGM_G6="${FABOLUS_CGM_G6:-0}"
+# The vendored DexcomG6Kit/G7SensorKit packages themselves are gone too, so there is no longer a
+# CGM_G6/CGM_G7 gate at all — only Nightscout still has a compile gate below.
 CGM_NIGHTSCOUT="${FABOLUS_CGM_NIGHTSCOUT:-1}"
-CGM_G7="${FABOLUS_CGM_G7:-0}"
 # Phase 3 (03-02, REMOTE-02): the phone-peer PHONE_PEER compile gate is retired — the iPhone-to-iPhone
 # peer remote is git rm'd from main outright (delete-on-main, D-01), preserved on dev/phone-remote, the
 # same posture as the Phase 2.5 CGM retro-clean. The SHARED PhoneRemoteHost.swift Garmin/widget receiver
@@ -222,27 +220,10 @@ fi
 # no-op instead of a misleading one. The erase/full-reset MARK section in AppModel.swift is deliberately
 # NOT wrapped in this flag (D-08) so it is unaffected either way.
 drop_flag FABOLUS_BACKUP
-# FABOLUS_CGM_G6=0 (default) drops the DexcomG6Kit SPM package + the app-target dependency on it — the
-# ONLY thing CGM_G6 still gates after Phase 2.5 (its source-file exclude entry no longer exists; the
-# source itself is git rm'd, D-01/D-07). Distinct tag from CGM_G6 (word-boundary anchored in
-# strip_block, so CGM_G6 never matches CGM_G6_KIT and vice-versa — Pitfall 2).
-if [ "$CGM_G6" = 0 ]; then
-  strip_block CGM_G6_KIT
-fi
-
-# FABOLUS_CGM_G7=0 (default) drops the G7SensorKit SPM package + the app-target/watch-target
-# dependency on it — the ONLY thing CGM_G7 still gates after Phase 2.5 (its standalone Shared/
-# source-file exclude entries no longer exist on either target; the source itself is git rm'd,
-# D-01/D-07). Mirrors the CGM_G6/CGM_G6_KIT fence shape exactly.
-if [ "$CGM_G7" = 0 ]; then
-  strip_block CGM_G7_KIT
-fi
 
 echo "generate-project: Garmin=$GARMIN iCloud=$ICLOUD DataProtection=$DATA_PROTECTION TimeSensitive=$TIME_SENSITIVE TandemLocal=$TANDEM_LOCAL TempRateCiqExperimental=$TEMPRATE_CIQ_EXPERIMENTAL"
-echo "generate-project (Phase-0 app-source gates): CgmG6Kit=$CGM_G6 CgmNightscout=$CGM_NIGHTSCOUT CgmG7Kit=$CGM_G7 Backup=$BACKUP (G6/LibreLinkUp/G7/xDrip sources git rm'd from main outright — Phase 2.5 retro-clean, D-07; phone-peer git rm'd from main outright — Phase 3, 03-02; FoodFinder git rm'd from main outright — Phase 7, 07-01; backup/restore+PrivacyData-export+SiteAtlas sources git rm'd from main outright — Phase 6, 06-02; CGM_G6/CGM_G7 now only gate their vendored SPM package; Nightscout still default-present)"
-[ "$CGM_G6" = 0 ] && echo "  → building WITHOUT the DexcomG6Kit package/dependency (FABOLUS_CGM_G6=0, default) — the Dexcom G5/G6/ONE BLE decoder is unlinked; the app-side source was git rm'd from main in Phase 2.5 (D-07), preserved on dev/cgm-extra; G7SensorKit/ShareClient kept"
+echo "generate-project (Phase-0 app-source gates): CgmNightscout=$CGM_NIGHTSCOUT Backup=$BACKUP (G6/LibreLinkUp/G7/xDrip sources git rm'd from main outright — Phase 2.5 retro-clean, D-07; phone-peer git rm'd from main outright — Phase 3, 03-02; FoodFinder git rm'd from main outright — Phase 7, 07-01; backup/restore+PrivacyData-export+SiteAtlas sources git rm'd from main outright — Phase 6, 06-02; the vendored DexcomG6Kit/G7SensorKit packages are gone outright — Phase 34; Nightscout still default-present)"
 [ "$CGM_NIGHTSCOUT" = 0 ] && echo "  → building WITHOUT the Nightscout CGM source + backfill (FABOLUS_CGM_NIGHTSCOUT=0)"
-[ "$CGM_G7" = 0 ] && echo "  → building WITHOUT the G7SensorKit package/dependency on iOS AND watch (FABOLUS_CGM_G7=0, default) — the Dexcom G7/ONE+ BLE decoder is unlinked; the app-side source was git rm'd from main in Phase 2.5 (D-07), preserved on dev/cgm-extra"
 [ "$BACKUP" = 0 ] && echo "  → building WITHOUT backup/restore + PrivacyData export + SiteAtlas (FABOLUS_BACKUP=0, default on main) — 7 source files/dirs are physically absent (git rm'd, Phase 6 06-02); the on-device erase/full-reset path (Delete all on-device data / Full reset) STAYS present (D-08 owner carve-out)"
 [ "$BACKUP" = 1 ] && echo "  → FABOLUS_BACKUP=1 env-override requested on main — a genuine no-op: the 7 backup/restore/SiteAtlas source files no longer exist here to include (git rm'd, Phase 6 06-02; see dev/backup), AND the FABOLUS_BACKUP compile-condition token is unconditionally dropped below regardless of this override, so the #if FABOLUS_BACKUP guards in AppModel.swift/App.swift stay compiled OUT (CR-01 gap-closure fix)"
 echo "  → FABOLUS_MOBI=$MOBI (placeholder plumbing — documented NO-OP this milestone; zero #if FABOLUS_MOBI call sites; Mobi capability-model surgery is Phase 9's job, dev/mobi sub-branch)"

@@ -32,16 +32,6 @@ packages:
     # primitive (in-repo local package). Depends on faBolusCore for the single classifier/thresholds
     # (D-01/D-02) — no cycle, since faBolusCore has zero package dependencies of its own.
     path: Packages/faBolusDesign
-  # >>> CGM_G7_KIT (scripts/generate-project.sh strips this package when FABOLUS_CGM_G7=0; default 0 = absent — Phase 1)
-  G7SensorKit:
-    # Dexcom G7/ONE+ BLE message decoders, vendored from LoopKit/G7SensorKit (MIT), LoopKit-free.
-    path: Packages/G7SensorKit
-  # <<< CGM_G7_KIT
-  # >>> CGM_G6_KIT (scripts/generate-project.sh strips this package when FABOLUS_CGM_G6=0; default 1 = present)
-  DexcomG6Kit:
-    # Dexcom G5/G6/ONE passive glucose-message decoders, vendored from LoopKit/CGMBLEKit (MIT).
-    path: Packages/DexcomG6Kit
-  # <<< CGM_G6_KIT
   HistoryStore:
     # faBolus-owned persistent glucose/insulin/carb history (SwiftData) — powers TIR/plotting and
     # feeds the advisory tools. In-repo local package. See MIGRATION.md.
@@ -214,14 +204,6 @@ targets:
         product: faBolusCore
       - package: faBolusDesign
         product: faBolusDesign
-      # >>> CGM_G7_KIT (scripts/generate-project.sh strips this dependency when FABOLUS_CGM_G7=0; default 0 = absent — Phase 1)
-      - package: G7SensorKit
-        product: G7SensorKit
-      # <<< CGM_G7_KIT
-      # >>> CGM_G6_KIT (scripts/generate-project.sh strips this dependency when FABOLUS_CGM_G6=0; default 1 = present)
-      - package: DexcomG6Kit
-        product: DexcomG6Kit
-      # <<< CGM_G6_KIT
       - package: HistoryStore
         product: HistoryStore
       - package: ShareClient

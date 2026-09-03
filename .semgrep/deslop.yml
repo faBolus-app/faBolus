@@ -50,8 +50,6 @@ rules:
         - "**/Vendor/**"
         - "**/vendor/**"
         - "**/ShareClient/**"
-        - "**/G7SensorKit/**"
-        - "**/DexcomG6Kit/**"
         - "**/HistoryStore/**"
         - "**/cliparser/**"
     # `(?<!bytes )` / `(?<!byte )` fence the wire-offset form ("carbs 13 g @ bytes 17-18"), which is
@@ -91,8 +89,6 @@ rules:
         - "**/Vendor/**"
         - "**/vendor/**"
         - "**/ShareClient/**"
-        - "**/G7SensorKit/**"
-        - "**/DexcomG6Kit/**"
         - "**/HistoryStore/**"
         - "**/cliparser/**"
     # Two fixes over the naive pattern, both from real false positives in this tree:
@@ -126,8 +122,6 @@ rules:
         - "**/Vendor/**"
         - "**/vendor/**"
         - "**/ShareClient/**"
-        - "**/G7SensorKit/**"
-        - "**/DexcomG6Kit/**"
         - "**/HistoryStore/**"
         - "**/cliparser/**"
     pattern-regex: '(?://|/\*|^\s*\*)[^\n]*\b[A-Za-z][A-Za-z0-9+]*\.(?:swift|mc):\d+'

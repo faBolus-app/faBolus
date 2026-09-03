@@ -31,8 +31,6 @@ excluded:
   # Vendored third-party source. Not ours to restyle; drift against upstream must stay visible.
   - ios/faBolus/Vendor
   - Packages/ShareClient
-  - Packages/G7SensorKit
-  - Packages/DexcomG6Kit
   - Packages/HistoryStore
   # Generated / build output. SwiftLint resolves `excluded` relative to THIS file, so the per-package
   # .build directories need naming explicitly — a bare `.build` does not match them.

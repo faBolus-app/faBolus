@@ -21,8 +21,6 @@ Format per row: component · version/revision · SPDX license · source · how f
 
 | Component | Upstream | License (SPDX) | Source | Usage |
 |---|---|---|---|---|
-| G7SensorKit | LoopKit/G7SensorKit | MIT | `Packages/G7SensorKit` (LICENSE incl.) | Dexcom G7/ONE+ BLE decoders (passive). Vendored package retained per D-02 (owner has not authorized vendored-package removal) — its only app-tree consumer, `Shared/DexcomG7BLESource.swift`, was deleted from `main` (preserved on `dev/cgm-extra`); currently unused on `main`. |
-| DexcomG6Kit | LoopKit/CGMBLEKit | MIT | `Packages/DexcomG6Kit` | Dexcom G5/G6/ONE passive decoders. Vendored package retained per D-02 (owner has not authorized vendored-package removal) — its only app-tree consumer, `ios/faBolus/Data/Sources/DexcomG6BLESource.swift`, was deleted from `main` (preserved on `dev/cgm-extra`); currently unused on `main`. |
 | ShareClient | LoopKit/dexcom-share-client-swift | MIT | `Packages/ShareClient` (LICENSE incl.) | Dexcom Share follower core |
 
 **LoopPowerPack (SiteAtlas / LoopInsights / FoodFinder) — removed from `main`.** The vendored source
