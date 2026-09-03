@@ -16,6 +16,13 @@ struct CgmArbiterDiagnosticsTests {
         #expect(lines.contains("Active source: pump"))
     }
 
+    @Test func pumpProvenanceWithNoFailoverSourcesRendersHonestCopy() {
+        let block = CgmArbiterDiagnostics.section(provenance: .pump, sourceStatuses: [], enabled: true)
+
+        #expect(block.contains("failover") || block.contains("Pump only"))
+        #expect(!block.contains("Configured sources: none"))
+    }
+
     @Test func failoverProvenanceRendersSourceIdAndReason() {
         let block = CgmArbiterDiagnostics.section(
             provenance: .failover(sourceID: "dexcom-g7", reason: .pumpStale),

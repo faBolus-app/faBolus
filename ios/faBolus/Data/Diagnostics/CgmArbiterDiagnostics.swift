@@ -47,7 +47,11 @@ enum CgmArbiterDiagnostics {
             lines.append("Active source: \(sourceID) (reason: \(reason.rawValue))")
         }
         if sourceStatuses.isEmpty {
-            lines.append("Configured sources: none")
+            // sourceStatuses is a FAILOVER-only collection, so an empty list next to
+            // "Active source: pump" is a normal, consistent state, not a contradiction — say so the
+            // way CgmStatusView's own copy already does for the identical state.
+            lines.append("Pump only — no failover source selected")
+            lines.append("No failover source is configured yet.")
         } else {
             for (id, status) in sourceStatuses {
                 lines.append("\(id): \(caseName(status))")
