@@ -22,6 +22,12 @@ struct FeatureSurfaceAbsenceGuardTests {
                 !source.contains(forbidden),
                 "GlucoseChartView.swift must not reference \"\(forbidden)\" — the scrubber section is carved out")
         }
+
+        let readoutURL = Self.repoRoot.appendingPathComponent(
+            "Packages/faBolusCore/Sources/faBolusCore/GraphDetailReadout.swift")
+        #expect(
+            !FileManager.default.fileExists(atPath: readoutURL.path),
+            "GraphDetailReadout.swift must not exist on disk — it was deleted outright, not left as a compile shim")
     }
 
     @Test func glucoseBadgeStubHasNoNotificationCenterOrBadgeCountSink() throws {
