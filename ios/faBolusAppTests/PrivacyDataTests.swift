@@ -3,8 +3,8 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// On-device erase and full reset stay ungated regardless of `FABOLUS_BACKUP`. Both must refuse
-/// while a delivery is unresolved; erase wipes health data only, full reset also unpairs.
+/// On-device erase and full reset are always compiled in and ungated by any backup-related flag.
+/// Both must refuse while a delivery is unresolved; erase wipes health data only, full reset also unpairs.
 @MainActor
 @Suite(.serialized) struct PrivacyDataTests {
 

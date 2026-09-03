@@ -1684,18 +1684,17 @@ public final class AppModel {
 
     /// Timestamp of the most recent user acknowledgment of the "untested feature" warning
     /// (`UnverifiedFeatureGate`). Therapy-defining writes for unverified, hardware-unvalidated features
-    /// — IDP profile/segment CRUD, pump reconfigure, and the CGM high/low alert — are refused at *this*
+    /// — IDP profile/segment CRUD and the CGM high/low alert — are refused at *this*
     /// AppModel boundary unless a recent ack exists, so a **new caller can't bypass the on-screen
     /// warning** by invoking the AppModel method directly (the earlier design only gated the individual
-    /// UI buttons, which `applyPumpSettings` and a fresh caller could sidestep). `@ObservationIgnored`:
+    /// UI buttons, which a fresh caller could sidestep). `@ObservationIgnored`:
     /// pure policy state, never rendered.
     @ObservationIgnored private var unverifiedTherapyAckAt: Date?
-    /// How long an acknowledgment authorizes gated writes — also the window a single ack covers a whole
-    /// batch reconfigure (many sub-writes) after one confirmation.
+    /// How long an acknowledgment authorizes gated writes.
     static let unverifiedAckMaxAge: TimeInterval = 120
 
     /// Record that the user acknowledged the untested-feature warning. Called by `UnverifiedFeatureGate`
-    /// (and the backup-restore confirmation) immediately before the gated action runs.
+    /// immediately before the gated action runs.
     public func acknowledgeUnverifiedTherapy() { unverifiedTherapyAckAt = Date() }
 
     /// Whether a recent (< `unverifiedAckMaxAge`) untested-feature acknowledgment is on record.
@@ -2057,21 +2056,6 @@ public final class AppModel {
                 isf: isf, targetBg: targetBg, insulinDurationMinutes: insulinDurationMinutes)
         }
     }
-    #if FABOLUS_BACKUP
-    /// Ungated create — used ONLY by the batch reconfigure in `applyPumpSettings`, which gates the whole
-    /// batch once (one ack + one capability/child/read-only check) then drives these raw helpers, so a
-    /// single confirmation authorizes the entire reconfigure rather than one profile.
-    private func createProfileRaw(
-        name: String, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int,
-        insulinDurationMinutes: Int
-    ) async {
-        await performControl {
-            try await source.createProfile(
-                name: name, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit,
-                isf: isf, targetBg: targetBg, insulinDurationMinutes: insulinDurationMinutes)
-        }
-    }
-    #endif
     public func refreshProfileSegments(idpId: Int) async {
         await source.refreshProfileSegments(idpId: idpId)
         refresh()
@@ -2104,19 +2088,6 @@ public final class AppModel {
             beforeTarget: nil, afterTarget: targetBg,
             succeeded: lastError == nil)
     }
-    #if FABOLUS_BACKUP
-    /// Ungated add — used ONLY by the batch reconfigure (see `createProfileRaw`).
-    private func addProfileSegmentRaw(
-        idpId: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int,
-        targetBg: Int
-    ) async {
-        await performControl {
-            try await source.addProfileSegment(
-                idpId: idpId, startTimeMinutes: startTimeMinutes, basalRateUnitsPerHour: basalRateUnitsPerHour,
-                carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg)
-        }
-    }
-    #endif
     public func modifyProfileSegment(
         idpId: Int, segmentIndex: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double,
         carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int
@@ -2142,107 +2113,6 @@ public final class AppModel {
             try await self.source.deleteProfileSegment(idpId: idpId, segmentIndex: segmentIndex)
         }
     }
-    // MARK: Backup / reconfigure
-    #if FABOLUS_BACKUP
-
-    /// Read the pump's therapy settings for a backup. Works on **t:slim X2 and Mobi** (all reads are
-    /// `SupportedDevices.ALL`). Reads each profile's segments sequentially.
-    func readPumpSettingsForBackup() async -> PumpSettingsBackup {
-        await refreshProfiles()
-        var profs: [PumpSettingsBackup.ProfileBackup] = []
-        for p in snapshot.profiles {
-            await refreshProfileSegments(idpId: p.idpId)
-            let segs = snapshot.viewedProfileSegments
-                .filter { $0.idpId == p.idpId }
-                .sorted { $0.startTimeMinutes < $1.startTimeMinutes }
-                .map {
-                    PumpSettingsBackup.SegmentBackup(
-                        startTimeMinutes: $0.startTimeMinutes,
-                        basalRateUnitsPerHour: $0.basalRateUnitsPerHour,
-                        carbRatioGramsPerUnit: $0.carbRatioGramsPerUnit, isf: $0.isf, targetBg: $0.targetBg)
-                }
-            profs.append(
-                .init(
-                    name: p.name, active: p.active,
-                    insulinDurationMinutes: p.insulinDurationMinutes, segments: segs))
-        }
-        await refreshControlIQSettings()
-        let s = snapshot
-        return PumpSettingsBackup(
-            profiles: profs,
-            maxBolusUnits: s.maxBolusUnits > 0 ? s.maxBolusUnits : nil,
-            maxBasalUnitsPerHour: s.maxBasalUnitsPerHour > 0 ? s.maxBasalUnitsPerHour : nil,
-            controlIQEnabled: s.controlIQEnabled,
-            controlIQWeightLbs: s.controlIQWeightLbs > 0 ? s.controlIQWeightLbs : nil,
-            controlIQTotalDailyInsulin: s.controlIQTotalDailyInsulin > 0 ? s.controlIQTotalDailyInsulin : nil)
-    }
-
-    /// Whether backed-up pump settings can be auto-applied to the CURRENT pump (Mobi + Advanced control
-    /// on + not read-only). On t:slim the caller shows them for manual re-entry instead.
-    public var canApplyPumpSettings: Bool { advancedControlAllowed && pumpReady }
-
-    /// Auto-apply backed-up therapy settings to the current pump — **Mobi only**, after the caller's
-    /// review + confirmation. **Creates** each profile (with its segments), then sets Control-IQ + max
-    /// bolus. Experimental/unvalidated; therapy-defining, so it's fully gated + confirmed upstream.
-    /// Returns false (and sets `lastError`) on the first failure.
-    func applyPumpSettings(_ p: PumpSettingsBackup) async -> Bool {
-        // The whole batch is ONE gated therapy gesture. Gate it once through the single
-        // evaluator (using `.createProfile` as the representative unverified-ack write): this folds the
-        // ack in with child-mode, phone read-only, and the capability + advanced-control gate — the same
-        // interlocks the per-sub-write `runControl` used to apply, now checked once at the gesture (they
-        // can't change mid-batch). Consume the ack once, then drive the raw (already-authorized) helpers
-        // so a single confirmation authorizes the whole reconfigure, not just the first profile. Bespoke
-        // messages are preserved for the two reconfigure-specific reasons.
-        let decision = accessDecision(.createProfile, from: .phoneUI)
-        guard decision.allowed else {
-            switch decision.reason {
-            case .capabilityUnavailable:
-                lastError = "Reconfiguring the pump needs a Tandem Mobi with Advanced control enabled."
-            case .unverifiedAckRequired:
-                lastError = "Reconfiguring the pump needs the untested-feature warning acknowledged first."
-            default:
-                lastError = decision.reason?.userMessage ?? "Reconfiguring the pump is not allowed right now."
-            }
-            return false
-        }
-        unverifiedTherapyAckAt = nil
-        for prof in p.profiles {
-            guard let first = prof.segments.first else { continue }
-            let before = Set(snapshot.profiles.map(\.idpId))
-            await createProfileRaw(
-                name: prof.name, basalRateUnitsPerHour: first.basalRateUnitsPerHour,
-                carbRatioGramsPerUnit: first.carbRatioGramsPerUnit, isf: first.isf,
-                targetBg: first.targetBg,
-                insulinDurationMinutes: prof.insulinDurationMinutes > 0 ? prof.insulinDurationMinutes : 300)
-            if lastError != nil { return false }
-            await refreshProfiles()
-            guard let newId = snapshot.profiles.map(\.idpId).first(where: { !before.contains($0) }) else { continue }
-            for seg in prof.segments.dropFirst() {
-                await addProfileSegmentRaw(
-                    idpId: newId, startTimeMinutes: seg.startTimeMinutes,
-                    basalRateUnitsPerHour: seg.basalRateUnitsPerHour,
-                    carbRatioGramsPerUnit: seg.carbRatioGramsPerUnit, isf: seg.isf, targetBg: seg.targetBg)
-                if lastError != nil { return false }
-            }
-        }
-        if let mb = p.maxBolusUnits {
-            await setMaxBolus(units: mb)
-            if lastError != nil { return false }
-        }
-        if let mbasal = p.maxBasalUnitsPerHour {
-            await setMaxBasal(unitsPerHour: mbasal)
-            if lastError != nil { return false }
-        }
-        if let ciq = p.controlIQEnabled {
-            await setControlIQ(
-                enabled: ciq, weightLbs: p.controlIQWeightLbs ?? snapshot.controlIQWeightLbs,
-                totalDailyInsulinUnits: p.controlIQTotalDailyInsulin ?? snapshot.controlIQTotalDailyInsulin)
-            if lastError != nil { return false }
-        }
-        return true
-    }
-    #endif
-
     public func setLowInsulinAlert(thresholdUnits: Int) async {
         await runControl(.setLowInsulinAlert) { try await source.setLowInsulinAlert(thresholdUnits: thresholdUnits) }
     }

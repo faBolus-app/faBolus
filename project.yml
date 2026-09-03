@@ -245,14 +245,10 @@ targets:
         # HealthKit (Phase 09.23, D-10/D-13) was removed from `main` entirely in Phase 5 (HEALTH-01) —
         # the entitlement, both usage strings, the compile flag, and the whole source surface are
         # `git rm`'d/deleted, not merely stripped-by-default. See dev/healthkit's REINTEGRATION.md.
-        # Automatic iCloud backup of app settings (Backup & restore) is OPT-IN for the same reason:
-        # iCloud needs the paid Apple Developer Program. Default OFF: scripts/generate-project.sh strips
-        # the block below AND the FABOLUS_ICLOUD compile flag unless FABOLUS_ICLOUD=1, so an unmodified
-        # clone signs and builds on a free account with the no-op stub. The file-based backup/restore
-        # needs no entitlement and always works. Set FABOLUS_ICLOUD=1 (paid account) to compile it in.
-        # >>> ICLOUD (stripped by scripts/generate-project.sh unless FABOLUS_ICLOUD=1)
-        com.apple.developer.ubiquity-kvstore-identifier: $(TeamIdentifierPrefix)$(APP_BUNDLE_ID)
-        # <<< ICLOUD
+        # Automatic iCloud settings sync (the ubiquity-kvstore entitlement + its FABOLUS_ICLOUD compile
+        # flag) is retired outright, the same posture as HealthKit above — `ICloudSettingsSync` never
+        # existed anywhere in the tree, so the guarded call sites it would have backed could not compile
+        # if the flag were ever set. File-based backup/restore needs no entitlement and is unaffected.
     info:
       path: ios/faBolus/Info.plist
       properties:
@@ -298,17 +294,15 @@ targets:
       # Watch app + complication tree is git rm'd from main, so there is nothing to embed and no gate
       # left to flip; the `#if !WATCH_EMBEDDED` fallback in SettingsView.swift is now permanently active.
       configs:
-        # generate-project.sh drops FABOLUS_ICLOUD unless FABOLUS_ICLOUD=1 (default OFF → the no-op iCloud
-        # stub compiles and the app signs on a free account).
-        # generate-project.sh also drops FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL unless
+        # generate-project.sh drops FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL unless
         # FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL=1 (default OFF). Phase 09.5 D-02: current Tandem docs say a
         # temp rate can be set while Control-IQ+ is ON, but the repo's LOCKED constraint says the pump
         # rejects it — this flag EXPERIMENTALLY overturns the CIQ-off precondition in AppModel.setTempBasal
         # ONLY when explicitly opted in (local/bench builds), never in a build a real user or CI runs.
         Debug:
-          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG GARMIN FABOLUS_ICLOUD FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL FABOLUS_BACKUP
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG GARMIN FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL
         Release:
-          SWIFT_ACTIVE_COMPILATION_CONDITIONS: GARMIN FABOLUS_ICLOUD FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL FABOLUS_BACKUP
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: GARMIN FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL
 
   # Phase 3 (03-03, REMOTE-03/REMOTE-04): the watchOS companion app (incl. the direct-pump/
   # subtree) and its glucose-complication extension are removed from narrow main entirely

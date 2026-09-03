@@ -52,11 +52,6 @@ fi
 # there is no package/product/compile-flag cascade left to auto-detect or gate. Relying on the old
 # `git ls-remote` reachability probe was itself the false-pass hazard D-03 exists to remove (a machine
 # with repo access would silently resolve NUDGE=1). Preserved on dev/nudge; see its REINTEGRATION.md.
-# Automatic iCloud settings sync (NSUbiquitousKeyValueStore) defaults OFF: it needs a paid Apple
-# Developer account + the iCloud capability, which would break the free-account build. When off, the
-# entitlement block and the FABOLUS_ICLOUD compile flag are stripped so the no-op stub compiles and an
-# unmodified clone signs on a free account. Enable on a paid account with FABOLUS_ICLOUD=1.
-ICLOUD="${FABOLUS_ICLOUD:-0}"
 # Apple Health (HealthKit) import/export (Phase 09.23, D-10/D-13) was removed from `main` entirely
 # in Phase 5 (HEALTH-01) — the whole HealthKit surface, the entitlement, the usage strings, and the
 # FABOLUS_HEALTHKIT compile flag are all deleted, not merely default-off. See dev/healthkit's
@@ -103,24 +98,17 @@ CGM_NIGHTSCOUT="${FABOLUS_CGM_NIGHTSCOUT:-1}"
 # git rm'd from main outright (delete-on-main, D-01/D-03), preserved on dev/food-finder, the same
 # posture as the Phase 2.5 CGM retro-clean / Phase 3 phone-peer retirement. No env-var declaration, no
 # strip_block call, no exclude-list entry remains for it.
-# BACKUP compile gate (BACKUP-01/D-02, Phase 6 06-02/D-08 owner carve-out). REMOVAL FLIP: `main`'s
-# backup/restore, PrivacyData-export, and SiteAtlas surface is now permanently ABSENT — the 7
-# app-layer files/dirs this flag used to gate are physically git rm'd from `main` (delete-on-main,
-# preserved on dev/backup), and the default here flips to 0 so AppModel.swift's/App.swift's identical
-# #if FABOLUS_BACKUP guards compile out with no dead engine retained by default. Per the owner's D-08
-# carve-out, the on-device "Delete all on-device data" / "Full reset" erase path
-# (AppModel.EraseOutcome/eraseAllOnDeviceHealthData/eraseEverythingFullReset) is NOT gated by this flag
-# — it stays reachable + compiled regardless of BACKUP's value; PrivacyDataView.swift itself stays on
-# `main` (trimmed to erase-only) for exactly that reason. The flag/gate machinery (this var, the
-# project.yml BACKUP excludes block, the SWIFT_ACTIVE_COMPILATION_CONDITIONS token) is kept, not
-# retired outright — `dev/backup`/`experimental` keep their own copies of these files with the files
-# present and FABOLUS_BACKUP=1 default, unaffected by this main-only flip. Setting FABOLUS_BACKUP=1
-# here is now an env-override-only escape hatch (no shipped effect: the excluded source no longer
-# exists on `main` to bring back). CR-01 gap-closure fix: the compile-condition token
-# (SWIFT_ACTIVE_COMPILATION_CONDITIONS' FABOLUS_BACKUP entry) is dropped unconditionally below,
-# independent of this variable's value — see the `drop_flag FABOLUS_BACKUP` call further down for why
-# (previously it only fired when BACKUP=0, so BACKUP=1 defined the flag while the gated types were
-# already gone, breaking the build; that made the "no-op" claim below false until this fix).
+# BACKUP file-exclude gate (Phase 6 06-02 delete-on-main; erase carve-out). `main`'s backup/restore,
+# PrivacyData-export, and SiteAtlas surface is permanently ABSENT — the 7 app-layer files/dirs this
+# flag used to gate are physically git rm'd from `main` (preserved on dev/backup). The on-device
+# "Delete all on-device data" / "Full reset" erase path
+# (AppModel.EraseOutcome/eraseAllOnDeviceHealthData/eraseEverythingFullReset) was never gated by this
+# flag and stays reachable + compiled unconditionally; PrivacyDataView.swift stays on `main` (trimmed
+# to erase-only) for exactly that reason. The `#if FABOLUS_BACKUP` guards those 7 files used to compile
+# under, and the SWIFT_ACTIVE_COMPILATION_CONDITIONS token itself, are now deleted outright — there is
+# nothing left for either to gate, so this variable now drives only the still-present
+# APP_SOURCE_EXCLUDES file-exclude gate below; FABOLUS_BACKUP=1 is a no-op there too, since the
+# excluded source no longer exists on `main` to bring back.
 BACKUP="${FABOLUS_BACKUP:-0}"
 # Mobi capability-model placeholder (TOPO-03/D-03, RESEARCH Pattern 3 + Pitfall 5). Mobi support is NOT a
 # strippable block — it is an `enum PumpModel` case + a `.mobiAdvanced` capability floor threaded through
@@ -152,7 +140,7 @@ strip_block() {
 
 # Remove one flag from the SWIFT_ACTIVE_COMPILATION_CONDITIONS lines only. Scoped to those lines (not
 # a bare global sed) because the same flag names appear in prose comments — "unless
-# FABOLUS_ICLOUD=1" would otherwise become "unless=1".
+# FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL=1" would otherwise become "unless=1".
 drop_flag() {
   sed -i '' "/SWIFT_ACTIVE_COMPILATION_CONDITIONS/ s/ $1//g" "$SPEC"
 }
@@ -170,10 +158,6 @@ if [ "$TANDEM_LOCAL" = 1 ]; then
   echo "  → TandemKit consumed by LOCAL PATH (FABOLUS_TANDEM_LOCAL=1) — unpinned dev build"
 else
   strip_block TANDEM_LOCAL    # keep the pinned url:+revision: — the default, reproducible build
-fi
-if [ "$ICLOUD" = 0 ]; then
-  strip_block ICLOUD                       # the ubiquity-kvstore entitlement → free-account build signs
-  drop_flag FABOLUS_ICLOUD                 # drop the compile flag → the no-op iCloud stub compiles
 fi
 if [ "$TEMPRATE_CIQ_EXPERIMENTAL" = 0 ]; then
   drop_flag FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL   # drop the compile flag → the CIQ-off precondition stays enforced
@@ -210,26 +194,13 @@ else
   [ "$CGM_NIGHTSCOUT" = 1 ]  && strip_block CGM_NIGHTSCOUT
   [ "$BACKUP" = 1 ]          && strip_block BACKUP            # present → drop the Backup/SiteAtlas exclude lines
 fi
-# The compile-condition token (not just the file excludes above) is ALWAYS dropped on main, regardless
-# of $BACKUP's value — AppModel.swift's/App.swift's #if FABOLUS_BACKUP guards must compile out
-# unconditionally here, because the 7 files those guards reference (SiteAtlasStore, PrivacyDataExport,
-# ICloudSettingsSync, ...) are physically git rm'd from main (06-02); there is nothing left for the flag
-# to gate even if a developer sets FABOLUS_BACKUP=1 (CR-01 gap-closure fix — see 06-REVIEW.md). Leaving
-# this conditional on `$BACKUP = 0` (the pre-fix code) let FABOLUS_BACKUP=1 define the flag while the
-# gated types were gone, which broke the build; unconditional drop_flag makes the override a genuine
-# no-op instead of a misleading one. The erase/full-reset MARK section in AppModel.swift is deliberately
-# NOT wrapped in this flag (D-08) so it is unaffected either way.
-drop_flag FABOLUS_BACKUP
-
-echo "generate-project: Garmin=$GARMIN iCloud=$ICLOUD DataProtection=$DATA_PROTECTION TimeSensitive=$TIME_SENSITIVE TandemLocal=$TANDEM_LOCAL TempRateCiqExperimental=$TEMPRATE_CIQ_EXPERIMENTAL"
+echo "generate-project: Garmin=$GARMIN DataProtection=$DATA_PROTECTION TimeSensitive=$TIME_SENSITIVE TandemLocal=$TANDEM_LOCAL TempRateCiqExperimental=$TEMPRATE_CIQ_EXPERIMENTAL"
 echo "generate-project (Phase-0 app-source gates): CgmNightscout=$CGM_NIGHTSCOUT Backup=$BACKUP (G6/LibreLinkUp/G7/xDrip sources git rm'd from main outright — Phase 2.5 retro-clean, D-07; phone-peer git rm'd from main outright — Phase 3, 03-02; FoodFinder git rm'd from main outright — Phase 7, 07-01; backup/restore+PrivacyData-export+SiteAtlas sources git rm'd from main outright — Phase 6, 06-02; the vendored DexcomG6Kit/G7SensorKit packages are gone outright; Nightscout still default-present)"
 [ "$CGM_NIGHTSCOUT" = 0 ] && echo "  → building WITHOUT the Nightscout CGM source + backfill (FABOLUS_CGM_NIGHTSCOUT=0)"
-[ "$BACKUP" = 0 ] && echo "  → building WITHOUT backup/restore + PrivacyData export + SiteAtlas (FABOLUS_BACKUP=0, default on main) — 7 source files/dirs are physically absent (git rm'd, Phase 6 06-02); the on-device erase/full-reset path (Delete all on-device data / Full reset) STAYS present (D-08 owner carve-out)"
-[ "$BACKUP" = 1 ] && echo "  → FABOLUS_BACKUP=1 env-override requested on main — a genuine no-op: the 7 backup/restore/SiteAtlas source files no longer exist here to include (git rm'd, Phase 6 06-02; see dev/backup), AND the FABOLUS_BACKUP compile-condition token is unconditionally dropped below regardless of this override, so the #if FABOLUS_BACKUP guards in AppModel.swift/App.swift stay compiled OUT (CR-01 gap-closure fix)"
+[ "$BACKUP" = 0 ] && echo "  → building WITHOUT backup/restore + PrivacyData export + SiteAtlas (FABOLUS_BACKUP=0, default on main) — 7 source files/dirs are physically absent (git rm'd, Phase 6 06-02); the on-device erase/full-reset path (Delete all on-device data / Full reset) STAYS present"
+[ "$BACKUP" = 1 ] && echo "  → FABOLUS_BACKUP=1 env-override requested on main — a genuine no-op: the 7 backup/restore/SiteAtlas source files no longer exist here to include (git rm'd, Phase 6 06-02; see dev/backup), and FABOLUS_BACKUP is no longer a declared compile-condition token at all — the #if FABOLUS_BACKUP guards it used to gate are deleted outright, not merely compiled out"
 echo "  → FABOLUS_MOBI=$MOBI (placeholder plumbing — documented NO-OP this milestone; zero #if FABOLUS_MOBI call sites; Mobi capability-model surgery is Phase 9's job, dev/mobi sub-branch)"
 [ "$GARMIN" = 0 ] && echo "  → building WITHOUT the Garmin Connect IQ SDK (not found at $SDK_DIR)"
-[ "$ICLOUD" = 0 ] && echo "  → building WITHOUT automatic iCloud settings sync (needs a paid account; set FABOLUS_ICLOUD=1 to enable) — file backup/restore still works"
-[ "$ICLOUD" = 1 ] && echo "  → automatic iCloud settings sync ON (FABOLUS_ICLOUD=1) — requires the iCloud capability on a paid account; falls back to local-only when signed out"
 [ "$DATA_PROTECTION" = 0 ] && echo "  → building WITHOUT the §13 Data Protection entitlement (needs the capability provisioned on the App ID; set FABOLUS_DATA_PROTECTION=1 to enable) — on-device protection unchanged (iOS default level)"
 [ "$DATA_PROTECTION" = 1 ] && echo "  → §13 Data Protection entitlement ON (FABOLUS_DATA_PROTECTION=1) — requires the Data Protection capability on App IDs com.fabolus.app + .widgets"
 [ "$TIME_SENSITIVE" = 0 ] && echo "  → building WITHOUT the Time-Sensitive Notifications entitlement (needs the capability provisioned on the App ID; set FABOLUS_TIME_SENSITIVE=1 to enable) — .timeSensitive is set in code but iOS downgrades it to .active until the capability is provisioned"

@@ -83,9 +83,6 @@ struct FaBolusApp: App {
                         backstop.start()
                         mobiRejectBackstop = backstop
                     }
-                    #if FABOLUS_BACKUP
-                    ICloudSettingsSync.shared.start()  // optional; no-op unless built with FABOLUS_ICLOUD
-                    #endif
                     AppSettings.shared.syncWidgetConfig()
                     model.publishWidgetLockState()  // seed the Quick-Bolus widget's lock flag
                     AppSettings.shared.applyFreshness()  // stale/hide thresholds → faBolusCore
@@ -111,9 +108,6 @@ struct FaBolusApp: App {
                             if model.snapshot.connection == .connected { await model.refreshGlucoseNow() }
                         }
                     } else if phase == .background {
-                        #if FABOLUS_BACKUP
-                        ICloudSettingsSync.shared.push()  // optional; no-op unless built with FABOLUS_ICLOUD
-                        #endif
                         // debug pump-background-disconnect: no app-side action needed on background. A drop
                         // that happens while suspended is recovered by the kit's INLINE background-safe
                         // connect (H1, PumpBLEClient.planUnintendedDropRecovery); the app-side belt-and-
