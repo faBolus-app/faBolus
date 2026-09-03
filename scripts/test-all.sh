@@ -31,8 +31,7 @@ start() {  # start <name> <command...>
 }
 
 # All three local Swift packages (faBolusCore, HistoryStore, faBolusDesign) run here as one job, so
-# none of them is left unrun locally the way HistoryStore/faBolusDesign previously were — CI still
-# runs each as its own separately-attributable step (D-11).
+# none of them is left unrun locally. CI still runs each as its own separately-attributable step.
 run_packages() {
     swift test --package-path Packages/faBolusCore \
         && swift test --package-path Packages/HistoryStore \
