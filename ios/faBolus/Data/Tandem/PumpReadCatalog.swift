@@ -151,6 +151,19 @@ enum PumpReadCatalog {
         MalfunctionStatusRequest.props.opCode
     ]
 
+    /// The two reads the bounded exact-id bolus-history search depends on — `HistoryLogStatusRequest`
+    /// (op58, the available sequence-number range) and `HistoryLogRequest` (op60, the paged log stream
+    /// `findBolusInHistory` walks backward through). This search is the primary settle path's only
+    /// fallback when the fast `LastBolusStatusV2Request` (op164) read is unavailable/mismatched, so a
+    /// durable blacklist here would delete the fallback itself rather than merely a diagnostic read.
+    /// Held out of the durable store exactly like `doseInputReadOpcodes`/`alertReadOpcodes` above: a
+    /// single transient `BAD_OPCODE` (or three corroborating strikes) still suppresses the read for the
+    /// REST of this connection, but is re-probed on the next connection cycle rather than persisted.
+    static let reconciliationReadOpcodes: Set<UInt8> = [
+        HistoryLogStatusRequest.props.opCode,
+        HistoryLogRequest.props.opCode
+    ]
+
     /// One user-facing safety-degraded note per excluded safety-relevant read. Empty when
     /// no safety-relevant read is excluded.
     static func safetyDegradedNotes(excludedOpcodes: Set<UInt8>) -> [String] {

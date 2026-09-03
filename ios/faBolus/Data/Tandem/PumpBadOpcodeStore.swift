@@ -80,13 +80,15 @@ struct PumpBadOpcodeStore: @unchecked Sendable {
     /// from the stamp already stored for this pump, the pre-existing opcodes are dropped first (they were
     /// learned under a different firmware and may no longer hold) before this one is recorded under the new
     /// stamp.
-    /// The three hold-out sets every write path must respect, factored out so `record` and
+    /// The hold-out sets every write path must respect, factored out so `record` and
     /// `recordStrike` can never drift apart. Returns false when this opcode must never be persisted:
     ///  - op0: the empty-cargo artifact / bootstrap opcode;
     ///  - a pure delivery/control-WRITE opcode (read-colliding op144/op164 are deliberately NOT in that
     ///    set, so a legitimately-learned READ still persists);
     ///  - a dose-input READ (op108 IOB / op115 therapy) — a durable blacklist bricks the calculator;
-    ///  - an alert-read burst opcode (op72-76) — a durable blacklist silences the CGM-alert mirror.
+    ///  - an alert-read burst opcode (op72-76) — a durable blacklist silences the CGM-alert mirror;
+    ///  - a reconciliation read (op58/op60) — a durable blacklist deletes the bolus-settle history
+    ///    fallback, permanently disabling the primary path when the fast op164 read is unavailable.
     /// `PumpReadScheduler.insertBadOpcode` already refuses all of these before calling in; this is the
     /// second choke point so a future direct caller of the durable store can never seed one.
     private func isPersistable(_ opcode: UInt8) -> Bool {
@@ -94,6 +96,7 @@ struct PumpBadOpcodeStore: @unchecked Sendable {
         guard !PumpReadCatalog.deliveryControlWriteOpcodes.contains(opcode) else { return false }
         guard !PumpReadCatalog.doseInputReadOpcodes.contains(opcode) else { return false }
         guard !PumpReadCatalog.alertReadOpcodes.contains(opcode) else { return false }
+        guard !PumpReadCatalog.reconciliationReadOpcodes.contains(opcode) else { return false }
         return true
     }
 
@@ -138,7 +141,8 @@ struct PumpBadOpcodeStore: @unchecked Sendable {
     #endif
 
     func record(_ opcode: UInt8, for pumpKey: String, firmware: String?) {
-        // The four hold-out guards (op0, delivery/control WRITE, dose-input READ, alert-read burst) live in
+        // The five hold-out guards (op0, delivery/control WRITE, dose-input READ, alert-read burst,
+        // reconciliation READ) live in
         // `isPersistable` and are applied through it rather than restated here, so this path and
         // `recordStrike` genuinely CANNOT drift apart — see that helper's doc comment for what each one
         // protects and why. `PumpReadScheduler.insertBadOpcode` already refuses all four before calling in;

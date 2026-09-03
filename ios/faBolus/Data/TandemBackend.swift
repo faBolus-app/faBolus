@@ -1666,8 +1666,16 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// exhaustion with no match, fails CLOSED (`.unavailable`; never a blind retry, never assumes
     /// not-delivered). Runs entirely alongside (never mutates) the routine gap-sync/backfill state
     /// machine — see `historySearchTarget`'s doc comment.
-    private func findBolusInHistory(bolusId: Int) async -> BolusReconciliation {
-        guard snapshot.connection == .connected else { return .unavailable }  // need the link to ask the pump
+    /// `livenessAlreadyProven` lets a caller that has ALREADY established — by some other means — that
+    /// this exact bolus id is no longer active bypass the `.connected` entry guard just below.
+    /// `perform()`'s own settle is the one caller that passes `true`: it has just polled op-45 and
+    /// confirmed `!isActive` for this exact id, while the connection itself is still `.bolusing` (the
+    /// demotion to `.connected` happens only after settle) — so a bare `.connected`-only guard would
+    /// always reject it. Every other caller (`reconcile(bolusId:)`, `reconcileIndeterminateDelivery()`)
+    /// passes the default `false` and is unaffected.
+    private func findBolusInHistory(bolusId: Int, livenessAlreadyProven: Bool = false) async -> BolusReconciliation {
+        // need the link (or an already-proven liveness) to ask the pump
+        guard snapshot.connection == .connected || livenessAlreadyProven else { return .unavailable }
         // Three independent entry points can converge on the same fresh-connect edge (launch, the
         // `.connected` edge, `onPaired`), and this function has several `await` points a second call
         // could land inside. Fail the overlapping call closed rather than let it share/corrupt the
@@ -2011,14 +2019,24 @@ public final class TandemBackend: NSObject, PumpBackend {
             throw indeterminate(perm.bolusId, "no authoritative completion before the deadline")
         }
 
-        // Authoritative completion: settle from the MATCHING last-bolus record only — no fallback to the
-        // requested units. An unavailable/mismatched final status is indeterminate. We do NOT invent a
-        // cancellation flag (no verified pump cancellation semantics): a partial simply reports fewer
-        // units.
-        guard let last = try? await lastBolusStatus(), last.bolusId == currentBolusId else {
+        // Authoritative completion: settle from the MATCHING last-bolus record when available; on a
+        // miss (a rejected/unusable op-164 read, or an id mismatch) fall through to the SAME bounded
+        // exact-id history search `reconcile(bolusId:)` uses, rather than giving up — op-45 above has
+        // already proven this exact id is no longer active, so the search may run now, before the
+        // `.bolusing → .connected` demotion below, instead of no-oping the way a bare `.connected`-only
+        // call would. Genuine exhaustion of that search still fails closed to indeterminate; there is
+        // still no fallback to the requested units. We do NOT invent a cancellation flag (no verified
+        // pump cancellation semantics): a partial simply reports fewer units.
+        let delivered: Double
+        if let last = try? await lastBolusStatus(), last.bolusId == currentBolusId {
+            delivered = last.deliveredUnits
+        } else if case .resolved(let fromHistory, _) = await findBolusInHistory(
+            bolusId: perm.bolusId, livenessAlreadyProven: true)
+        {
+            delivered = fromHistory
+        } else {
             throw indeterminate(perm.bolusId, "final bolus status unavailable or mismatched")
         }
-        let delivered = last.deliveredUnits
         lastBolusCancelled = false
         cancelRequested = false
         currentBolusId = 0

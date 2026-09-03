@@ -176,6 +176,11 @@ final class PumpReadScheduler {
         // throttling, so a transient op77 can be mis-correlated to ANY of them. A durable skip
         // would permanently silence the phone-side CGM-alert mirror with no re-probe.
         guard !PumpReadCatalog.alertReadOpcodes.contains(opcode) else { return }
+        // Same again for the two reconciliation reads (op58 history range, op60 history page) —
+        // `findBolusInHistory` is the bolus-settle path's own fallback when the fast op164 read is
+        // unavailable/mismatched, so a durable skip here would delete that fallback rather than a
+        // merely-diagnostic read.
+        guard !PumpReadCatalog.reconciliationReadOpcodes.contains(opcode) else { return }
         // Ration the DURABLE write by what the error actually proved (see `PumpBadOpcodeDurability`).
         // The in-memory skip above is unconditional — it is what stops a bad exchange being re-thrashed
         // every 15 s poll — but only a durable write can make a mistake permanent, so only it is gated.
@@ -761,6 +766,9 @@ final class PumpReadScheduler {
         // Same re-probe for the alert-read burst (op72-76) — never carried over as a durable skip
         // across a reconnect, so a transient op77 can't permanently silence the CGM-alert mirror.
         badOpcodes.subtract(PumpReadCatalog.alertReadOpcodes)
+        // Same re-probe for the two reconciliation reads (op58/op60) — never carried over as a
+        // durable skip, so a transient op77 can't permanently delete the bolus-settle history fallback.
+        badOpcodes.subtract(PumpReadCatalog.reconciliationReadOpcodes)
         // Reference-required bootstrap trio FIRST (see "MARK: - Post-pair bootstrap order" above) —
         // must be sent ahead of fastRead()/staticRead()'s other CURRENT_STATUS reads, not after.
         sendPostPairBootstrapReads()
