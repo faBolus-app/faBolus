@@ -156,7 +156,13 @@ final class FakePumpTransport: PumpTransport {
         c[2] = le2(bolusId)[1]
         return frame(opCode: CurrentBolusStatusResponse.props.opCode, cargo: c, signed: false)
     }
-    static func lastBolus(bolusId: Int, deliveredMilliunits: UInt32, status: Int = 3) -> [UInt8] {
+    /// `requestedMilliunits` defaults to MIRROR `deliveredMilliunits` (byte offset 20) so every existing
+    /// call site keeps `requested == delivered` with no behavior change. Pass it explicitly to build a
+    /// genuine partial/complete-with-tolerance/unpopulated-requested fixture for the amount-based
+    /// terminal-evidence rule.
+    static func lastBolus(
+        bolusId: Int, deliveredMilliunits: UInt32, status: Int = 3, requestedMilliunits: UInt32? = nil
+    ) -> [UInt8] {
         var c = [UInt8](repeating: 0, count: 24)
         c[0] = UInt8(status)
         c[1] = le2(bolusId)[0]
@@ -165,6 +171,8 @@ final class FakePumpTransport: PumpTransport {
         for i in 0..<4 { c[5 + i] = ts[i] }
         let dv = Bytes.toUint32(deliveredMilliunits)
         for i in 0..<4 { c[9 + i] = dv[i] }
+        let rv = Bytes.toUint32(requestedMilliunits ?? deliveredMilliunits)
+        for i in 0..<4 { c[20 + i] = rv[i] }
         return frame(opCode: LastBolusStatusV2Response.props.opCode, cargo: c, signed: false)
     }
 
@@ -358,12 +366,15 @@ final class FakePumpTransport: PumpTransport {
     /// One 26-byte history-log completed-bolus record, matching `HistoryLog.parseBolusRecord`'s layout
     /// exactly: typeId = short@0 (`HistoryLog.bolusCompletedTypeId` = 20), pumpTimeSec = uint32@2,
     /// sequenceNum = uint32@6, completionStatusId = short@10, bolusId = short@12, iob = float@14,
-    /// deliveredUnits = float@18. `bolusId`/`completionStatusId` default to 0 (unused by most existing
-    /// callers, which predate the restored `BolusHistoryRecord.bolusId`).
+    /// deliveredUnits = float@18, insulinRequested = float@22. `bolusId`/`completionStatusId` default to 0
+    /// (unused by most existing callers, which predate the restored `BolusHistoryRecord.bolusId`).
+    /// `insulinRequested` defaults to MIRROR `deliveredUnits` so every existing call site keeps
+    /// `requested == delivered` with no behavior change; pass it explicitly to build a genuine
+    /// partial/unpopulated-requested fixture for the amount-based terminal-evidence rule.
     static func bolusHistoryRecord(
         sequenceNum: UInt32, pumpTimeSec: UInt32,
         deliveredUnits: Double, iobUnits: Double,
-        bolusId: Int = 0, completionStatusId: Int = 0
+        bolusId: Int = 0, completionStatusId: Int = 0, insulinRequested: Double? = nil
     ) -> [UInt8] {
         var r = [UInt8](repeating: 0, count: 26)
         let t = le2(20)
@@ -383,6 +394,8 @@ final class FakePumpTransport: PumpTransport {
         for i in 0..<4 { r[14 + i] = iobB[i] }
         let dv = Bytes.toFloat(Float(deliveredUnits))
         for i in 0..<4 { r[18 + i] = dv[i] }
+        let rq = Bytes.toFloat(Float(insulinRequested ?? deliveredUnits))
+        for i in 0..<4 { r[22 + i] = rq[i] }
         return r
     }
 
@@ -391,13 +404,15 @@ final class FakePumpTransport: PumpTransport {
     /// bolus record supplied (`events` accepts pre-built raw 26-byte records for any other record type a
     /// test needs — e.g. an unrecognized/`UnknownHistoryLog` typeId — and defaults to none).
     /// `bolusRecordsById` is a separate param from `bolusRecords` — additive, so no existing call site
-    /// needs to change — for a test that needs the restored `bolusId` field.
+    /// needs to change — for a test that needs the restored `bolusId` field. `insulinRequested` on each
+    /// tuple element is `nil` to MIRROR `delivered` (a genuinely complete record); pass an explicit value
+    /// (including 0, for the unpopulated-requested case) to build a partial/mismatched fixture.
     static func historyLogStream(
         cgmReadings: [(seq: UInt32, pumpTimeSec: UInt32, mgdl: Int)] = [],
         bolusRecords: [(seq: UInt32, pumpTimeSec: UInt32, delivered: Double, iob: Double)] = [],
         bolusRecordsById: [(
             seq: UInt32, pumpTimeSec: UInt32, bolusId: Int, delivered: Double,
-            iob: Double, completionStatusId: Int
+            iob: Double, completionStatusId: Int, insulinRequested: Double?
         )] = [],
         events: [[UInt8]] = [], streamId: Int = 0
     ) -> [UInt8] {
@@ -411,7 +426,8 @@ final class FakePumpTransport: PumpTransport {
         records += bolusRecordsById.map {
             bolusHistoryRecord(
                 sequenceNum: $0.seq, pumpTimeSec: $0.pumpTimeSec, deliveredUnits: $0.delivered,
-                iobUnits: $0.iob, bolusId: $0.bolusId, completionStatusId: $0.completionStatusId)
+                iobUnits: $0.iob, bolusId: $0.bolusId, completionStatusId: $0.completionStatusId,
+                insulinRequested: $0.insulinRequested)
         }
         records += events
         let cargo: [UInt8] = [UInt8(records.count), UInt8(streamId)] + records.flatMap { $0 }
