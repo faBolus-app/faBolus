@@ -5,16 +5,12 @@ import Foundation
 /// therapy event (no way to reconnect until you're back at the base). That warning is KEPT
 /// unconditionally. Pure and pump-neutral so the copy lives in one place and is testable.
 ///
-/// §2.2.3 backup gate (owner decision 2026-08-09) — the unpair flow now OFFERS a settings backup, or
-/// an explicit skip, BEFORE it completes. This supersedes the earlier "no forced backup" reading for a
-/// reason that evaluation under-weighted: an unpair is frequently a prelude to **switching or replacing** a
-/// pump (see the pump-switch settings reset), and a pump's therapy settings live only on that pump
-/// — once it is unpaired and gone they cannot be re-read. A settings backup taken while still connected
-/// captures the pump's therapy values (carb ratios / correction factors / targets / limits, for manual
-/// re-entry or a Mobi reconfigure) AND the app's own preferences — so it DOES protect something the
-/// unpair-to-switch puts at risk. (The earlier reasoning holds only for re-pairing the *same* pump, where
-/// nothing is lost.) The gate never blocks: "skip backup" is always available as an explicit, acknowledged
-/// choice, and the charging-base warning below is still shown at the final confirm.
+/// A settings-backup step (`Step.backupChoice` below) was designed for the unpair flow: an unpair is
+/// frequently a prelude to **switching or replacing** a pump, and a pump's therapy settings (carb ratios /
+/// correction factors / targets / limits) live only on that pump — once it is unpaired and gone they can't
+/// be re-read. A backup taken while still connected would capture those values, for manual re-entry or a
+/// Mobi reconfigure, alongside the app's own preferences. The shipping unpair flow does not present that
+/// step; only the charging-base confirm below runs.
 public enum UnpairAdvisory {
     /// Whether re-pairing this model needs the charging base — the load-bearing §2.2.3 Mobi warning.
     public static func requiresChargingBaseToRepair(_ model: PumpModel) -> Bool { model == .mobi }

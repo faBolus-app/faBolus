@@ -730,7 +730,7 @@ public final class AppModel {
         UnpairAdvisory.resolvedModel(snapshotModel: snapshot.pumpModel, storedIsMobi: PumpModelStore.isMobi())
     }
     /// The unpair confirmation text for the current pump (a Mobi carries the unconditional
-    /// charging-base warning). No forced settings backup is needed — see `UnpairAdvisory` for why.
+    /// charging-base warning) — the only step the shipping unpair flow presents.
     public var unpairConfirmation: String { UnpairAdvisory.confirmationMessage(for: lastKnownPumpModel) }
 
     // MARK: - Mobi PIN saving
