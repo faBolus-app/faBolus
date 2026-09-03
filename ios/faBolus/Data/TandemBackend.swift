@@ -77,8 +77,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// Note on time sync: `ChangeTimeDateRequest` is *unannotated* in the reverse-engineered protocol,
     /// so it falls back to `SupportedDevices.ALL` — but that default is an assumption, not a tested
     /// guarantee. On real t:slim X2 hardware the signed time write is **not** honored (the pump doesn't
-    /// change its clock, and `sendControl` can't tell — it doesn't inspect the response status), so
-    /// time sync stays Mobi-only.
+    /// change its clock), so time sync stays Mobi-only.
     /// Capabilities are derived from the pump model refined by the pump's OWN `PumpFeaturesV1`
     /// bitmask (`pumpFeatureBits`, cached from op 79 in `didReceiveFrame`). Before that frame lands —
     /// or on firmware that never answers — `derive` falls back to the exact model preset. The feature
@@ -595,15 +594,17 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// The profile whose segments are being read into snapshot.viewedProfileSegments (-1 = none).
     private var viewedProfileId = -1
 
-    /// Send a request and await its correlated, typed response via the transaction coordinator.
-    /// A synchronous send/build failure propagates as-is (a clean *pre-write* failure); a post-write
-    /// timeout/disconnect surfaces as `PumpTransactionCoordinator.TxError` (which a delivery caller maps to
-    /// *indeterminate* — see `perform`). Replaces the old hand-owned continuation slots.
-    private func awaitResponse<T: Message>(
-        _ message: Message, as _: T.Type, deadline: TimeInterval,
+    /// Shared send-then-parse core of `awaitResponse<T>` and `awaitControlResponse`: issues the write via
+    /// the transaction coordinator, times the round-trip for the observational latency sink, then decodes
+    /// the reply through `ResponseParser` — length-gated and HMAC-verified, fail-closed on a parse
+    /// failure. Returns the parsed message un-narrowed; `awaitResponse<T>` casts it to the caller's
+    /// concrete type, `awaitControlResponse` (which has no static response type — `sendControl`'s
+    /// `message: Message` parameter is untyped) returns it as-is.
+    private func awaitParsedMessage(
+        _ message: Message, deadline: TimeInterval,
         signed: Bool = false, allowInsulinDelivery: Bool = false,
         serialized: Bool = false
-    ) async throws -> T {
+    ) async throws -> any Message {
         // Time the round-trip for the observational latency dimension. `start` is a
         // monotonic clock (never wall-clock), so a system time change can't skew it. On a response, report
         // the elapsed seconds; on a throw that ran to the deadline (a genuine timeout), report `nil`; a fast
@@ -628,17 +629,44 @@ public final class TandemBackend: NSObject, PumpBackend {
             throw error
         }
         onCommandLatency?(elapsedSeconds())  // a response arrived
-        guard
-            let parsed = try? ResponseParser.parse(
-                frame: frame, characteristic: message.characteristic,
-                authenticationKey: authenticationKey),
-            let typed = parsed.message as? T
+        // A signed response now fails-closed (throws) unless its HMAC verifies under the session
+        // key — a forged/tampered signed control ack is rejected here rather than trusted. NEVER build a
+        // response via `init(cargo:)` directly — only through this length-gated, HMAC-verifying parse.
+        guard let parsed = try? ResponseParser.parse(
+            frame: frame, characteristic: message.characteristic,
+            authenticationKey: authenticationKey)
         else {
-            // A signed response now fails-closed (throws) unless its HMAC verifies under the session
-            // key — a forged/tampered signed control ack is rejected here rather than trusted.
+            throw BolusError.pumpRejected("could not parse response to \(type(of: message))")
+        }
+        return parsed.message
+    }
+
+    /// Send a request and await its correlated, typed response via the transaction coordinator.
+    /// A synchronous send/build failure propagates as-is (a clean *pre-write* failure); a post-write
+    /// timeout/disconnect surfaces as `PumpTransactionCoordinator.TxError` (which a delivery caller maps to
+    /// *indeterminate* — see `perform`). Replaces the old hand-owned continuation slots.
+    private func awaitResponse<T: Message>(
+        _ message: Message, as _: T.Type, deadline: TimeInterval,
+        signed: Bool = false, allowInsulinDelivery: Bool = false,
+        serialized: Bool = false
+    ) async throws -> T {
+        let raw = try await awaitParsedMessage(
+            message, deadline: deadline, signed: signed, allowInsulinDelivery: allowInsulinDelivery,
+            serialized: serialized)
+        guard let typed = raw as? T else {
             throw BolusError.pumpRejected("could not parse \(T.self) response")
         }
         return typed
+    }
+
+    /// `sendControl`'s untyped twin of `awaitResponse<T>`: `sendControl` takes an untyped `message:
+    /// Message`, so it has no static response type to hand `awaitResponse` — this returns whatever
+    /// concrete type the registry resolved instead, for `sendControl` to inspect via `ControlAck`. Same
+    /// fail-closed send-then-parse core as `awaitResponse` (`awaitParsedMessage`), always signed.
+    private func awaitControlResponse(
+        _ message: Message, deadline: TimeInterval, delivery: Bool
+    ) async throws -> any Message {
+        try await awaitParsedMessage(message, deadline: deadline, signed: true, allowInsulinDelivery: delivery)
     }
 
     /// Apply the side-effects the old `didReceiveFrame` case did for a time response (the pump↔phone clock
@@ -2087,9 +2115,10 @@ public final class TandemBackend: NSObject, PumpBackend {
     // MARK: - Advanced control (B3)
     // Each command is signed with a fresh pump-clock timestamp and sent under a raised WritePolicy
     // that is restored via `defer`. Insulin-affecting commands use `.allowDelivery` +
-    // `allowInsulinDelivery: true`; non-insulin ones use `.allowNonDelivery`. The pump's response
-    // (parsed in didReceiveFrame) updates the snapshot. The UI only reaches these behind the
-    // advanced-control + Mobi gate; the WritePolicy + pump-side checks are the enforcement backstop.
+    // `allowInsulinDelivery: true`; non-insulin ones use `.allowNonDelivery`. The pump's response is
+    // awaited via the transaction coordinator and inspected before `sendControl` returns; the UI only
+    // reaches these behind the advanced-control + Mobi gate; the WritePolicy + pump-side checks are the
+    // enforcement backstop.
 
     private func refreshSigningTimestamp() async throws {
         let time = try await awaitResponse(TimeSinceResetRequest(), as: TimeSinceResetResponse.self, deadline: 5)
@@ -2097,9 +2126,13 @@ public final class TandemBackend: NSObject, PumpBackend {
         signingTimestamp = time.currentTime
     }
 
-    /// Fresh-timestamp, policy-raised signed send for a control command. `delivery` selects the
-    /// WritePolicy + the insulin-delivery signing flag. Fire-and-send: the response updates state.
-    /// Serialized behind any other signed transaction so its awaited time-sync can't overlap.
+    /// Fresh-timestamp, policy-raised signed send for a control command, gated on the pump's own ack.
+    /// `delivery` selects the WritePolicy + the insulin-delivery signing flag. Awaits the correlated,
+    /// HMAC-verified reply (the same pattern `dismissNotificationTyped` uses) and throws
+    /// `BolusError.pumpRejected` on a non-accepted ack, so a refused write surfaces as a refusal rather
+    /// than reporting success — see `ControlAckInspection.swift`. A dropped/timed-out reply throws the
+    /// coordinator's own `TxError` unchanged, distinct from a definite rejection. Serialized behind any
+    /// other signed transaction so its awaited time-sync can't overlap.
     private func sendControl(_ message: Message, delivery: Bool) async throws {
         guard snapshot.connection == .connected || snapshot.connection == .bolusing else {
             throw BolusError.notConnected
@@ -2108,12 +2141,38 @@ public final class TandemBackend: NSObject, PumpBackend {
             try await refreshSigningTimestamp()
             // Scoped one-operation elevation — always restored to .readOnly (even on throw).
             try await tx.withWritePolicy(delivery ? .allowDelivery : .allowNonDelivery) {
-                _ = try tx.send(
-                    message, authenticationKey: authenticationKey,
-                    pumpTimeSinceReset: signingTimestamp, allowInsulinDelivery: delivery)
-                // Let the signed ack arrive (didReceiveFrame updates the snapshot) before restoring policy.
-                try? await Task.sleep(nanoseconds: 500_000_000)
+                // 5s matches the `dismissNotificationTyped` precedent above: long enough for a real
+                // round-trip, short enough that a refused/dropped write doesn't hang the caller. Replaces
+                // the old fixed 0.5s `Task.sleep` — a refusal or a lost reply now costs up to 5s instead
+                // of always reporting success after half a second.
+                let ack = try await awaitControlResponse(message, deadline: 5, delivery: delivery)
+                guard let controlAck = ack as? ControlAck else {
+                    // Fail-safe: a parsed-but-unrecognized reply type is never treated as a silent success.
+                    throw BolusError.pumpRejected("The pump sent an unrecognized reply to a \(type(of: message)) request.")
+                }
+                guard controlAck.isControlAckAccepted else {
+                    throw BolusError.pumpRejected(
+                        "The pump rejected the \(controlAck.controlAckSubjectDescription) (status \(controlAck.controlAckStatus)).")
+                }
+                applyControlAckSideEffects(ack)
             }
+        }
+    }
+
+    /// The suspend/resume snapshot side effects `PumpResponseApplier.apply` used to apply from
+    /// `didReceiveFrame` — now applied here instead, because the transaction coordinator consumes the
+    /// ack frame before it ever reaches `didReceiveFrame`. Runs only after `sendControl` has already
+    /// verified the ack is accepted.
+    private func applyControlAckSideEffects(_ ack: any Message) {
+        switch ack {
+        case is SuspendPumpingResponse:
+            snapshot.deliverySuspended = true
+            onChange?()
+        case is ResumePumpingResponse:
+            snapshot.deliverySuspended = false
+            onChange?()
+        default:
+            break
         }
     }
 

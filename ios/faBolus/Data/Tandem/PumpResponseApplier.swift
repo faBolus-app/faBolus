@@ -510,10 +510,6 @@ final class PumpResponseApplier {
             }
         case let m as CGMHardwareInfoResponse:
             resumeCGMHardwareInfoContinuation(m)
-        case let m as SuspendPumpingResponse:
-            if m.accepted { withSnapshot { $0.deliverySuspended = true } }
-        case let m as ResumePumpingResponse:
-            if m.accepted { withSnapshot { $0.deliverySuspended = false } }
         default: break
         }
     }
