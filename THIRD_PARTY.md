@@ -18,6 +18,6 @@ itself is MIT (see `LICENSE`).
 | Garmin Connect IQ Mobile SDK | proprietary (`LicenseRef-Garmin-Proprietary`) | binary xcframework, credential-gated | Garmin companion build only |
 | faBolusNudge | MIT (code); model/dataset out of scope | pinned advisory SDK (separate repo) | rev `c3d1e228` |
 
-**Trademarks.** "faBolus" is a trademark of Tia Geri (the code is MIT; the name is not licensed).
+**Trademarks.** "faBolus" is a trademark of Zev Granowitz (the code is MIT; the name is not licensed).
 Tandem, t:slim X2, Mobi, Control-IQ, Dexcom, Garmin, FreeStyle Libre are trademarks of their respective
 owners; faBolus is independent and unaffiliated.

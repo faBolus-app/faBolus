@@ -68,6 +68,6 @@ a future port lands on `main`.
 
 ## Trademarks
 
-"faBolus" is a trademark of Tia Geri (code is MIT; the name is not licensed). Tandem, t:slim X2, Mobi,
+"faBolus" is a trademark of Zev Granowitz (code is MIT; the name is not licensed). Tandem, t:slim X2, Mobi,
 Dexcom, Garmin are trademarks of their respective owners; faBolus is independent and unaffiliated. See
 `NOTICE.md` for the full attribution prose.

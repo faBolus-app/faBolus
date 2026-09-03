@@ -62,8 +62,10 @@ There is **no Watch app on `main`**. Do not build `faBolusWatch` or assume a `wa
   explicit `case foo = "foo"` records a wire contract, and the metric rules describe wire-message
   constructors. Never rename a wire field, settings key, or `RemoteCommand` case to satisfy a linter.
 - `semgrep --config .semgrep/deslop.yml --metrics=off .` flags AI-process residue (phase/ticket
-  breadcrumbs, migration notes, drifted `File.swift:123` references) and vacuous tests. Advisory —
-  triage by hand; a genuine safety comment can match a residue pattern.
+  breadcrumbs, migration notes, drifted `File.swift:123` references) and vacuous tests. The report
+  is advisory — triage by hand; a genuine safety comment can match a residue pattern — but the
+  residue count is ratcheted: CI's second semgrep step fails the build if any residue rule rises
+  above its committed baseline (`.semgrep/baseline.json`).
 - Sibling repos: `../TandemKit` (pump protocol — change message bytes there, with an oracle test) and
   `../faBolusGarmin`. Keep the `RemoteCommand` schema in sync.
 
