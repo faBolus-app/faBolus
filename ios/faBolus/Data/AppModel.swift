@@ -827,6 +827,11 @@ public final class AppModel {
         deliveryLedgerCoordinator.refresh = { [weak self] in self?.refresh() }
         deliveryLedgerCoordinator.onDeliveryBlockChanged = { [weak self] reason in self?.deliveryBlockedReason = reason
         }
+        // Pump-identity scoping: the same identity concept `maybeHandlePumpSwitch` already
+        // compares, with no new pump-protocol read.
+        deliveryLedgerCoordinator.currentPumpIdentity = { [weak self] in
+            self?.currentPumpIdentity() ?? RemoteBolusLedger.unpairedPumpKeySentinel
+        }
         // The CGM Test-flow coordinator depends ONLY on closures bound to `self` — never a whole-
         // AppModel back-pointer. `probe` reads `glucoseSourceProbe` (itself already the private-
         // `glucoseSource`-guarded read), so the coordinator never touches `glucoseSource` directly.

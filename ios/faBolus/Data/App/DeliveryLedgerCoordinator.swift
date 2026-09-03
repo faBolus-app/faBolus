@@ -41,6 +41,10 @@ final class DeliveryLedgerCoordinator {
     /// (source of the published `deliveryBlockedReason`/`deliveryGloballyBlocked`), so SwiftUI
     /// observation is unbroken.
     var onDeliveryBlockChanged: (String?) -> Void = { _ in }
+    /// Bound to `AppModel.currentPumpIdentity()` — the stable identity of the pump connected RIGHT NOW.
+    /// Used to scope a ledger entry's outcome to the pump that wrote it: no new
+    /// pump-protocol read, and the identity concept `PumpSwitchStore.decide` already compares.
+    var currentPumpIdentity: () -> String = { RemoteBolusLedger.unpairedPumpKeySentinel }
 
     // MARK: - Ledger + store
 
@@ -144,7 +148,8 @@ final class DeliveryLedgerCoordinator {
     /// failure can never leave an id-less record a relaunch mistakes for "not sent."
     func commitInFlightBolusId(_ bolusId: Int) async -> Bool {
         guard let key = inFlightDeliveryKey else { return false }
-        remoteBolusLedger.markSent(peerId: key.peerId, requestId: key.requestId, bolusId: bolusId)
+        remoteBolusLedger.markSent(
+            peerId: key.peerId, requestId: key.requestId, bolusId: bolusId, pumpKey: currentPumpIdentity())
         do {
             try remoteBolusLedgerStore.save(remoteBolusLedger)
             return true
@@ -155,13 +160,17 @@ final class DeliveryLedgerCoordinator {
 
     private func computeDeliveryBlockReason() -> String? {
         // Evaluate `unreconciled()` first so the lazy ledger load runs (which sets `ledgerFailedClosed`).
+        // `blockReason`'s `unresolved:` parameter predates the ledger's `pumpKey` field, so narrow to the
+        // shape it still expects — the precedence itself is a pure faBolusCore function
+        // (`RemoteBolusLedger.blockReason`), this is the ONLY caller in the app target, so the strings
+        // have one source of truth with zero-`AppModel` unit coverage in `RemoteBolusLedgerTests`.
         let unresolved = remoteBolusLedger.unreconciled()
-        // The precedence itself is a pure faBolusCore function (`RemoteBolusLedger.blockReason`) —
-        // this is the ONLY caller in the app target, so the strings have one source of truth with
-        // zero-`AppModel` unit coverage in `RemoteBolusLedgerTests`.
+        let narrowed = unresolved.map {
+            (peerId: $0.peerId, requestId: $0.requestId, bolusId: $0.bolusId, sentToPump: $0.sentToPump)
+        }
         return RemoteBolusLedger.blockReason(
             noDurableStore: noDurableStore, ledgerFailedClosed: ledgerFailedClosed,
-            terminalSaveFailed: terminalSaveFailed, unresolved: unresolved,
+            terminalSaveFailed: terminalSaveFailed, unresolved: narrowed,
             inFlightDeliveryKey: inFlightDeliveryKey)
     }
     /// Recompute the current block reason and push it through `onDeliveryBlockChanged`. Exposed

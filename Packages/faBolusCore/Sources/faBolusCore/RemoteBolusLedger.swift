@@ -44,6 +44,13 @@ public struct RemoteBolusLedger: Codable, Sendable {
         var deliveredUnits: Double?
         /// The pump-assigned bolus id, once known — used to reconcile an indeterminate outcome.
         var bolusId: Int?
+        /// The identity of the pump this entry's `bolusId` was assigned by (the same string
+        /// `AppModel.currentPumpIdentity()` produces — `"real|<peripheral UUID>"` or
+        /// `"sim|tslim"`/`"sim|mobi"`), stamped by `markSent` in the same mutation as `bolusId`. Nil
+        /// means the identity is unknown — either a ledger written before this field existed, or the
+        /// identity resolved to the unpaired sentinel at stamp time (refused, never stamped) — and is
+        /// treated as grandfathered, not as a mismatch, when reconciling.
+        var pumpKey: String?
         /// Explicit phase flag — true once the pump has granted permission and the id was durably
         /// recorded, i.e. the initiate write is imminent/issued. Reconciliation must NOT infer
         /// "not sent" merely from a missing bolus id; a nonterminal record with `sentToPump == true` stays
@@ -60,11 +67,12 @@ public struct RemoteBolusLedger: Codable, Sendable {
             self.state = state
             self.usedIncludedStaleBG = usedIncludedStaleBG
         }
-        // Tolerant decode so a ledger persisted before `sentToPump`/`usedIncludedStaleBG` existed still
-        // loads (both default false).
+        // Tolerant decode so a ledger persisted before `sentToPump`/`usedIncludedStaleBG`/`pumpKey`
+        // existed still loads (each defaults to its safe absent value) — a non-tolerant decode would
+        // make the WHOLE ledger unreadable on the first launch after upgrade.
         private enum K: String, CodingKey {
-            case doseKey, state, terminalStatus, terminalMessage, deliveredUnits, bolusId, sentToPump,
-                usedIncludedStaleBG
+            case doseKey, state, terminalStatus, terminalMessage, deliveredUnits, bolusId, pumpKey,
+                sentToPump, usedIncludedStaleBG
         }
         init(from d: Decoder) throws {
             let c = try d.container(keyedBy: K.self)
@@ -74,6 +82,7 @@ public struct RemoteBolusLedger: Codable, Sendable {
             terminalMessage = try c.decodeIfPresent(String.self, forKey: .terminalMessage)
             deliveredUnits = try c.decodeIfPresent(Double.self, forKey: .deliveredUnits)
             bolusId = try c.decodeIfPresent(Int.self, forKey: .bolusId)
+            pumpKey = try c.decodeIfPresent(String.self, forKey: .pumpKey)
             sentToPump = try c.decodeIfPresent(Bool.self, forKey: .sentToPump) ?? false
             usedIncludedStaleBG = try c.decodeIfPresent(Bool.self, forKey: .usedIncludedStaleBG) ?? false
         }
@@ -186,13 +195,27 @@ public struct RemoteBolusLedger: Codable, Sendable {
         }
     }
 
+    /// The identity string a caller must NOT stamp: `TandemBackend.pumpIdentityDetail`'s own "no
+    /// peripheral id" sentinel, wrapped in `AppModel.currentPumpIdentity()`'s `"real|"` prefix. Two
+    /// different unpaired pumps would both produce this same string and compare equal, defeating the
+    /// whole point of a pump-identity key — so it is refused rather than stamped.
+    public static let unpairedPumpKeySentinel = "real|unpaired"
+
     /// The pump granted permission and assigned `bolusId` — record it AND flip the explicit `sentToPump`
     /// phase, together, so a durable save of this transition proves the initiate is imminent/issued. The
     /// host persists (throwing) right after and only proceeds to initiate on success.
-    public mutating func markSent(peerId: String, requestId: String, bolusId: Int) {
+    ///
+    /// - Parameter pumpKey: the identity of the currently-connected pump (`AppModel.currentPumpIdentity()`),
+    ///   stamped alongside `bolusId` so a later reconcile can never attribute this entry's outcome to a
+    ///   different pump. Nil (the default) or the unpaired sentinel leaves the entry's key nil — never
+    ///   stamped — rather than recording an identity that would make two different pumps compare equal.
+    public mutating func markSent(peerId: String, requestId: String, bolusId: Int, pumpKey: String? = nil) {
         mutate(peerId, requestId) {
             $0.bolusId = bolusId
             $0.sentToPump = true
+            if let pumpKey, pumpKey != Self.unpairedPumpKeySentinel {
+                $0.pumpKey = pumpKey
+            }
         }
     }
 
@@ -315,7 +338,7 @@ public struct RemoteBolusLedger: Codable, Sendable {
 
     /// Requests that were mid-flight when the process stopped: `delivering` or `indeterminate`. The host
     /// reconciles these at launch (look up each `bolusId` in pump history) before allowing new deliveries.
-    public func unreconciled() -> [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool)] {
+    public func unreconciled() -> [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool, pumpKey: String?)] {
         order.compactMap { k in
             guard let e = entries[k] else { return nil }
             // An id always means the pump was written to (only the pump mints one), and `sentToPump`
@@ -331,7 +354,7 @@ public struct RemoteBolusLedger: Codable, Sendable {
             guard midFlight else { return nil }
             let parts = k.split(separator: "\u{1F}", maxSplits: 1, omittingEmptySubsequences: false)
             guard parts.count == 2 else { return nil }
-            return (String(parts[0]), String(parts[1]), e.bolusId, sent)
+            return (String(parts[0]), String(parts[1]), e.bolusId, sent, e.pumpKey)
         }
     }
 

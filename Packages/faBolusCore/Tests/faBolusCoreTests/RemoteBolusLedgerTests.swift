@@ -492,11 +492,55 @@ final class RemoteBolusLedgerTests: XCTestCase {
         let stillUnresolved = l.unreconciled()
 
         XCTAssertEqual(stillUnresolved.count, 1, "the newest entry must survive unresolved")
+        let narrowed = stillUnresolved.map {
+            (peerId: $0.peerId, requestId: $0.requestId, bolusId: $0.bolusId, sentToPump: $0.sentToPump)
+        }
         XCTAssertNotNil(
             RemoteBolusLedger.blockReason(
                 noDurableStore: false, ledgerFailedClosed: false, terminalSaveFailed: false,
-                unresolved: stillUnresolved, inFlightDeliveryKey: nil),
+                unresolved: narrowed, inFlightDeliveryKey: nil),
             "a collapse must never be able to release the delivery block")
+    }
+
+    // MARK: - Pump-identity scoping
+    //
+    // The Entry field, the stamp site (markSent), and the pure comparison oracle used to decide
+    // grandfather/match/mismatch when reconciling.
+
+    /// An Entry encoded WITHOUT the new `pumpKey` key still decodes — the whole ledger stays readable
+    /// after upgrade. A legacy ledger's entries carry a nil key, not a decode failure.
+    func testEntryWithoutPumpKeyStillDecodesReadably() throws {
+        var l = RemoteBolusLedger()
+        _ = l.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0))
+        l.markDelivering(peerId: "watch", requestId: "r1", bolusId: 42)  // no pumpKey — pre-upgrade shape
+        let data = try JSONEncoder().encode(l)
+        let restored = try JSONDecoder().decode(RemoteBolusLedger.self, from: data)
+        XCTAssertEqual(restored.state(peerId: "watch", requestId: "r1"), .delivering)
+        XCTAssertNil(restored.unreconciled().first?.pumpKey)
+    }
+
+    /// `markSent` stamps the given pump identity alongside `bolusId`, in the SAME mutation — after it
+    /// returns, `bolusId != nil ⇒ pumpKey != nil` for a normal (paired) identity.
+    func testMarkSentStampsPumpKeyAlongsideBolusId() {
+        var l = RemoteBolusLedger()
+        _ = l.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0))
+        l.markSent(peerId: "watch", requestId: "r1", bolusId: 99, pumpKey: "real|ABCD-1234")
+        let entry = l.unreconciled().first
+        XCTAssertEqual(entry?.bolusId, 99)
+        XCTAssertEqual(entry?.pumpKey, "real|ABCD-1234")
+    }
+
+    /// Two different unpaired pumps would both stamp `"real|unpaired"` and compare equal — `markSent`
+    /// refuses to stamp the sentinel; the entry keeps a nil key rather than that string.
+    func testMarkSentRefusesToStampTheUnpairedSentinel() {
+        var l = RemoteBolusLedger()
+        _ = l.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0))
+        l.markSent(
+            peerId: "watch", requestId: "r1", bolusId: 99,
+            pumpKey: RemoteBolusLedger.unpairedPumpKeySentinel)
+        let entry = l.unreconciled().first
+        XCTAssertEqual(entry?.bolusId, 99, "the id itself is still recorded — only the key is refused")
+        XCTAssertNil(entry?.pumpKey)
     }
 
     /// Pre-permission entries (`sentToPump == false`, no bolus id) are the not-delivered loop's
