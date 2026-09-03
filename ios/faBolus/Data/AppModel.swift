@@ -2,10 +2,6 @@ import Foundation
 import faBolusCore
 import HistoryStore
 import TandemBLE
-#if FABOLUS_NUDGE
-import GlucoseIntelligenceKit
-import AlertIntelligenceKit
-#endif
 import Observation
 #if canImport(UIKit)
 import UIKit
@@ -29,32 +25,6 @@ public final class AppModel {
     // `history` is a computed forward so other AppModel extensions can still read the store.
     @ObservationIgnored private let historyPersistence = HistoryPersistenceCoordinator()
     internal var history: GlucoseHistoryStore? { historyPersistence.store }
-
-    // Eating nudge (multi-signal fusion) — advisory, gated by AppSettings.eatingNudgesEnabled.
-    // Stored properties live here because a separate-file extension cannot declare them or see
-    // `private` members. Widened to `internal` (never public); no dose/gate member is included.
-    @ObservationIgnored internal var eatingEngine = EatingTriggerEngine(config: AppSettings.shared.eatingTriggerConfig)
-    @ObservationIgnored internal var lastEatingConfig: Data?
-    #if FABOLUS_NUDGE
-    @ObservationIgnored internal let mealDetector = MealDetector()
-    #endif
-    /// Latest accel p(eating) from the Garmin/watch path (nil if no wrist signal available).
-    @ObservationIgnored public var latestAccelProb: Double?
-    @ObservationIgnored internal var lastAccelWindowAt = Date.distantPast
-    @ObservationIgnored internal var lastAccelWindowRaw: [Float]?  // last window (to label from feedback)
-    #if FABOLUS_NUDGE
-    @ObservationIgnored internal let accelPipeline = EatingAccelPipeline()
-    @ObservationIgnored internal let eatingPersonalization = EatingPersonalization()
-    #endif
-    /// Optional location gate (advisory, on-device, off by default). Works without the nudge SDK.
-    @ObservationIgnored internal let eatingLocation = EatingLocationGate()
-    /// Set by the Garmin/watch bridge — the phone calls this to start/stop wrist sensing on demand
-    /// (battery: for cgmThenAccel, only escalate when the CGM hints a meal).
-    @ObservationIgnored public var onWantAccelSensing: ((Bool) -> Void)?
-    @ObservationIgnored internal var lastWantAccel = false
-    /// De-dupes eating "positive" training examples to ~one per meal (nudge-acted OR silent pre-bolus).
-    @ObservationIgnored internal var lastEatingPositiveAt = Date.distantPast
-    internal var eatingNudge: EatingAlert?
 
     /// Decoded history-log events for the Logbook, newest first.
     public private(set) var historyEvents: [HistoryEvent] = []
@@ -269,7 +239,7 @@ public final class AppModel {
 
     /// Whether the user dismissed the Low Power Mode advisory for the CURRENT episode. Per-episode: reset
     /// on the off→on edge in `refreshLowPowerMode` so the banner returns on the next Low Power Mode
-    /// episode (mirrors the eating-nudge dismissal). `@ObservationIgnored` — banner visibility is driven
+    /// episode. `@ObservationIgnored` — banner visibility is driven
     /// by `shouldShowLowPowerAdvisory`, not by observing this flag directly.
     @ObservationIgnored private var lowPowerAdvisoryDismissed = false
 
@@ -294,7 +264,7 @@ public final class AppModel {
             dismissedEpisode: lowPowerAdvisoryDismissed)
     }
 
-    /// Dismiss the Low Power Mode advisory for the current episode (like the eating nudge). It reappears
+    /// Dismiss the Low Power Mode advisory for the current episode. It reappears
     /// if Low Power Mode toggles off then on again. Advisory-only — changes nothing about polling/dosing.
     public func dismissLowPowerAdvisory() { lowPowerAdvisoryDismissed = true }
 
@@ -910,7 +880,6 @@ public final class AppModel {
         refreshEffectsCoordinator.onHealthKitAutoImport = { [weak self] in self?.maybeAutoImportAppleHealth() }
         refreshEffectsCoordinator.onHealthKitAutoExport = { [weak self] in self?.maybeAutoExportAppleHealth() }
         #endif
-        refreshEffectsCoordinator.onUpdateEatingNudge = { [weak self] in self?.updateEatingNudge() }
         refreshEffectsCoordinator.onEvaluateSavePinOffer = { [weak self] in self?.evaluateSavePinOffer() }
         refreshEffectsCoordinator.onAutoSyncPumpTime = { [weak self] in self?.maybeAutoSyncPumpTime() }
         refreshEffectsCoordinator.onApplyModeAutomation = { [weak self] in
@@ -1031,7 +1000,6 @@ public final class AppModel {
         arbiterTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
-        setupEatingPersonalization()
         // Surface any restored global block immediately, then reconcile at launch. Entries with no
         // pump bolus id (interrupted before permission) clear now; id-bearing entries stay blocked until a
         // reconnect can reconcile them against the pump.
@@ -1303,21 +1271,6 @@ public final class AppModel {
     internal var lastHealthKitAutoImport = Date.distantPast
     @ObservationIgnored internal lazy var healthKitExportDestination: HealthKitExportDestination = HealthKitExporter()
     internal var lastHealthKitAutoExport = Date.distantPast
-    #endif
-
-    /// The learned alarm-fatigue layer for ADVISORY alerts (complements the pump-alert AlertRuleEngine).
-    /// Widened `private`->`internal` so `AppModel+EatingNudge.swift` can read it. `loadAlertIntel()`
-    /// stays here — it is only ever referenced from this property's own default-value expression.
-    #if FABOLUS_NUDGE
-    @ObservationIgnored internal var alertIntel = AppModel.loadAlertIntel()
-    private static func loadAlertIntel() -> AlertIntelligence {
-        if let d = UserDefaults.standard.data(forKey: "alertIntel"),
-            let a = try? JSONDecoder().decode(AlertIntelligence.self, from: d)
-        {
-            return a
-        }
-        return AlertIntelligence()
-    }
     #endif
 
     /// The SINGLE "can Snooze actually do anything right now" predicate,

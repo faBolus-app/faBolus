@@ -6,8 +6,8 @@ import Foundation
 /// not all past data" (an interior/non-sequential gap), which is exactly what
 /// `TandemBackend.missingRanges` needs to compute the exact windows still worth fetching.
 ///
-/// Persisted exactly like `AppSettings.eatingTriggerConfig` — JSON-in-UserDefaults, `backsUp: false`
-/// (derived/rebuildable local cache, not a user preference; see `SettingsCatalog`'s "historyCoverage" row).
+/// Persisted as JSON-in-UserDefaults, `backsUp: false` (derived/rebuildable local cache, not a user
+/// preference; see `SettingsCatalog`'s "historyCoverage" row).
 public struct HistoryCoverageMap: Codable, Equatable, Sendable {
     /// Held sequence ranges, always normalized (sorted ascending, no overlaps or adjacency) — the
     /// invariant `inserting(_:)` maintains, so callers never need to normalize separately.

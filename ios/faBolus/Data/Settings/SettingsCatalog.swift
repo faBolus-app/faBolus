@@ -112,8 +112,7 @@ enum SettingsCatalog {
         // MARK: — Not backed up (caches + advisory/experimental toggles). syncsToICloud false by rule.
         // `historyCoverage` is deliberately NOT registered — no UI surface (pure sync bookkeeping).
         // Adding it would fail `SettingsReachabilityGuardTests` (every non-exempt catalog key needs
-        // a literal UI reference). Same for `eatingNudgesEnabled` / `eatingTriggerConfig` /
-        // `eatingLearnFromFeedback` / `siteAtlasEnabled` — properties survive as unregistered flags.
+        // a literal UI reference).
     ]
 
     /// Lookup by key.

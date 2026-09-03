@@ -1,17 +1,6 @@
 import Foundation
 import faBolusCore
 
-/// An advisory eating-nudge shown in the UI (from the multi-signal EatingTriggerEngine).
-struct EatingAlert: Sendable, Equatable {
-    let estimatedCarbs: Double  // 0 if only the accel signal fired (no carb estimate)
-    let at: Date
-    var message: String {
-        estimatedCarbs > 0
-            ? "Looks like you're eating (~\(Int(estimatedCarbs))g). Bolus?"
-            : "Looks like you might be eating. Bolus?"
-    }
-}
-
 // App-local, kit-free mirrors of the therapy-advice results so views never reference faBolusNudge
 // types — the Smart Assist features can then compile out when the SDK is unavailable. (No UI surface
 // consumes this today.)

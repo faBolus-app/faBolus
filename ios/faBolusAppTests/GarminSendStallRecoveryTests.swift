@@ -121,9 +121,9 @@ struct GarminSendStallRecoveryTests {
     //
     // `pump()` drains `echoQueue` STRICTLY before `pendingStatus`, and a watchdog-exhausted echo is
     // re-parked at `echoQueue` index 0 — where the next `pump()` re-pulls it with `attempts` RESET to
-    // 0. So `maxSendAttempts` was not a global bound: one undeliverable echo (including a tiny
-    // out-of-band `eating_sense` control dict from `sendRaw`) retried forever and starved every status
-    // push AND every watch-poll reply. `Queue depth: 2` pinned forever is exactly that shape.
+    // 0. So `maxSendAttempts` was not a global bound: one undeliverable echo (e.g. a terminal
+    // bolus-status echo) retried forever and starved every status push AND every watch-poll reply.
+    // `Queue depth: 2` pinned forever is exactly that shape.
     //
     // The valve must NOT weaken the safety rule: a terminal bolus echo is never dropped, never
     // coalesced, and echo-vs-echo ORDER is never changed. It only lets a pending status take ONE slot

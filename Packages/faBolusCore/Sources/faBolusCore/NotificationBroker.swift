@@ -12,9 +12,8 @@ import Foundation
 /// pump alert; this decides delivery governance for whatever becomes a notification.
 ///
 /// The rate-limit / quiet-hours logic is reimplemented here (pure, in faBolusCore) rather than depending on
-/// the optional `AlertIntelligenceKit` (a `faBolusNudge` product, behind `#if FABOLUS_NUDGE`, whose source
-/// is not vendored) — a safety-adjacent governance layer must not be gated on an optional package, and it
-/// must apply to every channel, not only the two Nudge banners.
+/// an optional external package — a safety-adjacent governance layer must not be gated on an optional
+/// dependency, and it must apply to every channel.
 public enum NotificationBroker {
 
     // MARK: - Categories

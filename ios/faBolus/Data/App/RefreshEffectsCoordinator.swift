@@ -40,7 +40,6 @@ final class RefreshEffectsCoordinator {
     var onHistoryPersist: ([GlucoseReading], [BolusMarker], GlucoseProvenance) -> Void = { _, _, _ in }
     var onHealthKitAutoImport: () -> Void = {}
     var onHealthKitAutoExport: () -> Void = {}
-    var onUpdateEatingNudge: () -> Void = {}
     var onEvaluateSavePinOffer: () -> Void = {}
     var onAutoSyncPumpTime: () -> Void = {}
     /// Gated by the `canControlModes` input (`ModeAutomation.applyPendingIfDue(using:)` takes the concrete
@@ -150,8 +149,6 @@ final class RefreshEffectsCoordinator {
         onHealthKitAutoExport()
         recordStep("healthkitExport")
         #endif
-        onUpdateEatingNudge()
-        recordStep("updateEatingNudge")
         onEvaluateSavePinOffer()
         recordStep("evaluateSavePinOffer")
         onAutoSyncPumpTime()

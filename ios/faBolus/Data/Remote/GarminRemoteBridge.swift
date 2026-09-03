@@ -154,9 +154,9 @@ enum GarminPumpSlot: Equatable {
 ///
 /// Bug 2.2: `pump()` drains `echoQueue` STRICTLY before `pendingStatus`, and a watchdog-exhausted echo
 /// is re-parked at `echoQueue` index 0 — where the next `pump()` re-pulls it with `attempts` reset to
-/// zero. `maxSendAttempts` was therefore not a global bound: one undeliverable echo (including a tiny
-/// out-of-band `eating_sense` control dict from `sendRaw`) retried forever and starved every status
-/// push and every watch-poll reply, which is the reported "CGM never updates".
+/// zero. `maxSendAttempts` was therefore not a global bound: one undeliverable echo (e.g. a terminal
+/// bolus-status echo) retried forever and starved every status push and every watch-poll reply, which
+/// is the reported "CGM never updates".
 ///
 /// Safety: this does NOT weaken the terminal-echo rules. No echo is ever dropped or coalesced, and
 /// echo-vs-echo ORDER is untouched — a healthy echo still outranks a pending status. Only an echo that
@@ -259,80 +259,6 @@ func garminCapStatusHistory(_ dict: [String: Any]) -> [String: Any] {
     if let h = dict["history"] as? [Int] { out["history"] = GarminHistoryCap.cap(h) }
     if let e = dict["historyEpochs"] as? [Int] { out["historyEpochs"] = GarminHistoryCap.cap(e) }
     return out
-}
-
-/// Decode of the out-of-band `imu_window` envelope. Lives outside `#if GARMIN` (Foundation-only)
-/// so both wire versions get unit coverage in the default target.
-///
-/// - v1 (legacy, unversioned or `v:1`): `data` is a flat `[Number]` of Float samples, SAMPLE-MAJOR
-///   (each sample's `ch` channel values contiguous), oldest→newest.
-/// - v2 (compact, the current wire contract):
-///     - `ch` (Int) channel count (e.g. 6: accelX/Y/Z, gyroX/Y/Z), `n` (Int) samples per channel.
-///     - `scale` (`[Number]`, length == `ch`) — one dequantization scale per channel, owned by the
-///       watch encoder and carried IN the envelope — `float = int16 * scale[ch]`. Never a hardcoded
-///       duplicate on either side, so the sides cannot silently drift if the scale is retuned.
-///     - `data` — packed int16: `n * ch * 2` raw bytes, little-endian, sample-major. Accepted as
-///       either a `[Number]` of raw bytes OR Foundation `Data`. The vendored ConnectIQ SDK's
-///       documented `sendMessage` types are String/Number/Null/Array/Dictionary only — no ByteArray
-///       — so the real bridged Swift type for a Monkey C `ByteArray` is unverified pre-device;
-///       covering both shapes means a mismatch needs only a data-shape fix here, not an envelope
-///       redesign.
-///
-/// ANY malformed/mismatched-length/oversized envelope decodes to an EMPTY array — never a
-/// garbled or partial window. `imu_window` is advisory-only (never a dose input);
-/// `AppModel.ingestGarminIMUWindow`'s `accelPipeline.predict` already no-ops on empty.
-enum GarminImuWindowDecode {
-    /// Defensive upper bound on total samples (`n * ch`) — the largest real window is
-    /// `WINDOW(150) * ch(6) = 900`; this leaves generous headroom while still rejecting a spoofed
-    /// huge `n`/`ch` before it can drive an unbounded allocation.
-    static let maxTotalSamples = 4096
-
-    static func decode(_ dict: [String: Any]) -> [Float] {
-        let version = (dict["v"] as? NSNumber)?.intValue ?? 1
-        return version >= 2 ? decodeV2(dict) : decodeV1(dict)
-    }
-
-    private static func decodeV1(_ dict: [String: Any]) -> [Float] {
-        (dict["data"] as? [Any])?.compactMap { ($0 as? NSNumber)?.floatValue } ?? []
-    }
-
-    private static func decodeV2(_ dict: [String: Any]) -> [Float] {
-        guard let ch = (dict["ch"] as? NSNumber)?.intValue, ch > 0,
-            let n = (dict["n"] as? NSNumber)?.intValue, n > 0
-        else { return [] }
-        let total = n * ch
-        guard total > 0, total <= maxTotalSamples else { return [] }
-        guard let scaleRaw = dict["scale"] as? [Any], scaleRaw.count == ch else { return [] }
-        let scale = scaleRaw.compactMap { ($0 as? NSNumber)?.doubleValue }
-        guard scale.count == ch else { return [] }
-        guard let bytes = rawBytes(from: dict["data"]), bytes.count == total * 2 else { return [] }
-        var out: [Float] = []
-        out.reserveCapacity(total)
-        for i in 0..<total {
-            let lo = UInt16(bytes[2 * i])
-            let hi = UInt16(bytes[2 * i + 1])
-            let bits = lo | (hi << 8)
-            let int16Value = Int16(bitPattern: bits)
-            out.append(Float(Double(int16Value) * scale[i % ch]))
-        }
-        return out
-    }
-
-    /// Accepts either a Foundation `Data` or an `[NSNumber]` of raw byte values 0...255 — see the enum
-    /// doc comment above for why both shapes are defensively supported.
-    private static func rawBytes(from value: Any?) -> [UInt8]? {
-        if let data = value as? Data { return [UInt8](data) }
-        if let arr = value as? [Any] {
-            var out: [UInt8] = []
-            out.reserveCapacity(arr.count)
-            for element in arr {
-                guard let n = (element as? NSNumber)?.intValue, n >= 0, n <= 255 else { return nil }
-                out.append(UInt8(n))
-            }
-            return out
-        }
-        return nil
-    }
 }
 
 /// ConnectIQ-free classification of a `getAppStatus` result onto `GarminDiagnostics.AppInstallState`.
@@ -598,10 +524,6 @@ final class GarminRemoteBridge: NSObject {
         // in `send`/`pump`. StatusRead-shaped only — never a signed/dose-authorizing command.
         model.addStatusListener { [weak self] snap in self?.sendStatus(snap) }
         model.setupGarmin = { [weak self] in self?.selectDevice() }
-        // Phone tells the watch when to run wrist eating-sensing (battery: only when wanted).
-        model.onWantAccelSensing = { [weak self] on in
-            self?.sendRaw(["v": 1, "type": "eating_sense", "on": on])
-        }
         restoreDevice()
     }
 
@@ -842,13 +764,6 @@ final class GarminRemoteBridge: NSObject {
         } else {
             echoQueue.append(dict)
         }
-        pump()
-    }
-
-    /// Send an out-of-band control dict (e.g. eating_sense) to the watch — queued like an echo so it
-    /// respects the single-in-flight discipline. Not a RemoteCommand (no safety-critical schema).
-    private func sendRaw(_ dict: [String: Any]) {
-        echoQueue.append(dict)
         pump()
     }
 
@@ -1281,15 +1196,6 @@ final class GarminRemoteBridge: NSObject {
 extension GarminRemoteBridge: IQAppMessageDelegate, IQDeviceEventDelegate {
     nonisolated func receivedMessage(_ message: Any!, from app: IQApp!) {
         guard let dict = message as? [String: Any] else { return }
-        // Eating-detection IMU windows ride an out-of-band envelope (not the safety-critical
-        // RemoteCommand schema) — route them to phone-side inference before RemoteCommand parsing.
-        if dict["type"] as? String == "imu_window" {
-            // Accepts both the legacy v1 flat-Float envelope and v2 compact int16. Fail-safe
-            // to empty on any malformed/oversized input.
-            let raw = GarminImuWindowDecode.decode(dict)
-            Task { @MainActor in self.model?.ingestGarminIMUWindow(rawWindow: raw) }
-            return
-        }
         guard let cmd = try? RemoteCommand.fromValidated(dict) else { return }
         Task { @MainActor in self.handle(cmd) }
     }

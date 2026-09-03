@@ -202,37 +202,23 @@ public final class AppSettings {
     /// Persisted pump history-log sequence coverage — replaces the one-shot `didBackfill` gate.
     /// `TandemBackend` reads this on every connect to compute exactly which sequence windows are
     /// still missing, and writes back into it as gap-sync windows complete.
-    /// Derived/rebuildable local sync bookkeeping, not a user preference — persisted with
-    /// `eatingTriggerConfig`'s JSON-in-UserDefaults shape, but deliberately NOT a `SettingsCatalog` row
-    /// (no UI surface at all; see the NOTE in `SettingsCatalog.swift`) and never included in a settings
-    /// backup.
+    /// Derived/rebuildable local sync bookkeeping, not a user preference — deliberately NOT a
+    /// `SettingsCatalog` row (no UI surface at all; see the NOTE in `SettingsCatalog.swift`) and never
+    /// included in a settings backup.
     public var historyCoverage: HistoryCoverageMap {
         didSet { if let data = try? JSONEncoder().encode(historyCoverage) { d.set(data, forKey: "historyCoverage") } }
     }
 
-    /// Eating-detection bolus nudge (multi-signal). **OFF by default** — advisory, never doses.
-    private var _eatingNudgesEnabled = Stored<Bool>(wrappedValue: false, "eatingNudgesEnabled")
-    public var eatingNudgesEnabled: Bool {
-        get { _eatingNudgesEnabled.wrappedValue }
-        set { _eatingNudgesEnabled.wrappedValue = newValue }
-    }
-
-    /// User-tunable trigger config (signals/mode/thresholds/delay). Persisted as JSON.
-    public var eatingTriggerConfig: EatingTriggerConfig {
-        didSet {
-            if let data = try? JSONEncoder().encode(eatingTriggerConfig) { d.set(data, forKey: "eatingTriggerConfig") }
-        }
-    }
-    /// On-device personalization for the nudge: adapt the wrist threshold (and, when the model is
-    /// updatable, fine-tune it) from your feedback. On by default; everything stays on-device.
-    private var _eatingLearnFromFeedback = Stored<Bool>(wrappedValue: true, "eatingLearnFromFeedback")
-    public var eatingLearnFromFeedback: Bool {
-        get { _eatingLearnFromFeedback.wrappedValue }
-        set { _eatingLearnFromFeedback.wrappedValue = newValue }
-    }
+    /// The five orphaned `UserDefaults` keys the retired eating/Nudge surface left behind — no property
+    /// on this type or any other reads them any more. Purged once at launch in `init`, guarded by
+    /// `eatingResiduePurgeV1`. `internal` (not `private`) so `AppSettingsMigrationTests`/
+    /// `AppSettingsStoredMigrationTests`-style suites can assert the purge without hardcoding the list twice.
+    internal static let retiredEatingResidueKeys: [String] = [
+        "eatingMealPlaces", "alertIntel", "eatingTriggerConfig", "eatingNudgesEnabled", "eatingLearnFromFeedback"
+    ]
 
     // Control-IQ-awareness Smart-Assist toggles. Defaults are owner-locked. Same idiom as
-    // `eatingNudgesEnabled`: plain persisted Bool, mirrored to remotes on `statusRead` so a
+    // `autoExerciseMode`: plain persisted Bool, mirrored to remotes on `statusRead` so a
     // remote suppresses an off feature belt-and-suspenders. The extended disable-CIQ warning
     // has NO flag here — it always fires.
     /// CIQ state/status readouts (pure facts, no action). Default **ON**.
@@ -514,7 +500,7 @@ public final class AppSettings {
     /// Deliberately NOT wrapped in `#if FABOLUS_HEALTHKIT` (unlike the AppModel import hook) — the
     /// settings MODEL stays unconditional so it compiles/tests under the default OFF build; only the
     /// FEATURE REACH (the actual HealthKit calls) is gated. Same device-local persisted-Bool idiom as
-    /// `eatingNudgesEnabled`: deliberately NOT a `SettingsCatalog` row and NOT in `backupSnapshot`
+    /// `autoExerciseMode`: deliberately NOT a `SettingsCatalog` row and NOT in `backupSnapshot`
     /// yet — the UI surface these toggles gate (per-type rows in `CgmCredentialsView`) ships later,
     /// and `SettingsReachabilityGuardTests` requires every catalog row to have a literal UI
     /// reference; adding the catalog row before the UI exists would make that guard fail. Revisit
@@ -968,13 +954,6 @@ public final class AppSettings {
         }
         let sfAck = d.double(forKey: "smartFeaturesNoticeAckAt")  // 0 (absent) ⇒ never acknowledged
         smartFeaturesNoticeAckAt = sfAck > 0 ? Date(timeIntervalSince1970: sfAck) : nil
-        if let data = d.data(forKey: "eatingTriggerConfig"),
-            let cfg = try? JSONDecoder().decode(EatingTriggerConfig.self, from: data)
-        {
-            eatingTriggerConfig = cfg
-        } else {
-            eatingTriggerConfig = EatingTriggerConfig()
-        }
         glucoseHideDelayMinutes = d.object(forKey: "glucoseHideDelayMinutes") as? Int  // nil = Never
         let ackTs = d.double(forKey: "clinicianTierAckAt")  // 0 (absent) ⇒ never acknowledged
         clinicianTierAckAt = ackTs > 0 ? Date(timeIntervalSince1970: ackTs) : nil
@@ -1050,8 +1029,6 @@ public final class AppSettings {
         _showGlucoseUnitLabels.store = defaults
         _historyRetentionDays.store = defaults
         _historySyncEnabled.store = defaults
-        _eatingNudgesEnabled.store = defaults
-        _eatingLearnFromFeedback.store = defaults
         _ciqStateReadoutsEnabled.store = defaults
         _ciqLockoutCountdownEnabled.store = defaults
         _ciqMaxBasalReadoutEnabled.store = defaults
@@ -1126,8 +1103,6 @@ public final class AppSettings {
         historyRetentionDays = 1
         // Default ON — a fresh install (and any device with no stored value) auto-syncs.
         historySyncEnabled = (d.object(forKey: "historySyncEnabled") as? Bool) ?? true
-        eatingNudgesEnabled = (d.object(forKey: "eatingNudgesEnabled") as? Bool) ?? false
-        eatingLearnFromFeedback = (d.object(forKey: "eatingLearnFromFeedback") as? Bool) ?? true
         ciqStateReadoutsEnabled = (d.object(forKey: "ciqStateReadoutsEnabled") as? Bool) ?? true
         ciqLockoutCountdownEnabled = (d.object(forKey: "ciqLockoutCountdownEnabled") as? Bool) ?? true
         ciqMaxBasalReadoutEnabled = (d.object(forKey: "ciqMaxBasalReadoutEnabled") as? Bool) ?? false
@@ -1143,6 +1118,16 @@ public final class AppSettings {
         if d.object(forKey: "criticalAlertsForceResetV050") == nil {
             criticalAlertsEnabled = false
             d.set(true, forKey: "criticalAlertsForceResetV050")
+        }
+        // One-time purge of the five UserDefaults keys the retired eating/Nudge surface left behind —
+        // no code can read, display, or delete them once the surface is gone, so an upgrading tester's
+        // learned coarse meal-place coordinates would otherwise survive as unreadable, undeletable
+        // residue. Same idempotent-once shape as `criticalAlertsForceResetV050` above: checked, removed
+        // once, never re-fires (a later key of the same name is never clobbered because the guard only
+        // ever runs while its own marker is absent).
+        if d.object(forKey: "eatingResiduePurgeV1") == nil {
+            for key in Self.retiredEatingResidueKeys { d.removeObject(forKey: key) }
+            d.set(true, forKey: "eatingResiduePurgeV1")
         }
         nightscoutUploadEnabled = (d.object(forKey: "nightscoutUploadEnabled") as? Bool) ?? false
         // Every Apple Health import toggle — per-type + automatic — defaults OFF.

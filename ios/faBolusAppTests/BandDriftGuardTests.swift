@@ -86,7 +86,7 @@ struct BandDriftGuardTests {
     }
 
     /// Balanced-brace forward slice starting at `startIdx` through its matching close — the same
-    /// technique as `NudgeDeliveryBoundaryTests.balancedFunctionBody(signaturePrefix:in:)`, generalized
+    /// balanced-brace-scan technique as `functionSlice(signaturePrefix:in:file:)` below, generalized
     /// to start at an explicit line index instead of a signature-prefix search (this scan doesn't know
     /// function signatures ahead of time; `smallestEnclosingBlockStart` already found the right line).
     private static func balancedSlice(startingAt startIdx: Int, in lines: [String]) -> String {
@@ -196,8 +196,9 @@ struct BandDriftGuardTests {
     }
 
     /// Locate a declaration by its signature-line substring and slice it via balanced braces — same
-    /// idea as `NudgeDeliveryBoundaryTests.balancedFunctionBody(signaturePrefix:in:)`, adapted to take
-    /// pre-split lines (this file already splits once per source file for the main scan).
+    /// balanced-brace-scan idea as `balancedSlice(startingAt:in:)` above, but searches by signature
+    /// prefix instead of a known line index (pre-split lines; this file already splits once per source
+    /// file for the main scan).
     private static func functionSlice(signaturePrefix: String, in lines: [String], file: String) throws -> String {
         guard let startIdx = lines.firstIndex(where: { $0.contains(signaturePrefix) }) else {
             throw SliceError.signatureNotFound("\(signaturePrefix) in \(file)")

@@ -65,7 +65,7 @@ struct SleepScheduleWriteBoundaryTests {
     /// Locate a function by its declaration-line signature prefix (e.g. `"func foo("`) and return the
     /// source slice from that line through its balanced closing brace. Scoping by signature (rather than a
     /// hardcoded line range) means a future line-shift in the source file does not silently widen or
-    /// narrow the scanned region. Mirrors `NudgeDeliveryBoundaryTests.balancedFunctionBody` byte-for-byte.
+    /// narrow the scanned region.
     private static func balancedFunctionBody(signaturePrefix: String, in source: String) throws -> String {
         let lines = source.components(separatedBy: "\n")
         guard let startIdx = lines.firstIndex(where: { $0.contains(signaturePrefix) }) else {

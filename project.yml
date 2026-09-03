@@ -268,9 +268,6 @@ targets:
         # How Siri should pronounce/recognize the app name in App Shortcut phrases ("… in <name>").
         CFBundleSpokenName: "Fabolus"
         NSBluetoothAlwaysUsageDescription: "faBolus connects to your pump over Bluetooth to read status and deliver boluses."
-        # Optional eating-nudge location gate: learn the coarse places you eat, on-device, to skip nudges
-        # elsewhere. Off by default; uses significant-location changes only. See EatingLocationGate.
-        NSLocationWhenInUseUsageDescription: "faBolus can learn the places you usually eat (on your device only) so it can skip eating reminders when you're clearly somewhere else. Optional and off by default."
         # HealthKit's NSHealthShareUsageDescription/NSHealthUpdateUsageDescription usage strings were
         # deleted in Phase 5 (HEALTH-01) along with the entitlement and the whole HealthKit surface —
         # see dev/healthkit's REINTEGRATION.md.

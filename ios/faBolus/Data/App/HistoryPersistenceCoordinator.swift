@@ -15,8 +15,7 @@ import os
 /// reference to itself, and this coordinator never reaches back into `AppModel`.
 ///
 /// `AppModel` exposes a forwarding `history` computed property (`historyPersistence.store`) so
-/// `AppModel+Backup.swift`, `AppModel+EatingNudge.swift`, and `AppModel+HealthKit.swift` keep
-/// compiling unchanged.
+/// `AppModel+Backup.swift` and `AppModel+HealthKit.swift` keep compiling unchanged.
 @MainActor
 final class HistoryPersistenceCoordinator {
     private static let log = Logger(subsystem: "com.fabolus.app", category: "history")

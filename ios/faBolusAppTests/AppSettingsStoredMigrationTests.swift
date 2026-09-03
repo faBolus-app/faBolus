@@ -333,16 +333,6 @@ struct AppSettingsStoredMigrationTests {
         assertBoolStoredRoundTrip(
             key: "historySyncEnabled", backingLabel: "__historySyncEnabled", defaultValue: true, \.historySyncEnabled)
     }
-    @Test func eatingNudgesEnabledStoredRoundTrip() {
-        assertBoolStoredRoundTrip(
-            key: "eatingNudgesEnabled", backingLabel: "__eatingNudgesEnabled", defaultValue: false,
-            \.eatingNudgesEnabled)
-    }
-    @Test func eatingLearnFromFeedbackStoredRoundTrip() {
-        assertBoolStoredRoundTrip(
-            key: "eatingLearnFromFeedback", backingLabel: "__eatingLearnFromFeedback", defaultValue: true,
-            \.eatingLearnFromFeedback)
-    }
     @Test func ciqStateReadoutsEnabledStoredRoundTrip() {
         assertBoolStoredRoundTrip(
             key: "ciqStateReadoutsEnabled", backingLabel: "__ciqStateReadoutsEnabled", defaultValue: true,

@@ -46,22 +46,10 @@ struct AppModelAccessWideningGuardTests {
     /// with this prefix — the guard pins visibility, not stored-vs-computed.
     static let widenedStoredPropertyDeclarations: [String] = [
         "internal var history: GlucoseHistoryStore?",
-        "internal var eatingEngine = EatingTriggerEngine(",
-        "internal var lastEatingConfig: Data?",
-        "internal let mealDetector = MealDetector()",
-        "internal var lastAccelWindowAt = Date.distantPast",
-        "internal var lastAccelWindowRaw: [Float]?",
-        "internal let accelPipeline = EatingAccelPipeline()",
-        "internal let eatingPersonalization = EatingPersonalization()",
-        "internal let eatingLocation = EatingLocationGate()",
-        "internal var lastWantAccel = false",
-        "internal var lastEatingPositiveAt = Date.distantPast",
-        "internal var eatingNudge: EatingAlert?",
         "internal lazy var healthKitImportSource: HealthKitImportSource",
         "internal var lastHealthKitAutoImport = Date.distantPast",
         "internal lazy var healthKitExportDestination: HealthKitExportDestination",
-        "internal var lastHealthKitAutoExport = Date.distantPast",
-        "internal var alertIntel = AppModel.loadAlertIntel()"
+        "internal var lastHealthKitAutoExport = Date.distantPast"
     ]
 
     /// Thin read-only seam so backup export can read the ledger snapshot without widening `deliveryLedgerCoordinator`.
