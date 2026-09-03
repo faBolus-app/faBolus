@@ -10,15 +10,9 @@ import Foundation
 /// concrete-type cast.
 ///
 /// History/diagnostics casts go through `PumpHistoryProviding` / `PumpDiagnosticsProviding`. This
-/// protocol is the Tandem-specific residue covered by neither: `consumeSleepScheduleWriteError`,
-/// `pumpIdentityDetail`.
+/// protocol is the Tandem-specific residue covered by neither: `pumpIdentityDetail`.
 @MainActor
 protocol TandemOnlyOps: AnyObject {
-    /// One-shot consume of the most recent Sleep-schedule write rejection
-    /// (`SetSleepScheduleResponse.status != 0`), surfaced via `AppModel.lastError` right after the
-    /// write completes. Genuinely Tandem-specific.
-    func consumeSleepScheduleWriteError() -> String?
-
     /// The concrete-Tandem-only identity detail feeding `AppModel.currentPumpIdentity()`'s "real"
     /// branch: the paired peripheral's CoreBluetooth UUID, or `"unpaired"` before first pairing. A
     /// non-Tandem backend never reaches this — the `source as? TandemOnlyOps` cast is nil and

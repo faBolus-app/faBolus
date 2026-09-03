@@ -109,8 +109,6 @@ final class PumpResponseApplier {
     var setPumpFeatureBits: (PumpFeatureBits) -> Void = { _ in }
     /// Bound to `{ calcSnapshot = $0 }` — read elsewhere (the dose-calculator path).
     var setCalcSnapshot: (BolusCalcDataSnapshotResponse) -> Void = { _ in }
-    /// Bound to `{ sleepScheduleWriteError = $0 }`.
-    var setSleepScheduleWriteError: (String?) -> Void = { _ in }
     // Alert-list setters: `alertList`/`alarmList`/`cgmAlertList`/`reminderList`/`malfunctionList` are
     // each read elsewhere by `mergeNotifications`/dismiss handling, which stay in `TandemBackend`.
     var setAlertList: ([PumpNotification]) -> Void = { _ in }
@@ -230,12 +228,6 @@ final class PumpResponseApplier {
                         slot: i, enabled: s.enabled, activeDays: s.activeDays,
                         startMinute: s.startTime, endMinute: s.endTime)
                 }
-            }
-        case let m as SetSleepScheduleResponse:
-            // Write ack. No optimistic mutation of `snapshot.sleepSchedules` — a follow-up
-            // `refreshSleepSchedule()` reflects the actual pump state, mirroring `setControlIQ`.
-            if m.status != 0 {
-                setSleepScheduleWriteError("The pump rejected the sleep-schedule change (status \(m.status)).")
             }
         case let m as ProfileStatusResponse:
             profileActiveIdpId = m.activeIdpId

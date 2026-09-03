@@ -8,7 +8,7 @@ import TandemBLE
 /// Pins that `TandemBackend.sendControl` awaits and inspects the pump's ack instead of firing-and-
 /// forgetting: an accepted ack applies its snapshot side effect, a refused (non-zero status) ack throws
 /// and never claims success, and a dropped/timed-out reply is a distinct "unconfirmed" outcome — never
-/// collapsed with a definite refusal (D-05/D-07/D-08).
+/// collapsed with a definite refusal.
 @Suite(.serialized) @MainActor
 struct ControlWriteAckTests {
 
@@ -73,10 +73,10 @@ struct ControlWriteAckTests {
         do {
             try await b.suspendDelivery()
             Issue.record("a refused suspend must throw, never report success")
-        } catch let BolusError.pumpRejected(message) {
+        } catch let ControlWriteError.rejected(message) {
             #expect(message.contains("suspend"), "the refusal message should name the rejected write")
         } catch {
-            Issue.record("expected BolusError.pumpRejected, got \(error)")
+            Issue.record("expected ControlWriteError.rejected, got \(error)")
         }
         #expect(!b.snapshot.deliverySuspended, "a refused suspend must never set deliverySuspended")
     }
@@ -136,6 +136,44 @@ struct ControlWriteAckTests {
         #expect(
             model.lastError != nil,
             "a refused control write must surface via AppModel.lastError — the pre-fix fire-and-forget funnel reported success (lastError == nil) for exactly this case"
+        )
+    }
+
+    // MARK: - Sleep-schedule write: the bespoke error chain is closed by deletion, the funnel's own
+    // refusal message stays as specific as the retired one.
+
+    @Test func refusedSleepScheduleWriteSurfacesTheSpecificLastErrorThroughTheFunnel() async {
+        let fake = FakePumpTransport()
+        let backend = mobiBackend(fake)
+        fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
+        fake.script(
+            SetSleepScheduleResponse.props.opCode,
+            .frame(FakePumpTransport.frame(opCode: SetSleepScheduleResponse.props.opCode, cargo: [1], signed: true)))
+
+        let s = AppSettings.shared
+        let ro = s.phoneReadOnly, child = s.childModeEnabled, adv = s.advancedControlEnabled
+        let mode = s.appMode
+        s.phoneReadOnly = false
+        s.childModeEnabled = false
+        s.advancedControlEnabled = true
+        s.appMode = .advanced
+        defer {
+            s.phoneReadOnly = ro
+            s.childModeEnabled = child
+            s.advancedControlEnabled = adv
+            s.appMode = mode
+        }
+
+        let ledgerURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("appmodel-ledger-\(UUID().uuidString).json")
+        let model = AppModel(source: backend, ledgerStoreURL: ledgerURL)
+        model.acknowledgeUnverifiedTherapy()
+
+        await model.setSleepSchedule(slot: 0, enabled: true, activeDays: 0x7F, startMinute: 0, endMinute: 60)
+
+        #expect(
+            model.lastError == "The pump rejected the sleep-schedule change (status 1).",
+            "a rejected sleep-schedule write must surface a message as specific as the retired bespoke one; got: \(model.lastError ?? "nil")"
         )
     }
 }

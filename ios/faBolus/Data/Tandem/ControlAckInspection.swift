@@ -1,6 +1,23 @@
 import Foundation
 import TandemMessages
 
+/// The control-write-domain error thrown by `sendControl`'s ack-acceptance check. A
+/// rejected or unrecognized signed CONTROL ack is not a bolus/delivery outcome, so it must not borrow
+/// `BolusError.pumpRejected` — a case named and typed for the delivery domain whose own
+/// `errorDescription` prefixes every message with "Pump rejected the bolus: ", which would misrender a
+/// non-bolus refusal (e.g. a sleep-schedule or max-bolus-limit rejection) as if it were about a bolus.
+/// Mirrors `PumpReadError`'s identical reasoning for the read domain (see `TandemBackend.swift`'s
+/// top-of-file doc comment). Covers only the POST-parse acceptance decision — a pre-ack parse failure or
+/// timeout still propagates as `BolusError`/`PumpTransactionCoordinator.TxError` unchanged.
+enum ControlWriteError: Error, LocalizedError {
+    case rejected(String)
+    var errorDescription: String? {
+        switch self {
+        case .rejected(let r): return r
+        }
+    }
+}
+
 /// App-only acceptance signal for a pump's ack to a `TandemBackend.sendControl` write. `status`/
 /// `accepted` are per-type fields on the individual TandemKit response structs, never protocol members
 /// (`Message`/`ResponseMessage` declare neither) — this protocol lets `sendControl` ask "did the pump

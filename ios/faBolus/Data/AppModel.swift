@@ -2050,19 +2050,13 @@ public final class AppModel {
     /// `supportsSleepScheduleWrite` capability, all via the single AccessPolicy evaluator). `op` is
     /// the RAW backend write, mirroring `setControlIQ`/`createProfile` — never re-enter `runControl`.
     ///
-    /// `sendControl` is fire-and-forget (doesn't itself inspect the ack status — see `TandemBackend`'s
-    /// `ChangeTimeDateRequest` note), so after the write completes this consumes the concrete-Tandem-only
-    /// `sleepScheduleWriteError` one-shot sink, via `TandemOnlyOps` (mirrors `onCommandLatency`/
-    /// `historySyncState`), to surface a pump-rejected write (`SetSleepScheduleResponse.status != 0`)
-    /// via `lastError`.
+    /// `sendControl` now awaits and inspects the pump's ack itself, so a rejected write throws and
+    /// `performControl`'s catch tail sets `lastError` — no separate drain needed here.
     public func setSleepSchedule(slot: Int, enabled: Bool, activeDays: Int, startMinute: Int, endMinute: Int) async {
         await runGatedTherapy(.setSleepSchedule) {
             try await self.source.setSleepSchedule(
                 slot: slot, enabled: enabled, activeDays: activeDays,
                 startMinute: startMinute, endMinute: endMinute)
-        }
-        if let ops = source as? TandemOnlyOps, let err = ops.consumeSleepScheduleWriteError() {
-            lastError = err
         }
     }
     public func refreshProfiles() async {

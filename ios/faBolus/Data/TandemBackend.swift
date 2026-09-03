@@ -103,18 +103,6 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// synced time rather than always reading "Never" until the next connect.
     public private(set) var historySyncState: HistorySyncState = .idle(
         lastSynced: AppSettings.shared.historyLastSyncedAt)
-    /// The most recent Sleep-schedule write rejection (`SetSleepScheduleResponse.status
-    /// != 0`), set in `didReceiveFrame`. `sendControl` is fire-and-forget over BLE and doesn't itself
-    /// inspect the ack status (see the `ChangeTimeDateRequest` note above), so `AppModel.setSleepSchedule`
-    /// consumes this one-shot via `consumeSleepScheduleWriteError()` right after the write completes,
-    /// mirroring the `onCommandLatency`/`historySyncState` concrete-Tandem-only sink pattern.
-    private(set) var sleepScheduleWriteError: String?
-    /// One-shot consume: returns the pending write-rejection message (if any) and clears it, so a stale
-    /// rejection can never re-surface on a later, unrelated refresh.
-    func consumeSleepScheduleWriteError() -> String? {
-        defer { sleepScheduleWriteError = nil }
-        return sleepScheduleWriteError
-    }
     public var onChange: (@MainActor () -> Void)?
     /// Fired the moment the pump grants permission and assigns a bolus id, before the initiate write,
     /// so the host can persist the id durably for later reconciliation.
@@ -1015,7 +1003,6 @@ public final class TandemBackend: NSObject, PumpBackend {
         }
         responseApplier.setPumpFeatureBits = { [weak self] bits in self?.pumpFeatureBits = bits }
         responseApplier.setCalcSnapshot = { [weak self] snapshot in self?.calcSnapshot = snapshot }
-        responseApplier.setSleepScheduleWriteError = { [weak self] error in self?.sleepScheduleWriteError = error }
         responseApplier.setAlertList = { [weak self] list in self?.alertList = list }
         responseApplier.setAlarmList = { [weak self] list in self?.alarmList = list }
         responseApplier.setCGMAlertList = { [weak self] list in self?.cgmAlertList = list }
@@ -2129,10 +2116,10 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// Fresh-timestamp, policy-raised signed send for a control command, gated on the pump's own ack.
     /// `delivery` selects the WritePolicy + the insulin-delivery signing flag. Awaits the correlated,
     /// HMAC-verified reply (the same pattern `dismissNotificationTyped` uses) and throws
-    /// `BolusError.pumpRejected` on a non-accepted ack, so a refused write surfaces as a refusal rather
-    /// than reporting success — see `ControlAckInspection.swift`. A dropped/timed-out reply throws the
-    /// coordinator's own `TxError` unchanged, distinct from a definite rejection. Serialized behind any
-    /// other signed transaction so its awaited time-sync can't overlap.
+    /// `ControlWriteError.rejected` on a non-accepted ack, so a refused write surfaces as a refusal
+    /// rather than reporting success — see `ControlAckInspection.swift`. A dropped/timed-out reply
+    /// throws the coordinator's own `TxError` unchanged, distinct from a definite rejection. Serialized
+    /// behind any other signed transaction so its awaited time-sync can't overlap.
     private func sendControl(_ message: Message, delivery: Bool) async throws {
         guard snapshot.connection == .connected || snapshot.connection == .bolusing else {
             throw BolusError.notConnected
@@ -2148,10 +2135,10 @@ public final class TandemBackend: NSObject, PumpBackend {
                 let ack = try await awaitControlResponse(message, deadline: 5, delivery: delivery)
                 guard let controlAck = ack as? ControlAck else {
                     // Fail-safe: a parsed-but-unrecognized reply type is never treated as a silent success.
-                    throw BolusError.pumpRejected("The pump sent an unrecognized reply to a \(type(of: message)) request.")
+                    throw ControlWriteError.rejected("The pump sent an unrecognized reply to a \(type(of: message)) request.")
                 }
                 guard controlAck.isControlAckAccepted else {
-                    throw BolusError.pumpRejected(
+                    throw ControlWriteError.rejected(
                         "The pump rejected the \(controlAck.controlAckSubjectDescription) (status \(controlAck.controlAckStatus)).")
                 }
                 applyControlAckSideEffects(ack)
@@ -2849,9 +2836,8 @@ extension Notification.Name {
 
 // MARK: - TandemOnlyOps conformance
 
-/// `consumeSleepScheduleWriteError` above already satisfies `TandemOnlyOps`; `pumpIdentityDetail` is
-/// the one new member this conformance adds. History/diagnostics members live on
-/// `PumpHistoryProviding` / `PumpDiagnosticsProviding`.
+/// `pumpIdentityDetail` is the sole member `TandemOnlyOps` requires. History/diagnostics members live
+/// on `PumpHistoryProviding` / `PumpDiagnosticsProviding`.
 extension TandemBackend: TandemOnlyOps {
     /// The concrete-Tandem-only identity detail feeding `AppModel.currentPumpIdentity()`'s "real"
     /// branch (R28), reached via `source as? TandemOnlyOps`. Behavior-identical to the inline
