@@ -36,7 +36,6 @@ final class RefreshEffectsCoordinator {
     var onWidgetPublish: (PumpSnapshot, [GlucoseReading], [PumpAlert], Bool, String) -> Void = { _, _, _, _, _ in }
     var onHistoryPersist: ([GlucoseReading], [BolusMarker], GlucoseProvenance) -> Void = { _, _, _ in }
     var onEvaluateSavePinOffer: () -> Void = {}
-    var onAutoSyncPumpTime: () -> Void = {}
     /// Gated by the `canControlModes` input (`ModeAutomation.applyPendingIfDue(using:)` takes the concrete
     /// `AppModel`, so it can only be reached through a sink `AppModel` binds to itself — never a back-pointer).
     var onApplyModeAutomation: () -> Void = {}
@@ -137,8 +136,6 @@ final class RefreshEffectsCoordinator {
         recordStep("historyPersist")
         onEvaluateSavePinOffer()
         recordStep("evaluateSavePinOffer")
-        onAutoSyncPumpTime()
-        recordStep("maybeAutoSyncPumpTime")
         if canControlModes {
             onApplyModeAutomation()
             recordStep("modeAutomation")

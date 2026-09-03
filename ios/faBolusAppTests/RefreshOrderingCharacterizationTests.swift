@@ -30,7 +30,7 @@ struct RefreshOrderingCharacterizationTests {
         "maybeHandlePumpSwitch", "merge", "facadeAssign",
         "connectionEdge:", "freshnessEdge:", "stalenessWatchdog:", "urgentLowEdge:",
         "widgetPublish", "historyPersist",
-        "evaluateSavePinOffer", "maybeAutoSyncPumpTime",
+        "evaluateSavePinOffer",
         "statusPush"
     ]
 

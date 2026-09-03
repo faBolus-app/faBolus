@@ -871,7 +871,6 @@ public final class AppModel {
             self?.historyPersistence.persist(glucose: glucose, boluses: boluses, provenance: provenance)
         }
         refreshEffectsCoordinator.onEvaluateSavePinOffer = { [weak self] in self?.evaluateSavePinOffer() }
-        refreshEffectsCoordinator.onAutoSyncPumpTime = { [weak self] in self?.maybeAutoSyncPumpTime() }
         refreshEffectsCoordinator.onApplyModeAutomation = { [weak self] in
             guard let self else { return }
             ModeAutomation.applyPendingIfDue(using: self)  // takes the concrete AppModel — sink, not back-pointer
@@ -910,15 +909,9 @@ public final class AppModel {
         (source as? TandemBackend)?.onReliabilityEvent = { [weak self] event in
             self?.handleReliabilityEvent(event)
         }
-        // Correct the pump clock immediately when the phone's time or time zone changes (travel / DST).
-        for name in [NSNotification.Name.NSSystemClockDidChange, .NSSystemTimeZoneDidChange] {
-            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                Task { @MainActor in self?.maybeAutoSyncPumpTime(force: true) }
-            }
-        }
         // WARN-ONLY: refresh the Low Power Mode flag when iOS toggles power state, so the
-        // Dashboard advisory appears/clears live. Mirrors the clock observers above (a `[weak self]`
-        // block that hops to the main actor); like them it is left registered for the model's lifetime.
+        // Dashboard advisory appears/clears live. A `[weak self]` block that hops to the main actor,
+        // left registered for the model's lifetime.
         // This is purely advisory — it never changes any poll/scan/timer cadence and never gates a dose.
         NotificationCenter.default.addObserver(
             forName: Notification.Name.NSProcessInfoPowerStateDidChange,
@@ -972,7 +965,7 @@ public final class AppModel {
         // backend's background-execution window is needed (see `TandemBackend.appDidEnterBackground` /
         // `PumpBackgroundSession.enteredBackground`). Self-registered here (not from App.swift's
         // scenePhase handler) to match this file's own existing app-lifecycle-observer idiom (the
-        // clock-change / Low-Power-Mode observers above).
+        // Low-Power-Mode observer above).
         NotificationCenter.default.addObserver(
             forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -984,9 +977,8 @@ public final class AppModel {
         // work (CGM-data-loss notification, WidgetPublisher badge re-eval + App-Group re-stamp, Garmin/
         // watch mirror); on a pump-only user with a connected-but-silent link, `source.onChange` never fires,
         // so without this the aging work stalls indefinitely. Hoisted out of the failover-only `else if`
-        // above; identical body. Safe re "no BLE I/O into a dead/pre-auth link": `refresh()`'s only outbound
-        // action, `maybeAutoSyncPumpTime()`, is already gated on `snapshot.connection == .connected` and
-        // rate-limited to once/24 h, so a heartbeat tick never sends into a silent/pre-auth link.
+        // above; identical body. Safe re "no BLE I/O into a dead/pre-auth link": `refresh()` has no
+        // outbound action at all, so a heartbeat tick never sends into a silent/pre-auth link.
         arbiterTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
@@ -1387,7 +1379,7 @@ public final class AppModel {
     }
 
     /// Public entry point to the always-safe `refresh()` (re-publish + staleness re-eval;
-    /// its only outbound action, `maybeAutoSyncPumpTime()`, is self-gated on `.connected` and rate-limited).
+    /// it has no outbound action at all).
     /// Called on foreground-resume so a warm link's HUD/widget/Garmin mirror re-age even when no new pump
     /// frame arrived while suspended (poll timers don't tick while suspended). Issues no BLE read itself.
     public func publicRefresh() { refresh() }
@@ -1808,30 +1800,6 @@ public final class AppModel {
         provenanceRecorder.recordClinicianEditIfChanged(
             .global("maxBasal"), before: .double(before),
             afterOnSuccess: .double(clamped), succeeded: lastError == nil)
-    }
-    public func syncTimeToNow() async { await runControl(.syncTimeToNow) { try await source.syncTimeToNow() } }
-
-    private var timeSyncInFlight = false
-    private static let lastTimeSyncKey = "lastPumpTimeSyncEpoch"
-    /// Auto-sync the pump clock to the phone (opt-in via `autoSyncPumpTime`, **default OFF**). Runs at most
-    /// once a day on the refresh cadence, and immediately when `force` (a clock/time-zone change).
-    /// No-op unless a time-sync-capable pump is connected and idle; best-effort (retries next cycle).
-    func maybeAutoSyncPumpTime(force: Bool = false) {
-        guard AppSettings.shared.autoSyncPumpTime, capabilities.supportsTimeSync else { return }
-        guard snapshot.connection == .connected, !timeSyncInFlight else { return }
-        let lastEpoch = UserDefaults.standard.double(forKey: Self.lastTimeSyncKey)
-        let due =
-            force || lastEpoch == 0
-            || Date().timeIntervalSince1970 - lastEpoch > 24 * 60 * 60
-        guard due else { return }
-        timeSyncInFlight = true
-        Task { @MainActor in
-            defer { timeSyncInFlight = false }
-            await runControl(.syncTimeToNow) { try await source.syncTimeToNow() }
-            if lastError == nil {
-                UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Self.lastTimeSyncKey)
-            }
-        }
     }
     /// Whether clearing active notifications is required before entering cartridge mode (controlX2
     /// precondition). Exposed for the wizard's guard.

@@ -125,9 +125,8 @@ import faBolusCore
     }
 
     /// Safety: the unconditional heartbeat must be harmless on a cold, `.disconnected`, pump-only
-    /// model. `publicRefresh()` (the heartbeat/foreground call) issues no BLE read — its only outbound
-    /// action, `maybeAutoSyncPumpTime()`, is self-gated on `snapshot.connection == .connected` (verified in
-    /// source) and so no-ops here — and posts NO spurious safety notification: startup down is not a
+    /// model. `publicRefresh()` (the heartbeat/foreground call) issues no BLE read — it has no
+    /// outbound action at all — and posts NO spurious safety notification: startup down is not a
     /// pump-drop (`SafetyEdge.connection(prev: nil, now: .disconnected) == .none`) and a never-fresh feed
     /// is not data-loss (`freshness(false, false) == .none`). Repeated ticks stay silent and never connect.
     ///
