@@ -1667,6 +1667,12 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// machine — see `historySearchTarget`'s doc comment.
     private func findBolusInHistory(bolusId: Int) async -> BolusReconciliation {
         guard snapshot.connection == .connected else { return .unavailable }  // need the link to ask the pump
+        // Three independent entry points can converge on the same fresh-connect edge (launch, the
+        // `.connected` edge, `onPaired`), and this function has several `await` points a second call
+        // could land inside. Fail the overlapping call closed rather than let it share/corrupt the
+        // in-flight search's own `historySearchTarget`/`historySearchMatch`/`historySearchRecordsScanned`
+        // bookkeeping — see the doc comment above those properties.
+        guard historySearchTarget == nil else { return .unavailable }
         func resolved(_ deliveredUnits: Double) -> BolusReconciliation {
             // The pump's last-bolus/history record reports the delivered amount authoritatively. Neither
             // exposes a distinct "cancelled" flag, so a partial amount simply reports fewer delivered units.
@@ -1721,7 +1727,13 @@ public final class TandemBackend: NSObject, PumpBackend {
             while historySearchMatch == nil, Date() < pageDeadline {
                 try? await Task.sleep(nanoseconds: 30_000_000)  // 30 ms poll — see historySearchTarget's doc comment
             }
-            if let match = historySearchMatch { return resolved(match.deliveredUnits) }
+            if let match = historySearchMatch {
+                // Re-check against the id THIS call queried for, not merely that some match landed —
+                // a stale/mismatched target must fall through to fail-closed rather than resolve the
+                // wrong id.
+                guard match.bolusId == bolusId else { return .unavailable }
+                return resolved(match.deliveredUnits)
+            }
             if startLog <= range.firstSequenceNum { break }  // reached the bottom of the available range
             nextEnd = startLog - 1
         }

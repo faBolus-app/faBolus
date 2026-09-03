@@ -344,12 +344,16 @@ final class DeliveryLedgerCoordinator {
     /// (so nothing could have been delivered) → safe to settle as not-delivered. An entry WITH an id is
     /// reconciled by that id; a mismatch/`.unavailable` keeps it blocked (verify on the pump).
     func reconcileUnresolvedDeliveries() async {
+        // Collapse a legacy ledger holding more than one unresolved id-bearing entry — written before
+        // the global block existed, when the two fresh-connect triggers could still diverge onto
+        // distinct ids. Must run before the read below: the block guarantees at most one going forward,
+        // so more than one predates it entirely and needs re-establishing, not reconciling by id.
+        var changed = remoteBolusLedger.collapseLegacyMultiEntryUnresolved()
         let unresolved = remoteBolusLedger.unreconciled()
         guard !unresolved.isEmpty else {
             refreshDeliveryBlock()
             return
         }
-        var changed = false
         for entry in unresolved {
             // Decide from the EXPLICIT phase, not merely a missing id. `sentToPump == false`
             // proves pre-initiate (the id was never durably recorded, so the backend aborted before the

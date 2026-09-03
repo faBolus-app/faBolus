@@ -348,6 +348,32 @@ public struct RemoteBolusLedger: Codable, Sendable {
         }
     }
 
+    /// Collapse a legacy ledger holding more than one unresolved id-bearing entry — written before the
+    /// global block existed, when the two fresh-connect reconcile triggers could still diverge onto
+    /// distinct ids. Keeps the NEWEST unresolved entry unresolved (`order`'s own oldest→newest sequence
+    /// decides "newest", the same convention `terminalOutcomes` already documents) so `blockReason`'s
+    /// `!unresolved.isEmpty` arm still fires; settles every OLDER id-bearing entry with `.unknown` — its
+    /// outcome could not be established, never a guessed `.delivered`/`.failed`. Entries with no bolus id
+    /// (`sentToPump == false`) are left alone; that class is the not-delivered loop's business, not this
+    /// migration's. A ledger already satisfying the at-most-one invariant is untouched. Returns whether
+    /// anything was settled, so the caller knows whether a persist is owed.
+    @discardableResult
+    public mutating func collapseLegacyMultiEntryUnresolved(now: Date = Date()) -> Bool {
+        let idBearing = unreconciled().filter { $0.bolusId != nil }
+        guard idBearing.count > 1 else { return false }
+        let newest = idBearing[idBearing.count - 1]
+        var changed = false
+        for entry in idBearing where !(entry.peerId == newest.peerId && entry.requestId == newest.requestId) {
+            settle(
+                peerId: entry.peerId, requestId: entry.requestId,
+                status: RemoteCommand.Status.unknown.rawValue,
+                message: "Predates the single-outstanding-delivery guarantee — its outcome could not be established.",
+                now: now)
+            changed = true
+        }
+        return changed
+    }
+
     private mutating func evictIfNeeded() {
         // Never evict a non-terminal (still-tracked) entry — only settle-able history is LRU-dropped.
         while order.count > cap {

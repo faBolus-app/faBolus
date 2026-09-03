@@ -440,4 +440,84 @@ final class RemoteBolusLedgerTests: XCTestCase {
         XCTAssertTrue(l.hasExistingEntry(peerId: "watch", requestId: "r1"))
         XCTAssertFalse(l.hasExistingEntry(peerId: "garmin", requestId: "r1"))  // different peer, same id string
     }
+
+    // MARK: - collapseLegacyMultiEntryUnresolved
+    //
+    // With the global block in place at most one unresolved entry can exist going forward. A ledger
+    // written BEFORE that block existed can carry several — this collapses such a ledger back to the
+    // invariant every other reconciliation path assumes, without ever inventing a delivered/failed
+    // outcome for the ones it drops.
+
+    func testCollapseKeepsNewestUnresolvedAndSettlesOlderIdBearingEntriesAsUnknown() {
+        var l = RemoteBolusLedger()
+        _ = l.begin(peerId: "local", requestId: "old", doseKey: key(1.0))
+        l.markDelivering(peerId: "local", requestId: "old", bolusId: 100)
+        _ = l.begin(peerId: "local", requestId: "new", doseKey: key(2.0))
+        l.markDelivering(peerId: "local", requestId: "new", bolusId: 200)
+
+        let changed = l.collapseLegacyMultiEntryUnresolved()
+
+        XCTAssertTrue(changed)
+        let remaining = l.unreconciled()
+        XCTAssertEqual(remaining.count, 1, "only the newest unresolved id-bearing entry may survive")
+        XCTAssertEqual(remaining.first?.requestId, "new")
+        XCTAssertEqual(remaining.first?.bolusId, 200)
+        // The older entry is settled — terminally, honestly, never guessed delivered/failed.
+        XCTAssertEqual(l.state(peerId: "local", requestId: "old"), .terminal)
+        XCTAssertTrue(l.isSettled(peerId: "local", requestId: "old"))
+    }
+
+    func testCollapseLeavesASingleUnresolvedIdBearingEntryUntouched() {
+        var l = RemoteBolusLedger()
+        _ = l.begin(peerId: "local", requestId: "only", doseKey: key(1.0))
+        l.markDelivering(peerId: "local", requestId: "only", bolusId: 100)
+
+        let changed = l.collapseLegacyMultiEntryUnresolved()
+
+        XCTAssertFalse(changed, "a ledger already satisfying the at-most-one invariant must not be touched")
+        XCTAssertEqual(l.unreconciled().count, 1)
+        XCTAssertEqual(l.state(peerId: "local", requestId: "only"), .delivering)
+    }
+
+    /// Invariant this whole phase relies on: a collapse can NEVER release the delivery block —
+    /// `RemoteBolusLedger.blockReason`'s `!unresolved.isEmpty` arm must still fire afterwards.
+    func testCollapseCanNeverReleaseTheGlobalDeliveryBlock() {
+        var l = RemoteBolusLedger()
+        _ = l.begin(peerId: "local", requestId: "old", doseKey: key(1.0))
+        l.markDelivering(peerId: "local", requestId: "old", bolusId: 100)
+        _ = l.begin(peerId: "local", requestId: "new", doseKey: key(2.0))
+        l.markDelivering(peerId: "local", requestId: "new", bolusId: 200)
+
+        _ = l.collapseLegacyMultiEntryUnresolved()
+        let stillUnresolved = l.unreconciled()
+
+        XCTAssertEqual(stillUnresolved.count, 1, "the newest entry must survive unresolved")
+        XCTAssertNotNil(
+            RemoteBolusLedger.blockReason(
+                noDurableStore: false, ledgerFailedClosed: false, terminalSaveFailed: false,
+                unresolved: stillUnresolved, inFlightDeliveryKey: nil),
+            "a collapse must never be able to release the delivery block")
+    }
+
+    /// Pre-permission entries (`sentToPump == false`, no bolus id) are the not-delivered loop's
+    /// business, not the collapse's — it must scope strictly to id-bearing entries.
+    func testCollapseDoesNotTouchPrePermissionEntriesWithoutABolusId() {
+        var l = RemoteBolusLedger()
+        _ = l.begin(peerId: "local", requestId: "old", doseKey: key(1.0))
+        l.markDelivering(peerId: "local", requestId: "old", bolusId: 100)
+        _ = l.begin(peerId: "local", requestId: "new", doseKey: key(2.0))
+        l.markDelivering(peerId: "local", requestId: "new", bolusId: 200)
+        // Interrupted before the pump granted permission: no id, sentToPump stays false.
+        _ = l.begin(peerId: "local", requestId: "pre-permission", doseKey: key(3.0))
+        l.markDelivering(peerId: "local", requestId: "pre-permission")
+
+        let changed = l.collapseLegacyMultiEntryUnresolved()
+
+        XCTAssertTrue(changed)
+        let remaining = l.unreconciled()
+        XCTAssertEqual(Set(remaining.map(\.requestId)), Set(["new", "pre-permission"]))
+        XCTAssertEqual(
+            l.state(peerId: "local", requestId: "pre-permission"), .delivering,
+            "a pre-permission entry is not this migration's business")
+    }
 }

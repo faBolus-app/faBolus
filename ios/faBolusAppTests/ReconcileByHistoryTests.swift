@@ -251,4 +251,74 @@ struct ReconcileByHistoryTests {
             #expect(backend.deliveryOutcomeUnknown, "an exhausted search must NEVER clear the hold on a guess")
         }
     }
+
+    // MARK: - findBolusInHistory reentrancy guard
+    //
+    // Two reconcile triggers (`onPaired`, the `.connected` edge, launch) can land inside
+    // `findBolusInHistory` on the same fresh-connect edge. The entry guard must fail an overlapping
+    // call closed instead of sharing/corrupting the in-flight search's bookkeeping.
+
+    /// A second call for a DIFFERENT id arrives while the first call's history search is already in
+    /// flight — it must fail closed to `.unavailable` immediately, and the first call's own search must
+    /// resolve correctly against ITS OWN id, unaffected.
+    @Test func overlappingReconcileCallWhileASearchIsInFlightFailsClosedAndNeverCorruptsTheInFlightSearch() async {
+        await withNoCompetingBackfill {
+            let (backend, fake) = makeBackend()
+            let firstId = 600, secondId = 700, newerId = 906
+            scriptLastBolus(fake, bolusId: newerId)
+            scriptHistoryStatus(fake, numEntries: 1000, first: 1, last: 1000)
+
+            let firstTask = Task { await backend.reconcile(bolusId: firstId) }
+            try? await Task.sleep(nanoseconds: 150_000_000)  // let the first call reach the in-flight search
+
+            let overlappingResult = await backend.reconcile(bolusId: secondId)
+            #expect(
+                overlappingResult == .unavailable,
+                "an overlapping call must fail closed, never queue behind or share the in-flight search")
+
+            backend.injectHistoryLogFrameForTesting(
+                FakePumpTransport.historyLogStream(bolusRecordsById: [
+                    (
+                        seq: 995, pumpTimeSec: 900_000, bolusId: firstId, delivered: 1.25, iob: 0.5,
+                        completionStatusId: 3
+                    )
+                ]))
+            let firstResult = await firstTask.value
+            #expect(
+                firstResult == .resolved(deliveredUnits: 1.25, cancelled: false),
+                "the overlapping call must never corrupt the first call's own in-flight search")
+        }
+    }
+
+    /// The guard must leave no residue: once the first call's search settles (its `defer` clears
+    /// `historySearchTarget`), a fresh call for the id that failed closed during the overlap must reach
+    /// the pump normally — the guard only fails the OVERLAPPING window closed, not the id forever.
+    @Test func idThatFailedClosedDuringAnOverlapCanStillResolveOnANonOverlappingRetry() async {
+        await withNoCompetingBackfill {
+            let (backend, fake) = makeBackend()
+            let firstId = 601, secondId = 701, newerId = 907
+            scriptLastBolus(fake, bolusId: newerId)
+            scriptHistoryStatus(fake, numEntries: 1000, first: 1, last: 1000)
+
+            let firstTask = Task { await backend.reconcile(bolusId: firstId) }
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            let overlappingResult = await backend.reconcile(bolusId: secondId)
+            #expect(overlappingResult == .unavailable)
+
+            backend.injectHistoryLogFrameForTesting(
+                FakePumpTransport.historyLogStream(bolusRecordsById: [
+                    (
+                        seq: 995, pumpTimeSec: 900_000, bolusId: firstId, delivered: 1.0, iob: 0.5,
+                        completionStatusId: 3
+                    )
+                ]))
+            _ = await firstTask.value  // the first search settles, clearing historySearchTarget via its defer
+
+            scriptLastBolus(fake, bolusId: secondId, deliveredMilliunits: 4000)
+            let retried = await backend.reconcile(bolusId: secondId)
+            #expect(
+                retried == .resolved(deliveredUnits: 4.0, cancelled: false),
+                "the guard must never leave a stale always-busy state behind")
+        }
+    }
 }
