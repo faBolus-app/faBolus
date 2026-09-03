@@ -35,6 +35,12 @@ final class DeliveryLedgerCoordinator {
     var postSafety: (NotificationBroker.Category, NotificationBroker.Severity, String, String, String) -> Void = {
         _, _, _, _, _ in
     }
+    /// Bound to `AppModel`'s private `echo(_:)` — the SAME broadcast an immediate (live) delivery
+    /// already uses to reach every registered remote (Garmin today). Invoked once per terminal
+    /// settle below, so a dose resolved silently from pump history reaches the wrist too, not only
+    /// the local `postSafety` notification. No peer filtering here — mirrors `echo(_:)`'s own
+    /// unconditional broadcast; a remote that never registered has no handler to call.
+    var echo: (RemoteCommand) -> Void = { _ in }
     /// Bound to `AppModel.refresh()`.
     var refresh: () -> Void = {}
     /// Mirrors the freshly computed block reason into `AppModel`'s own `@Observable` stored property
@@ -439,6 +445,10 @@ final class DeliveryLedgerCoordinator {
                     .bolusReconciliation, .warning, "Bolus not delivered",
                     "A bolus that was interrupted never reached the pump (0 U). Re-enter it if you still need it.",
                     RemoteBolusLedger.reconciliationDedupeKey(peerId: entry.peerId, requestId: entry.requestId))
+                echo(
+                    RemoteCommand(
+                        kind: .bolusStatus, requestId: entry.requestId, status: .failed,
+                        message: "Interrupted before the pump accepted it — not delivered."))
                 recordReconciliation(.notDelivered)
                 changed = true
                 continue
@@ -474,6 +484,14 @@ final class DeliveryLedgerCoordinator {
                         ? "Reconciled from the pump: \(f) U delivered before it was cancelled."
                         : "Reconciled from the pump: \(f) U delivered.",
                     RemoteBolusLedger.reconciliationDedupeKey(peerId: entry.peerId, requestId: entry.requestId))
+                echo(
+                    RemoteCommand(
+                        kind: .bolusStatus, requestId: entry.requestId,
+                        status: cancelled ? .cancelled : .delivered,
+                        deliveredUnits: delivered,
+                        message: pumpKeyComparison == .grandfathered
+                            ? "Reconciled from pump history. Pump identity unknown for this entry."
+                            : "Reconciled from pump history."))
                 recordReconciliation(cancelled ? .cancelled : .delivered)
                 changed = true
             case .unavailable:

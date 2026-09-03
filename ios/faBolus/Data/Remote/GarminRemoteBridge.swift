@@ -367,6 +367,20 @@ func garminEchoesToSeed(
         }
 }
 
+/// Which `bolusStatus` outcomes are durably SETTLED — the only ones `markAlreadyEchoed` may act on.
+/// `.delivering` (the live in-flight notice a delivery sends when it starts) round-trips an ack just
+/// like a terminal echo, but marking IT here would durably poison the requestId before the real
+/// terminal outcome ever echoes on the same id — permanently losing it from the launch re-seed above.
+/// Exhaustive over `RemoteCommand.Status` so a new case must be classified here explicitly, not
+/// silently default into either bucket. Lives outside `#if GARMIN` for default-target coverage.
+func garminIsTerminalBolusStatus(_ status: String?) -> Bool {
+    guard let status, let parsed = RemoteCommand.Status(rawValue: status) else { return false }
+    switch parsed {
+    case .delivered, .cancelled, .failed, .unknown, .manuallyCleared: return true
+    case .pending, .awaitingConfirm, .delivering, .outOfRange: return false
+    }
+}
+
 // MARK: - ConnectIQ-free dismiss-ack decision + handler
 //
 // Lives OUTSIDE `#if GARMIN`, mirroring `garminEchoesToSeed`/`GarminMessageReadiness` above, precisely
@@ -1038,7 +1052,7 @@ final class GarminRemoteBridge: NSObject {
                         if let f = self.inFlight, f.isEcho, let rid = f.payload["requestId"] as? String {
                             if (f.payload["kind"] as? String) == "dismissAck" {
                                 Self.dismissReceiptStore.markAcked(peer: "garmin", requestId: rid)
-                            } else {
+                            } else if garminIsTerminalBolusStatus(f.payload["status"] as? String) {
                                 Self.markAlreadyEchoed(rid)
                             }
                         }

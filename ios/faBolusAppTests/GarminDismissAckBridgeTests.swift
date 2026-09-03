@@ -161,6 +161,80 @@ struct GarminDismissAckBridgeTests {
         #expect(rec.acksSent == [Call(requestId: "r4", alertId: 9, alertKind: 1)])
     }
 
+    // MARK: - garminIsTerminalBolusStatus (markAlreadyEchoed's terminal-only scope)
+
+    @Test func settledStatusesAreTerminal() {
+        for status in ["delivered", "cancelled", "failed", "unknown", "manuallyCleared"] {
+            #expect(garminIsTerminalBolusStatus(status), "\(status) must be classified terminal")
+        }
+    }
+
+    /// `.delivering` is the live in-flight notice a delivery sends when it STARTS — acking it must never
+    /// poison the requestId, or the real terminal outcome on the same id would be silently lost.
+    @Test func inFlightStatusesAreNotTerminal() {
+        for status in ["pending", "awaitingConfirm", "delivering", "outOfRange"] {
+            #expect(!garminIsTerminalBolusStatus(status), "\(status) must NOT be classified terminal")
+        }
+    }
+
+    @Test func unknownOrAbsentStatusIsNotTerminal() {
+        #expect(!garminIsTerminalBolusStatus("not-a-real-status"))
+        #expect(!garminIsTerminalBolusStatus(nil))
+    }
+
+    // MARK: - The `echo` seam (DeliveryLedgerCoordinator → AppModel.echo → the Garmin bridge)
+
+    /// A durable store preloaded with a fixed ledger, mirroring `SafetyNotificationTests.SeedLedgerStore`
+    /// — seeds the reconcile state directly, no delivery path, no gating dependency.
+    private final class SeedLedgerStore: RemoteBolusLedgerPersisting, @unchecked Sendable {
+        private var persisted: Data?
+        init(seed: RemoteBolusLedger) { persisted = try? JSONEncoder().encode(seed) }
+        func loadOutcome() -> RemoteBolusLedgerStore.LoadOutcome {
+            if let persisted, let l = try? JSONDecoder().decode(RemoteBolusLedger.self, from: persisted) {
+                return .init(ledger: l, failedClosed: false)
+            }
+            return .init(ledger: RemoteBolusLedger(), failedClosed: false)
+        }
+        func save(_ ledger: RemoteBolusLedger) throws { persisted = try JSONEncoder().encode(ledger) }
+        func saveBestEffort(_ ledger: RemoteBolusLedger) { try? save(ledger) }
+    }
+
+    /// A pre-permission entry (`sentToPump == false`) settles as not-delivered on reconcile — the
+    /// coordinator's echo seam must fire with that terminal outcome, reaching every registered remote
+    /// (`AppModel.addRemoteEcho`) exactly as an immediate live delivery already does.
+    @Test @MainActor func notDeliveredTerminalSettleInvokesTheEchoSeam() async {
+        var ledger = RemoteBolusLedger()
+        _ = ledger.begin(peerId: "garmin", requestId: "g1", doseKey: "garmin:g1:2.0")
+        ledger.markDelivering(peerId: "garmin", requestId: "g1")
+        let model = AppModel(source: MockBackend(), ledgerStore: SeedLedgerStore(seed: ledger))
+
+        var echoed: [RemoteCommand] = []
+        model.addRemoteEcho { echoed.append($0) }
+
+        await model.reconcileUnresolvedDeliveries()
+
+        #expect(echoed.map(\.requestId) == ["g1"])
+        #expect(echoed.first?.kind == .bolusStatus)
+        #expect(echoed.first?.status == .failed)
+    }
+
+    /// An id-bearing entry that stays `.unavailable` (the pump's history hasn't caught up) must NOT echo
+    /// anything — D-22's invariant is "never announce a non-terminal entry," and the echo seam must honor
+    /// it exactly like `postSafety` already does.
+    @Test @MainActor func stillUnresolvedEntryNeverInvokesTheEchoSeam() async {
+        var ledger = RemoteBolusLedger()
+        _ = ledger.begin(peerId: "garmin", requestId: "g2", doseKey: "garmin:g2:1.0")
+        ledger.markSent(peerId: "garmin", requestId: "g2", bolusId: 42)  // sentToPump; MockBackend.reconcile defaults to .unavailable
+        let model = AppModel(source: MockBackend(), ledgerStore: SeedLedgerStore(seed: ledger))
+
+        var echoed: [RemoteCommand] = []
+        model.addRemoteEcho { echoed.append($0) }
+
+        await model.reconcileUnresolvedDeliveries()
+
+        #expect(echoed.isEmpty, "an entry that stays unavailable must never echo a terminal outcome")
+    }
+
     // MARK: - GarminDismissReceiptStore (durability, two-lane TTL)
 
     private func freshStore() -> GarminDismissReceiptStore {

@@ -835,6 +835,7 @@ public final class AppModel {
         deliveryLedgerCoordinator.postSafety = { [weak self] category, severity, title, body, dedupeKey in
             self?.postSafety(category, severity: severity, title: title, body: body, dedupeKey: dedupeKey)
         }
+        deliveryLedgerCoordinator.echo = { [weak self] cmd in self?.echo(cmd) }
         deliveryLedgerCoordinator.refresh = { [weak self] in self?.refresh() }
         deliveryLedgerCoordinator.onDeliveryBlockChanged = { [weak self] reason in self?.deliveryBlockedReason = reason
         }
