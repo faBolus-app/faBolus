@@ -412,7 +412,7 @@ struct PairingSheet: View {
                     // No Mobi pairing instructions: this build rejects a Mobi at pairing, so telling
                     // the user how to pair one would be misleading. Generic t:slim copy stays.
                     Text(
-                        "On the pump: Options → Device Settings → Bluetooth → Pair Device. Unpair the official t:connect app first — only one connection at a time.\n\nMost pumps show a 6-digit code. Older pumps (firmware before v7.7) show a longer 16-character code with letters and numbers — enter it exactly as shown (it is case-sensitive); faBolus pairs either way automatically.\n\nIf faBolus has a saved PIN for this pump, it's prefilled here to skip re-typing. To pair a different pump, edit the code above or Clear saved PIN."
+                        "On the pump: Options → Device Settings → Bluetooth → Pair Device. Unpair the official t:connect app first — only one connection at a time.\n\nMost pumps show a 6-digit code. Older pumps (firmware before v7.7) show a longer 16-character code with letters and numbers — enter it exactly as shown (it is case-sensitive); faBolus pairs either way automatically."
                     )
                 }
             }
