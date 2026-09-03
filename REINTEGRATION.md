@@ -1,5 +1,47 @@
 # REINTEGRATION.md — dev/nudge
 
+## ⚠ 2026-09-03 amendment (Phase 31-02, D-26): this is a RE-PORT, not a cherry-pick
+
+This branch is ~440 commits behind `main` (D-26 estimated ~378 when Phase 31 was planned; the gap
+only grows as `main` advances) and preserves the eating-half feature at **pre-carve paths** that
+predate `main`'s later restructuring:
+
+- `ios/faBolus/Data/EatingLocationGate.swift` (main's current path, before this amendment's own
+  removal, was `ios/faBolus/Data/App/EatingLocationGate.swift`)
+- `ios/faBolus/Data/SmartAssist.swift` (this branch's copy carries `EatingAlert` inline —
+  `main`'s current path is `ios/faBolus/Data/App/SmartAssist.swift`, and `EatingAlert` no longer
+  exists there as of this amendment)
+- `ios/faBolus/Data/EatingAccelPipeline.swift`, `ios/faBolus/Data/EatingPersonalization.swift`
+- `ios/faBolus/Views/EatingNudgeSettingsView.swift`, `ios/faBolus/Views/SmartAssistSettingsView.swift`
+- `watch/faBolusWatch/WatchEatingSensor.swift`
+- `docs/operate/eating-nudges.md`
+- `Packages/faBolusCore/Sources/faBolusCore/EatingTrigger.swift` (+ its tests) — at the SAME path
+  `main` used until Phase 31-02 deleted it; this is the one file this branch and `main`'s pre-deletion
+  tree agreed on.
+
+**This branch does NOT contain `ios/faBolus/Data/App/AppModel+EatingNudge.swift` under any name.**
+On `main`, the eating-nudge methods (`updateEatingNudge`, `dismissEatingNudge`,
+`eatingNudgeActedOn`, `setupEatingPersonalization`, …) were extracted into that dedicated extension
+file well after this branch's tip; here, the equivalent code is still **inline in `AppModel.swift`**,
+pre-extension. Consequently `main`'s current shape — the extension file, the 12 `internal` stored
+properties `AppModelAccessWideningGuardTests` pinned before this phase decremented them away (11
+eating + `alertIntel`), and that guard's own denylist + closed-allowlist reshape (Phase 31-02
+Task 1) — postdates this branch entirely and has no analog here.
+
+**Honest restore consequence.** The reintegration steps below (written for Phase 4/NUDGE-01's
+removal, itself much earlier than Phase 31-02's) describe copying this branch's files back onto a
+`main` shape that no longer exists — there is no `AppModel+EatingNudge.swift` to diff against, no
+`AppModelAccessWideningGuardTests` allowlist to restore entries into, and the five orphaned
+`UserDefaults` keys Phase 31-02 purges once at launch (`eatingMealPlaces`, `alertIntel`,
+`eatingTriggerConfig`, `eatingNudgesEnabled`, `eatingLearnFromFeedback`) would need that purge
+either removed or left as a permanent no-op on a reintroduced feature. A literal cherry-pick would
+not build. The **feature** is nonetheless genuinely preserved, and this branch's version is a
+**superset** of what `main` carried at removal (it also has the Control-IQ-awareness readout views
+Phase 4 removed, per the "Feature preserved" section below) — so the correct fix is this honest
+amendment stating the branch's true relationship to current `main`, not a branch refresh. A future
+reintegrator should treat every path/shape claim below as approximate and re-derive against whatever
+`main` looks like at that time, exactly as step 3 already advises for the Settings scaffolding.
+
 ## Feature preserved
 
 faBolusNudge / Smart Assist (Phase 4, NUDGE-01): the eating-detection nudge pipeline and the
