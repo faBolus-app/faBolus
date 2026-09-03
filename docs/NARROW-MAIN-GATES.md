@@ -4,19 +4,31 @@
 gates below. Later phases (1–9.5) implement removals against this single convention instead of
 inventing their own shapes.
 
-> **⏸ PAUSED — cross-branch dose/signed byte-identity FREEZE (owner-directed 2026-08-23).**
-> The requirement that `Packages/faBolusCore`, `ios/faBolus/Data/AppModel.swift`, and
-> `ios/faBolus/Data/TandemBackend.swift` stay **byte-identical between `main` and every `dev/<surface>`
-> sub-branch** (INV-01/INV-03) is **paused** to unblock the `AppModel` / `TandemBackend` god-object
-> refactor — splitting those files necessarily makes the sub-branches diverge in these paths.
-> `scripts/check-dose-byte-identity.sh` is now non-blocking by default (prints a PAUSED banner, exits 0);
-> run it with `ENFORCE_BYTE_IDENTITY=1` to perform the legacy hard check / measure drift.
+> **RETIRED — cross-branch dose/signed byte-identity freeze.**
+> The requirement that the dose-path file set (see the section below) stay byte-identical between
+> `main` and every `dev/<surface>` sub-branch does not resume. It was never a running gate — it exited
+> 0 unless invoked with a manual override flag — and its enforced mode was a cross-branch `git diff`
+> that stayed red across every sub-branch it was ever run against, not a byte-parity oracle. No CI
+> workflow invoked it.
 >
-> **This does NOT relax dose-to-pump safety.** The real dose-wire correctness net is *separate* and
-> stays fully in force: the TandemKit **oracle byte-parity** fixtures, the `BolusMathParity`/`GatedPumpWrite`/
-> gate test suites, and `check-schema-drift.sh`. Any refactor touching delivery code must still keep those
-> green. **To resume the freeze:** revert this notice + the `ENFORCE_BYTE_IDENTITY` guard in the script, and
-> replay the dose/signed sources across the `dev/*` sub-branches so they are byte-identical to `main` again.
+> The dose-wire correctness net that actually runs is the TandemKit **JDK-21 oracle byte-parity** run
+> plus each phase's own named suites (`BolusMathParityTests`, the `GatedPumpWrite` guards, and the
+> other suites named per gate below), together with `check-schema-drift.sh`. Any change touching
+> delivery code keeps those green; that is the re-proof, not a cross-branch diff.
+
+## The dose-path file set (the membership marker)
+
+The dose/signed source set that every removal phase treats as dose-adjacent, **by file, not by
+symbol**:
+
+- `Packages/faBolusCore`
+- `ios/faBolus/Data/AppModel.swift`
+- `ios/faBolus/Data/TandemBackend.swift`
+
+Membership in this list is what a later phase checks before deciding whether an item needs the full
+dose re-proof (the oracle byte-parity run plus the named suites) rather than an ordinary suite run.
+The two-tier narrowing of this list — whether a file that only partially touches dose logic should
+count as a partial member — is an open question this document does not resolve.
 
 The v0.5.0 "narrow main" milestone subtracts surfaces from `main` one at a time. Every removal takes
 **exactly one of two shapes**, and which shape is allowed is decided by whether the surface is
@@ -28,7 +40,7 @@ dose-adjacent:
 | **Runtime gate** (settings-forced-value + UI-hide) | **Dose-adjacent** surfaces | Force the existing setting to its safe value + hide the UI; the evaluator/core is **NOT touched** | The dose/signed evaluator/core is **byte-identical across every branch** (INV-01/INV-03) |
 
 **Why dose-adjacent surfaces get a runtime gate, never a compile-deletion (D-03):** every one of the
-7 hides below touches code the `check-dose-byte-identity.sh` invariant protects (`AccessPolicy`,
+7 hides below touches code the dose-path file set above protects (`AccessPolicy`,
 `GatedPumpWrite`, `StackingGuard`, `deliverExtendedBolus`, the `PumpResponseApplier` time anchor). A
 `#if FABOLUS_*` around any of it would make the dose/signed core diverge between branches, the exact
 drift the exit gate forbids. So a dose-adjacent surface is removed by **forcing its setting off and
@@ -100,10 +112,9 @@ reusable pieces this capstone stood up. Run from the faBolus repo root:
 # (1) TAG CURRENCY: baseline annotated + ancestor + not-behind on all 3 repos
 ./scripts/verify-pre-narrow-tags.sh
 
-# (2) DOSE/SIGNED BYTE-IDENTICAL: main vs every dev/<surface> sub-branch (empty diff)
-#     ⏸ PAUSED (owner-directed 2026-08-23, for the god-object refactor) — now non-blocking by default.
-#     Use ENFORCE_BYTE_IDENTITY=1 to run the legacy hard check. See the PAUSED banner at the top of this doc.
-./scripts/check-dose-byte-identity.sh
+# (2) DOSE/SIGNED RE-PROOF: the cross-branch byte-identity freeze is retired (see the top of this
+#     doc). The dose re-proof is the TandemKit JDK-21 oracle byte-parity run plus the named suites in
+#     step (3) below — there is no standalone script to invoke here.
 
 # (3) GREEN MAIN + full safety suite
 swift test --package-path Packages/faBolusCore            # BolusMathParity + oracle-parity + guards
