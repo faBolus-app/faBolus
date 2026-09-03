@@ -4,11 +4,19 @@ import faBolusCore
 @testable import faBolus
 
 /// Pins `RemoteStatusComposer.compose`'s DYNAMIC, pump-tied
-/// `supportsDismissAck` emission directly against hand-built `RemoteStatusInputs`/`RemoteStatusSettings`
-/// (bypassing `AppModel`/`MockBackend`, whose `.full`/`.mobiAdvanced` capability presets both hardcode
-/// `supportsRemoteAlertDismiss == true` and so can't exercise the false/t:slim branch). Mirrors
+/// `supportsDismissAck` emission directly against hand-built `RemoteStatusInputs`/`RemoteStatusSettings`,
+/// bypassing `AppModel`/`MockBackend` entirely. Deterministic hand-built inputs let each branch be
+/// exercised in isolation, independent of whichever backend a future change wires up. Mirrors
 /// `RemoteStatusComposerEquivalenceTests`' fixed-clock idiom.
 struct RemoteStatusComposerDismissAckTests {
+
+    /// The shipping "Simulated t:slim X2" mock must never advertise a remote-alert-dismiss capability
+    /// the real t:slim lacks — it derives its capability set rather than hardcoding it.
+    @MainActor
+    @Test func tSlimMockNeverAdvertisesRemoteAlertDismiss() {
+        let mock = MockBackend(isMobi: false)
+        #expect(mock.capabilities.supportsRemoteAlertDismiss == false)
+    }
 
     private func settings() -> RemoteStatusSettings {
         RemoteStatusSettings(

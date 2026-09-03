@@ -10,7 +10,7 @@ public final class MockBackend: PumpBackend {
     // t:slim X2 (bolus/status only), selected via the backend picker. The control wizards still
     // require AppSettings.advancedControlEnabled = on and only appear for the Mobi simulator.
     private let mobi: Bool
-    public var capabilities: PumpCapabilities { mobi ? .mobiAdvanced : .full }
+    public var capabilities: PumpCapabilities { .derive(isMobi: mobi, features: nil) }
     public private(set) var snapshot = PumpSnapshot()
     public private(set) var glucoseHistory: [GlucoseReading] = []
     public private(set) var iobHistory: [IOBSample] = []
