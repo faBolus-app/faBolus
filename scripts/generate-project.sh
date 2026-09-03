@@ -246,8 +246,8 @@ echo "  → FABOLUS_MOBI=$MOBI (placeholder plumbing — documented NO-OP this m
 xcodegen generate --spec "$SPEC"
 
 # §1.3 version-pin (D-04): restore the tracked, root-level canonical Package.resolved into the
-# generated project's swiftpm dir so a fresh generation reuses the pinned graph (TandemKit +
-# faBolusNudge/LoopAlgorithm) instead of re-resolving latest for every transitive dependency.
+# generated project's swiftpm dir so a fresh generation reuses the pinned graph (TandemKit)
+# instead of re-resolving latest for every transitive dependency.
 if [ -f "$REPO/Package.resolved" ]; then
   SWIFTPM_DIR="$REPO/faBolus.xcodeproj/project.xcworkspace/xcshareddata/swiftpm"
   mkdir -p "$SWIFTPM_DIR"

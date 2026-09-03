@@ -1,22 +1,6 @@
 {
   "pins" : [
     {
-      "identity" : "fabolusnudge",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/faBolus-app/faBolusNudge.git",
-      "state" : {
-        "revision" : "c3d1e2284249e1667c8c17f37eeecb28c605d4a5"
-      }
-    },
-    {
-      "identity" : "loopalgorithm",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/LoopKit/LoopAlgorithm.git",
-      "state" : {
-        "revision" : "2f5c630084aa0d72b8d14999e1e0f7c836b0c341"
-      }
-    },
-    {
       "identity" : "swift-custom-dump",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/pointfreeco/swift-custom-dump",

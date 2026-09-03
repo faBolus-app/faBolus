@@ -129,7 +129,7 @@ jobs:
       # it is deferred because it touches the Garmin safety path that master-plan P11/P12 rewrite.
       - name: Generate the Xcode project (no private SDK, no Garmin)
         working-directory: repos/faBolus
-        run: FABOLUS_TANDEM_LOCAL=1 FABOLUS_NUDGE=0 FABOLUS_GARMIN=0 ./scripts/generate-project.sh
+        run: FABOLUS_TANDEM_LOCAL=1 FABOLUS_GARMIN=0 ./scripts/generate-project.sh
 
       # Align CI to the toolchain the team develops/ships on (Xcode 26.x / Swift 6.2). The runner's
       # default was Xcode 16.4 (Swift 6.1), whose region-isolation ("sending") checker has known
@@ -169,7 +169,7 @@ jobs:
       - name: Run app behavioral tests (Simulator)
         working-directory: repos/faBolus
         run: |
-          FABOLUS_NUDGE=0 FABOLUS_GARMIN=0 ./scripts/test-ios.sh \
+          FABOLUS_GARMIN=0 ./scripts/test-ios.sh \
             -skip-testing:faBolusAppTests/BolusEntrySnapshotTests \
             -skip-testing:faBolusAppTests/SettingsSnapshotTests \
             -skip-testing:faBolusAppTests/DashboardSnapshotTests
@@ -205,7 +205,7 @@ jobs:
       # `https://github.com/faBolus-app/TandemKit.git` at the pinned revision in project.yml, not the
       # branch-matched sibling checkout the other three build jobs use.
       - name: Generate the Xcode project (default pinned TandemKit, no private SDK, no Garmin)
-        run: FABOLUS_NUDGE=0 FABOLUS_GARMIN=0 ./scripts/generate-project.sh
+        run: FABOLUS_GARMIN=0 ./scripts/generate-project.sh
 
       # Asserts the build stamp generate-project.sh just wrote actually describes this checkout, and
       # that it never became git-tracked — see the script header for why either failure mode matters.

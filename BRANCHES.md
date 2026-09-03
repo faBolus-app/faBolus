@@ -260,7 +260,7 @@ tags as part of this contract*:
 
 faBolus now commits a canonical, root-level `Package.resolved` (restored into the generated project by
 `scripts/generate-project.sh` after each `xcodegen generate`), locking `tandemkit` at the pinned
-revision above alongside the existing `fabolusnudge`/`loopalgorithm` pins. This closes contract clause 3.
+revision above. This closes contract clause 3.
 The TandemKit repo's own resolved file stays gitignored by design (TandemKit has no cross-repo package
 dependencies of its own to lock). Committing this file does not change any shipped delivery/dosing/
 alerting behavior — it is dependency-resolution metadata only.
