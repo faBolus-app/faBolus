@@ -1319,6 +1319,15 @@ public final class TandemBackend: NSObject, PumpBackend {
         snapshot.glucoseDate = date
     }
 
+    /// Test seam: whether a bolus-calculator snapshot (op-115) is currently cached, since `calcSnapshot`
+    /// is private. Lets a test prove a pump switch clears it rather than carrying the previous pump's
+    /// carb ratio/ISF/target forward.
+    var calcSnapshotSetForTesting: Bool { calcSnapshot != nil }
+    /// Test seam: whether the pump↔phone clock anchor is currently cached, since `pumpTimeAnchor` is
+    /// private. Lets a test prove a pump switch clears it rather than converting a new pump's timestamps
+    /// against the previous pump's clock.
+    var pumpTimeAnchorSetForTesting: Bool { pumpTimeAnchor != nil }
+
     #endif
 
     // MARK: - PumpDataSource
