@@ -3,7 +3,7 @@ import Foundation
 
 /// Imported HealthKit history is display-only and must never enter the signed dose path, or
 /// anywhere else in the app — the surface itself was deleted, so its symbols must never come back.
-/// Widened repo-wide (D-12) after `AppModel+HealthKit.swift` — the only declarer of both forbidden
+/// Widened repo-wide after `AppModel+HealthKit.swift` — the only declarer of both forbidden
 /// symbols — was removed: a four-file dose-path-only scan would otherwise pass vacuously forever,
 /// proving nothing about the rest of the tree. This suite is a KEEP, not a candidate for deletion.
 struct HealthKitImportDosePathGuardTests {
@@ -68,7 +68,7 @@ struct HealthKitImportDosePathGuardTests {
     }
 
     /// The forbidden HealthKit import/export symbols. Both were declared ONLY in the now-deleted
-    /// `AppModel+HealthKit.swift` (D-11).
+    /// `AppModel+HealthKit.swift`.
     private static let forbiddenSymbols = ["HealthKitHistoryImporter", "HealthKitExporter"]
 
     @Test func repoWideScanResolvesAPlausibleNumberOfFiles() throws {
