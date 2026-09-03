@@ -31,15 +31,37 @@ pre-removal tip, identical to `main` before Phase 7 Plan 02 (07-02, P-B) ran. `m
    digest view itself (a pre-existing gap this task's own deletion surfaced, not a plan-listed file).
 5. `git rm`'d `EndoReportPDFTests.swift` (tests the deleted PDF render path). Kept
    `LoopInsightsExclusionGuardTests.swift` completely UNMODIFIED (it only asserts the ABSENCE of
-   excluded upstream files — vacuously true whether or not the 8 benign kept-then-removed files exist).
-6. Left `AppModel.therapyInsights()` (`AppModel.swift:1409-1414`) and `SmartAssist.swift` (35 lines)
-   COMPLETELY untouched — no dose-file edit, no `SmartAssist.swift` edit. Both become orphaned-but-
-   compiled the moment `DataHistoryView.swift`'s consumer is gone; ZERO stub work was needed for this
-   surface (RESEARCH: "No stub work is actually required").
-7. Authored a new `RetrospectiveAbsenceGuardTests.swift` on `main` (source-scans `DataHistoryView.swift`
-   for the absence of `TherapyInsightItem`/`therapyInsights`) — this branch has no such file (it
-   predates the removal); do not port it over on reintegration, it asserts the opposite of what this
-   branch's tree looks like.
+   excluded upstream files — vacuously true whether or not the 8 benign kept-then-removed files exist;
+   remains a KEEP as of Phase 31, C-KEPT, still non-vacuous — 8 of 11 `LoopInsights` matches survive).
+6. **Phase 31 unit 3 (31-03, this correction) deleted the rest of the chain outright.** `main` no
+   longer has `AppModel.therapyInsights()`, `SmartAssist.swift` (the file that held `TherapyInsightItem`
+   + `enum SmartAssist` — it died whole once Phase 31 unit 2 had already removed its other member,
+   `EatingAlert`), `Packages/HistoryStore/Sources/HistoryStore/FaBolusInsightsAggregator.swift`,
+   `Packages/faBolusCore/Sources/faBolusCore/InsightsGlucoseUnitContext.swift`, or
+   `Packages/faBolusCore/Sources/faBolusCore/PatternInsights.swift` — none survive on `main`, all four
+   plus `SmartAssist.swift` and `AppModel.therapyInsights()` are on this branch's tip, untouched.
+   ⚠ Supersedes the earlier "COMPLETELY untouched, ZERO stub work needed" note below, which was accurate
+   only up to Phase 31 unit 2 — as of unit 3 there IS work required (see the reintegration path).
+7. No file named `RetrospectiveAbsenceGuardTests.swift` was ever authored on `main` — the note
+   previously here claiming one was is corrected; it never existed in `git ls-files` at any point in
+   this branch's history against `main`. The absence-guard `main` actually carries for this surface is
+   `ios/faBolusAppTests/FeatureSurfaceAbsenceGuardTests.swift` (Phase 31 unit 3, D-23), which scans
+   `GlucoseChartView.swift` for the absence of `GraphDetailReadout` and asserts
+   `Packages/faBolusCore/Sources/faBolusCore/GraphDetailReadout.swift` does not exist on disk — it does
+   not scan `DataHistoryView.swift` or reference `TherapyInsightItem`/`therapyInsights` at all, so there
+   is no case to delete on reintegration for this branch's feature.
+
+## GraphDetailReadout dependency (owner decision 2026-08-31, D-21)
+
+This branch's tree (cut from the same pre-narrow baseline as `dev/graph-detail`) also carries
+`ios/faBolus/Views/GraphDetailView.swift` and the un-carved `GlucoseChartView.swift` scrubber section,
+both of which reference `Packages/faBolusCore/Sources/faBolusCore/GraphDetailReadout.swift`.
+`GraphDetailReadout.swift` was deleted from `main` outright by Phase 31 unit 3 (no compile shim) — so
+**this branch fails to compile at its next sync from `main` independent of whether the Retrospective
+feature itself is reintegrated.** `GraphDetailReadout.swift` must return to `main` (via `dev/graph-detail`
+reintegrating, or a standalone re-add) before or alongside this branch's own reintegration; see
+`dev/graph-detail:REINTEGRATION.md` for that file's own restore path. `BRANCHES.md` records that
+`experimental` needs the same fix-up on its next sync, for the same reason.
 
 ## Reintegration path
 
@@ -51,8 +73,16 @@ pre-removal tip, identical to `main` before Phase 7 Plan 02 (07-02, P-B) ran. `m
 3. Re-apply the 4 `AppSettings.swift` properties + their `init`-restore lines, and the 3
    `caregiverDigestNoticeAckAt`-family members (all 4+3=7 members total), from this branch's copy.
 4. Re-apply `EndoReportPDFTests.swift` from this branch's tip.
-5. Delete the post-removal `RetrospectiveAbsenceGuardTests.swift` case (it asserts absence).
-6. Do NOT touch `AppModel.swift` or `SmartAssist.swift` — neither was ever edited by the removal;
-   reintegration needs no change to either.
-7. Run the full exit gate (`check-dose-byte-identity.sh`, `xcodebuild build`, full test suite) to confirm
-   the re-added surface compiles and nothing else regressed.
+5. There is no post-removal absence-guard case naming this surface to delete (see item 7 above) — the
+   file the earlier version of this note described was never authored.
+6. **Re-apply, from this branch's tip:** `AppModel.therapyInsights()`, `SmartAssist.swift` (whole file —
+   `TherapyInsightItem` + `enum SmartAssist`), `Packages/HistoryStore/Sources/HistoryStore/
+   FaBolusInsightsAggregator.swift` (+ its tests), `Packages/faBolusCore/Sources/faBolusCore/
+   InsightsGlucoseUnitContext.swift` (+ its tests), and `Packages/faBolusCore/Sources/faBolusCore/
+   PatternInsights.swift` (+ its tests) — all six deleted from `main` by Phase 31 unit 3. Re-apply
+   `GraphDetailReadout.swift` (+ its tests) too if `dev/graph-detail` has not already restored it (see
+   the dependency note above) — this branch's own scrubber-adjacent files need it independent of the
+   Retrospective feature.
+7. Run the full exit gate (`xcodebuild build`, full test suite, TandemKit JDK-21 oracle) to confirm the
+   re-added surface compiles and nothing else regressed. `check-dose-byte-identity.sh` no longer exists
+   on `main` (Phase 34 wave 1, D-47) — it is not part of the gate to re-run.
