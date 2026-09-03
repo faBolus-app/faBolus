@@ -226,6 +226,78 @@ struct PumpTransientErrorNeverDurablyBlacklistsTests {
         #expect(b.badOpcodesForTesting.contains(homeScreenOpcode))
     }
 
+    // MARK: - The two reconciliation reads (op58/op60) must never durably blacklist, even on a genuine BAD_OPCODE
+
+    /// op60 `HistoryLogRequest` is the paged read the bolus-settle history fallback depends on. Unlike
+    /// the counter-case above, EVEN a genuine, authoritative `BAD_OPCODE(6)` must not durably blacklist
+    /// it — a durable skip here deletes the settle path's own fallback, not merely a diagnostic read.
+    @Test func op60HistoryLogPageReadNeverDurablyBlacklistsEvenOnAGenuineBadOpcode() {
+        let (store, suite, defaults) = isolatedStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let key = "pump-reconciliation-op60-\(UUID().uuidString)"
+        let op60 = HistoryLogRequest.props.opCode
+
+        let b = TandemBackend(testTransport: FakePumpTransport())
+        b.configurePersistedBadOpcodesForTesting(store: store, pumpKey: key)
+        b.startPollingForTesting()
+        // `.immediate` is the durability an authoritative BAD_OPCODE(6) resolves to — the strongest
+        // (single-observation) persistence request the production path can make.
+        b.insertBadOpcodeForTesting(op60)
+
+        #expect(
+            b.badOpcodesForTesting.contains(op60),
+            "op60 is still skipped in-memory for the REST of this connection — no re-thrash")
+        #expect(
+            !store.learnedOpcodes(for: key).contains(op60),
+            "op60 must never be durably blacklisted — one BAD_OPCODE cannot permanently delete the bolus-settle history fallback"
+        )
+
+        var dispatched: [UInt8] = []
+        b.onReadDispatchedForTesting = { _, op in dispatched.append(op) }
+        b.startPollingForTesting()
+        #expect(
+            !b.badOpcodesForTesting.contains(op60),
+            "op60 must be dropped from the never-resend set on the next connection cycle — re-probed, never permanent")
+    }
+
+    /// Same contract for op58 `HistoryLogStatusRequest` — the range read `findBolusInHistory` needs
+    /// before it can even walk the first page.
+    @Test func op58HistoryLogStatusReadNeverDurablyBlacklistsEvenOnAGenuineBadOpcode() {
+        let (store, suite, defaults) = isolatedStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let key = "pump-reconciliation-op58-\(UUID().uuidString)"
+        let op58 = HistoryLogStatusRequest.props.opCode
+
+        let b = TandemBackend(testTransport: FakePumpTransport())
+        b.configurePersistedBadOpcodesForTesting(store: store, pumpKey: key)
+        b.startPollingForTesting()
+        b.insertBadOpcodeForTesting(op58)
+
+        #expect(
+            !store.learnedOpcodes(for: key).contains(op58),
+            "op58 must never be durably blacklisted — a rejected range read must self-heal, not permanently disable the history search"
+        )
+    }
+
+    /// The hold-out must be scoped to EXACTLY op58/op60 — an unrelated read (op56, the counter-case
+    /// above) still blacklists durably from a genuine BAD_OPCODE. Guards against a widened set that
+    /// would quietly reintroduce the owner's originally-reported defect elsewhere.
+    @Test func theReconciliationHoldOutIsScopedToExactlyOp58AndOp60() {
+        let (store, suite, defaults) = isolatedStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let key = "pump-reconciliation-scope-\(UUID().uuidString)"
+
+        let b = TandemBackend(testTransport: FakePumpTransport())
+        b.configurePersistedBadOpcodesForTesting(store: store, pumpKey: key)
+        b.startPollingForTesting()
+        b.insertBadOpcodeForTesting(homeScreenOpcode)
+
+        #expect(
+            store.learnedOpcodes(for: key).contains(homeScreenOpcode),
+            "an opcode outside the reconciliation set must still durably blacklist exactly as before — this hold-out is not a general widening of the exclusion set"
+        )
+    }
+
     // MARK: - The ambiguous opcode-less UNDEFINED_ERROR needs corroboration
 
     /// `UNDEFINED_ERROR(0)` with an opcode-less `[0,0]` cargo is the API-2.5 op-20 case AND what a
