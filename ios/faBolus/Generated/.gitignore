@@ -1,0 +1,11 @@
+# Everything in this directory is written by scripts/stamp-revision.sh before each generate/build and
+# is deliberately NOT committed. The stamp holds the build commit's short hash, and a commit's hash is
+# a function of its own contents, so a committed hash could only ever be a PREVIOUS commit's —
+# permanently stale, which is the exact failure the diagnostics build-provenance stamp exists to avoid.
+#
+# This file is committed for two reasons beyond documenting that: it makes the directory exist in a
+# fresh clone (the recursive `ios/faBolus` source path picks up whatever XcodeGen finds here, and git
+# cannot track an empty directory), and it makes an accidental `git add` of the generated file
+# impossible without an explicit -f.
+*
+!.gitignore

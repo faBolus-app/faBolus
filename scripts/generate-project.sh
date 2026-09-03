@@ -256,6 +256,12 @@ echo "  → FABOLUS_MOBI=$MOBI (placeholder plumbing — documented NO-OP this m
 [ "$TEMPRATE_CIQ_EXPERIMENTAL" = 0 ] && echo "  → building WITHOUT the D-02 experimental Control-IQ+ temp-rate overturn (default — CIQ-off is still required to set a temp rate)"
 [ "$TEMPRATE_CIQ_EXPERIMENTAL" = 1 ] && echo "  → ⚠️  D-02 EXPERIMENTAL Control-IQ+ temp-rate overturn ON (FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL=1) — a temp rate can now be set while Control-IQ+ is on, UNVERIFIED until the Phase-11 saline bench. Local/bench builds only."
 
+# Written before xcodegen runs: XcodeGen resolves the app target's source list (the recursive `- path:
+# ios/faBolus`) at generation time, so the generated AppRevision.swift must already exist on disk or it
+# is never picked up. Every build path (build-sim.sh, test-ios.sh, CI) already runs this script, so this
+# single hook reaches all of them.
+./scripts/stamp-revision.sh >/dev/null
+
 xcodegen generate --spec "$SPEC"
 
 # §1.3 version-pin (D-04): restore the tracked, root-level canonical Package.resolved into the

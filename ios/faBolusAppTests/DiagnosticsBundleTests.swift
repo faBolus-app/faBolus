@@ -58,4 +58,13 @@ struct DiagnosticsBundleTests {
         #expect(result1 == result2)
     }
 
+    /// `buildProvenanceSection` wraps an already-rendered literal stamp in a `[Build]` section
+    /// verbatim — it never re-derives the dirty marker or the hash itself.
+    @Test func buildProvenanceSectionRendersSuppliedStampInsideBuildSection() {
+        let block = DiagnosticsBundle.buildProvenanceSection(buildStamp: "abc1234+")
+
+        #expect(block.contains("[Build]"))
+        #expect(block.contains("Commit: abc1234+"))
+    }
+
 }

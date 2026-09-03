@@ -5,14 +5,22 @@ import Foundation
 /// the BLE-session-log line-builder, and this type's own identity/telemetry helpers). Never
 /// re-derives or reformats any surface's own state, and performs no I/O of its own.
 ///
-/// PHI: `DiagnosticsBundle` adds no field of its own — the aggregate can only ever contain what
-/// each already-reviewed surface section already emits.
+/// PHI: `DiagnosticsBundle` adds exactly one non-PHI provenance value of its own — a build-commit
+/// stamp (`buildProvenanceSection`) naming which binary produced the export. Every other section
+/// still only contains what each already-reviewed surface emits.
 enum DiagnosticsBundle {
     /// Concatenates already-formatted section strings into the single shareable bundle, in the SAME
     /// stable order they are supplied. Pure: no I/O, no async, no re-derivation — identical inputs
     /// always produce identical output.
     static func build(sections: [String]) -> String {
         sections.joined(separator: "\n")
+    }
+
+    /// `[Build]` — names the exact binary an export came from. `buildStamp` is already the fully
+    /// rendered value (short commit hash, plus a trailing "+" when the tree was dirty, or "unknown"
+    /// outside a git checkout) — this helper only wraps it in the section shape, never re-derives it.
+    static func buildProvenanceSection(buildStamp: String) -> String {
+        "\n[Build]\nCommit: \(buildStamp)"
     }
 
     /// Header + explicit "not currently reachable" placeholder for a surface whose section string is
