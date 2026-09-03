@@ -15,9 +15,10 @@
 
 # Safety-critical core: the idempotency ledger, remote-command classification/validation, the send
 # dispositions, and the transport gating. Dosing changes get extra review (CONTRIBUTING.md).
+# (RemoteLink.swift, the Apple-Watch WatchConnectivity transport, was retired in Phase 17.5 and
+# preserved on `dev/watch-host` — no `main` path left to route review for it.)
 /Packages/faBolusCore/Sources/faBolusCore/RemoteBolusLedger.swift   @zgranowitz
 /Packages/faBolusCore/Sources/faBolusCore/RemoteCommand.swift       @zgranowitz
-/Packages/faBolusCore/Sources/faBolusCore/RemoteLink.swift          @zgranowitz
 /Packages/faBolusCore/Sources/faBolusCore/RemoteTransport.swift     @zgranowitz
 
 # The pump-facing backend + the central therapy gate.

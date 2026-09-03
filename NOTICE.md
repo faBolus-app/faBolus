@@ -11,7 +11,7 @@ your fork is the official project or is endorsed by it.
 
 It is built on the Tandem pump Bluetooth protocol as reverse-engineered by the
 **[pumpX2](https://github.com/jwoglom/pumpx2)** project (© James Woglom, MIT License). faBolus is an
-independent reimplementation for iPhone / Apple Watch / Garmin; it is **not** a fork of, affiliated
+independent reimplementation for iPhone / Garmin; it is **not** a fork of, affiliated
 with, or endorsed by pumpX2/controlX2.
 
 The protocol/auth/Bluetooth core lives in the separate **TandemKit** package, which vendors

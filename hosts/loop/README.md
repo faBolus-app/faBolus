@@ -1,8 +1,7 @@
 # Loop host adapter (design scaffold — open contribution, not built)
 
-This directory sketches how **Loop** (or any app) can host the faBolus remotes (Apple Watch /
-faBolusGarmin) by implementing the remote protocol, so the same watch apps work with Loop instead of
-faBolus. It is **not compiled into faBolus** (it would pull in LoopKit); it's a reference for a Loop
+This directory sketches how **Loop** (or any app) can host the faBolus remotes (faBolusGarmin) by
+implementing the remote protocol, so the same remote apps work with Loop instead of faBolus. It is **not compiled into faBolus** (it would pull in LoopKit); it's a reference for a Loop
 integration that would live in Loop's own build, or graduate into an optional package here.
 
 **This is intentionally left for a contributor to build** — the design and the contract are settled;
@@ -25,8 +24,9 @@ reference host. A Loop adapter does the same, mapping the contract ↔ LoopKit:
 ## Rules
 - **Enforce the interlocks:** a confirmation step + max-bolus clamp on the host side. The remote's
   1-2-3/hold confirm is a second factor, not the only one.
-- **Transport:** Apple Watch via `WatchConnectivity` (see `RemoteLink`); Garmin via the Connect IQ
-  iOS SDK registered for the faBolusGarmin app UUID. The wire payload is identical either way.
+- **Transport:** Garmin via the Connect IQ iOS SDK registered for the faBolusGarmin app UUID. (An
+  Apple Watch transport via `RemoteLink`/`WatchConnectivity` existed but is retired — not on
+  `main`; see `BRANCHES.md`.)
 - **Licensing:** keep this adapter compatible with LoopKit's license; it stays an optional module,
   separate from faBolus's MIT core.
 

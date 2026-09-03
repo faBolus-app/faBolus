@@ -38,7 +38,7 @@ TandemKit  (Swift package — build once, reuse everywhere)
 └── TandemBLE        Core Bluetooth central
 
 faBolus  (this repo, consumes TandemKit via SPM)
-├── Packages/faBolusCore/  contracts + models (RemoteCommand, RemoteLink, PumpBackend, GlucoseSource, GlucoseArbiter)
+├── Packages/faBolusCore/  contracts + models (RemoteCommand, PumpBackend, GlucoseSource, GlucoseArbiter)
 ├── Packages/ShareClient/  Dexcom Share API client (vendored from LoopKit, MIT)
 ├── ios/faBolus/         iOS host app — owns the pump connection; tabbed modern UI
 │   └── Data/Sources/    the Dexcom Share glucose source + its stored credentials
@@ -58,7 +58,8 @@ faBolusGarmin  (separate repo)
 
 !!! note "Other remotes live on `experimental`"
     A few other remote surfaces were built and then scoped out of this narrow-`main` build — each
-    is preserved on its own `dev/*` branch, not part of the app you're reading about here.
+    is preserved on its own `dev/*` branch, not part of the app you're reading about here (e.g. the
+    Apple Watch app's `RemoteLink` WatchConnectivity transport, on `dev/watch-host`).
 
 ## Who owns the pump
 

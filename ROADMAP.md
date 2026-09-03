@@ -126,8 +126,9 @@ Work required (restore from `dev/watch-host` first):
    `deliverBolus`/`cancelBolus`/`dismissNotification` + snapshot building into `WatchPumpClient`
    (the `TandemBLE`/`TandemAuth`/`TandemMessages` libs already run on watchOS unchanged).
 2. **Reverse the relay** — the watch becomes the `statusCommand` producer / `remoteDeliver`
-   executor / echo source; iOS becomes a `RemoteClientModel` consumer. `RemoteLink`
-   (WatchConnectivity) has no host/remote role today (cf. `PeerLink.Role`) — add one.
+   executor / echo source; iOS becomes a `RemoteClientModel` consumer. On `dev/watch-host`,
+   `RemoteLink` (WatchConnectivity) has no host/remote role (cf. `PeerLink.Role`) — add one when
+   restoring.
 3. **Single-pairing eviction UX** — pairing the watch unpairs the phone; add a clear hand-off flow.
 4. **On-device host testing** — validate the watch-hosted signed delivery path (extends the
    currently-untested Phase-1 direct-pump work).
