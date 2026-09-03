@@ -210,6 +210,11 @@ jobs:
       - name: Generate the Xcode project (default pinned TandemKit, no private SDK, no Garmin)
         run: FABOLUS_NUDGE=0 FABOLUS_GARMIN=0 ./scripts/generate-project.sh
 
+      # Asserts the build stamp generate-project.sh just wrote actually describes this checkout, and
+      # that it never became git-tracked — see the script header for why either failure mode matters.
+      - name: Check the build-stamp freshness/tracking guard
+        run: ./scripts/check-version-sync.sh
+
       - name: Resolve the pinned TandemKit dependency graph
         run: |
           set -o pipefail
