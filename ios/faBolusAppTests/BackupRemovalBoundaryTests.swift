@@ -31,6 +31,9 @@ import faBolusCore
     @Test func credentialStoreCgmSecretAccountsRelocationStaysReachable() {
         #expect(!CredentialStore.cgmSecretAccounts.isEmpty)
         #expect(CredentialStore.cgmSecretAccounts.contains("dexcomshare.password"))
+        #expect(CredentialStore.cgmSecretAccounts.contains("nightscout.token"))
+        #expect(CredentialStore.cgmSecretAccounts.contains("nightscout.apisecret"))
+        #expect(CredentialStore.cgmSecretAccounts.contains("librelinkup.password"))
     }
 
     // MARK: - ERASE STAYS REACHABLE
