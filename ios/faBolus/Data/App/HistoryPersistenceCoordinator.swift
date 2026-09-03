@@ -1,6 +1,7 @@
 import Foundation
 import faBolusCore
 import HistoryStore
+import os
 
 /// Persistent-history write-through + identity-diff bookkeeping, extracted from `AppModel` behind
 /// the unchanged `GlucoseHistoryStore` seam. Owns the store, the two identity-diff key sets, and
@@ -18,12 +19,26 @@ import HistoryStore
 /// compiling unchanged.
 @MainActor
 final class HistoryPersistenceCoordinator {
+    private static let log = Logger(subsystem: "com.fabolus.app", category: "history")
 
     /// Persistent history (SwiftData) — write-through target for long-term glucose/bolus history;
     /// powers time-in-range / future plotting and feeds the advisory tools. Optional so a store-init
     /// failure never breaks the app. `#if DEBUG` `setHistoryStoreForTesting` substitutes an in-memory
     /// store for test isolation; production never reassigns it after init.
-    private(set) var store: GlucoseHistoryStore? = try? GlucoseHistoryStore()
+    private(set) var store: GlucoseHistoryStore?
+
+    /// Opens the persistent store, surfacing (not discarding) any `ModelContainer` failure so the
+    /// whole history subsystem going dark is visible somewhere instead of silent. `store` stays nil on
+    /// failure — every caller already treats a nil store as "no persisted history" — but the cause is
+    /// now logged rather than swallowed by a bare `try?`.
+    init() {
+        do {
+            store = try GlucoseHistoryStore()
+        } catch {
+            Self.log.error("GlucoseHistoryStore failed to open: \(String(describing: error), privacy: .public)")
+            store = nil
+        }
+    }
 
     // Identity-diff bookkeeping (this cycle's readings vs. what the LAST `persist` call already
     // wrote), NOT a forward-only date watermark. A forward watermark (`$0.date > lastGlucoseIngest`)
