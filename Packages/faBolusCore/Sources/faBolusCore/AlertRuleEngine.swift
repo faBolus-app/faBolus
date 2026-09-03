@@ -133,6 +133,18 @@ public enum PumpAlertCopyOverlay {
         }
         return (decodedTitle, decodedDetail ?? "")
     }
+
+    /// Namespace-guarded entry point: the overlay's id-keyed name table is scoped to alerts only, so a
+    /// reminder, alarm, malfunction or CGM alert whose id happens to collide with an alert-overlay entry
+    /// (e.g. a hardware malfunction at bit 50, the same id as "Control-IQ high") passes straight through
+    /// on its own decoded copy instead of borrowing the alert's. `.alert`-kind notifications defer to the
+    /// unguarded `resolve` above unchanged.
+    public static func resolve(kind: PumpAlertKind, id: Int, decodedTitle: String, decodedDetail: String?)
+        -> (title: String, detail: String)
+    {
+        guard kind == .alert else { return (decodedTitle, decodedDetail ?? "") }
+        return resolve(id: id, decodedTitle: decodedTitle, decodedDetail: decodedDetail)
+    }
 }
 
 /// Neutral, non-directive copy: true when `text` contains an imperative dosing verb that would

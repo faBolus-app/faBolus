@@ -137,15 +137,18 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// `NotificationCoordinator` and never calls those private methods itself.
     public var onReliabilityEvent: (@MainActor (ReliabilityEvent) -> Void)?
 
-    /// Map a PumpX2 notification onto the backend-neutral `PumpAlert`. Runs the
-    /// decoded title/detail through `PumpAlertCopyOverlay` so a handful of ids TandemKit's own name
-    /// table doesn't yet carry (e.g. Control-IQ High Alert #50) still surface with clean, neutral,
-    /// Tandem-sourced copy in the existing mirror — never overriding a name TandemKit already supplies.
+    /// Map a PumpX2 notification onto the backend-neutral `PumpAlert`. Runs the decoded title/detail
+    /// through `PumpAlertCopyOverlay` so a handful of ids TandemKit's own name table doesn't yet carry
+    /// (e.g. Control-IQ High Alert #50) still surface with clean, neutral, Tandem-sourced copy in the
+    /// existing mirror — never overriding a name TandemKit already supplies. The overlay is namespace-
+    /// guarded to `.alert`-kind notifications only: reminders, alarms, malfunctions and CGM alerts share
+    /// the same bit-id space as alerts but must never borrow copy from it.
     private static func toAlert(_ n: PumpNotification) -> PumpAlert {
-        let copy = PumpAlertCopyOverlay.resolve(id: n.id, decodedTitle: n.title, decodedDetail: n.detail)
+        let alertKind = PumpAlertKind(rawValue: n.kind.rawValue) ?? .alert
+        let copy = PumpAlertCopyOverlay.resolve(
+            kind: alertKind, id: n.id, decodedTitle: n.title, decodedDetail: n.detail)
         return PumpAlert(
-            id: n.id, kind: PumpAlertKind(rawValue: n.kind.rawValue) ?? .alert,
-            title: copy.title, detail: copy.detail, isDismissable: n.dismissable)
+            id: n.id, kind: alertKind, title: copy.title, detail: copy.detail, isDismissable: n.dismissable)
     }
 
     /// Classify a pump notification into a `NotificationBroker.AlertSafetyClass` from its OWN identity
