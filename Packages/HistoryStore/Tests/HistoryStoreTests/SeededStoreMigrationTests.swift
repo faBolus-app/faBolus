@@ -12,7 +12,71 @@ import faBolusCore
 ///
 /// Seeds a real on-disk container declaring the CURRENT full entity set, then reopens the SAME file
 /// with a container declaring only the survivor entities, and asserts the survivor rows are still
-/// readable.
+/// readable. The 4 removed entities no longer exist in `HistoryStore`, so the seed step declares
+/// local shadow `@Model` types below, same class names as the production types they stand in for, so
+/// SwiftData derives the same on-disk table names and the seed is a genuine 7-table store.
+@Model private final class StoredSite {
+    var siteID: String
+    var kind: String
+    var bodySide: String
+    var normalizedX: Double
+    var normalizedY: Double
+    var note: String?
+    var date: Date
+    var sourceID: String
+    var recordedAt: Date
+    init(siteID: String, kind: String, bodySide: String,
+         normalizedX: Double, normalizedY: Double, note: String?,
+         date: Date, sourceID: String, recordedAt: Date) {
+        self.siteID = siteID; self.kind = kind; self.bodySide = bodySide
+        self.normalizedX = normalizedX; self.normalizedY = normalizedY
+        self.note = note
+        self.date = date; self.sourceID = sourceID; self.recordedAt = recordedAt
+    }
+}
+
+@Model private final class StoredCaffeine {
+    var entryID: String
+    var milligrams: Double
+    var source: String
+    var date: Date
+    var sourceID: String
+    var recordedAt: Date
+    init(entryID: String, milligrams: Double, source: String,
+         date: Date, sourceID: String, recordedAt: Date) {
+        self.entryID = entryID; self.milligrams = milligrams; self.source = source
+        self.date = date; self.sourceID = sourceID; self.recordedAt = recordedAt
+    }
+}
+
+@Model private final class StoredAlcohol {
+    var entryID: String
+    var standardDrinks: Double
+    var source: String
+    var date: Date
+    var sourceID: String
+    var recordedAt: Date
+    init(entryID: String, standardDrinks: Double, source: String,
+         date: Date, sourceID: String, recordedAt: Date) {
+        self.entryID = entryID; self.standardDrinks = standardDrinks; self.source = source
+        self.date = date; self.sourceID = sourceID; self.recordedAt = recordedAt
+    }
+}
+
+@Model private final class StoredHeartRate {
+    var entryID: String
+    var bpm: Double
+    var source: String
+    var date: Date
+    var sourceID: String
+    var recordedAt: Date
+    init(entryID: String, bpm: Double, source: String,
+         date: Date, sourceID: String, recordedAt: Date) {
+        self.entryID = entryID; self.bpm = bpm; self.source = source
+        self.date = date; self.sourceID = sourceID; self.recordedAt = recordedAt
+    }
+}
+
 @MainActor
 final class SeededStoreMigrationTests: XCTestCase {
     private func makeTempStoreURL() -> URL {
