@@ -258,18 +258,6 @@ public final class AppSettings {
         get { _ciqCeilingFlagsEnabled.wrappedValue }
         set { _ciqCeilingFlagsEnabled.wrappedValue = newValue }
     }
-    // Generic "About Smart Features" one-time explainer — a durable per-install marker,
-    // same idiom as `stackingGuardNoticeAckAt`: NOT a `SettingsCatalog` row, never backed up /
-    // iCloud-synced (a synced ack must not pre-suppress the notice on another device). Fired on
-    // first ENABLE of a Smart Features surface (e.g. SiteAtlas). nil ⇒ never shown. NEVER gates a write.
-    public var smartFeaturesNoticeAckAt: Date? {
-        didSet { d.set(smartFeaturesNoticeAckAt?.timeIntervalSince1970 ?? 0, forKey: "smartFeaturesNoticeAckAt") }
-    }
-    public var hasAcknowledgedSmartFeaturesNotice: Bool { smartFeaturesNoticeAckAt != nil }
-    public func acknowledgeSmartFeaturesNotice() {
-        if smartFeaturesNoticeAckAt == nil { smartFeaturesNoticeAckAt = Date() }
-    }
-
     /// Minutes after which a CGM reading is **stale**: shown de-emphasized and no longer used to
     /// auto-fill a bolus correction. A stale reading is never used regardless of whether it's still
     /// shown (greyed) or hidden. Also propagated to the remotes.
@@ -779,17 +767,6 @@ public final class AppSettings {
     /// Record the one-time acknowledgment (idempotent — keeps the first timestamp).
     public func acknowledgeClinicianTier() { if clinicianTierAckAt == nil { clinicianTierAckAt = Date() } }
 
-    // One-time "editing these values affects AUTOMATED delivery, not just manual boluses"
-    // acknowledgment, shown at the first therapy-segment edit. Same idiom as `clinicianTierAckAt`:
-    // durable per-install marker, NOT a catalog row — never backed up, never iCloud-synced (a synced ack
-    // must not silently pre-suppress the disclosure on another device). NEVER gates a write. nil ⇒ never shown.
-    public var therapyEditAckAt: Date? {
-        didSet { d.set(therapyEditAckAt?.timeIntervalSince1970 ?? 0, forKey: "therapyEditAckAt") }
-    }
-    public var hasAcknowledgedTherapyEdit: Bool { therapyEditAckAt != nil }
-    /// Record the one-time therapy-edit acknowledgment (idempotent — keeps the first timestamp).
-    public func acknowledgeTherapyEdit() { if therapyEditAckAt == nil { therapyEditAckAt = Date() } }
-
     // One-time "you're turning on real insulin delivery from this remote" acknowledgment,
     // shown the FIRST time each surface's enable is switched on. Same idiom as `clinicianTierAckAt`:
     // durable per-install markers, NOT catalog rows — never backed up, never iCloud-synced (a synced ack
@@ -800,19 +777,6 @@ public final class AppSettings {
     public var hasAcknowledgedGarminBolusWarning: Bool { garminBolusWarningAckAt != nil }
     public func acknowledgeGarminBolusWarning() {
         if garminBolusWarningAckAt == nil { garminBolusWarningAckAt = Date() }
-    }
-
-    // One-time DosingSafetyKit→SG advisory-behavior-change notice, shown the first time the bolus
-    // screen appears. Same idiom as `therapyEditAckAt`: durable per-install marker, NOT a
-    // `SettingsCatalog` row — never backed up, never iCloud-synced (a synced ack must not silently
-    // pre-suppress the notice on another device). NEVER gates a write. nil ⇒ never shown.
-    public var stackingGuardNoticeAckAt: Date? {
-        didSet { d.set(stackingGuardNoticeAckAt?.timeIntervalSince1970 ?? 0, forKey: "stackingGuardNoticeAckAt") }
-    }
-    public var hasAcknowledgedStackingGuardNotice: Bool { stackingGuardNoticeAckAt != nil }
-    /// Record the one-time acknowledgment (idempotent — keeps the first timestamp).
-    public func acknowledgeStackingGuardNotice() {
-        if stackingGuardNoticeAckAt == nil { stackingGuardNoticeAckAt = Date() }
     }
 
     /// `.shared` uses `.standard`; tests inject a fresh empty suite. Not
@@ -854,17 +818,11 @@ public final class AppSettings {
         } else {
             historyCoverage = HistoryCoverageMap()
         }
-        let sfAck = d.double(forKey: "smartFeaturesNoticeAckAt")  // 0 (absent) ⇒ never acknowledged
-        smartFeaturesNoticeAckAt = sfAck > 0 ? Date(timeIntervalSince1970: sfAck) : nil
         glucoseHideDelayMinutes = d.object(forKey: "glucoseHideDelayMinutes") as? Int  // nil = Never
         let ackTs = d.double(forKey: "clinicianTierAckAt")  // 0 (absent) ⇒ never acknowledged
         clinicianTierAckAt = ackTs > 0 ? Date(timeIntervalSince1970: ackTs) : nil
-        let teAck = d.double(forKey: "therapyEditAckAt")  // 0 (absent) ⇒ never acknowledged
-        therapyEditAckAt = teAck > 0 ? Date(timeIntervalSince1970: teAck) : nil
         let gAck = d.double(forKey: "garminBolusWarningAckAt")
         garminBolusWarningAckAt = gAck > 0 ? Date(timeIntervalSince1970: gAck) : nil
-        let sgAck = d.double(forKey: "stackingGuardNoticeAckAt")  // 0 (absent) ⇒ never acknowledged
-        stackingGuardNoticeAckAt = sgAck > 0 ? Date(timeIntervalSince1970: sgAck) : nil
         // nil (absent, or a stored non-positive) ⇒ the ceiling is OFF; only a positive value arms it.
         let rbc = d.object(forKey: "remoteBolusCeiling") as? Double
         remoteBolusCeiling = (rbc.map { $0.isFinite && $0 > 0 } ?? false) ? rbc : nil

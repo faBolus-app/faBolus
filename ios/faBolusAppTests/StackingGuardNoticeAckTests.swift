@@ -2,9 +2,8 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// Pins ack-state persistence for the stacking-guard notice (`stackingGuardNoticeAckAt` is
-/// idempotent — keeps the first timestamp). The notice UI is gone from `BolusEntryView`; this
-/// suite also greps that source so `showStackingGuardNotice` / `stackingGuardNoticeCopy` cannot
+/// The stacking-guard notice UI is gone from `BolusEntryView`, and so is its ack flag; this
+/// suite greps that source so `showStackingGuardNotice` / `stackingGuardNoticeCopy` cannot
 /// return without a test failure.
 @Suite(.serialized) @MainActor
 struct StackingGuardNoticeAckTests {
@@ -21,22 +20,6 @@ struct StackingGuardNoticeAckTests {
     private static var bolusEntryViewSource: String {
         let url = repoRoot.appendingPathComponent("ios/faBolus/Views/BolusEntryView.swift")
         return (try? String(contentsOf: url, encoding: .utf8)) ?? ""
-    }
-
-    // MARK: - Ack-state persistence (independent of the notice UI — kept as before)
-
-    @Test func acknowledgeIsIdempotentAndPersists() {
-        let s = AppSettings.shared
-        let saved = s.stackingGuardNoticeAckAt
-        defer { s.stackingGuardNoticeAckAt = saved }
-
-        s.stackingGuardNoticeAckAt = nil
-        #expect(!s.hasAcknowledgedStackingGuardNotice)
-        s.acknowledgeStackingGuardNotice()
-        #expect(s.hasAcknowledgedStackingGuardNotice)
-        let first = s.stackingGuardNoticeAckAt
-        s.acknowledgeStackingGuardNotice()  // idempotent — must keep the first timestamp
-        #expect(s.stackingGuardNoticeAckAt == first)
     }
 
     // MARK: - The notice UI never presents — proven at the source level

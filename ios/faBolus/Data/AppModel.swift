@@ -1312,9 +1312,8 @@ public final class AppModel {
 
     /// Reconnect the pump link if a pairing exists and it's currently disconnected — pure link
     /// maintenance, never a dose. Promoted here (from a private `RootTabView` helper of the exact
-    /// same name/guard) so the Live Activity's "Refresh" `LiveActivityIntent` can call the SAME seam
-    /// via `LiveActivityIntentBridge.reconnect` instead of re-implementing the guard —
-    /// `RootTabView` now delegates to this method too, so there is still exactly one implementation.
+    /// same name/guard) so `RootTabView` and any other caller share exactly one implementation of
+    /// the guard rather than each re-implementing it.
     public func autoReconnectIfNeeded() async {
         guard hasStoredPairing, snapshot.connection == .disconnected else { return }
         await connect()
