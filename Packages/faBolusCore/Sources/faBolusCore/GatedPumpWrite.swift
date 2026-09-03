@@ -11,7 +11,7 @@ import Foundation
 ///
 /// **Not included:** `setPumpSounds` — a signed `PumpBackend` method with **no `AppModel` entry point**
 /// today (nothing surfaces it, so it is not a reachable action; add a case when it is surfaced) — and the
-/// pure reads (`refresh*`, `reconcile`, `readG6TransmitterId`), which mutate nothing.
+/// pure reads (`refresh*`, `reconcile`), which mutate nothing.
 public enum GatedPumpWrite: String, CaseIterable, Sendable {
     // Delivery — durable idempotency ledger + global delivery block (`runLedgeredDelivery`).
     case deliverBolus, deliverExtendedBolus

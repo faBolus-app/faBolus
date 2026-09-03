@@ -543,7 +543,6 @@ public final class TandemBackend: NSObject, PumpBackend {
         set { detectedIsMobi = newValue }
     }
     #endif
-    private var cgmHwCont: CheckedContinuation<CGMHardwareInfoResponse?, Never>?
     // `profileActiveIdpId` lives on `PumpResponseApplier` — used only by the IDP-cascade cases there.
     /// The profile whose segments are being read into snapshot.viewedProfileSegments (-1 = none).
     private var viewedProfileId = -1
@@ -731,18 +730,15 @@ public final class TandemBackend: NSObject, PumpBackend {
         return try await body()
     }
 
-    /// Resume any non-coordinator waiter on a transport/parse error. The signed request/
-    /// response flow is now owned by `client.transactions`, which the client itself fails-closed
-    /// (`failAll(.connectionLost)`) on every disconnect / read / notify-state error — so here we only
-    /// resume the remaining hand-owned waiter (the best-effort CGM-hardware read) and belt-and-suspenders
-    /// reset the write policy. A lost reply *after* the initiate write surfaces to the delivery
-    /// caller as `TxError` from `sendAwaitingResponse` and is mapped to `.indeterminate` in `perform`.
+    /// Belt-and-suspenders reset on a transport/parse error. The signed request/response flow is
+    /// owned by `client.transactions`, which the client itself fails-closed (`failAll(.connectionLost)`)
+    /// on every disconnect / read / notify-state error. A lost reply *after* the initiate write surfaces
+    /// to the delivery caller as `TxError` from `sendAwaitingResponse` and is mapped to `.indeterminate`
+    /// in `perform`.
     private func failPumpWaiters(_ error: Error) {
         _ = error
-        cgmHwCont?.resume(returning: nil)
-        cgmHwCont = nil
-        // Belt-and-suspenders: a terminated transaction must never leave delivery writes enabled on the
-        // persistent client into the next connection.
+        // A terminated transaction must never leave delivery writes enabled on the persistent client
+        // into the next connection.
         client.writePolicy = .readOnly
     }
 
@@ -990,11 +986,6 @@ public final class TandemBackend: NSObject, PumpBackend {
         responseApplier.mergeNotifications = { [weak self] in self?.mergeNotifications() }
         responseApplier.setLastDismissAck = { [weak self] ack in self?.lastDismissAck = ack }
         responseApplier.renderDebug = { [weak self] in self?.renderDebug() }
-        responseApplier.resumeCGMHardwareInfoContinuation = { [weak self] m in
-            guard let self, let c = self.cgmHwCont else { return }
-            self.cgmHwCont = nil
-            c.resume(returning: m)
-        }
     }
 
     /// Wires `historySyncCoordinator`'s injected closures — called from BOTH
@@ -2519,30 +2510,6 @@ public final class TandemBackend: NSObject, PumpBackend {
         try await sendControl(
             CgmRiseFallAlertRequest(alertType: alertType, enable: enabled, mgPerDl: mgdlPerMin, bitmask: 0),
             delivery: false)
-    }
-
-    /// Read the paired G6 CGM transmitter ID from the pump (CGMHardwareInfoResponse.hardwareInfoString),
-    /// so the CGM-failover setup can auto-fill it instead of the user looking it up. Requires a live
-    /// connection; returns nil on timeout / not connected / empty.
-    public func readG6TransmitterId() async -> String? {
-        guard snapshot.connection == .connected || snapshot.connection == .bolusing else { return nil }
-        let resp: CGMHardwareInfoResponse? = await withCheckedContinuation { cont in
-            cgmHwCont = cont
-            // 6 s timeout so the button never hangs if the pump doesn't answer.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
-                guard let self, let c = self.cgmHwCont else { return }
-                self.cgmHwCont = nil
-                c.resume(returning: nil)
-            }
-            do { try client.send(CGMHardwareInfoRequest()) } catch {
-                if let c = cgmHwCont {
-                    cgmHwCont = nil
-                    c.resume(returning: nil)
-                }
-            }
-        }
-        let id = resp?.hardwareInfoString.trimmingCharacters(in: .whitespacesAndNewlines)
-        return (id?.isEmpty ?? true) ? nil : id
     }
 
     // MARK: - Helpers

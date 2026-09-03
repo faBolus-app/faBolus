@@ -157,10 +157,6 @@ public protocol PumpBackend: AnyObject {
     /// Play the "find my pump" sound. Non-insulin.
     func playFindMyPump() async throws
 
-    /// Read the paired G6 CGM transmitter ID from the pump (for CGM-failover auto-fill). Returns nil
-    /// if the pump can't/doesn't report it. Read-only.
-    func readG6TransmitterId() async -> String?
-
     // MARK: - Mobi workflows (A4) — the screenless Mobi needs a phone for these.
 
     // CGM sensor session (non-insulin control). G6: set the transmitter id, then start with the
@@ -419,7 +415,6 @@ public extension PumpBackend {
     func stopTempBasal() async throws { throw ControlError.notSupported }
     func setMode(_ command: ModeCommand) async throws { throw ControlError.notSupported }
     func playFindMyPump() async throws { throw ControlError.notSupported }
-    func readG6TransmitterId() async -> String? { nil }
 
     func startG6Session(transmitterId: String, sensorCode: Int) async throws { throw ControlError.notSupported }
     func startG7Session(pairingCode: Int) async throws { throw ControlError.notSupported }

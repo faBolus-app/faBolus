@@ -124,9 +124,6 @@ final class PumpResponseApplier {
     var setLastDismissAck: (String) -> Void = { _ in }
     /// Bound to `TandemBackend.renderDebug()`.
     var renderDebug: () -> Void = {}
-    /// Bound to a closure resolving `TandemBackend.cgmHwCont` — mirrors the inline
-    /// `if let c = cgmHwCont { cgmHwCont = nil; c.resume(returning: m) }` this case ran before the move.
-    var resumeCGMHardwareInfoContinuation: (CGMHardwareInfoResponse) -> Void = { _ in }
 
     // MARK: - State exclusively owned by the moved cascades
 
@@ -500,8 +497,6 @@ final class PumpResponseApplier {
                     snap.sleepWindowEndMinute = nil
                 }
             }
-        case let m as CGMHardwareInfoResponse:
-            resumeCGMHardwareInfoContinuation(m)
         default: break
         }
     }
