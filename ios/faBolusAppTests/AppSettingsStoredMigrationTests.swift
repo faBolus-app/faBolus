@@ -368,51 +368,6 @@ struct AppSettingsStoredMigrationTests {
             key: "nightscoutUploadEnabled", backingLabel: "__nightscoutUploadEnabled", defaultValue: false,
             \.nightscoutUploadEnabled)
     }
-    @Test func healthKitImportCarbsEnabledStoredRoundTrip() {
-        assertBoolStoredRoundTrip(
-            key: "healthKitImportCarbsEnabled", backingLabel: "__healthKitImportCarbsEnabled", defaultValue: false,
-            \.healthKitImportCarbsEnabled)
-    }
-    @Test func healthKitImportInsulinEnabledStoredRoundTrip() {
-        assertBoolStoredRoundTrip(
-            key: "healthKitImportInsulinEnabled", backingLabel: "__healthKitImportInsulinEnabled", defaultValue: false,
-            \.healthKitImportInsulinEnabled)
-    }
-    @Test func healthKitImportHeartRateEnabledStoredRoundTrip() {
-        assertBoolStoredRoundTrip(
-            key: "healthKitImportHeartRateEnabled", backingLabel: "__healthKitImportHeartRateEnabled",
-            defaultValue: false, \.healthKitImportHeartRateEnabled)
-    }
-    @Test func healthKitImportGlucoseEnabledStoredRoundTrip() {
-        assertBoolStoredRoundTrip(
-            key: "healthKitImportGlucoseEnabled", backingLabel: "__healthKitImportGlucoseEnabled", defaultValue: false,
-            \.healthKitImportGlucoseEnabled)
-    }
-    @Test func healthKitAutoImportEnabledStoredRoundTrip() {
-        assertBoolStoredRoundTrip(
-            key: "healthKitAutoImportEnabled", backingLabel: "__healthKitAutoImportEnabled", defaultValue: false,
-            \.healthKitAutoImportEnabled)
-    }
-    @Test func healthKitExportCarbsEnabledStoredRoundTrip() {
-        assertBoolStoredRoundTrip(
-            key: "healthKitExportCarbsEnabled", backingLabel: "__healthKitExportCarbsEnabled", defaultValue: false,
-            \.healthKitExportCarbsEnabled)
-    }
-    @Test func healthKitExportInsulinEnabledStoredRoundTrip() {
-        assertBoolStoredRoundTrip(
-            key: "healthKitExportInsulinEnabled", backingLabel: "__healthKitExportInsulinEnabled", defaultValue: false,
-            \.healthKitExportInsulinEnabled)
-    }
-    @Test func healthKitExportGlucoseEnabledStoredRoundTrip() {
-        assertBoolStoredRoundTrip(
-            key: "healthKitExportGlucoseEnabled", backingLabel: "__healthKitExportGlucoseEnabled", defaultValue: false,
-            \.healthKitExportGlucoseEnabled)
-    }
-    @Test func healthKitAutoExportEnabledStoredRoundTrip() {
-        assertBoolStoredRoundTrip(
-            key: "healthKitAutoExportEnabled", backingLabel: "__healthKitAutoExportEnabled", defaultValue: false,
-            \.healthKitAutoExportEnabled)
-    }
     @Test func autoExerciseModeStoredRoundTrip() {
         assertBoolStoredRoundTrip(
             key: "autoExerciseMode", backingLabel: "__autoExerciseMode", defaultValue: false, \.autoExerciseMode)

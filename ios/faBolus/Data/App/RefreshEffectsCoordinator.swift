@@ -38,8 +38,6 @@ final class RefreshEffectsCoordinator {
     var onWidgetPublish: (PumpSnapshot, [GlucoseReading], [PumpAlert], Bool, String) -> Void = { _, _, _, _, _ in }
     var onNightscoutSync: (PumpSnapshot, [GlucoseReading], [BolusMarker]) -> Void = { _, _, _ in }
     var onHistoryPersist: ([GlucoseReading], [BolusMarker], GlucoseProvenance) -> Void = { _, _, _ in }
-    var onHealthKitAutoImport: () -> Void = {}
-    var onHealthKitAutoExport: () -> Void = {}
     var onEvaluateSavePinOffer: () -> Void = {}
     var onAutoSyncPumpTime: () -> Void = {}
     /// Gated by the `canControlModes` input (`ModeAutomation.applyPendingIfDue(using:)` takes the concrete
@@ -143,12 +141,6 @@ final class RefreshEffectsCoordinator {
         recordStep("nightscoutSync")
         onHistoryPersist(glucoseHistory, bolusMarkers, provenance)
         recordStep("historyPersist")
-        #if FABOLUS_HEALTHKIT
-        onHealthKitAutoImport()
-        recordStep("healthkitImport")
-        onHealthKitAutoExport()
-        recordStep("healthkitExport")
-        #endif
         onEvaluateSavePinOffer()
         recordStep("evaluateSavePinOffer")
         onAutoSyncPumpTime()

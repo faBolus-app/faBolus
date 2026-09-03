@@ -493,78 +493,6 @@ public final class AppSettings {
         set { _nightscoutUploadEnabled.wrappedValue = newValue }
     }
 
-    /// Per-type Apple Health IMPORT toggles — each import type (carbs, insulin/bolus, heart rate,
-    /// glucose gap-fill) is individually user-selectable. All **default OFF** — a fresh install
-    /// imports nothing until the user explicitly turns on each type. Gates BOTH the per-type
-    /// HealthKit read-authorization request AND the ingest path (`AppModel.importFromAppleHealth`).
-    /// Deliberately NOT wrapped in `#if FABOLUS_HEALTHKIT` (unlike the AppModel import hook) — the
-    /// settings MODEL stays unconditional so it compiles/tests under the default OFF build; only the
-    /// FEATURE REACH (the actual HealthKit calls) is gated. Same device-local persisted-Bool idiom as
-    /// `autoExerciseMode`: deliberately NOT a `SettingsCatalog` row and NOT in `backupSnapshot`
-    /// yet — the UI surface these toggles gate (per-type rows in `CgmCredentialsView`) ships later,
-    /// and `SettingsReachabilityGuardTests` requires every catalog row to have a literal UI
-    /// reference; adding the catalog row before the UI exists would make that guard fail. Revisit
-    /// (add the catalog row + backup participation) once the UI lands.
-    private var _healthKitImportCarbsEnabled = Stored<Bool>(wrappedValue: false, "healthKitImportCarbsEnabled")
-    public var healthKitImportCarbsEnabled: Bool {
-        get { _healthKitImportCarbsEnabled.wrappedValue }
-        set { _healthKitImportCarbsEnabled.wrappedValue = newValue }
-    }
-    private var _healthKitImportInsulinEnabled = Stored<Bool>(wrappedValue: false, "healthKitImportInsulinEnabled")
-    public var healthKitImportInsulinEnabled: Bool {
-        get { _healthKitImportInsulinEnabled.wrappedValue }
-        set { _healthKitImportInsulinEnabled.wrappedValue = newValue }
-    }
-    private var _healthKitImportHeartRateEnabled = Stored<Bool>(wrappedValue: false, "healthKitImportHeartRateEnabled")
-    public var healthKitImportHeartRateEnabled: Bool {
-        get { _healthKitImportHeartRateEnabled.wrappedValue }
-        set { _healthKitImportHeartRateEnabled.wrappedValue = newValue }
-    }
-    private var _healthKitImportGlucoseEnabled = Stored<Bool>(wrappedValue: false, "healthKitImportGlucoseEnabled")
-    public var healthKitImportGlucoseEnabled: Bool {
-        get { _healthKitImportGlucoseEnabled.wrappedValue }
-        set { _healthKitImportGlucoseEnabled.wrappedValue = newValue }
-    }
-    /// Automatic background Apple Health import (anchored observer, like the live-glucose
-    /// reader). **Default OFF** — the manual on-demand "Import from Apple Health" action is always
-    /// available regardless of this toggle (manual = baseline, auto = opt-in).
-    private var _healthKitAutoImportEnabled = Stored<Bool>(wrappedValue: false, "healthKitAutoImportEnabled")
-    public var healthKitAutoImportEnabled: Bool {
-        get { _healthKitAutoImportEnabled.wrappedValue }
-        set { _healthKitAutoImportEnabled.wrappedValue = newValue }
-    }
-
-    /// Per-type Apple Health EXPORT toggles — each export type (carbs, insulin/bolus, glucose)
-    /// is individually user-selectable. All **default OFF**. Deliberately NO heart-rate export
-    /// toggle exists (HR is read-only, originates from the user's own sensors, and is never
-    /// written back to Health). Same shape as the import toggles: unconditional (not
-    /// `#if FABOLUS_HEALTHKIT`) so the settings MODEL compiles/tests under the default OFF build.
-    /// Not yet in `SettingsCatalog` / `backupSnapshot` / `applyBackup` — catalog + backup is a
-    /// separate iCloud-sync decision, not implied by a UI reference alone.
-    private var _healthKitExportCarbsEnabled = Stored<Bool>(wrappedValue: false, "healthKitExportCarbsEnabled")
-    public var healthKitExportCarbsEnabled: Bool {
-        get { _healthKitExportCarbsEnabled.wrappedValue }
-        set { _healthKitExportCarbsEnabled.wrappedValue = newValue }
-    }
-    private var _healthKitExportInsulinEnabled = Stored<Bool>(wrappedValue: false, "healthKitExportInsulinEnabled")
-    public var healthKitExportInsulinEnabled: Bool {
-        get { _healthKitExportInsulinEnabled.wrappedValue }
-        set { _healthKitExportInsulinEnabled.wrappedValue = newValue }
-    }
-    private var _healthKitExportGlucoseEnabled = Stored<Bool>(wrappedValue: false, "healthKitExportGlucoseEnabled")
-    public var healthKitExportGlucoseEnabled: Bool {
-        get { _healthKitExportGlucoseEnabled.wrappedValue }
-        set { _healthKitExportGlucoseEnabled.wrappedValue = newValue }
-    }
-    /// Automatic go-forward Apple Health export (each newly-logged carb/insulin/bolus/glucose
-    /// written out as logged). **Default OFF** — the manual "Export to Apple Health" backfill action
-    /// is always available regardless of this toggle (manual = baseline, auto = opt-in).
-    private var _healthKitAutoExportEnabled = Stored<Bool>(wrappedValue: false, "healthKitAutoExportEnabled")
-    public var healthKitAutoExportEnabled: Bool {
-        get { _healthKitAutoExportEnabled.wrappedValue }
-        set { _healthKitAutoExportEnabled.wrappedValue = newValue }
-    }
-
     /// Opt-in (default OFF) for local notification telemetry — per-category delivered/dismissed/
     /// acted-upon counts the broker uses to tune defaults. Stored in the **App Group** (not `d`) so the
     /// broker, incl. the out-of-process mode-reminder intent, reads the same choice. Local-only, never
@@ -1037,15 +965,6 @@ public final class AppSettings {
         _ciqCeilingFlagsEnabled.store = defaults
         _criticalAlertsEnabled.store = defaults
         _nightscoutUploadEnabled.store = defaults
-        _healthKitImportCarbsEnabled.store = defaults
-        _healthKitImportInsulinEnabled.store = defaults
-        _healthKitImportHeartRateEnabled.store = defaults
-        _healthKitImportGlucoseEnabled.store = defaults
-        _healthKitAutoImportEnabled.store = defaults
-        _healthKitExportCarbsEnabled.store = defaults
-        _healthKitExportInsulinEnabled.store = defaults
-        _healthKitExportGlucoseEnabled.store = defaults
-        _healthKitAutoExportEnabled.store = defaults
         _stackingGuardFrictionEnabled.store = defaults
         _autoExerciseMode.store = defaults
         _autoSleepMode.store = defaults
@@ -1130,17 +1049,6 @@ public final class AppSettings {
             d.set(true, forKey: "eatingResiduePurgeV1")
         }
         nightscoutUploadEnabled = (d.object(forKey: "nightscoutUploadEnabled") as? Bool) ?? false
-        // Every Apple Health import toggle — per-type + automatic — defaults OFF.
-        healthKitImportCarbsEnabled = (d.object(forKey: "healthKitImportCarbsEnabled") as? Bool) ?? false
-        healthKitImportInsulinEnabled = (d.object(forKey: "healthKitImportInsulinEnabled") as? Bool) ?? false
-        healthKitImportHeartRateEnabled = (d.object(forKey: "healthKitImportHeartRateEnabled") as? Bool) ?? false
-        healthKitImportGlucoseEnabled = (d.object(forKey: "healthKitImportGlucoseEnabled") as? Bool) ?? false
-        healthKitAutoImportEnabled = (d.object(forKey: "healthKitAutoImportEnabled") as? Bool) ?? false
-        // Every Apple Health EXPORT toggle defaults OFF (no HR export).
-        healthKitExportCarbsEnabled = (d.object(forKey: "healthKitExportCarbsEnabled") as? Bool) ?? false
-        healthKitExportInsulinEnabled = (d.object(forKey: "healthKitExportInsulinEnabled") as? Bool) ?? false
-        healthKitExportGlucoseEnabled = (d.object(forKey: "healthKitExportGlucoseEnabled") as? Bool) ?? false
-        healthKitAutoExportEnabled = (d.object(forKey: "healthKitAutoExportEnabled") as? Bool) ?? false
         // Force-set OFF — a restored/legacy `true` must not re-arm the extra-confirmation step.
         // Never disables `StackingGuard.escalation`'s own disclosure computation.
         stackingGuardFrictionEnabled = false

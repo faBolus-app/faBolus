@@ -876,10 +876,6 @@ public final class AppModel {
         refreshEffectsCoordinator.onHistoryPersist = { [weak self] glucose, boluses, provenance in
             self?.historyPersistence.persist(glucose: glucose, boluses: boluses, provenance: provenance)
         }
-        #if FABOLUS_HEALTHKIT
-        refreshEffectsCoordinator.onHealthKitAutoImport = { [weak self] in self?.maybeAutoImportAppleHealth() }
-        refreshEffectsCoordinator.onHealthKitAutoExport = { [weak self] in self?.maybeAutoExportAppleHealth() }
-        #endif
         refreshEffectsCoordinator.onEvaluateSavePinOffer = { [weak self] in self?.evaluateSavePinOffer() }
         refreshEffectsCoordinator.onAutoSyncPumpTime = { [weak self] in self?.maybeAutoSyncPumpTime() }
         refreshEffectsCoordinator.onApplyModeAutomation = { [weak self] in
@@ -1256,17 +1252,6 @@ public final class AppModel {
     /// Record user-entered carbs (from a carb bolus) into the persistent store, so sensitivity/insights
     /// have carb context. Source = faBolus (its own entry).
     public func recordCarbs(grams: Double) { historyPersistence.recordCarbs(grams: grams) }
-
-    // MARK: - Apple Health (HealthKit) import/export — gated: the whole hook compiles out of the
-    // free/CI build. Stored properties stay HERE (a separate-file extension can't declare them);
-    // methods live in `AppModel+HealthKit.swift`. `maybeAutoImportAppleHealth`/`maybeAutoExportAppleHealth`
-    // are still called from `refresh()` below.
-    #if FABOLUS_HEALTHKIT
-    @ObservationIgnored internal lazy var healthKitImportSource: HealthKitImportSource = HealthKitHistoryImporter()
-    internal var lastHealthKitAutoImport = Date.distantPast
-    @ObservationIgnored internal lazy var healthKitExportDestination: HealthKitExportDestination = HealthKitExporter()
-    internal var lastHealthKitAutoExport = Date.distantPast
-    #endif
 
     /// The SINGLE "can Snooze actually do anything right now" predicate,
     /// read by `hasSnoozeEligibleAlert` below. Delegates to `FailoverBadgePresenter.snoozeGateAllows`.

@@ -23,10 +23,9 @@ struct RefreshOrderingCharacterizationTests {
 
     /// The always-present ordered "spine" of top-level phase + effect tags every `refresh()` emits,
     /// regardless of build flags / runtime gates. Safety-edge tags carry their decision (`":raise"` etc.),
-    /// so they are matched by PREFIX. Gated tags (`healthkitImport`/`healthkitExport` behind
-    /// `#if FABOLUS_HEALTHKIT`, `modeAutomation` behind `canControlModes`, `subscriberFanout` behind
-    /// `alertsChanged`) are deliberately NOT in the spine — their presence varies, but the spine's strict
-    /// subsequence still constrains WHERE they may appear.
+    /// so they are matched by PREFIX. Gated tags (`modeAutomation` behind `canControlModes`,
+    /// `subscriberFanout` behind `alertsChanged`) are deliberately NOT in the spine — their presence
+    /// varies, but the spine's strict subsequence still constrains WHERE they may appear.
     private static let spine: [String] = [
         "maybeHandlePumpSwitch", "merge", "facadeAssign",
         "connectionEdge:", "freshnessEdge:", "stalenessWatchdog:", "urgentLowEdge:",
