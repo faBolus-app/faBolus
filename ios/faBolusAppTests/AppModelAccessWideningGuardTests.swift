@@ -45,11 +45,7 @@ struct AppModelAccessWideningGuardTests {
     /// Exact declaration-line substrings widened to `internal`. `history` is now computed but still starts
     /// with this prefix — the guard pins visibility, not stored-vs-computed.
     static let widenedStoredPropertyDeclarations: [String] = [
-        "internal var history: GlucoseHistoryStore?",
-        "internal lazy var healthKitImportSource: HealthKitImportSource",
-        "internal var lastHealthKitAutoImport = Date.distantPast",
-        "internal lazy var healthKitExportDestination: HealthKitExportDestination",
-        "internal var lastHealthKitAutoExport = Date.distantPast"
+        "internal var history: GlucoseHistoryStore?"
     ]
 
     /// Thin read-only seam so backup export can read the ledger snapshot without widening `deliveryLedgerCoordinator`.

@@ -1,8 +1,11 @@
 import Testing
 import Foundation
 
-/// Imported HealthKit history is display-only and must never enter the signed dose path
-/// (`BolusMath`, `GlucoseArbiter`, `TandemBackend`, `PumpTransport`).
+/// Imported HealthKit history is display-only and must never enter the signed dose path, or
+/// anywhere else in the app — the surface itself was deleted, so its symbols must never come back.
+/// Widened repo-wide (D-12) after `AppModel+HealthKit.swift` — the only declarer of both forbidden
+/// symbols — was removed: a four-file dose-path-only scan would otherwise pass vacuously forever,
+/// proving nothing about the rest of the tree. This suite is a KEEP, not a candidate for deletion.
 struct HealthKitImportDosePathGuardTests {
 
     /// Resolve the repo root by walking up from `#filePath`
@@ -19,45 +22,89 @@ struct HealthKitImportDosePathGuardTests {
         return nil
     }
 
-    /// The dose-path files this guard scans — the same four named in the PLAN's `<prohibitions>` and
-    /// `<verification>` (BolusMath, GlucoseArbiter, TandemBackend, PumpTransport).
-    private static let doseSourcePathRelativePaths: [String] = [
-        "Packages/faBolusCore/Sources/faBolusCore/BolusMath.swift",
-        "Packages/faBolusCore/Sources/faBolusCore/GlucoseArbiter.swift",
-        "ios/faBolus/Data/TandemBackend.swift",
-        "ios/faBolus/Data/Tandem/PumpTransport.swift"
-    ]
+    /// Repo-wide scan roots relative to the repo root — strictly stronger than the old four-file
+    /// dose-path-only scan this replaces.
+    private static let topLevelScanRootRelativePaths: [String] = ["ios", "Shared"]
 
-    /// The forbidden HealthKit-import/export symbols. Held as plain string constants — this scan
-    /// targets the dose-path SOURCE files below, never this test file itself.
-    private static let forbiddenSymbols = ["HealthKitHistoryImporter", "HealthKitExporter"]
-
-    @Test func doseSourcePathFilesResolveAndAreNonTrivial() throws {
-        let root = try #require(
-            Self.repoRootURL(),
-            "could not resolve the repo root from #filePath=\(#filePath)")
-        for relativePath in Self.doseSourcePathRelativePaths {
-            let url = root.appendingPathComponent(relativePath)
-            let source = try #require(
-                try? String(contentsOf: url, encoding: .utf8),
-                "could not resolve \(relativePath) — path resolution likely broke")
-            #expect(source.count > 200, "\(relativePath) resolved implausibly short — path resolution likely broke")
+    /// `Packages/*/Sources`, resolved dynamically since package names vary and are not worth hardcoding.
+    private static func packageSourcesRoots(under root: URL) -> [URL] {
+        let fm = FileManager.default
+        let packagesDir = root.appendingPathComponent("Packages")
+        guard let entries = try? fm.contentsOfDirectory(at: packagesDir, includingPropertiesForKeys: nil) else {
+            return []
         }
+        return entries
+            .map { $0.appendingPathComponent("Sources") }
+            .filter { fm.fileExists(atPath: $0.path) }
     }
 
-    @Test func doseSourcePathFilesContainNoHealthKitImportExportSymbols() throws {
+    /// Every `.swift` file under `root`, recursively — excluding THIS test file itself, whose own
+    /// `forbiddenSymbols` literals would otherwise self-match (the same self-match hazard
+    /// `NightscoutStubInertnessTests` documents for declaration-shaped needles).
+    private static func swiftFiles(under root: URL) -> [URL] {
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(at: root, includingPropertiesForKeys: nil) else { return [] }
+        var results: [URL] = []
+        for case let url as URL in enumerator {
+            guard url.pathExtension == "swift" else { continue }
+            if url.lastPathComponent == "HealthKitImportDosePathGuardTests.swift" { continue }
+            results.append(url)
+        }
+        return results
+    }
+
+    private static func allScannedSwiftFiles() throws -> [URL] {
         let root = try #require(
             Self.repoRootURL(),
             "could not resolve the repo root from #filePath=\(#filePath)")
-        for relativePath in Self.doseSourcePathRelativePaths {
-            let url = root.appendingPathComponent(relativePath)
-            let source = try #require(
-                try? String(contentsOf: url, encoding: .utf8),
-                "could not resolve \(relativePath) — path resolution likely broke")
+        var files: [URL] = []
+        for relative in Self.topLevelScanRootRelativePaths {
+            files += Self.swiftFiles(under: root.appendingPathComponent(relative))
+        }
+        for sourcesRoot in Self.packageSourcesRoots(under: root) {
+            files += Self.swiftFiles(under: sourcesRoot)
+        }
+        return files
+    }
+
+    /// The forbidden HealthKit import/export symbols. Both were declared ONLY in the now-deleted
+    /// `AppModel+HealthKit.swift` (D-11).
+    private static let forbiddenSymbols = ["HealthKitHistoryImporter", "HealthKitExporter"]
+
+    @Test func repoWideScanResolvesAPlausibleNumberOfFiles() throws {
+        let files = try Self.allScannedSwiftFiles()
+        #expect(
+            files.count > 100,
+            "repo-wide scan resolved implausibly few files (\(files.count)) — path resolution likely broke")
+    }
+
+    /// Non-vacuity: proves the scan mechanism can actually surface a positive match, by scanning for a
+    /// symbol known to exist under the scanned roots. If this ever fails, the file-walk itself is
+    /// broken — not evidence that the codebase changed.
+    @Test func scanMechanismFindsAKnownPresentSymbol() throws {
+        let files = try Self.allScannedSwiftFiles()
+        var found = false
+        for url in files {
+            guard let source = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            if source.contains("enum BolusMath") {
+                found = true
+                break
+            }
+        }
+        #expect(
+            found,
+            "scan mechanism failed to find a known-present symbol ('enum BolusMath') anywhere under the scanned roots — the file walk is broken, not the codebase"
+        )
+    }
+
+    @Test func noHealthKitImportExportSymbolsExistAnywhereRepoWide() throws {
+        let files = try Self.allScannedSwiftFiles()
+        for url in files {
+            guard let source = try? String(contentsOf: url, encoding: .utf8) else { continue }
             for symbol in Self.forbiddenSymbols {
                 #expect(
                     !source.contains(symbol),
-                    "forbidden HealthKit import/export symbol '\(symbol)' found in \(relativePath). Imported HealthKit history must land ONLY in GlucoseHistoryStore.ingest*, never the signed dose path."
+                    "forbidden HealthKit import/export symbol '\(symbol)' found in \(url.path). The HealthKit surface was deleted; this symbol must never be reintroduced anywhere in the app."
                 )
             }
         }
