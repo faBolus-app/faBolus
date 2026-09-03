@@ -214,6 +214,15 @@ No surface in either table is on `main`. See DECISION 999.5-D1/D2 (`.planning/in
 ratified v0.5.0 as-built record, and each `dev/<surface>` branch's own `REINTEGRATION.md` for
 reintegration steps (every branch above now has one).
 
+**`experimental` next-sync fix-up needed (Phase 31 unit 3, D-21).**
+`Packages/faBolusCore/Sources/faBolusCore/GraphDetailReadout.swift` was deleted outright from `main`
+(no compile shim) — `experimental` is not frozen (it was 9 ahead / 388 behind `main` at the time this
+note was written) and its own `ios/faBolus/Views/GraphDetailView.swift` + `GlucoseChartView.swift`
+still reference the type, so `experimental` will fail to compile the next time it syncs from `main`
+until that reference is resolved (either by re-adding the file locally on `experimental`, or by not
+yet merging past this point). This is recorded here rather than fixed now because fixing it requires
+touching `experimental`, out of scope for a `main`-only phase.
+
 ## §1.3 — versioning and the cross-repo contract
 
 This is the **canonical** version + cross-repo contract for all three code repos. `AGENTS.md` and
