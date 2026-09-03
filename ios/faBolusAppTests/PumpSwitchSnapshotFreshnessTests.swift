@@ -28,7 +28,7 @@ struct PumpSwitchSnapshotFreshnessTests {
         return b
     }
 
-    // MARK: - LB-1: the four freshness stamps + basalRateKnown nil on a switch; values never zeroed
+    // MARK: - the four freshness stamps + basalRateKnown nil on a switch; values never zeroed
 
     @Test func freshnessStampsGoNilOnSwitchButUnderlyingValuesSurvive() {
         let b = seededBackend()
@@ -62,7 +62,7 @@ struct PumpSwitchSnapshotFreshnessTests {
         #expect(b.snapshot.basalRateUnitsPerHour == preBasal)
     }
 
-    // MARK: - LB-4: calcSnapshot + pumpTimeAnchor nil on a switch
+    // MARK: - calcSnapshot + pumpTimeAnchor nil on a switch
 
     @Test func calcSnapshotAndPumpTimeAnchorAreClearedOnSwitch() {
         let b = seededBackend()
