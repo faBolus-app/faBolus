@@ -146,8 +146,8 @@ struct CgmStatusView: View {
     /// True when the persisted selection differs from the running instance — a Test then runs against
     /// a source that isn't armed yet.
     private var needsRelaunchToArm: Bool {
-        guard let sel = GlucoseSourceRegistry.selectedId(), !sel.isEmpty else { return false }
-        return model.glucoseSourceProbe?.id != sel
+        guard let sel = GlucoseSourceRegistry.selected() else { return false }
+        return model.glucoseSourceProbe?.id != sel.id
     }
 
     var body: some View {
