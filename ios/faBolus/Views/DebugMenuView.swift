@@ -201,9 +201,12 @@ struct DebugMenuView: View {
         } header: {
             Text("Connection telemetry")
         } footer: {
+            // Shares the export's exact limitation prose (DiagnosticsBundle.connectionTelemetryLimitation)
+            // so the screen and the export can never disagree about what these counters mean.
             Text(
                 model.connectionTelemetry.enabled
-                    ? "Cumulative counters (uptime, why the link dropped, how unresolved deliveries settled). Local-only."
+                    ? "Cumulative counters (uptime, why the link dropped, how unresolved deliveries settled). "
+                        + "Local-only. \(DiagnosticsBundle.connectionTelemetryLimitation)"
                     : "Turn on “Share local diagnostics” above to start collecting these counters.")
         }
     }

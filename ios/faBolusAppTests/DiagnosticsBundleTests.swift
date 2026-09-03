@@ -88,4 +88,16 @@ struct DiagnosticsBundleTests {
         #expect(block.contains("Window start: unknown — accrued across an unknown set of builds"))
     }
 
+    // MARK: - Connection telemetry: the non-complementarity limitation line
+
+    /// The export section always carries the explicit "no ratio is meaningful" prose — a future
+    /// reader holding only the export must not conclude Connects and Total uptime divide into a rate.
+    @Test func connectionTelemetrySectionCarriesTheNoRatioLimitationLine() {
+        let block = DiagnosticsBundle.connectionTelemetrySection(
+            connectCount: 190, totalUptimeFormatted: "14m 54s", disconnects: [], reconcile: [],
+            windowStartFormatted: "unknown — accrued across an unknown set of builds")
+
+        #expect(block.lowercased().contains("no ratio") || block.lowercased().contains("not a rate"))
+    }
+
 }

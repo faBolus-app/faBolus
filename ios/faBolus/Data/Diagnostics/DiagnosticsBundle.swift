@@ -64,8 +64,26 @@ enum DiagnosticsBundle {
         lines.append("Total uptime: \(totalUptimeFormatted)")
         for d in disconnects { lines.append("Disconnect \(d.key): \(d.count)") }
         for r in reconcile { lines.append("Reconcile \(r.key): \(r.count)") }
+        lines.append("")
+        lines.append(connectionTelemetryLimitation)
         return lines.joined(separator: "\n")
     }
+
+    /// The connection-telemetry non-complementarity, in operator-facing prose. Shared verbatim by
+    /// both renderers (this export section and the on-screen footer) so the screen and the export can
+    /// never disagree about what the counters mean. `Connects` and `Total uptime` are written on
+    /// different edges by different mechanisms, not a matched pair: the first observation of a
+    /// connection starts neither counter; a bolus that returns the link to connected bumps `Connects`
+    /// with no matching disconnect; a connecting-to-error timeout records a disconnect with zero
+    /// uptime; and a silent background reconnect bumps `Connects` while discarding the uptime accrued
+    /// before it.
+    static let connectionTelemetryLimitation =
+        "No ratio between any two rows above is meaningful — not a rate, not an average session "
+        + "length. Connects and Total uptime are written on different edges by different mechanisms: "
+        + "the first observation of a connection starts neither counter; a bolus that returns the "
+        + "link to connected bumps Connects with no matching disconnect; a connecting-to-error "
+        + "timeout records a disconnect with zero uptime; and a silent background reconnect bumps "
+        + "Connects while discarding the uptime accrued before it. Read each counter on its own."
 
     /// `[Notification telemetry]` — flows through the same pure-aggregator array rather than staying
     /// an inline `View` block.
