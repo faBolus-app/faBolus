@@ -28,9 +28,7 @@ files under `ios/faBolus/Vendor/LoopPowerPack/{SiteAtlas,LoopInsights,FoodFinder
 to list have been scope-narrowed off `main` along with the features that consumed them ("Backup/restore
 incl. iCloud + SiteAtlas" → `dev/backup`; "Retrospective insights" → `dev/retrospective`; "FoodFinder /
 food-scanner" → `dev/food-finder`; `BRANCHES.md` §1.2c). Only `UPSTREAM.md` remains as vendored-tree
-source on `main`. **Known issue (out of this docs-only plan's scope, logged in
-`.planning/WINDOWS.md`):** `.vendor-manifest.sha256` was not regenerated when those files were deleted,
-so `scripts/check-vendor-drift.sh` currently fails against the stale manifest.
+source on `main`.
 
 ## Local path dependency (separate repo)
 

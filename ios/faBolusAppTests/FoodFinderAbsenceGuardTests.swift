@@ -16,12 +16,14 @@ struct FoodFinderAbsenceGuardTests {
     }
 
     /// FoodFinder trees must stay off the working tree: the compile gate is gone, so a re-added file
-    /// compiles into the app. An AI carb estimate is a bolus input.
+    /// compiles into the app. An AI carb estimate is a bolus input. The vendor tree is a separate
+    /// removal (the LoopPowerPack integrity mechanism retired with it) but pinned here too, since it
+    /// was FoodFinder's only vendored source.
     @Test func foodFinderDirectoriesAreAbsentFromWorkingTree() {
         let removedRelativeDirs = [
             "ios/faBolus/Data/FoodFinder",
             "ios/faBolus/Views/FoodFinder",
-            "ios/faBolus/Vendor/LoopPowerPack/FoodFinder"
+            "ios/faBolus/Vendor/LoopPowerPack"
         ]
         for relative in removedRelativeDirs {
             let url = Self.repoRoot.appendingPathComponent(relative)

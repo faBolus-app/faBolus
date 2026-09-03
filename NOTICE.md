@@ -60,8 +60,8 @@ OpenFoodFacts client + models in `ios/faBolus/Vendor/LoopPowerPack/FoodFinder/` 
 `ad4c4d498f936a25e22dd3a8dc93354138458509`), used under the MIT License. The SiteAtlas and FoodFinder
 features are **© 2026 LoopKit Authors and Taylor Patterson** (idea by Taylor Patterson); the surrounding
 Loop code is © 2015 Nathan Racklyeft and © 2016 LoopKit Authors. faBolus adapts this source behind thin
-adapters and does not auto-merge upstream changes — see `ios/faBolus/Vendor/LoopPowerPack/UPSTREAM.md`
-and the `scripts/check-vendor-drift.sh` integrity check. The FoodFinder client is corrected to the
+adapters and does not auto-merge upstream changes — see `ios/faBolus/Vendor/LoopPowerPack/UPSTREAM.md`.
+The FoodFinder client is corrected to the
 production OpenFoodFacts host + `api/v3` endpoint with a faBolus-identifying User-Agent. The BodyMap PNG
 graphics are not vendored here.
 

@@ -27,11 +27,10 @@ fi
 # (verified on exactly those 3 files), which makes it a stable pin.
 SWIFT_FORMAT="${SWIFT_FORMAT:-$(xcrun --find swift-format)}"
 
-# Vendored: ios/faBolus/Vendor (LoopPowerPack) and the two vendored Packages.
+# Vendored: the two vendored Packages.
 FILES=()
 while IFS= read -r f; do FILES+=("$f"); done < <(
   git ls-files '*.swift' \
-    ':!:ios/faBolus/Vendor/*' \
     ':!:Packages/ShareClient/*' \
     ':!:Packages/HistoryStore/*'
 )

@@ -172,8 +172,8 @@ targets:
           # RemoteSettingsView.swift no longer exist on main at all.
           # Phase 7 (07-01, FEAT-07): the FoodFinder compile gate is retired — the barcode/OpenFoodFacts
           # + AI carb-estimate surface is now physically git rm'd from main (delete-on-main, D-01/D-03),
-          # preserved on dev/food-finder, not a compile-gated exclude. Data/FoodFinder/Views/FoodFinder/
-          # Vendor/LoopPowerPack/FoodFinder no longer exist on main at all.
+          # preserved on dev/food-finder, not a compile-gated exclude. Data/FoodFinder/Views/FoodFinder
+          # no longer exist on main at all.
           # >>> BACKUP (Phase 6, 06-02, BACKUP-01/D-02/D-08 owner carve-out): these 7 paths are now
           #   PHYSICALLY git rm'd from `main` (delete-on-main, preserved on dev/backup) — this exclude
           #   list is a harmless no-op on `main` (the paths no longer exist to exclude) kept intact only

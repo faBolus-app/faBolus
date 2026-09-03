@@ -99,10 +99,10 @@ CGM_NIGHTSCOUT="${FABOLUS_CGM_NIGHTSCOUT:-1}"
 # same posture as the Phase 2.5 CGM retro-clean. The SHARED PhoneRemoteHost.swift Garmin/widget receiver
 # core stays on main unconditionally (part of the always-included ios/faBolus tree).
 # Phase 7 (07-01, FEAT-07): the FoodFinder compile gate (env override was named for this surface) is
-# retired — the barcode/OpenFoodFacts + AI carb-estimate surface (Data/FoodFinder, Views/FoodFinder,
-# Vendor/LoopPowerPack/FoodFinder) is git rm'd from main outright (delete-on-main, D-01/D-03),
-# preserved on dev/food-finder, the same posture as the Phase 2.5 CGM retro-clean / Phase 3 phone-peer
-# retirement. No env-var declaration, no strip_block call, no exclude-list entry remains for it.
+# retired — the barcode/OpenFoodFacts + AI carb-estimate surface (Data/FoodFinder, Views/FoodFinder) is
+# git rm'd from main outright (delete-on-main, D-01/D-03), preserved on dev/food-finder, the same
+# posture as the Phase 2.5 CGM retro-clean / Phase 3 phone-peer retirement. No env-var declaration, no
+# strip_block call, no exclude-list entry remains for it.
 # BACKUP compile gate (BACKUP-01/D-02, Phase 6 06-02/D-08 owner carve-out). REMOVAL FLIP: `main`'s
 # backup/restore, PrivacyData-export, and SiteAtlas surface is now permanently ABSENT — the 7
 # app-layer files/dirs this flag used to gate are physically git rm'd from `main` (delete-on-main,
