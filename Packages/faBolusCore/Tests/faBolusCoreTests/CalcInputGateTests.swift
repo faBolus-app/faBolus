@@ -105,6 +105,23 @@ import Testing
         #expect(CalcInputGate.Kind.both.allowStaleIob && CalcInputGate.Kind.both.allowStaleTherapy)
     }
 
+    // MARK: - §13 no-zero-IOB-override shape: exactly three kinds, none named drop/zero/ignore
+
+    @Test func kindIsExactlyThreeCasesNeverADropZeroOrIgnoreVariant() {
+        // The frozen owner decision: the override is always a warned two-way choice (include-last-known vs
+        // cancel per input, or both) — never a "drop / zero the IOB" case. This is the live surface
+        // `BolusEntryView.attemptDeliver` actually calls (`decide()` + `overrideDeliverUnits()`), so it is
+        // where that shape invariant is pinned.
+        #expect(CalcInputGate.Kind.allCases == [.iob, .therapy, .both])
+        #expect(CalcInputGate.Kind.allCases.count == 3)
+        for kind in CalcInputGate.Kind.allCases {
+            let name = kind.rawValue.lowercased()
+            #expect(!name.contains("drop"))
+            #expect(!name.contains("zero"))
+            #expect(!name.contains("ignore"))
+        }
+    }
+
     @Test func overrideDeliverUnitsNeverExceedsConsentOrFresh() {
         // IOB decayed → fresh recompute larger → deliver the consented baseline.
         #expect(CalcInputGate.overrideDeliverUnits(baseline: 5.0, freshRecompute: 5.9) == 5.0)

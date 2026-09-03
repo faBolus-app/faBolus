@@ -7,17 +7,18 @@ import Foundation
 /// is identical everywhere the OWNER composes.
 ///
 /// **Two inputs, two independent WARNED TWO-WAY choices — never a three-way, and never a "drop / zero" case.**
+/// That §13 no-zero-IOB-override shape is machine-checked on `CalcInputGate.Kind` (the surface the deliver
+/// path actually calls), not here.
 ///
-/// **IOB (`StaleIobPrompt` / `StaleIobChoice`).** The dose SUBTRACTS active insulin. When the IOB read is
-/// stale (or the op-115↔op-109 IOB cross-check diverged) the only warned override is to keep SUBTRACTING the
-/// last-known IOB, or to cancel. There is deliberately NO "ignore / zero the IOB" option: zeroing a term that
-/// is subtracted is the MAXIMUM-dose direction — the opposite of the conservative include-stale-glucose
-/// choice — so it is prohibited by the frozen owner decision. `includeLastKnownIob` therefore only ever keeps
-/// subtracting the real cached value; it can never increase the dose beyond what a confirmed-fresh read would.
+/// **IOB (`StaleIobPrompt`).** The dose SUBTRACTS active insulin. When the IOB read is stale (or the
+/// op-115↔op-109 IOB cross-check diverged) the only warned override is to keep SUBTRACTING the last-known
+/// IOB, or to cancel. There is deliberately NO "ignore / zero the IOB" option: zeroing a term that is
+/// subtracted is the MAXIMUM-dose direction — the opposite of the conservative include-stale-glucose
+/// choice — so it is prohibited by the frozen owner decision.
 ///
-/// **Therapy (`StaleTherapyPrompt` / `StaleTherapyChoice`).** CR/ISF/target either come from the pump or they
-/// don't; there is no partial / reduced-dose analogue. The warned override is to compute off the last-known
-/// settings, or to cancel.
+/// **Therapy (`StaleTherapyPrompt`).** CR/ISF/target either come from the pump or they don't; there is no
+/// partial / reduced-dose analogue. The warned override is to compute off the last-known settings, or to
+/// cancel.
 ///
 /// Both overrides are **per-attempt — never sticky, never a default, never auto-selected** — and both are
 /// insulin-affecting, so they are recorded for the §13 clinical-review distribution gate
@@ -26,16 +27,8 @@ import Foundation
 ///
 /// **Host-owner only.** The HOST (iPhone) is the authoritative gate. A remote (Apple Watch / Mac / Garmin /
 /// remote-iPhone) uses `shouldWarn` + the `CalcInputFreshness` age labels to grey/age its rows and PRE-WARN,
-/// but NEVER offers `includeLastKnownIob` / `useLastKnownSettings` and NEVER sends an override — it fails
-/// closed via the host's `resolveRemoteDose` (which recomputes with NO override).
-public enum StaleIobChoice: String, Sendable, Codable, CaseIterable {
-    /// Keep SUBTRACTING the last-known active-insulin value (explicit, per-attempt, insulin-affecting but
-    /// never insulin-INCREASING). NEVER zeroes IOB.
-    case includeLastKnownIob
-    /// Abort the compose flow. NOT a pump `cancelBolus` (nothing was sent) — a pure UI back-out.
-    case cancel
-}
-
+/// but NEVER offers the include-last-known overrides and NEVER sends an override — it fails closed via the
+/// host's `resolveRemoteDose` (which recomputes with NO override).
 public enum StaleIobPrompt {
 
     // NOTE: the deliver-time DECISION of whether to warn — and which two-way prompt — is NOT here; it is the
@@ -58,13 +51,6 @@ public enum StaleIobPrompt {
                 + "(last known %.2f U, %@). It will keep SUBTRACTING that active insulin — the higher reading if "
                 + "the pump's two readings disagree — never dropping it. Use it, or cancel.", iobUnits, age)
     }
-}
-
-public enum StaleTherapyChoice: String, Sendable, Codable, CaseIterable {
-    /// Compute off the last-known carb ratio / ISF / target (explicit, per-attempt).
-    case useLastKnownSettings
-    /// Abort the compose flow. Sends nothing (a pure UI back-out).
-    case cancel
 }
 
 public enum StaleTherapyPrompt {

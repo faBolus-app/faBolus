@@ -3,37 +3,16 @@ import Foundation
 @testable import faBolusCore
 
 /// DIF-ux — the shared stale/unconfirmable calc-input decision (`StaleCalcInputPrompt`). Mirrors
-/// `StaleBolusPromptTests`: pins the warn predicates, the two-way (never three-way) shape, that `cancel`
-/// alone does not proceed, and — the load-bearing safety invariant — that there is NO drop / zero-IOB path
-/// anywhere. Dates are chosen far from any plausible threshold so the test neither depends on nor mutates
-/// the runtime `CalcInputFreshness` windows (avoids cross-suite flakiness).
+/// `StaleBolusPromptTests`: pins the shared warning COPY for the two-way (never three-way) stale-IOB /
+/// stale-therapy overrides. Dates are chosen far from any plausible threshold so the test neither depends
+/// on nor mutates the runtime `CalcInputFreshness` windows (avoids cross-suite flakiness).
+///
+/// The two-way, no-drop/zero-IOB SHAPE invariant is pinned on `CalcInputGateTests` (the pure gate the
+/// production deliver path actually calls), not here — the two standalone choice enums this suite used to
+/// pin were unused by any production path and were removed together with those tests.
 struct StaleCalcInputPromptTests {
 
     private let now = Date(timeIntervalSince1970: 1_000_000)
-
-    // MARK: - The choices are two-way, with NO drop / zero-IOB case (the frozen owner decision)
-
-    @Test func iobChoiceHasExactlyIncludeAndCancel_neverZero() {
-        #expect(StaleIobChoice.allCases == [.includeLastKnownIob, .cancel])
-        #expect(StaleIobChoice.allCases.count == 2)
-        // Defensive: no case name hints at dropping / zeroing the subtracted IOB term.
-        for c in StaleIobChoice.allCases {
-            let name = c.rawValue.lowercased()
-            #expect(!name.contains("drop"))
-            #expect(!name.contains("zero"))
-            #expect(!name.contains("ignore"))
-        }
-    }
-
-    @Test func therapyChoiceHasExactlyUseAndCancel() {
-        #expect(StaleTherapyChoice.allCases == [.useLastKnownSettings, .cancel])
-        #expect(StaleTherapyChoice.allCases.count == 2)
-    }
-
-    // NOTE: the WARN / which-prompt decision is pinned by `CalcInputGateTests` (the pure gate the production
-    // deliver path actually calls). This suite covers only the shared choice shape + warning COPY. The
-    // former `shouldWarn`/`proceeds` tests were removed with those unused helpers — they tested logic no
-    // production path invoked, which was false confidence.
 
     // MARK: - Warning copy names the SUBTRACT framing (never "ignore/zero the IOB")
 
