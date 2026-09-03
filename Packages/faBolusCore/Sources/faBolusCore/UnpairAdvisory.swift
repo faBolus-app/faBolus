@@ -5,33 +5,13 @@ import Foundation
 /// therapy event (no way to reconnect until you're back at the base). That warning is KEPT
 /// unconditionally. Pure and pump-neutral so the copy lives in one place and is testable.
 ///
-/// A settings-backup step (`Step.backupChoice` below) was designed for the unpair flow: an unpair is
-/// frequently a prelude to **switching or replacing** a pump, and a pump's therapy settings (carb ratios /
-/// correction factors / targets / limits) live only on that pump — once it is unpaired and gone they can't
-/// be re-read. A backup taken while still connected would capture those values, for manual re-entry or a
-/// Mobi reconfigure, alongside the app's own preferences. The shipping unpair flow does not present that
-/// step; only the charging-base confirm below runs.
+/// A settings-backup step was designed for the unpair flow (an unpair is frequently a prelude to
+/// switching or replacing a pump, and a pump's therapy settings can't be re-read once it's unpaired), but
+/// that backup-or-skip step and its copy were never shipped and have been removed; only the
+/// charging-base confirm below runs.
 public enum UnpairAdvisory {
     /// Whether re-pairing this model needs the charging base — the load-bearing §2.2.3 Mobi warning.
     public static func requiresChargingBaseToRepair(_ model: PumpModel) -> Bool { model == .mobi }
-
-    // MARK: §2.2.3 backup gate — step 1 of the two-step unpair flow (A4)
-
-    /// The two ordered steps the unpair flow must present: the backup-or-skip choice ALWAYS precedes the
-    /// model-appropriate confirm, so an unpair can never complete without the user having made a
-    /// backup-or-skip choice first. Pure so the gate's presence + ordering is testable without the UI.
-    public enum Step: Equatable, Sendable { case backupChoice, confirm }
-    public static let steps: [Step] = [.backupChoice, .confirm]
-
-    /// Copy for the step-1 backup prompt. `skipBackup` is the explicit acknowledgment (never a default).
-    public static let backupPromptTitle = "Back up your settings first?"
-    public static let backupPromptMessage =
-        "Backing up now saves your app settings and a snapshot of this pump's therapy settings (carb "
-        + "ratios, correction factors, targets, limits) to a file — worth doing if you're switching or "
-        + "replacing pumps, because those settings live only on the pump and can't be re-read once it's "
-        + "unpaired."
-    public static let backUpNowLabel = "Back up settings"
-    public static let skipBackupLabel = "Skip backup and continue"
 
     /// Resolve the model for the unpair warning: prefer the LIVE snapshot model; when it's `.unknown`
     /// (disconnected / the name has cleared), fall back to the persisted offline Mobi signal. C19: that
