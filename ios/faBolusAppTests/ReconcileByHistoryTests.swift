@@ -530,4 +530,92 @@ struct ReconcileByHistoryTests {
                 "the guard must never leave a stale always-busy state behind")
         }
     }
+
+    // MARK: - perform()'s own settle reaching the history fallback
+
+    /// Scripts the REAL end-to-end `deliverBolus` flow (time sync, permission, initiate, the op-45
+    /// completion poll), then makes the fast op-164 `lastBolusStatus` read unavailable — exactly the
+    /// owner's device (op-164 rejected on every bolus). Before this fix that always threw indeterminate
+    /// even though op-45 had just proven the exact id was no longer active. `perform()`'s settle must
+    /// now reach the SAME bounded exact-id history search `reconcile(bolusId:)` uses — while the
+    /// connection is still `.bolusing` (the demotion to `.connected` happens only after settle) — and
+    /// resolve from a matching op-60 history record instead of no-oping.
+    @Test func performsSettleReachesTheHistoryFallbackWhenOp164IsUnavailable() async throws {
+        try await withNoCompetingBackfill {
+            let fake = FakePumpTransport()
+            let backend = TandemBackend(testTransport: fake)
+            backend.historySearchPageTimeoutOverride = 0.08
+            let bolusId = 8001
+            fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
+            fake.script(
+                BolusPermissionResponse.props.opCode,
+                .frame(FakePumpTransport.permissionGranted(bolusId: bolusId)))
+            fake.script(
+                InitiateBolusResponse.props.opCode, .frame(FakePumpTransport.initiateAccepted(bolusId: bolusId)))
+            // op-45: the completion poll's own authoritative liveness proof (this exact id no longer
+            // active) — scripted twice, once for the settle-loop poll and once for the fallback's own
+            // internal op-45 re-check.
+            fake.script(
+                CurrentBolusStatusResponse.props.opCode,
+                .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: bolusId)),
+                .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: bolusId)))
+            // op-164 (`lastBolusStatus`) is left UNSCRIPTED — a dropped/refused response, exactly the
+            // owner's device behavior — so `perform()`'s settle must fall through to history.
+            scriptHistoryStatus(fake, numEntries: 1000, first: 1, last: 1000)
+
+            let task = Task { try await backend.deliverBolus(units: 2.0, carbsGrams: nil, bgMgdl: nil, iobUnits: nil) }
+            // The completion poll's own hardcoded 500 ms first tick (never overridable) must elapse
+            // before the settle even attempts op-164, so this wait must clear that plus the fallback's
+            // own op-45 re-check and range read before the injected frame can be observed.
+            try? await Task.sleep(nanoseconds: 650_000_000)
+            backend.injectHistoryLogFrameForTesting(
+                FakePumpTransport.historyLogStream(bolusRecordsById: [
+                    (
+                        seq: 995, pumpTimeSec: 900_000, bolusId: bolusId, delivered: 2.0, iob: 0.5,
+                        completionStatusId: 3, insulinRequested: 2.0
+                    )
+                ]))
+            let delivered = try await task.value
+            #expect(
+                delivered == 2.0,
+                "perform()'s settle must reach the history fallback and resolve from the matching op-60 record instead of throwing indeterminate over an unavailable op-164"
+            )
+            #expect(fake.sent.contains { $0.opCode == HistoryLogRequest.props.opCode })
+        }
+    }
+
+    /// Genuine exhaustion of the fallback (no exact-id match anywhere in the bounded search) must still
+    /// fail closed to indeterminate — the fallback is a real search, never an unconditional settle.
+    @Test func performsSettleStillFailsClosedToIndeterminateWhenHistoryHasNoMatch() async {
+        await withNoCompetingBackfill {
+            let fake = FakePumpTransport()
+            let backend = TandemBackend(testTransport: fake)
+            backend.historySearchPageTimeoutOverride = 0.08
+            let bolusId = 8002
+            fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
+            fake.script(
+                BolusPermissionResponse.props.opCode,
+                .frame(FakePumpTransport.permissionGranted(bolusId: bolusId)))
+            fake.script(
+                InitiateBolusResponse.props.opCode, .frame(FakePumpTransport.initiateAccepted(bolusId: bolusId)))
+            fake.script(
+                CurrentBolusStatusResponse.props.opCode,
+                .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: bolusId)),
+                .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: bolusId)))
+            // op-164 unscripted, and the history range is scripted but NO matching record is ever
+            // injected — the bounded page walk must exhaust and fail closed.
+            scriptHistoryStatus(fake, numEntries: 1000, first: 1, last: 1000)
+
+            var thrown: Error?
+            do {
+                _ = try await backend.deliverBolus(units: 2.0, carbsGrams: nil, bgMgdl: nil, iobUnits: nil)
+            } catch {
+                thrown = error
+            }
+            #expect(
+                (thrown as? BolusError)?.isIndeterminate == true,
+                "genuine exhaustion of the history fallback must still fail closed to indeterminate, never assume delivered or not-delivered"
+            )
+        }
+    }
 }
