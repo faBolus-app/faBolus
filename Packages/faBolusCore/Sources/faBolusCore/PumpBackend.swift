@@ -183,11 +183,14 @@ public protocol PumpBackend: AnyObject {
     func syncTimeToNow() async throws
 
     /// B4 — clear the pump-DERIVED CONFIG fields of the snapshot (max bolus/basal, calculator therapy
-    /// params, Control-IQ config, controller variant, profiles/segments) back to defaults so a DIFFERENT
-    /// pump's values can't be shown or dosed against in the window before the new pump's reads land.
-    /// Preserves LIVE fields (connection, glucose, IOB, reservoir, battery, delivery-suspended). MUST NOT
-    /// call `onChange` — the caller (`AppModel.refresh`) republishes; a nested notify would re-enter refresh.
-    /// Synchronous. Default no-op (a stateless/simulated backend re-seeds on connect anyway).
+    /// params, Control-IQ config, controller variant, profiles/segments) back to defaults, and reset the
+    /// FRESHNESS of every live reading (glucose, IOB, reservoir, battery, basal rate) to unknown, so a
+    /// DIFFERENT pump's config or readings can never be shown or dosed against before the new pump
+    /// answers. Values already read are kept — a reading is never fabricated to zero — only their age
+    /// resets to "never read this connection." Connection state and delivery-suspended are unaffected.
+    /// MUST NOT call `onChange` — the caller (`AppModel.refresh`) republishes; a nested notify would
+    /// re-enter refresh. Synchronous. Default no-op (a stateless/simulated backend re-seeds on connect
+    /// anyway).
     func resetSnapshotForPumpSwitch()
 
     // Control-IQ settings (non-insulin config; changes closed-loop behavior).

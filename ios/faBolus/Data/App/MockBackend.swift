@@ -222,9 +222,10 @@ public final class MockBackend: PumpBackend {
     /// `PumpBackend`'s no-op default. On a switch to a DIFFERENT pump, `AppModel.maybeHandlePumpSwitch()`
     /// calls this BEFORE `refresh()`'s merge reads `source.snapshot`, so the previous pump's
     /// therapy/config params can't be shown or dosed against in the window before the new pump's reads
-    /// land — mirroring `TandemBackend`. Not test-only: `MockBackend` also ships in the Simulator
-    /// build. Without this the ordering-trap characterization is vacuous (nothing changes on switch),
-    /// so `carbRatio`/`isf`/`targetBg` (seeded 10/40/110, default 0/0/0) are the fields that make the
+    /// land, and its glucose/IOB/reservoir/battery/basal readings can't be shown as fresh either —
+    /// mirroring `TandemBackend`. Not test-only: `MockBackend` also ships in the Simulator build.
+    /// Without this the ordering-trap characterization is vacuous (nothing changes on switch), so
+    /// `carbRatio`/`isf`/`targetBg` (seeded 10/40/110, default 0/0/0) are the fields that make the
     /// reset observable — `maxBolusUnits`'s seed (25) equals its default (25), so it is deliberately
     /// NOT the assertion target.
     public func resetSnapshotForPumpSwitch() {
@@ -243,6 +244,13 @@ public final class MockBackend: PumpBackend {
         snapshot.controllerVariant = d.controllerVariant
         snapshot.profiles = d.profiles
         snapshot.viewedProfileSegments = d.viewedProfileSegments
+        // These four LIVE readings keep their VALUE — only the age resets, mirroring `TandemBackend`,
+        // so a stale value can never masquerade as current on the new pump.
+        snapshot.glucoseDate = d.glucoseDate
+        snapshot.iobDate = d.iobDate
+        snapshot.reservoirDate = d.reservoirDate
+        snapshot.batteryDate = d.batteryDate
+        snapshot.basalRateKnown = d.basalRateKnown
     }
     /// Test knob: `seedHistory()`'s glucose trace uses `Double.random` so the Simulator/SwiftUI-preview
     /// experience never looks robotic — but that same randomness makes the default `MockBackend()`

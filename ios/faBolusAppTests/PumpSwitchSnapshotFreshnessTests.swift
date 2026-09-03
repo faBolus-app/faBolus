@@ -15,12 +15,12 @@ struct PumpSwitchSnapshotFreshnessTests {
     private func seededBackend() -> TandemBackend {
         let b = TandemBackend(testTransport: FakePumpTransport())
         b.calcInputRefreshTimeout = 0.2
-        b.injectStatusFrameForTesting(FakePumpTransport.currentEgvV2(mgdl: 145, trendRate: 0))
+        b.setGlucoseSnapshotForTesting(mgdl: 145, date: Date())
+        b.injectStatusFrameForTesting(FakePumpTransport.timeResponse(currentTime: 5_000))
         b.injectStatusFrameForTesting(FakePumpTransport.controlIQIOB(iobMilliunits: 1500))
         b.injectStatusFrameForTesting(FakePumpTransport.insulinStatus(unitsRemaining: 120))
         b.injectStatusFrameForTesting(FakePumpTransport.currentBatteryV2(percent: 80))
         b.injectStatusFrameForTesting(FakePumpTransport.currentBasalStatus(currentMilliunitsPerHour: 900))
-        b.injectStatusFrameForTesting(FakePumpTransport.timeResponse(currentTime: 5_000))
         b.injectStatusFrameForTesting(
             FakePumpTransport.calcDataSnapshot(
                 iobMilliunits: 1500, targetBg: 110, isf: 40,

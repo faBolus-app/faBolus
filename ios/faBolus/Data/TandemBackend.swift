@@ -2215,11 +2215,14 @@ public final class TandemBackend: NSObject, PumpBackend {
     }
 
     /// B4 — clear the pump-DERIVED CONFIG so a DIFFERENT pump can't be dosed against the previous pump's
-    /// values before its own reads land (the in-run re-pair window). Resets ONLY config/therapy fields to
+    /// values before its own reads land (the in-run re-pair window). Resets config/therapy fields to
     /// their `PumpSnapshot()` defaults (max bolus back to the 25 U default — never 0, which the per-bolus
-    /// clamp reads); preserves every LIVE field (connection, glucose/IOB, reservoir, battery, basal rate,
-    /// delivery-suspended, cartridge/CGM state, model identity). No `onChange` — `AppModel.refresh`
-    /// republishes on the same cycle (a nested notify would re-enter refresh).
+    /// clamp reads). Every LIVE field (glucose/IOB, reservoir, battery, basal rate) keeps its last-read
+    /// VALUE — an empty cartridge or a zero IOB is a real reading, never fabricated — but its freshness
+    /// stamp is cleared, so the display and dose path treat it as UNKNOWN until the new pump answers
+    /// rather than as this-pump-current. The calculator snapshot and the pump/phone clock anchor are
+    /// cleared outright, since neither has a "keep the value, reset the age" shape. No `onChange` —
+    /// `AppModel.refresh` republishes on the same cycle (a nested notify would re-enter refresh).
     public func resetSnapshotForPumpSwitch() {
         // The nil-until-first-read invariant: a different pump's raw bitmap must
         // never be judged against the PRIOR pump's stale raw set.
@@ -2239,6 +2242,17 @@ public final class TandemBackend: NSObject, PumpBackend {
         snapshot.controllerVariant = d.controllerVariant
         snapshot.profiles = d.profiles
         snapshot.viewedProfileSegments = d.viewedProfileSegments
+        // The values above are read-again-soon config; these four are LIVE readings whose VALUE must
+        // survive — only the age resets, so a stale value can never masquerade as current.
+        snapshot.glucoseDate = d.glucoseDate
+        snapshot.iobDate = d.iobDate
+        snapshot.reservoirDate = d.reservoirDate
+        snapshot.batteryDate = d.batteryDate
+        // Basal has no stamp of its own — "known" is the only signal a real 0 U/hr reading has ever
+        // arrived, so it resets alongside the four dated stamps above.
+        snapshot.basalRateKnown = d.basalRateKnown
+        calcSnapshot = nil
+        pumpTimeAnchor = nil
     }
 
     // Control-IQ settings — non-insulin config.
