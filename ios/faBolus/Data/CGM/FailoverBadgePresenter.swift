@@ -58,8 +58,7 @@ enum FailoverBadgePresenter {
     /// The SINGLE "can Snooze actually do anything right now" predicate, fed into
     /// `WidgetPublisher.publish`'s `hasSnoozeEligibleAlert` parameter (`WidgetSnapshot`).
     /// True only when there's at least one active alert AND none of them is `.alarm` (an `.alarm`
-    /// blocks snoozing entirely — mirrors `AlertRuleEngine`'s own "never match alarms" rule). Pure —
-    /// no `AppModel` state read beyond the alerts array handed in.
+    /// blocks snoozing entirely). Pure — no `AppModel` state read beyond the alerts array handed in.
     static func snoozeGateAllows(_ alerts: [PumpAlert]) -> Bool {
         !alerts.isEmpty && !alerts.contains(where: { !$0.kind.isAutoRuleEligible })
     }
