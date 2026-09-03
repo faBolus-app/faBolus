@@ -695,6 +695,41 @@ struct ReconcileByHistoryTests {
         }
     }
 
+    /// An empty ledger must never arm the driver — zero retries, zero pump reads.
+    @Test func emptyLedgerNeverArmsThePeriodicDriver() async {
+        await withCleanSettings {
+            let backend = MockBackend()
+            await backend.connect()
+            let model = AppModel(
+                source: backend,
+                ledgerStoreURL: URL(fileURLWithPath: NSTemporaryDirectory())
+                    .appendingPathComponent("periodic-reconcile-empty-\(UUID().uuidString).json"))
+            model.periodicReconcileIntervalOverrideForTesting = 0.02
+            await model.reconcileUnresolvedDeliveries()
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            #expect(model.periodicReconcileCallCountForTesting == 0)
+            #expect(!model.deliveryGloballyBlocked)
+        }
+    }
+
+    /// A block reason that is NOT a genuinely-unresolved entry — an unreadable/corrupt ledger — must
+    /// never arm the driver: the trigger is `!unreconciled().isEmpty`, never the block reason, and a
+    /// corrupt load reports zero persisted entries by construction.
+    @Test func nonHistoryFixableBlockNeverArmsThePeriodicDriver() async {
+        await withCleanSettings {
+            let store = R3CLedgerFaultTests.FakeLedgerStore()
+            store.reportCorruptLoad = true
+            let backend = MockBackend()
+            await backend.connect()
+            let model = AppModel(source: backend, ledgerStore: store)
+            model.periodicReconcileIntervalOverrideForTesting = 0.02
+            await model.reconcileUnresolvedDeliveries()
+            #expect(model.deliveryGloballyBlocked)  // blocked — but for a reason no history search can fix
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            #expect(model.periodicReconcileCallCountForTesting == 0)
+        }
+    }
+
     /// A second call into the SAME funnel while the FIRST is still in flight — representative of a
     /// periodic tick racing a connect edge — must fail closed on `TandemBackend`'s reentrancy guard
     /// rather than queue behind or corrupt the in-flight search; the in-flight search must still
