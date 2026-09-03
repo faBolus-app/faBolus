@@ -174,22 +174,6 @@ targets:
           # + AI carb-estimate surface is now physically git rm'd from main (delete-on-main, D-01/D-03),
           # preserved on dev/food-finder, not a compile-gated exclude. Data/FoodFinder/Views/FoodFinder
           # no longer exist on main at all.
-          # >>> BACKUP (Phase 6, 06-02, BACKUP-01/D-02/D-08 owner carve-out): these 7 paths are now
-          #   PHYSICALLY git rm'd from `main` (delete-on-main, preserved on dev/backup) — this exclude
-          #   list is a harmless no-op on `main` (the paths no longer exist to exclude) kept intact only
-          #   as documentation of the D-02 file set + so the block shape matches dev/backup/experimental's
-          #   own (unaffected, still-FABOLUS_BACKUP=1) copy of this file, where the paths are real and
-          #   this list is load-bearing. PrivacyDataView.swift is DELIBERATELY NOT in this list — it stays
-          #   on main (trimmed to erase-only, Plan 02) so the on-device "Delete all on-device data" /
-          #   "Full reset" affordance survives FABOLUS_BACKUP=0 (main's new default).
-          - Data/SettingsBackup.swift
-          - Data/PrivacyDataExport.swift
-          - Views/BackupRestoreView.swift
-          - Data/ICloudSync.swift
-          - Data/SiteAtlasStore.swift
-          - Views/SiteAtlas
-          - Vendor/LoopPowerPack/SiteAtlas/SiteAtlas_Models.swift
-          # <<< BACKUP
         # <<< APP_SOURCE_EXCLUDES
       # PhoneRemoteHost.swift (the shared Garmin/widget-adjacent WatchConnectivity receiver core,
       # REMOTE-02) is already covered by the unconditional `ios/faBolus` include above — the
@@ -283,15 +267,7 @@ targets:
         GarminBetaAppID: $(GARMIN_BETA_APP_ID)
         # How Siri should pronounce/recognize the app name in App Shortcut phrases ("… in <name>").
         CFBundleSpokenName: "Fabolus"
-        # iOS allows at most 3 alternative names.
-        INAlternativeAppNames:
-          - INAlternativeAppNameKey: "faBolus"
-          - INAlternativeAppNameKey: "Pump Remote"
-          - INAlternativeAppNameKey: "Fabolus"
         NSBluetoothAlwaysUsageDescription: "faBolus connects to your pump over Bluetooth to read status and deliver boluses."
-        # Scan a host phone's pairing QR code when using this phone as a remote, AND scan food barcodes
-        # in FoodFinder for a carb estimate the user reviews (09.18c-02, D-13) — never a dose.
-        NSCameraUsageDescription: "faBolus uses the camera to scan a pairing QR code when connecting to another phone as a remote."
         # Optional eating-nudge location gate: learn the coarse places you eat, on-device, to skip nudges
         # elsewhere. Off by default; uses significant-location changes only. See EatingLocationGate.
         NSLocationWhenInUseUsageDescription: "faBolus can learn the places you usually eat (on your device only) so it can skip eating reminders when you're clearly somewhere else. Optional and off by default."
@@ -302,10 +278,6 @@ targets:
         # peripheral for the Mac remote (bluetooth-peripheral) so it works when locked/backgrounded.
         UIBackgroundModes: [bluetooth-central, bluetooth-peripheral]
         UILaunchScreen: {}
-        # Phase 5 (D-04) — the ONLY addition this Live Activity needs: app-driven Activity.update()
-        # off the existing bluetooth-central background mode above. NO aps-environment entitlement,
-        # NO push; entitlements stay App-Groups-only.
-        NSSupportsLiveActivities: true
         # Garmin Connect IQ companion messaging: our custom callback scheme + querying the
         # Garmin Connect Mobile app.
         LSApplicationQueriesSchemes: [gcm-ciq]
