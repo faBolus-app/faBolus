@@ -1,4 +1,5 @@
 import Foundation
+import faBolusCore
 
 /// Pure aggregator that concatenates each surface's already-formatted `[Bracket]` section string
 /// (`CapabilityDiagnostics`, `CgmArbiterDiagnostics`, `RemoteRoleDiagnostics`, `GarminDiagnostics`,
@@ -84,6 +85,19 @@ enum DiagnosticsBundle {
         + "link to connected bumps Connects with no matching disconnect; a connecting-to-error "
         + "timeout records a disconnect with zero uptime; and a silent background reconnect bumps "
         + "Connects while discarding the uptime accrued before it. Read each counter on its own."
+
+    /// `[Command latency]` — one row per canonical bucket in `ConnectionTelemetry.latencyBucketOrder`
+    /// (fast→slow), never `.sorted(by:)` over `counts`' keys — the alphabetical key sort the other
+    /// dictionary rows use would print the slowest bucket first with the sub-second buckets split
+    /// apart, misreadable as a slow or bimodal link. Every canonical bucket renders, 0 when absent, so
+    /// the fixed order is visible regardless of which buckets happen to have data.
+    static func commandLatencySection(counts: [String: Int]) -> String {
+        var lines: [String] = ["", "[Command latency]"]
+        for bucket in ConnectionTelemetry.latencyBucketOrder {
+            lines.append("\(bucket): \(counts[bucket] ?? 0)")
+        }
+        return lines.joined(separator: "\n")
+    }
 
     /// `[Notification telemetry]` — flows through the same pure-aggregator array rather than staying
     /// an inline `View` block.

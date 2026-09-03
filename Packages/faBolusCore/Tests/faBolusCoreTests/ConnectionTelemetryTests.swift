@@ -33,4 +33,25 @@ struct ConnectionTelemetryTests {
         #expect(decoded.windowStart == original.windowStart)
         #expect(decoded.connectCount == 1)
     }
+
+    // MARK: - Canonical latency bucket order
+
+    /// The canonical order is fast→slow — NOT the alphabetical sort the house dictionary-row pattern
+    /// would produce (`ge4s, lt1s, lt250ms, lt2s, lt4s, lt500ms, timeout`).
+    @Test func latencyBucketOrderIsFastToSlow() {
+        #expect(
+            ConnectionTelemetry.latencyBucketOrder == [
+                "lt250ms", "lt500ms", "lt1s", "lt2s", "lt4s", "ge4s", "timeout"
+            ])
+    }
+
+    /// The canonical order contains exactly the seven tokens `latencyBucket` + `timeoutBucket` can
+    /// produce — no more, no fewer, no duplicates.
+    @Test func latencyBucketOrderContainsExactlyTheProducibleTokens() {
+        let producible: Set<String> = Set(
+            [0.0, 0.3, 0.6, 1.5, 3.0, 30.0].map(ConnectionTelemetry.latencyBucket)
+                + [ConnectionTelemetry.timeoutBucket])
+        #expect(Set(ConnectionTelemetry.latencyBucketOrder) == producible)
+        #expect(ConnectionTelemetry.latencyBucketOrder.count == 7)
+    }
 }

@@ -116,6 +116,9 @@ struct DebugMenuView: View {
             // MARK: - Connection telemetry (read-only)
             connectionTelemetrySection
 
+            // MARK: - Command latency (read-only)
+            commandLatencySection
+
             // MARK: - Notification telemetry (read-only)
             notificationTelemetrySection
 
@@ -208,6 +211,21 @@ struct DebugMenuView: View {
                     ? "Cumulative counters (uptime, why the link dropped, how unresolved deliveries settled). "
                         + "Local-only. \(DiagnosticsBundle.connectionTelemetryLimitation)"
                     : "Turn on “Share local diagnostics” above to start collecting these counters.")
+        }
+    }
+
+    /// Fixed fast→slow row order (`ConnectionTelemetry.latencyBucketOrder`) — never
+    /// `.sorted(by:)`, the same canonical order the export's `[Command latency]` section iterates.
+    @ViewBuilder private var commandLatencySection: some View {
+        let t = model.connectionTelemetry.snapshot
+        Section {
+            ForEach(ConnectionTelemetry.latencyBucketOrder, id: \.self) { bucket in
+                row(bucket, "\(t.commandLatency[bucket] ?? 0)")
+            }
+        } header: {
+            Text("Command latency")
+        } footer: {
+            Text("Command round-trip time distribution, fastest to slowest. Local-only.")
         }
     }
 
@@ -396,6 +414,7 @@ struct DebugMenuView: View {
                 disconnects: t.disconnects.sorted(by: { $0.key < $1.key }).map { (key: $0.key, count: $0.value) },
                 reconcile: t.reconcile.sorted(by: { $0.key < $1.key }).map { (key: $0.key, count: $0.value) },
                 windowStartFormatted: Self.formatWindowStart(t.windowStart)),
+            DiagnosticsBundle.commandLatencySection(counts: t.commandLatency),
             DiagnosticsBundle.notificationTelemetrySection(
                 counts: notif.sorted(by: { $0.key < $1.key }).map {
                     (

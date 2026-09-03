@@ -100,4 +100,33 @@ struct DiagnosticsBundleTests {
         #expect(block.lowercased().contains("no ratio") || block.lowercased().contains("not a rate"))
     }
 
+    // MARK: - Command latency: canonical fast→slow order
+
+    /// The latency section renders buckets in the canonical fast→slow order, never the alphabetical
+    /// key-sort the other dictionary rows use — `lt250ms` must appear before `ge4s` and `timeout`
+    /// even though an alphabetical sort would place both of those first.
+    @Test func commandLatencySectionRendersBucketsInCanonicalOrderNotAlphabetical() {
+        let block = DiagnosticsBundle.commandLatencySection(
+            counts: ["ge4s": 1, "lt1s": 2, "lt250ms": 3, "lt2s": 4, "lt4s": 5, "lt500ms": 6, "timeout": 7])
+
+        let lt250msIndex = block.range(of: "lt250ms")!.lowerBound
+        let ge4sIndex = block.range(of: "ge4s")!.lowerBound
+        let timeoutIndex = block.range(of: "timeout")!.lowerBound
+        #expect(lt250msIndex < ge4sIndex)
+        #expect(lt250msIndex < timeoutIndex)
+        #expect(block.contains("lt250ms: 3"))
+        #expect(block.contains("ge4s: 1"))
+        #expect(block.contains("timeout: 7"))
+    }
+
+    /// A bucket absent from `counts` still renders, at 0 — the fixed order stays visible regardless
+    /// of which buckets happen to have data.
+    @Test func commandLatencySectionZeroRendersAbsentBuckets() {
+        let block = DiagnosticsBundle.commandLatencySection(counts: ["lt250ms": 3])
+
+        #expect(block.contains("lt250ms: 3"))
+        #expect(block.contains("lt500ms: 0"))
+        #expect(block.contains("timeout: 0"))
+    }
+
 }

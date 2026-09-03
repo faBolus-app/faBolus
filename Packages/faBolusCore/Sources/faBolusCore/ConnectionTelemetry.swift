@@ -80,4 +80,13 @@ public struct ConnectionTelemetry: Sendable, Equatable, Codable {
     }
     /// The bucket token for a command that never got a response (timed out / disconnected mid-wait).
     public static let timeoutBucket = "timeout"
+
+    /// The seven latency tokens (`latencyBucket`'s six cases plus `timeoutBucket`), fast→slow — the
+    /// single source of truth for latency-row ordering. An alphabetical key sort over these tokens
+    /// prints `ge4s, lt1s, lt250ms, lt2s, lt4s, lt500ms, timeout`: the slowest bucket first, with the
+    /// sub-second buckets split apart — readable as a slow or bimodal link when the distribution is
+    /// neither. Callers MUST iterate this array, never `.sorted(by:)` over the dictionary's keys.
+    public static let latencyBucketOrder: [String] = [
+        "lt250ms", "lt500ms", "lt1s", "lt2s", "lt4s", "ge4s", timeoutBucket
+    ]
 }
