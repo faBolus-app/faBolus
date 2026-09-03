@@ -1084,7 +1084,8 @@ public final class AppSettings {
         glucosePlotCeiling = plotBounds.ceiling
         showStats = (d.object(forKey: "showStats") as? Bool) ?? false
         glucoseStaleMinutes = (d.object(forKey: "glucoseStaleMinutes") as? Int) ?? 6
-        advancedControlEnabled = (d.object(forKey: "advancedControlEnabled") as? Bool) ?? false
+        // Force-set OFF — a restored/legacy `true` must not silently re-arm advanced control.
+        advancedControlEnabled = false
         // Force-set `.advanced` — a restored/legacy `.simple`/`.standard` must not silently downgrade
         // the mode before `ModeStore` runs.
         appMode = .advanced
@@ -1329,20 +1330,4 @@ public final class AppSettings {
         syncWidgetConfig()
     }
 
-    /// Reset PUMP-SPECIFIC prefs to their off/default state on a pump switch, so one pump's
-    /// automation/limits don't silently carry onto a different pump. Turns off Control-IQ mode
-    /// automation + reminders (Mobi-only closed-loop behavior), first-connect pump-time-sync, and
-    /// the advanced-control opt-in; drops the optional remote dose ceiling and any pump-alert
-    /// auto-rules. Deliberately KEEPS display preferences, app mode, child/read-only, and CGM setup
-    /// (pump-independent). Each assignment goes through the property's `didSet` so it persists +
-    /// updates the live singleton.
-    public func resetPumpRelevantSettings() {
-        advancedControlEnabled = false
-        autoSyncPumpTime = false
-        autoSleepMode = false
-        autoExerciseMode = false
-        modeReminders = false
-        remoteBolusCeiling = nil
-        alertRules = []
-    }
 }

@@ -1212,11 +1212,6 @@ public final class AppModel {
 
     // MARK: - Pump-switch settings reset
 
-    /// True while the "a different pump connected — reset pump-specific app settings?" prompt should show
-    /// (RootTabView presents it). Observed. The pump-DERIVED snapshot config is cleared automatically on
-    /// the switch regardless of the answer; this prompt governs only the pump-specific *app prefs*.
-    var pendingPumpSwitch = false
-
     /// A stable identity for the CURRENTLY-connected pump, from the LIVE backend (not the persisted
     /// `BackendRegistry` selection — that only takes effect next launch): sim-vs-real plus which real pump
     /// (its CoreBluetooth peripheral UUID). Enough to tell "a different pump than last time" with no new
@@ -1229,7 +1224,7 @@ public final class AppModel {
     }
 
     /// On a fresh `.connected` edge, detect a switch to a DIFFERENT pump and, if so, clear the old
-    /// pump's derived config (auto) + raise the settings-reset prompt. First connect ever only records the
+    /// pump's derived config automatically. First connect ever only records the
     /// identity (no prior pump to reset). GATED: never disturbs the snapshot over an in-flight/unresolved
     /// delivery (the ledger + snapshot are needed to reconcile it) — it defers by leaving the marker
     /// un-advanced, so a later clean connect handles it. Uses the pre-update `previousConnection` as the
@@ -1246,24 +1241,8 @@ public final class AppModel {
             if deliveryLedgerCoordinator.hasInFlightOrUnresolvedDelivery { return }  // defer
             source.resetSnapshotForPumpSwitch()  // auto-clear the old pump's config (re-read on connect)
             PumpSwitchStore.setHandled(current)  // handled ⇒ don't re-fire every refresh
-            pendingPumpSwitch = true  // offer to reset pump-specific app prefs too
         }
     }
-
-    /// The user chose to reset pump-specific app settings after a switch: reset the pump-specific
-    /// automation/limit prefs to their off/default state AND clear the therapy change-log (its provenance +
-    /// one-tap-revert targets are keyed to the PREVIOUS pump's profile/segments — a revert must never write
-    /// a prior pump's value onto the new one). Display prefs, app mode, child/read-only, and CGM setup are
-    /// deliberately kept.
-    func resetPumpRelevantSettingsAfterSwitch() {
-        AppSettings.shared.resetPumpRelevantSettings()
-        settingChangeStore.saveBestEffort(SettingChangeLog())
-        pendingPumpSwitch = false
-    }
-
-    /// The user chose to keep their settings; just dismiss the prompt. The stale snapshot config was
-    /// already cleared automatically on the switch, so nothing pump-derived leaks either way.
-    func keepSettingsAfterPumpSwitch() { pendingPumpSwitch = false }
 
     /// Approximate on-disk size of stored history, for a "history uses ~X MB" line.
     public func storedHistoryApproxBytes() -> Int { historyPersistence.storedHistoryApproxBytes() }

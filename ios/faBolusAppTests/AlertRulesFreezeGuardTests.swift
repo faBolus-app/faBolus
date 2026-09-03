@@ -47,10 +47,4 @@ struct AlertRulesFreezeGuardTests {
         )
     }
 
-    // MARK: - resetPumpRelevantSettings' own alertRules = [] assignment stays a harmless no-op
-
-    @Test func resetPumpRelevantSettingsLeavesAlertRulesEmpty() {
-        AppSettings.shared.resetPumpRelevantSettings()
-        #expect(AppSettings.shared.alertRules.isEmpty)
-    }
 }

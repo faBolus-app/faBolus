@@ -48,8 +48,11 @@ import faBolusCore
     }
 
     /// A connected Mobi-capable model whose setting-change store points at a fresh temp file (empty log),
-    /// so `lastManualTherapyActionAt` is governed only by the inputs the test controls.
+    /// so `lastManualTherapyActionAt` is governed only by the inputs the test controls. `PumpSwitchStore`
+    /// is global App-Group state other suites write, so the connect below is forced to be a deterministic
+    /// first connect — otherwise whether it counts as a pump switch would depend on test order.
     private func makeConnectedModel() async -> (AppModel, MockBackend) {
+        PumpSwitchStore.clear()
         let backend = MockBackend(isMobi: true)
         let model = AppModel(source: backend)
         model.settingChangeStore = StoredSettingChangeStore(

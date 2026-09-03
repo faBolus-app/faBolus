@@ -189,7 +189,7 @@ struct SettingsCatalogTests {
         #expect(!SettingsCatalog.commandAdjacentFlags.contains("advancedControlEnabled"))
     }
 
-    @Test @MainActor func advancedControlEnabledRoundTripsAcrossReinitButAllowedStaysFalse() {
+    @Test @MainActor func advancedControlEnabledIsForceSetFalseAcrossReinitAndAllowedStaysFalse() {
         let suiteName = "SettingsCatalogTests.advancedControlEnabled.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -197,13 +197,12 @@ struct SettingsCatalogTests {
         let fresh = AppSettings(defaults: defaults)
         #expect(fresh.advancedControlEnabled == false)  // default OFF, unchanged
 
-        fresh.advancedControlEnabled = true  // the property setter itself is unchanged (still writable —
-        // no force-set pin — the toggle that called this setter is what's gone, not the setter itself)
+        fresh.advancedControlEnabled = true  // the property setter itself is unchanged (still writable)…
         let reloaded = AppSettings(defaults: defaults)
-        #expect(reloaded.advancedControlEnabled == true)  // persists like any ordinary flag
+        #expect(reloaded.advancedControlEnabled == false)  // …but the NEXT init force-sets it back to false
 
-        // But `advancedControlAllowed` stays false regardless, via the OTHER operand — the t:slim-only
-        // `.full` capability preset in `Models.swift` floors every advanced capability OFF.
+        // `advancedControlAllowed` also stays false via the OTHER operand — the t:slim-only `.full`
+        // capability preset in `Models.swift` floors every advanced capability OFF.
         #expect(reloaded.advancedControlAllowed(capabilities: .full) == false)
     }
 
