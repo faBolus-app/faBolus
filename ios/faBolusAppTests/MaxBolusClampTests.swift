@@ -75,6 +75,9 @@ struct MaxBolusClampTests {
         let backend = TandemBackend(testTransport: fake)
         backend.setConnectionForTesting(.connected)
         fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
+        fake.script(
+            SetMaxBasalLimitResponse.props.opCode,
+            .frame(FakePumpTransport.frame(opCode: SetMaxBasalLimitResponse.props.opCode, cargo: [0], signed: true)))
         try await backend.setMaxBasal(unitsPerHour: 20)  // above the 15 U/hr ceiling → must clamp, not throw
         let sent = fake.lastSent(SetMaxBasalLimitRequest.props.opCode)
         #expect(sent != nil, "a max-basal-limit write must have gone out (clamped, not thrown)")
@@ -89,6 +92,9 @@ struct MaxBolusClampTests {
         let backend = TandemBackend(testTransport: fake)
         backend.setConnectionForTesting(.connected)
         fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
+        fake.script(
+            SetMaxBasalLimitResponse.props.opCode,
+            .frame(FakePumpTransport.frame(opCode: SetMaxBasalLimitResponse.props.opCode, cargo: [0], signed: true)))
         try await backend.setMaxBasal(unitsPerHour: 0.1)  // below the 1.0 U/hr floor
         let sent = fake.lastSent(SetMaxBasalLimitRequest.props.opCode)
         #expect(sent != nil, "a max-basal-limit write must have gone out")

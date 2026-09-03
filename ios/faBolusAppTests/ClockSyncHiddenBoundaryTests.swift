@@ -26,9 +26,13 @@ struct ClockSyncHiddenBoundaryTests {
 
     /// `syncTimeToNow()` still issues the signed `ChangeTimeDateRequest` (opcode 0xD6) write through the
     /// fake transport with zero UI constructed anywhere in this test — what was removed is the
-    /// Settings/PumpControlView surfaces, never the write path itself.
+    /// Settings/PumpControlView surfaces, never the write path itself. `sendControl` now awaits the
+    /// ack, so an accepted `ChangeTimeDateResponse` must be scripted for the write to complete.
     @Test func syncTimeToNowStillIssuesTheWriteWithNoUIPresent() async throws {
         let (backend, fake) = makeSyncableBackend()
+        fake.script(
+            ChangeTimeDateResponse.props.opCode,
+            .frame(FakePumpTransport.frame(opCode: ChangeTimeDateResponse.props.opCode, cargo: [0], signed: true)))
         try await backend.syncTimeToNow()
         #expect(
             fake.lastSent(ChangeTimeDateRequest.props.opCode) != nil,
