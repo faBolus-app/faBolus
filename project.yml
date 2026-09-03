@@ -137,7 +137,16 @@ packages:
     # oracle NOT required); the 14-WR-02 pinned contract (state==.discovering, writePolicy untouched, in-flight
     # tx not failed) is preserved. TandemBLETests 442/54 green. STILL bench-pending: on-device UAT (mid-session
     # notify-loss drop recovers WITHOUT force-quit) is PENDING; NO-GO for real insulin — saline/bench only.
-    revision: 17e1a9971e9bcdface2e6475a5d778ae4e9cfd09
+    # Pin BUMP 2026-09-03 (owner-approved): 17e1a99 -> 4a8218f. Delta = 25 commits: an additive, read-only
+    # decode of the pump-reported requested bolus amount onto the slim history record (mirrors an existing
+    # decode already present on the sibling event type, same field/offset — no wire change); a device-axis
+    # fix so three Mobi-tagged messages are gated on device family rather than an API-version floor that a
+    # t:slim reporting API 4.0 exceeded; the JVM-version-gate fix for the oracle test harness itself; and the
+    # rest are comment/lint/CI hygiene with no wire-byte effect. TandemKit swift test 453/55 green, oracle
+    # parity (ResponseParityTests/OracleParityTests/SignedResponseHmacVerifyTests/OracleAvailabilityGateTests)
+    # green on a by-hand-confirmed JDK 21. Every ENCODE vector stays byte-identical; nothing in this delta
+    # changes a signed wire byte. STILL bench-pending: NO-GO for real insulin until the saline bench.
+    revision: 4a8218f388a9e4eb401d6c5257a021fb6ee8d688
     # <<< TANDEM_PINNED
   # >>> GARMIN (scripts/generate-project.sh strips this block when the SDK is absent)
   ConnectIQ:
