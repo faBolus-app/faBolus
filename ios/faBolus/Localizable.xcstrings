@@ -10,12 +10,6 @@
     "“Remote confirms” lets the device deliver after confirming on its own screen; “I approve on this phone” makes each bolus wait for your OK here." : {
 
     },
-    "**Advisory only** — never blocks or changes a dose. Eating nudges suggest a bolus when a meal looks likely. Off by default. Retrospective insights are under Data & History." : {
-
-    },
-    "**Advisory only** — reminds you to bolus when you're likely eating. Never doses, never blocks. Off by default." : {
-
-    },
     "**Bolusing from the Apple Watch and Garmin is off by default.** Turn on a switch above to let that device deliver a bolus — you'll confirm a one-time warning the first time. **Limit remote bolus size** optionally caps how many units a single Watch/Garmin bolus can be, on top of your pump's max bolus; the iPhone is never affected. **Read-only** overrides everything: while on, the Watch and Garmin show pump + CGM data only and can't deliver, whatever the switches above say. The iPhone is always unaffected — this is separate from the phone's own read-only mode." : {
 
     },
@@ -198,9 +192,6 @@
     "Activity & sleep automation" : {
 
     },
-    "Adapts the wrist threshold from your responses (and fine-tunes the model on-device when supported). Acting on a nudge = a real meal; dismissing it = a false alert. Everything stays on your device." : {
-
-    },
     "Adds a dashboard card with Time-in-Range, GMI, average, and variability (CV) over the last ~24 hours of readings held in memory. Off by default to keep the dashboard clean." : {
 
     },
@@ -316,9 +307,6 @@
 
     },
     "Carbs" : {
-
-    },
-    "CGM finds meal, wrist confirms" : {
 
     },
     "CGM high / low alerts" : {
@@ -484,9 +472,6 @@
     "faBolus is experimental and not FDA-cleared. This delivers on the other phone's pump." : {
 
     },
-    "faBolus keeps your glucose, insulin and carb history on this device to power stats, charts, and retrospective insights — about **1 MB per month**, so keeping everything is fine. This control is only if you prefer to auto-delete older data." : {
-
-    },
     "faBolus starts in **Simple mode** — the essentials: see your glucose and give a bolus. As you get comfortable you can unlock more, one step at a time, in **Settings → Mode**." : {
       "comment" : "P16 F6 (N13) seed — first-run onboarding body (Markdown emphasis).",
       "extractionState" : "manual",
@@ -571,9 +556,6 @@
         }
       }
     },
-    "Learns the coarse places you eat (on-device) and skips nudges elsewhere. Needs a few meals to learn first — %@ place(s) learned. Never gates until then." : {
-
-    },
     "Lets a paired **Mac** or **parent iPhone** connect over Bluetooth to view status and (with permission) deliver boluses — even when this phone is locked. Each device's permissions (view-only vs. control) are set when you pair it and editable under **Pair a remote → the device**. Pairing is authenticated and end-to-end encrypted, **but turning this on makes the phone advertise a connectable Bluetooth service, a small added attack surface. Leave it off unless you use a remote.** (Your Apple Watch and Garmin are unaffected.)" : {
 
     },
@@ -584,9 +566,6 @@
 
     },
     "Loading segments…" : {
-
-    },
-    "Longer = more confident / fewer false alerts, but a later nudge (less useful for pre-bolusing)." : {
 
     },
     "Low alert at %@ mg/dL" : {
