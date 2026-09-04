@@ -29,12 +29,6 @@ struct RemoteCommandSchemaConformanceTests {
         return obj as? [String: Any] ?? [:]
     }
 
-    /// BLE-only/Mac-pairing/reverse-approval kinds that were excluded from the shared watch/Garmin
-    /// `command.schema.json`. Empty now that all of those kinds have been deleted — kept as a typed
-    /// set (rather than removed outright) so the belt-and-suspenders loop below stays generically
-    /// correct if a future BLE-only kind is ever added again.
-    private static let bleOrSwiftOnlyKinds: Set<RemoteCommand.Kind> = []
-
     /// LIVE Swift fields that must stay present on BOTH sides — a schema-only or Swift-only deletion
     /// would create drift invisible to a kinds-only test.
     private static let atRiskSharedFields = ["activeMode", "watchChartRanges"]
@@ -60,22 +54,12 @@ struct RemoteCommandSchemaConformanceTests {
             return
         }
 
-        let sharedSwiftKinds = RemoteCommand.Kind.allCases.filter { !Self.bleOrSwiftOnlyKinds.contains($0) }
-        let sharedSwiftKindRawValues = Set(sharedSwiftKinds.map(\.rawValue))
+        let allKindRawValues = Set(RemoteCommand.Kind.allCases.map(\.rawValue))
 
         #expect(
-            Set(schemaKinds) == sharedSwiftKindRawValues,
-            "schema kind.enum \(schemaKinds.sorted()) must equal the documented shared subset of RemoteCommand.Kind \(sharedSwiftKindRawValues.sorted()) — a BLE-only/Mac-pairing/advisory kind leaked into the schema, or a shared kind is missing from it"
+            Set(schemaKinds) == allKindRawValues,
+            "schema kind.enum \(schemaKinds.sorted()) must equal every RemoteCommand.Kind \(allKindRawValues.sorted()) — a kind leaked into the schema, or a Swift kind is missing from it"
         )
-
-        // Belt-and-suspenders: every excluded case really is excluded (catches a typo in the exclusion set
-        // itself hiding a real omission from the shared subset).
-        for excluded in Self.bleOrSwiftOnlyKinds {
-            #expect(
-                !schemaKinds.contains(excluded.rawValue),
-                "'\(excluded.rawValue)' is documented BLE-only/Mac-pairing/advisory (RemoteCommand.swift) but appears in schema kind.enum"
-            )
-        }
     }
 
     // MARK: - shared top-level properties
