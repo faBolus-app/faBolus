@@ -1644,10 +1644,6 @@ public final class AppModel {
         await runControl(.setSensorType) { try await source.setSensorType(typeId) }
     }
     public func stopCgmSession() async { await runControl(.stopCgmSession) { try await source.stopCgmSession() } }
-    public func refreshCgmSession() async {
-        await source.refreshCgmSession()
-        refresh()
-    }
     public func enterChangeCartridgeMode() async {
         await runControl(.enterChangeCartridgeMode) { try await source.enterChangeCartridgeMode() }
     }
@@ -1662,10 +1658,6 @@ public final class AppModel {
     }
     public func fillCannula(milliunits: Int) async {
         await runControl(.fillCannula) { try await source.fillCannula(milliunits: milliunits) }
-    }
-    public func refreshLoadStatus() async {
-        await source.refreshLoadStatus()
-        refresh()
     }
     /// Set the pump's max-bolus limit. The absolute 25 U ceiling is a HARD cap: clamp at the funnel so
     /// the invariant holds regardless of backend (the backends clamp too, as defense-in-depth). Never a
@@ -1859,10 +1851,6 @@ public final class AppModel {
                 slot: slot, enabled: enabled, activeDays: activeDays,
                 startMinute: startMinute, endMinute: endMinute)
         }
-    }
-    public func refreshProfiles() async {
-        await source.refreshProfiles()
-        refresh()
     }
     // Switching the active profile, renaming, and deleting a profile are therapy-defining
     // (they change the active basal / carb-ratio / ISF the pump doses from), so they route through the

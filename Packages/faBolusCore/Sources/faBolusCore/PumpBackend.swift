@@ -165,8 +165,6 @@ public protocol PumpBackend: AnyObject {
     func startG7Session(pairingCode: Int) async throws
     func setSensorType(_ typeId: Int) async throws
     func stopCgmSession() async throws
-    /// Poll the pump's CGM session status into `snapshot.cgmSessionActive`.
-    func refreshCgmSession() async
 
     // Cartridge change / fill (INSULIN-AFFECTING — bench-validate on saline first). Multi-step:
     // suspend → clear alerts → enter change mode → (swap) → exit → detect; fill tubing/cannula after.
@@ -176,8 +174,6 @@ public protocol PumpBackend: AnyObject {
     func exitFillTubingMode() async throws
     /// Fill the cannula with `milliunits` (e.g. 300 = 0.3 U). Insulin-affecting; bounded by the UI.
     func fillCannula(milliunits: Int) async throws
-    /// Poll the pump's cartridge/load status into `snapshot.cartridgeLoadState`.
-    func refreshLoadStatus() async
 
     // Settings (non-insulin config).
     func setMaxBolus(units: Double) async throws
@@ -213,7 +209,6 @@ public protocol PumpBackend: AnyObject {
     func setPumpSounds(quickBolus: Int, general: Int, reminder: Int, alert: Int, alarm: Int, cgmA: Int, cgmB: Int)
         async throws
     // Insulin-delivery profiles (IDP). Switch/rename/delete are insulin-affecting (change active basal).
-    func refreshProfiles() async
     func setActiveProfile(idpId: Int) async throws
     func renameProfile(idpId: Int, name: String) async throws
     func deleteProfile(idpId: Int) async throws
@@ -419,13 +414,11 @@ public extension PumpBackend {
     func startG7Session(pairingCode: Int) async throws { throw ControlError.notSupported }
     func setSensorType(_ typeId: Int) async throws { throw ControlError.notSupported }
     func stopCgmSession() async throws { throw ControlError.notSupported }
-    func refreshCgmSession() async {}
     func enterChangeCartridgeMode() async throws { throw ControlError.notSupported }
     func exitChangeCartridgeMode() async throws { throw ControlError.notSupported }
     func enterFillTubingMode() async throws { throw ControlError.notSupported }
     func exitFillTubingMode() async throws { throw ControlError.notSupported }
     func fillCannula(milliunits: Int) async throws { throw ControlError.notSupported }
-    func refreshLoadStatus() async {}
     func setMaxBolus(units: Double) async throws { throw ControlError.notSupported }
     func setMaxBasal(unitsPerHour: Double) async throws { throw ControlError.notSupported }
     func syncTimeToNow() async throws { throw ControlError.notSupported }
@@ -439,7 +432,6 @@ public extension PumpBackend {
     func setPumpSounds(quickBolus: Int, general: Int, reminder: Int, alert: Int, alarm: Int, cgmA: Int, cgmB: Int)
         async throws
     { throw ControlError.notSupported }
-    func refreshProfiles() async {}
     func setActiveProfile(idpId: Int) async throws { throw ControlError.notSupported }
     func renameProfile(idpId: Int, name: String) async throws { throw ControlError.notSupported }
     func deleteProfile(idpId: Int) async throws { throw ControlError.notSupported }

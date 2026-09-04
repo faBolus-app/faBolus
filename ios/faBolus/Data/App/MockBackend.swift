@@ -476,7 +476,6 @@ public final class MockBackend: PumpBackend {
         snapshot.cgmSessionActive = false
         onChange?()
     }
-    public func refreshCgmSession() async {}
 
     public func enterChangeCartridgeMode() async throws {
         snapshot.deliverySuspended = true
@@ -502,7 +501,6 @@ public final class MockBackend: PumpBackend {
         snapshot.deliverySuspended = false
         onChange?()
     }
-    public func refreshLoadStatus() async {}
 
     /// Counts the therapy-defining control writes (max bolus/basal, Control-IQ) that reach the
     /// backend, so a test can prove they are ack-gated the same way `idpWriteCount` proves it for IDP CRUD.
@@ -555,15 +553,6 @@ public final class MockBackend: PumpBackend {
                     startMinute: 23 * 60, endMinute: 7 * 60),
                 PumpSleepScheduleSlot(slot: 2, enabled: false, activeDays: 0, startMinute: 0, endMinute: 0),
                 PumpSleepScheduleSlot(slot: 3, enabled: false, activeDays: 0, startMinute: 0, endMinute: 0)
-            ]
-            onChange?()
-        }
-    }
-    public func refreshProfiles() async {
-        if snapshot.profiles.isEmpty {
-            snapshot.profiles = [
-                PumpProfileInfo(idpId: 1, name: "Default", active: true),
-                PumpProfileInfo(idpId: 2, name: "Weekend", active: false)
             ]
             onChange?()
         }

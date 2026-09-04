@@ -2261,6 +2261,12 @@ public final class TandemBackend: NSObject, PumpBackend {
         let clamped = FillLimits.clampPrimeSize(milliunits)
         try await sendControl(try FillCannulaRequest(primeSize: clamped), delivery: true)
     }
+    /// On-demand guarded cartridge/load read. This method has no production caller — it is the
+    /// tests' on-demand-read entry point, the canonical shape the op-77 never-resend guard, learned-opcode
+    /// persistence, the static unsupported-read registry, the identity-gated read hold, and the cartridge
+    /// fail-closed path all drive against. The underlying `LoadStatusRequest` itself is NOT dead: it rides
+    /// the recurring fast read burst and feeds the fail-closed bolus pre-guard, so the read stays live even
+    /// though this convenience entry point is invoked only from tests.
     public func refreshLoadStatus() async {
         guard snapshot.connection == .connected else { return }
         // op20 LoadStatus is gated OUT of `fastRead()`'s pre-capability burst; this on-demand path
