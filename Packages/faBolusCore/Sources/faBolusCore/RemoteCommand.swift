@@ -453,18 +453,6 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// initializer stays untouched.
     public var controlIQMode: Int?
 
-    /// Whether the
-    /// pump's OWN configured Sleep-schedule (`PumpSnapshot.sleepSchedules`) has a window active
-    /// RIGHT NOW, plus that window's start/end minute-of-day — pure window math over
-    /// pump-communicated data, never a clinical literal. Watch/Garmin never render this,
-    /// though it rides the SAME shared wire/parse point as every other primitive
-    /// here rather than a second channel. Emitted UNCONDITIONALLY (mirrors
-    /// `ciqSuspendedForLow`: `false` is a fully-known "no window active" fact, not "absent").
-    /// Display-only, never a dose input. Additive; auto-Codable.
-    public var inSleepWindow: Bool?
-    public var sleepWindowStartMinute: Int?
-    public var sleepWindowEndMinute: Int?
-
     /// The phone-owned Garmin alert-intensity setting, mirrored to the watch on
     /// the statusRead reply (the watch's fail-closed gate consumes them). `alertIntensityMode` is a frozen
     /// 3-token enum ("silent"|"vibrate"|"audible", DEFAULT "vibrate"); `alertAudibleMinSeverity` the audible
@@ -700,11 +688,8 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         try intRange("glucosePlotFloorSmall", glucosePlotFloorSmall, 1, 1000)
         try intRange("glucosePlotCeilingSmall", glucosePlotCeilingSmall, 1, 1000)
 
-        // The live mode is always one of the pump's own 3 states; the sleep-window minutes are
-        // a plain minute-of-day (0-1439). Absent is always valid for all three.
+        // The live mode is always one of the pump's own 3 states. Absent is always valid.
         try intRange("controlIQMode", controlIQMode, 0, 2)
-        try intRange("sleepWindowStartMinute", sleepWindowStartMinute, 0, 1439)
-        try intRange("sleepWindowEndMinute", sleepWindowEndMinute, 0, 1439)
 
         // `ciqZone` is a frozen wire token — a remote
         // reconstructs Tandem's own zone word locally from it, so an out-of-set string (e.g. a forged

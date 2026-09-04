@@ -161,13 +161,6 @@ final class RemoteCommandWireFixture {
     /// surviving past the moment the pump's own state changed. Safe default `0` ⇒ no card on a cold
     /// launch, before the first statusRead.
     var controlIQMode: Int = 0
-    /// The pump's OWN configured sleep-schedule window, evaluated at the phone against `now` (pure
-    /// window math, (b) pump-communicated) — iPhone/Mac render the verbose window text from these;
-    /// Watch does not render them (explicit scope) even though they ARE parsed here (one
-    /// shared parse point).
-    var inSleepWindow: Bool?
-    var sleepWindowStartMinute: Int?
-    var sleepWindowEndMinute: Int?
 
     /// The pump's controller descriptor, reconstructed locally from the mirrored variant. There are no
     /// disclosure-string computed props here; `lockoutRemainingFraction` below documents the
@@ -500,11 +493,8 @@ final class RemoteCommandWireFixture {
             // Fail-closed: mirrors `lockoutUntilDate`'s unconditional
             // assign-or-clear exactly — the host relays its CURRENT knowledge every statusRead
             // (`nil` on the wire means "legacy host", which the safe `0` default already covers), so
-            // a stale Sleep/Exercise mode/window must never survive past the moment it clears.
+            // a stale Sleep/Exercise mode must never survive past the moment it clears.
             controlIQMode = cmd.controlIQMode ?? 0
-            inSleepWindow = cmd.inSleepWindow
-            sleepWindowStartMinute = cmd.sleepWindowStartMinute
-            sleepWindowEndMinute = cmd.sleepWindowEndMinute
             if let a = cmd.alerts {
                 // Watch/Mac otherwise render alerts as a silent list. Detect a newly-arrived alert by
                 // identity (so an equal-count replacement still counts) and actively surface it — but not

@@ -219,11 +219,6 @@ enum RemoteStatusComposer {
         // Live Sleep/Exercise mode. Unconditional: `0` = normal is a known fact, not absent.
         // Display-only.
         cmd.controlIQMode = s.controlIQMode
-        // Pump-configured sleep-schedule window. iPhone/Mac render the verbose window text;
-        // Watch/Garmin never receive/render it.
-        cmd.inSleepWindow = s.inSleepWindow
-        cmd.sleepWindowStartMinute = s.sleepWindowStartMinute
-        cmd.sleepWindowEndMinute = s.sleepWindowEndMinute
         // Phone-owned Garmin alert intensity + complication slots. Unconditional; "absent"
         // is a legacy host. Watch fails closed to vibration-only and iob/reservoir/battery
         // slots. Settings only — never a dose input.

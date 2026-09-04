@@ -476,20 +476,6 @@ final class PumpResponseApplier {
                     snap.ciqSuspendedForLow = false
                     snap.ciqSuspendStartDate = nil
                 }
-                // Sleep-window derivation — pure minute-of-day/day-of-week math over the
-                // already-decoded `sleepSchedules`, never a clinical literal (those live only in
-                // `ControllerDescriptor.activityPresets`). Independent of the LIVE mode (answers
-                // "is a configured schedule window active right now"). The card itself gates
-                // window-text rendering on `controlIQMode == .sleep`, not duplicated here.
-                if let window = SleepWindowDerivation.activeWindow(slots: snap.sleepSchedules) {
-                    snap.inSleepWindow = true
-                    snap.sleepWindowStartMinute = window.startMinute
-                    snap.sleepWindowEndMinute = window.endMinute
-                } else {
-                    snap.inSleepWindow = false
-                    snap.sleepWindowStartMinute = nil
-                    snap.sleepWindowEndMinute = nil
-                }
             }
         default: break
         }

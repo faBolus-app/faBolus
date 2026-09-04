@@ -506,16 +506,6 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// read-only/editor screen. Universal read — populated regardless of pump model; empty until
     /// `PumpBackend.refreshSleepSchedule()` has been called and answered.
     public var sleepSchedules: [PumpSleepScheduleSlot] = []
-    /// Whether the pump's OWN configured Sleep-schedule (`sleepSchedules` above) has a window active
-    /// RIGHT NOW, plus that window's start/end minute-of-day — pure window math over pump-communicated
-    /// data, computed by `SleepWindowDerivation.activeWindow`, never a clinical literal. Independent
-    /// of the LIVE `controlIQMode` (a configured schedule can be active even while a different mode
-    /// happens to be live) — the Sleep card additionally requires `controlIQMode == .sleep` before
-    /// rendering the window text (mutual-exclusivity enforced at render time via `ciqActivityPreset`'s
-    /// single-branch selection, not duplicated here). Display-only, never a dose input.
-    public var inSleepWindow: Bool?
-    public var sleepWindowStartMinute: Int?
-    public var sleepWindowEndMinute: Int?
     public init() {}
 
     /// Typed model identity, derived from the driver's raw detection. Mirrors the historical
@@ -564,50 +554,6 @@ public struct PumpSnapshot: Sendable, Equatable {
         CalcInputFreshness.isTherapyStale(therapyParamsDate, now: now)
     }
 
-}
-
-/// Pure minute-of-day/day-of-week window math over the pump's OWN `sleepSchedules` (already decoded
-/// from `ControlIQSleepScheduleResponse`). No clinical literal — this is structural scheduling
-/// arithmetic, not a Tandem clinical constant.
-public enum SleepWindowDerivation {
-    /// The first ENABLED slot (checked in stored `slot`-index order, matching the pump's own
-    /// precedence) whose day-of-week bit matches `now`'s weekday and whose minute-of-day range
-    /// contains `now` — including a slot that spans midnight (`startMinute > endMinute`), checked
-    /// against both today's and yesterday's day-bit as appropriate. `nil` when no slot is currently
-    /// active.
-    ///
-    /// Day-bit mapping (CONFIRMED, matches `PumpSleepScheduleSlot.activeDays`'s documented ordering):
-    /// Monday=bit0…Sunday=bit6. `Calendar.weekday` is Sunday=1…Saturday=7, so `todayBit = (weekday +
-    /// 5) % 7` converts one to the other.
-    public static func activeWindow(
-        slots: [PumpSleepScheduleSlot], now: Date = Date(),
-        calendar: Calendar = .current
-    ) -> (startMinute: Int, endMinute: Int)? {
-        let comps = calendar.dateComponents([.hour, .minute, .weekday], from: now)
-        guard let weekday = comps.weekday else { return nil }
-        let nowMinute = (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
-        let todayBit = (weekday + 5) % 7
-        let yesterdayBit = (todayBit + 6) % 7
-        for slot in slots.sorted(by: { $0.slot < $1.slot }) where slot.enabled {
-            let start = slot.startMinute, end = slot.endMinute
-            if start <= end {
-                // Same-day window.
-                if slot.activeDays & (1 << todayBit) != 0, nowMinute >= start, nowMinute < end {
-                    return (start, end)
-                }
-            } else {
-                // Midnight-spanning window: active either "tonight" (today's slot, start...midnight)
-                // or "this morning" (yesterday's slot, midnight...end).
-                if slot.activeDays & (1 << todayBit) != 0, nowMinute >= start {
-                    return (start, end)
-                }
-                if slot.activeDays & (1 << yesterdayBit) != 0, nowMinute < end {
-                    return (start, end)
-                }
-            }
-        }
-        return nil
-    }
 }
 
 /// The honest "% of your configured max basal rate" readout. This is faBolus's OWN construct
