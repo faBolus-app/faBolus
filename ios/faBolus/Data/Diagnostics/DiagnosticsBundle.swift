@@ -2,9 +2,9 @@ import Foundation
 import faBolusCore
 
 /// Pure aggregator that concatenates each surface's already-formatted `[Bracket]` section string
-/// (`CapabilityDiagnostics`, `CgmArbiterDiagnostics`, `RemoteRoleDiagnostics`, `GarminDiagnostics`,
-/// the BLE-session-log line-builder, and this type's own identity/telemetry helpers). Never
-/// re-derives or reformats any surface's own state, and performs no I/O of its own.
+/// (`CapabilityDiagnostics`, `CgmArbiterDiagnostics`, `GarminDiagnostics`, the BLE-session-log
+/// line-builder, and this type's own identity/telemetry helpers). Never re-derives or reformats
+/// any surface's own state, and performs no I/O of its own.
 ///
 /// PHI: `DiagnosticsBundle` adds exactly two non-PHI provenance values of its own — a build-commit
 /// stamp (`buildProvenanceSection`) naming which binary produced the export, and a connection-telemetry

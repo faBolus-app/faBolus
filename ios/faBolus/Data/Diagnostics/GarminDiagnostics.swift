@@ -130,7 +130,7 @@ enum GarminDiagnostics {
 
     /// Deterministic, non-identifying token for a Garmin device name — same input always yields the
     /// same token (SHA-256, not process-randomized), so repeated diagnostics pulls can be correlated
-    /// without ever reconstructing the original name. Mirrors `RemoteRoleDiagnostics.stableToken`.
+    /// without ever reconstructing the original name.
     private static func stableToken(for name: String) -> String {
         let digest = SHA256.hash(data: Data(name.utf8))
         let hex = digest.map { String(format: "%02x", $0) }.joined()

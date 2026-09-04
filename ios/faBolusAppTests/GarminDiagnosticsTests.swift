@@ -4,8 +4,7 @@ import faBolusCore
 
 /// Behavior pins for the `[Garmin CIQ]` diagnostics section — a fabricated
 /// `GarminDiagnostics.BridgeState` plain value is injected directly (no live
-/// `GarminRemoteBridge`/ConnectIQ instantiation required), mirroring `RemoteRoleDiagnostics`'s
-/// "inject the already-tracked state as plain values" precedent. Any Garmin device name must never
+/// `GarminRemoteBridge`/ConnectIQ instantiation required). Any Garmin device name must never
 /// appear verbatim in the rendered text.
 @MainActor
 struct GarminDiagnosticsTests {
