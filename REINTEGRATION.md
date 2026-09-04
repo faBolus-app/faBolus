@@ -19,12 +19,54 @@ that read `MacPairingCoordinator`.
   here, when 03-03 removes the whole `watch/faBolusWatch` tree.
 - `ios/faBolus/Data/PhoneRemoteHost.swift`, `GarminRemoteBridge.swift`, `RemoteClientAuthStore.swift`,
   `RemoteRoleDiagnostics.swift` — the shared receiver core + kept diagnostics, deliberately untouched
-  (D-04 STAY list); still live on `main` unconditionally.
+  (D-04 STAY list) as of this branch's own tip. ⚠ **`RemoteClientAuthStore.swift` is stale in THIS
+  bullet as of a later `main` removal — see "Update" below; the other three are unaffected.**
 - `ios/faBolus/Data/RemotePeerPolicyStore.swift`, `MacPairingCoordinator.swift` — NOT deleted, REPLACED
   with minimal deny-by-default stubs (see "Stubs to un-stub" below) so the byte-frozen `AppModel.swift`
   keeps compiling.
 - `requireRemoteBolusApproval`'s `AppSettings` accessor — stays (frozen `AppModel.swift:1871` still
   reads it); only its `SettingsCatalog` row + `ChildModeView.swift` UI were removed (hidden-flag).
+
+## Update (a later `main` removal — the transport/handshake/routing layer, no `dev/*` branch of its own)
+
+A subsequent `main` removal deleted the transport/handshake/routing cluster that the phone-peer surface
+above rode on. **None of it is preserved on this branch** — this branch's tip only ever carried the
+*consumer* code (`PhoneRemoteClientModel.swift` etc., listed in "What it is" above), never the
+transport primitives, so there is nothing to restore from `dev/phone-remote` for these; recover them
+from `main` history instead, `git show <pre-removal-sha>:<path>` (pre-removal main tip was
+`649e6cce56744fdc593bbf077075201140995132`; re-verify the sha is still an ancestor before relying on it,
+and re-derive the path by symbol if `main` has since reorganized `ios/faBolus/Data/Remote/` again):
+
+- `Packages/faBolusCore/Sources/faBolusCore/BLELink.swift` — the phone↔Mac/phone↔phone GATT-server
+  transport (470 lines; was never constructed on `main`, "DEAD on main" per its own header comment).
+- `Packages/faBolusCore/Sources/faBolusCore/SealedTransport.swift` — the AES-GCM sealed-envelope
+  `RemoteTransport` decorator (169 lines).
+- `Packages/faBolusCore/Sources/faBolusCore/MacPairing.swift` — the HMAC pairing-handshake primitives
+  (131 lines), including `newStrongCode()` (the QR-pairing high-entropy code generator).
+- `Packages/faBolusCore/Sources/faBolusCore/PeerPairingPayload.swift` — the pairing-QR payload
+  encode/decode struct (40 lines).
+- `Packages/faBolusCore/Sources/faBolusCore/RemoteTransport.swift`'s `RemoteSendDisposition` enum +
+  `decide(...)` (the never-queue-a-pump-mutating-command classifier that predated
+  `RemoteCommand.Kind.mutatesPumpState` becoming the live classifier) — **only this enum**; `protocol
+  RemoteTransport` and `onUndeliverable` in the same file are UNCHANGED and still live on `main`.
+- `ios/faBolus/Data/Remote/RemoteClientAuthStore.swift` — corrects the bullet above: this file is now
+  ALSO gone from `main` (a zero-caller orphan by the time of its removal — the phone-peer consumer that
+  used it had already been removed here in 03-02). Its Keychain service
+  (`com.fabolus.app.remoteclient.auth`) and `phoneRemoteClientId` UserDefaults key were left as stale,
+  harmless, unreadable orphans by that removal (same class as the `com.fabolus.app.macremote` note
+  below), not purged by it — treat any surviving entries the same way.
+- `ios/faBolus/Views/QRCodeView.swift` — the host-side pairing-QR *generator* (32 lines; its scanner
+  counterpart, `Views/QRScannerView.swift`, IS preserved above on this branch — the two were never
+  reunited on `main` after 03-02 orphaned the generator).
+- `ios/faBolus/Data/Remote/AppRouter.swift` — the single-case `enum Target { case thisPump }` routing
+  shell (+ its `@State`/`.environment(router)` wiring in `RootContainerView.swift`) that phone-peer's
+  `.remote` `Target` case (see "Callers to re-wire" step 3 below) would have extended, had it survived.
+  Re-add the `.remote` case to a fresh router type on reintegration; do not expect this one back.
+
+Reintegrating the phone-peer surface from this branch is therefore NOT sufficient by itself once that
+later removal has landed — the transport/handshake layer above must be recovered from `main` history
+(there is no `dev/*` branch carrying it verbatim) and re-wired underneath `PhoneRemoteClientModel`
+before any of this branch's preserved files will compile.
 
 ## State at removal
 
