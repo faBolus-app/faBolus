@@ -198,7 +198,6 @@ public protocol PumpBackend: AnyObject {
 
     // Control-IQ settings (non-insulin config; changes closed-loop behavior).
     func setControlIQ(enabled: Bool, weightLbs: Int, totalDailyInsulinUnits: Int) async throws
-    func refreshControlIQSettings() async
     /// Read the pump's native Sleep-schedule slots into `snapshot.sleepSchedules`. Universal/unsigned
     /// read — NOT capability-gated; sendable and harmless on any connected pump model regardless of
     /// `PumpCapabilities.supportsSleepScheduleWrite`.
@@ -436,7 +435,6 @@ public extension PumpBackend {
     func setSleepSchedule(slot: Int, enabled: Bool, activeDays: Int, startMinute: Int, endMinute: Int) async throws {
         throw ControlError.notSupported
     }
-    func refreshControlIQSettings() async {}
     func refreshSleepSchedule() async {}
     func setPumpSounds(quickBolus: Int, general: Int, reminder: Int, alert: Int, alarm: Int, cgmA: Int, cgmB: Int)
         async throws

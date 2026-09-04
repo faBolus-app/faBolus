@@ -210,12 +210,6 @@ final class PumpResponseApplier {
                 // discloses it relies on the pump's own protection rather than presenting confirmed-ready.
                 snap.cartridgeLoadStateConfirmed = true
             }
-        case let m as ControlIQInfoV1Response:
-            withSnapshot { snap in
-                snap.controlIQEnabled = m.closedLoopEnabled
-                snap.controlIQWeightLbs = m.weight
-                snap.controlIQTotalDailyInsulin = m.totalDailyInsulin
-            }
         case let m as ControlIQSleepScheduleResponse:
             // Universal read — decode-boundary projection into faBolusCore's
             // PumpSleepScheduleSlot; TandemKit's SleepSchedule never crosses this boundary.

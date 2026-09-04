@@ -522,13 +522,6 @@ public final class MockBackend: PumpBackend {
         snapshot.controlIQTotalDailyInsulin = totalDailyInsulinUnits
         onChange?()
     }
-    public func refreshControlIQSettings() async {
-        if snapshot.controlIQWeightLbs == 0 {
-            snapshot.controlIQWeightLbs = 160
-            snapshot.controlIQTotalDailyInsulin = 45
-            onChange?()
-        }
-    }
     /// Mirrors `setControlIQ` — counted via `controlWriteCount` (the therapy-defining-write counter
     /// `everyTherapyWriteEntryPointIsCentrallyGated` asserts against), clamps minute-of-day to
     /// 0...1439 (defense-in-depth, same bound as `TandemBackend`), and updates (or appends) the

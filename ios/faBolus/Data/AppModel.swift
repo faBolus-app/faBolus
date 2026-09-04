@@ -1839,10 +1839,6 @@ public final class AppModel {
             .global("controlIQEnabled"), before: .bool(before),
             afterOnSuccess: .bool(enabled), succeeded: lastError == nil)
     }
-    public func refreshControlIQSettings() async {
-        await source.refreshControlIQSettings()
-        refresh()
-    }
     // Sleep schedule — universal/unsigned read: ungated passthrough, no runControl/runGatedTherapy
     // wrapper. The write routes through runGatedTherapy.
     public func refreshSleepSchedule() async {

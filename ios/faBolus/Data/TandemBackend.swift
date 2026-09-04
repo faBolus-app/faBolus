@@ -2341,14 +2341,8 @@ public final class TandemBackend: NSObject, PumpBackend {
                 enabled: enabled, weightLbs: weightLbs,
                 totalDailyInsulinUnits: totalDailyInsulinUnits), delivery: false)
     }
-    public func refreshControlIQSettings() async {
-        guard snapshot.connection == .connected else { return }
-        try? client.send(ControlIQInfoV1Request())  // reply handled in didReceiveFrame
-        try? await Task.sleep(nanoseconds: 600_000_000)
-    }
-
-    // Sleep schedule — universal/unsigned read, NOT capability-gated. Mirrors
-    // refreshControlIQSettings() exactly; the reply is handled in didReceiveFrame.
+    // Sleep schedule — universal/unsigned read, NOT capability-gated. Fire-and-forget:
+    // send the request and let the reply be handled in didReceiveFrame.
     public func refreshSleepSchedule() async {
         guard snapshot.connection == .connected else { return }
         try? client.send(ControlIQSleepScheduleRequest())
