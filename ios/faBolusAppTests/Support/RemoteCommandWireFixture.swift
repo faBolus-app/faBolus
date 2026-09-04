@@ -17,9 +17,11 @@ import WidgetKit
 ///
 /// Original doc (verbatim — describes the PRODUCTION type this fixture mirrors — the second paragraph's
 /// "platform can subclass it" no longer applies to this fixture, which is never subclassed in test code;
-/// the Apple-Watch/`RemoteLink` transport it once described is itself retired):
+/// the Apple-Watch/`RemoteLink` transport it once described, and the phone/Mac BLE peer transport, are
+/// both retired):
 /// Transport-agnostic remote-client state shared by every faBolus remote that mirrors the phone
-/// (formerly Apple Watch over a WatchConnectivity transport, still Mac/iPhone over `BLELink`). It is a
+/// (formerly Apple Watch over a WatchConnectivity transport; formerly Mac/iPhone peer over a BLE
+/// transport). It is a
 /// *dumb remote*: it never touches the pump (TandemKit runs on the phone). It sends
 /// bolus/cancel/dismiss/status commands and reflects the status the phone echoes back, and publishes
 /// the latest glucose/pump state to the App Group for this device's widgets/complication.
@@ -254,8 +256,6 @@ final class RemoteCommandWireFixture {
     var lastStatus: RemoteCommand.Status?
     var statusMessage: String?
     var pendingRequestId: String?
-    /// A bolus the host started that's awaiting THIS remote's approval (reverse approval): (id, units).
-    var incomingApproval: (requestId: String, units: Double)?
 
     /// Whether the phone has been seen bolusing since this request started — so a lost/late terminal
     /// echo can be recovered from the connection state (see handle(.statusRead)).
@@ -603,21 +603,9 @@ final class RemoteCommandWireFixture {
                 GlucoseFreshness.staleAfter + TimeInterval($0) * 60
             }
             publishSnapshot()
-        case .bolusApprovalRequest:
-            incomingApproval = (cmd.requestId, cmd.units ?? 0)
         default:
             break
         }
-    }
-
-    /// Approve or deny a host-initiated bolus (reverse approval).
-    func respondToApproval(_ approved: Bool) {
-        guard let a = incomingApproval else { return }
-        var cmd = RemoteCommand(kind: .bolusApprovalResponse, requestId: a.requestId)
-        cmd.approved = approved
-        cmd.sentAt = Int(Date().timeIntervalSince1970)  // freshness-gated (a late approval could dose)
-        link.send(cmd)
-        incomingApproval = nil
     }
 
     /// Publish the latest glucose/pump state to the App Group so this device's widgets/complication

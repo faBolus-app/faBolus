@@ -302,10 +302,9 @@ final class RemoteCommandTests: XCTestCase {
             let expectedMutating: Bool
             switch kind {
             case .bolusRequest, .bolusConfirm, .cancelBolus, .suspendPump, .resumePump,
-                .dismissAlert, .bolusApprovalRequest, .bolusApprovalResponse, .sealed:
+                .dismissAlert:
                 expectedMutating = true
-            case .bolusStatus, .statusRead, .dismissAck,
-                .authHello, .authChallenge, .authProof, .authResult:
+            case .bolusStatus, .statusRead, .dismissAck:
                 expectedMutating = false
             }
             XCTAssertEqual(

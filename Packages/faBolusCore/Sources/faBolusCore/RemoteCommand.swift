@@ -20,20 +20,6 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         /// Remote advanced-control requests (suspend/resume). The phone re-confirms on-device and
         /// only honors them when advanced control is enabled for a Mobi.
         case suspendPump, resumePump
-        /// Mac↔phone pairing handshake (see `MacPairing`). Carried over the BLE/Multipeer remote
-        /// link only — the phone gates all other kinds until the peer is authenticated. These are
-        /// intentionally NOT part of the shared watch/Garmin schema (command.schema.json / the
-        /// Monkey C mirror): the handshake is phone↔Mac-specific.
-        case authHello, authChallenge, authProof, authResult
-        /// An AES-GCM-**sealed** envelope wrapping a real command, carried over the BLE remote link
-        /// after the pairing handshake (see `SealedTransport`). Its `sealedPayload` is the encrypted
-        /// bytes; the inner command is only visible to the paired peer. BLE-only, not in the shared
-        /// watch/Garmin schema.
-        case sealed
-        /// Reverse approval (opt-in): the host asks a paired remote to approve a bolus the **child**
-        /// started on the host's own phone. `bolusApprovalRequest` carries the units; the remote replies
-        /// `bolusApprovalResponse` with `approved`. Off by default; BLE-only, not in the shared schema.
-        case bolusApprovalRequest, bolusApprovalResponse
         /// True for commands that cause — or authorize — a **write to the pump**.
         ///
         /// These must never be queued for later opportunistic delivery. A queued bolus that lands
@@ -41,27 +27,23 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         /// can cancel a *later* bolus than the one the user meant; a queued `resumePump` can resume
         /// delivery long after the user chose to suspend it. A transport must therefore send these
         /// live or report them undeliverable (`RemoteTransport.onUndeliverable`) — never defer them.
-        ///
-        /// `sealed` is included because its inner command is opaque until decrypted, so the
-        /// conservative assumption is that it may be a delivery command.
         public var mutatesPumpState: Bool {
             switch self {
             case .bolusRequest, .bolusConfirm, .cancelBolus, .suspendPump, .resumePump,
-                .dismissAlert, .bolusApprovalRequest, .bolusApprovalResponse, .sealed:
+                .dismissAlert:
                 return true
-            case .bolusStatus, .statusRead, .dismissAck,
-                .authHello, .authChallenge, .authProof, .authResult:
+            case .bolusStatus, .statusRead, .dismissAck:
                 return false
             }
         }
 
         /// Commands whose LATE application could **increase** insulin delivery — these must be refused if
-        /// stale (a bolus / resume / bolus-approval applied minutes late is the hazard `sentAt` guards).
+        /// stale (a bolus / resume applied minutes late is the hazard `sentAt` guards).
         /// Insulin-REDUCING commands (`cancelBolus`, `suspendPump`) and neutral ones (`dismissAlert`) are
         /// deliberately NOT freshness-gated: refusing a late *safety* action would be the unsafe direction.
         public var isFreshnessSensitive: Bool {
             switch self {
-            case .bolusRequest, .bolusConfirm, .resumePump, .bolusApprovalResponse: return true
+            case .bolusRequest, .bolusConfirm, .resumePump: return true
             default: return false
             }
         }
@@ -220,28 +202,6 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var glucosePlotFloorSmall: Int?
     public var glucosePlotCeilingSmall: Int?
 
-    // MARK: Mac↔phone pairing handshake (see MacPairing)
-    // Swift-only fields with defaults, so the existing initializer, command.schema.json, and the
-    // Garmin Monkey C mirror all stay untouched. Present only on `auth*` kinds; nil (omitted from
-    // JSON) on every real command. base64 for the binary values.
-    /// The Mac's stable client id (authHello / authProof / authResult).
-    public var authClientId: String?
-    /// A challenge nonce — the Mac's in authHello, the phone's in authChallenge (base64).
-    public var authNonce: String?
-    /// An HMAC proof of the shared secret (authProof = Mac's, authResult = phone's; base64).
-    public var authProof: String?
-    /// The long-term token, AES-GCM-sealed with a code-derived key, on first pairing only (base64).
-    public var authSealedToken: String?
-    /// authResult outcome: true = authenticated; false = rejected (see `message`).
-    public var authOK: Bool?
-    /// authHello only: the remote's intent — true = first-time/re-pair using a one-time code, false =
-    /// reconnect using a stored token. The host uses this to pick the SAME secret the remote used, so an
-    /// asymmetric "forget" (one side dropped its token) can't leave the two ends on mismatched secrets.
-    public var authFirstPairing: Bool?
-    /// The AES-GCM-sealed inner command (base64 combined box) on a `.sealed` envelope. See
-    /// `SealedTransport`. Present only on `.sealed`; nil on every other kind.
-    public var sealedPayload: String?
-
     /// Extended (combo) bolus params on a `bolusRequest`: total is `units`, delivered `extendedNowUnits`
     /// now and the remainder over `extendedMinutes`. Both nil ⇒ a standard bolus.
     public var extendedMinutes: Int?
@@ -269,10 +229,6 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// remote sets this when opening its bolus screen, so the shown estimate is off the newest value).
     /// Omitted/false = reply from the host's current snapshot. Swift-only additive field.
     public var forceGlucose: Bool?
-
-    /// Reverse-approval outcome on a `bolusApprovalResponse`: true = the remote approved the host's
-    /// bolus, false = denied.
-    public var approved: Bool?
 
     /// On a `statusRead` reply, the host's authoritative "may a remote start a bolus right now?" — the
     /// broadcast-safe axes the host knows for ALL remotes: pump linked AND not mid-delivery AND remotes
@@ -678,7 +634,6 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public static let maxEncodedBytes = 32 * 1024
     public static let maxRequestIdLength = 128
     public static let maxStringLength = 1024
-    public static let maxBlobLength = 16 * 1024  // base64 sealed payload / token
     public static let maxArrayCount = 1024
 
     /// Decode with a hard byte cap and full field validation. Use on every untrusted transport path.
@@ -819,16 +774,12 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         let strings: [(String, String?)] = [
             ("message", message), ("confirmToken", confirmToken), ("trend", trend),
             ("bolusMode", bolusMode), ("defaultScreen", defaultScreen),
-            ("garminComplicationDisplay", garminComplicationDisplay), ("authClientId", authClientId),
-            ("authNonce", authNonce), ("authProof", authProof), ("bolusPasscode", bolusPasscode),
+            ("garminComplicationDisplay", garminComplicationDisplay), ("bolusPasscode", bolusPasscode),
             // Short frozen-enum settings tokens (fail-closed to defaults on the watch).
             ("alertIntensityMode", alertIntensityMode), ("alertAudibleMinSeverity", alertAudibleMinSeverity)
         ]
         for (name, s) in strings where s != nil {
             guard s!.count <= Self.maxStringLength else { throw ValidationError.oversizedString(name) }
-        }
-        for (name, s) in [("sealedPayload", sealedPayload), ("authSealedToken", authSealedToken)] where s != nil {
-            guard s!.count <= Self.maxBlobLength else { throw ValidationError.oversizedString(name) }
         }
 
         // Array element caps.
@@ -874,29 +825,5 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
                 throw ValidationError.crossField("dismissAck missing alertId/alertKind")
             }
         }
-    }
-
-    /// Build a pairing-handshake command (see `MacPairing`, `PeerRemoteHost`, `MacRemoteModel`).
-    public static func auth(
-        _ kind: Kind, clientId: String? = nil, nonce: String? = nil,
-        proof: String? = nil, sealedToken: String? = nil, ok: Bool? = nil,
-        message: String? = nil, firstPairing: Bool? = nil
-    ) -> RemoteCommand {
-        var c = RemoteCommand(kind: kind)
-        c.authClientId = clientId
-        c.authNonce = nonce
-        c.authProof = proof
-        c.authSealedToken = sealedToken
-        c.authOK = ok
-        c.message = message
-        c.authFirstPairing = firstPairing
-        return c
-    }
-
-    /// Build a `.sealed` envelope carrying an encrypted inner command (see `SealedTransport`).
-    public static func sealed(_ payloadB64: String) -> RemoteCommand {
-        var c = RemoteCommand(kind: .sealed)
-        c.sealedPayload = payloadB64
-        return c
     }
 }

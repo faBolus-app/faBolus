@@ -29,13 +29,11 @@ struct RemoteCommandSchemaConformanceTests {
         return obj as? [String: Any] ?? [:]
     }
 
-    /// Mac pairing handshake (`auth*`), sealed BLE envelope (`sealed`), and reverse-approval
-    /// (`bolusApproval*`) are not part of the shared watch/Garmin `command.schema.json`.
-    private static let bleOrSwiftOnlyKinds: Set<RemoteCommand.Kind> = [
-        .authHello, .authChallenge, .authProof, .authResult,
-        .sealed,
-        .bolusApprovalRequest, .bolusApprovalResponse
-    ]
+    /// BLE-only/Mac-pairing/reverse-approval kinds that were excluded from the shared watch/Garmin
+    /// `command.schema.json`. Empty now that all of those kinds have been deleted — kept as a typed
+    /// set (rather than removed outright) so the belt-and-suspenders loop below stays generically
+    /// correct if a future BLE-only kind is ever added again.
+    private static let bleOrSwiftOnlyKinds: Set<RemoteCommand.Kind> = []
 
     /// LIVE Swift fields that must stay present on BOTH sides — a schema-only or Swift-only deletion
     /// would create drift invisible to a kinds-only test.

@@ -29,7 +29,6 @@ struct RemoteCommandFreshnessTests {
         // The whole insulin-INCREASING set is gated, not just bolusRequest.
         #expect(RemoteCommandFreshness.isStale(cmd(.bolusConfirm, ageSec: 3600), now: now))
         #expect(RemoteCommandFreshness.isStale(cmd(.resumePump, ageSec: 3600), now: now))
-        #expect(RemoteCommandFreshness.isStale(cmd(.bolusApprovalResponse, ageSec: 3600), now: now))
     }
 
     @Test func aStampTooFarInTheFutureIsRejected() {

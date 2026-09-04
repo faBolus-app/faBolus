@@ -263,9 +263,9 @@ targets:
         # HealthKit's NSHealthShareUsageDescription/NSHealthUpdateUsageDescription usage strings were
         # deleted in Phase 5 (HEALTH-01) along with the entitlement and the whole HealthKit surface —
         # see dev/healthkit's REINTEGRATION.md.
-        # Keep the pump BLE connection alive in the background (bluetooth-central), and act as a BLE
-        # peripheral for the Mac remote (bluetooth-peripheral) so it works when locked/backgrounded.
-        UIBackgroundModes: [bluetooth-central, bluetooth-peripheral]
+        # Keep the pump BLE connection alive in the background (bluetooth-central) so it works when
+        # locked/backgrounded.
+        UIBackgroundModes: [bluetooth-central]
         UILaunchScreen: {}
         # Garmin Connect IQ companion messaging: our custom callback scheme + querying the
         # Garmin Connect Mobile app.
