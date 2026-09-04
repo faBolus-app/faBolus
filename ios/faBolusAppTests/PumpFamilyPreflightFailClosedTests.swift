@@ -69,7 +69,7 @@ struct PumpFamilyPreflightFailClosedTests {
     /// funnel — the two public deliver entry points that share `validateDeliver`.
     @Test func mobiIsBlockedOnStandardAndExtendedDeliverDespiteOtherwiseDeliverable() async {
         let (b, fake) = makeDeliverableBackend()
-        b.injectStatusFrameForTesting(FakePumpTransport.apiVersion(major: 4, minor: 0))  // → isMobi=true ⇒ .mobi
+        b.injectStatusFrameForTesting(FakePumpTransport.apiVersion(major: 3, minor: 5))  // → isMobi=true ⇒ .mobi (a table Mobi)
         #expect(b.snapshot.pumpModel == .mobi, "op33 (API 4.0) identifies the pump as a Mobi")
 
         // Standard bolus funnel.

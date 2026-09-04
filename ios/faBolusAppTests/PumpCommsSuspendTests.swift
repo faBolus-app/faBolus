@@ -153,7 +153,7 @@ struct PumpCommsSuspendTests {
     private func makeMobiBackendWithActiveAlert() -> (TandemBackend, FakePumpTransport, PumpAlert)? {
         let fake = FakePumpTransport()
         let b = TandemBackend(testTransport: fake)
-        b.injectStatusFrameForTesting(FakePumpTransport.apiVersion(major: 4, minor: 0))  // → isMobi=true
+        b.injectStatusFrameForTesting(FakePumpTransport.apiVersion(major: 3, minor: 5))  // → isMobi=true (a table Mobi)
         b.injectStatusFrameForTesting(FakePumpTransport.alertStatusBitmap(1 << 5))
         guard let alert = b.activeNotifications.first(where: { $0.id == 5 }) else { return nil }
         fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
