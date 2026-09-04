@@ -147,14 +147,6 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var lastBolusUnits: Double?
     /// Current basal delivery rate (units/hr), so a remote's basal pill matches the host.
     public var basalRate: Double?
-    /// Seconds since the current CGM reading was taken (so a remote can show "Nm ago" and hide
-    /// readings older than 6 minutes).
-    ///
-    /// **Prefer `glucoseEpochSec`.** An age is computed at *compose* time, so it silently becomes
-    /// wrong by however long the message spends in flight, and it cannot be distinguished from
-    /// "absent" by a receiver that then invents its own. See `glucoseEpochSec`. Kept for
-    /// compatibility with remotes that only understand an age.
-    public var glucoseAgeSec: Double?
     /// **Immutable source timestamp** of the current CGM reading (Unix seconds), set once at origin
     /// from the pump's own reading time and propagated unchanged through every hop.
     ///
@@ -592,7 +584,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         maxBolusUnits: Double? = nil, reservoirUnits: Double? = nil,
         batteryPercent: Double? = nil, lastBolusUnits: Double? = nil,
         basalRate: Double? = nil,
-        glucoseAgeSec: Double? = nil, glucoseEpochSec: Int? = nil,
+        glucoseEpochSec: Int? = nil,
         history: [Int]? = nil, historyEpochs: [Int]? = nil,
         alerts: [RemoteAlert]? = nil, alertId: Int? = nil, alertKind: Int? = nil,
         bolusMode: String? = nil, bolusIncrement: Double? = nil, carbIncrement: Double? = nil,
@@ -621,7 +613,6 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         self.batteryPercent = batteryPercent
         self.lastBolusUnits = lastBolusUnits
         self.basalRate = basalRate
-        self.glucoseAgeSec = glucoseAgeSec
         self.glucoseEpochSec = glucoseEpochSec
         self.history = history
         self.historyEpochs = historyEpochs
@@ -715,7 +706,6 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
             ("extendedNowUnits", extendedNowUnits), ("carbRatio", carbRatio), ("isf", isf),
             ("targetBg", targetBg), ("maxBolusUnits", maxBolusUnits), ("reservoirUnits", reservoirUnits),
             ("batteryPercent", batteryPercent), ("lastBolusUnits", lastBolusUnits), ("basalRate", basalRate),
-            ("glucoseAgeSec", glucoseAgeSec),
             ("maxBasalUnitsPerHour", maxBasalUnitsPerHour)
         ]
         for (name, v) in allDoubles where v != nil {

@@ -20,8 +20,6 @@ enum RemoteStatusComposer {
     static func compose(_ inputs: RemoteStatusInputs) -> RemoteCommand {
         let s = inputs.snapshot
         let settings = inputs.settings
-        // The ONLY "clock read" in this type: the already-captured `inputs.now`, never `Date()`.
-        let age = s.glucoseDate.map { max(0, inputs.now.timeIntervalSince($0)) }
         let alertList = inputs.activeNotifications.map {
             // Phone-classified salience. A remote that lacks the field fails closed to "critical".
             RemoteCommand.RemoteAlert(
@@ -106,7 +104,6 @@ enum RemoteStatusComposer {
             // A real 0 U/hr (a 0 U/hr temp rate, or a suspend) still travels as `0` — that distinction is
             // the whole reason `basalRateKnown` exists.
             basalRate: s.basalRateUnitsPerHourIfRead,
-            glucoseAgeSec: age,
             // Group A: send the pump's own reading time, not just an age computed
             // here — an age is already wrong by however long this message is in
             // flight, and a receiver cannot tell it apart from "absent".

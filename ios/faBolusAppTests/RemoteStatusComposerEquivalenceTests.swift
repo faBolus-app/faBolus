@@ -63,7 +63,6 @@ struct RemoteStatusComposerEquivalenceTests {
             #expect(a == b, "compose must be deterministic under a fixed clock (no live singleton/clock read)")
             #expect(try canonicalJSON(a) == canonicalJSON(b))
 
-            #expect(a.glucoseAgeSec == 30)
             #expect(a.glucoseEpochSec == Int(sampleDate.timeIntervalSince1970))
             #expect(a.canBolus == true)
             #expect(a.bolusBlockReason == nil)
@@ -121,7 +120,7 @@ struct RemoteStatusComposerEquivalenceTests {
             #expect(a == b)
             #expect(try canonicalJSON(a) == canonicalJSON(b))
 
-            #expect(a.glucoseAgeSec == 3600)
+            #expect(a.glucoseEpochSec == Int(sampleDate.timeIntervalSince1970))
             #expect(a.alerts?.isEmpty == false)
             #expect(a.alerts?.first?.title == backend.activeNotifications.first?.title)
             #expect(a.alerts?.first?.kind == backend.activeNotifications.first?.kind.rawValue)

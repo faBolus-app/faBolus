@@ -405,15 +405,10 @@ final class RemoteCommandWireFixture {
             // Treat a non-positive relayed value as "no reading" (nil) so the UI shows "—" instead of
             // a literal 0; a missing bgMgdl leaves the current value untouched.
             if let g = cmd.bgMgdl { glucose = g > 0 ? Int(g) : nil }
-            // Prefer the immutable source timestamp. Deriving the date from an age means
-            // re-stamping relative to *our* clock at receive time, which silently discounts the time
-            // the message spent in flight. Fall back to the age only for a host that doesn't send an
-            // epoch yet. If neither is present the age stays unknown — `isGlucoseStale` then treats
-            // the reading as stale rather than letting it read as fresh.
+            // Use the immutable source timestamp only. If it is absent the age stays unknown —
+            // `isGlucoseStale` then treats the reading as stale rather than letting it read as fresh.
             if let e = cmd.glucoseEpochSec {
                 glucoseDate = Date(timeIntervalSince1970: TimeInterval(e))
-            } else if let age = cmd.glucoseAgeSec {
-                glucoseDate = Date().addingTimeInterval(-age)
             }
             if let t = cmd.trend { trend = Self.arrow(fromToken: t) }
             if let iob = cmd.units { iobUnits = iob }

@@ -54,7 +54,7 @@ final class LoopRemoteHost: RemoteHost {
     }
 
     func statusCommand(includeHistory: Bool) -> RemoteCommand {
-        // TODO: fill from LoopKit — glucose, glucoseAgeSec, trend, iobUnits(units), reservoirUnits,
+        // TODO: fill from LoopKit — glucose, trend, iobUnits(units), reservoirUnits,
         // batteryPercent, lastBolusUnits, carbRatio/isf/targetBg/maxBolusUnits, alerts, and history.
         RemoteCommand(kind: .statusRead)
     }

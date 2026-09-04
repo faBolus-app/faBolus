@@ -30,7 +30,7 @@ VALID = [
     {
         "version": 1, "kind": "statusRead", "requestId": "r1",
         "status": "unknown", "message": "Outcome unknown — check pump history.",
-        "trend": "flat", "bgMgdl": 120, "glucoseAgeSec": 60,
+        "trend": "flat", "bgMgdl": 120,
         "glucoseEpochSec": 1700000000, "iobEpochSec": 1700000000, "therapyEpochSec": 1700000000,
         "reservoirEpochSec": 1700000000, "batteryEpochSec": 1700000000,
         "history": [100, 110, 120], "alerts": [{"id": 1, "kind": 1, "title": "Low insulin"}],

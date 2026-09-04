@@ -119,11 +119,6 @@
       "minimum": 0,
       "description": "Current basal delivery rate (units/hr), so a remote's basal pill matches the host (statusRead reply). Absent means the pump has never answered the basal read; a real 0 U/hr (a 0 U/hr temp rate, or a suspend) still travels as 0 — that distinction is why the host gates emission on having read the rate at all, rather than sending 0 for both cases."
     },
-    "glucoseAgeSec": {
-      "type": "number",
-      "minimum": 0,
-      "description": "Seconds since the current CGM reading was taken, computed at compose time. Legacy — prefer glucoseEpochSec, which does not go stale in flight and cannot be confused with 'absent'."
-    },
     "glucoseEpochSec": {
       "type": "integer",
       "minimum": 1,

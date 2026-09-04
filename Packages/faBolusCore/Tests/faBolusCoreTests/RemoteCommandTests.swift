@@ -29,7 +29,7 @@ final class RemoteCommandTests: XCTestCase {
             bgMgdl: 142, message: "Connected", trend: "up45",
             carbRatio: 10, isf: 40, targetBg: 110, maxBolusUnits: 25,
             reservoirUnits: 142, batteryPercent: 80, lastBolusUnits: 2.0,
-            glucoseAgeSec: 120, history: [110, 120, 130],
+            history: [110, 120, 130],
             alerts: [.init(id: 2, kind: 3, title: "High glucose")],
             bolusMode: "carbs", bolusIncrement: 0.05, carbIncrement: 5,
             screenOrder: ["glance", "alerts"], defaultScreen: "glance")

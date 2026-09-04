@@ -68,7 +68,6 @@ import faBolusCore
         let model = RemoteCommandWireFixture(link: FakeLink())
         var cmd = RemoteCommand(kind: .statusRead, bgMgdl: 120)
         cmd.glucoseEpochSec = nil
-        cmd.glucoseAgeSec = nil
         model.handle(cmd)
         #expect(model.glucose == 120)
         #expect(model.glucoseDate == nil)
