@@ -376,47 +376,6 @@ struct AppModelBehaviorTests {
         }
     }
 
-    /// P13c-4: the two INVERSE Control-IQ preconditions enforced AT THE FUNNEL (pre-flight), not left for
-    /// the pump to silently reject. A mode change is refused while Control-IQ is OFF; a temp rate is
-    /// refused while it's ON. Fails closed: `lastError` carries the plain reason and nothing reaches the
-    /// backend write.
-    @Test func inverseControlIQPreconditionsRefusedAtFunnel() async {
-        try? await withCleanSettings {
-            let (m, backend, _) = await makeModel(connected: true)  // MockBackend defaults Control-IQ ON
-            AppSettings.shared.advancedControlEnabled = true
-
-            // Temp rate while Control-IQ is ON → refused with the temp-rate reason.
-            await m.setTempBasal(percent: 120, durationMinutes: 30)
-            #expect(m.lastError == ControlIQPrecondition.tempRateBlockReason(controlIQEnabled: true))
-
-            // Turn Control-IQ OFF (onChange → the model's cached snapshot updates synchronously).
-            try? await backend.setControlIQ(enabled: false, weightLbs: 0, totalDailyInsulinUnits: 0)
-            // A mode change is now refused with the mode reason, and the reported activity stays normal.
-            await m.setMode(.sleepOn)
-            #expect(m.lastError == ControlIQPrecondition.modeBlockReason(controlIQEnabled: false))
-            #expect(backend.snapshot.controlIQMode == ControlIQActivity.normal.rawValue)
-        }
-    }
-
-    #if FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL
-    /// Experimental-only: under `FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL` a temp rate while Control-IQ is
-    /// ON reaches the backend instead of being refused pre-flight. The default-build refusal stays
-    /// pinned by `inverseControlIQPreconditionsRefusedAtFunnel`.
-    @Test func inverseControlIQPreconditionOverturnedUnderExperimentalFlag() async {
-        try? await withCleanSettings {
-            let (m, backend, _) = await makeModel(connected: true)  // MockBackend defaults Control-IQ ON
-            AppSettings.shared.advancedControlEnabled = true
-
-            // Temp rate while Control-IQ is ON → the CIQ-off refusal does NOT fire; the write reaches
-            // the backend funnel (MockBackend's write counter increments, lastError is not the
-            // tempRateBlockReason value).
-            await m.setTempBasal(percent: 120, durationMinutes: 30)
-            #expect(m.lastError != ControlIQPrecondition.tempRateBlockReason(controlIQEnabled: true))
-            #expect(backend.tempRateWriteCount == 1)
-        }
-    }
-    #endif
-
     /// P14 S11 (§2.1(7)): the Control-IQ CONFIG compatibility pre-flight, AT THE FUNNEL.
     /// - A Mobi (remotely configurable) is NOT blocked — even though its `controllerVariant` is still
     ///   `.none` here (the MockBackend reads no feature bits, exactly like a real Mobi before `staticRead`

@@ -1579,66 +1579,6 @@ public final class AppModel {
 
     public func suspendDelivery() async { await runControl(.suspendDelivery) { try await source.suspendDelivery() } }
     public func resumeDelivery() async { await runControl(.resumeDelivery) { try await source.resumeDelivery() } }
-    public func setTempBasal(percent: Int, durationMinutes: Int) async {
-        // Inverse precondition: a temp rate requires Control-IQ OFF (the controller owns basal
-        // while running, so the pump rejects a temp rate). Refuse pre-flight with a plain reason rather
-        // than issue a write the pump will bounce.
-        //
-        // Current Tandem Control-IQ+ docs say a temp rate CAN be set while Control-IQ+ is on.
-        // EXPERIMENTAL-ONLY until a saline bench confirms it — the default/shipping build keeps this
-        // precondition unchanged (HARD INVARIANT).
-        #if !FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL
-        if let reason = ControlIQPrecondition.tempRateBlockReason(controlIQEnabled: snapshot.controlIQEnabled) {
-            lastError = reason
-            return
-        }
-        #endif
-        await runControl(.setTempBasal) {
-            try await source.setTempBasal(percent: percent, durationMinutes: durationMinutes)
-        }
-    }
-    public func stopTempBasal() async { await runControl(.stopTempBasal) { try await source.stopTempBasal() } }
-    /// Set a pump user mode. Takes the typed `ModeCommand` (wire `sleepOn=1…exerciseOff=4`) so a caller
-    /// can't confuse it with the reported state `snapshot.controlIQMode` (0=normal, 1=sleep, 2=exercise).
-    /// Inverse precondition: modes require Control-IQ ON — refused pre-flight otherwise. Mobi-only;
-    /// gated in the UI by `advancedControlAllowed`.
-    public func setMode(_ command: ModeCommand) async {
-        if let reason = ControlIQPrecondition.modeBlockReason(controlIQEnabled: snapshot.controlIQEnabled) {
-            lastError = reason
-            return
-        }
-        await runControl(.setMode) { try await source.setMode(command) }
-    }
-    public func playFindMyPump() async { await runControl(.playFindMyPump) { try await source.playFindMyPump() } }
-
-    // MARK: Mobi workflows
-    public func startG6Session(transmitterId: String, sensorCode: Int) async {
-        await runControl(.startG6Session) {
-            try await source.startG6Session(transmitterId: transmitterId, sensorCode: sensorCode)
-        }
-    }
-    public func startG7Session(pairingCode: Int) async {
-        await runControl(.startG7Session) { try await source.startG7Session(pairingCode: pairingCode) }
-    }
-    public func setSensorType(_ typeId: Int) async {
-        await runControl(.setSensorType) { try await source.setSensorType(typeId) }
-    }
-    public func stopCgmSession() async { await runControl(.stopCgmSession) { try await source.stopCgmSession() } }
-    public func enterChangeCartridgeMode() async {
-        await runControl(.enterChangeCartridgeMode) { try await source.enterChangeCartridgeMode() }
-    }
-    public func exitChangeCartridgeMode() async {
-        await runControl(.exitChangeCartridgeMode) { try await source.exitChangeCartridgeMode() }
-    }
-    public func enterFillTubingMode() async {
-        await runControl(.enterFillTubingMode) { try await source.enterFillTubingMode() }
-    }
-    public func exitFillTubingMode() async {
-        await runControl(.exitFillTubingMode) { try await source.exitFillTubingMode() }
-    }
-    public func fillCannula(milliunits: Int) async {
-        await runControl(.fillCannula) { try await source.fillCannula(milliunits: milliunits) }
-    }
     /// Set the pump's max-bolus limit. The absolute 25 U ceiling is a HARD cap: clamp at the funnel so
     /// the invariant holds regardless of backend (the backends clamp too, as defense-in-depth). Never a
     /// confirmation — a request above 25 U is capped, not offered. Routes through the ACK funnel
@@ -1911,38 +1851,10 @@ public final class AppModel {
             try await self.source.deleteProfileSegment(idpId: idpId, segmentIndex: segmentIndex)
         }
     }
-    public func setLowInsulinAlert(thresholdUnits: Int) async {
-        await runControl(.setLowInsulinAlert) { try await source.setLowInsulinAlert(thresholdUnits: thresholdUnits) }
-    }
-    public func setAutoOffAlert(enabled: Bool, durationMinutes: Int) async {
-        await runControl(.setAutoOffAlert) {
-            try await source.setAutoOffAlert(enabled: enabled, durationMinutes: durationMinutes)
-        }
-    }
-    public func setSiteChangeReminder(enabled: Bool, days: Int, timeOfDayMinutes: Int) async {
-        await runControl(.setSiteChangeReminder) {
-            try await source.setSiteChangeReminder(enabled: enabled, days: days, timeOfDayMinutes: timeOfDayMinutes)
-        }
-    }
-    public func setAlertSnooze(enabled: Bool, durationMinutes: Int) async {
-        await runControl(.setAlertSnooze) {
-            try await source.setAlertSnooze(enabled: enabled, durationMinutes: durationMinutes)
-        }
-    }
     public func setCgmHighLowAlert(alertType: Int, thresholdMgdl: Int, repeatMinutes: Int, enabled: Bool) async {
         await runGatedTherapy(.setCgmHighLowAlert) {
             try await self.source.setCgmHighLowAlert(
                 alertType: alertType, thresholdMgdl: thresholdMgdl, repeatMinutes: repeatMinutes, enabled: enabled)
-        }
-    }
-    public func setCgmOutOfRangeAlert(enabled: Bool, delayMinutes: Int) async {
-        await runControl(.setCgmOutOfRangeAlert) {
-            try await source.setCgmOutOfRangeAlert(enabled: enabled, delayMinutes: delayMinutes)
-        }
-    }
-    public func setCgmRiseFallAlert(alertType: Int, enabled: Bool, mgdlPerMin: Int) async {
-        await runControl(.setCgmRiseFallAlert) {
-            try await source.setCgmRiseFallAlert(alertType: alertType, enabled: enabled, mgdlPerMin: mgdlPerMin)
         }
     }
 
