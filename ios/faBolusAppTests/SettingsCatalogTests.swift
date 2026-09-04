@@ -51,14 +51,6 @@ enum CompileGateAudit {
 
 struct SettingsCatalogTests {
 
-    /// The four backup keys `backupSnapshot()` emits only when their value is present (two optionals — an
-    /// int and the §2.3 remote-bolus ceiling double — and two JSON blobs). Everything else is unconditional.
-    /// Declared here so the drift guard can tolerate their absence on a fresh `AppSettings` without weakening it.
-    private let conditionalBackupKeys: Set<String> = [
-        "glucoseHideDelayMinutes", "remoteBolusCeiling",
-        "glucosePlotFloorSmall", "glucosePlotCeilingSmall"
-    ]
-
     // MARK: Coverage
 
     @Test func descriptorsCoverExactly48UniqueKeys() {
@@ -68,56 +60,12 @@ struct SettingsCatalogTests {
         #expect(Set(keys).count == keys.count)  // no duplicate literal
     }
 
-    // MARK: Golden equivalence — the catalog's backup set == what backupSnapshot actually emits
-
-    /// Drift guard, read-only (no singleton mutation → safe under parallel execution). If a key is added to
-    /// `backupSnapshot()` without the catalog, `snapshot ⊄ backedUpKeys` fails; if an unconditional key is
-    /// dropped from `backupSnapshot()`, `unconditional ⊄ snapshot` fails.
-    @Test @MainActor func backedUpSetMatchesBackupSnapshot() {
-        let snapshotKeys = Set(AppSettings.shared.backupSnapshot().keys)
-        #expect(snapshotKeys.isSubset(of: SettingsCatalog.backedUpKeys))
-        let unconditional = SettingsCatalog.backedUpKeys.subtracting(conditionalBackupKeys)
-        #expect(unconditional.isSubset(of: snapshotKeys))
-        #expect(SettingsCatalog.backedUpKeys.count == 35)  // 31 unconditional + 4 conditional
-        #expect(conditionalBackupKeys.isSubset(of: SettingsCatalog.backedUpKeys))
-    }
-
-    /// applyBackup ∘ backupSnapshot is a no-op round-trip: re-applying the current values leaves every
-    /// backed-up key byte-identical (idempotent, so safe even if another suite reads `.shared` meanwhile).
-    @Test @MainActor func backupRoundTripsThroughBackupValue() {
-        let before = AppSettings.shared.backupSnapshot()
-        AppSettings.shared.applyBackup(before)
-        let after = AppSettings.shared.backupSnapshot()
-        #expect(before == after)
-    }
-
-    /// A backup from an older build may still carry removed `basalScheduleByHour` /
-    /// `basalScheduleSource` keys; restore must decode them and ignore them — never crash, never
-    /// resurrect a removed setting.
-    @Test @MainActor func restoreToleratesLegacyBasalScheduleKeys() {
-        let base = AppSettings.shared.backupSnapshot()
-        var legacy = base
-        legacy["basalScheduleByHour"] = .data(Data([0, 1, 2, 3]))  // stand-in for the old [Double] cache blob
-        legacy["basalScheduleSource"] = .string("Nightscout")
-        // Survive a full JSON encode→decode like a real on-disk backup, not just an in-memory dict.
-        let backup = FaBolusBackup(
-            meta: .init(
-                createdAt: Date(), appVersion: "test",
-                pumpModel: "unknown", deviceName: "test"),
-            appSettings: legacy)
-        let decoded = try? FaBolusBackup.decode(backup.encoded())
-        #expect(decoded != nil, "a legacy backup carrying removed keys must still decode")
-        #expect(decoded?.appSettings?["basalScheduleByHour"] != nil)  // the unknown key round-trips…
-        AppSettings.shared.applyBackup(decoded?.appSettings ?? [:])  // …and applying it must not crash
-        #expect(AppSettings.shared.backupSnapshot() == base)  // removed keys ignored; nothing changed
-    }
-
     /// The `childAllowed` set is the ONLY `Set`-backed persisted value, and `Set` serializes to a JSON array
     /// in hash-iteration order — randomized per process. If we ever encode it raw again, the same set of
-    /// features would produce different bytes across launches/devices, reintroducing spurious backup/iCloud
-    /// diffs and the flaky `backupRoundTripsThroughBackupValue` failure this replaced. Pin the invariant
-    /// directly and process-independently: the canonical encoding lists features in ascending `rawValue`
-    /// order (not whatever order the set happens to iterate), and still decodes back to the identical set.
+    /// features would produce different bytes across launches/devices, reintroducing spurious iCloud
+    /// sync diffs. Pin the invariant directly and process-independently: the canonical encoding lists
+    /// features in ascending `rawValue` order (not whatever order the set happens to iterate), and still
+    /// decodes back to the identical set.
     @Test func childAllowedEncodingIsCanonicalAndLossless() {
         let set = Set(ChildFeature.allCases)
         let data = AppSettings.canonicalChildAllowedData(set)
@@ -142,8 +90,8 @@ struct SettingsCatalogTests {
     }
 
     @Test func syncingImpliesBackedUp() {
-        // iCloud only ships `SettingsBackup.appSettingsSnapshot()` == `backupSnapshot()`, so a key that is
-        // not backed up can never sync regardless of how the row is written.
+        // `syncsToICloud` implies `backsUp` by construction (see SettingDescriptor.init), so a key that
+        // is not backed up can never sync regardless of how the row is written.
         for d in SettingsCatalog.descriptors where d.syncsToICloud {
             #expect(d.backsUp, "\(d.key) syncs to iCloud but is not backed up")
         }
@@ -357,29 +305,6 @@ struct SettingsCatalogTests {
         let fresh = AppSettings(defaults: defaults)
         #expect(fresh.glucosePlotFloorSmall == nil)
         #expect(fresh.glucosePlotCeilingSmall == nil)
-    }
-
-    /// `backupSnapshot` emits the override pair only when both are set.
-    @Test @MainActor func glucosePlotSmallOverrideBackupIsConditionalAndRoundTrips() {
-        let suiteName = "SettingsCatalogTests.glucosePlotSmallOverrideBackup.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        let s = AppSettings(defaults: defaults)
-
-        let offSnapshot = s.backupSnapshot()
-        #expect(offSnapshot["glucosePlotFloorSmall"] == nil)
-        #expect(offSnapshot["glucosePlotCeilingSmall"] == nil)
-
-        s.glucosePlotFloorSmall = 50
-        s.glucosePlotCeilingSmall = 400
-        let onSnapshot = s.backupSnapshot()
-        #expect(onSnapshot["glucosePlotFloorSmall"] == .int(50))
-        #expect(onSnapshot["glucosePlotCeilingSmall"] == .int(400))
-
-        let s2 = AppSettings(defaults: defaults)
-        s2.applyBackup(onSnapshot)
-        #expect(s2.glucosePlotFloorSmall == 50)
-        #expect(s2.glucosePlotCeilingSmall == 400)
     }
 
     // MARK: Orphaned search-token guard

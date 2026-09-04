@@ -5,8 +5,7 @@
 #
 # Triage rules for this repo:
 #   - Do NOT "clean up" a fail-closed path, a clamp, a confirm gesture, or a frozen accessor because a
-#     query dislikes it. The empty setters on `childModeEnabled` / `requireRemoteBolusApproval`
-#     are safety interlocks, not dead code.
+#     query dislikes it. The empty setter on `childModeEnabled` is a safety interlock, not dead code.
 #   - Crypto- and randomness-family queries will fire on the Mac/peer pairing payload and the App
 #     Group / Keychain plumbing. Review each alert, dismiss with a reason in the code-scanning UI.
 #   - A cleartext-logging alert on glucose or insulin values is worth reading carefully: those are

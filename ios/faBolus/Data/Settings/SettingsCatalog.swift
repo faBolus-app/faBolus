@@ -15,7 +15,7 @@ struct SettingDescriptor: Identifiable {
     let tier: SettingTier
     /// The modes in which this setting is shown. `.advanced` sees everything, so it is always a member.
     let modes: Set<AppMode>
-    /// True iff the key participates in the portable settings backup (`backupSnapshot`/`applyBackup`).
+    /// True iff the key is considered part of the durable settings surface (vs. a cache/derived value).
     let backsUp: Bool
     /// True iff the key rides iCloud KV settings sync. Invariant: implies `backsUp`, and is forced
     /// **false** for command-adjacent flags so settings sync can never carry a safety/command

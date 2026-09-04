@@ -18,7 +18,4 @@ enum PumpPairingCode {
 
     /// The pairing scheme the app will use for `code` (`.short6Char` JPAKE vs `.long16Char` legacy V1).
     static func scheme(_ code: String) -> PairingCodeType { PairingAuth.detectType(code) }
-
-    /// True when `code` routes to the legacy V1 (16-char) handshake rather than modern JPAKE.
-    static func isLegacy(_ code: String) -> Bool { scheme(code) == .long16Char }
 }

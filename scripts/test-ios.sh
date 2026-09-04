@@ -35,8 +35,8 @@ fi
 # AppModel, which reads process-global `AppSettings.shared` (a UserDefaults.standard-backed singleton —
 # AppModel.swift reads it in ~59 places, incl. the delivery gates childModeEnabled/phoneReadOnly/
 # remotesReadOnly/advancedControlEnabled). Many suites also MUTATE those same globals (appMode,
-# phoneReadOnly, requireRemoteBolusApproval, garminBolusEnabled, …) with a save→set→`await body()`→defer-
-# restore pattern. That pattern is safe WITHIN a `@Suite(.serialized)` suite, but the `.serialized` trait
+# phoneReadOnly, garminBolusEnabled, …) with a save→set→`await body()`→defer-restore pattern. That
+# pattern is safe WITHIN a `@Suite(.serialized)` suite, but the `.serialized` trait
 # only orders tests relative to each other WITHIN their own suite — Apple's docs: it "does not influence
 # the execution of a test relative to other unrelated tests." So at every `await` a test in suite A yields
 # the main actor to an interleaved test in suite B, which clobbers/observes A's shared-global setup. That

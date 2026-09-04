@@ -13,7 +13,7 @@ public struct FaBolusBackup: Codable, Sendable {
     public static let currentSchema = 3
 
     public var meta: Meta
-    /// Non-secret app preferences (UserDefaults-backed). See `AppSettings.backupSnapshot()`.
+    /// Non-secret app preferences (UserDefaults-backed).
     public var appSettings: [String: BackupValue]?
 
     public struct Meta: Codable, Sendable {

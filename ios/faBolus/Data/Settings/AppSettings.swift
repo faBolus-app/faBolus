@@ -116,9 +116,8 @@ public final class AppSettings {
 
     /// Glucose plot Y-axis **ceiling**, canonical mg/dL. Discrete preset. The resolved-at-init pair
     /// always satisfies `floor < ceiling` via `GlucosePlotScale.resolve`.
-    // `init`/`applyBackup` still route every assignment through `GlucosePlotScale.resolve`
-    // before calling this setter — Stored only replaces the raw `d.set(...)` plumbing, never
-    // the validation.
+    // `init` still routes every assignment through `GlucosePlotScale.resolve` before calling
+    // this setter — Stored only replaces the raw `d.set(...)` plumbing, never the validation.
     private var _glucosePlotCeiling = Stored<Int>(wrappedValue: 300, "glucosePlotCeiling")
     public var glucosePlotCeiling: Int {
         get { _glucosePlotCeiling.wrappedValue }
@@ -442,23 +441,11 @@ public final class AppSettings {
     /// `notificationSettings().criticalAlertSetting` last reported `.enabled` (the entitlement is granted
     /// AND the user authorized it). `NotificationCoordinator.refreshGrantState()` is the sole writer.
     /// Defaults `false` so the app never over-claims critical delivery before the first OS query resolves.
-    /// Deliberately NOT persisted to `UserDefaults` and NOT part of any backup/applyBackup key list —
+    /// Deliberately NOT persisted to `UserDefaults` —
     /// `@Observable` tracks it automatically for `AlertRulesView`'s honest-status read. UI-only: NEVER
     /// consulted by `NotificationCoordinator.post`'s `allowCritical` gate or `NotificationBroker.decide`
     /// (the cache can never suppress the never-suppressible trio).
     public var criticalAlertGrantActive: Bool = false
-
-    /// Reverse approval (opt-in): a bolus started on **this** phone must be approved by a paired remote
-    /// (e.g. a parent) before it delivers. **Default OFF.** Only takes effect when a remote is paired;
-    /// if no paired remote responds within the timeout the bolus is aborted (safe default).
-    /// FROZEN to `false` — belt-and-suspenders so this can never become `true` by any means.
-    /// See `ChildModeFreezeGuardTests`.
-    public var requireRemoteBolusApproval: Bool {
-        get { false }
-        // The empty setter IS the freeze: swallowing the write is what makes this
-        // unreachable by any means, including restore-from-backup.
-        set {}  // swiftlint:disable:this unused_setter_value
-    }
 
     /// Opt-in (default OFF) for local notification telemetry — per-category delivered/dismissed/
     /// acted-upon counts the broker uses to tune defaults. Stored in the **App Group** (not `d`) so the
@@ -523,10 +510,9 @@ public final class AppSettings {
     }
     /// Encode `childAllowed` deterministically. `Set` serializes to a JSON array in hash-iteration order,
     /// which Swift randomizes per process — so the *same* set of features encodes to different bytes across
-    /// launches and devices, producing spurious backup/iCloud diffs (and a flaky `backupSnapshot` round-trip
-    /// equality check). Sorting by `rawValue` first makes the encoding canonical and seed-independent;
-    /// decoding `Set<ChildFeature>` from the array is unaffected, so old blobs still load and no migration is
-    /// needed. This is the only `Set`-backed persisted value.
+    /// launches and devices, producing spurious iCloud sync diffs. Sorting by `rawValue` first makes the
+    /// encoding canonical and seed-independent; decoding `Set<ChildFeature>` from the array is unaffected,
+    /// so old blobs still load and no migration is needed. This is the only `Set`-backed persisted value.
     nonisolated static func canonicalChildAllowedData(_ set: Set<ChildFeature>) -> Data {
         (try? JSONEncoder().encode(set.sorted { $0.rawValue < $1.rawValue })) ?? Data()
     }
@@ -985,158 +971,4 @@ public final class AppSettings {
         _glucoseStaleMinutes.onChange = { [weak self] _ in self?.applyFreshness() }
         _showGlucoseUnitLabels.onChange = { _ in WidgetPublisher.republishShowUnitLabel() }
     }
-
-    // MARK: - Backup / restore (see SettingsBackup + BackupModels)
-
-    /// Snapshot the non-secret preferences for a backup. Excludes derived/cache keys and all secrets
-    /// (those live in the Keychain — see SettingsBackup). `nil`-valued optionals are omitted.
-    public func backupSnapshot() -> [String: BackupValue] {
-        var m: [String: BackupValue] = [
-            "defaultBolusMode": .string(defaultBolusMode.rawValue),
-            "bolusIncrement": .double(bolusIncrement),
-            "carbIncrement": .double(carbIncrement),
-            "showBolusReasoning": .bool(showBolusReasoning),
-            "watchDefaultBolusMode": .string(watchDefaultBolusMode.rawValue),
-            "watchBolusIncrement": .double(watchBolusIncrement),
-            "watchCarbIncrement": .double(watchCarbIncrement),
-            "showGlucoseAxis": .bool(showGlucoseAxis),
-            "showIOBAxis": .bool(showIOBAxis),
-            "showBolusBars": .bool(showBolusBars),
-            "glucosePlotFloor": .int(glucosePlotFloor),
-            "glucosePlotCeiling": .int(glucosePlotCeiling),
-            "showStats": .bool(showStats),
-            "detailsOrder": .stringArray(detailsOrder),
-            "watchDetailsOrder": .stringArray(watchDetailsOrder),
-            "pillsOrder": .stringArray(pillsOrder),
-            "watchChartRanges": .intArray(watchChartRanges),
-            "glucoseStaleMinutes": .int(glucoseStaleMinutes),
-            "phoneReadOnly": .bool(phoneReadOnly),
-            "readOnlyAllowAlertClear": .bool(readOnlyAllowAlertClear),
-            "remotesReadOnly": .bool(remotesReadOnly),
-            "garminBolusEnabled": .bool(garminBolusEnabled),
-            "garminScreenOrder": .stringArray(garminScreenOrder),
-            "garminDefaultScreen": .string(garminDefaultScreen),
-            "garminComplicationDisplay": .string(garminComplicationDisplay),
-            "garminClockAnalog": .bool(garminClockAnalog),
-            "garminTargetApp": .string(garminTargetApp),
-            "garminAlertIntensityMode": .string(garminAlertIntensityMode),
-            "garminAlertAudibleMinSeverity": .string(garminAlertAudibleMinSeverity),
-            "garminAlertCriticalOverridesDnd": .bool(garminAlertCriticalOverridesDnd),
-            "garminComplicationSlots": .stringArray(garminComplicationSlots)
-        ]
-        if let hide = glucoseHideDelayMinutes { m["glucoseHideDelayMinutes"] = .int(hide) }
-        // Emitted only when the optional ceiling is armed (nil ⇒ off ⇒ omitted), like the hide delay.
-        if let ceiling = remoteBolusCeiling { m["remoteBolusCeiling"] = .double(ceiling) }
-        // Small-screen override pair — emitted only when set (nil ⇒ Same as phone ⇒ omitted).
-        if let f = glucosePlotFloorSmall { m["glucosePlotFloorSmall"] = .int(f) }
-        if let c = glucosePlotCeilingSmall { m["glucosePlotCeilingSmall"] = .int(c) }
-        return m
-    }
-
-    /// Apply a backed-up preferences dict. Assigns the real properties (so `didSet` persists + updates
-    /// the live UI). Keys absent from the backup are left unchanged.
-    public func applyBackup(_ m: [String: BackupValue]) {
-        func b(_ k: String) -> Bool? {
-            if case .bool(let v)? = m[k] { return v }
-            return nil
-        }
-        func i(_ k: String) -> Int? {
-            if case .int(let v)? = m[k] { return v }
-            return nil
-        }
-        func dbl(_ k: String) -> Double? {
-            if case .double(let v)? = m[k] { return v }
-            return nil
-        }
-        func s(_ k: String) -> String? {
-            if case .string(let v)? = m[k] { return v }
-            return nil
-        }
-        func sa(_ k: String) -> [String]? {
-            if case .stringArray(let v)? = m[k] { return v }
-            return nil
-        }
-        func ia(_ k: String) -> [Int]? {
-            if case .intArray(let v)? = m[k] { return v }
-            return nil
-        }
-        func dat(_ k: String) -> Data? {
-            if case .data(let v)? = m[k] { return v }
-            return nil
-        }
-
-        if let v = s("defaultBolusMode"), let mode = BolusMode(rawValue: v) { defaultBolusMode = mode }
-        // Mirror init's `max(0.05, …)` clamp so a restored/cross-version sub-pump-minimum increment
-        // (e.g. a legacy 0.01) can't install a value absent from `bolusIncrements` (empty Picker +
-        // sub-0.05 step) until the next relaunch.
-        if let v = dbl("bolusIncrement") { bolusIncrement = max(0.05, v) }
-        if let v = dbl("carbIncrement") { carbIncrement = v }
-        if let v = b("showBolusReasoning") { showBolusReasoning = v }
-        if let v = s("watchDefaultBolusMode"), let mode = BolusMode(rawValue: v) { watchDefaultBolusMode = mode }
-        // Same `max(0.05, …)` clamp init applies.
-        if let v = dbl("watchBolusIncrement") { watchBolusIncrement = max(0.05, v) }
-        if let v = dbl("watchCarbIncrement") { watchCarbIncrement = v }
-        if let v = b("showGlucoseAxis") { showGlucoseAxis = v }
-        if let v = b("showIOBAxis") { showIOBAxis = v }
-        if let v = b("showBolusBars") { showBolusBars = v }
-        // Route restored plot bounds through the SAME `GlucosePlotScale.resolve` init uses so an
-        // inverted/out-of-set backup pair can't install invalid bounds (floor < ceiling + in-set).
-        // When only one half is present, resolve against the current value for the other so the
-        // "absent keys left unchanged" contract still holds for a fully-absent pair.
-        if i("glucosePlotFloor") != nil || i("glucosePlotCeiling") != nil {
-            let bounds = GlucosePlotScale.resolve(
-                storedFloor: i("glucosePlotFloor") ?? glucosePlotFloor,
-                storedCeiling: i("glucosePlotCeiling") ?? glucosePlotCeiling)
-            glucosePlotFloor = bounds.floor
-            glucosePlotCeiling = bounds.ceiling
-        }
-        // Only apply the override when BOTH halves are present in the backup (same one-unit
-        // treatment as init); a backup missing one half leaves the current override unchanged, per
-        // applyBackup's "absent keys are left unchanged" contract. Snap the present pair through
-        // `GlucosePlotScale.resolve` exactly as init does — never assigned raw.
-        if let f = i("glucosePlotFloorSmall"), let c = i("glucosePlotCeilingSmall") {
-            let bounds = GlucosePlotScale.resolve(storedFloor: f, storedCeiling: c)
-            glucosePlotFloorSmall = bounds.floor
-            glucosePlotCeilingSmall = bounds.ceiling
-        }
-        if let v = b("showStats") { showStats = v }
-        // Reuse the SAME `restoreOrder` / chart-range filter+sort init uses so a restored/cross-version
-        // list can't install unknown/duplicate/out-of-set entries until relaunch.
-        if let v = sa("detailsOrder") { detailsOrder = Self.restoreOrder(v, all: Self.detailFields) }
-        if let v = sa("watchDetailsOrder") { watchDetailsOrder = Self.restoreOrder(v, all: Self.detailFields) }
-        if let v = sa("pillsOrder") { pillsOrder = Self.restoreOrder(v, all: Self.pillItems) }
-        if let v = ia("watchChartRanges") {
-            let filtered = v.filter { Self.chartRangeOptions.contains($0) }
-            watchChartRanges = filtered.isEmpty ? Self.chartRangeOptions : filtered.sorted()
-        }
-        // Clamp a restored `glucoseStaleMinutes` into the valid option range so a corrupt/cross-version
-        // backup can't widen the "fresh glucose" correction window via the restore door until relaunch.
-        if let v = i("glucoseStaleMinutes") {
-            glucoseStaleMinutes = min(max(v, Self.glucoseStaleOptions.min()!), Self.glucoseStaleOptions.max()!)
-        }
-        if let v = i("glucoseHideDelayMinutes") { glucoseHideDelayMinutes = v }
-        if let v = b("phoneReadOnly") { phoneReadOnly = v }
-        if let v = b("readOnlyAllowAlertClear") { readOnlyAllowAlertClear = v }
-        if let v = b("remotesReadOnly") { remotesReadOnly = v }
-        if let v = b("garminBolusEnabled") { garminBolusEnabled = v }
-        if let v = dbl("remoteBolusCeiling"), v > 0 { remoteBolusCeiling = v }  // only a positive cap arms it
-        if let v = sa("garminScreenOrder") { garminScreenOrder = v }
-        if let v = s("garminDefaultScreen") { garminDefaultScreen = v }
-        if let v = s("garminComplicationDisplay") { garminComplicationDisplay = v }
-        if let v = b("garminClockAnalog") { garminClockAnalog = v }
-        if let v = s("garminTargetApp") { garminTargetApp = v }
-        // Restore with the same fail-closed validation as init (unrecognized token ⇒ safe default;
-        // slots sanitized + capped at 3).
-        if let v = s("garminAlertIntensityMode"), Self.alertIntensityModeOptions.contains(v) {
-            garminAlertIntensityMode = v
-        }
-        if let v = s("garminAlertAudibleMinSeverity"), Self.alertSeverityTierOptions.contains(v) {
-            garminAlertAudibleMinSeverity = v
-        }
-        if let v = b("garminAlertCriticalOverridesDnd") { garminAlertCriticalOverridesDnd = v }
-        if let v = sa("garminComplicationSlots") { garminComplicationSlots = Self.sanitizeComplicationSlots(v) }
-        applyFreshness()
-        syncWidgetConfig()
-    }
-
 }
