@@ -52,7 +52,7 @@ file puts it in `Data/Tandem/` only if it is clearly NOT dose/gate-adjacent.
 
 `ios/faBolus/Data/` itself is organized by concern (Phase 17-10): `App/` (AppModel extensions,
 backend registration, pump-connection/session infra), `Remote/` (remote-host machinery —
-`GarminRemoteBridge`, `AppRouter`, remote auth/policy), `CGM/` (glucose-source arbitration +
+`GarminRemoteBridge`, remote auth/policy), `CGM/` (glucose-source arbitration +
 followers), `Diagnostics/` (BLE/session/connection logs), `Settings/` (persisted settings +
 catalogs), and `Tandem/` (Tandem-only BLE/read/opcode satellites, moved in Phase 16). Only
 `AppModel.swift` and `TandemBackend.swift` stay at the `Data/` root — the two byte-guarded
