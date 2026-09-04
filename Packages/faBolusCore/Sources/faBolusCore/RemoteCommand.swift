@@ -497,27 +497,6 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var ciqMaxBolusEventsExceeded: Bool?
     public var ciqMaxIobEventsExceeded: Bool?
 
-    /// The phone-owned Control-IQ-awareness Smart-Assist toggle STATES
-    /// themselves, mirrored to remotes on the SAME `statusRead` channel already used for other
-    /// unconditionally-emitted phone-owned settings like `remotesReadOnly`. This is
-    /// belt-and-suspenders parity: a remote must suppress a feature whose toggle
-    /// is OFF even if the phone forgot to ALSO gate that feature's own field emission — the remote is
-    /// never allowed to depend solely on the host's other gate. Emitted UNCONDITIONALLY every
-    /// statusRead, so "absent" can only mean a legacy host that predates these fields. Additive;
-    /// auto-Codable, so the existing memberwise initializer stays untouched.
-    ///
-    /// Absent-on-legacy-host default asymmetry (matches each flag's own `AppSettings` default):
-    /// the always-on-by-default features (state readouts, lockout countdown) resolve a missing key to
-    /// NON-suppressing (`true`); the opt-in/OFF-by-default features (max-basal readout, sleep/exercise,
-    /// CIQ+ temp-rate, ceiling flags) resolve a missing key to suppressing (`false`) — a legacy host
-    /// never advertised those toggles as on, so a remote must not assume they are.
-    public var ciqStateReadoutsEnabled: Bool?
-    public var ciqLockoutCountdownEnabled: Bool?
-    public var ciqMaxBasalReadoutEnabled: Bool?
-    public var ciqSleepExerciseAwarenessEnabled: Bool?
-    public var ciqPlusTempRateEnabled: Bool?
-    public var ciqCeilingFlagsEnabled: Bool?
-
     /// The phone-owned Garmin alert-intensity setting, mirrored to the watch on
     /// the statusRead reply (the watch's fail-closed gate consumes them). `alertIntensityMode` is a frozen
     /// 3-token enum ("silent"|"vibrate"|"audible", DEFAULT "vibrate"); `alertAudibleMinSeverity` the audible

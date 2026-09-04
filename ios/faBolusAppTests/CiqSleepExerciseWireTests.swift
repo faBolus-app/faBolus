@@ -338,10 +338,6 @@ import faBolusCore
         var cmd = RemoteCommand(kind: .statusRead)
         cmd.controlIQMode = 2
         cmd.exerciseTimeRemainingSec = 1500
-        // Belt-and-suspenders: the awareness toggle must be explicitly ON for these fields to render
-        // on the client — this test proves the raw parse mechanics, not the toggle-suppression behavior
-        // (covered by CiqSmartAssistMirrorTests).
-        cmd.ciqSleepExerciseAwarenessEnabled = true
         m.handle(cmd)
         #expect(m.controlIQMode == 2)
         #expect(m.exerciseTimeRemainingSec == 1500)
@@ -358,14 +354,11 @@ import faBolusCore
         var active = RemoteCommand(kind: .statusRead)
         active.controlIQMode = 2
         active.exerciseTimeRemainingSec = 900
-        // Belt-and-suspenders: see note above.
-        active.ciqSleepExerciseAwarenessEnabled = true
         m.handle(active)
         #expect(m.ciqActivityPreset?.name == "Exercise")
 
         var normal = RemoteCommand(kind: .statusRead)
         normal.controlIQMode = 0  // exerciseTimeRemainingSec absent ⇒ nil
-        normal.ciqSleepExerciseAwarenessEnabled = true
         m.handle(normal)
         #expect(m.controlIQMode == 0)
         #expect(m.exerciseTimeRemainingSec == nil)
@@ -383,8 +376,6 @@ import faBolusCore
         cmd.inSleepWindow = true
         cmd.sleepWindowStartMinute = 1320
         cmd.sleepWindowEndMinute = 360
-        // Belt-and-suspenders: see note above.
-        cmd.ciqSleepExerciseAwarenessEnabled = true
         m.handle(cmd)
         #expect(m.ciqSleepWindowLine == "Current window: 22:00–06:00")
     }

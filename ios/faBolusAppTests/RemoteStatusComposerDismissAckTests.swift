@@ -29,9 +29,6 @@ struct RemoteStatusComposerDismissAckTests {
             glucosePlotFloor: 40, glucosePlotCeiling: 300,
             glucosePlotFloorSmall: nil, glucosePlotCeilingSmall: nil,
             garminBolusEnabled: false, activeModeRawValue: "advanced",
-            ciqStateReadoutsEnabled: true, ciqLockoutCountdownEnabled: true,
-            ciqMaxBasalReadoutEnabled: false, ciqSleepExerciseAwarenessEnabled: false,
-            ciqPlusTempRateEnabled: false, ciqCeilingFlagsEnabled: false,
             alertIntensityMode: "vibrate", alertAudibleMinSeverity: "critical",
             alertCriticalOverridesDnd: false, garminComplicationSlots: ["iob", "reservoir", "battery"])
     }

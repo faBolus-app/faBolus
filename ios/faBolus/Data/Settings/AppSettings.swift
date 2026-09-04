@@ -216,47 +216,6 @@ public final class AppSettings {
         "eatingMealPlaces", "alertIntel", "eatingTriggerConfig", "eatingNudgesEnabled", "eatingLearnFromFeedback"
     ]
 
-    // Control-IQ-awareness Smart-Assist toggles. Defaults are owner-locked. Same idiom as
-    // `autoExerciseMode`: plain persisted Bool, mirrored to remotes on `statusRead` so a
-    // remote suppresses an off feature belt-and-suspenders. The extended disable-CIQ warning
-    // has NO flag here — it always fires.
-    /// CIQ state/status readouts (pure facts, no action). Default **ON**.
-    private var _ciqStateReadoutsEnabled = Stored<Bool>(wrappedValue: true, "ciqStateReadoutsEnabled")
-    public var ciqStateReadoutsEnabled: Bool {
-        get { _ciqStateReadoutsEnabled.wrappedValue }
-        set { _ciqStateReadoutsEnabled.wrappedValue = newValue }
-    }
-    /// 60-min auto-correction lockout countdown (safety-increasing disclosure). Default **ON**.
-    private var _ciqLockoutCountdownEnabled = Stored<Bool>(wrappedValue: true, "ciqLockoutCountdownEnabled")
-    public var ciqLockoutCountdownEnabled: Bool {
-        get { _ciqLockoutCountdownEnabled.wrappedValue }
-        set { _ciqLockoutCountdownEnabled.wrappedValue = newValue }
-    }
-    /// "% of configured max basal" readout (introduces a "limit" concept). Default **OFF**.
-    private var _ciqMaxBasalReadoutEnabled = Stored<Bool>(wrappedValue: false, "ciqMaxBasalReadoutEnabled")
-    public var ciqMaxBasalReadoutEnabled: Bool {
-        get { _ciqMaxBasalReadoutEnabled.wrappedValue }
-        set { _ciqMaxBasalReadoutEnabled.wrappedValue = newValue }
-    }
-    /// Sleep/Exercise awareness (least directly pump-sourced). Default **OFF**.
-    private var _ciqSleepExerciseAwarenessEnabled = Stored<Bool>(
-        wrappedValue: false, "ciqSleepExerciseAwarenessEnabled")
-    public var ciqSleepExerciseAwarenessEnabled: Bool {
-        get { _ciqSleepExerciseAwarenessEnabled.wrappedValue }
-        set { _ciqSleepExerciseAwarenessEnabled.wrappedValue = newValue }
-    }
-    /// CIQ+-only temp-rate placeholder (bench-gated, `benchVerifiedDefault = false`). Default **OFF**.
-    private var _ciqPlusTempRateEnabled = Stored<Bool>(wrappedValue: false, "ciqPlusTempRateEnabled")
-    public var ciqPlusTempRateEnabled: Bool {
-        get { _ciqPlusTempRateEnabled.wrappedValue }
-        set { _ciqPlusTempRateEnabled.wrappedValue = newValue }
-    }
-    /// Direct CIQ-ceiling flags (bench-gated, render-absent pre-bench). Default **OFF**.
-    private var _ciqCeilingFlagsEnabled = Stored<Bool>(wrappedValue: false, "ciqCeilingFlagsEnabled")
-    public var ciqCeilingFlagsEnabled: Bool {
-        get { _ciqCeilingFlagsEnabled.wrappedValue }
-        set { _ciqCeilingFlagsEnabled.wrappedValue = newValue }
-    }
     /// Minutes after which a CGM reading is **stale**: shown de-emphasized and no longer used to
     /// auto-fill a bolus correction. A stale reading is never used regardless of whether it's still
     /// shown (greyed) or hidden. Also propagated to the remotes.
@@ -864,12 +823,6 @@ public final class AppSettings {
         _showGlucoseUnitLabels.store = defaults
         _historyRetentionDays.store = defaults
         _historySyncEnabled.store = defaults
-        _ciqStateReadoutsEnabled.store = defaults
-        _ciqLockoutCountdownEnabled.store = defaults
-        _ciqMaxBasalReadoutEnabled.store = defaults
-        _ciqSleepExerciseAwarenessEnabled.store = defaults
-        _ciqPlusTempRateEnabled.store = defaults
-        _ciqCeilingFlagsEnabled.store = defaults
         _criticalAlertsEnabled.store = defaults
         _stackingGuardFrictionEnabled.store = defaults
         _autoExerciseMode.store = defaults
@@ -926,12 +879,6 @@ public final class AppSettings {
         historyRetentionDays = 1
         // Default ON — a fresh install (and any device with no stored value) auto-syncs.
         historySyncEnabled = (d.object(forKey: "historySyncEnabled") as? Bool) ?? true
-        ciqStateReadoutsEnabled = (d.object(forKey: "ciqStateReadoutsEnabled") as? Bool) ?? true
-        ciqLockoutCountdownEnabled = (d.object(forKey: "ciqLockoutCountdownEnabled") as? Bool) ?? true
-        ciqMaxBasalReadoutEnabled = (d.object(forKey: "ciqMaxBasalReadoutEnabled") as? Bool) ?? false
-        ciqSleepExerciseAwarenessEnabled = (d.object(forKey: "ciqSleepExerciseAwarenessEnabled") as? Bool) ?? false
-        ciqPlusTempRateEnabled = (d.object(forKey: "ciqPlusTempRateEnabled") as? Bool) ?? false
-        ciqCeilingFlagsEnabled = (d.object(forKey: "ciqCeilingFlagsEnabled") as? Bool) ?? false
         criticalAlertsEnabled = (d.object(forKey: "criticalAlertsEnabled") as? Bool) ?? false
         // One-time force-reset — a persisted `criticalAlertsEnabled == true` from before the
         // Mobi-default decoupling is force-reset to the uniform OFF default EXACTLY ONCE via the

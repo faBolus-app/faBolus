@@ -229,15 +229,6 @@ enum RemoteStatusComposer {
         cmd.inSleepWindow = s.inSleepWindow
         cmd.sleepWindowStartMinute = s.sleepWindowStartMinute
         cmd.sleepWindowEndMinute = s.sleepWindowEndMinute
-        // Phone-owned CIQ-awareness toggles, same channel as remotesReadOnly, so a remote
-        // suppresses an OFF feature even if that feature's own field still arrived.
-        // Unconditional; "absent" is a legacy host.
-        cmd.ciqStateReadoutsEnabled = settings.ciqStateReadoutsEnabled
-        cmd.ciqLockoutCountdownEnabled = settings.ciqLockoutCountdownEnabled
-        cmd.ciqMaxBasalReadoutEnabled = settings.ciqMaxBasalReadoutEnabled
-        cmd.ciqSleepExerciseAwarenessEnabled = settings.ciqSleepExerciseAwarenessEnabled
-        cmd.ciqPlusTempRateEnabled = settings.ciqPlusTempRateEnabled
-        cmd.ciqCeilingFlagsEnabled = settings.ciqCeilingFlagsEnabled
         // Phone-owned Garmin alert intensity + complication slots. Unconditional; "absent"
         // is a legacy host. Watch fails closed to vibration-only and iob/reservoir/battery
         // slots. Settings only — never a dose input.
@@ -306,12 +297,6 @@ struct RemoteStatusSettings {
     let glucosePlotCeilingSmall: Int?
     let garminBolusEnabled: Bool
     let activeModeRawValue: String  // AppSettings.appMode.rawValue
-    let ciqStateReadoutsEnabled: Bool
-    let ciqLockoutCountdownEnabled: Bool
-    let ciqMaxBasalReadoutEnabled: Bool
-    let ciqSleepExerciseAwarenessEnabled: Bool
-    let ciqPlusTempRateEnabled: Bool
-    let ciqCeilingFlagsEnabled: Bool
     // Phone-owned Garmin alert intensity + complication slots, watch-synced.
     let alertIntensityMode: String
     let alertAudibleMinSeverity: String

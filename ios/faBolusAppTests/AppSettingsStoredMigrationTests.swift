@@ -325,36 +325,6 @@ struct AppSettingsStoredMigrationTests {
         assertBoolStoredRoundTrip(
             key: "historySyncEnabled", backingLabel: "__historySyncEnabled", defaultValue: true, \.historySyncEnabled)
     }
-    @Test func ciqStateReadoutsEnabledStoredRoundTrip() {
-        assertBoolStoredRoundTrip(
-            key: "ciqStateReadoutsEnabled", backingLabel: "__ciqStateReadoutsEnabled", defaultValue: true,
-            \.ciqStateReadoutsEnabled)
-    }
-    @Test func ciqLockoutCountdownEnabledStoredRoundTrip() {
-        assertBoolStoredRoundTrip(
-            key: "ciqLockoutCountdownEnabled", backingLabel: "__ciqLockoutCountdownEnabled", defaultValue: true,
-            \.ciqLockoutCountdownEnabled)
-    }
-    @Test func ciqMaxBasalReadoutEnabledStoredRoundTrip() {
-        assertBoolStoredRoundTrip(
-            key: "ciqMaxBasalReadoutEnabled", backingLabel: "__ciqMaxBasalReadoutEnabled", defaultValue: false,
-            \.ciqMaxBasalReadoutEnabled)
-    }
-    @Test func ciqSleepExerciseAwarenessEnabledStoredRoundTrip() {
-        assertBoolStoredRoundTrip(
-            key: "ciqSleepExerciseAwarenessEnabled", backingLabel: "__ciqSleepExerciseAwarenessEnabled",
-            defaultValue: false, \.ciqSleepExerciseAwarenessEnabled)
-    }
-    @Test func ciqPlusTempRateEnabledStoredRoundTrip() {
-        assertBoolStoredRoundTrip(
-            key: "ciqPlusTempRateEnabled", backingLabel: "__ciqPlusTempRateEnabled", defaultValue: false,
-            \.ciqPlusTempRateEnabled)
-    }
-    @Test func ciqCeilingFlagsEnabledStoredRoundTrip() {
-        assertBoolStoredRoundTrip(
-            key: "ciqCeilingFlagsEnabled", backingLabel: "__ciqCeilingFlagsEnabled", defaultValue: false,
-            \.ciqCeilingFlagsEnabled)
-    }
     @Test func autoExerciseModeStoredRoundTrip() {
         assertBoolStoredRoundTrip(
             key: "autoExerciseMode", backingLabel: "__autoExerciseMode", defaultValue: false, \.autoExerciseMode)
