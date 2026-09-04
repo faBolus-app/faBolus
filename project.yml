@@ -164,8 +164,8 @@ targets:
           # Phase 3 (03-02, REMOTE-02): the PHONE_PEER gate is retired — the iPhone-to-iPhone peer remote
           # is now physically git rm'd from main (delete-on-main, D-01), preserved on dev/phone-remote,
           # not a compile-gated exclude. PeerRemoteHost.swift/PhoneRemoteClientModel.swift/
-          # RemotePeerPolicyStore.swift (now a minimal stub)/RemoteControlView.swift/RemoteRootView.swift/
-          # RemoteSettingsView.swift no longer exist on main at all.
+          # RemoteControlView.swift/RemoteRootView.swift/RemoteSettingsView.swift no longer exist on
+          # main at all.
           # Phase 7 (07-01, FEAT-07): the FoodFinder compile gate is retired — the barcode/OpenFoodFacts
           # + AI carb-estimate surface is now physically git rm'd from main (delete-on-main, D-01/D-03),
           # preserved on dev/food-finder, not a compile-gated exclude. Data/FoodFinder/Views/FoodFinder

@@ -93,20 +93,6 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
         }
     }
 
-    /// The peer permission an authenticated remote needs to drive this action (matches
-    /// `PeerRemoteHost`'s current switch). `nil` = there is no remote verb for it, so a peer surface
-    /// fails closed — fail-safe.
-    public var requiredPeerPermission: RemotePermission? {
-        switch self {
-        case .deliverBolus: return .bolus
-        case .deliverExtendedBolus: return .extendedBolus
-        case .cancelBolus: return .cancelBolus
-        case .dismissNotification: return .dismissAlerts
-        case .suspendDelivery, .resumeDelivery: return .suspendResume
-        default: return nil
-        }
-    }
-
     /// The **opt-in axis**: whether this action needs the user's advanced-control opt-in
     /// (`advancedControlEnabled`) at the funnel. Delivery (`.ledgeredDelivery`) and the child-only pair
     /// (`.childOnly`) never need the opt-in; neither does `syncTimeToNow` — it is reachable on a Mobi

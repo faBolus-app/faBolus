@@ -1,29 +1,29 @@
 import Testing
 @testable import faBolusCore
 
-/// Pins AccessPolicy fail-closed behavior across every GatedPumpWrite × Surface: child-lock bypass is
-/// authenticated-peer only, plus capability and ack gates.
+/// Pins AccessPolicy fail-closed behavior across every GatedPumpWrite × Surface: read-only,
+/// child-lock, capability, and ack gates.
 @Suite struct AccessPolicyTests {
     typealias P = AccessPolicy
     typealias A = GatedPumpWrite
     typealias S = AccessPolicy.Surface
 
-    /// Fully locked: child on with nothing allowed, both read-only flags on, no ack, no advanced control,
-    /// a view-only peer. Nothing consequential may happen on any surface.
+    /// Fully locked: child on with nothing allowed, both read-only flags on, no ack, no advanced
+    /// control. Nothing consequential may happen on any surface.
     private var locked: P.AccessContext {
         P.AccessContext(
             childModeEnabled: true, childAllowed: [],
             phoneReadOnly: true, remotesReadOnly: true,
             advancedControlOptIn: false, capabilities: PumpCapabilities(),
-            hasRecentUnverifiedAck: false, peerPolicy: .viewOnly)
+            hasRecentUnverifiedAck: false)
     }
-    /// Fully permissive: child off, no read-only, advanced control available, ack present, full peer policy.
-    private func openCtx(peer: RemotePeerPolicy? = .fullControl) -> P.AccessContext {
+    /// Fully permissive: child off, no read-only, advanced control available, ack present.
+    private func openCtx() -> P.AccessContext {
         P.AccessContext(
             childModeEnabled: false, childAllowed: Set(ChildFeature.allCases),
             phoneReadOnly: false, remotesReadOnly: false,
             advancedControlOptIn: true, capabilities: .mobiAdvanced,
-            hasRecentUnverifiedAck: true, peerPolicy: peer,
+            hasRecentUnverifiedAck: true,
             // "Fully permissive" must set this explicitly now that the init default is
             // fail-closed (false); openCtx asserts a Garmin deliver is ALLOWED.
             garminBolusEnabled: true)
@@ -36,12 +36,11 @@ import Testing
             childModeEnabled: false, childAllowed: Set(ChildFeature.allCases),
             phoneReadOnly: false, remotesReadOnly: false,
             advancedControlOptIn: true, capabilities: .mobiAdvanced,
-            hasRecentUnverifiedAck: true, peerPolicy: .fullControl,
+            hasRecentUnverifiedAck: true,
             garminBolusEnabled: false)
         #expect(P.evaluate(.deliverBolus, surface: .garmin, context: off).reason == .remoteBolusDisabled)
-        // Not this surface — the phone and authenticated peers are unaffected by the per-surface remote flag.
+        // Not this surface — the phone is unaffected by the per-surface remote flag.
         #expect(P.evaluate(.deliverBolus, surface: .phoneUI, context: off).allowed)
-        #expect(P.evaluate(.deliverBolus, surface: .macPeer, context: off).allowed)
         // Not this action — a safety STOP (cancel) from the same remote is never blocked by this gate.
         #expect(P.evaluate(.cancelBolus, surface: .garmin, context: off).reason != .remoteBolusDisabled)
         // Enabled ⇒ the deliver is allowed (openCtx defaults the flag to true).
@@ -56,7 +55,7 @@ import Testing
             childModeEnabled: false, childAllowed: Set(ChildFeature.allCases),
             phoneReadOnly: false, remotesReadOnly: false,
             advancedControlOptIn: true, capabilities: .mobiAdvanced,
-            hasRecentUnverifiedAck: true, peerPolicy: .fullControl,
+            hasRecentUnverifiedAck: true,
             garminBolusEnabled: false)
         // Enable OFF ⇒ extended deliver denied on Garmin, exactly like a normal bolus.
         #expect(P.evaluate(.deliverExtendedBolus, surface: .garmin, context: off).reason == .remoteBolusDisabled)
@@ -78,13 +77,13 @@ import Testing
             childModeEnabled: false, childAllowed: Set(ChildFeature.allCases),
             phoneReadOnly: false, remotesReadOnly: false,
             advancedControlOptIn: true, capabilities: .mobiAdvanced,
-            hasRecentUnverifiedAck: true, peerPolicy: .fullControl)  // flag OMITTED
+            hasRecentUnverifiedAck: true)  // flag OMITTED
         #expect(P.evaluate(.deliverBolus, surface: .garmin, context: c).reason == .remoteBolusDisabled)
         #expect(P.evaluate(.deliverBolus, surface: .phoneUI, context: c).allowed)  // phone unaffected
     }
 
     /// When a passcode is required, a Garmin deliver is allowed only with a host-verified code.
-    /// The phone/peers are unaffected, a non-deliver action is never gated, and "bolusing off" still outranks "needs a passcode".
+    /// The phone is unaffected, a non-deliver action is never gated, and "bolusing off" still outranks "needs a passcode".
     @Test func garminBolusPasscodeGateRequiresASatisfiedCode() {
         // Required + verified ⇒ the Garmin deliver is allowed.
         var ok = openCtx()
@@ -141,10 +140,9 @@ import Testing
                     "\(a.rawValue) (safety STOP / clear) must stay available under read-only on \(s.rawValue)")
             }
         }
-        // …but a real delivery IS blocked by the same read-only, per surface.
+        // …but a real delivery IS blocked by the same read-only, per surface — including Garmin.
         #expect(P.evaluate(.deliverBolus, surface: .phoneUI, context: ctx).reason == .phoneReadOnly)
         #expect(P.evaluate(.deliverBolus, surface: .garmin, context: ctx).reason == .remotesReadOnly)
-        #expect(P.evaluate(.deliverBolus, surface: .macPeer, context: ctx).reason == .remotesReadOnly)  // owner decision: peers too
     }
 
     @Test func childModeStillGovernsCancelAndDismissWhenDisallowed() {
@@ -154,25 +152,6 @@ import Testing
         #expect(P.evaluate(.cancelBolus, surface: .phoneUI, context: ctx).reason == .childLocked(.cancelBolus))
         #expect(
             P.evaluate(.dismissNotification, surface: .phoneUI, context: ctx).reason == .childLocked(.dismissAlerts))
-    }
-
-    @Test func childBypassIsAuthenticatedPeerOnly() {
-        // Child mode ON, nothing allowed. A macPeer granted .bolus still delivers (bypass); the widget does
-        // NOT — the old enforceChildLock:false hole is now closed to every non-peer surface.
-        var ctx = openCtx(peer: RemotePeerPolicy(permissions: [.bolus]))
-        ctx.childModeEnabled = true
-        ctx.childAllowed = []
-        #expect(P.evaluate(.deliverBolus, surface: .macPeer, context: ctx).allowed)
-        #expect(P.evaluate(.deliverBolus, surface: .quickBolusWidget, context: ctx).reason == .childLocked(.bolus))
-    }
-
-    @Test func peerFailsClosedWithoutPermissionOrVerb() {
-        let ctx = openCtx(peer: .viewOnly)
-        #expect(P.evaluate(.deliverBolus, surface: .macPeer, context: ctx).reason == .notPermittedForPeer)
-        // An action with no remote verb (setTempBasal) is denied on a peer surface even with full policy.
-        #expect(
-            P.evaluate(.setTempBasal, surface: .macPeer, context: openCtx(peer: .fullControl)).reason
-                == .notPermittedForPeer)
     }
 
     @Test func advancedControlRequiresCapabilityAndOptIn() {

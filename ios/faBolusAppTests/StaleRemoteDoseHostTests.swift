@@ -44,10 +44,6 @@ struct StaleRemoteDoseHostTests {
         s.remotesReadOnly = false
         s.readOnlyAllowAlertClear = false
         s.appMode = .advanced
-        let d = UserDefaults.standard
-        let peerPolicies = d.data(forKey: "remotePeerPolicies"), peerQR = d.data(forKey: "remotePeerHighEntropy")
-        d.removeObject(forKey: "remotePeerPolicies")
-        d.removeObject(forKey: "remotePeerHighEntropy")
         defer {
             s.phoneReadOnly = ro
             s.childModeEnabled = child
@@ -56,13 +52,9 @@ struct StaleRemoteDoseHostTests {
             s.remotesReadOnly = rro
             s.readOnlyAllowAlertClear = clr
             s.appMode = mode
-            d.set(peerPolicies, forKey: "remotePeerPolicies")
-            d.set(peerQR, forKey: "remotePeerHighEntropy")
         }
         try await body()
     }
-
-    // No peer can hold a full-control grant, so a Mac host-approval include-stale path is unconstructable.
 
     /// Pin a KNOWN stale reading (10 min old): a fixed value above target so a correction is nonzero, with
     /// a stale timestamp so `freshCorrectionBG == nil` and the include-stale branch is the one under test.

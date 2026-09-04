@@ -58,12 +58,6 @@ struct AppModelBehaviorTests {
         // Baseline Advanced so the mode gate is a no-op for every existing test; a mode test sets
         // it explicitly. Restored below.
         s.appMode = .advanced
-        // AccessPolicy's peer gate reads `RemotePeerPolicyStore` (UserDefaults). Snapshot + clear
-        // it so a peer grant set by one test can't leak into the next (the suite is serialized).
-        let d = UserDefaults.standard
-        let peerPolicies = d.data(forKey: "remotePeerPolicies"), peerQR = d.data(forKey: "remotePeerHighEntropy")
-        d.removeObject(forKey: "remotePeerPolicies")
-        d.removeObject(forKey: "remotePeerHighEntropy")
         defer {
             s.phoneReadOnly = ro
             s.childModeEnabled = child
@@ -72,14 +66,9 @@ struct AppModelBehaviorTests {
             s.remotesReadOnly = rro
             s.readOnlyAllowAlertClear = clr
             s.appMode = mode
-            d.set(peerPolicies, forKey: "remotePeerPolicies")
-            d.set(peerQR, forKey: "remotePeerHighEntropy")
         }
         try await body()
     }
-
-    // AccessPolicy still gates `.macPeer`/`.caregiverPhonePeer`; this suite no longer constructs a
-    // full-control peer grant (those APIs are gone from the deny-by-default stub).
 
     private let tol = 0.0001
 
@@ -262,21 +251,17 @@ struct AppModelBehaviorTests {
 
     // MARK: - AccessPolicy surface × action matrix
 
-    /// `AppModel.accessDecision` builds context from live app/pump/peer state and every gated
+    /// `AppModel.accessDecision` builds context from live app/pump state and every gated
     /// entry point defers to the one AccessPolicy evaluator. This pins that wiring, including
     /// fail-closed.
     @Test func surfaceActionMatrixRoutesThroughTheEvaluator() async {
         try? await withCleanSettings {
             let (model, _, _) = await makeModel(connected: true)
-            typealias A = GatedPumpWrite
             typealias S = AccessPolicy.Surface
-            // Authenticated peers are always denied via AccessPolicy Gate 4 (deny-by-default stub);
-            // remotesReadOnly is proven on Garmin, which can still be granted.
             let remotes: [S] = [.garmin]
 
-            // Owner decision 2026-08-05 — `remotesReadOnly` governs ALL remotes INCLUDING the Mac/
-            // caregiver peer path (the hole this closes: the peer path never consulted it before). A
-            // delivery is refused on every remote surface; the phone (local) is untouched.
+            // `remotesReadOnly` governs every remote. A delivery is refused on every remote surface;
+            // the phone (local) is untouched.
             AppSettings.shared.remotesReadOnly = true
             for s in remotes {
                 #expect(
@@ -296,17 +281,6 @@ struct AppModelBehaviorTests {
                     model.accessDecision(.dismissNotification, from: s, peerId: "mac").allowed,
                     "dismiss must survive remotesReadOnly on \(s.rawValue)")
             }
-            // The new, MORE restrictive peer invariant (F-3): an authenticated peer is denied EVERY
-            // action, including the safety-STOP cancel/dismiss that survive remotesReadOnly on every
-            // other remote — there is no possible producer of a permission grant anymore.
-            for s: S in [.macPeer, .caregiverPhonePeer] {
-                #expect(
-                    model.accessDecision(.deliverBolus, from: s, peerId: "mac").reason == .notPermittedForPeer,
-                    "deliverBolus on \(s.rawValue) must be denied (no possible peer grant)")
-                #expect(
-                    !model.accessDecision(.cancelBolus, from: s, peerId: "mac").allowed,
-                    "cancel on \(s.rawValue) must ALSO be denied — an authenticated peer has zero permissions")
-            }
 
             // AccessPolicy still fail-closes child mode in faBolusCore; the app-layer setter is frozen
             // false, so this suite does not flip it.
@@ -323,9 +297,7 @@ struct AppModelBehaviorTests {
             let (model, _, _) = await makeModel(connected: true)
             typealias S = AccessPolicy.Surface
             AppSettings.shared.appMode = .simple
-            // An advanced write is denied on every surface, through the real context-builder. Holds for
-            // an authenticated peer too (no `requiredPeerPermission` for `.setTempBasal` ⇒ Gate 4 alone
-            // already denies it, independent of the mode gate or any peer grant — F-3/Pitfall F).
+            // An advanced write is denied on every surface, through the real context-builder.
             for s in S.allCases {
                 #expect(
                     !model.accessDecision(.setTempBasal, from: s, peerId: "mac").allowed,
@@ -333,18 +305,12 @@ struct AppModelBehaviorTests {
             }
             // On a local surface (everything else open) the reason is specifically the mode gate.
             #expect(model.accessDecision(.setTempBasal, from: .phoneUI).reason == .modeDisallowed(required: .advanced))
-            // Core bolus stays available on the phone; safety STOPs survive on every surface except
-            // an authenticated peer (AccessPolicy deny-by-default: Gate 4, not the mode gate).
+            // Core bolus stays available on the phone; safety STOPs survive on every surface.
             #expect(model.accessDecision(.deliverBolus, from: .phoneUI).allowed)
-            for s in S.allCases where !s.isAuthenticatedPeer {
+            for s in S.allCases {
                 #expect(
                     model.accessDecision(.cancelBolus, from: s, peerId: "mac").allowed,
                     "cancel (safety STOP) must survive Simple mode on \(s.rawValue)")
-            }
-            for s: S in [.macPeer, .caregiverPhonePeer] {
-                #expect(
-                    !model.accessDecision(.cancelBolus, from: s, peerId: "mac").allowed,
-                    "cancel on \(s.rawValue) is denied by Gate 4 (no possible peer grant), not the mode gate")
             }
             // Advanced mode restores the advanced write (proves the wiring reads the live value, not a const).
             AppSettings.shared.appMode = .advanced

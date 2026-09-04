@@ -1,21 +1,19 @@
 import Foundation
 
 /// Single access-policy evaluator: whether a `GatedPumpWrite` is permitted from a `Surface`.
-/// Folds unverified-feature ack, child mode, phone/remote read-only, per-peer permissions, pump
-/// capabilities, and modes into one ordered check. Every funnel (`runControl`, `runGatedTherapy`,
-/// `runLedgeredDelivery`, remote hosts) must go through this so a surface cannot be gated on one
-/// layer and open on another. Pure over `AccessContext` — faBolusCore must not read app globals.
+/// Folds unverified-feature ack, child mode, phone/remote read-only, pump capabilities, and modes
+/// into one ordered check. Every funnel (`runControl`, `runGatedTherapy`, `runLedgeredDelivery`,
+/// remote hosts) must go through this so a surface cannot be gated on one layer and open on
+/// another. Pure over `AccessContext` — faBolusCore must not read app globals.
 ///
-/// `remotesReadOnly` governs all remotes including Mac/caregiver. Pump-capability + advanced-control
-/// opt-in is enforced at this funnel, not only in the UI.
+/// `remotesReadOnly` governs all remotes. Pump-capability + advanced-control opt-in is enforced at
+/// this funnel, not only in the UI.
 public enum AccessPolicy {
 
-    /// Where an action originates. Determines which read-only flag applies and whether the child-lock
-    /// bypass (an authenticated peer that passed its per-peer policy) is available.
+    /// Where an action originates. Determines which read-only flag applies.
     public enum Surface: String, CaseIterable, Sendable {
         case phoneUI, quickBolusWidget, siriShortcuts  // local (this phone)
         case garmin  // paired remote governed by remotesReadOnly + child
-        case macPeer, caregiverPhonePeer  // authenticated peers (per-peer policy)
 
         /// Local surfaces are subject to `phoneReadOnly`.
         public var isLocal: Bool {
@@ -26,14 +24,6 @@ public enum AccessPolicy {
         }
         /// Any non-local surface is a remote and is subject to `remotesReadOnly`.
         public var isRemote: Bool { !isLocal }
-        /// Authenticated peers carry a per-peer `RemotePeerPolicy` and bypass child-mode (they are a
-        /// separately-authenticated controller).
-        public var isAuthenticatedPeer: Bool {
-            switch self {
-            case .macPeer, .caregiverPhonePeer: return true
-            default: return false
-            }
-        }
     }
 
     /// The mode axis, folded in as one more input to the one evaluator (NOT a sixth mechanism).
@@ -58,8 +48,8 @@ public enum AccessPolicy {
         }
     }
 
-    /// Everything the evaluator needs, snapshotted by the app from `AppSettings` / the backend / the peer
-    /// policy store. Pure data — no globals, no side effects.
+    /// Everything the evaluator needs, snapshotted by the app from `AppSettings` / the backend. Pure
+    /// data — no globals, no side effects.
     public struct AccessContext: Sendable {
         // Gate 2 — child mode
         public var childModeEnabled: Bool
@@ -73,8 +63,6 @@ public enum AccessPolicy {
         public var capabilities: PumpCapabilities
         // Gate 1 — unverified-feature acknowledgment
         public var hasRecentUnverifiedAck: Bool
-        // Gate 4 — per-peer policy (nil for a non-authenticated-peer surface)
-        public var peerPolicy: RemotePeerPolicy?
         // Mode seam
         public var modeContext: ModeGateContext
         // Per-surface remote bolus authorization (default true so no OTHER surface/action is
@@ -94,7 +82,7 @@ public enum AccessPolicy {
             childModeEnabled: Bool, childAllowed: Set<ChildFeature>,
             phoneReadOnly: Bool, remotesReadOnly: Bool,
             advancedControlOptIn: Bool, capabilities: PumpCapabilities,
-            hasRecentUnverifiedAck: Bool, peerPolicy: RemotePeerPolicy? = nil,
+            hasRecentUnverifiedAck: Bool,
             modeContext: ModeGateContext = .init(),
             // Fail-closed default: a caller that forgets to thread the per-surface remote
             // bolus enable must NOT silently arm Garmin bolusing. The one production call site
@@ -112,7 +100,6 @@ public enum AccessPolicy {
             self.advancedControlOptIn = advancedControlOptIn
             self.capabilities = capabilities
             self.hasRecentUnverifiedAck = hasRecentUnverifiedAck
-            self.peerPolicy = peerPolicy
             self.modeContext = modeContext
             self.garminBolusEnabled = garminBolusEnabled
             self.bolusPasscodeRequired = bolusPasscodeRequired
@@ -122,7 +109,6 @@ public enum AccessPolicy {
 
     /// Why an action was denied. `userMessage` is the string the app surfaces in `lastError`.
     public enum DenialReason: Sendable, Equatable {
-        case notPermittedForPeer
         case childLocked(ChildFeature)
         case phoneReadOnly
         case remotesReadOnly
@@ -135,7 +121,6 @@ public enum AccessPolicy {
 
         public var userMessage: String {
             switch self {
-            case .notPermittedForPeer: return "Not permitted for this remote."
             case .childLocked(let f): return "Locked (child mode): \(f.label.lowercased()) is disabled."
             case .phoneReadOnly: return "This action is disabled — the app is in read-only mode."
             case .remotesReadOnly: return "Remote control is turned off — remotes are read-only."
@@ -162,26 +147,15 @@ public enum AccessPolicy {
         public static func deny(_ r: DenialReason) -> AccessDecision { .init(allowed: false, reason: r) }
     }
 
-    /// The single decision. **Fail-closed**: any gate that isn't satisfied denies; a peer with no verb for
-    /// the action, or a context missing a required grant, is denied. Ordering reproduces today's precedence
-    /// and messages.
+    /// The single decision. **Fail-closed**: any gate that isn't satisfied denies. Ordering reproduces
+    /// today's precedence and messages.
     public static func evaluate(
         _ action: GatedPumpWrite,
         surface: Surface,
         context: AccessContext
     ) -> AccessDecision {
-        // Gate 4 — per-peer permission (authenticated peers only). No verb for this action ⇒ fail closed.
-        if surface.isAuthenticatedPeer {
-            guard let perm = action.requiredPeerPermission,
-                context.peerPolicy?.allows(perm) == true
-            else {
-                return .deny(.notPermittedForPeer)
-            }
-        }
-
-        // Gate 2 — child mode. Local + Garmin surfaces are subject to it; an authenticated peer
-        // bypasses it (it just passed its own per-peer policy).
-        if context.childModeEnabled && !surface.isAuthenticatedPeer {
+        // Gate 2 — child mode. Local + Garmin surfaces are subject to it.
+        if context.childModeEnabled {
             if !context.childAllowed.contains(action.requiredChildFeature) {
                 return .deny(.childLocked(action.requiredChildFeature))
             }
@@ -189,8 +163,7 @@ public enum AccessPolicy {
 
         // Gate 3 — read-only. CARVE-OUT: `.childOnly` actions (cancel bolus, dismiss alert) are never
         // read-only-blocked — cancelling is a safety STOP that must stay available, and clearing an alert
-        // is low-risk. Every other action: local ⇒ phoneReadOnly, remote ⇒ remotesReadOnly (including
-        // Mac/caregiver peers).
+        // is low-risk. Every other action: local ⇒ phoneReadOnly, remote ⇒ remotesReadOnly.
         if action.gate != .childOnly {
             if surface.isLocal && context.phoneReadOnly { return .deny(.phoneReadOnly) }
             if surface.isRemote && context.remotesReadOnly { return .deny(.remotesReadOnly) }
@@ -198,9 +171,9 @@ public enum AccessPolicy {
 
         // Per-surface remote bolus authorization. Bolusing from Garmin is an explicit, default-OFF
         // opt-in on the phone, INDEPENDENT of `remotesReadOnly` (which already denied above if set).
-        // Only the actual deliver from that paired remote is gated — every other surface/action, and
-        // the authenticated-peer paths, are unaffected. Fail-closed: a phone that never enabled the surface
-        // denies here regardless of what the remote UI showed.
+        // Only the actual deliver from that paired remote is gated — every other surface/action is
+        // unaffected. Fail-closed: a phone that never enabled the surface denies here regardless of
+        // what the remote UI showed.
         // Gate BOTH ledgered deliveries (normal AND extended bolus). Keying on `.deliverBolus`
         // alone left `.deliverExtendedBolus` from a paired remote ungated by the per-surface enable —
         // latent today (extended bolus isn't Garmin-reachable) but exactly the drift this single

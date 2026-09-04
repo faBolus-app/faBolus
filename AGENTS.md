@@ -41,7 +41,7 @@ There is **no Watch app on `main`**. Do not build `faBolusWatch` or assume a `wa
   schema/Garmin mirror.
 - **A CGM source:** implement `GlucoseSource`, add a `GlucoseSourceDescriptor` to
   `GlucoseSourceRegistry.enabled`.
-- **A permission:** `ChildFeature` (local) or `RemotePermission` (peers); enforce via `AccessPolicy`.
+- **A permission:** `ChildFeature`; enforce via `AccessPolicy`.
 
 ## Conventions
 - Swift 6 / strict concurrency: most UI + model types are `@MainActor`; CoreBluetooth/AVFoundation

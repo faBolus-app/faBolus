@@ -19,7 +19,7 @@ public enum BolusBlockReason: Equatable, Sendable {
     case noCartridge  // cartridge is mid change/load/prime-tubing — dosing is physically impossible
     case belowMinimum(Double)  // entered amount is below the minimum deliverable
     case aboveMax(Double)  // entered amount exceeds the pump's configured max
-    case accessDenied(AccessPolicy.DenialReason)  // child / read-only / capability / ack / per-peer
+    case accessDenied(AccessPolicy.DenialReason)  // child / read-only / capability / ack
 
     public var userMessage: String {
         switch self {
@@ -74,7 +74,12 @@ public enum BolusGate {
         if !linked { return (false, .pumpNotLinked) }
         if bolusInFlight { return (false, .bolusInFlight) }
         if !cartridgeReady { return (false, .noCartridge) }
-        if !access.allowed { return (false, .accessDenied(access.reason ?? .notPermittedForPeer)) }
+        // `access.reason` is nil ⇔ allowed by `AccessDecision`'s own contract, so `!access.allowed`
+        // always carries a reason in practice; this fallback exists only because the struct's public
+        // init can't enforce that pairing at compile time. `.capabilityUnavailable` is the least
+        // situation-specific surviving reason, so a caller that somehow reaches this branch is never
+        // told a false, more-specific story about WHY.
+        if !access.allowed { return (false, .accessDenied(access.reason ?? .capabilityUnavailable)) }
         // A non-finite amount (NaN/±inf) satisfies neither `< minimum` nor `> maximum`, so without this
         // guard it would fall through to `(true, nil)` and arm the affordance. `validateDeliver`
         // fail-closes it before the pump write, but the gate itself must reject it too — fail-closed.

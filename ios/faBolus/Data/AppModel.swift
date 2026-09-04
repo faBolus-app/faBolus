@@ -271,13 +271,11 @@ public final class AppModel {
 
     // MARK: - Single access-policy evaluator (the one decision point for every gate)
 
-    /// Build the pure `AccessContext` from live app / pump / peer state and defer to
-    /// `AccessPolicy.evaluate`. This is the ONLY place the five gates (unverified-ack, child mode,
-    /// phone/remote read-only, per-peer permission, pump-capability + advanced-control opt-in) are read
-    /// together, so a surface can't be gated on one layer and open on another. Pure inputs — the evaluator
-    /// itself lives in faBolusCore and touches no globals. For an authenticated-peer surface it supplies
-    /// that peer's stored policy (Gate 4); for every other surface `peerPolicy` is nil (and Gate 4 is
-    /// skipped). `advancedControlOptIn` is the raw opt-in (`advancedControlEnabled`); the evaluator
+    /// Build the pure `AccessContext` from live app / pump state and defer to `AccessPolicy.evaluate`.
+    /// This is the ONLY place the four gates (unverified-ack, child mode, phone/remote read-only,
+    /// pump-capability + advanced-control opt-in) are read together, so a surface can't be gated on one
+    /// layer and open on another. Pure inputs — the evaluator itself lives in faBolusCore and touches no
+    /// globals. `advancedControlOptIn` is the raw opt-in (`advancedControlEnabled`); the evaluator
     /// composes it with the pump-derived `capabilities` (not a raw `isMobi` gate), matching
     /// the UI's `advancedControlAllowed`.
     func accessDecision(
@@ -291,10 +289,6 @@ public final class AppModel {
         bolusPasscodeRequired: Bool = false,
         bolusPasscodeSatisfied: Bool = false
     ) -> AccessPolicy.AccessDecision {
-        let peerPolicy: RemotePeerPolicy? =
-            surface.isAuthenticatedPeer
-            ? RemotePeerPolicyStore.effectivePolicy(for: peerId ?? "")
-            : nil
         let ctx = AccessPolicy.AccessContext(
             childModeEnabled: AppSettings.shared.childModeEnabled,
             childAllowed: AppSettings.shared.childAllowed,
@@ -303,7 +297,6 @@ public final class AppModel {
             advancedControlOptIn: AppSettings.shared.advancedControlEnabled,
             capabilities: capabilities,
             hasRecentUnverifiedAck: hasRecentUnverifiedAck,
-            peerPolicy: peerPolicy,
             // The active mode flows through the ONE context-builder so modes gate every surface
             // identically, never a sixth mechanism. Per-feature toggles (`disabledFeatures`) are empty
             // here until a mode store supplies them.
@@ -364,8 +357,8 @@ public final class AppModel {
     }
 
     /// Clear a pump alert/alarm from the app (signed dismiss on the pump). Gated through the single
-    /// evaluator by `surface` (dismiss is `.childOnly` — child mode governs it on local/watch/Garmin, an
-    /// authenticated peer needs the `.dismissAlerts` permission, and it is never read-only-blocked).
+    /// evaluator by `surface` (dismiss is `.childOnly` — child mode governs it on local/watch/Garmin,
+    /// and it is never read-only-blocked).
     ///
     /// RETURNS the backend's TYPED outcome so a caller (the Garmin bridge) can gate a durable ack on
     /// `.authenticatedCleared` and ONLY that case — never infer authentication from any other observable.
@@ -1439,9 +1432,7 @@ public final class AppModel {
 
     /// Deliver an extended (combo) bolus: `nowUnits` up front, the rest over `durationMinutes`. Gated
     /// through the single evaluator by `surface` — `.phoneUI` (child + phone read-only) for the phone's
-    /// own combo bolus; an authenticated peer passes `.macPeer` + its `peerId` so the evaluator enforces
-    /// the `.extendedBolus` peer permission and `remotesReadOnly` while
-    /// bypassing child mode. The idempotency ledger keeps its own `local-ext:` keying, independent of the
+    /// own combo bolus. The idempotency ledger keeps its own `local-ext:` keying, independent of the
     /// gating `peerId`.
     public func deliverExtendedBolus(
         totalUnits: Double, nowUnits: Double, durationMinutes: Int,
@@ -2023,8 +2014,8 @@ public final class AppModel {
             return
         }
         if deliveryLedgerCoordinator.isSettled(peerId: peerId, requestId: requestId) { return }
-        // Gate the request through the single evaluator (child mode for local/watch/Garmin; the
-        // `.bolus` peer permission + `remotesReadOnly` for an authenticated peer). Echo the exact reason.
+        // Gate the request through the single evaluator (child mode for local/watch/Garmin;
+        // `remotesReadOnly` for Garmin). Echo the exact reason.
         let decision = accessDecision(.deliverBolus, from: surface, peerId: peerId)
         guard decision.allowed else {
             echo(
@@ -2148,8 +2139,8 @@ public final class AppModel {
                 passcodeSatisfied = BolusPasscodeStore.verify(entered)
             }
         }
-        // Gate through the single evaluator (child mode for local/Garmin; the `.bolus` peer
-        // permission + `remotesReadOnly` for an authenticated peer). Echo the exact denial reason.
+        // Gate through the single evaluator (child mode for local/Garmin; `remotesReadOnly` for
+        // Garmin). Echo the exact denial reason.
         let decision = accessDecision(
             .deliverBolus, from: surface, peerId: peerId,
             bolusPasscodeRequired: passcodeRequired,
