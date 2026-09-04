@@ -1,10 +1,10 @@
 import Foundation
 
-/// Transport a remote client (Mac or another iPhone) uses to talk to the host. `BLELink` conforms.
-/// One `RemoteClientModel` works over any conforming link.
+/// Transport a remote client uses to talk to the host.
+/// Any remote client works over any conforming link.
 ///
-/// To add a transport: conform (send/receive encoded `RemoteCommand`s); wrap in `SealedTransport`
-/// if the medium is not already encrypted.
+/// To add a transport: conform (send/receive encoded `RemoteCommand`s), encrypting the medium
+/// yourself if it is not already encrypted.
 public protocol RemoteTransport: AnyObject {
     /// Invoked (on the main actor) with each decoded command received from the peer.
     var onReceive: (@MainActor (RemoteCommand) -> Void)? { get set }
