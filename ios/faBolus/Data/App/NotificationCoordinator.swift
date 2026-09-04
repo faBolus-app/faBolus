@@ -614,11 +614,11 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     }
 
     /// The registered notification-category id for a broker category: `PUMP_ALERT` for pump alerts (CLEAR
-    /// + SNOOZE), the raw value for other governed categories (SNOOZE), and "" for the never-suppressible
-    /// safety categories (no snooze action — they must never be snoozeable).
+    /// + SNOOZE), the raw value for every other category — INCLUDING the never-suppressible safety ones,
+    /// which `ownedCategories()` now registers too (with an EMPTY action set, so they still can never be
+    /// snoozed from a banner). Every category resolves to a registered identifier; none resolves to "".
     static func categoryIdentifier(for c: NotificationBroker.Category) -> String {
-        if c == .pumpAlert { return pumpAlertCategory }
-        return c.neverSuppressible ? "" : c.rawValue
+        c == .pumpAlert ? pumpAlertCategory : c.rawValue
     }
 
     // MARK: Pump-alert fan-in
@@ -698,30 +698,42 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
             identifier: "CLEAR", title: "Clear",
             options: [.authenticationRequired])
         let snooze = UNNotificationAction(identifier: "SNOOZE", title: "Snooze 2h", options: [])
-        // Pump alerts: dismiss-on-pump (CLEAR) + snooze the category. Every OTHER governed (suppressible)
-        // category is registered under its raw value, and whether it carries the snooze action is decided
-        // by the ONE predicate `NotificationBroker.Category.permitsSilencingAction` — the same predicate
-        // the snooze write side reads, so the affordance and the governance cannot disagree.
+        // Pump alerts: dismiss-on-pump (CLEAR) + snooze the category, plus `.customDismissAction` so an
+        // explicit swipe-dismiss is reported back as `UNNotificationDismissActionIdentifier` (without it,
+        // iOS never delivers that identifier at all, and a dismissal is structurally unrecordable). Every
+        // OTHER governed (suppressible) category is registered under its raw value, and whether it
+        // carries the snooze action is decided by the ONE predicate
+        // `NotificationBroker.Category.permitsSilencingAction` — the same predicate the snooze write side
+        // reads, so the affordance and the governance cannot disagree.
         //
         // That makes `.bolusIndeterminate` ("Bolus outcome unknown") and `.bolusDeliveryFailed` ("Bolus
         // not delivered") register with NO actions at all (owner decision 2026-08-30): a snooze was their
         // ONLY button, and neither posts at `.critical`, so the single tap available on an unresolved-dose
         // alert silenced the category for two hours. They keep a category IDENTIFIER (so the notification
-        // stays attributable and a future `.customDismissAction` has somewhere to live) but no buttons —
-        // iOS still provides its own default tap and swipe-to-dismiss, so nothing became harder to act on.
+        // stays attributable) but no buttons — iOS still provides its own default tap and
+        // swipe-to-dismiss, so nothing became harder to act on.
         //
-        // Safety categories are not registered at all (`categoryIdentifier(for:)` returns "" for them), so
-        // they cannot be snoozed from a notification either.
+        // Never-suppressible safety categories are registered too, under their raw value: an EMPTY action
+        // set (no actions ⇒ no visible silencing — they must never be snoozeable from a banner) plus
+        // `.customDismissAction`, so a swipe-dismiss on one of them is reportable the same way a pump
+        // alert's is, and the category becomes attributable instead of resolving to no registered
+        // identifier at all.
         var cats: Set<UNNotificationCategory> = [
             UNNotificationCategory(
                 identifier: Self.pumpAlertCategory, actions: [clear, snooze],
-                intentIdentifiers: [], options: [])
+                intentIdentifiers: [], options: [.customDismissAction])
         ]
         for c in NotificationBroker.Category.allCases where !c.neverSuppressible && c != .pumpAlert {
             cats.insert(
                 UNNotificationCategory(
                     identifier: c.rawValue, actions: c.permitsSilencingAction ? [snooze] : [],
                     intentIdentifiers: [], options: []))
+        }
+        for c in NotificationBroker.Category.allCases where c.neverSuppressible {
+            cats.insert(
+                UNNotificationCategory(
+                    identifier: c.rawValue, actions: [],
+                    intentIdentifiers: [], options: [.customDismissAction]))
         }
         return cats
     }

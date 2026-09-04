@@ -92,19 +92,39 @@ import UserNotifications
         }
     }
 
-    /// No never-suppressible safety category is registered at all (they resolve to "" and must never be
-    /// snoozeable from a banner), and every category that DOES resolve to an identifier is registered —
-    /// so a posted notification can never name a category iOS does not know.
+    /// Every category resolves to a REGISTERED identifier — including the never-suppressible safety ones,
+    /// which used to resolve to "" and could never be attributed. A never-suppressible category's
+    /// registered actions are EMPTY (no snooze/silencing affordance — they must never be snoozeable from a
+    /// banner), which is how attribution and the safety property can both hold at once.
     @Test func everyResolvedCategoryIdentifierIsRegisteredAndNoSafetyCategoryIs() {
-        let identifiers = Set(NotificationCoordinator.ownedCategories().map(\.identifier))
+        let owned = ownedByIdentifier()
+        let identifiers = Set(owned.keys)
         #expect(!identifiers.isEmpty, "an empty owned set would make every other assertion vacuous")
         for c in C.allCases {
             let id = NotificationCoordinator.categoryIdentifier(for: c)
+            #expect(identifiers.contains(id), "\(c.rawValue) resolves to \(id), which is not registered")
             if c.neverSuppressible {
-                #expect(id.isEmpty, "\(c.rawValue) is never-suppressible — it must resolve to no category")
-            } else {
-                #expect(identifiers.contains(id), "\(c.rawValue) resolves to \(id), which is not registered")
+                #expect(
+                    owned[id]?.actions.isEmpty == true,
+                    "\(c.rawValue) is never-suppressible — its registered category must carry no actions")
             }
+        }
+    }
+
+    /// The pump-alert category registers `.customDismissAction` so an explicit swipe-dismiss is reported
+    /// back as `UNNotificationDismissActionIdentifier` — without it, iOS never delivers that identifier
+    /// at all, and a dismissal is structurally unrecordable. Every never-suppressible category gets the
+    /// same option, for the same reason.
+    @Test func pumpAlertAndEveryNeverSuppressibleCategoryRegisterCustomDismissAction() {
+        let owned = ownedByIdentifier()
+        #expect(
+            owned[NotificationCoordinator.pumpAlertCategory]?.options.contains(.customDismissAction) == true,
+            "the pump-alert category must register .customDismissAction so a dismiss is recordable")
+        for c in C.allCases where c.neverSuppressible {
+            let registered = owned[NotificationCoordinator.categoryIdentifier(for: c)]
+            #expect(
+                registered?.options.contains(.customDismissAction) == true,
+                "\(c.rawValue) must register .customDismissAction so a dismiss is recordable")
         }
     }
 
