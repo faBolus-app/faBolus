@@ -241,52 +241,14 @@ struct PairingStoreSchemeExclusionTests {
         #expect(PairingStore.loadV1Code() == nil)
     }
 
-    // MARK: - MIGRATION: an install that ALREADY holds both entries
+    // MARK: - The both-present state, and why it has no dedicated test here
 
-    /// The pre-fix state is reachable on a real install today, and no writer change can retroactively
-    /// undo it. `loadActivePairing()` resolves it by WRITE RECENCY: with a single global record, the
-    /// most-recently-written credential is by definition the most-recently-paired — i.e. the live —
-    /// pump. It must resolve it WITHOUT deleting the loser: a load-time delete has no proof of which
-    /// pump is actually in front of us, and picking wrong would un-pair a working one.
-    @Test func bothPresentWithTheJpakeSecretWrittenLastResolvesToJpakeAndDeletesNothing() {
-        reset()
-        defer { tearDown() }
-        PairingStore.seedBothSchemesForTesting(secret: Self.secret, v1Code: Self.v1Code, newer: .jpake)
-
-        #expect(PairingStore.loadActivePairing() == .jpake(derivedSecret: Self.secret))
-
-        #expect(PairingStore.load() == Self.secret, "the winner is still readable")
-        #expect(
-            PairingStore.loadV1Code() == Self.v1Code,
-            "…and the LOSER was not deleted either — resolving is a read, never a destructive repair")
-        #expect(
-            PairingStore.loadActivePairing() == .jpake(derivedSecret: Self.secret),
-            "the resolution is stable across repeated reads (no hidden mutation)")
-    }
-
-    /// The reverse direction, and the reason a blind precedence FLIP was rejected: an install that
-    /// paired JPAKE first and a legacy-V1 pump second works TODAY under the old V1-first order.
-    /// Newest-wins must keep it working; JPAKE-first would have broken it.
-    @Test func bothPresentWithTheLegacyCodeWrittenLastResolvesToLegacyV1() {
-        reset()
-        defer { tearDown() }
-        PairingStore.seedBothSchemesForTesting(secret: Self.secret, v1Code: Self.v1Code, newer: .legacyV1)
-
-        #expect(PairingStore.loadActivePairing() == .legacyV1(code: Self.v1Code))
-        #expect(PairingStore.load() == Self.secret, "nothing deleted")
-        #expect(PairingStore.loadV1Code() == Self.v1Code)
-    }
-
-    /// When ordering information is unavailable (the Keychain did not return a modification date), fall
-    /// back to the HISTORICAL V1-first order — identical to the behaviour that shipped, so a degraded
-    /// fallback can never break an install that works today.
-    @Test func bothPresentWithNoOrderingInformationKeepsTheHistoricalV1FirstOrder() {
-        reset()
-        defer { tearDown() }
-        PairingStore.seedBothSchemesForTesting(secret: Self.secret, v1Code: Self.v1Code, newer: .unknown)
-
-        #expect(PairingStore.loadActivePairing() == .legacyV1(code: Self.v1Code))
-    }
+    // The pre-fix both-present state is reachable only on an install that predates the writer
+    // cross-delete fix (or a crash mid-write-then-delete). `theInvariantHoldsAfterEveryInterleavingOfSaves`
+    // above already proves the writers themselves never produce it. There is no remaining seam that
+    // legitimately drives the store into that state without reaching into its private storage, so
+    // `loadActivePairing()`'s both-present branch (clear both, return nil) is verified by direct
+    // inspection rather than a unit test that would have to fake the very state it exists to repair.
 
     /// The single-entry cases must be byte-identical to the old chain, or the fix would regress the
     /// overwhelmingly common path.
@@ -301,17 +263,6 @@ struct PairingStoreSchemeExclusionTests {
         PairingStore.clear()
         #expect(PairingStore.loadActivePairing() == nil)
     }
-
-    /// The both-present state CONVERGES to a single entry on the next successful fresh pair — the first
-    /// moment real hardware evidence of the live pump's scheme exists.
-    @Test func aSuccessfulFreshPairConvergesTheBothPresentStateToOneEntry() {
-        reset()
-        defer { tearDown() }
-        PairingStore.seedBothSchemesForTesting(secret: Self.secret, v1Code: Self.v1Code, newer: .legacyV1)
-        #expect(PairingStore.save(Self.otherSecret), "a fresh JPAKE pair proves the live pump uses JPAKE")
-        expectExactlyOne(jpake: true, v1: false, "after convergence")
-        #expect(PairingStore.loadActivePairing() == .jpake(derivedSecret: Self.otherSecret))
-    }
 }
 
 /// The read side, driven through the REAL `pumpClientDidBecomeReady` scheme-selection path. The
@@ -325,9 +276,10 @@ struct PairingStoreSchemeExclusionTests {
 ///
 /// The bug this file exists for: with BOTH credentials present, the stale 16-char code from the OLD
 /// pump won selection on every silent reconnect, forcing a legacy-V1 re-challenge against a pump that
-/// wants JPAKE. The pairing SCHEME-SELECTION logic for a freshly TYPED code (by code LENGTH, via
-/// `PairingAuth.detectType`) is correct and deliberately untouched — only the saved-material
-/// precedence changed.
+/// wants JPAKE. The fix no longer tries to guess a winner between the two: a both-present store is
+/// wiped and the reconnect falls through to "no saved pairing" (see `PairingStore.loadActivePairing()`).
+/// The pairing SCHEME-SELECTION logic for a freshly TYPED code (by code LENGTH, via
+/// `PairingAuth.detectType`) is correct and deliberately untouched.
 @Suite(.serialized) @MainActor
 struct PairingSchemeStaleV1CarryoverTests {
     private static let secret: [UInt8] = [1, 2, 3, 4]
@@ -343,36 +295,23 @@ struct PairingSchemeStaleV1CarryoverTests {
         return sends.first
     }
 
-    // MARK: - The regression: a stale legacy code must not beat a newer derived secret
+    // MARK: - The regression: a both-present store must never let a stale credential win a guess
 
-    @Test func bothStoredWithTheJpakeSecretNewerSelectsTheJpakeResume() {
+    /// With BOTH credentials present (an install that predates the writer cross-delete fix), the
+    /// reconnect must not pick either one — it wipes the store and falls through to "no saved
+    /// pairing", the same as a fresh install. The next connect prompts for the pairing code once.
+    @Test func bothStoredSendsNoPairingMessageAndClearsTheStoreRatherThanGuessing() {
         PairingStore.useInMemoryBackingForTests = true
         defer { PairingStore.useInMemoryBackingForTests = false }
         PairingStore.clear()
         defer { PairingStore.clear() }
-        PairingStore.seedBothSchemesForTesting(secret: Self.secret, v1Code: Self.v1Code, newer: .jpake)
+        PairingStore.seedBothPresentForTesting(secret: Self.secret, v1Code: Self.v1Code)
 
         #expect(
-            firstPairingSend(backend()) == "Jpake3SessionKeyRequest",
-            """
-            the pump paired most recently uses JPAKE — a leftover 16-char code from the PREVIOUS \
-            pump must not force a legacy-V1 re-challenge against it
-            """)
-    }
-
-    @Test func bothStoredWithTheLegacyCodeNewerStillSelectsTheV1Rechallenge() {
-        PairingStore.useInMemoryBackingForTests = true
-        defer { PairingStore.useInMemoryBackingForTests = false }
-        PairingStore.clear()
-        defer { PairingStore.clear() }
-        PairingStore.seedBothSchemesForTesting(secret: Self.secret, v1Code: Self.v1Code, newer: .legacyV1)
-
-        #expect(
-            firstPairingSend(backend()) == "CentralChallengeRequest",
-            """
-            an install whose live pump is the legacy one must keep working — this is the case a \
-            blind precedence flip to JPAKE-first would have broken
-            """)
+            firstPairingSend(backend()) == nil,
+            "a both-present store must not resume on either credential — it forces a fresh re-pair")
+        #expect(PairingStore.load() == nil, "the derived secret is wiped")
+        #expect(PairingStore.loadV1Code() == nil, "…and so is the legacy code")
     }
 
     // MARK: - The single-entry paths are unchanged
@@ -404,50 +343,45 @@ struct PairingSchemeStaleV1CarryoverTests {
     }
 
     /// A freshly TYPED code must still route by LENGTH, ignoring whatever is stored — the stored
-    /// material is only for silent reconnects. Guards against the precedence change leaking into the
-    /// fresh-pair path.
+    /// material is only for silent reconnects. Guards against a stored credential of the OPPOSITE
+    /// scheme leaking into the fresh-pair path.
     @Test func aFreshlyTypedCodeStillRoutesByLengthRegardlessOfStoredMaterial() {
         PairingStore.useInMemoryBackingForTests = true
         defer { PairingStore.useInMemoryBackingForTests = false }
         PairingStore.clear()
         defer { PairingStore.clear() }
-        PairingStore.seedBothSchemesForTesting(secret: Self.secret, v1Code: Self.v1Code, newer: .jpake)
+        #expect(PairingStore.save(Self.secret))  // a JPAKE secret is stored…
 
         var sends: [String] = []
         let b = backend()
         b.onPairingSendForTesting = { typeName, _, _ in sends.append(typeName) }
-        b.beginPairingForTesting(code: Self.v1Code)  // 16 alphanumerics → legacy V1, fresh
+        b.beginPairingForTesting(code: Self.v1Code)  // …but a typed 16-char code is a FRESH V1 pair
         #expect(sends.first == "CentralChallengeRequest", "a typed 16-char code is a FRESH V1 pair")
+
+        #expect(PairingStore.saveV1Code(Self.v1Code))  // now a legacy code is stored…
 
         var sends2: [String] = []
         let b2 = backend()
         b2.onPairingSendForTesting = { typeName, _, _ in sends2.append(typeName) }
-        b2.beginPairingForTesting(code: "123456")  // 6 digits → JPAKE, fresh (round 1a, not round 3)
+        b2.beginPairingForTesting(code: "123456")  // …but a typed 6-digit code is a FRESH JPAKE pair
         #expect(sends2.first == "Jpake1aRequest", "a typed 6-digit code is a FRESH JPAKE pair, not a resume")
     }
 
-    // MARK: - A MALFORMED stored legacy code must not take the derived secret down with it
+    // MARK: - A MALFORMED stored legacy code must not retry forever
 
-    /// The malformed-stored-code error path used to call `clear()`, which wipes BOTH accounts — so an
-    /// unusable 16-char code would also destroy a perfectly good derived secret, forcing a manual
-    /// re-pair. It now removes only the unusable legacy code, and the next reconnect resumes on the
-    /// surviving JPAKE secret.
-    @Test func aMalformedStoredLegacyCodeIsDroppedWithoutDestroyingTheDerivedSecret() {
+    /// A malformed STORED legacy code (the single-entry case — no derived secret coexists with it,
+    /// since the writers now keep the store single-entry) must not silently retry forever:
+    /// `clearLegacyV1Code()` drops the unusable entry so the connection falls through to prompting for
+    /// a fresh code instead.
+    @Test func aMalformedStoredLegacyCodeIsDroppedByClearLegacyV1Code() {
         PairingStore.useInMemoryBackingForTests = true
         defer { PairingStore.useInMemoryBackingForTests = false }
         PairingStore.clear()
         defer { PairingStore.clear() }
-        // Not 16 alphanumerics → `LegacyPairingCoordinator(pairingCode:)` throws. Seeded (not saved) so
-        // the legacy entry is the NEWER one and therefore the one selection picks.
-        PairingStore.seedBothSchemesForTesting(secret: Self.secret, v1Code: "zzz", newer: .legacyV1)
+        // Not 16 alphanumerics → `LegacyPairingCoordinator(pairingCode:)` throws.
+        #expect(PairingStore.saveV1Code("zzz"))
 
         #expect(firstPairingSend(backend()) == nil, "a malformed stored code cannot start a handshake")
-        #expect(
-            PairingStore.load() == Self.secret,
-            "the derived secret must SURVIVE — dropping an unusable legacy code is not a reason to un-pair the pump")
-        #expect(PairingStore.loadV1Code() == nil, "…and the unusable legacy code is gone")
-
-        // The very next reconnect now resumes cleanly on the surviving secret.
-        #expect(firstPairingSend(backend()) == "Jpake3SessionKeyRequest")
+        #expect(PairingStore.loadV1Code() == nil, "…and the unusable legacy code is dropped, not retried")
     }
 }

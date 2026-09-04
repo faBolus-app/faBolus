@@ -37,9 +37,9 @@ import Security
 ///
 /// Write-then-delete does leave one in-process instant where both accounts exist. That is deliberate:
 /// the alternative (delete first) trades a harmless transient for a permanent loss. A crash inside that
-/// window is the only way this code can still produce a both-present store, and `loadActivePairing()`
-/// resolves it to the just-written credential — the correct one — because it is the more recently
-/// written. The state then converges at the next successful pair.
+/// window, or an install that predates this fix, is the only way this store still surfaces a
+/// both-present state; `loadActivePairing()` has no evidence of which pump is physically present at
+/// that point, so it wipes both and forces one fresh re-pair rather than guess.
 enum PairingStore {
     private static let service = "com.fabolus.app.pairing"
     private static let account = "jpakeDerivedSecret"
@@ -70,11 +70,6 @@ enum PairingStore {
     /// uses, so ONE `upsert`/`deleteAccount` code path serves both backings — the cross-delete invariant
     /// cannot drift between "what the test exercises" and "what ships".
     nonisolated(unsafe) private static var memValues: [String: Data] = [:]
-    /// Per-account write ORDER for the in-memory backing — the stand-in for the Keychain's
-    /// `kSecAttrModificationDate`, which `loadActivePairing()` uses to break a both-present tie. A
-    /// monotonic counter rather than a `Date` so consecutive writes in one test are always distinguishable.
-    nonisolated(unsafe) private static var memWriteOrders: [String: Double] = [:]
-    nonisolated(unsafe) private static var memWriteSequence: Double = 0
 
     /// Test seam: which raw op the last write actually took. Lets a test assert that REPLACING a
     /// credential used `SecItemUpdate` (never a delete plus a second `SecItemAdd`, which is the
@@ -89,34 +84,16 @@ enum PairingStore {
     /// that branch. `nil` (the default) means "succeed". Mirrors `BolusPasscodeStore.injectedUpsertStatus`.
     nonisolated(unsafe) static var injectedUpsertStatus: OSStatus?
 
-    /// Which credential a `seedBothSchemesForTesting` call should present as the more recently written.
-    enum SeededNewer { case jpake, legacyV1, unknown }
-
     /// Test seam: plant BOTH credential kinds at once, which the public writers can no longer produce
-    /// (that is the fix). The both-present state is nonetheless reachable on a real install that
-    /// predates the fix, so `loadActivePairing()`'s tie-break has to be testable. `.unknown` seeds them
-    /// with NO ordering information, standing in for a Keychain that returned no modification date.
+    /// (that is the fix `theInvariantHoldsAfterEveryInterleavingOfSaves` proves). The both-present
+    /// state is nonetheless reachable on a real install that predates that fix, so
+    /// `loadActivePairing()`'s defensive clear-both-and-return-nil branch has to be testable. No
+    /// ordering is recorded — `loadActivePairing()` no longer tries to pick a winner between the two.
     /// DEBUG only; requires `useInMemoryBackingForTests`. Never used in production.
-    static func seedBothSchemesForTesting(secret: [UInt8], v1Code: String, newer: SeededNewer) {
+    static func seedBothPresentForTesting(secret: [UInt8], v1Code: String) {
         guard useInMemoryBackingForTests else { return }
         memValues[account] = Data(secret)
         memValues[v1CodeAccount] = Data(v1Code.utf8)
-        switch newer {
-        case .jpake:
-            memWriteOrders[v1CodeAccount] = nextMemWriteOrder()
-            memWriteOrders[account] = nextMemWriteOrder()
-        case .legacyV1:
-            memWriteOrders[account] = nextMemWriteOrder()
-            memWriteOrders[v1CodeAccount] = nextMemWriteOrder()
-        case .unknown:
-            memWriteOrders[account] = nil
-            memWriteOrders[v1CodeAccount] = nil
-        }
-    }
-
-    private static func nextMemWriteOrder() -> Double {
-        memWriteSequence += 1
-        return memWriteSequence
     }
     #endif
 
@@ -147,7 +124,6 @@ enum PairingStore {
             lastUpsertOp = memValues[acct] != nil ? .update : .add
             if let injected = injectedUpsertStatus, injected != errSecSuccess { return false }
             memValues[acct] = data
-            memWriteOrders[acct] = nextMemWriteOrder()
             return true
         }
         #endif
@@ -174,7 +150,6 @@ enum PairingStore {
         #if DEBUG
         if useInMemoryBackingForTests {
             memValues[acct] = nil
-            memWriteOrders[acct] = nil
             return
         }
         #endif
@@ -196,30 +171,6 @@ enum PairingStore {
             let data = out as? Data, !data.isEmpty
         else { return nil }
         return data
-    }
-
-    /// When this account was last written, as a comparable ordering key — the Keychain's
-    /// `kSecAttrModificationDate` (maintained automatically by `SecItemAdd`/`SecItemUpdate`), or the
-    /// in-memory counter under the test seam.
-    ///
-    /// Deliberately a SEPARATE, attributes-only query rather than folding `kSecReturnAttributes` into
-    /// `readData`: the data query above is the long-proven production read, and this one is purely
-    /// advisory. If it ever returns nil — an OS that does not report the attribute, a query shape that
-    /// behaves differently in the field — `loadActivePairing()` degrades to the historical fixed order
-    /// rather than losing a credential it can plainly read.
-    private static func writeOrderKey(account acct: String) -> Double? {
-        #if DEBUG
-        if useInMemoryBackingForTests { return memWriteOrders[acct] }
-        #endif
-        var query = keychainBase(acct)
-        query[kSecReturnAttributes as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-        var out: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &out) == errSecSuccess,
-            let attrs = out as? [String: Any],
-            let modified = attrs[kSecAttrModificationDate as String] as? Date
-        else { return nil }
-        return modified.timeIntervalSinceReferenceDate
     }
 
     // MARK: - JPAKE derived secret
@@ -287,23 +238,13 @@ enum PairingStore {
 
     /// Resolve the stored material to the ONE scheme a silent reconnect should use.
     ///
-    /// With the writers enforcing mutual exclusion this is almost always a single-entry lookup, and for
-    /// those cases it answers exactly what the old fixed `loadV1Code()`-then-`load()` chain did. The
-    /// tie-break matters for one state: an install that ALREADY held both entries before the writers
-    /// were fixed. No writer change can retroactively undo that, so it is resolved by WRITE RECENCY —
-    /// with a single global record, the most-recently-written credential is by definition the
-    /// most-recently-paired, i.e. the live, pump.
-    ///
-    /// Why recency and not simply "prefer the modern scheme": a blind flip to JPAKE-first would BREAK a
-    /// pre-fix install that paired JPAKE and then a legacy pump, which works today under the V1-first
-    /// order. Recency is correct in both directions and guesses in neither.
-    ///
-    /// This DELETES NOTHING. A load-time repair has no evidence of which pump is physically present, and
-    /// deleting the loser on a wrong guess would un-pair a working pump. The state converges instead at
-    /// the next successful fresh pair — the first moment such evidence exists — via the writers above.
+    /// With the writers enforcing mutual exclusion this is almost always a single-entry lookup. The
+    /// both-present state is reachable only on an install that predates the writer cross-delete fix —
+    /// no writer change can retroactively undo a pre-existing both-present store — and there is no
+    /// evidence at load time of which of the two pumps is physically present, so it is resolved by
+    /// wiping both and returning nil: the caller (see `PumpConnectionLifecycle`) treats that exactly
+    /// like a fresh install and asks for the pairing code again, once.
     static func loadActivePairing() -> StoredPairing? {
-        // Values come from the long-proven data readers, so a credential we can plainly read is never
-        // lost to a problem with the advisory ordering query.
         let secret = load()
         let v1 = loadV1Code()
         switch (secret, v1) {
@@ -313,15 +254,11 @@ enum PairingStore {
             return .jpake(derivedSecret: s)
         case (nil, let c?):
             return .legacyV1(code: c)
-        case (let s?, let c?):
-            // Pre-fix carry-over. Newest write wins; if ordering is unavailable or identical, fall back
-            // to the HISTORICAL V1-first order so a degraded tie-break can never break an install that
-            // works today.
-            guard let secretOrder = writeOrderKey(account: account),
-                let v1Order = writeOrderKey(account: v1CodeAccount),
-                secretOrder != v1Order
-            else { return .legacyV1(code: c) }
-            return secretOrder > v1Order ? .jpake(derivedSecret: s) : .legacyV1(code: c)
+        case (_?, _?):
+            // Pre-fix carry-over: neither credential is provably the live pump. Clear both and force
+            // one re-pair rather than guess.
+            clear()
+            return nil
         }
     }
 
