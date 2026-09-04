@@ -1663,9 +1663,6 @@ public final class AppModel {
             .global("maxBasal"), before: .double(before),
             afterOnSuccess: .double(clamped), succeeded: lastError == nil)
     }
-    /// Whether clearing active notifications is required before entering cartridge mode (controlX2
-    /// precondition). Exposed for the wizard's guard.
-    public var hasActiveNotifications: Bool { !activeNotifications.isEmpty }
 
     // MARK: - Provenance recording
     //
