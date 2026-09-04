@@ -219,11 +219,6 @@ enum RemoteStatusComposer {
         // Live Sleep/Exercise mode. Unconditional: `0` = normal is a known fact, not absent.
         // Display-only.
         cmd.controlIQMode = s.controlIQMode
-        // Remaining-seconds countdown, not an epoch — a receiver animates against its own
-        // receipt time and must not treat it as absolute past the next statusRead. Nil unless
-        // the pump's live mode is Exercise right now (PumpResponseApplier only populates it
-        // then) — never a stale timer surviving into another mode.
-        cmd.exerciseTimeRemainingSec = s.exerciseTimeRemainingSec
         // Pump-configured sleep-schedule window. iPhone/Mac render the verbose window text;
         // Watch/Garmin never receive/render it.
         cmd.inSleepWindow = s.inSleepWindow

@@ -476,12 +476,6 @@ final class PumpResponseApplier {
                     snap.ciqSuspendedForLow = false
                     snap.ciqSuspendStartDate = nil
                 }
-                // Exercise countdown, simply copied. Gated on the pump's OWN live mode (never
-                // populated outside Exercise) so a stale timer from a PRIOR exercise session can
-                // never leak into another mode — never both Sleep and Exercise facts at once.
-                let mode = ControlIQActivity(rawMode: m.currentUserModeType)
-                snap.exerciseTimeRemainingSec = SleepExerciseAwareness.exerciseTimerToStore(
-                    mode: mode, rawRemainingSeconds: m.exerciseTimeRemainingSeconds)
                 // Sleep-window derivation — pure minute-of-day/day-of-week math over the
                 // already-decoded `sleepSchedules`, never a clinical literal (those live only in
                 // `ControllerDescriptor.activityPresets`). Independent of the LIVE mode (answers

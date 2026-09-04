@@ -161,10 +161,6 @@ final class RemoteCommandWireFixture {
     /// surviving past the moment the pump's own state changed. Safe default `0` ⇒ no card on a cold
     /// launch, before the first statusRead.
     var controlIQMode: Int = 0
-    /// The already-decoded exercise countdown, raw remaining-seconds (NOT an epoch) — a receiver
-    /// counts down locally against ITS OWN receipt time for animation only, re-anchored on every
-    /// statusRead. `nil` ⇒ the timer fact renders ABSENT (fail-closed).
-    var exerciseTimeRemainingSec: Int?
     /// The pump's OWN configured sleep-schedule window, evaluated at the phone against `now` (pure
     /// window math, (b) pump-communicated) — iPhone/Mac render the verbose window text from these;
     /// Watch does not render them (explicit scope) even though they ARE parsed here (one
@@ -172,32 +168,6 @@ final class RemoteCommandWireFixture {
     var inSleepWindow: Bool?
     var sleepWindowStartMinute: Int?
     var sleepWindowEndMinute: Int?
-
-    /// The controller's OWN activity preset (Sleep/Exercise) currently selected by `controlIQMode`, or
-    /// `nil` in normal mode. Pure UI wiring of `controllerDescriptor.activityPresets` — no new clinical
-    /// literal.
-    var ciqActivityPreset: ActivityPreset? {
-        SleepExerciseAwareness.activePreset(
-            mode: ControlIQActivity(rawMode: controlIQMode),
-            descriptor: controllerDescriptor)
-    }
-    /// The compact single-line fact EVERY remote surface (Watch/Garmin/Mac's base line) shows —
-    /// "Sleep — AutoBolus off" / "Exercise — ends 4:20". `nil` when normal mode, no matching preset, or
-    /// (Exercise only) the timer is unknown (fail-closed).
-    var ciqActivityCompactLine: String? {
-        SleepExerciseAwareness.compactLine(
-            mode: ControlIQActivity(rawMode: controlIQMode),
-            descriptor: controllerDescriptor,
-            exerciseTimeRemainingSec: exerciseTimeRemainingSec)
-    }
-    /// iPhone/Mac only — "Current window: {start}–{end}" when a configured Sleep-schedule slot is
-    /// currently active, else `nil`. Watch never renders this (explicit scope) even though it's parsed
-    /// on this shared base.
-    var ciqSleepWindowLine: String? {
-        guard inSleepWindow == true, let s = sleepWindowStartMinute, let e = sleepWindowEndMinute else { return nil }
-        return
-            "Current window: \(SleepExerciseAwareness.minuteOfDayString(s))–\(SleepExerciseAwareness.minuteOfDayString(e))"
-    }
 
     /// The pump's controller descriptor, reconstructed locally from the mirrored variant. There are no
     /// disclosure-string computed props here; `lockoutRemainingFraction` below documents the
@@ -530,9 +500,8 @@ final class RemoteCommandWireFixture {
             // Fail-closed: mirrors `lockoutUntilDate`'s unconditional
             // assign-or-clear exactly — the host relays its CURRENT knowledge every statusRead
             // (`nil` on the wire means "legacy host", which the safe `0` default already covers), so
-            // a stale Sleep/Exercise mode/timer/window must never survive past the moment it clears.
+            // a stale Sleep/Exercise mode/window must never survive past the moment it clears.
             controlIQMode = cmd.controlIQMode ?? 0
-            exerciseTimeRemainingSec = cmd.exerciseTimeRemainingSec
             inSleepWindow = cmd.inSleepWindow
             sleepWindowStartMinute = cmd.sleepWindowStartMinute
             sleepWindowEndMinute = cmd.sleepWindowEndMinute

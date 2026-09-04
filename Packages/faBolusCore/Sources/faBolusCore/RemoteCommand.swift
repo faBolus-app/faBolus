@@ -453,18 +453,6 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// initializer stays untouched.
     public var controlIQMode: Int?
 
-    /// The already-decoded-but-previously-dropped exercise
-    /// countdown (`ControlIQInfoV2Response.exerciseTimeRemainingSeconds`, op-179), relayed as a RAW
-    /// remaining-seconds DURATION — deliberately NOT an epoch (unlike every other time-ish field on
-    /// this type): the pump reports "time remaining" directly, so a receiver counts down LOCALLY
-    /// against ITS OWN receipt time for animation smoothness only, re-anchoring on every subsequent
-    /// statusRead — never trusting this value as absolute past that point. `nil` unless the pump's
-    /// OWN live mode is genuinely Exercise right now (`SleepExerciseAwareness
-    /// .exerciseTimerToStore`) — a leftover value from a PRIOR exercise session can never leak into
-    /// another mode (mutual-exclusivity). Display-only, never a dose input.
-    /// Additive; auto-Codable.
-    public var exerciseTimeRemainingSec: Int?
-
     /// Whether the
     /// pump's OWN configured Sleep-schedule (`PumpSnapshot.sleepSchedules`) has a window active
     /// RIGHT NOW, plus that window's start/end minute-of-day — pure window math over
@@ -712,12 +700,9 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         try intRange("glucosePlotFloorSmall", glucosePlotFloorSmall, 1, 1000)
         try intRange("glucosePlotCeilingSmall", glucosePlotCeilingSmall, 1, 1000)
 
-        // The live mode is always one of the pump's own 3 states; the
-        // exercise timer is a sane bounded duration (generous — not a clinical claim, matches
-        // `maxBasalUnitsPerHour`'s "sane upper bound" precedent above); the sleep-window minutes are
-        // a plain minute-of-day (0-1439). Absent is always valid for all four.
+        // The live mode is always one of the pump's own 3 states; the sleep-window minutes are
+        // a plain minute-of-day (0-1439). Absent is always valid for all three.
         try intRange("controlIQMode", controlIQMode, 0, 2)
-        try intRange("exerciseTimeRemainingSec", exerciseTimeRemainingSec, 0, 24 * 60 * 60)
         try intRange("sleepWindowStartMinute", sleepWindowStartMinute, 0, 1439)
         try intRange("sleepWindowEndMinute", sleepWindowEndMinute, 0, 1439)
 
