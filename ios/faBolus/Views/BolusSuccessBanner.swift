@@ -33,11 +33,9 @@ struct BolusSuccessBanner: Equatable {
 /// Maps an already-resolved bolus outcome to display text. Never synthesizes "delivered" for a
 /// pending outcome, and never a silent banner once the caller knows what happened.
 enum BolusConfirmation {
-    /// Outcomes from the caller's already-known `lastError` / `pendingApproval` — this type never
-    /// inspects `AppModel` itself.
+    /// Outcomes from the caller's already-known `lastError` — this type never inspects
+    /// `AppModel` itself.
     enum Signal {
-        /// Awaiting remote (child-mode) approval — `pendingApproval != nil`. NEVER a banner.
-        case staged
         /// Blocked / indeterminate / failed / rejected / timed out. A supplied `message`
         /// (`AppModel.lastError`) becomes a warning banner so a non-success is never silent; omit it
         /// to stay silent. Failed vs indeterminate stays in `AppModel` — this type does not split them.
@@ -65,8 +63,6 @@ enum BolusConfirmation {
         message: String? = nil
     ) -> BolusSuccessBanner? {
         switch signal {
-        case .staged:
-            return nil
         case .failed:
             // Fail-closed: no message means nothing truthful to show yet — stay silent rather than
             // invent an empty/generic warning.

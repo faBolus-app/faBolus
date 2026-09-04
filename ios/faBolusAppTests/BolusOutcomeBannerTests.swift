@@ -38,12 +38,6 @@ struct BolusOutcomeBannerTests {
         #expect(banner?.secondary == "2.50 U delivered")
     }
 
-    @Test func stagedStillProducesNoBannerEvenWithAMessage() {
-        // An awaiting-approval bolus must never show a banner — staged is never a terminal outcome.
-        let banner = BolusConfirmation.banner(for: .staged, units: 2.50, message: "irrelevant")
-        #expect(banner == nil, "an awaiting-approval bolus must never show a banner")
-    }
-
     // MARK: - Per-presentation identity token
 
     /// Two back-to-back deliveries of the SAME amount produce byte-identical content. They must still

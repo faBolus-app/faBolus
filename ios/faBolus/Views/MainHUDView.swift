@@ -49,27 +49,7 @@ struct DashboardView: View {
 
                         AlertsBannerView(model: model)
 
-                        if let pending = model.pendingApproval {
-                            VStack(spacing: 6) {
-                                HStack {
-                                    ProgressView()
-                                    Text("Waiting for remote approval of \(String(format: "%.2f U", pending.units))…")
-                                        .font(.callout)
-                                }
-                                .accessibilityElement(children: .combine)
-                                Button(role: .destructive) {
-                                    model.cancelPendingApproval()
-                                } label: {
-                                    Text("Cancel")
-                                }
-                                .hoverEffect(.automatic)
-                                .accessibilityLabel("Cancel pending approval")
-                            }
-                            .padding().frame(maxWidth: .infinity)
-                            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12)).padding(.horizontal)
-                        }
-
-                        // Dose-affecting — no .hoverEffect / .keyboardShortcut.
+                                        // Dose-affecting — no .hoverEffect / .keyboardShortcut.
                         if model.snapshot.connection == .bolusing && model.capabilities.supportsBolusCancel {
                             Button(role: .destructive) {
                                 Task { await model.cancelBolus() }
@@ -158,27 +138,7 @@ struct DashboardView: View {
 
                         AlertsBannerView(model: model)
 
-                        if let pending = model.pendingApproval {
-                            VStack(spacing: 6) {
-                                HStack {
-                                    ProgressView()
-                                    Text("Waiting for remote approval of \(String(format: "%.2f U", pending.units))…")
-                                        .font(.callout)
-                                }
-                                .accessibilityElement(children: .combine)
-                                Button(role: .destructive) {
-                                    model.cancelPendingApproval()
-                                } label: {
-                                    Text("Cancel")
-                                }
-                                .hoverEffect(.automatic)
-                                .accessibilityLabel("Cancel pending approval")
-                            }
-                            .padding().frame(maxWidth: .infinity)
-                            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12)).padding(.horizontal)
-                        }
-
-                        // Dose-affecting — no .hoverEffect / .keyboardShortcut.
+                                        // Dose-affecting — no .hoverEffect / .keyboardShortcut.
                         if model.snapshot.connection == .bolusing && model.capabilities.supportsBolusCancel {
                             Button(role: .destructive) {
                                 Task { await model.cancelBolus() }

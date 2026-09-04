@@ -748,17 +748,6 @@ struct BolusEntryView: View {
             lastCGMChangeAt = Date()
             syncBGFromCGM()
         }
-        // Remote-approval resolution: only a non-nil→nil transition is a result. Use the frozen
-        // staged amount — never a false "delivered" at staging, never on reject/timeout.
-        .onChange(of: model.pendingApproval) { oldValue, newValue in
-            guard let resolved = oldValue, newValue == nil else { return }
-            let signal: BolusConfirmation.Signal = model.lastError == nil ? .delivered : .failed
-            // Prefer the ledger's actual committed units over the staged requested amount.
-            present(
-                BolusConfirmation.banner(
-                    for: signal, units: model.lastDeliveredUnits ?? resolved.units,
-                    message: model.lastError))
-        }
         // Tick the age label every 60s; only spend a pump read when the shown value is aging
         // (>90s). Self-stops after ~30 min so a screen left open can't drain battery.
         .task {
@@ -1222,9 +1211,8 @@ struct BolusEntryView: View {
             await model.deliverBolus(units: f.units, carbsGrams: f.carbsGrams, bgMgdl: f.bgMgdl, iobUnits: f.iobUnits)
         }
         delivering = false
-        // Sync-path confirmation from the model's already-updated state. Child-mode reverse-approval
-        // stages `pendingApproval` and resolves later via `.onChange`. Report ledger actual units,
-        // not the frozen request — a mid-flight cancel/partial isn't overstated.
+        // Sync-path confirmation from the model's already-updated state. Report ledger actual
+        // units, not the frozen request — a mid-flight cancel/partial isn't overstated.
         let bannerUnits = model.lastDeliveredUnits ?? f.units
         let extended: BolusConfirmation.ExtendedDetail?
         // `!lastDeliveredWasCancelled` is load-bearing: on a cancelled extended delivery the now/total
@@ -1246,7 +1234,6 @@ struct BolusEntryView: View {
 
     /// Outcome of a just-completed attempt, read from the model — never a delivery decision.
     private func confirmationSignal() -> BolusConfirmation.Signal {
-        if model.pendingApproval != nil { return .staged }
         return model.lastError == nil ? .delivered : .failed
     }
 

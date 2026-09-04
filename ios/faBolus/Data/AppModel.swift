@@ -1433,21 +1433,15 @@ public final class AppModel {
         // The phone's own standard bolus, gated through the single evaluator (child mode + phone
         // read-only). Reachable only from the phone UI, so the surface is always `.phoneUI`.
         guard allow(.deliverBolus, from: .phoneUI) else { return }
-        // Reverse approval (child-mode-only): when child mode is on and set to require a paired
-        // remote (parent) to approve boluses, stage the request and wait rather than delivering now.
-        if AppSettings.shared.childModeEnabled, AppSettings.shared.requireRemoteBolusApproval, hasPairedRemote {
-            requestRemoteApproval(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
-            return
-        }
         await performLocalBolus(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl, iobUnits: iobUnits)
     }
 
     private func performLocalBolus(
         units: Double, carbsGrams: Double? = nil, bgMgdl: Int? = nil, iobUnits: Double? = nil
     ) async {
-        // Re-checked here (not just in `deliverBolus`) so the reverse-approval-approved path
-        // (`resolveRemoteApproval`) is gated too. `.deliverBolus` is `.ledgeredDelivery` — the evaluator
-        // applies child + phone read-only; delivery never requires advanced control.
+        // Re-checked here (not just in `deliverBolus`) so this local-delivery path stays gated on its
+        // own. `.deliverBolus` is `.ledgeredDelivery` — the evaluator applies child + phone
+        // read-only; delivery never requires advanced control.
         guard allow(.deliverBolus, from: .phoneUI) else { return }
         // Local boluses go through the SAME durable ledger as remotes, so an indeterminate local
         // outcome records a reconcilable entry (and blocks every surface) across a restart, and a global
@@ -1485,51 +1479,6 @@ public final class AppModel {
         }
         refresh()
     }
-
-    // MARK: Reverse approval (host bolus approved by a paired remote)
-
-    /// A bolus this phone started that's awaiting a paired remote's approval.
-    public struct PendingApproval: Equatable, Sendable {
-        public let requestId: String
-        public let units: Double
-        public var carbsGrams: Double?
-        public var bgMgdl: Int?
-    }
-    public private(set) var pendingApproval: PendingApproval?
-    private var hasPairedRemote: Bool { !MacPairingCoordinator.shared.pairedMacs.isEmpty }
-
-    private func requestRemoteApproval(units: Double, carbsGrams: Double? = nil, bgMgdl: Int? = nil) {
-        let id = UUID().uuidString
-        pendingApproval = PendingApproval(requestId: id, units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
-        lastError = nil
-        echo(RemoteCommand(kind: .bolusApprovalRequest, requestId: id, units: units))
-        Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 60 * 1_000_000_000)
-            guard let self, self.pendingApproval?.requestId == id else { return }
-            self.resolveRemoteApproval(requestId: id, approved: false, reason: "No response from the remote")
-        }
-    }
-
-    /// Called when a remote answers (via `PeerRemoteHost`) or the request times out.
-    public func resolveRemoteApproval(requestId: String, approved: Bool, reason: String? = nil) {
-        guard let p = pendingApproval, p.requestId == requestId else { return }
-        pendingApproval = nil
-        if approved {
-            Task { await performLocalBolus(units: p.units, carbsGrams: p.carbsGrams, bgMgdl: p.bgMgdl) }
-        } else {
-            // A staged bolus was refused and never dosed → the definition of `.remoteBolusRejected`.
-            // Keep `lastError` (the synchronous op-result / inline display) AND post through the broker,
-            // the same dual pattern the 5 other rejection sites use — so the user sees the decline even
-            // when the app is backgrounded or on another screen, not only inline on this view. The
-            // broker owns notifications + persistent user messages; `lastError` stays op-result.
-            let msg = "Bolus not approved" + (reason.map { " — \($0)" } ?? "")
-            lastError = msg
-            notifyRemoteBolusRejected(msg)
-        }
-    }
-
-    /// Cancel a bolus that's waiting for remote approval (user backed out).
-    public func cancelPendingApproval() { pendingApproval = nil }
 
     /// Deliver an extended (combo) bolus: `nowUnits` up front, the rest over `durationMinutes`. Gated
     /// through the single evaluator by `surface` — `.phoneUI` (child + phone read-only) for the phone's

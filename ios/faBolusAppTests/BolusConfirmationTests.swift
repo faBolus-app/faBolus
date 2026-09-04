@@ -14,11 +14,6 @@ struct BolusConfirmationTests {
 
     // MARK: - Never-false-positive cases (core safety property)
 
-    @Test func stagedSignalProducesNoBanner() {
-        let banner = BolusConfirmation.banner(for: .staged, units: 2.50)
-        #expect(banner == nil, "a bolus awaiting remote approval must never show a success banner")
-    }
-
     @Test func failedSignalProducesNoBanner() {
         let banner = BolusConfirmation.banner(for: .failed, units: 2.50)
         #expect(banner == nil, "a blocked/indeterminate/rejected/timed-out outcome must never show a success banner")
