@@ -524,22 +524,6 @@ public struct PumpSnapshot: Sendable, Equatable {
     public var inSleepWindow: Bool?
     public var sleepWindowStartMinute: Int?
     public var sleepWindowEndMinute: Int?
-    /// The two independent Control-IQ ceiling flags from op-115's `BolusCalcDataSnapshotResponse`
-    /// (`maxBolusEventsExceeded@24` / `maxIobEventsExceeded@25`), dose-path-adjacent and gated as a
-    /// bench-gated placeholder exactly like `CiqCeilingFlags` below (`benchVerifiedDefault == false`).
-    /// Display-only, never a dose input; ALWAYS independent booleans, never merged into one generic flag.
-    ///
-    /// **DOCUMENTED STUB — read deliberately not wired.** The kit decode landed in TandemKit and the
-    /// symbols `BolusCalcDataSnapshotResponse.maxBolusEventsExceeded` / `.maxIobEventsExceeded` exist
-    /// in the pinned kit. But `PumpResponseApplier`'s `BolusCalcDataSnapshotResponse` case still
-    /// deliberately does NOT read them, so these two fields stay `nil` unconditionally: the true-case
-    /// is bench-gated (`CiqCeilingFlags.benchVerifiedDefault == false`, and the wire-composers return
-    /// `nil` pre-bench), and the LAYOUT is oracle-backed only for the KNOWN-FALSE case (the `true`
-    /// case has never been observed in a first-party capture). Wiring the applier read is deferred to
-    /// the post-bench follow-up; this stub keeps the wire-level (`RemoteCommand`) and UI
-    /// (`StatusPillsView`) shapes in place ahead of that change.
-    public var ciqMaxBolusEventsExceeded: Bool?
-    public var ciqMaxIobEventsExceeded: Bool?
     public init() {}
 
     /// Typed model identity, derived from the driver's raw detection. Mirrors the historical
@@ -813,49 +797,6 @@ public enum MaxBasalFraction {
         let headline = "\(pct)% of your configured max basal rate"
         let detail = String(format: "%.2f / %.2f U/hr", currentUnitsPerHour, maxUnitsPerHour)
         return (headline, detail)
-    }
-}
-
-/// Bench + emission gate for the two independent Control-IQ ceiling flags
-/// (`PumpSnapshot.ciqMaxBolusEventsExceeded` / `.ciqMaxIobEventsExceeded`, sourced from op-115's
-/// `BolusCalcDataSnapshotResponse.maxBolusEventsExceeded@24` / `.maxIobEventsExceeded@25`), built
-/// as a bench-gated placeholder — the same `benchVerifiedDefault` idiom as `CiqPlusTempRate`. This
-/// is dose-path-adjacent (op-115 also carries carb ratio/ISF/target for the bolus calculator) so it
-/// gets full dose-path discipline: nothing is marked verified; the `true` case has never been
-/// observed in a first-party capture.
-///
-/// The kit decode is oracle-backed for LAYOUT + the `false` case only. `PumpSnapshot`'s two fields
-/// above are an inert, always-`nil` documented stub today regardless of this gate's value.
-public enum CiqCeilingFlags {
-    /// Flips to `true` only after a saline bench captures a real `true` frame for EITHER flag. Ships
-    /// `false` so both flags are inert on every build regardless of the connected pump or the pin
-    /// state.
-    public static let benchVerifiedDefault = false
-
-    /// Verbatim copywriting-contract strings (never merged into one generic "limit" string) — the
-    /// single source of truth both this package's tests and `StatusPillsView` read from, so the two
-    /// surfaces can never drift apart.
-    public static let maxBolusEventsExceededLabel = "Control-IQ hit its hourly auto-bolus limit"
-    public static let maxIobEventsExceededLabel = "Control-IQ hit its insulin-on-board limit"
-
-    /// The wire value to emit for `maxBolusEventsExceeded`, gated on `benchVerified` — `nil` pre-bench
-    /// REGARDLESS of `snapshotValue` (belt-and-suspenders: even if a future pin advance populated the
-    /// snapshot field, this gate alone still decides emission onto the wire, fail-closed).
-    public static func wireMaxBolusEventsExceeded(
-        benchVerified: Bool = benchVerifiedDefault,
-        snapshotValue: Bool?
-    ) -> Bool? {
-        benchVerified ? snapshotValue : nil
-    }
-
-    /// Same gate as `wireMaxBolusEventsExceeded`, but for the INDEPENDENT `maxIobEventsExceeded` flag —
-    /// a deliberately separate function (never a shared "wireFlags" that could accidentally couple the
-    /// two), matching the "always exactly two independent booleans" requirement.
-    public static func wireMaxIobEventsExceeded(
-        benchVerified: Bool = benchVerifiedDefault,
-        snapshotValue: Bool?
-    ) -> Bool? {
-        benchVerified ? snapshotValue : nil
     }
 }
 

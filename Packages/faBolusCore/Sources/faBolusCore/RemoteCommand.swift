@@ -477,26 +477,6 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var sleepWindowStartMinute: Int?
     public var sleepWindowEndMinute: Int?
 
-    /// The two independent Control-IQ ceiling flags
-    /// (`PumpSnapshot.ciqMaxBolusEventsExceeded` / `.ciqMaxIobEventsExceeded`), mirroring `ciqZone`'s
-    /// SAME wire/compose/parse/Garmin-persist/widget-field pattern once active — but this is a
-    /// BENCH-GATED PLACEHOLDER (`CiqCeilingFlags.benchVerifiedDefault == false`, `Models.swift`):
-    /// composed ONLY via `CiqCeilingFlags.wireMaxBolusEventsExceeded`/`.wireMaxIobEventsExceeded`, which
-    /// return `nil` unconditionally while the gate is unverified — dose-path-adjacent, full dose-path
-    /// discipline, nothing marked verified. Display-only, never a dose input. Never merged into
-    /// one generic flag — always exactly two independent booleans, each mapping to its OWN distinct
-    /// Copywriting-Contract string (`CiqCeilingFlags.maxBolusEventsExceededLabel` /
-    /// `.maxIobEventsExceededLabel`).
-    ///
-    /// **NOT YET COMPOSED (documented stub).** `AppModel`'s `statusRead`
-    /// builder does not yet set these fields — that compose-site wiring, plus the
-    /// Watch/Mac/Garmin/widget parse-side plumbing every other primitive here has, is deferred
-    /// until the TandemKit pin advances past the bench that verifies the flags. Additive; auto-Codable,
-    /// so the existing memberwise initializer stays
-    /// untouched — an old JSON blob with these keys absent decodes fine.
-    public var ciqMaxBolusEventsExceeded: Bool?
-    public var ciqMaxIobEventsExceeded: Bool?
-
     /// The phone-owned Garmin alert-intensity setting, mirrored to the watch on
     /// the statusRead reply (the watch's fail-closed gate consumes them). `alertIntensityMode` is a frozen
     /// 3-token enum ("silent"|"vibrate"|"audible", DEFAULT "vibrate"); `alertAudibleMinSeverity` the audible
