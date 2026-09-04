@@ -289,4 +289,28 @@ final class RemoteCommandTests: XCTestCase {
             XCTAssertEqual(field, "rawAlerts")
         }
     }
+
+    // MARK: - mutatesPumpState / the never-queue invariant
+
+    /// A pump-mutating command must never be queued for later opportunistic delivery (see
+    /// `RemoteTransport.onUndeliverable`'s doc comment). Iterates `Kind.allCases` — not a
+    /// hand-maintained array literal twin — and pins the classification with a switch, so a future
+    /// case forces THIS switch to be extended too before it can compile, rather than silently
+    /// defaulting to "not mutating".
+    func testMutatesPumpStateClassifiesEveryKindByAllCases() {
+        for kind in RemoteCommand.Kind.allCases {
+            let expectedMutating: Bool
+            switch kind {
+            case .bolusRequest, .bolusConfirm, .cancelBolus, .suspendPump, .resumePump,
+                .dismissAlert, .bolusApprovalRequest, .bolusApprovalResponse, .sealed:
+                expectedMutating = true
+            case .bolusStatus, .statusRead, .dismissAck,
+                .authHello, .authChallenge, .authProof, .authResult:
+                expectedMutating = false
+            }
+            XCTAssertEqual(
+                kind.mutatesPumpState, expectedMutating,
+                "\(kind.rawValue) mutatesPumpState classification changed")
+        }
+    }
 }

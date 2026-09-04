@@ -23,31 +23,3 @@ public protocol RemoteTransport: AnyObject {
     /// `onUndeliverable` — never deferred. See `RemoteCommand.Kind.mutatesPumpState`.
     func send(_ command: RemoteCommand)
 }
-
-/// What a transport should do with one outbound command. Isolated so the live-vs-queue rule is
-/// testable without a concrete transport.
-public enum RemoteSendDisposition: Equatable, Sendable {
-    /// Hand to the peer now (a live BLE write).
-    case sendLive
-    /// Park it for opportunistic delivery on reconnect. Only ever correct for commands that do not
-    /// touch the pump.
-    case queue
-    /// Do not send, and tell the caller. The only safe outcome for a pump-mutating command with no
-    /// live link — nothing was sent, so there is nothing to reconcile.
-    case reportUndeliverable
-
-    /// - Parameters:
-    ///   - kind: the command being sent.
-    ///   - isReachable: whether the peer is live right now.
-    ///   - liveSendFailed: pass `true` when a live send was already attempted and errored, to decide
-    ///     the fallback. A non-mutating command falls back to the queue; a mutating one must not.
-    public static func decide(
-        kind: RemoteCommand.Kind,
-        isReachable: Bool,
-        liveSendFailed: Bool = false
-    ) -> RemoteSendDisposition {
-        if liveSendFailed { return kind.mutatesPumpState ? .reportUndeliverable : .queue }
-        if isReachable { return .sendLive }
-        return kind.mutatesPumpState ? .reportUndeliverable : .queue
-    }
-}

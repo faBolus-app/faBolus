@@ -20,7 +20,7 @@
 
 ## Layout
 - `Packages/faBolusCore/` — `PumpBackend`, `GlucoseSource` / `GlucoseArbiter`, `RemoteCommand`,
-  `AccessPolicy`, transports (`BLELink`, `SealedTransport`), models.
+  `AccessPolicy`, the `RemoteTransport` protocol, models.
 - `ios/faBolus/Data/` — `AppModel`, `TandemBackend`, `MockBackend`, `GarminRemoteBridge`, `AppSettings`.
 - `ios/faBolus/Views/` — SwiftUI. Display views take plain values.
 - `Shared/` — widget store and shared snapshot types.
