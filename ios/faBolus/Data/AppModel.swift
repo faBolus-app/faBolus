@@ -590,49 +590,6 @@ public final class AppModel {
         deliveryLedgerCoordinator.clearDeliveryBlockAfterVerification()
     }
 
-    /// A suspend/resume requested by a remote, awaiting the phone's on-device confirmation.
-    public struct PendingRemoteControl: Equatable, Sendable {
-        public enum Action: String, Sendable { case suspend, resume }
-        public let requestId: String
-        public let action: Action
-    }
-    public var pendingRemoteControl: PendingRemoteControl?
-
-    /// Called by a remote bridge when the watch/Garmin requests suspend/resume. Only honored when
-    /// advanced control is enabled for a Mobi; otherwise rejected back to the remote. Never executes
-    /// directly — it stages a phone-side confirmation (RootTabView presents the alert).
-    public func requestRemoteControl(requestId: String, action: PendingRemoteControl.Action) {
-        guard advancedControlAllowed else {
-            echo(
-                RemoteCommand(
-                    kind: .bolusStatus, requestId: requestId, status: .failed,
-                    message: "Advanced control is off"))
-            return
-        }
-        pendingRemoteControl = PendingRemoteControl(requestId: requestId, action: action)
-    }
-    public func confirmRemoteControl() async {
-        guard let p = pendingRemoteControl else { return }
-        pendingRemoteControl = nil
-        switch p.action {
-        case .suspend: await suspendDelivery()
-        case .resume: await resumeDelivery()
-        }
-        let ok = lastError == nil
-        echo(
-            RemoteCommand(
-                kind: .bolusStatus, requestId: p.requestId,
-                status: ok ? .delivered : .failed,
-                message: ok ? (p.action == .suspend ? "Suspended" : "Resumed") : (lastError ?? "Failed")))
-    }
-    public func rejectRemoteControl() {
-        if let p = pendingRemoteControl {
-            echo(
-                RemoteCommand(
-                    kind: .bolusStatus, requestId: p.requestId, status: .cancelled, message: "Rejected on phone"))
-        }
-        pendingRemoteControl = nil
-    }
     /// Status-echo handlers registered by remote bridges (watch / Garmin). Broadcasts to all;
     /// each remote ignores statuses for requestIds it didn't send.
     private var remoteEchoes: [@MainActor (RemoteCommand) -> Void] = []
@@ -2099,13 +2056,6 @@ public final class AppModel {
             requestedCarbsGrams: carbsGrams, requestedBgMgdl: bgMgdl,
             createdAt: Date(), peerId: peerId, surface: surface,
             usedIncludedStaleBG: resolved.usedIncludedStaleBG)
-    }
-
-    /// Drop a pending host-approval bolus bound to `peerId`. When a peer re-handshakes or
-    /// its auth fails, any awaiting-approval bolus tied to that peer's now-invalidated session must not
-    /// survive to be confirmed against a different/re-paired identity.
-    public func clearPendingRemoteBolus(forPeer peerId: String) {
-        if pendingRemoteBolus?.peerId == peerId { pendingRemoteBolus = nil }
     }
 
     /// The phone user's confirmation (second confirm) — delivers the FROZEN dose exactly as shown and

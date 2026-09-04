@@ -20,20 +20,6 @@ struct RootTabView: View {
         (phoneReadOnly && current == 1) ? 0 : current
     }
 
-    /// SwiftUI presents at most one `.alert` per view. Pick one by priority so the remote-bolus
-    /// confirm is never the alert that gets dropped.
-    enum RootAlert { case remoteBolus, remoteControl }
-    static func activeAlert(hasRemoteBolus: Bool, hasRemoteControl: Bool) -> RootAlert? {
-        if hasRemoteBolus { return .remoteBolus }
-        if hasRemoteControl { return .remoteControl }
-        return nil
-    }
-    private var active: RootAlert? {
-        Self.activeAlert(
-            hasRemoteBolus: model.pendingRemoteBolus != nil,
-            hasRemoteControl: model.pendingRemoteControl != nil)
-    }
-
     var body: some View {
         TabView(selection: $selection) {
             DashboardView(model: model)
@@ -69,7 +55,8 @@ struct RootTabView: View {
         // `presenting:` captures one snapshot of the pending request for both closures so the
         // confirmed amount can't drift if the model updates while the alert is on screen.
         .alert(
-            String(localized: "Remote bolus request"), isPresented: .constant(active == .remoteBolus),
+            String(localized: "Remote bolus request"),
+            isPresented: .constant(model.pendingRemoteBolus != nil),
             presenting: model.pendingRemoteBolus
         ) { p in
             Button(
@@ -104,19 +91,6 @@ struct RootTabView: View {
             }
             parts.append(String(localized: "Confirm to deliver."))
             return Text(parts.joined(separator: " "))
-        }
-        .alert("Remote pump-control request", isPresented: .constant(active == .remoteControl)) {
-            let action = model.pendingRemoteControl?.action
-            Button(
-                action == .suspend ? "Suspend insulin" : "Resume insulin", role: action == .suspend ? .destructive : nil
-            ) {
-                Task { await model.confirmRemoteControl() }
-            }
-            Button("Reject", role: .cancel) { model.rejectRemoteControl() }
-        } message: {
-            Text(
-                "A remote requested to \(model.pendingRemoteControl?.action == .suspend ? "suspend" : "resume") insulin delivery. Confirm on the phone to proceed."
-            )
         }
     }
 }

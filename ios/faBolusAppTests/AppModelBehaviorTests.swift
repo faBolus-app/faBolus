@@ -212,22 +212,6 @@ struct AppModelBehaviorTests {
         }
     }
 
-    /// Audit A-01: a pending host-approval bolus bound to a peer must not survive that peer's session
-    /// teardown — and clearing one peer must not touch another's.
-    @Test func clearPendingForPeerDropsOnlyThatPeer() async {
-        try? await withCleanSettings {
-            let (model, _, _) = await makeModel()
-            let dose = await model.recommendBolus(carbsGrams: 30, bgMgdl: nil).recommendedUnits
-            await model.presentRemoteBolus(
-                requestId: "f5", units: 0, carbsGrams: 30,
-                remoteEstimate: dose, peerId: "mac")
-            model.clearPendingRemoteBolus(forPeer: "otherPhone")
-            #expect(model.pendingRemoteBolus != nil)  // different peer → untouched
-            model.clearPendingRemoteBolus(forPeer: "mac")
-            #expect(model.pendingRemoteBolus == nil)  // bound peer → dropped
-        }
-    }
-
     // MARK: - Action gates
     //
     // AccessPolicy still blocks when `childModeEnabled` is true (faBolusCore `AccessPolicyTests`);
