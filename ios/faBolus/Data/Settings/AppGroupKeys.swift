@@ -6,7 +6,10 @@ import Foundation
 public enum AppGroupKeys {
     // MARK: - Notification broker (`NotificationCoordinator.swift`, `NotificationRuntime`)
     public static let notificationBrokerState = "notificationBroker.state.v1"
-    public static let notificationBrokerTelemetry = "notificationBroker.telemetry.v1"
+    /// v2, not a migration of v1: the pre-fix cohort could never report a dismissal (no category ever
+    /// registered a dismiss action), so those accrued counts cannot answer the question the counters
+    /// exist to answer. The loader reads only this key; a v1 blob is left in place and ignored.
+    public static let notificationBrokerTelemetry = "notificationBroker.telemetry.v2"
     public static let notificationBrokerSettings = "notificationBroker.settings.v1"
     /// Shared opt-in — also read directly by `BLESessionLog`/`ConnectionTelemetryStore` (one
     /// "share local diagnostics" switch governs all three; App-Group-backed so the out-of-process

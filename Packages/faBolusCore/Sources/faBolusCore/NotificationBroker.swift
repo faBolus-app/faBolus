@@ -323,6 +323,12 @@ public enum NotificationBroker {
     /// dismissed (swiped away), and how many they acted on (opened / tapped an action). **Kept separate
     /// from `State`** so it never perturbs the decision/equality semantics `decide` round-trips; it is
     /// write-only accounting. Cumulative (lifetime), local-only, and gathered only when the user opts in.
+    ///
+    /// `dismissed` is a LOWER BOUND, not an exact count, and the fix that made it move at all is not
+    /// retroactive: iOS reports a dismiss only for an explicit per-notification swipe-away — "Clear All"
+    /// and app-side withdrawal are never reported — and a replayed entry persisted by an earlier build
+    /// carries no attributable category until it churns. Neither counter is a rename of "delivered" for
+    /// an error-free submission; that would just reproduce the same defect one abstraction higher.
     public struct CategoryTelemetry: Sendable, Equatable, Codable {
         public var delivered: Int
         public var dismissed: Int
@@ -331,6 +337,22 @@ public enum NotificationBroker {
             self.delivered = delivered
             self.dismissed = dismissed
             self.actedUpon = actedUpon
+        }
+
+        // Tolerant decode from the start (the house pattern is `ConnectionTelemetry.swift`, one file
+        // away): a synthesized decoder THROWS on a missing non-optional key, and the loader's `try?`
+        // would then fall back to an empty dictionary — silently zeroing every OTHER category's counts
+        // too, not just the one missing the new field. Decoding each field with `decodeIfPresent`
+        // (defaulting to its current value) means a later required-field addition upgrades a persisted
+        // blob in place instead of erasing it. Encoding stays the default (all keys written).
+        private enum CodingKeys: String, CodingKey {
+            case delivered, dismissed, actedUpon
+        }
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            delivered = try c.decodeIfPresent(Int.self, forKey: .delivered) ?? 0
+            dismissed = try c.decodeIfPresent(Int.self, forKey: .dismissed) ?? 0
+            actedUpon = try c.decodeIfPresent(Int.self, forKey: .actedUpon) ?? 0
         }
     }
 
