@@ -1,7 +1,7 @@
 import Testing
 @testable import faBolusCore
 
-/// P13c-5: pump-control bounds + the extended-bolus capability. Pins the values and the clamps; the
+/// P13c-5: pump-control bounds. Pins the values and the clamps; the
 /// mirror's equality with the kit's own firmware constants is pinned separately by the app-target
 /// drift guard (`PumpControlBoundsMirrorTests`, which can see TandemMessages).
 struct PumpControlBoundsTests {
@@ -23,18 +23,5 @@ struct PumpControlBoundsTests {
         #expect(PumpControlBounds.clampTempRateMinutes(5) == 15)
         #expect(PumpControlBounds.clampTempRateMinutes(9999) == 72 * 60)
         #expect(PumpControlBounds.clampTempRateMinutes(60) == 60)
-    }
-
-    @Test func extendedBolusIsABolusCapabilityNotAdvancedControl() {
-        // Available on t:slim (`.full`) even though `.full` advertises NO advanced control — so extended
-        // bolus is offered independent of the advanced-control opt-in.
-        #expect(PumpCapabilities.full.supportsExtendedBolus)
-        #expect(!PumpCapabilities.full.supportsAnyAdvancedControl)
-        #expect(PumpCapabilities.mobiAdvanced.supportsExtendedBolus)
-        // Narrowing advanced control off (pump reports no BLE pump control) must NOT strip extended bolus —
-        // it's a bolus, not an advanced-control write.
-        let narrowed = PumpCapabilities.derive(isMobi: true, features: PumpFeatureBits(blePumpControlSupported: false))
-        #expect(narrowed.supportsExtendedBolus)
-        #expect(!narrowed.supportsAnyAdvancedControl)
     }
 }

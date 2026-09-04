@@ -83,6 +83,23 @@ struct PumpCapabilitiesDeriveTests {
         #expect(PumpCapabilities.mobiAdvanced.supportsTempBasal)  // gate open: capability present
     }
 
+    // MARK: - supportsExtendedBolus: a bolus capability, independent of advanced control
+
+    /// Extended (combo) bolus is a BOLUS capability — available even on a t:slim (`.full`) that advertises
+    /// no advanced control, and never stripped when advanced control is narrowed off. Kept because these
+    /// are the only assertions in faBolusCore on `capabilities.supportsExtendedBolus`, the live flag
+    /// `AppModel` reads to decide bolus eligibility; relocated here so they outlive the PumpControlBounds
+    /// test file.
+    @Test func extendedBolusIsABolusCapabilityIndependentOfAdvancedControl() {
+        // Available on t:slim (`.full`) even though `.full` advertises NO advanced control.
+        #expect(PumpCapabilities.full.supportsExtendedBolus)
+        #expect(PumpCapabilities.mobiAdvanced.supportsExtendedBolus)
+        // Narrowing advanced control off (pump reports no BLE pump control) must NOT strip extended bolus —
+        // it's a bolus, not an advanced-control write.
+        let narrowed = PumpCapabilities.derive(isMobi: true, features: PumpFeatureBits(blePumpControlSupported: false))
+        #expect(narrowed.supportsExtendedBolus)
+    }
+
     // MARK: - supportsSleepScheduleWrite: a NEW dedicated Mobi-only write-gate capability
     // Deliberately NOT folded into supportsControlIQSettings; the read
     // (PumpBackend.refreshSleepSchedule / PumpSnapshot.sleepSchedules) is universal/ungated and is
