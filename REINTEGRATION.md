@@ -15,7 +15,33 @@ that served BOTH the Mac client and the phone-peer surface — it is deliberatel
 Phase 3's Mac-removal plan (03-01) because phone-peer (03-02) still needs it live; 03-02 does that
 shared-receiver teardown + introduces stubs. Also not preserved here: the Mac/peer "Remote access"
 Settings UI (`SettingsView.swift`/`SettingsCatalog.swift`), which is shared with phone-peer and removed
-in 03-02.
+in 03-02. ⚠ **`MacRemoteAuthStore.swift` and `PeerRemoteHost.swift` are stale in this bullet as of a
+later `main` removal — neither exists on `main` any more (removed before the transport-layer removal
+below; unrelated to it). `MacPairingCoordinator.swift` is unaffected — still the D-04 deny-by-default
+stub, still live, at `ios/faBolus/Data/Remote/MacPairingCoordinator.swift`.**
+
+## Update (a later `main` removal — the BLE transport this target's status/command link ran over)
+
+This target's whole reason for existing was talking to the phone over BLE: `mac/faBolusMac/**`'s status
+display and bolus/cancel/dismiss command sending depended on the SAME transport/handshake primitives
+the phone-peer surface used (see `dev/phone-remote`'s own "Update" section for the full list and the
+reasoning). A subsequent `main` removal deleted all of them — **none are preserved on this branch
+either**, since `dev/mac` only ever carried the Xcode target sources (`mac/faBolusMac/`,
+`mac/faBolusMacWidgets/`), never the shared transport code, which lived in `Packages/faBolusCore` and
+was never Mac-target-specific. Recover from `main` history, `git show <pre-removal-sha>:<path>`
+(pre-removal `main` tip was `649e6cce56744fdc593bbf077075201140995132`; re-verify ancestry and re-derive
+paths by symbol before relying on this):
+
+- `Packages/faBolusCore/Sources/faBolusCore/BLELink.swift` (the phone-side GATT peripheral the Mac's
+  central connected to), `SealedTransport.swift`, `MacPairing.swift` (the pairing-code HMAC handshake
+  the Mac's first-pairing flow drove), `PeerPairingPayload.swift` (QR pairing payload).
+- `Packages/faBolusCore/Sources/faBolusCore/RemoteTransport.swift`'s `RemoteSendDisposition` enum only
+  — `protocol RemoteTransport` + `onUndeliverable` are UNCHANGED and still live on `main`.
+- `ios/faBolus/Views/QRCodeView.swift` (the phone-side QR generator a Mac would scan to pair).
+
+Reintegrating the Mac target from this branch therefore requires ALSO recovering the transport layer
+from `main` history — it is not enough to copy `mac/faBolusMac/` back; there is nothing left on `main`
+or on any `dev/*` branch for it to talk to until that layer is rebuilt too.
 
 ## State at removal
 
