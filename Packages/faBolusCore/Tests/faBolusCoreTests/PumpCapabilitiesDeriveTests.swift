@@ -100,6 +100,15 @@ struct PumpCapabilitiesDeriveTests {
         #expect(narrowed.supportsExtendedBolus)
     }
 
+    /// The pump-firmware minimum extended (combo) bolus dose bound (0.40 U in milliunits). Relocated
+    /// out of the deleted `PumpControlBounds` enum to its canonical dose home in `BolusMath`; the value
+    /// is unchanged and its equality with the kit's `InitiateBolusRequest.minExtendedBolusMilliunits`
+    /// is pinned separately by the app-target `PumpControlBoundsMirrorTests` (which links
+    /// TandemMessages).
+    @Test func extendedBolusMinDoseBoundIsFourHundredMilliunits() {
+        #expect(BolusMath.extendedBolusMinMilliunits == 400)
+    }
+
     // MARK: - supportsSleepScheduleWrite: a NEW dedicated Mobi-only write-gate capability
     // Deliberately NOT folded into supportsControlIQSettings; the read
     // (PumpBackend.refreshSleepSchedule / PumpSnapshot.sleepSchedules) is universal/ungated and is

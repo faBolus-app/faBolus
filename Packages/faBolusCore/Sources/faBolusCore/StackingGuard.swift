@@ -24,7 +24,6 @@ import os
 /// (`.disclose` → `.confirmExtra` → `.reenter`) as the override magnitude crosses owner-confirmable,
 /// lock-backed cut-points (`confirmExtraOverrideRatio` / `reenterOverrideRatio`) — still friction/disclosure
 /// only, never a `.block` case, never a units field.
-/// **SG3b** (`tempRateOffer`): a strictly-inert stub — see its doc comment.
 public enum StackingGuard {
 
     /// Friction levels a StackingGuard function can report. Ordered (`Comparable` via `rawValue`) so a
@@ -252,23 +251,6 @@ public enum StackingGuard {
                 detail: sg1.detail)
         }
         return Disclosure(friction: .disclose, message: sg1.message, detail: sg1.detail)
-    }
-
-    // MARK: - SG3b: temp-rate offer (BLOCKED, strictly inert)
-
-    /// **SG3b** — a structurally-unreachable stub. `SetTempRateRequest` is Mobi-only and requires
-    /// Control-IQ OFF (TandemKit's `TempRateRequests.swift`), while SG3b's entire premise — offering the 150%
-    /// temp-rate as an alternative to a correction bolus — only makes sense while Control-IQ is ON. That
-    /// contradiction means this function can never legitimately fire; it exists ONLY to complete the
-    /// `Friction`/`Disclosure` type surface, documented BLOCKED until a saline-bench check of
-    /// temp-rate-while-Control-IQ-on unblocks it. Returns `.none` unconditionally — no default branch,
-    /// no recommended-dose comparison, no units field, under every input.
-    public static func tempRateOffer(
-        iobUnits: Double,
-        glucoseMgdl: Int?,
-        controlIQEnabled: Bool
-    ) -> Disclosure {
-        .none
     }
 
     // MARK: - Formatting helpers (never used to derive a value that flows into a dose)

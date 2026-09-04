@@ -95,37 +95,6 @@ public enum ControlIQPrecondition {
     }
 }
 
-/// Control-IQ+-only temporary basal-rate option, built as a bench-gated placeholder, never a live
-/// write path. Current Control-IQ+ documentation states a temp rate CAN be set while Control-IQ+
-/// stays ON — "If a Temp Rate is set while Control-IQ+ is turned on, Control-IQ+ will modulate basal
-/// and deliver automatic correction boluses even if a Temp Basal Rate is set to 0%." This is the
-/// opposite precondition from classic Control-IQ's `ControlIQPrecondition.tempRateBlockReason` above
-/// (a temp rate there requires Control-IQ **off**) — that gate is left byte-identical; this is a
-/// separate, inert path that never touches it.
-///
-/// Whether a real Control-IQ+ pump actually accepts this write is unverified until a saline bench
-/// confirms it. `benchVerifiedDefault == false` means "not offered", on every controller variant.
-/// Once bench-verified, availability stays capability-scoped to `.controlIQPro` (Control-IQ+) only;
-/// classic Control-IQ and `.none` never offer it. Never a "Control-IQ is maxed → set a temp rate"
-/// suggestion.
-public enum CiqPlusTempRate {
-    /// Flip to `true` only after a saline bench confirms a Control-IQ+ pump accepts a temp-rate write
-    /// while its controller stays on. Ships `false` so the option is inert regardless of the connected
-    /// controller variant.
-    public static let benchVerifiedDefault = false
-
-    /// `true` only when both the bench has verified the write AND the connected controller is
-    /// Control-IQ+ (`.controlIQPro`) — never `true` for classic Control-IQ or `.none`, even once the
-    /// bench flips. The UI wraps its entire option in this predicate so the row/button is
-    /// render-absent (not merely disabled/greyed) while it returns `false`.
-    public static func isOffered(
-        benchVerified: Bool = benchVerifiedDefault,
-        controllerVariant: ControllerVariant
-    ) -> Bool {
-        benchVerified && controllerVariant == .controlIQPro
-    }
-}
-
 /// Fail-closed cause-attribution: did the pump's own control-state say Control-IQ suspended basal
 /// delivery to prevent a low? Distinct from the generic `PumpSnapshot.deliverySuspended` bool — a
 /// suspend can also come from a manual user suspend, a cartridge/loading-state block, or any other

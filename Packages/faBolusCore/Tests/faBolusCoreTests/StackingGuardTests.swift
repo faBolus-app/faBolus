@@ -135,10 +135,6 @@ import Testing
                         assertNoForbiddenPhrase(d)
                     }
                 }
-                for ciq in [true, false] {
-                    let t = StackingGuard.tempRateOffer(iobUnits: entered, glucoseMgdl: nil, controlIQEnabled: ciq)
-                    assertNoForbiddenPhrase(t)
-                }
                 for max in entries {
                     let sg2 = StackingGuard.maxBolusProximity(enteredUnits: entered, maxBolusUnits: max)
                     assertNoForbiddenPhrase(sg2)
@@ -199,22 +195,6 @@ import Testing
         let d = StackingGuard.maxBolusProximity(enteredUnits: 25.0, maxBolusUnits: 25.0)
         #expect(d.friction == .disclose)
         #expect(d.message?.contains("25") == true)
-    }
-
-    // MARK: - SG3b (tempRateOffer): inert under every input in a representative sweep
-
-    @Test func tempRateOfferIsInertUnderRepresentativeSweep() {
-        let glucoses: [Int?] = [nil, 100, 200, 300]
-        for iob in [0.0, 1.0, 5.0] {
-            for glucose in glucoses {
-                for ciq in [true, false] {
-                    let d = StackingGuard.tempRateOffer(iobUnits: iob, glucoseMgdl: glucose, controlIQEnabled: ciq)
-                    #expect(d.friction == .none)
-                    #expect(d.message == nil)
-                    #expect(d.detail == nil)
-                }
-            }
-        }
     }
 
     // MARK: - SG3a (escalation): none when SG1 would not fire — mirrors calcOverride's own guards

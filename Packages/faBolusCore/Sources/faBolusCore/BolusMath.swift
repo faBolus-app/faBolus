@@ -19,6 +19,13 @@ import Foundation
 /// `BolusCalculator.java` (fixtures captured from the JVM) and asserts this port matches its `getTotal()`.
 public enum BolusMath {
 
+    /// Minimum total dispensable extended (combo) bolus dose, milliunits (0.40 U). A pump-firmware
+    /// bound on what an extended bolus may request, not a therapy recommendation. faBolusCore stays
+    /// free of the PumpX2 message layer, so this is a mirror of the kit's canonical
+    /// `InitiateBolusRequest.minExtendedBolusMilliunits`; an app-target drift test links both and pins
+    /// the two equal so they can't diverge.
+    public static let extendedBolusMinMilliunits = 400
+
     /// The pump bolus-calculator profile inputs, already scaled to human units (the oracle stores carb
     /// ratio and IOB ×1000; callers pass the divided values, matching `BolusCalcDataSnapshotResponse`
     /// accessors like `carbRatioGramsPerUnit`).
