@@ -1,5 +1,4 @@
 import Foundation
-import CryptoKit
 import CommonCrypto
 import Security
 
@@ -10,12 +9,13 @@ import Security
 /// This-device-only Keychain store, never the raw PIN. The PIN is derived with a slow KDF
 /// (**PBKDF2-HMAC-SHA256**, versioned `v2:` blob) rather than a single fast SHA-256 — a 4-digit PIN
 /// is too small for a fast hash. Exponential soft-lock counters live in the **Keychain** (not
-/// `UserDefaults`) so a plist edit or an unencrypted backup cannot reset the backoff. An old
-/// `"saltHex:hashHex"` SHA-256 blob is transparently migrated to `v2:` on the next correct entry
-/// (verify-old-then-rehash — no forced re-set). Distinct Keychain service and lockout account. A
-/// wrong entry backs off with **exponential delay** — a soft rate-limit, never a hard
-/// permanent lock — and it is resettable from the phone (set to `nil`). Validation is phone-side
-/// (the host holds the hash); a remote never sees or checks it. The phone is the passcode authority.
+/// `UserDefaults`) so a plist edit or an unencrypted backup cannot reset the backoff. Only a `v2:`
+/// blob is ever verifiable — a stored blob in any other shape fails closed (never matches, and counts
+/// as a wrong entry toward the backoff); the only recovery is setting a new passcode from Settings.
+/// Distinct Keychain service and lockout account. A wrong entry backs off with **exponential delay**
+/// — a soft rate-limit, never a hard permanent lock — and it is resettable from the phone (set to
+/// `nil`). Validation is phone-side (the host holds the hash); a remote never sees or checks it. The
+/// phone is the passcode authority.
 enum BolusPasscodeStore {
     private static let service = "com.fabolus.app.bolus-passcode"
     private static let account = "pinHash"
@@ -50,17 +50,6 @@ enum BolusPasscodeStore {
     /// Test seam: force `SecRandomCopyBytes`'s reported status, so a test can exercise the
     /// discarded-RNG-result fail-closed path without a real RNG failure (which can't be induced on demand).
     nonisolated(unsafe) static var injectedRNGStatus: OSStatus?
-
-    /// Test seam: seed a LEGACY (pre-v2) `"saltHex:hashHex"` SHA-256 blob so a test can exercise the
-    /// migration path (`setPasscode` only ever writes v2, so there is no other way to produce an old blob).
-    /// DEBUG only; never used in production. Uses a fixed salt for determinism. Seeds directly (bypassing
-    /// `upsertBlob`) since this is establishing a FIRST item, not exercising the replace logic itself.
-    static func seedLegacyBlobForTesting(pin: String) {
-        let salt = [UInt8](repeating: 0xAB, count: 16)
-        deleteBlob()
-        clearLockout()
-        _ = upsertBlob(hex(salt) + ":" + legacyHash(pin: pin, salt: salt))
-    }
     #endif
 
     /// A valid passcode is **exactly 4 digits**. Used to reject bad input before it is ever stored.
@@ -113,9 +102,9 @@ enum BolusPasscodeStore {
 
     /// Check `pin` against the stored hash, enforcing the backoff. A correct PIN clears the counter; a wrong
     /// one increments it and, past the threshold, arms an exponential delay (30 s doubling, capped at 1 h)
-    /// that survives relaunch. Never hard-locks. PBKDF2 for `v2:` blobs, with transparent migration of
-    /// an old SHA-256 `"salt:hash"` blob on a successful verify. The phone is the authority; the remote
-    /// never verifies.
+    /// that survives relaunch. Never hard-locks. PBKDF2 for `v2:` blobs — the only shape this ever verifies;
+    /// a stored blob in any other shape (including a pre-`v2:` one) fails closed, counting toward the same
+    /// backoff as a wrong PIN. The phone is the authority; the remote never verifies.
     static func verify(_ pin: String) -> Bool {
         guard lockoutRemaining <= 0 else { return false }  // backing off — don't even hash
         guard let stored = load() else { return false }
@@ -135,27 +124,11 @@ enum BolusPasscodeStore {
                 matched = constantTimeEquals(derived, storedHash)
             }
             // A malformed v2 blob falls through as a failure (never traps).
-        } else {
-            // Legacy "saltHex:hashHex" SHA-256 blob — verify with the old scheme, then migrate on success.
-            let parts = stored.split(separator: ":")
-            if parts.count == 2, let salt = bytes(String(parts[0])),
-                let storedHash = bytes(String(parts[1])),
-                // Constant-time compare over raw hash bytes, matching the v2 path.
-                constantTimeEquals(legacyHashBytes(pin: pin, salt: salt), storedHash)
-            {
-                matched = true
-                // Silently upgrade to a PBKDF2 `v2:` blob on this correct entry (fresh salt).
-                // The SAME atomic-upsert guarantee applies here — a failed upgrade store leaves the
-                // legacy blob (which just matched) untouched, so it is still verifiable next time. `matched`
-                // is already `true` regardless of whether this best-effort upgrade succeeds: migration
-                // failure never turns a correct entry into a rejected one, and never opens the gate.
-                var newSalt = [UInt8](repeating: 0, count: 16)
-                _ = SecRandomCopyBytes(kSecRandomDefault, newSalt.count, &newSalt)
-                if let upgraded = hashV2(pin: pin, salt: newSalt, iterations: pbkdf2Iterations) {
-                    _ = upsertBlob(upgraded)  // never delete-then-add — on failure the legacy blob remains
-                }
-            }
         }
+        // Any other stored shape (a pre-`v2:` blob, or anything else) is not recognized and never
+        // matches — fails closed rather than falling back to an older scheme. `matched` stays `false`,
+        // so this counts as a wrong entry below and arms the same backoff; the recovery is setting a
+        // new passcode from Settings (`setPasscode`, which needs no old code and clears the backoff).
 
         if matched {
             clearLockout()
@@ -328,14 +301,6 @@ enum BolusPasscodeStore {
             }
         }
         return status == Int32(kCCSuccess) ? derived : nil
-    }
-
-    /// The legacy single-SHA-256 derivation, kept ONLY to verify (and then migrate) an old `"salt:hash"` blob.
-    private static func legacyHashBytes(pin: String, salt: [UInt8]) -> [UInt8] {
-        Array(SHA256.hash(data: Data(salt) + Data(pin.utf8)))
-    }
-    private static func legacyHash(pin: String, salt: [UInt8]) -> String {
-        hex(legacyHashBytes(pin: pin, salt: salt))
     }
 
     /// Constant-time equality over raw hash bytes. XOR-accumulates every byte and only

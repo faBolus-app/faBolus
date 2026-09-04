@@ -97,37 +97,6 @@ struct BolusPasscodeTransactionalTests {
         #expect(BolusPasscodeStore.verify("4444"))  // correct entry clears it cleanly either way
     }
 
-    // MARK: - LEGACY MIGRATION: a failed v2 upgrade never leaves the gate open
-
-    @Test func legacyMigrationFailureLeavesLegacyGateIntactAndVerifiable() {
-        reset()
-        defer { reset() }
-        BolusPasscodeStore.seedLegacyBlobForTesting(pin: "3141")
-        #expect(BolusPasscodeStore.isRequired)
-
-        BolusPasscodeStore.injectedUpsertStatus = errSecIO  // the v2-upgrade upsert fails
-        #expect(BolusPasscodeStore.verify("3141"))  // correct entry still matches (legacy scheme)
-        BolusPasscodeStore.injectedUpsertStatus = nil
-
-        // The gate never opened and never went blank — the legacy blob (never deleted, since the upgrade
-        // upsert failed before writing anything) is still there and still verifiable.
-        #expect(BolusPasscodeStore.isRequired)
-        #expect(BolusPasscodeStore.verify("3141"))
-        #expect(!BolusPasscodeStore.verify("0000"))
-    }
-
-    /// Positive control: with no injected failures, the legacy blob DOES migrate to v2 (proven indirectly —
-    /// no public blob getter exists — by a second correct verify still succeeding after the store call that
-    /// would have failed had `injectedUpsertStatus` still been armed from a prior test).
-    @Test func legacyMigrationSucceedsWithNoInjectedFailure() {
-        reset()
-        defer { reset() }
-        BolusPasscodeStore.seedLegacyBlobForTesting(pin: "8080")
-        #expect(BolusPasscodeStore.verify("8080"))
-        #expect(BolusPasscodeStore.lastUpsertOp == .update)  // seeded item existed → migration upserts via update
-        #expect(BolusPasscodeStore.verify("8080"))
-    }
-
     // MARK: - Positive path
 
     @Test func successfulReplaceReturnsTrueAndNewPasscodeIsRequired() {
@@ -139,7 +108,7 @@ struct BolusPasscodeTransactionalTests {
         #expect(!BolusPasscodeStore.verify("1230"))
     }
 
-    // MARK: - Constant-time hash comparison still verifies/rejects correctly (v2 + legacy)
+    // MARK: - Constant-time hash comparison still verifies/rejects correctly
 
     /// `verify()` compares raw hash bytes, not hex strings. The correct PIN still verifies and a wrong PIN still rejects — constant-time must not mean always-true.
     @Test func constantTimeCompareVerifiesAndRejectsOnV2Path() {
@@ -150,15 +119,6 @@ struct BolusPasscodeTransactionalTests {
         #expect(!BolusPasscodeStore.verify("2719"))  // wrong PIN → unequal hashes → rejected
         #expect(!BolusPasscodeStore.verify("8172"))  // different wrong PIN → rejected
         #expect(BolusPasscodeStore.verify("2718"))  // still verifies after the wrong attempts
-    }
-
-    @Test func constantTimeCompareVerifiesAndRejectsOnLegacyPath() {
-        reset()
-        defer { reset() }
-        BolusPasscodeStore.seedLegacyBlobForTesting(pin: "3141")  // legacy "saltHex:hashHex" SHA-256 blob
-        // First verify goes through the legacy constant-time compare (and then migrates to v2).
-        #expect(!BolusPasscodeStore.verify("3142"))  // wrong PIN on the legacy path → rejected
-        #expect(BolusPasscodeStore.verify("3141"))  // correct PIN on the legacy path → matched
     }
 
     // MARK: - Call site: SettingsView honors setPasscode's false return (source-scan guard)

@@ -87,7 +87,7 @@ struct BolusPasscodeStoreTests {
         #expect(BolusPasscodeStore.lockoutRemaining == 0)  // not yet locked → counter really reset
     }
 
-    // MARK: - Hardening (PBKDF2 v2 blob, legacy migration, Keychain-backed backoff)
+    // MARK: - Hardening (PBKDF2 v2 blob, Keychain-backed backoff)
 
     @Test func pbkdf2RoundTrips() {
         reset()
@@ -99,23 +99,6 @@ struct BolusPasscodeStoreTests {
         #expect(!BolusPasscodeStore.verify("9999"))  // wrong
         #expect(BolusPasscodeStore.lockoutRemaining == 0)
         #expect(BolusPasscodeStore.verify("1234"))  // still verifies against the same v2 blob
-    }
-
-    @Test func legacyBlobMigratesOnCorrectEntry() {
-        reset()
-        defer { reset() }
-        // setPasscode only ever writes v2, so seed a pre-v2 "saltHex:hashHex" SHA-256 blob directly.
-        BolusPasscodeStore.seedLegacyBlobForTesting(pin: "4321")
-        #expect(BolusPasscodeStore.isRequired)
-        // The old SHA-256 blob still verifies, and a correct entry transparently rehashes it to v2.
-        #expect(BolusPasscodeStore.verify("4321"))
-        // A second correct entry now runs against the migrated v2 blob — proves the rehash didn't corrupt it.
-        // (No public blob getter exists, so this successful re-verify is the migration evidence.)
-        #expect(BolusPasscodeStore.verify("4321"))
-
-        // A WRONG PIN against a freshly-seeded legacy blob must NOT succeed (and so must not migrate).
-        BolusPasscodeStore.seedLegacyBlobForTesting(pin: "4321")
-        #expect(!BolusPasscodeStore.verify("0000"))
     }
 
     @Test func keychainBackedBackoffStillArmsAndClears() {
