@@ -3,6 +3,7 @@ import faBolusCore
 import HistoryStore
 import TandemBLE
 import Observation
+import Security
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -1134,6 +1135,52 @@ public final class AppModel {
         // Also tell the active backend to drop its in-memory pairing/auth state + run its own cleanup.
         forgetPairing()
         return .erased
+    }
+
+    // MARK: - One-time orphaned remote-credential purge
+
+    /// The two Keychain services and three `UserDefaults` keys left behind by the now-deleted
+    /// `RemoteClientAuthStore`, `MacRemoteAuthStore` and `AppRouter`. `eraseEverythingFullReset()`
+    /// above never reached them — its explicit per-store list predates their orphaning — so once
+    /// their owning types are gone, nothing else can ever read or clear them again. This purge is
+    /// sited at LAUNCH rather than folded into the erase flow, because the tokens must clear even
+    /// for a tester who never opens "Erase everything"; a tester who never paired a Mac or a peer
+    /// phone simply has nothing here to delete.
+    private static let orphanedRemoteKeychainServices = [
+        "com.fabolus.app.remoteclient.auth", "com.fabolus.app.macremote",
+    ]
+    private static let orphanedRemoteDefaultsKeys = [
+        "phoneRemoteClientId", "macRemotePairedNames", "appTarget",
+    ]
+    /// Guards the purge to at most once per install.
+    static let orphanedRemoteCredentialPurgeDoneKey = "orphanedRemoteCredentialPurgeDone"
+
+    #if DEBUG
+    /// Test seam: records the exact target set the purge acted on. The xctest host has no
+    /// keychain-sharing entitlement (`PairingStore.swift` documents the same limit for
+    /// `SecItemAdd`), so no assertion here can observe real Keychain contents — this records intent
+    /// instead. `nil` until the purge runs; compiled out of Release.
+    nonisolated(unsafe) static var orphanedRemotePurgeSpyForTests: (services: [String], defaultsKeys: [String])?
+    #endif
+
+    /// Runs the purge at most once per install, guarded by `orphanedRemoteCredentialPurgeDoneKey`.
+    /// `defaults` is injectable for hermetic testing; production always uses `.standard`.
+    static func purgeOrphanedRemoteCredentialsIfNeeded(defaults: UserDefaults = .standard) {
+        guard !defaults.bool(forKey: orphanedRemoteCredentialPurgeDoneKey) else { return }
+        for service in orphanedRemoteKeychainServices {
+            SecItemDelete(
+                [
+                    kSecClass as String: kSecClassGenericPassword,
+                    kSecAttrService as String: service,
+                ] as CFDictionary)
+        }
+        for key in orphanedRemoteDefaultsKeys { defaults.removeObject(forKey: key) }
+        #if DEBUG
+        orphanedRemotePurgeSpyForTests = (
+            services: orphanedRemoteKeychainServices, defaultsKeys: orphanedRemoteDefaultsKeys
+        )
+        #endif
+        defaults.set(true, forKey: orphanedRemoteCredentialPurgeDoneKey)
     }
 
     // MARK: - Pump-switch settings reset

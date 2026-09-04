@@ -8,6 +8,7 @@ import Foundation
 /// under the xctest host (no keychain-sharing entitlement — `PairingStore.swift` documents the same
 /// limit for `SecItemAdd`), so these tests assert the purge's TARGET SET and its idempotence via the
 /// `orphanedRemotePurgeSpyForTests` seam, never real stored Keychain contents.
+@MainActor
 struct OrphanedRemoteCredentialPurgeTests {
 
     private func freshSuiteName() -> String { "OrphanedRemoteCredentialPurgeTests.\(UUID().uuidString)" }

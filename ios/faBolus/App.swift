@@ -17,6 +17,11 @@ struct FaBolusApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        // One-shot purge of Keychain services + UserDefaults keys orphaned by the deleted peer/Mac
+        // remote transport. Sited here (not the erase flow) so it also runs on a viewless
+        // CoreBluetooth cold-restoration relaunch, and clears for a tester who never opens
+        // "Erase everything". No-op after its first run (`AppModel.purgeOrphanedRemoteCredentialsIfNeeded`).
+        AppModel.purgeOrphanedRemoteCredentialsIfNeeded()
         // Construct the Garmin bridge at process launch — including a background BLE relaunch,
         // where no view (and thus no `.onAppear`) ever runs — so a remote request always has a
         // live bridge to answer, and (in a GARMIN build) so ConnectIQ's CoreBluetooth state-restoration
