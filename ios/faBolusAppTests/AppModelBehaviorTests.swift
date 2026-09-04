@@ -392,7 +392,7 @@ struct AppModelBehaviorTests {
             // Turn Control-IQ OFF (onChange → the model's cached snapshot updates synchronously).
             try? await backend.setControlIQ(enabled: false, weightLbs: 0, totalDailyInsulinUnits: 0)
             // A mode change is now refused with the mode reason, and the reported activity stays normal.
-            await m.setSleepMode(true)
+            await m.setMode(.sleepOn)
             #expect(m.lastError == ControlIQPrecondition.modeBlockReason(controlIQEnabled: false))
             #expect(backend.snapshot.controlIQMode == ControlIQActivity.normal.rawValue)
         }

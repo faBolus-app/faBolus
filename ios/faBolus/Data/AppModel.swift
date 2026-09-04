@@ -771,10 +771,6 @@ public final class AppModel {
         refreshEffectsCoordinator.onHistoryPersist = { [weak self] glucose, boluses, provenance in
             self?.historyPersistence.persist(glucose: glucose, boluses: boluses, provenance: provenance)
         }
-        refreshEffectsCoordinator.onApplyModeAutomation = { [weak self] in
-            guard let self else { return }
-            ModeAutomation.applyPendingIfDue(using: self)  // takes the concrete AppModel — sink, not back-pointer
-        }
         refreshEffectsCoordinator.onPushStatusIfNeeded = { [weak self] in self?.pushStatusIfNeeded() }
         refreshEffectsCoordinator.onAlertsChangedFanout = { [weak self] alerts in
             guard let self else { return }
@@ -1274,7 +1270,6 @@ public final class AppModel {
             cgmFresh: cgmFresh,
             urgentLowNow: urgentLowNow,
             alertsChanged: alertsChanged,
-            canControlModes: canControlModes,
             pumpDisconnectKey: Self.pumpDisconnectKey,
             pumpConnectionUnstableKey: Self.pumpConnectionUnstableKey,
             cgmDataLossKey: Self.cgmDataLossKey,
@@ -1613,21 +1608,6 @@ public final class AppModel {
             return
         }
         await runControl(.setMode) { try await source.setMode(command) }
-    }
-    public func setSleepMode(_ on: Bool) async { await setMode(on ? .sleepOn : .sleepOff) }
-    public func setExerciseMode(_ on: Bool) async { await setMode(on ? .exerciseOn : .exerciseOff) }
-    /// Return to normal by clearing whichever special mode is currently active.
-    public func setNormalMode() async {
-        if let clear = ControlIQActivity(rawMode: snapshot.controlIQMode).clearCommand { await setMode(clear) }
-    }
-    /// Whether pump mode-switching is currently possible (advanced control on, Mobi, connected).
-    public var canControlModes: Bool { advancedControlAllowed && capabilities.supportsModes && pumpReady }
-    /// Apply an activity/sleep mode toggle (used by the Shortcuts automation via `ModeAutomation`).
-    func applyMode(_ mode: ModeAutomation.Mode, on: Bool) async {
-        switch mode {
-        case .exercise: await setExerciseMode(on)
-        case .sleep: await setSleepMode(on)
-        }
     }
     public func playFindMyPump() async { await runControl(.playFindMyPump) { try await source.playFindMyPump() } }
 
