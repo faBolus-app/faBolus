@@ -365,6 +365,12 @@ public enum NotificationBroker {
         /// (`Category.deliversAsNotification == false`). Distinct from `categoryDisabled`, which is a
         /// USER choice that a user can reverse: this one is policy and there is no setting for it.
         case uiStateOnly
+        /// The unified notification-rules resolver (`NotificationRules.resolve`) resolved this
+        /// notification's phone intent to `.off`. Distinct from `categoryDisabled`, which reflects
+        /// only the category's own `CategorySettings.enabled` flag — this reason can be produced by
+        /// ANY cascade level (global/source/category/per-notification) resolving to `.off`, so it is
+        /// named for the mechanism rather than reusing a settings-specific reason.
+        case ruleResolvedOff
     }
 
     public struct Decision: Sendable, Equatable {
@@ -390,7 +396,9 @@ public enum NotificationBroker {
         state: State,
         budget: Budget = Budget(),
         now: Date,
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        rules: NotificationRules.Cascade? = nil,
+        timeSensitiveAvailable: Bool = false
     ) -> Decision {
         var s = state
         // Roll the daily counters over at a day boundary.
@@ -423,6 +431,18 @@ public enum NotificationBroker {
         }
         func deliver() -> Decision { Decision(deliver: true, reason: nil, nextState: record()) }
         func suppress(_ r: SuppressionReason) -> Decision { Decision(deliver: false, reason: r, nextState: s) }
+
+        // The unified notification-rules resolver is the SINGLE governed decision point for the
+        // pump-mirror category once a caller supplies a rule cascade — no parallel inline check
+        // alongside it, so the phone can never assert two different answers about the same
+        // notification again. `rules == nil` (every existing caller, since the parameter defaults
+        // to `nil`) falls straight through to the pre-existing settings-driven path below
+        // unchanged; only `.pumpAlert` is routed here today — every other category is expanded
+        // onto the resolver later.
+        if message.category == .pumpAlert, let rules {
+            let resolved = NotificationRules.resolve(rules, timeSensitiveAvailable: timeSensitiveAvailable)
+            return resolved.phone == .off ? suppress(.ruleResolvedOff) : deliver()
+        }
 
         // A category that surfaces as UI state only never becomes a notification — checked ABOVE the
         // never-suppressible short-circuit, because "always delivered" is a statement about a category

@@ -101,8 +101,7 @@ import Foundation
 
     // MARK: - `NotificationBroker.decide` reads the ONE resolver for the pump-mirror tracer category
 
-    private func msg(_ c: NotificationBroker.Category = .pumpAlert, key: String = "k") -> NotificationBroker.Message
-    {
+    private func msg(_ c: NotificationBroker.Category = .pumpAlert, key: String = "k") -> NotificationBroker.Message {
         NotificationBroker.Message(category: c, severity: .warning, title: "t", body: "b", dedupeKey: key)
     }
 
