@@ -234,8 +234,13 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// injected closures (wired in `wireResponseApplier()` right below, same two-phase-init reason as
     /// `readScheduler`). `didReceiveFrame` keeps the `.authorization` CRC gate + `ResponseParser.parse`
     /// boundary + the historyLog-unparseable error branch itself, then hands the parsed message to
-    /// `responseApplier.apply(_:)`.
-    private let responseApplier = PumpResponseApplier()
+    /// `responseApplier.apply(_:)`. No default here — its `resolveBadOpcodeForError` resolver has no
+    /// safe default (see `PumpResponseApplier`'s own doc comment), so construction is required and
+    /// happens in BOTH initializers right before `super.init()` (capturing the LOCAL `readScheduler`,
+    /// never `[weak self]`, since `self` cannot be captured before it exists — same two-phase-init
+    /// reason as `readScheduler`, but resolved by capturing the already-initialized property value
+    /// directly instead of deferring to a post-`super.init()` wiring step).
+    private let responseApplier: PumpResponseApplier
     /// The read-only history-log gap-sync state machine — extracted behind injected closures
     /// (wired in `wireHistorySyncCoordinator()` right below, same two-phase-init reason as
     /// `readScheduler`/`responseApplier`). Owns coverage/paging fields + sync functions;
@@ -730,6 +735,12 @@ public final class TandemBackend: NSObject, PumpBackend {
 
     public override init() {
         self.injectedTransport = nil
+        self.responseApplier = PumpResponseApplier(
+            resolveBadOpcodeForError: { [readScheduler] requestCodeId, errorCodeId, txId in
+                readScheduler.resolveErrorResponse(
+                    requestCodeId: requestCodeId, errorCodeId: errorCodeId, txId: txId)
+                    ?? UInt8(truncatingIfNeeded: requestCodeId)
+            })
         super.init()
         client.writePolicy = .readOnly
         client.delegate = self
@@ -907,14 +918,8 @@ public final class TandemBackend: NSObject, PumpBackend {
         responseApplier.cgmReadingDate = { [weak self] pumpSec, now in
             self?.readScheduler.cgmReadingDate(pumpSec: pumpSec, now: now)
         }
-        // Resolve an inbound op77 to the true failing opcode (cargo requestCodeId when named, else
-        // the outstanding read correlated by echoed txId / FIFO), record it in `badOpcodes`, and
-        // return it for the standing diagnostic log line.
-        responseApplier.resolveBadOpcodeForError = { [weak self] requestCodeId, errorCodeId, txId in
-            self?.readScheduler.resolveErrorResponse(
-                requestCodeId: requestCodeId, errorCodeId: errorCodeId, txId: txId)
-                ?? UInt8(truncatingIfNeeded: requestCodeId)
-        }
+        // `resolveBadOpcodeForError` is bound at construction (both initializers, right before
+        // `super.init()`) — see `responseApplier`'s own doc comment.
         // Gap-sync state lives on `historySyncCoordinator` — the gap-sync state machine now
         // lives there; see its own doc comment's STATE-OWNERSHIP CONTRACT.
         responseApplier.beginGapSync = { [weak self] first, last in
@@ -1059,6 +1064,12 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// pre-established connected + paired state, so `perform` can be exercised without CoreBluetooth.
     init(testTransport: PumpTransport, authKey: [UInt8] = [0x01]) {
         self.injectedTransport = testTransport
+        self.responseApplier = PumpResponseApplier(
+            resolveBadOpcodeForError: { [readScheduler] requestCodeId, errorCodeId, txId in
+                readScheduler.resolveErrorResponse(
+                    requestCodeId: requestCodeId, errorCodeId: errorCodeId, txId: txId)
+                    ?? UInt8(truncatingIfNeeded: requestCodeId)
+            })
         super.init()
         wireReadScheduler()
         wireResponseApplier()

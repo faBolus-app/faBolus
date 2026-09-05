@@ -24,7 +24,7 @@ struct PumpDeviceContextWireTests {
     @Test func fallsBackToApiHeuristicWhenNameUnknown() {
         // Mobi API version (3.5) with no name detection ⇒ heuristic says Mobi.
         do {
-            let applier = PumpResponseApplier()
+            let applier = PumpResponseApplier(resolveBadOpcodeForError: { requestCodeId, _, _ in UInt8(truncatingIfNeeded: requestCodeId) })
             var captured: Bool?
             var apiVer: ApiVersion?
             var trusted: Bool?
@@ -44,7 +44,7 @@ struct PumpDeviceContextWireTests {
         }
         // t:slim X2 API version (2.5) with no name detection ⇒ heuristic says NOT Mobi.
         do {
-            let applier = PumpResponseApplier()
+            let applier = PumpResponseApplier(resolveBadOpcodeForError: { requestCodeId, _, _ in UInt8(truncatingIfNeeded: requestCodeId) })
             var captured: Bool?
             var apiVer: ApiVersion?
             var trusted: Bool?
@@ -71,7 +71,7 @@ struct PumpDeviceContextWireTests {
         // Name says Mobi, but the op33 frame's heuristic says t:slim (2.5) — the name must win.
         // The apiVersion forwarded is the frame's own (2.5), independent of the name-derived model.
         do {
-            let applier = PumpResponseApplier()
+            let applier = PumpResponseApplier(resolveBadOpcodeForError: { requestCodeId, _, _ in UInt8(truncatingIfNeeded: requestCodeId) })
             var captured: Bool?
             var apiVer: ApiVersion?
             var trusted: Bool?
@@ -92,7 +92,7 @@ struct PumpDeviceContextWireTests {
         }
         // Name says t:slim, but the op33 frame's heuristic says Mobi (3.5) — the name must win.
         do {
-            let applier = PumpResponseApplier()
+            let applier = PumpResponseApplier(resolveBadOpcodeForError: { requestCodeId, _, _ in UInt8(truncatingIfNeeded: requestCodeId) })
             var captured: Bool?
             var apiVer: ApiVersion?
             var trusted: Bool?

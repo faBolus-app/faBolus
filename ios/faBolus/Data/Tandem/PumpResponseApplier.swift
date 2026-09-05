@@ -40,16 +40,17 @@ final class PumpResponseApplier {
     /// inbound op77 `ErrorResponse` to the true failing opcode — the cargo's `requestCodeId` when the
     /// pump names it, else the outstanding read correlated by the echoed txId (frame[1]) — records it
     /// in the never-resend `badOpcodes` set, and returns it for the diagnostic log (0 when
-    /// unresolvable, so opcode 0 is never suppressed). Default trusts the cargo, used only before
-    /// wiring.
+    /// unresolvable, so opcode 0 is never suppressed). Supplied at construction — there is no
+    /// default, so a caller cannot build this type without a real resolver.
     ///
     /// `errorCodeId` is passed through because it decides whether the exclusion may be made DURABLE:
     /// only `BAD_OPCODE(6)` is a statement about opcode support, so a transient error must not
     /// permanently delete a working read (debug session `tslim-reservoir-battery-zero` — five ordinary
     /// reads were lost that way on a brand-new t:slim X2). See `PumpErrorClass`.
-    var resolveBadOpcodeForError: (_ requestCodeId: Int, _ errorCodeId: Int, _ txId: UInt8) -> UInt8 = {
-        requestCodeId, _, _ in
-        UInt8(truncatingIfNeeded: requestCodeId)
+    let resolveBadOpcodeForError: (_ requestCodeId: Int, _ errorCodeId: Int, _ txId: UInt8) -> UInt8
+
+    init(resolveBadOpcodeForError: @escaping (_ requestCodeId: Int, _ errorCodeId: Int, _ txId: UInt8) -> UInt8) {
+        self.resolveBadOpcodeForError = resolveBadOpcodeForError
     }
     /// Bound to `TandemBackend.beginGapSync(pumpFirst:pumpLast:)`.
     var beginGapSync: (UInt32, UInt32) -> Void = { _, _ in }
