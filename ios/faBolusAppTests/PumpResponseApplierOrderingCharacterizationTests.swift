@@ -192,19 +192,20 @@ struct PumpResponseApplierOrderingCharacterizationTests {
         apply(egvValidReading(), to: applier)
         apply(alertStatus(), to: applier)
 
-        let expected =
+        let expected: [String] = [
             // op-33
-            ["withSnapshot", "applyDeviceContext", "noteBootstrapVersionIdentified"]
+            "withSnapshot", "applyDeviceContext", "noteBootstrapVersionIdentified",
             // op-70
-            + ["setPumpTimeAnchor", "setHistoryStatusRequestedThisConnection(true)", "send(HistoryLogStatusRequest)"]
+            "setPumpTimeAnchor", "setHistoryStatusRequestedThisConnection(true)", "send(HistoryLogStatusRequest)",
             // op-115
-            + ["setCalcSnapshot", "withSnapshot", "noteCalcInputArrived(false)"]
+            "setCalcSnapshot", "withSnapshot", "noteCalcInputArrived(false)",
             // op-109
-            + ["withSnapshot", "noteCalcInputArrived(true)", "withIOBHistory"]
+            "withSnapshot", "noteCalcInputArrived(true)", "withIOBHistory",
             // EGV (op-35)
-            + ["withSnapshot", "cgmReadingDate", "withSnapshot", "withGlucoseHistory", "schedulePredictiveBurst", "completeGlucoseRead"]
+            "withSnapshot", "cgmReadingDate", "withSnapshot", "withGlucoseHistory", "schedulePredictiveBurst", "completeGlucoseRead",
             // alert (op-69)
-            + ["setAlertList", "noteAlert", "mergeNotifications"]
+            "setAlertList", "noteAlert", "mergeNotifications",
+        ]
 
         // Anti-vacuity: the recorder must have observed the full cross-case sequence, not silently
         // nothing (an unbound seam would drop steps and shorten the array).
