@@ -28,9 +28,10 @@ struct PumpValuePresentationTests {
     }
 
     @Test func thePlaceholderIsTheSameEmDashEveryOtherPumpSurfaceUses() {
-        // One literal, one place. If this ever fails, two surfaces have started disagreeing about what
-        // "the pump never told us" looks like.
-        #expect(PumpValuePresentation.unknownText == ReservoirPresentation.unknownText)
+        // One literal, one place. The reservoir funnel reads the placeholder from the general owner; if
+        // this ever fails, two surfaces have started disagreeing about what "the pump never told us"
+        // looks like.
+        #expect(ReservoirPresentation.unknownText == PumpValuePresentation.unknownText)
         #expect(PumpValuePresentation.unknownText == "—")
     }
 
