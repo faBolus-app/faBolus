@@ -293,10 +293,6 @@ public final class AppModel {
             phoneReadOnly: AppSettings.shared.phoneReadOnly,
             remotesReadOnly: AppSettings.shared.remotesReadOnly,
             capabilities: capabilities,
-            // The active mode flows through the ONE context-builder so modes gate every surface
-            // identically, never a sixth mechanism. Per-feature toggles (`disabledFeatures`) are empty
-            // here until a mode store supplies them.
-            modeContext: AccessPolicy.ModeGateContext(activeMode: AppSettings.shared.appMode),
             // Per-surface remote bolus enable (default OFF on the phone) so the evaluator refuses a
             // Garmin deliver the user hasn't opted into — not a seventh mechanism.
             garminBolusEnabled: AppSettings.shared.garminBolusEnabled,
@@ -428,7 +424,6 @@ public final class AppModel {
             glucosePlotFloorSmall: AppSettings.shared.glucosePlotFloorSmall,
             glucosePlotCeilingSmall: AppSettings.shared.glucosePlotCeilingSmall,
             garminBolusEnabled: AppSettings.shared.garminBolusEnabled,
-            activeModeRawValue: AppSettings.shared.appMode.rawValue,
             alertIntensityMode: AppSettings.shared.garminAlertIntensityMode,
             alertAudibleMinSeverity: AppSettings.shared.garminAlertAudibleMinSeverity,
             alertCriticalOverridesDnd: AppSettings.shared.garminAlertCriticalOverridesDnd,

@@ -250,18 +250,6 @@ struct AppSettingsStoredMigrationTests {
         #expect(settings2.autoSyncPumpTime == false)  // …but the NEXT init still force-sets false
     }
 
-    @Test func appModeIsForceSetAdvancedRegardlessOfAnyStoredValue() {
-        let d = freshSuite("appMode")
-        d.set("simple", forKey: "appMode")
-        let settings = AppSettings(defaults: d)
-        expectStoredBacking(settings, label: "__appMode", valueType: AppMode.self)
-        #expect(settings.appMode == .advanced)
-        settings.appMode = .simple
-        #expect(d.string(forKey: "appMode") == "simple")
-        let settings2 = AppSettings(defaults: d)
-        #expect(settings2.appMode == .advanced)
-    }
-
     // MARK: - Initialization behavior: a side effect must NOT fire during `AppSettings.init()`
 
     /// Structural proof of the "does not fire during init" guarantee: right after construction, every

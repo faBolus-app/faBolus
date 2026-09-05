@@ -85,11 +85,25 @@ Force `glucoseDisplayUnit = .mgdl` and hide the unit picker. Dose math is alread
 unit-internal, so the evaluator/core is **byte-identical**; this gate is purely a display-surface
 lock. Named suite: `BolusMathParityTests` (proves the dose path never read the display unit).
 
-### 5. mode-lock-advanced  (Phase 8)
-Pin `appMode = .advanced` (settings-forced-value) and hide the mode picker in `ModeViews.swift`. The
-`AccessPolicy` / `GatedPumpWrite` / `BolusGate` evaluators stay **byte-identical**: locking the mode
-changes which surfaces are shown, never how a command is authorized. Named suites: `BolusMathParityTests`,
-the relevant `*ScopeGuard` suites, `KeyboardShortcutDoseGuardTests`.
+### 5. mode-lock-advanced  (Phase 8; **RETIRED**)
+Retired: the `AccessPolicy` Mode Gate, the `appMode = .advanced` pin, and the whole `AppMode` /
+`SettingTier` vocabulary that existed only to feed it are deleted. The mode axis was structurally
+inert on three independently verified legs before removal: (1) the only production
+`ModeGateContext` construction site omitted `disabledFeatures`, so the per-feature toggle set was
+always empty; (2) `appMode` was pinned to the ceiling (`.advanced`) on every launch, with a single
+documented writer that agreed; (3) at the ceiling, every action's minimum-mode requirement was at
+most `.advanced`, so the gate's own comparison could never deny. Nothing became reachable that was
+not already reachable: the gate's two `evaluate` branches, `GatedPumpWrite.requiredMode`, the
+`AccessPolicy.ModeGateContext` struct and `Context.modeContext`, the `DenialReason` cases the gate
+alone produced, `SettingsTiers.swift` (both enums, whole), the `SettingsCatalog` mode/tier axis (the
+35 descriptors' per-row minimum-mode filter, which had zero production readers), and the
+`activeMode` phone→remote wire field (an emit-only field no remote consumed) are all gone together,
+in one commit, so no reader is ever left describing a system that no longer exists. The
+`AccessPolicy` / `GatedPumpWrite` / `BolusGate` evaluators' surviving gates (child mode, phone/remote
+read-only, per-surface remote-bolus enable, the Garmin passcode gate, and pump capability) are
+**byte-identical**: removing the mode axis changed which surfaces were ever gated by it, never how
+any other check is evaluated. Preserved on the `dev/mode-selector` branch. Named suites:
+`BolusMathParityTests`, the relevant `*ScopeGuard` suites, `KeyboardShortcutDoseGuardTests`.
 
 ### 6. stacking-guard-hide  (Phase 8; **RETIRED**)
 Retired: the `stackingGuardFrictionEnabled` pin and the whole escalated-friction UI it gated

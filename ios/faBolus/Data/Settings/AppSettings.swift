@@ -255,16 +255,6 @@ public final class AppSettings {
     }
 
 
-    /// The active experience **mode**, the axis `AccessPolicy` gates on. Deliberately not a
-    /// `SettingsCatalog` row and **never** backed up or iCloud-synced (a synced mode could silently
-    /// unlock features on another device). `init` force-sets `.advanced`.
-    // Force-set-`.advanced` pin lives in `init` as an explicit assignment through this setter.
-    private var _appMode = Stored<AppMode>(wrappedValue: .advanced, "appMode")
-    public var appMode: AppMode {
-        get { _appMode.wrappedValue }
-        set { _appMode.wrappedValue = newValue }
-    }
-
     /// **Read-only mode (this phone).** Turns the app into a safe viewer: bolusing and all pump control
     /// are disabled and their UI (Bolus tab, Pump Control) is hidden. **Default OFF.** Clearing pump
     /// alerts is also disabled by default while read-only, unless `readOnlyAllowAlertClear` is on.
@@ -760,7 +750,6 @@ public final class AppSettings {
         _glucosePlotFloor.store = defaults
         _showStats.store = defaults
         _glucoseStaleMinutes.store = defaults
-        _appMode.store = defaults
         _phoneReadOnly.store = defaults
         _readOnlyAllowAlertClear.store = defaults
         _remotesReadOnly.store = defaults
@@ -795,9 +784,6 @@ public final class AppSettings {
         glucosePlotCeiling = plotBounds.ceiling
         showStats = (d.object(forKey: "showStats") as? Bool) ?? false
         glucoseStaleMinutes = (d.object(forKey: "glucoseStaleMinutes") as? Int) ?? 6
-        // Force-set `.advanced` — a restored/legacy `.simple`/`.standard` must not silently downgrade
-        // the mode before `ModeStore` runs.
-        appMode = .advanced
         phoneReadOnly = (d.object(forKey: "phoneReadOnly") as? Bool) ?? false
         readOnlyAllowAlertClear = (d.object(forKey: "readOnlyAllowAlertClear") as? Bool) ?? false
         remotesReadOnly = (d.object(forKey: "remotesReadOnly") as? Bool) ?? false

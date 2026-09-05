@@ -176,9 +176,6 @@ enum RemoteStatusComposer {
         // still refuses a deliver from a disabled surface.
         cmd.garminBolusEnabled = settings.garminBolusEnabled
         cmd.bolusPasscodeRequired = inputs.bolusPasscodeRequired
-        // Phone's active mode so a remote hides (rather than shows-then-fails) a denied
-        // affordance. AccessPolicy still enforces on every surface; this only drives UI.
-        cmd.activeMode = settings.activeModeRawValue
         // Controller identity + runtime on/off so a remote can render the auto-correction
         // disclosure locally. Display-only, never a dose input. Unconditional; "absent" is
         // a legacy host (renders nothing controller-specific).
@@ -286,7 +283,6 @@ struct RemoteStatusSettings {
     let glucosePlotFloorSmall: Int?
     let glucosePlotCeilingSmall: Int?
     let garminBolusEnabled: Bool
-    let activeModeRawValue: String  // AppSettings.appMode.rawValue
     // Phone-owned Garmin alert intensity + complication slots, watch-synced.
     let alertIntensityMode: String
     let alertAudibleMinSeverity: String

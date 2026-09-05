@@ -33,11 +33,8 @@ final class RemoteCommandTests: XCTestCase {
             alerts: [.init(id: 2, kind: 3, title: "High glucose")],
             bolusMode: "carbs", bolusIncrement: 0.05, carbIncrement: 5,
             screenOrder: ["glance", "alerts"], defaultScreen: "glance")
-        var withMode = cmd
-        withMode.activeMode = "simple"  // remotes need the phone's active mode on the wire
-        let decoded = try RemoteCommand.decode(try withMode.encoded())
-        XCTAssertEqual(decoded, withMode)
-        XCTAssertEqual(decoded.activeMode, "simple")
+        let decoded = try RemoteCommand.decode(try cmd.encoded())
+        XCTAssertEqual(decoded, cmd)
         XCTAssertEqual(decoded.history, [110, 120, 130])
         XCTAssertEqual(decoded.alerts?.first?.kind, 3)
         XCTAssertEqual(decoded.trend, "up45")

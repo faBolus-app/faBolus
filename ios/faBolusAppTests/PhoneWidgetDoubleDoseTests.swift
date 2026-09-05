@@ -37,19 +37,16 @@ struct PhoneWidgetDoubleDoseTests {
         let s = AppSettings.shared
         let ro = s.phoneReadOnly, child = s.childModeEnabled, allowed = s.childAllowed
         let rro = s.remotesReadOnly, clr = s.readOnlyAllowAlertClear
-        let mode = s.appMode
         s.phoneReadOnly = false
         s.childModeEnabled = false
         s.remotesReadOnly = false
         s.readOnlyAllowAlertClear = false
-        s.appMode = .advanced
         defer {
             s.phoneReadOnly = ro
             s.childModeEnabled = child
             s.childAllowed = allowed
             s.remotesReadOnly = rro
             s.readOnlyAllowAlertClear = clr
-            s.appMode = mode
         }
         try await body()
     }

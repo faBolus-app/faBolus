@@ -4,7 +4,7 @@ import faBolusCore
 @testable import faBolus
 
 /// Pins that the status-push JSON no longer emits retired Apple-Watch-only and eating-advisory fields,
-/// while garminBolusEnabled, activeMode, and watchChartRanges stay present. A broad deletion would drop live Garmin contract keys.
+/// while garminBolusEnabled and watchChartRanges stay present. A broad deletion would drop live Garmin contract keys.
 @MainActor
 @Suite(.serialized) struct StatusPushWireEncodeTests {
 
@@ -50,7 +50,7 @@ import faBolusCore
             "the real status push must no longer emit eatingProb — eatingProb is only ever set on an eatingEvent, not statusRead, but this pins its absence explicitly alongside eatingSensingOn"
         )
 
-        for keepKey in ["garminBolusEnabled", "activeMode", "watchChartRanges"] {
+        for keepKey in ["garminBolusEnabled", "watchChartRanges"] {
             #expect(
                 json.contains(keepKey),
                 "KEEP sibling \(keepKey) must remain present on the status push — the deletion must be surgical, not broad"

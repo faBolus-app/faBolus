@@ -19,7 +19,6 @@ struct SettingRevertTests {
         let s = AppSettings.shared
         s.phoneReadOnly = false
         s.childModeEnabled = false
-        s.appMode = .advanced
         let backend = MockBackend()  // Mobi / .mobiAdvanced
         let ledgerURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(
             "b1c-l-\(UUID().uuidString).json")

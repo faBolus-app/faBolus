@@ -215,16 +215,14 @@ struct DosingInputFreshnessTests {
     /// Restores after. Mirrors `AppModelBehaviorTests.withCleanSettings` (which is private to that suite).
     private func withCleanGates(_ body: () async -> Void) async {
         let s = AppSettings.shared
-        let ro = s.phoneReadOnly, child = s.childModeEnabled, rro = s.remotesReadOnly, mode = s.appMode
+        let ro = s.phoneReadOnly, child = s.childModeEnabled, rro = s.remotesReadOnly
         s.phoneReadOnly = false
         s.childModeEnabled = false
         s.remotesReadOnly = false
-        s.appMode = .advanced
         defer {
             s.phoneReadOnly = ro
             s.childModeEnabled = child
             s.remotesReadOnly = rro
-            s.appMode = mode
         }
         await body()
     }

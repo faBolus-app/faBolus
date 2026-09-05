@@ -3,8 +3,7 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// The one-time "Connect your pump" flag on `ModeStore`, mirroring
-/// `ModeStoreTests.onboardingIsShownExactlyOnce` exactly: defaults false, flips + persists on
+/// The one-time "Connect your pump" flag on `ModeStore`: defaults false, flips + persists on
 /// `completePumpOnboarding()`, and survives relaunch (a fresh `ModeStore` reading the same
 /// `UserDefaults` suite).
 @Suite(.serialized) @MainActor
@@ -34,8 +33,10 @@ struct PumpOnboardingFlowTests {
     @Test func pumpOnboardingFlagIsIndependentOfModeOnboardingFlag() {
         let d = freshDefaults()
         let s = store(d)
-        s.completeOnboarding()  // mode step done…
-        #expect(!s.hasCompletedPumpOnboarding)  // …pump step is a SEPARATE one-time flag
+        // `hasCompletedOnboarding` is force-true from init (the mode-onboarding overlay is gone);
+        // the pump-connect flag is the separate one-time flag this test actually pins.
+        #expect(s.hasCompletedOnboarding)
+        #expect(!s.hasCompletedPumpOnboarding)
         s.completePumpOnboarding()
         #expect(s.hasCompletedOnboarding && s.hasCompletedPumpOnboarding)
     }

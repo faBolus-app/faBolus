@@ -49,7 +49,6 @@ VALID = [
         "canBolus": True, "cartridgeReady": True, "batteryCharging": False,
         "supportsRemoteAlertDismiss": True, "supportsDismissAck": True,
         "rawAlerts": [{"id": 1, "kind": 1, "title": "Low insulin"}], "supportsRawAlertSnapshot": True,
-        "activeMode": "advanced",
         "garminBolusEnabled": False, "bolusPasscodeRequired": False,
         "controllerVariant": "controlIQPro", "controlIQEnabled": True,
         "ciqZone": "maintains", "ciqSuspendedForLow": True, "ciqSuspendStartEpochSec": 1699998000,

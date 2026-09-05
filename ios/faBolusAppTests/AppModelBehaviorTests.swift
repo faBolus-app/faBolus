@@ -47,21 +47,16 @@ struct AppModelBehaviorTests {
         let s = AppSettings.shared
         let ro = s.phoneReadOnly, child = s.childModeEnabled, allowed = s.childAllowed
         let rro = s.remotesReadOnly, clr = s.readOnlyAllowAlertClear
-        let mode = s.appMode
         s.phoneReadOnly = false
         s.childModeEnabled = false
         s.remotesReadOnly = false
         s.readOnlyAllowAlertClear = false
-        // Baseline Advanced so the mode gate is a no-op for every existing test; a mode test sets
-        // it explicitly. Restored below.
-        s.appMode = .advanced
         defer {
             s.phoneReadOnly = ro
             s.childModeEnabled = child
             s.childAllowed = allowed
             s.remotesReadOnly = rro
             s.readOnlyAllowAlertClear = clr
-            s.appMode = mode
         }
         try await body()
     }
@@ -280,37 +275,6 @@ struct AppModelBehaviorTests {
 
             // AccessPolicy still fail-closes child mode in faBolusCore; the app-layer setter is frozen
             // false, so this suite does not flip it.
-        }
-    }
-
-    /// P14 S2: the mode axis flows through the SAME `AppModel.accessDecision` context-builder as every
-    /// other gate — the load-bearing wiring (C13's "inert-change trap"). If the mode field were added to
-    /// the evaluator but `accessDecision` didn't populate `modeContext`, the gate would be dead and this
-    /// fails. Simple mode hides an advanced write on EVERY surface (incl. the remote list) while the core
-    /// bolus stays available and safety STOPs survive; Advanced restores it.
-    @Test func modeGateRoutesThroughAppModelWiring() async {
-        try? await withCleanSettings {
-            let (model, _, _) = await makeModel(connected: true)
-            typealias S = AccessPolicy.Surface
-            AppSettings.shared.appMode = .simple
-            // An advanced write is denied on every surface, through the real context-builder.
-            for s in S.allCases {
-                #expect(
-                    !model.accessDecision(.syncTimeToNow, from: s, peerId: "mac").allowed,
-                    "syncTimeToNow must be denied in Simple on \(s.rawValue)")
-            }
-            // On a local surface (everything else open) the reason is specifically the mode gate.
-            #expect(model.accessDecision(.syncTimeToNow, from: .phoneUI).reason == .modeDisallowed(required: .advanced))
-            // Core bolus stays available on the phone; safety STOPs survive on every surface.
-            #expect(model.accessDecision(.deliverBolus, from: .phoneUI).allowed)
-            for s in S.allCases {
-                #expect(
-                    model.accessDecision(.cancelBolus, from: s, peerId: "mac").allowed,
-                    "cancel (safety STOP) must survive Simple mode on \(s.rawValue)")
-            }
-            // Advanced mode restores the advanced write (proves the wiring reads the live value, not a const).
-            AppSettings.shared.appMode = .advanced
-            #expect(model.accessDecision(.syncTimeToNow, from: .phoneUI).allowed)
         }
     }
 

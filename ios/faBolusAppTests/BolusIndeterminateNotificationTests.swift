@@ -31,17 +31,14 @@ struct BolusIndeterminateNotificationTests {
         return (model, backend, rec)
     }
 
-    /// `deliverExtendedBolus` runs through the app-mode gate, so `appMode` must be baselined to `.advanced`.
     private func withCleanSettings(_ body: () async throws -> Void) async rethrows {
         let s = AppSettings.shared
-        let ro = s.phoneReadOnly, child = s.childModeEnabled, mode = s.appMode
+        let ro = s.phoneReadOnly, child = s.childModeEnabled
         s.phoneReadOnly = false
         s.childModeEnabled = false
-        s.appMode = .advanced
         defer {
             s.phoneReadOnly = ro
             s.childModeEnabled = child
-            s.appMode = mode
         }
         try await body()
     }

@@ -97,32 +97,6 @@ struct SettingsCatalogTests {
         }
     }
 
-    // MARK: Mode axis
-
-    @Test func everyModeSetIsNonEmptyAndIncludesAdvanced() {
-        for d in SettingsCatalog.descriptors {
-            #expect(!d.modes.isEmpty)
-            #expect(d.isVisible(in: .advanced), "\(d.key) is not visible in Advanced")
-        }
-    }
-
-    @Test func simpleModeIsANonEmptyProperSubsetOfAdvanced() {
-        let simple = SettingsCatalog.descriptors.filter { $0.isVisible(in: .simple) }.map(\.key)
-        let advanced = SettingsCatalog.descriptors.filter { $0.isVisible(in: .advanced) }.map(\.key)
-        #expect(!simple.isEmpty)  // Simple is a real, usable subset
-        #expect(simple.count < advanced.count)  // …and strictly fewer than Advanced sees
-        #expect(Set(simple).isSubset(of: Set(advanced)))
-    }
-
-    // MARK: Tier axis (S1 state)
-
-    @Test func allCurrentKeysAreUserTier() {
-        // Every one of the 45 keys is an app/display/remote preference the user owns. The `.clinician` /
-        // `.fixed` tiers exist in the vocabulary but are reserved for the pump-therapy descriptors S6–S8
-        // add as *separate* rows; if one is ever added here it must update this assertion deliberately.
-        #expect(SettingsCatalog.descriptors.allSatisfy { $0.tier == .user })
-    }
-
     // MARK: Catalog absences
 
     /// `glucoseDisplayUnit` is not a catalog row; init force-sets `.mgdl`.

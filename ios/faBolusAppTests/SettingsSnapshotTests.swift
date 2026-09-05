@@ -7,9 +7,8 @@ import SnapshotTesting
 /// tolerance absorbs live CGM-age text jitter, not a structural regression.
 @MainActor
 @Suite struct SettingsSnapshotTests {
-    /// A private UserDefaults suite for ModeStore's earned/onboarded keys — mirrors
-    /// `ModeStoreTests.freshDefaults()` so this snapshot fixture never shares mode state with
-    /// `ModeStore.shared` or any other test.
+    /// A private UserDefaults suite for ModeStore's onboarding keys so this snapshot fixture never
+    /// shares state with `ModeStore.shared` or any other test.
     private func freshModeStore() -> ModeStore {
         let name = "settings-snapshot-modestore-\(UUID().uuidString)"
         return ModeStore(defaults: UserDefaults(suiteName: name)!, settings: .shared)

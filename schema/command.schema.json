@@ -328,11 +328,6 @@
       "type": "boolean",
       "description": "statusRead reply (CX-G-08, 14-10) — DYNAMIC pump-tied capability, the exact NEGATION of supportsDismissAck: true only when the phone build supports the raw-snapshot backstop AND the connected pump does NOT honor a remote dismiss (supportsRemoteAlertDismiss == false, e.g. t:slim X2). Computed fresh every statusRead, never a constant. The two capabilities can never both be true for the same connected pump. Emitted unconditionally (mirrors supportsDismissAck) so a Mobi reply carries false; absent ⇒ a legacy host that predates this plan."
     },
-    "activeMode": {
-      "type": "string",
-      "enum": ["simple", "standard", "advanced"],
-      "description": "statusRead reply — the phone's active app MODE (P14). A remote uses it to HIDE an affordance the phone's mode would deny (e.g. an extended/combo bolus needs 'advanced') instead of showing-then-failing. Absent ⇒ a legacy host that predates modes (and never mode-gates), so the remote treats it as the most-permissive 'advanced' and hides nothing. The host stays the enforcement point on every actual write via AccessPolicy — this only shapes the remote UI."
-    },
     "garminBolusEnabled": {
       "type": "boolean",
       "description": "statusRead reply (P15 §2.3) — whether bolusing from the GARMIN watch is enabled on the phone. Default OFF; a Garmin remote hides its bolus affordance unless this is true, and a cold launch with no push yet stays disabled (fail-closed). The host also refuses a Garmin deliver when false (AccessPolicy). Absent ⇒ a legacy host predating §2.3; the remote keeps its safe default (disabled)."

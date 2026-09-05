@@ -76,22 +76,4 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
         case .ledgeredDelivery, .childOnly: return true
         }
     }
-
-    /// The **mode axis**: the minimum `AppMode` at which this action is available. The evaluator's mode
-    /// gate denies when the active mode ranks below this (`.childOnly` STOPs excepted). The default is
-    /// `.advanced` — the strictest, fail-safe choice, so a newly-added case is never accidentally
-    /// reachable in a lower mode than intended. Only the genuinely-Simple action is classified explicitly:
-    ///   - `.simple`   — bolus is the core function; cancel/dismiss are STOPs (their gate is carved out, so
-    ///                   this value is only a fail-safe should the carve-out ever change).
-    ///   - `.advanced` — everything else: time sync, extended (combo) bolus. No surviving case currently
-    ///                   maps to `.standard` — the mode axis and its tiers survive for the next case that
-    ///                   needs one.
-    public var requiredMode: AppMode {
-        switch self {
-        case .deliverBolus, .cancelBolus, .dismissNotification:
-            return .simple
-        default:
-            return .advanced
-        }
-    }
 }

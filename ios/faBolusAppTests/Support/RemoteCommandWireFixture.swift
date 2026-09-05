@@ -95,11 +95,6 @@ final class RemoteCommandWireFixture {
     /// Drives the alert action label ("Clear" vs "Snooze"). Safe default false ⇒ "Snooze" (honest — a
     /// t:slim dismiss only snoozes locally); set by the first statusRead that carries any alert anyway.
     var canDismissAlertOnPump: Bool = false
-    /// The phone's active app mode, so this remote can HIDE an affordance the phone's mode would
-    /// deny (e.g. an extended/combo bolus needs Advanced) instead of showing-then-failing. Default
-    /// `.advanced` (most-permissive): an absent field means a LEGACY host that never mode-gates, so the
-    /// remote must not over-hide. The host remains the enforcement point on every actual write.
-    var activeMode: AppMode = .advanced
     /// Whether the phone has enabled bolusing from the Garmin watch. **Default false ⇒ fail-closed**: a
     /// cold launch / glance with no push yet keeps bolus hidden until a push arms it. The host also
     /// refuses a deliver from a disabled surface (AccessPolicy). (The Apple-Watch sibling
@@ -445,8 +440,6 @@ final class RemoteCommandWireFixture {
             if let b = cmd.basalRate { basalRate = b }
             if let ro = cmd.remotesReadOnly { readOnly = ro }
             if let d = cmd.supportsRemoteAlertDismiss { canDismissAlertOnPump = d }  // capability channel
-            // Adopt the phone's active mode (absent ⇒ legacy host ⇒ stays the permissive default).
-            if let m = cmd.activeMode { activeMode = AppMode(rawValue: m) ?? .advanced }
             // Adopt the per-surface bolus enables + passcode requirement. Absent ⇒ legacy host ⇒
             // stays the safe default (false = bolus hidden), so an old host can never leave a remote armed.
             if let g = cmd.garminBolusEnabled { garminBolusEnabled = g }

@@ -2,7 +2,7 @@ import Testing
 import Foundation
 @testable import faBolusCore
 
-/// Pins that `command.schema.json` `kind.enum` and the shared `activeMode`/`watchChartRanges` fields stay
+/// Pins that `command.schema.json` `kind.enum` and the shared `watchChartRanges` field stay
 /// aligned with `RemoteCommand`. BLE-only kinds and additive Swift-only fields are deliberately outside this contract.
 struct RemoteCommandSchemaConformanceTests {
 
@@ -31,7 +31,7 @@ struct RemoteCommandSchemaConformanceTests {
 
     /// LIVE Swift fields that must stay present on BOTH sides — a schema-only or Swift-only deletion
     /// would create drift invisible to a kinds-only test.
-    private static let atRiskSharedFields = ["activeMode", "watchChartRanges"]
+    private static let atRiskSharedFields = ["watchChartRanges"]
 
     // MARK: - Path resolution can't pass vacuously
 

@@ -1,7 +1,7 @@
 import Foundation
 
 /// Single access-policy evaluator: whether a `GatedPumpWrite` is permitted from a `Surface`.
-/// Folds child mode, phone/remote read-only, pump capabilities, and modes into one ordered check.
+/// Folds child mode, phone/remote read-only, and pump capabilities into one ordered check.
 /// Every funnel (`runControl`, `runLedgeredDelivery`, remote hosts) must go through this so a
 /// surface cannot be gated on one layer and open on another. Pure over `AccessContext` —
 /// faBolusCore must not read app globals.
@@ -26,28 +26,6 @@ public enum AccessPolicy {
         public var isRemote: Bool { !isLocal }
     }
 
-    /// The mode axis, folded in as one more input to the one evaluator (NOT a sixth mechanism).
-    /// Carries the active experience mode and the per-feature toggles the user set within it.
-    /// `evaluate` gains exactly one ordered `.modeDisallowed` / `.featureDisabledInMode` check at the
-    /// reserved slot; no surface or funnel signature changes.
-    ///
-    /// The default is `.advanced` with no toggles — a **no-op**: Advanced sees every action, so an app
-    /// that has not yet wired a real mode source (or a caller that omits `modeContext`) behaves exactly as
-    /// before. A real mode store must ship together with the unlock path, so `main` never has a
-    /// Simple-with-no-way-out window.
-    public struct ModeGateContext: Sendable, Equatable {
-        /// The active experience mode. Higher modes see strictly more (see `AppMode`'s ordering).
-        public var activeMode: AppMode
-        /// Features the user has explicitly turned off inside their current mode — finer-grained control
-        /// than the mode alone. Empty ⇒ no per-feature restriction. Never populated by a safety STOP
-        /// (see `evaluate`'s carve-out).
-        public var disabledFeatures: Set<GatedPumpWrite>
-        public init(activeMode: AppMode = .advanced, disabledFeatures: Set<GatedPumpWrite> = []) {
-            self.activeMode = activeMode
-            self.disabledFeatures = disabledFeatures
-        }
-    }
-
     /// Everything the evaluator needs, snapshotted by the app from `AppSettings` / the backend. Pure
     /// data — no globals, no side effects.
     public struct AccessContext: Sendable {
@@ -60,8 +38,6 @@ public enum AccessPolicy {
         // Gate 5 — pump capability. Capabilities are pump-derived (from the pump's own feature
         // bitmask) and are the sole capability signal — not a raw `isMobi` check.
         public var capabilities: PumpCapabilities
-        // Mode seam
-        public var modeContext: ModeGateContext
         // Per-surface remote bolus authorization (default true so no OTHER surface/action is
         // affected; the host passes the real default-OFF settings). Only consulted for `.deliverBolus`
         // from `.garmin`.
@@ -79,7 +55,6 @@ public enum AccessPolicy {
             childModeEnabled: Bool, childAllowed: Set<ChildFeature>,
             phoneReadOnly: Bool, remotesReadOnly: Bool,
             capabilities: PumpCapabilities,
-            modeContext: ModeGateContext = .init(),
             // Fail-closed default: a caller that forgets to thread the per-surface remote
             // bolus enable must NOT silently arm Garmin bolusing. The one production call site
             // (AppModel) always passes the real persisted value; this default only guards a future
@@ -94,7 +69,6 @@ public enum AccessPolicy {
             self.phoneReadOnly = phoneReadOnly
             self.remotesReadOnly = remotesReadOnly
             self.capabilities = capabilities
-            self.modeContext = modeContext
             self.garminBolusEnabled = garminBolusEnabled
             self.bolusPasscodeRequired = bolusPasscodeRequired
             self.bolusPasscodeSatisfied = bolusPasscodeSatisfied
@@ -107,8 +81,6 @@ public enum AccessPolicy {
         case phoneReadOnly
         case remotesReadOnly
         case capabilityUnavailable
-        case modeDisallowed(required: AppMode)  // feature not in the active mode
-        case featureDisabledInMode  // user turned this feature off within the mode
         case remoteBolusDisabled  // bolusing from this remote is turned off
         case remoteBolusPasscodeRequired  // Garmin bolus needs the correct passcode
 
@@ -118,8 +90,6 @@ public enum AccessPolicy {
             case .phoneReadOnly: return "This action is disabled — the app is in read-only mode."
             case .remotesReadOnly: return "Remote control is turned off — remotes are read-only."
             case .capabilityUnavailable: return "This pump doesn't support that action."
-            case .modeDisallowed(let m): return "Not available in your current mode — needs \(m.title) mode."
-            case .featureDisabledInMode: return "This feature is turned off in your settings."
             case .remoteBolusDisabled:
                 return "Bolusing from this device is turned off — enable it in faBolus on the phone."
             case .remoteBolusPasscodeRequired:
@@ -193,20 +163,6 @@ public enum AccessPolicy {
         // so Gate 5 stays a no-op there.
         if !action.hasRequiredCapability(in: context.capabilities) {
             return .deny(.capabilityUnavailable)
-        }
-
-        // Mode gate: one ordered input, evaluated last so an earlier gate's precedence and message are
-        // unchanged. CARVE-OUT: a mode NEVER restricts a safety STOP. `.childOnly` (cancel bolus /
-        // dismiss alert) is skipped here exactly as Gate 3 skips it — otherwise Simple mode would
-        // silently disable a cancel. The default context is `.advanced` with no toggles, so this is a
-        // no-op until a real active mode is supplied.
-        if action.gate != .childOnly {
-            if context.modeContext.activeMode < action.requiredMode {
-                return .deny(.modeDisallowed(required: action.requiredMode))
-            }
-            if context.modeContext.disabledFeatures.contains(action) {
-                return .deny(.featureDisabledInMode)
-            }
         }
 
         return .allow

@@ -291,17 +291,6 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// `false` and "absent" can only mean a legacy host that predates this field.
     public var supportsRawAlertSnapshot: Bool?
 
-    /// The phone's active app MODE (`AppMode.rawValue`: simple / standard / advanced), so a
-    /// remote can HIDE an affordance the phone's mode would deny instead of showing-then-failing (owner:
-    /// remotes must be mode-aware and must not bypass the phone's settings). The host stays the
-    /// enforcement point (`AccessPolicy` gates every surface on this same mode); this only drives what the
-    /// remote UI offers. Absent ⇒ a legacy host that predates the mode system (and therefore never
-    /// mode-gates), so the remote treats it as the most-permissive `.advanced` and hides nothing — the
-    /// inverse default of `supportsRemoteAlertDismiss`, because over-hiding on a legacy host would be a
-    /// functional regression. Emitted unconditionally on every statusRead. Additive; mirrored in the JSON
-    /// schema.
-    public var activeMode: String?
-
     /// Per-surface remote bolus authorization, pushed on every `statusRead` reply so a
     /// remote HIDES its bolus affordance when the phone hasn't enabled bolusing for that surface (instead of
     /// showing-then-failing). Both **default OFF** on the phone, so a remote that has never received a push

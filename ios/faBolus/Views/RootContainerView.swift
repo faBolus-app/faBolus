@@ -4,7 +4,7 @@ import faBolusCore
 /// App root: renders the host tabs (controlling this phone's pump).
 struct RootContainerView: View {
     @Bindable var model: AppModel
-    // Singleton; sole writer of `AppSettings.appMode` (forces `.advanced` once at init).
+    // Singleton; tracks first-run onboarding state.
     @State private var modeStore = ModeStore.shared
 
     var body: some View {

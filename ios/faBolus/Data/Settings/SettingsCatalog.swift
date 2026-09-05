@@ -11,10 +11,6 @@ struct SettingDescriptor: Identifiable {
     let key: String
     /// Which Settings screen category owns the control (reuses `SettingsCategory`).
     let category: SettingsCategory
-    /// Editability tier. Current keys are `.user` app preferences; `.clinician`/`.fixed` are reserved.
-    let tier: SettingTier
-    /// The modes in which this setting is shown. `.advanced` sees everything, so it is always a member.
-    let modes: Set<AppMode>
     /// True iff the key is considered part of the durable settings surface (vs. a cache/derived value).
     let backsUp: Bool
     /// True iff the key rides iCloud KV settings sync. Invariant: implies `backsUp`, and is forced
@@ -28,23 +24,18 @@ struct SettingDescriptor: Identifiable {
     var id: String { key }
 
     init(
-        _ key: String, _ category: SettingsCategory, tier: SettingTier = .user,
-        from minMode: AppMode, backsUp: Bool, syncsToICloud: Bool? = nil,
+        _ key: String, _ category: SettingsCategory,
+        backsUp: Bool, syncsToICloud: Bool? = nil,
         searchTitle: String? = nil, searchKeywords: String? = nil
     ) {
         self.key = key
         self.category = category
-        self.tier = tier
-        self.modes = Set(AppMode.allCases.filter { $0 >= minMode })
         self.backsUp = backsUp
         // Default: a backed-up key syncs. Command-adjacent flags pass `false` explicitly.
         self.syncsToICloud = (syncsToICloud ?? backsUp) && backsUp
         self.searchTitle = searchTitle
         self.searchKeywords = searchKeywords
     }
-
-    /// Whether this setting is shown in the given mode.
-    func isVisible(in mode: AppMode) -> Bool { modes.contains(mode) }
 }
 
 enum SettingsCatalog {
@@ -64,50 +55,50 @@ enum SettingsCatalog {
     /// `d`) and is intentionally absent.
     static let descriptors: [SettingDescriptor] = [
         // MARK: Bolus & entry
-        .init("defaultBolusMode", .bolus, from: .simple, backsUp: true),
-        .init("bolusIncrement", .bolus, from: .simple, backsUp: true),
-        .init("carbIncrement", .bolus, from: .simple, backsUp: true),
-        .init("showBolusReasoning", .bolus, from: .standard, backsUp: true),
+        .init("defaultBolusMode", .bolus, backsUp: true),
+        .init("bolusIncrement", .bolus, backsUp: true),
+        .init("carbIncrement", .bolus, backsUp: true),
+        .init("showBolusReasoning", .bolus, backsUp: true),
         // MARK: Watch / Garmin entry (remotes)
-        .init("watchDefaultBolusMode", .remotes, from: .standard, backsUp: true),
-        .init("watchBolusIncrement", .remotes, from: .standard, backsUp: true),
-        .init("watchCarbIncrement", .remotes, from: .standard, backsUp: true),
+        .init("watchDefaultBolusMode", .remotes, backsUp: true),
+        .init("watchBolusIncrement", .remotes, backsUp: true),
+        .init("watchCarbIncrement", .remotes, backsUp: true),
         // MARK: Display & chart
-        .init("showGlucoseAxis", .display, from: .standard, backsUp: true),
-        .init("showIOBAxis", .display, from: .standard, backsUp: true),
-        .init("showBolusBars", .display, from: .standard, backsUp: true),
+        .init("showGlucoseAxis", .display, backsUp: true),
+        .init("showIOBAxis", .display, backsUp: true),
+        .init("showBolusBars", .display, backsUp: true),
         // Glucose plot Y-axis presets — display preference, not command-adjacent; iCloud sync ON.
-        .init("glucosePlotFloor", .display, from: .standard, backsUp: true),
-        .init("glucosePlotCeiling", .display, from: .standard, backsUp: true),
-        .init("showStats", .display, from: .standard, backsUp: true),
-        .init("detailsOrder", .display, from: .standard, backsUp: true),
-        .init("pillsOrder", .display, from: .standard, backsUp: true),
+        .init("glucosePlotFloor", .display, backsUp: true),
+        .init("glucosePlotCeiling", .display, backsUp: true),
+        .init("showStats", .display, backsUp: true),
+        .init("detailsOrder", .display, backsUp: true),
+        .init("pillsOrder", .display, backsUp: true),
         // MARK: Watch/Garmin display (remotes)
-        .init("watchDetailsOrder", .remotes, from: .standard, backsUp: true),
-        .init("watchChartRanges", .remotes, from: .standard, backsUp: true),
+        .init("watchDetailsOrder", .remotes, backsUp: true),
+        .init("watchChartRanges", .remotes, backsUp: true),
         // Optional Watch/Garmin plot Y-axis override — display preference, default iCloud sync ON.
-        .init("glucosePlotFloorSmall", .remotes, from: .standard, backsUp: true),
-        .init("glucosePlotCeilingSmall", .remotes, from: .standard, backsUp: true),
+        .init("glucosePlotFloorSmall", .remotes, backsUp: true),
+        .init("glucosePlotCeilingSmall", .remotes, backsUp: true),
         // MARK: CGM & freshness
-        .init("glucoseStaleMinutes", .cgm, from: .standard, backsUp: true),
-        .init("glucoseHideDelayMinutes", .cgm, from: .standard, backsUp: true),
+        .init("glucoseStaleMinutes", .cgm, backsUp: true),
+        .init("glucoseHideDelayMinutes", .cgm, backsUp: true),
         // MARK: Pump & control
-        .init("phoneReadOnly", .pump, from: .standard, backsUp: true, syncsToICloud: false),
-        .init("readOnlyAllowAlertClear", .pump, from: .advanced, backsUp: true),
+        .init("phoneReadOnly", .pump, backsUp: true, syncsToICloud: false),
+        .init("readOnlyAllowAlertClear", .pump, backsUp: true),
         // MARK: Remotes & devices
-        .init("remotesReadOnly", .remotes, from: .standard, backsUp: true, syncsToICloud: false),
-        .init("garminBolusEnabled", .remotes, from: .standard, backsUp: true, syncsToICloud: false),
+        .init("remotesReadOnly", .remotes, backsUp: true, syncsToICloud: false),
+        .init("garminBolusEnabled", .remotes, backsUp: true, syncsToICloud: false),
         // Optional remote-only per-bolus ceiling. Command-adjacent (never iCloud-synced); backs up.
-        .init("remoteBolusCeiling", .remotes, from: .standard, backsUp: true, syncsToICloud: false),
-        .init("garminScreenOrder", .remotes, from: .standard, backsUp: true),
-        .init("garminDefaultScreen", .remotes, from: .standard, backsUp: true),
-        .init("garminComplicationDisplay", .remotes, from: .standard, backsUp: true),
-        .init("garminClockAnalog", .remotes, from: .standard, backsUp: true),
-        .init("garminTargetApp", .remotes, from: .advanced, backsUp: true),
-        .init("garminAlertIntensityMode", .remotes, from: .standard, backsUp: true),
-        .init("garminAlertAudibleMinSeverity", .remotes, from: .standard, backsUp: true),
-        .init("garminAlertCriticalOverridesDnd", .remotes, from: .standard, backsUp: true),
-        .init("garminComplicationSlots", .remotes, from: .standard, backsUp: true)
+        .init("remoteBolusCeiling", .remotes, backsUp: true, syncsToICloud: false),
+        .init("garminScreenOrder", .remotes, backsUp: true),
+        .init("garminDefaultScreen", .remotes, backsUp: true),
+        .init("garminComplicationDisplay", .remotes, backsUp: true),
+        .init("garminClockAnalog", .remotes, backsUp: true),
+        .init("garminTargetApp", .remotes, backsUp: true),
+        .init("garminAlertIntensityMode", .remotes, backsUp: true),
+        .init("garminAlertAudibleMinSeverity", .remotes, backsUp: true),
+        .init("garminAlertCriticalOverridesDnd", .remotes, backsUp: true),
+        .init("garminComplicationSlots", .remotes, backsUp: true)
 
         // MARK: — Not backed up (caches + advisory/experimental toggles). syncsToICloud false by rule.
         // `historyCoverage` is deliberately NOT registered — no UI surface (pure sync bookkeeping).

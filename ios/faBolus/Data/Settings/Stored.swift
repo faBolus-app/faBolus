@@ -125,7 +125,7 @@ extension Stored where Value == String {
     }
 }
 
-/// RawRepresentable-backed enums (`BolusMode`, `AppMode`) — stored as their `String` raw value, same
+/// RawRepresentable-backed enums (`BolusMode`) — stored as their `String` raw value, same
 /// encoding the pre-conversion `d.set(x.rawValue, forKey:)` / `BolusMode(rawValue: d.string(forKey:))`
 /// idiom used.
 extension Stored where Value: RawRepresentable, Value.RawValue == String {
