@@ -306,4 +306,60 @@ struct DeliverySurfaceOutcomeGuardTests {
             #expect(model.lastDeliveredWasCancelled == true)
         }
     }
+
+    // MARK: - Per-surface indeterminate dedupe token
+    //
+    // Pins the exact dedupe token each surface stamps on its `.bolusIndeterminate` heads-up, captured
+    // through the same `notificationSink` the failed-path tests use. A later extract that changes which
+    // token a surface reports fails here. The two local surfaces embed a fresh per-tap UUID in their
+    // requestId, so the stable prefix is pinned (and the standard vs extended prefixes stay distinct);
+    // the remote and widget surfaces carry a caller-supplied requestId, so the full token is pinned.
+
+    @Test func localStandardIndeterminateStampsTheLocalDedupeToken() async {
+        await withCleanSettings {
+            let (model, backend, _) = await makeModel(connected: true)
+            var posted: [NotificationBroker.Message] = []
+            model.notificationSink = { msg, _, _ in posted.append(msg) }
+            backend.forceIndeterminateNextDelivery = true
+            await model.deliverBolus(units: 1.0)
+            let key = posted.first { $0.category == .bolusIndeterminate }?.dedupeKey
+            #expect(key?.hasPrefix("indeterminate-local-local:") == true)
+        }
+    }
+
+    @Test func localExtendedIndeterminateStampsTheLocalExtDedupeToken() async {
+        await withCleanSettings {
+            let (model, backend, _) = await makeModel(connected: true)
+            var posted: [NotificationBroker.Message] = []
+            model.notificationSink = { msg, _, _ in posted.append(msg) }
+            backend.forceIndeterminateNextDelivery = true
+            await model.deliverExtendedBolus(totalUnits: 2.0, nowUnits: 1.0, durationMinutes: 30)
+            let key = posted.first { $0.category == .bolusIndeterminate }?.dedupeKey
+            #expect(key?.hasPrefix("indeterminate-local-local-ext:") == true)
+        }
+    }
+
+    @Test func remoteResolvedIndeterminateStampsThePeerScopedDedupeToken() async {
+        await withCleanSettings {
+            let (model, backend, _) = await makeModel(connected: true)
+            var posted: [NotificationBroker.Message] = []
+            model.notificationSink = { msg, _, _ in posted.append(msg) }
+            backend.forceIndeterminateNextDelivery = true
+            await model.remoteDeliver(requestId: "r-indet-key", units: 1.0, peerId: "watch")
+            let key = posted.first { $0.category == .bolusIndeterminate }?.dedupeKey
+            #expect(key == "indeterminate-watch-r-indet-key")
+        }
+    }
+
+    @Test func widgetIndeterminateStampsTheWidgetDedupeToken() async {
+        await withCleanSettings {
+            let (model, backend, _) = await makeModel(connected: true)
+            var posted: [NotificationBroker.Message] = []
+            model.notificationSink = { msg, _, _ in posted.append(msg) }
+            backend.forceIndeterminateNextDelivery = true
+            _ = await model.deliverWidgetBolus(requestId: "w-indet-key", units: 1.0)
+            let key = posted.first { $0.category == .bolusIndeterminate }?.dedupeKey
+            #expect(key == "indeterminate-widget-w-indet-key")
+        }
+    }
 }
