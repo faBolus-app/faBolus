@@ -22,11 +22,9 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
     // low-risk. `BolusGate` formally reviews `cancelBolus`; recorded here so the gap isn't lost.
     case cancelBolus, dismissNotification
 
-    // Child-mode + phone read-only interlock (`runControl`) — the remaining insulin-affecting /
-    // operational writes reachable through AppModel: suspend/resume delivery, and the pump clock
-    // sync (held together with its own capability + backend implementations, which must be removed
-    // in the same commit as this case — see `hasRequiredCapability`).
-    case suspendDelivery, resumeDelivery
+    // Child-mode + phone read-only interlock (`runControl`) — the pump clock sync (held together
+    // with its own capability + backend implementations, which must be removed in the same commit
+    // as this case — see `hasRequiredCapability`).
     case syncTimeToNow
 
     /// The access gate an action currently routes through in `AppModel`.
@@ -44,7 +42,7 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
             return .ledgeredDelivery
         case .cancelBolus, .dismissNotification:
             return .childOnly
-        case .suspendDelivery, .resumeDelivery, .syncTimeToNow:
+        case .syncTimeToNow:
             return .controlInterlock
         }
     }
@@ -82,18 +80,16 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
     /// The **mode axis**: the minimum `AppMode` at which this action is available. The evaluator's mode
     /// gate denies when the active mode ranks below this (`.childOnly` STOPs excepted). The default is
     /// `.advanced` — the strictest, fail-safe choice, so a newly-added case is never accidentally
-    /// reachable in a lower mode than intended. Only the genuinely-Simple/Standard actions are classified
-    /// explicitly:
+    /// reachable in a lower mode than intended. Only the genuinely-Simple action is classified explicitly:
     ///   - `.simple`   — bolus is the core function; cancel/dismiss are STOPs (their gate is carved out, so
     ///                   this value is only a fail-safe should the carve-out ever change).
-    ///   - `.standard` — routine pump control that isn't full "advanced" (suspend/resume).
-    ///   - `.advanced` — everything else: time sync, extended (combo) bolus.
+    ///   - `.advanced` — everything else: time sync, extended (combo) bolus. No surviving case currently
+    ///                   maps to `.standard` — the mode axis and its tiers survive for the next case that
+    ///                   needs one.
     public var requiredMode: AppMode {
         switch self {
         case .deliverBolus, .cancelBolus, .dismissNotification:
             return .simple
-        case .suspendDelivery, .resumeDelivery:
-            return .standard
         default:
             return .advanced
         }

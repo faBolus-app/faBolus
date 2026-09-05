@@ -1483,50 +1483,6 @@ public final class AppModel {
     /// screen uses so nothing that requires the pump is tappable when it isn't there.
     public var pumpReady: Bool { snapshot.connection == .connected }
 
-    /// The standard side-effects of a pump control op with NO gating (the caller has already gated via
-    /// the AccessPolicy evaluator): surface a thrown error, refresh, and push the new state to remotes promptly.
-    /// Control actions (suspend/resume, temp basal, modes…) are time-sensitive, so we don't wait on the
-    /// 15 s throttle. Shared tail for `runControl`.
-    private func performControl(_ op: () async throws -> Void) async {
-        do {
-            try await op()
-            lastError = nil
-        } catch PumpBLEClient.ClientError.identityNotEstablished {
-            // A distinct, ACTIONABLE message for the trusted-identity send-gate
-            // refusal — NOT the generic `error.localizedDescription` fallback (which would read as an
-            // opaque/scary error for what is a genuinely transient condition: a real Mobi is no longer
-            // permanently over-gated across a silent reconnect). Deliberately NOT a
-            // `ClientError: LocalizedError` conformance (that would change
-            // `.localizedDescription` for every OTHER case too, widening the blast radius for no benefit —
-            // this is a single surgical catch, ahead of the generic one below). No automatic retry: the
-            // caller's `op` already ran exactly once; this branch does not re-invoke it.
-            lastError = "Pump identity is still being confirmed — try again shortly."
-        } catch {
-            lastError = error.localizedDescription
-        }
-        refresh()
-        forceStatusPush()
-    }
-
-    /// Run a control write only if the single `AccessPolicy` evaluator permits it from `surface`.
-    /// Replaces the old inline child + read-only pair with the one
-    /// decision point, and ADDS the pump-capability gate at the funnel (defense-in-depth), so no
-    /// shipped t:slim/Mobi behavior changes for reachable actions. `surface` defaults to `.phoneUI`
-    /// (the phone's own control screens); remotes pass their own surface.
-    private func runControl(
-        _ action: GatedPumpWrite, from surface: AccessPolicy.Surface = .phoneUI,
-        peerId: String? = nil, _ op: () async throws -> Void
-    ) async {
-        guard allow(action, from: surface, peerId: peerId) else {
-            refresh()
-            return
-        }
-        await performControl(op)
-    }
-
-    public func suspendDelivery() async { await runControl(.suspendDelivery) { try await source.suspendDelivery() } }
-    public func resumeDelivery() async { await runControl(.resumeDelivery) { try await source.resumeDelivery() } }
-
     // MARK: - Provenance recording
     //
     // The disclosure sidecar itself lives in `ClinicianEditProvenanceRecorder` (plain values in/out,

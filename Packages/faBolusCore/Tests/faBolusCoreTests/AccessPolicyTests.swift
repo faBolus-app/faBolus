@@ -156,7 +156,7 @@ import Testing
         // writes — this keys on capabilities, not a pump-family flag.
         var noCap = openCtx()
         noCap.capabilities = .full
-        #expect(P.evaluate(.suspendDelivery, surface: .phoneUI, context: noCap).reason == .capabilityUnavailable)
+        #expect(P.evaluate(.syncTimeToNow, surface: .phoneUI, context: noCap).reason == .capabilityUnavailable)
     }
 
     /// The only evaluator-level proof anywhere that a t:slim refuses a pump-clock write.
@@ -189,13 +189,9 @@ import Testing
                 P.evaluate(a, surface: .phoneUI, context: ctx).reason == .modeDisallowed(required: .advanced),
                 "\(a.rawValue) must be modeDisallowed(.advanced) in Simple")
         }
-        // Standard-tier control (suspend/resume) reports it needs Standard, not Advanced.
-        #expect(
-            P.evaluate(.suspendDelivery, surface: .phoneUI, context: ctx).reason == .modeDisallowed(required: .standard)
-        )
-        // Standard mode then permits suspend/resume but still hides the advanced writes.
+        // Standard mode still hides the advanced writes — no surviving case has a `.standard` floor today,
+        // so this is purely the mode axis' own ranking, not a case-specific proof.
         ctx.modeContext = P.ModeGateContext(activeMode: .standard)
-        #expect(P.evaluate(.suspendDelivery, surface: .phoneUI, context: ctx).allowed)
         #expect(
             P.evaluate(.syncTimeToNow, surface: .phoneUI, context: ctx).reason == .modeDisallowed(required: .advanced))
     }

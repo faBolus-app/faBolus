@@ -48,9 +48,6 @@ struct PumpWriteFunnelGuardTests {
     static let allowedSourceCallNames: [String] = [
         // Delivery / dismissal anchors — the four capability-permitted `GatedPumpWrite` cases.
         "deliverBolus", "deliverExtendedBolus", "cancelBolus", "dismissNotificationTyped",
-        // INTERIM control survivors (`.controlInterlock`) — suspend/resume are dropped from this list in
-        // 35-11b, when their `AppModel` wrappers retire with the rest of the deferred ack/backend surface.
-        "suspendDelivery", "resumeDelivery",
         // Pump-switch reset.
         "resetSnapshotForPumpSwitch",
         // Reads / reconcile — mutate nothing, so they carry no `GatedPumpWrite` case.
