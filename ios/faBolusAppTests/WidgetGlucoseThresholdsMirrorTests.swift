@@ -3,9 +3,10 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// P13c-1 drift guard. The widget/complication extension targets don't link faBolusCore, so
-/// `WidgetShared.swift` carries `WidgetGlucoseThresholds` — a mirror of the canonical
-/// `faBolusCore.GlucoseThresholds`. This test target links BOTH, so it can assert the two never drift:
+/// Drift guard. `WidgetShared.swift` carries `WidgetGlucoseThresholds` — a mirror of the canonical
+/// `faBolusCore.GlucoseThresholds` that is intentionally RETAINED even though the widget extension
+/// target transitively links `faBolusCore` (retiring the widget mirrors was deliberately left out of
+/// scope when that link landed). This test target links BOTH, so it can assert the two never drift:
 /// the same guarantee the schema/Monkey-C drift checkers give the wire contract.
 struct WidgetGlucoseThresholdsMirrorTests {
 

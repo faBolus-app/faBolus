@@ -53,7 +53,7 @@ struct SettingsCatalogTests {
 
     // MARK: Coverage
 
-    @Test func descriptorsCoverExactly48UniqueKeys() {
+    @Test func descriptorsCoverExactly35UniqueKeys() {
         #expect(SettingsCatalog.descriptors.count == 35)
         #expect(SettingsCatalog.byKey.count == 35)  // Dictionary(uniqueKeysWithValues:) also traps on dup
         let keys = SettingsCatalog.descriptors.map(\.key)

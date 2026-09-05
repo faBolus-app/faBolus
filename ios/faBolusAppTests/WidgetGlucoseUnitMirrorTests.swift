@@ -3,10 +3,11 @@ import Foundation
 import faBolusCore
 @testable import faBolus
 
-/// Drift guard. The widget/complication extension targets don't link
-/// faBolusCore, so `WidgetShared.swift` carries `WidgetGlucoseUnit` — a mirror of the canonical
-/// `faBolusCore.GlucoseUnit`. This test target links BOTH, so it can assert the two never drift:
-/// same guarantee `WidgetGlucoseThresholdsMirrorTests` gives the threshold trio.
+/// Drift guard. `WidgetShared.swift` carries `WidgetGlucoseUnit` — a mirror of the canonical
+/// `faBolusCore.GlucoseUnit` that is intentionally RETAINED even though the widget extension target
+/// transitively links `faBolusCore` (retiring the widget mirrors was deliberately left out of scope
+/// when that link landed). This test target links BOTH, so it can assert the two never drift: same
+/// guarantee `WidgetGlucoseThresholdsMirrorTests` gives the threshold trio.
 struct WidgetGlucoseUnitMirrorTests {
 
     /// The mirror's `format(mgdl:)` must be byte-identical to the canonical funnel's, for both
