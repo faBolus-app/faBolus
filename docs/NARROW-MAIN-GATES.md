@@ -54,12 +54,18 @@ dose-adjacent code before its dedicated, oracle-re-run phase is Pitfall 5.
 Each spec below is the same shape: **settings-forced-value + UI-hide; evaluator/core byte-identical;
 the named test suite stays green.** Phase 0 flips none of them.
 
-### 1. extended-bolus-hide  (Phase 8)
-Force `extendedBolusEnabled` OFF and hide the extended-bolus section of `BolusEntryView` plus its
-Settings row. The delivery core (`AppModel.deliverExtendedBolus` and `GatedPumpWrite`) stays
-**byte-identical**; nothing about how an extended bolus is signed/delivered changes, the surface is
-merely unreachable. Named suites that must stay green: `BolusMathParityTests`, the `GatedPumpWrite`
-guards, `KeyboardShortcutDoseGuardTests`.
+### 1. extended-bolus-hide  (Phase 8; **RETIRED**)
+Retired: the `extendedBolusEnabled` pin, the extended-bolus section of `BolusEntryView`, and every
+now/later dose-splitting plumbing symbol it threaded through (`attemptDeliver`'s `extended`
+parameter, `freeze`'s split arm, `FrozenBolus.extendedNow`/`extendedDurationMin`,
+`deliverFrozen`'s dispatch) are deleted — there is no longer a settings row or UI section to hide.
+The delivery core (`AppModel.deliverExtendedBolus`, `TandemBackend.deliverExtendedBolus`,
+`GatedPumpWrite.deliverExtendedBolus`) and the `AppModel` capability pre-flight
+(`guard capabilities.supportsExtendedBolus`) are kept byte-identical and untouched — they simply
+have no caller left in the app UI. Preserved on the `dev/extended-bolus` branch. Named suites that
+must stay green: `BolusMathParityTests`, the `GatedPumpWrite` guards, `KeyboardShortcutDoseGuardTests`,
+`ExtendedBolusHiddenBoundaryTests` (the end-to-end consented-total proof through the retained
+delivery core).
 
 ### 2. history-24h-lock  (Phase 8)
 Cap `HistoryStore` retention (settings-forced-value on `historyRetentionDays`) and remove the

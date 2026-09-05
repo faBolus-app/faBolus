@@ -667,9 +667,9 @@ public struct PumpCapabilities: Sendable, Equatable {
     public var supportsPairing: Bool
     /// The pump supports an **extended (combo) bolus** — part now, the rest over a duration. A *bolus*
     /// capability (not an advanced-control one), so it is offered independent of the advanced-control
-    /// opt-in; it is still gated by the user's `extendedBolusEnabled` preference. Defaults true (both
-    /// current Tandem models support it); a backend that can't (e.g. a future pod) sets it false, and the
-    /// extended-bolus affordance disappears instead of failing at the pump.
+    /// opt-in. Defaults true (both current Tandem models support it); a backend that can't (e.g. a
+    /// future pod) sets it false, and the extended-bolus affordance disappears instead of failing at
+    /// the pump.
     public var supportsExtendedBolus: Bool
 
     // Advanced pump control (Workstream B / controlX2 parity) — write commands beyond bolus, mostly

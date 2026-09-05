@@ -250,18 +250,6 @@ struct AppSettingsStoredMigrationTests {
         #expect(settings2.autoSyncPumpTime == false)  // …but the NEXT init still force-sets false
     }
 
-    @Test func extendedBolusEnabledIsForceSetFalseRegardlessOfAnyStoredValue() {
-        let d = freshSuite("extendedBolusEnabled")
-        d.set(true, forKey: "extendedBolusEnabled")
-        let settings = AppSettings(defaults: d)
-        expectStoredBacking(settings, label: "__extendedBolusEnabled", valueType: Bool.self)
-        #expect(settings.extendedBolusEnabled == false)
-        settings.extendedBolusEnabled = true
-        #expect(d.object(forKey: "extendedBolusEnabled") as? Bool == true)
-        let settings2 = AppSettings(defaults: d)
-        #expect(settings2.extendedBolusEnabled == false)
-    }
-
     @Test func appModeIsForceSetAdvancedRegardlessOfAnyStoredValue() {
         let d = freshSuite("appMode")
         d.set("simple", forKey: "appMode")

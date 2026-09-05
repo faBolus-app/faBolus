@@ -409,14 +409,6 @@ public final class AppSettings {
         }
     }
 
-    /// Show the extended (combo) bolus controls on the bolus screen. **Default OFF** to keep the
-    /// screen simple. When on, the user can split a dose into now + over-a-duration.
-    // Force-set-false pin lives in `init` as an explicit assignment through this setter.
-    private var _extendedBolusEnabled = Stored<Bool>(wrappedValue: false, "extendedBolusEnabled")
-    public var extendedBolusEnabled: Bool {
-        get { _extendedBolusEnabled.wrappedValue }
-        set { _extendedBolusEnabled.wrappedValue = newValue }
-    }
     /// Show the collapsible "reasoning" breakdown (IOB, carb+correction, max-safe hint) under the
     /// recommendation. Default ON but collapsed; turn off to remove it entirely.
     private var _showBolusReasoning = Stored<Bool>(wrappedValue: true, "showBolusReasoning")
@@ -788,7 +780,6 @@ public final class AppSettings {
         _garminBolusEnabled.store = defaults
         _autoSyncPumpTime.store = defaults
         _suppressMirroredPumpAlarms.store = defaults
-        _extendedBolusEnabled.store = defaults
         _showBolusReasoning.store = defaults
         _garminComplicationDisplay.store = defaults
         _garminClockAnalog.store = defaults
@@ -830,8 +821,6 @@ public final class AppSettings {
         // Force-set OFF — a restored/legacy `true` must not silently re-arm pump-clock sync.
         autoSyncPumpTime = false
         suppressMirroredPumpAlarms = (d.object(forKey: "suppressMirroredPumpAlarms") as? Bool) ?? false
-        // Force-set OFF — a restored/legacy `true` must not silently re-arm extended bolus.
-        extendedBolusEnabled = false
         showBolusReasoning = (d.object(forKey: "showBolusReasoning") as? Bool) ?? true
         garminComplicationDisplay = Self.complicationDisplayOptions.contains(cd) ? cd : "numericColor"
         garminClockAnalog = (d.object(forKey: "garminClockAnalog") as? Bool) ?? false

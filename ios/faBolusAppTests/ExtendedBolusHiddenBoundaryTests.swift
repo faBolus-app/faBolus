@@ -5,8 +5,8 @@ import TandemMessages
 import TandemBLE
 @testable import faBolus
 
-/// The extended-bolus delivery path still delivers the consented units with no UI, while the Settings
-/// toggle stays force-off so the entry surface stays hidden.
+/// The extended-bolus delivery path still delivers the consented units with no UI — the entry surface
+/// and its Settings toggle have been removed entirely.
 @Suite(.serialized) @MainActor
 struct ExtendedBolusHiddenBoundaryTests {
 
@@ -41,17 +41,5 @@ struct ExtendedBolusHiddenBoundaryTests {
         #expect(delivered == 3.0)  // exactly the consented total, not the now/later split
         #expect(!backend.deliveryOutcomeUnknown)
         _ = fake  // keep the fake alive for the duration of the assertion
-    }
-
-    /// `AppSettings.extendedBolusEnabled` is force-set OFF unconditionally at init, regardless of any
-    /// pre-existing stored value — the auto-hide gate `BolusEntryView.extendedBolusSection` reads.
-    @Test @MainActor func extendedBolusEnabledIsForceSetOffRegardlessOfAnyStoredValue() {
-        let suiteName = "ExtendedBolusHiddenBoundaryTests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-        defaults.set(true, forKey: "extendedBolusEnabled")  // simulate a previously stored value
-
-        let fresh = AppSettings(defaults: defaults)
-        #expect(fresh.extendedBolusEnabled == false)
     }
 }

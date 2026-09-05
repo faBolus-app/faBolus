@@ -29,11 +29,6 @@ struct BolusEntryView: View {
     // computes a delivery result.
     @State private var successBanner: BolusSuccessBanner?
     @State private var showReasoning = false
-    // Extended (combo) bolus
-    @State private var extendedOn = false
-    @State private var extendedDurationMin = 120
-    @State private var extendedNowPercent = 50
-    @State private var confirmingExtended = false
     // SG3a stacking-guard friction at the standard confirm seam. Extra steps never change `units`.
     @State private var sgConfirmExtra = false
     @State private var sgReenter = false
@@ -52,13 +47,12 @@ struct BolusEntryView: View {
     /// Set when a fresh CGM pulled at delivery time would change the dose — asks the user which to use.
     @State private var cgmUpdate: CGMUpdatePrompt?
     /// `newBG == -1` means no fresh CGM — drop the correction (carbs-only) rather than dose off a
-    /// stale on-screen value (fail-closed). `extended` routes back to the matching delivery path.
+    /// stale on-screen value (fail-closed).
     private struct CGMUpdatePrompt: Identifiable {
         let id = UUID()
         let newBG: Int
         let newUnits: Double
         let oldUnits: Double
-        let extended: Bool
         // Stale (not merely missing): value + the dose it would produce, so the prompt can offer
         // "include the stale reading". nil ⇒ no reading at all (carbs-only / cancel only).
         var staleBG: Int?
@@ -73,7 +67,6 @@ struct BolusEntryView: View {
     private struct CalcInputPrompt: Identifiable {
         let id = UUID()
         let kind: CalcInputGate.Kind  // pure, unit-tested gate decision (faBolusCore)
-        let extended: Bool
         let overrideUnits: Double  // dose recomputed with the accepted override(s) applied
         let allowStaleIob: Bool
         let allowStaleTherapy: Bool
@@ -653,34 +646,6 @@ struct BolusEntryView: View {
         }
     }
 
-    @ViewBuilder private var extendedBolusSection: some View {
-        // Extended bolus — Settings plus pump capability (don't offer a combo a pump can't deliver).
-        if settings.extendedBolusEnabled && model.capabilities.supportsExtendedBolus && !delivering {
-            Section("Extended (combo) bolus") {
-                Stepper("Deliver now: \(extendedNowPercent)%", value: $extendedNowPercent, in: 0...100, step: 10)
-                Stepper(
-                    "Over \(durationLabel(extendedDurationMin))", value: $extendedDurationMin, in: 30...480, step: 30)
-                let now = units * Double(extendedNowPercent) / 100
-                Text(
-                    "\(String(format: "%.2f U", now)) now, \(String(format: "%.2f U", units - now)) over \(durationLabel(extendedDurationMin)). Min 0.40 U total."
-                )
-                .font(.caption2).foregroundStyle(.secondary)
-                Button {
-                    confirmingExtended = true
-                } label: {
-                    HStack {
-                        Spacer()
-                        Text("Extended bolus \(String(format: "%.2f U", units))")
-                        Spacer()
-                    }
-                }
-                .buttonStyle(.bordered).tint(AppTheme.insulin)
-                .disabled(!model.bolusGate(amount: units, minimum: 0.4).canBolus || preparingDeliver)
-                .accessibilityLabel("Deliver extended \(String(format: "%.2f", units)) units")
-            }
-        }
-    }
-
     @ViewBuilder private var formSections: some View {
         Form {
             // Carbs entry only when the backend supports the pump's bolus calculator.
@@ -692,8 +657,6 @@ struct BolusEntryView: View {
             }
 
             deliverSection
-
-            extendedBolusSection
         }
         // Floating top toast, not a Form Section — `.overlay` so it doesn't consume Form space.
         .overlay(alignment: .top) {
@@ -772,7 +735,7 @@ struct BolusEntryView: View {
         }
     }
 
-    /// Confirm / CGM-update / extended / calc-input dialogs as a separate modifier group so the
+    /// Confirm / CGM-update / calc-input dialogs as a separate modifier group so the
     /// Form's chain type-checks. Same rendered dialogs and gating.
     @ViewBuilder
     private func withBolusConfirmationDialogs<V: View>(_ view: V) -> some View {
@@ -802,7 +765,6 @@ struct BolusEntryView: View {
                             Button(
                                 "Include \(settings.glucoseDisplayUnit.format(mgdl: sbg)) \(settings.glucoseDisplayUnit == .mmol ? "mmol/L" : "mg/dL") → \(String(format: "%.2f U", su))"
                             ) {
-                                let ext = u.extended
                                 let carbsOnlyUnits = u.newUnits
                                 cgmUpdate = nil
                                 // Re-verify includable age at tap. If the reading aged past the cap
@@ -811,16 +773,15 @@ struct BolusEntryView: View {
                                 if StaleBolusPrompt.mayOfferInclude(
                                     glucoseMgdl: sbg, glucoseDate: model.snapshot.glucoseDate)
                                 {
-                                    Task { await deliverFrozen(freeze(units: su, bg: sbg, extended: ext)) }
+                                    Task { await deliverFrozen(freeze(units: su, bg: sbg)) }
                                 } else {
-                                    Task { await deliverFrozen(freeze(units: carbsOnlyUnits, bg: nil, extended: ext)) }
+                                    Task { await deliverFrozen(freeze(units: carbsOnlyUnits, bg: nil)) }
                                 }
                             }
                         }
                         Button("Deliver \(String(format: "%.2f U", u.newUnits)) (carbs only)", role: .destructive) {
-                            let ext = u.extended
                             cgmUpdate = nil
-                            Task { await deliverFrozen(freeze(units: u.newUnits, bg: nil, extended: ext)) }
+                            Task { await deliverFrozen(freeze(units: u.newUnits, bg: nil)) }
                         }
                         Button("Cancel", role: .cancel) { cgmUpdate = nil }
                     } else {
@@ -832,18 +793,16 @@ struct BolusEntryView: View {
                             bg = settings.glucoseDisplayUnit.format(mgdl: u.newBG)
                             bgSource = .cgm
                             unitsText = Self.trimUnits(u.newUnits)
-                            let ext = u.extended
                             let bgv = u.newBG
                             let uu = u.newUnits
                             cgmUpdate = nil
-                            Task { await deliverFrozen(freeze(units: uu, bg: bgv, extended: ext)) }
+                            Task { await deliverFrozen(freeze(units: uu, bg: bgv)) }
                         }
                         Button("Deliver \(String(format: "%.2f U", u.oldUnits)) anyway", role: .destructive) {
-                            let ext = u.extended
                             let uu = u.oldUnits
                             let bgv = settings.glucoseDisplayUnit.parse(bg)
                             cgmUpdate = nil
-                            Task { await deliverFrozen(freeze(units: uu, bg: bgv, extended: ext)) }
+                            Task { await deliverFrozen(freeze(units: uu, bg: bgv)) }
                         }
                         Button("Cancel", role: .cancel) { cgmUpdate = nil }
                     }
@@ -865,20 +824,6 @@ struct BolusEntryView: View {
                                 oldLabel: String(format: "%.2f U", u.oldUnits)))
                     }
                 }
-            }
-            .confirmationDialog(
-                "Extended bolus \(String(format: "%.2f U", units))?",
-                isPresented: $confirmingExtended, titleVisibility: .visible
-            ) {
-                Button("Deliver extended \(String(format: "%.2f U", units))", role: .destructive) {
-                    Task { await attemptDeliver(extended: true) }
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                let now = units * Double(extendedNowPercent) / 100
-                Text(
-                    "\(String(format: "%.2f U", now)) now, then \(String(format: "%.2f U", units - now)) over \(durationLabel(extendedDurationMin)). faBolus is experimental and not FDA-cleared."
-                )
             }
             // Pump never reported bolus settings this attempt. Cancel-only (fail-closed) — never a
             // dose off a guessed carb ratio, and no false "last-known" label.
@@ -913,9 +858,8 @@ struct BolusEntryView: View {
                             allowStaleIob: p.allowStaleIob,
                             allowStaleTherapy: p.allowStaleTherapy,
                             baseline: p.overrideUnits)
-                        let ext = p.extended
                         calcInputPrompt = nil
-                        Task { await attemptDeliver(extended: ext) }
+                        Task { await attemptDeliver() }
                     }
                     Button("Cancel", role: .cancel) { calcInputPrompt = nil }  // sends NOTHING
                 }
@@ -935,7 +879,7 @@ struct BolusEntryView: View {
                 isPresented: $sgConfirmExtra, titleVisibility: .visible
             ) {
                 Button("Deliver \(String(format: "%.2f U", sgOriginalUnits))", role: .destructive) {
-                    Task { await attemptDeliver(extended: false) }
+                    Task { await attemptDeliver() }
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
@@ -954,7 +898,7 @@ struct BolusEntryView: View {
                     if let retyped = Double(candidate), Self.reenterMatches(retyped: retyped, original: sgOriginalUnits)
                     {
                         sgReenterMismatch = false
-                        Task { await attemptDeliver(extended: false) }
+                        Task { await attemptDeliver() }
                     } else {
                         sgReenterMismatch = true
                         DispatchQueue.main.async { sgReenter = true }
@@ -996,7 +940,7 @@ struct BolusEntryView: View {
         case .confirmExtra:
             DispatchQueue.main.async { self.sgConfirmExtra = true }
         case .deliver:
-            Task { await attemptDeliver(extended: false) }
+            Task { await attemptDeliver() }
         }
     }
 
@@ -1037,10 +981,6 @@ struct BolusEntryView: View {
         }
     }
 
-    private func durationLabel(_ min: Int) -> String {
-        min % 60 == 0 ? "\(min / 60)h" : "\(min)m"
-    }
-
     private func calculate() async {
         // Nothing entered yet → no recommendation card.
         guard carbs > 0 || (settings.glucoseDisplayUnit.parse(bg) ?? 0) > 0 else {
@@ -1069,14 +1009,12 @@ struct BolusEntryView: View {
         let carbsGrams: Double?
         let bgMgdl: Int?
         let iobUnits: Double?
-        let extendedNow: Double?
-        let extendedDurationMin: Int?
     }
 
-    /// Validate a correction against a fresh CGM, then freeze + deliver. Shared by standard and
-    /// extended paths. Diverges → ask; fresh & close → use fresh; stale/missing → fail closed
-    /// (drop the correction, carbs-only) rather than dose off the stale on-screen value.
-    private func attemptDeliver(extended: Bool) async {
+    /// Validate a correction against a fresh CGM, then freeze + deliver. Diverges → ask; fresh &
+    /// close → use fresh; stale/missing → fail closed (drop the correction, carbs-only) rather
+    /// than dose off the stale on-screen value.
+    private func attemptDeliver() async {
         // Manual implausible BG blocked here, before any recommend/deliver. Passing a sub-40 typed
         // value onward would let BolusMath silently drop the dose-reducing correction — over-delivery
         // during an apparent hypo. Auto-CGM (`.cgm`) is never gated here.
@@ -1108,7 +1046,7 @@ struct BolusEntryView: View {
                     carbsGrams: carbs, bgMgdl: settings.glucoseDisplayUnit.parse(bg),
                     allowStaleIob: kind.allowStaleIob, allowStaleTherapy: kind.allowStaleTherapy)
                 calcInputPrompt = CalcInputPrompt(
-                    kind: kind, extended: extended, overrideUnits: pre.recommendedUnits,
+                    kind: kind, overrideUnits: pre.recommendedUnits,
                     allowStaleIob: kind.allowStaleIob, allowStaleTherapy: kind.allowStaleTherapy,
                     iobUnits: rec.iobUnits, iobDate: rec.iobDate,
                     assumedProfile: rec.assumedProfile, therapyDate: rec.therapyParamsDate)
@@ -1139,13 +1077,13 @@ struct BolusEntryView: View {
                 let delta = abs(rec.recommendedUnits - priorUnits)
                 if delta > AppModel.remoteDivergenceLimitUnits || (justChanged && delta > 0.0001) {
                     cgmUpdate = CGMUpdatePrompt(
-                        newBG: g, newUnits: rec.recommendedUnits, oldUnits: priorUnits, extended: extended)
+                        newBG: g, newUnits: rec.recommendedUnits, oldUnits: priorUnits)
                     return  // wait for the user's choice in the CGM-updated dialog
                 }
                 // Within tolerance deliver the on-screen dose, bound to the BG it was computed
                 // from — not the just-pulled `g` (that would attach glucose the dose wasn't derived from).
                 await deliverFrozen(
-                    freeze(units: priorUnits, bg: settings.glucoseDisplayUnit.parse(bg), extended: extended))
+                    freeze(units: priorUnits, bg: settings.glucoseDisplayUnit.parse(bg)))
                 return
             }
             // Stale/missing CGM — never silently correct off the on-screen value, even if a stale
@@ -1166,12 +1104,11 @@ struct BolusEntryView: View {
                     allowStaleTherapy: ov?.allowStaleTherapy ?? false)
                 cgmUpdate = CGMUpdatePrompt(
                     newBG: -1, newUnits: carbsOnly.recommendedUnits, oldUnits: priorUnits,
-                    extended: extended, staleBG: sg, staleUnits: withStale.recommendedUnits)
+                    staleBG: sg, staleUnits: withStale.recommendedUnits)
             } else {
                 // No includable reading: none present, or older than the cap. Carbs-only / cancel.
                 cgmUpdate = CGMUpdatePrompt(
-                    newBG: -1, newUnits: carbsOnly.recommendedUnits, oldUnits: priorUnits,
-                    extended: extended)
+                    newBG: -1, newUnits: carbsOnly.recommendedUnits, oldUnits: priorUnits)
             }
             return
         }
@@ -1183,51 +1120,33 @@ struct BolusEntryView: View {
                 carbsGrams: carbs, bgMgdl: settings.glucoseDisplayUnit.parse(bg),
                 allowStaleIob: ov.allowStaleIob, allowStaleTherapy: ov.allowStaleTherapy)
             let capped = CalcInputGate.overrideDeliverUnits(baseline: ov.baseline, freshRecompute: rec.recommendedUnits)
-            await deliverFrozen(freeze(units: capped, bg: settings.glucoseDisplayUnit.parse(bg), extended: extended))
+            await deliverFrozen(freeze(units: capped, bg: settings.glucoseDisplayUnit.parse(bg)))
         } else {
-            await deliverFrozen(freeze(units: units, bg: settings.glucoseDisplayUnit.parse(bg), extended: extended))
+            await deliverFrozen(freeze(units: units, bg: settings.glucoseDisplayUnit.parse(bg)))
         }
     }
 
     /// Build the immutable proposal from confirmed values.
-    private func freeze(units u: Double, bg bgVal: Int?, extended: Bool) -> FrozenBolus {
+    private func freeze(units u: Double, bg bgVal: Int?) -> FrozenBolus {
         // Freeze calculator IOB from the recommendation — not a live snapshot at delivery time.
         FrozenBolus(
             units: u, carbsGrams: carbs > 0 ? carbs : nil, bgMgdl: bgVal,
-            iobUnits: recommendation?.iobUnits,
-            extendedNow: extended ? u * Double(extendedNowPercent) / 100 : nil,
-            extendedDurationMin: extended ? extendedDurationMin : nil)
+            iobUnits: recommendation?.iobUnits)
     }
 
     /// Deliver exactly the frozen proposal — the only place that calls the backend.
     private func deliverFrozen(_ f: FrozenBolus) async {
         delivering = true
-        if let now = f.extendedNow, let dur = f.extendedDurationMin {
-            await model.deliverExtendedBolus(
-                totalUnits: f.units, nowUnits: now, durationMinutes: dur,
-                carbsGrams: f.carbsGrams, bgMgdl: f.bgMgdl, iobUnits: f.iobUnits)
-        } else {
-            // Carbs/BG go to the pump as recorded metadata; carb recording is centralized in the model.
-            await model.deliverBolus(units: f.units, carbsGrams: f.carbsGrams, bgMgdl: f.bgMgdl, iobUnits: f.iobUnits)
-        }
+        // Carbs/BG go to the pump as recorded metadata; carb recording is centralized in the model.
+        await model.deliverBolus(units: f.units, carbsGrams: f.carbsGrams, bgMgdl: f.bgMgdl, iobUnits: f.iobUnits)
         delivering = false
         // Sync-path confirmation from the model's already-updated state. Report ledger actual
         // units, not the frozen request — a mid-flight cancel/partial isn't overstated.
         let bannerUnits = model.lastDeliveredUnits ?? f.units
-        let extended: BolusConfirmation.ExtendedDetail?
-        // `!lastDeliveredWasCancelled` is load-bearing: on a cancelled extended delivery the now/total
-        // split cannot be decomposed from the single returned total, so asserting one would state a
-        // split that never happened. Fall back to the plain delivered-units line instead.
-        if let now = f.extendedNow, !model.lastDeliveredWasCancelled {
-            extended = BolusConfirmation.ExtendedDetail(
-                nowUnits: now, totalUnits: f.units, durationMinutes: f.extendedDurationMin ?? 0)
-        } else {
-            extended = nil
-        }
         // `lastError` is the truthful non-success message; unused when the signal is `.delivered`.
         present(
             BolusConfirmation.banner(
-                for: confirmationSignal(), units: bannerUnits, extended: extended,
+                for: confirmationSignal(), units: bannerUnits,
                 message: model.lastError))
         finishDelivery()
     }
