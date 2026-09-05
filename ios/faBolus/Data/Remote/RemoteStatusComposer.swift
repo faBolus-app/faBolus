@@ -15,6 +15,18 @@ enum RemoteStatusComposer {
     /// `buildSupportsDismissAck`.
     static let buildSupportsRawSnapshot = true
 
+    /// The pump-mirror category's derived watch intent — computed by calling the SAME unified
+    /// notification-rules resolver `NotificationBroker.decide` reads for the phone side, never a
+    /// re-implemented threshold. Pure static helper (no I/O, no singleton) so a test can prove
+    /// both consumers trace to the ONE resolver, differing only by surface. No wire emission: this
+    /// does not read or write any `RemoteCommand` field — that additive wire half is a later plan.
+    static func pumpMirrorWatchIntent(
+        rules: NotificationRules.Cascade,
+        timeSensitiveAvailable: Bool
+    ) -> NotificationRules.Intent {
+        NotificationRules.resolve(rules, timeSensitiveAvailable: timeSensitiveAvailable).watch
+    }
+
     /// Build the full `statusRead` `RemoteCommand` from a fully-snapshotted set of inputs. Pure:
     /// same inputs -> same output, every time, with no observable side effect.
     static func compose(_ inputs: RemoteStatusInputs) -> RemoteCommand {
