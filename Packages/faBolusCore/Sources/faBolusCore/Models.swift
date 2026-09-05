@@ -683,7 +683,6 @@ public struct PumpCapabilities: Sendable, Equatable {
     public var supportsCgmSession: Bool
     public var supportsCartridgeFill: Bool
     public var supportsLimits: Bool
-    public var supportsTimeSync: Bool
     public var supportsSounds: Bool
     public var supportsReminders: Bool
     /// Dedicated write-gate for the pump's native Sleep-schedule editor.
@@ -704,7 +703,7 @@ public struct PumpCapabilities: Sendable, Equatable {
         supportsModes: Bool = false, supportsProfiles: Bool = false,
         supportsControlIQSettings: Bool = false, supportsCgmSession: Bool = false,
         supportsCartridgeFill: Bool = false, supportsLimits: Bool = false,
-        supportsTimeSync: Bool = false, supportsSounds: Bool = false,
+        supportsSounds: Bool = false,
         supportsReminders: Bool = false, supportsSleepScheduleWrite: Bool = false
     ) {
         self.supportsSounds = supportsSounds
@@ -724,7 +723,6 @@ public struct PumpCapabilities: Sendable, Equatable {
         self.supportsCgmSession = supportsCgmSession
         self.supportsCartridgeFill = supportsCartridgeFill
         self.supportsLimits = supportsLimits
-        self.supportsTimeSync = supportsTimeSync
         self.supportsSleepScheduleWrite = supportsSleepScheduleWrite
     }
     public static let full = PumpCapabilities()
@@ -733,7 +731,7 @@ public struct PumpCapabilities: Sendable, Equatable {
     public static let mobiAdvanced = PumpCapabilities(
         supportsSuspendResume: true, supportsTempBasal: true, supportsModes: true,
         supportsProfiles: true, supportsControlIQSettings: true, supportsCgmSession: true,
-        supportsCartridgeFill: true, supportsLimits: true, supportsTimeSync: true,
+        supportsCartridgeFill: true, supportsLimits: true,
         supportsReminders: true,  // supportsSounds intentionally off — see deferral note
         supportsSleepScheduleWrite: true)
 
@@ -741,7 +739,7 @@ public struct PumpCapabilities: Sendable, Equatable {
     public var supportsAnyAdvancedControl: Bool {
         supportsSuspendResume || supportsTempBasal || supportsModes || supportsProfiles
             || supportsControlIQSettings || supportsCgmSession || supportsCartridgeFill
-            || supportsLimits || supportsTimeSync || supportsSounds || supportsReminders
+            || supportsLimits || supportsSounds || supportsReminders
     }
 }
 
@@ -920,7 +918,6 @@ extension PumpCapabilities {
             caps.supportsCgmSession = false
             caps.supportsCartridgeFill = false
             caps.supportsLimits = false
-            caps.supportsTimeSync = false
             caps.supportsSounds = false
             caps.supportsReminders = false
             caps.supportsSleepScheduleWrite = false

@@ -135,9 +135,6 @@ public protocol PumpBackend: AnyObject {
     /// history return `[]` (see the default). Populated from the pump's history backfill.
     var historyEvents: [HistoryEvent] { get }
 
-    /// Set the pump clock to the phone's current time.
-    func syncTimeToNow() async throws
-
     /// B4 — clear the pump-DERIVED CONFIG fields of the snapshot (max bolus/basal, calculator therapy
     /// params, Control-IQ config, controller variant, profiles/segments) back to defaults, and reset the
     /// FRESHNESS of every live reading (glucose, IOB, reservoir, battery, basal rate) to unknown, so a
@@ -327,7 +324,6 @@ public extension PumpBackend {
         totalUnits: Double, nowUnits: Double, durationMinutes: Int,
         carbsGrams: Double?, bgMgdl: Int?, iobUnits: Double?
     ) async throws -> Double { throw ControlError.notSupported }
-    func syncTimeToNow() async throws { throw ControlError.notSupported }
     func refreshSleepSchedule() async {}
     func setPumpSounds(quickBolus: Int, general: Int, reminder: Int, alert: Int, alarm: Int, cgmA: Int, cgmB: Int)
         async throws

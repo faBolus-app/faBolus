@@ -159,8 +159,10 @@ public enum AccessPolicy {
         // Gate 5 — pump capability, enforced at the funnel. One axis: the capability set is
         // driver-derived from the connected pump's own feature bitmask (`PumpCapabilities.derive`),
         // whose own input is a BLE-name substring match with an `ApiVersionResponse` fallback on the
-        // wire. `syncTimeToNow` needs `supportsTimeSync`; delivery + childOnly require no capability,
-        // so Gate 5 stays a no-op there.
+        // wire. Delivery and childOnly require no capability, so Gate 5 stays a no-op there; the
+        // pump clock-sync write that once denied here (`syncTimeToNow`/`supportsTimeSync`) is retired,
+        // so this axis currently has no denial subject — a fail-safe default for whatever
+        // `.controlInterlock` action is added next (see `GatedPumpWrite.hasRequiredCapability`).
         if !action.hasRequiredCapability(in: context.capabilities) {
             return .deny(.capabilityUnavailable)
         }

@@ -13,11 +13,12 @@ import Testing
 
     @Test func declaredSetIsStableAndFullyClassified() {
         // Pin the size: adding a reachable pump-write entry point without classifying it here fails visibly.
-        // Was 7: the suspendDelivery/resumeDelivery pair and their AppModel wrappers/funnel were retired
-        // together with the last suite that drove them, leaving the 5-case settled set — delivery,
-        // childOnly, and the single `.controlInterlock` survivor (syncTimeToNow, held for the clock-sync
-        // commit).
-        #expect(GatedPumpWrite.allCases.count == 5)
+        // Was 5: the pump clock-sync write (`syncTimeToNow`) — the single surviving `.controlInterlock`
+        // case, gated on its own dedicated `supportsTimeSync` capability — was retired together with that
+        // capability and its three backend implementations, leaving the FINAL FOUR-case settled set:
+        // the two ledgered deliveries and the two child-only writes. `.controlInterlock` now has no
+        // member at all.
+        #expect(GatedPumpWrite.allCases.count == 4)
         for w in GatedPumpWrite.allCases { _ = w.gate }  // exhaustive switch → also proves no crash
     }
 
@@ -26,21 +27,21 @@ import Testing
         // Both child-only writes are gated by child mode only (NOT read-only) — cancel is a safety STOP,
         // dismiss is low-risk. This locks the documented gap so a future BolusGate review can't forget it.
         #expect(names(.childOnly) == ["cancelBolus", "dismissNotification"])
-        // syncTimeToNow is the sole surviving `.controlInterlock` case (see
-        // declaredSetIsStableAndFullyClassified above).
-        #expect(names(.controlInterlock) == ["syncTimeToNow"])
+        // `.controlInterlock` has no surviving member — its last case (syncTimeToNow) retired with the
+        // pump clock-sync write. Pinning it empty (rather than deleting the assertion) keeps the
+        // partition-is-total-and-disjoint check below meaningful for whatever `.controlInterlock` case
+        // is added next.
+        #expect(names(.controlInterlock).isEmpty)
         // The partition is total and disjoint.
         let total = names(.ledgeredDelivery).count + names(.childOnly).count + names(.controlInterlock).count
         #expect(total == GatedPumpWrite.allCases.count)
     }
 
-    /// Capability axis: syncTimeToNow declares its own dedicated `supportsTimeSync` capability; delivery +
-    /// the child-only pair require none (so Gate 5 never blocks a bolus).
-    @Test func hasRequiredCapabilitySplitsTimeSyncFromTheAdvancedSet() {
-        #expect(GatedPumpWrite.syncTimeToNow.hasRequiredCapability(in: .mobiAdvanced))
-        #expect(!GatedPumpWrite.syncTimeToNow.hasRequiredCapability(in: .full))  // t:slim: no timeSync
-        // Never capability-gated — delivery must never be blocked by Gate 5 (no advanced capability).
-        for a in [GatedPumpWrite.deliverBolus, .deliverExtendedBolus, .cancelBolus, .dismissNotification] {
+    /// Capability axis: with `syncTimeToNow` retired, none of the four surviving cases require a
+    /// capability — Gate 5's capability axis has no denial subject left (delivery + the child-only
+    /// pair were always capability-exempt so a bolus is never blocked).
+    @Test func hasRequiredCapabilityNeverBlocksAnySurvivingCase() {
+        for a in GatedPumpWrite.allCases {
             #expect(a.hasRequiredCapability(in: .full), "\(a.rawValue) must never require a capability")
         }
     }

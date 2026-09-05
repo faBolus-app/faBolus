@@ -15,8 +15,8 @@ import TandemMessages
 ///   - op144 is BOTH `EnterChangeCartridgeModeRequest` (`.control` WRITE) AND `CurrentBatteryV2Request`
 ///     (`.currentStatus` READ).
 /// `PumpReadScheduler.badOpcodes` stores raw `UInt8` with NO characteristic, and is consulted ONLY by
-/// `sendStatusRead` (the `.currentStatus` read path) — the `.control` delivery/control write path
-/// (`deliverBolus`/`deliverExtendedBolus`/`sendControl` → `PumpTransactionCoordinator`) never consults it.
+/// `sendStatusRead` (the `.currentStatus` read path) — the `.control` delivery write path
+/// (`deliverBolus`/`deliverExtendedBolus` → `PumpTransactionCoordinator`) never consults it.
 /// So a raw op164 in `badOpcodes` suppresses only the op164 READ and has ZERO effect on the SetTempRate
 /// WRITE. Therefore `deliveryControlWriteOpcodes` below is the delivery/control set MINUS every read-
 /// colliding opcode: excluding only the PURE delivery opcodes (a) stops an op77 that NAMES a delivery

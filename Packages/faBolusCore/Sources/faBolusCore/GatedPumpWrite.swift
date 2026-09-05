@@ -22,15 +22,10 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
     // low-risk. `BolusGate` formally reviews `cancelBolus`; recorded here so the gap isn't lost.
     case cancelBolus, dismissNotification
 
-    // Child-mode + phone read-only interlock (`runControl`) — the pump clock sync (held together
-    // with its own capability + backend implementations, which must be removed in the same commit
-    // as this case — see `hasRequiredCapability`).
-    case syncTimeToNow
-
     /// The access gate an action currently routes through in `AppModel`.
     public enum Gate: String, Sendable, CaseIterable {
         case ledgeredDelivery  // runLedgeredDelivery: durable idempotency + global delivery block
-        case controlInterlock  // runControl: child-mode + phone read-only
+        case controlInterlock  // runControl: child-mode + phone read-only — no surviving member
         case childOnly  // child-mode only (NOT read-only) — see the note above
     }
 
@@ -42,22 +37,19 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
             return .ledgeredDelivery
         case .cancelBolus, .dismissNotification:
             return .childOnly
-        case .syncTimeToNow:
-            return .controlInterlock
         }
     }
 
     // MARK: - Evaluator maps (single AccessPolicy). Defaults are the most-restrictive/fail-safe choice,
     // so a newly-added case is never accidentally *less* gated than intended.
 
-    /// The child-mode feature this action requires. New control/ack cases default to `.advancedControl`
-    /// (the strictest child gate) — fail-safe.
+    /// The child-mode feature this action requires. The `switch` is exhaustive over the four surviving
+    /// cases — there is no longer a `.controlInterlock` case to fall back to a `default`.
     public var requiredChildFeature: ChildFeature {
         switch self {
         case .deliverBolus, .deliverExtendedBolus: return .bolus
         case .cancelBolus: return .cancelBolus
         case .dismissNotification: return .dismissAlerts
-        default: return .advancedControl  // every other .controlInterlock write
         }
     }
 
@@ -66,11 +58,12 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
     /// own input is a BLE-name substring match, with an `ApiVersionResponse` fallback on the wire —
     /// the accepted residual is a pump whose model can't be read from either signal.
     ///
-    /// The advanced-control writes require any advanced capability (`supportsAnyAdvancedControl`) —
-    /// preserving today's coarse check exactly, except `syncTimeToNow`'s own dedicated capability below.
     /// Delivery and the child-only pair require no capability (Gate 5 stays a no-op for them).
+    /// `.controlInterlock` has no surviving member — the pump clock-sync write, gated on its own
+    /// dedicated `supportsTimeSync` capability, was the last one and is retired together with it. The
+    /// `switch` (rather than a bare `true`) keeps this a fail-safe default for whatever
+    /// `.controlInterlock` action is added next, never a vacuous permission.
     public func hasRequiredCapability(in caps: PumpCapabilities) -> Bool {
-        if self == .syncTimeToNow { return caps.supportsTimeSync }
         switch gate {
         case .controlInterlock: return caps.supportsAnyAdvancedControl
         case .ledgeredDelivery, .childOnly: return true

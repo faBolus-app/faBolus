@@ -233,23 +233,6 @@ struct AppSettingsStoredMigrationTests {
         #expect(settings2.defaultBolusMode == .units)
     }
 
-    // MARK: - Force-pinned properties: the pin overrides ANY stored value at every `init`, but the
-    // setter itself still writes the exact key (proves the underlying `Stored` plumbing is intact,
-    // matching the pre-conversion `didSet` — only `init`'s explicit re-assignment differs, unchanged
-    // by this conversion).
-
-    @Test func autoSyncPumpTimeIsForceSetFalseRegardlessOfAnyStoredValue() {
-        let d = freshSuite("autoSyncPumpTime")
-        d.set(true, forKey: "autoSyncPumpTime")  // simulate a pre-existing stored `true`
-        let settings = AppSettings(defaults: d)
-        expectStoredBacking(settings, label: "__autoSyncPumpTime", valueType: Bool.self)
-        #expect(settings.autoSyncPumpTime == false)  // force-set pin wins over the stored value
-        settings.autoSyncPumpTime = true  // the setter itself is unchanged (still writable)…
-        #expect(d.object(forKey: "autoSyncPumpTime") as? Bool == true)
-        let settings2 = AppSettings(defaults: d)
-        #expect(settings2.autoSyncPumpTime == false)  // …but the NEXT init still force-sets false
-    }
-
     // MARK: - Initialization behavior: a side effect must NOT fire during `AppSettings.init()`
 
     /// Structural proof of the "does not fire during init" guarantee: right after construction, every

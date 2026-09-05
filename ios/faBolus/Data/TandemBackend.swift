@@ -544,12 +544,11 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// The profile whose segments are being read into snapshot.viewedProfileSegments (-1 = none).
     private var viewedProfileId = -1
 
-    /// Shared send-then-parse core of `awaitResponse<T>` and `awaitControlResponse`: issues the write via
-    /// the transaction coordinator, times the round-trip for the observational latency sink, then decodes
-    /// the reply through `ResponseParser` — length-gated and HMAC-verified, fail-closed on a parse
-    /// failure. Returns the parsed message un-narrowed; `awaitResponse<T>` casts it to the caller's
-    /// concrete type, `awaitControlResponse` (which has no static response type — `sendControl`'s
-    /// `message: Message` parameter is untyped) returns it as-is.
+    /// Shared send-then-parse core of `awaitResponse<T>`: issues the write via the transaction
+    /// coordinator, times the round-trip for the observational latency sink, then decodes the reply
+    /// through `ResponseParser` — length-gated and HMAC-verified, fail-closed on a parse failure.
+    /// Returns the parsed message un-narrowed; `awaitResponse<T>` casts it to the caller's concrete
+    /// type.
     private func awaitParsedMessage(
         _ message: Message, deadline: TimeInterval,
         signed: Bool = false, allowInsulinDelivery: Bool = false,
@@ -607,16 +606,6 @@ public final class TandemBackend: NSObject, PumpBackend {
             throw BolusError.pumpRejected("could not parse \(T.self) response")
         }
         return typed
-    }
-
-    /// `sendControl`'s untyped twin of `awaitResponse<T>`: `sendControl` takes an untyped `message:
-    /// Message`, so it has no static response type to hand `awaitResponse` — this returns whatever
-    /// concrete type the registry resolved instead, for `sendControl` to inspect via `ControlAck`. Same
-    /// fail-closed send-then-parse core as `awaitResponse` (`awaitParsedMessage`), always signed.
-    private func awaitControlResponse(
-        _ message: Message, deadline: TimeInterval, delivery: Bool
-    ) async throws -> any Message {
-        try await awaitParsedMessage(message, deadline: deadline, signed: true, allowInsulinDelivery: delivery)
     }
 
     /// Apply the side-effects the old `didReceiveFrame` case did for a time response (the pump↔phone clock
@@ -2131,68 +2120,11 @@ public final class TandemBackend: NSObject, PumpBackend {
     }
 
     // MARK: - Advanced control (B3)
-    // Each command is signed with a fresh pump-clock timestamp and sent under a raised WritePolicy
-    // that is restored via `defer`. Insulin-affecting commands use `.allowDelivery` +
-    // `allowInsulinDelivery: true`; non-insulin ones use `.allowNonDelivery`. The pump's response is
-    // awaited via the transaction coordinator and inspected before `sendControl` returns; the UI only
-    // reaches these behind the advanced-control + Mobi gate; the WritePolicy + pump-side checks are the
-    // enforcement backstop.
-
-    private func refreshSigningTimestamp() async throws {
-        let time = try await awaitResponse(TimeSinceResetRequest(), as: TimeSinceResetResponse.self, deadline: 5)
-        applyTimeResponse(time)
-        signingTimestamp = time.currentTime
-    }
-
-    /// Fresh-timestamp, policy-raised signed send for a control command, gated on the pump's own ack.
-    /// `delivery` selects the WritePolicy + the insulin-delivery signing flag. Awaits the correlated,
-    /// HMAC-verified reply (the same pattern `dismissNotificationTyped` uses) and throws
-    /// `ControlWriteError.rejected` on a non-accepted ack, so a refused write surfaces as a refusal
-    /// rather than reporting success — see `ControlAckInspection.swift`. A dropped/timed-out reply
-    /// throws the coordinator's own `TxError` unchanged, distinct from a definite rejection. Serialized
-    /// behind any other signed transaction so its awaited time-sync can't overlap.
-    private func sendControl(_ message: Message, delivery: Bool) async throws {
-        guard snapshot.connection == .connected || snapshot.connection == .bolusing else {
-            throw BolusError.notConnected
-        }
-        try await withPumpTx {
-            try await refreshSigningTimestamp()
-            // Scoped one-operation elevation — always restored to .readOnly (even on throw).
-            try await tx.withWritePolicy(delivery ? .allowDelivery : .allowNonDelivery) {
-                // 5s matches the `dismissNotificationTyped` precedent above: long enough for a real
-                // round-trip, short enough that a refused/dropped write doesn't hang the caller. Replaces
-                // the old fixed 0.5s `Task.sleep` — a refusal or a lost reply now costs up to 5s instead
-                // of always reporting success after half a second.
-                let ack = try await awaitControlResponse(message, deadline: 5, delivery: delivery)
-                guard let controlAck = ack as? ControlAck else {
-                    // Fail-safe: a parsed-but-unrecognized reply type is never treated as a silent success.
-                    throw ControlWriteError.rejected("The pump sent an unrecognized reply to a \(type(of: message)) request.")
-                }
-                guard controlAck.isControlAckAccepted else {
-                    throw ControlWriteError.rejected(
-                        "The pump rejected the \(controlAck.controlAckSubjectDescription) (status \(controlAck.controlAckStatus)).")
-                }
-                applyControlAckSideEffects(ack)
-            }
-        }
-    }
-
-    /// The suspend/resume snapshot side effects `PumpResponseApplier.apply` used to apply from
-    /// `didReceiveFrame` — now applied here instead, because the transaction coordinator consumes the
-    /// ack frame before it ever reaches `didReceiveFrame`. Runs only after `sendControl` has already
-    /// verified the ack is accepted.
-    private func applyControlAckSideEffects(_ ack: any Message) {
-        switch ack {
-        case is SuspendPumpingResponse:
-            snapshot.deliverySuspended = true
-            onChange?()
-        case is ResumePumpingResponse:
-            snapshot.deliverySuspended = false
-            onChange?()
-        default:
-            break
-        }
-    }
+    // The signed-command backend that lived here (`sendControl` + the `ControlAckInspection` ack
+    // machinery) was retired together with its last caller, the pump clock-sync write
+    // (`syncTimeToNow`). What remains below are on-demand, UNSIGNED reads whose former WRITE callers
+    // already retired earlier with the rest of the advanced-control backend — kept because a future
+    // screen would reuse them unchanged.
 
     /// CGM session status read. Its former callers — the G6/G7 session-start and session-stop writes —
     /// retired with the rest of the advanced-control backend, leaving this an inert on-demand read
@@ -2218,11 +2150,6 @@ public final class TandemBackend: NSObject, PumpBackend {
         // Reply handled in didReceiveFrame.
         readScheduler.sendOnDemandRead(LoadStatusRequest())
         try? await Task.sleep(nanoseconds: 600_000_000)
-    }
-
-    public func syncTimeToNow() async throws {
-        let tandemEpoch = UInt32(max(0, Date().timeIntervalSince1970 - 1_199_145_600))  // Jan 1 2008 base
-        try await sendControl(ChangeTimeDateRequest(tandemEpochTime: tandemEpoch), delivery: false)
     }
 
     /// B4 — clear the pump-DERIVED CONFIG so a DIFFERENT pump can't be dosed against the previous pump's

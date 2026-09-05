@@ -149,20 +149,19 @@ import Testing
             P.evaluate(.dismissNotification, surface: .phoneUI, context: ctx).reason == .childLocked(.dismissAlerts))
     }
 
-    // Gate 5's opt-in axis is retired; only the capability axis remains — the surviving denier of
-    // advanced writes on a t:slim.
-    @Test func advancedControlRequiresCapability() {
-        // Capability axis: a pump with no advanced capability (e.g. a t:slim, `.full`) denies advanced
-        // writes — this keys on capabilities, not a pump-family flag.
+    // Gate 5's opt-in axis (axis A) is retired, and its capability axis (axis B)'s only denial
+    // subject — the pump clock-sync write (`syncTimeToNow`, gated on `supportsTimeSync`) — is retired
+    // too. That leaves axis B with ZERO denial subjects: this replaces
+    // `advancedControlRequiresCapability` + `syncTimeToNowNeedsCapability`, whose shared subject no
+    // longer exists, with an action-absence assertion proving the axis is a fail-safe default for
+    // whatever `.controlInterlock` case is added next, never silently vacuous.
+    @Test func capabilityAxisHasNoDenialSubjectAfterClockSyncRetirement() {
         var noCap = openCtx()
-        noCap.capabilities = .full
-        #expect(P.evaluate(.syncTimeToNow, surface: .phoneUI, context: noCap).reason == .capabilityUnavailable)
-    }
-
-    /// The only evaluator-level proof anywhere that a t:slim refuses a pump-clock write.
-    @Test func syncTimeToNowNeedsCapability() {
-        var noTimeSync = openCtx()
-        noTimeSync.capabilities = .full  // t:slim: no supportsTimeSync
-        #expect(P.evaluate(.syncTimeToNow, surface: .phoneUI, context: noTimeSync).reason == .capabilityUnavailable)
+        noCap.capabilities = .full  // t:slim: no advanced capability, no supportsTimeSync
+        for a in GatedPumpWrite.allCases {
+            #expect(
+                P.evaluate(a, surface: .phoneUI, context: noCap).reason != .capabilityUnavailable,
+                "\(a.rawValue) must never be denied for lacking a capability — axis B has no denial subject left")
+        }
     }
 }

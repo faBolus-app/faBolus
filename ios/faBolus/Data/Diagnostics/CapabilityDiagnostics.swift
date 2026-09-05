@@ -33,7 +33,6 @@ enum CapabilityDiagnostics {
             ("supportsCgmSession", c.supportsCgmSession),
             ("supportsCartridgeFill", c.supportsCartridgeFill),
             ("supportsLimits", c.supportsLimits),
-            ("supportsTimeSync", c.supportsTimeSync),
             ("supportsSounds", c.supportsSounds),
             ("supportsReminders", c.supportsReminders),
             ("supportsSleepScheduleWrite", c.supportsSleepScheduleWrite)

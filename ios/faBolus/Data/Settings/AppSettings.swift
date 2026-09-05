@@ -308,13 +308,11 @@ public final class AppSettings {
     public static let remoteBolusCeilingOptions: [Double] = [1, 2, 3, 5, 8, 10, 15, 20]
     public static let defaultRemoteBolusCeiling: Double = 5
 
-    /// Keep the pump's clock aligned with this phone: sync at most once a day while connected, and
-    /// immediately when the phone's clock or time zone changes (travel / DST). **Default OFF**
-    /// so a first connect never silently writes the pump clock without an explicit opt-in.
-    /// Only active on pumps that honor the time write (**Mobi** — t:slim X2 doesn't accept it), gated on
-    /// `capabilities.supportsTimeSync`; not insulin-affecting. This opt-in is a plain preference,
-    /// independent of any advanced-control gate.
-    // Force-set-false pin lives in `init` as an explicit assignment through this setter.
+    /// **RESIDUAL — no consumer.** Was the opt-in for the pump clock-sync write path
+    /// (`GatedPumpWrite.syncTimeToNow`); that action, its capability, and the three backend
+    /// implementations are retired, so this stored preference has no reader left. Its own removal is a
+    /// separate, deliberate decision rather than an automatic follow-on of the write-path retirement —
+    /// the decl and its `store` wire are left untouched here.
     private var _autoSyncPumpTime = Stored<Bool>(wrappedValue: false, "autoSyncPumpTime")
     public var autoSyncPumpTime: Bool {
         get { _autoSyncPumpTime.wrappedValue }
@@ -790,8 +788,6 @@ public final class AppSettings {
         // Defaults OFF so a fresh install (and any device with no stored value) cannot bolus from a
         // remote until the user explicitly opts in.
         garminBolusEnabled = (d.object(forKey: "garminBolusEnabled") as? Bool) ?? false
-        // Force-set OFF — a restored/legacy `true` must not silently re-arm pump-clock sync.
-        autoSyncPumpTime = false
         suppressMirroredPumpAlarms = (d.object(forKey: "suppressMirroredPumpAlarms") as? Bool) ?? false
         showBolusReasoning = (d.object(forKey: "showBolusReasoning") as? Bool) ?? true
         garminComplicationDisplay = Self.complicationDisplayOptions.contains(cd) ? cd : "numericColor"

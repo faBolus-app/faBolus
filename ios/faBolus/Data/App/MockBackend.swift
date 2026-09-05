@@ -430,9 +430,6 @@ public final class MockBackend: PumpBackend {
         onChange?()
     }
 
-    // MARK: - Advanced control (fakes for Simulator testing)
-    public func syncTimeToNow() async throws {}
-
     /// Test-only: directly set the raw `cartridgeLoadState`, mirroring
     /// `TandemBackend.setCartridgeLoadStateForTesting` — `snapshot`'s setter is private outside this
     /// file, so a test that needs a mid change/load/prime-tubing state (e.g. for a bolus-gate or

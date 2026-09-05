@@ -73,12 +73,23 @@ Data & History settings UI. The read path and any IOB/dose computation stay **by
 assertion confirms no IOB/dose read reaches back beyond 24h. Named suites: `BolusMathParityTests`,
 `HistoryLogSyncDeliveryBoundaryTests`.
 
-### 3. clock-sync-removal  (Phase 8)
-Drop the `autoSyncPumpTime` write path (`GatedPumpWrite.syncTimeToNow`) and its settings UI, but
-**keep the read-side `PumpResponseApplier` time anchor byte-identical**: the app must still interpret
-pump-reported timestamps correctly even when it no longer *writes* the clock. This is the one gate with
-an explicit "keep the read side" caveat; removing the anchor would corrupt dose/IOB timing. Named
-suites: `BolusMathParityTests`, the `GatedPumpWrite` guards.
+### 3. clock-sync-removal  (Phase 8; **RETIRED**)
+Retired: the pump clock-sync WRITE path is deleted whole — `supportsTimeSync`,
+`GatedPumpWrite.syncTimeToNow`, the three backend implementations (`TandemBackend`, `PumpBackend`
+default, `MockBackend`), and the `autoSyncPumpTime = false` init pin — in one commit, together with
+`TandemBackend.sendControl` and the `ControlAckInspection.swift` ack-inspection machinery it retired
+as their last functional caller. `GatedPumpWrite` reaches its final four cases (`deliverBolus`,
+`deliverExtendedBolus`, `cancelBolus`, `dismissNotification`); `.controlInterlock` has no surviving
+member. **The read-side `PumpResponseApplier` time anchor is kept byte-identical and untouched** — the
+app must still interpret pump-reported timestamps correctly even though it no longer *writes* the
+clock. This was the one gate with an explicit "keep the read side" caveat; removing the anchor would
+corrupt dose/IOB timing. The removal is net-positive, not merely tidy: the write was already double-dead
+(`autoSyncPumpTime` defaulted off and no real pump advertised `supportsTimeSync` on `main`), and the
+project's own bench observed a `ChangeTimeDate`-family write producing an op-77 plus a BLE link drop on
+API 2.5. The `_autoSyncPumpTime` stored preference and its `store` wire are left standing — a readerless
+residual whose own removal is a separate decision, not an automatic follow-on. Preserved on the
+`dev/clock-sync` branch. Named suites: `BolusMathParityTests`, the `GatedPumpWrite` guards,
+`AccessPolicyTests`.
 
 ### 4. units-mgdl-lock  (Phase 8)
 Force `glucoseDisplayUnit = .mgdl` and hide the unit picker. Dose math is already mg/dL-canonical and
