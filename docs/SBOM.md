@@ -24,7 +24,7 @@ Format per row: component · version/revision · SPDX license · source · how f
 | ShareClient | LoopKit/dexcom-share-client-swift | MIT | `Packages/ShareClient` (LICENSE incl.) | Dexcom Share follower core. Deliberate de-port: `LocalizedString.swift`/`OSLog.swift`/`TimeInterval.swift` (zero `public` declarations, unreachable by construction) were dropped from the vendored set — the remaining source, its package linkage, and its `DexcomShareSource` consumer are unchanged. |
 
 **LoopPowerPack (SiteAtlas / LoopInsights / FoodFinder) — removed from `main`.** The vendored source
-files under `ios/faBolus/Vendor/LoopPowerPack/{SiteAtlas,LoopInsights,FoodFinder}` that this table used
+files under the `ios/faBolus/Vendor/` LoopPowerPack tree's `{SiteAtlas,LoopInsights,FoodFinder}` subdirs that this table used
 to list have been scope-narrowed off `main` along with the features that consumed them ("Backup/restore
 incl. iCloud + SiteAtlas" → `dev/backup`; "Retrospective insights" → `dev/retrospective`; "FoodFinder /
 food-scanner" → `dev/food-finder`; `BRANCHES.md` §1.2c). Only `UPSTREAM.md` remains as vendored-tree
