@@ -6,9 +6,9 @@ import faBolusCore
 /// Behavior-preserving equivalence proof for the pure mappers relocated from `AppModel` into
 /// `FailoverBadgePresenter`:
 /// `failoverBadge`/`shortSourceName` (the failover badge shown to the user) and
-/// `snoozeGateAllows`/`shouldPushStatus` (the two already-pure gate predicates). Every expected
-/// value pinned here is the value the ORIGINAL `AppModel` body returned before the move — a
-/// hardcoded "was this identical before/after" fixture, not a re-derivation from the new code.
+/// `shouldPushStatus` (the already-pure status-push predicate). Every expected value pinned here
+/// is the value the ORIGINAL `AppModel` body returned before the move — a hardcoded "was this
+/// identical before/after" fixture, not a re-derivation from the new code.
 @MainActor
 struct FailoverBadgePresenterTests {
 
@@ -57,29 +57,6 @@ struct FailoverBadgePresenterTests {
 
     @Test func shortSourceNameWithNoQualifierPassesThrough() {
         #expect(FailoverBadgePresenter.shortSourceName("LibreLinkUp") == "LibreLinkUp")
-    }
-
-    // MARK: - snoozeGateAllows (table-driven — pre/post-move identical booleans)
-
-    private static let alarm = PumpAlert(id: 1, kind: .alarm, title: "Alarm")
-    private static let alert = PumpAlert(id: 2, kind: .alert, title: "Alert")
-    private static let reminder = PumpAlert(id: 3, kind: .reminder, title: "Reminder")
-    private static let cgmAlert = PumpAlert(id: 4, kind: .cgmAlert, title: "CGM alert")
-
-    @Test func noAlertsNeverAllowsSnooze() {
-        #expect(!FailoverBadgePresenter.snoozeGateAllows([]))
-    }
-
-    @Test func anyAlarmPresentBlocksSnoozeEvenAlongsideASnoozeableAlert() {
-        #expect(!FailoverBadgePresenter.snoozeGateAllows([Self.alarm]))
-        #expect(!FailoverBadgePresenter.snoozeGateAllows([Self.alarm, Self.alert]))
-    }
-
-    @Test func onlyNonAlarmAlertsAllowsSnooze() {
-        #expect(FailoverBadgePresenter.snoozeGateAllows([Self.alert]))
-        #expect(FailoverBadgePresenter.snoozeGateAllows([Self.reminder]))
-        #expect(FailoverBadgePresenter.snoozeGateAllows([Self.cgmAlert]))
-        #expect(FailoverBadgePresenter.snoozeGateAllows([Self.alert, Self.reminder, Self.cgmAlert]))
     }
 
     // MARK: - shouldPushStatus (table-driven — pre/post-move identical booleans; the exhaustive

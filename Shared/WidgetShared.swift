@@ -147,14 +147,6 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     /// snapshot was carrying a fabricated `0` for it, and shipping the receipt alongside the value is
     /// what stops the next surface that adds a basal row from silently inheriting the defect.
     public var basalRateKnown: Bool?
-    /// True when at least one currently-active pump alert is snooze-eligible
-    /// (`PumpAlertKind.isAutoRuleEligible`, i.e. NOT `.alarm`). Computed app-side from
-    /// `AppModel.activeNotifications` (which carries the per-alert `kind` this wire type doesn't) —
-    /// the same "app computes the gate, the extension/intent only reads it" pattern as
-    /// `iobStale`/`pumpLinkStale` (§13 Rule 1). Originally gated the Live Activity's "Snooze"
-    /// button visibility + its `LiveActivityIntentBridge.snoozeAlertIfSafe` action re-check (both
-    /// since removed) — kept compiled as a general PumpSnapshot mirror.
-    public var hasSnoozeEligibleAlert: Bool
 
     public init(
         glucose: Int? = nil, glucoseDate: Date? = nil, trendArrow: String = "", iobUnits: Double = 0,
@@ -167,7 +159,7 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         iobStaleAfterSec: TimeInterval? = nil,
         displayUnit: String? = nil, iobDate: Date? = nil, basalRateUnitsPerHour: Double = 0,
         basalRateKnown: Bool? = nil,
-        hasSnoozeEligibleAlert: Bool = false, showUnitLabel: Bool = false
+        showUnitLabel: Bool = false
     ) {
         self.glucose = glucose
         self.glucoseDate = glucoseDate
@@ -190,7 +182,6 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         self.iobDate = iobDate
         self.basalRateUnitsPerHour = basalRateUnitsPerHour
         self.basalRateKnown = basalRateKnown
-        self.hasSnoozeEligibleAlert = hasSnoozeEligibleAlert
         self.showUnitLabel = showUnitLabel
     }
 
@@ -201,7 +192,6 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
             lastBolusDate, connected, updatedAt, recentPoints,
             staleAfterSec, hideAfterSec, iobStaleAfterSec, displayUnit, iobDate,
             basalRateUnitsPerHour, basalRateKnown,
-            hasSnoozeEligibleAlert,
             showUnitLabel
     }
 
@@ -246,7 +236,6 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         // the pump has not answered op-77, `true` = it has). Collapsing absent into `false` would be
         // harmless today but would make a legacy payload indistinguishable from a positively-unread one.
         basalRateKnown = try c.decodeIfPresent(Bool.self, forKey: .basalRateKnown)
-        hasSnoozeEligibleAlert = try c.decodeIfPresent(Bool.self, forKey: .hasSnoozeEligibleAlert) ?? false
         // Owner-requested toggle: a legacy snapshot missing the key ⇒ false (labels hidden), matching
         // the setting's own default-OFF — mirrors every other additive-optional field's fallback above.
         showUnitLabel = try c.decodeIfPresent(Bool.self, forKey: .showUnitLabel) ?? false

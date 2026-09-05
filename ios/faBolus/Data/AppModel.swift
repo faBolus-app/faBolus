@@ -750,14 +750,10 @@ public final class AppModel {
             self?.lastArmedGlucoseDate = nil
             self?.notificationStalenessCancelSink?()
         }
-        refreshEffectsCoordinator.onWidgetPublish = { snap, hist, alerts, locked, reason in
-            // The Live Activity's Snooze gate is computed HERE (the only place `PumpAlertKind` is
-            // available alongside the wire snapshot) via `FailoverBadgePresenter.snoozeGateAllows` —
-            // the SAME predicate App.swift's action gate uses.
+        refreshEffectsCoordinator.onWidgetPublish = { snap, hist, _, locked, reason in
             WidgetPublisher.publish(
                 snap, history: hist,
-                bolusLocked: locked, bolusLockReason: reason,
-                hasSnoozeEligibleAlert: FailoverBadgePresenter.snoozeGateAllows(alerts))
+                bolusLocked: locked, bolusLockReason: reason)
         }
         refreshEffectsCoordinator.onHistoryPersist = { [weak self] glucose, boluses, provenance in
             self?.historyPersistence.persist(glucose: glucose, boluses: boluses, provenance: provenance)
@@ -1171,9 +1167,6 @@ public final class AppModel {
     /// Record user-entered carbs (from a carb bolus) into the persistent store, so sensitivity/insights
     /// have carb context. Source = faBolus (its own entry).
     public func recordCarbs(grams: Double) { historyPersistence.recordCarbs(grams: grams) }
-
-    /// The SINGLE "can Snooze actually do anything right now" predicate,
-    /// read by `hasSnoozeEligibleAlert` below. Delegates to `FailoverBadgePresenter.snoozeGateAllows`.
 
     /// Additive test seam — a plain optional closure, nil in production (so zero cost), fired at each
     /// top-level phase boundary and each dispatched effect so `RefreshOrderingCharacterizationTests`

@@ -1,15 +1,15 @@
 import Foundation
 import faBolusCore
 
-/// Pure presentation/formatting mappers for the failover badge, short source name, and the two
-/// status-push / snooze-gate predicates. `failoverBadge` takes the already-computed
-/// `GlucoseProvenance` value IN and never reads `AppModel`'s `source`/snapshot live — no second
-/// source of pump truth. `shouldPushStatus`/`snoozeGateAllows` are pure value-in/value-out
-/// predicates with no `AppModel`/singleton/clock read of their own.
+/// Pure presentation/formatting mappers for the failover badge, short source name, and the
+/// status-push predicate. `failoverBadge` takes the already-computed `GlucoseProvenance` value IN
+/// and never reads `AppModel`'s `source`/snapshot live — no second source of pump truth.
+/// `shouldPushStatus` is a pure value-in/value-out predicate with no `AppModel`/singleton/clock
+/// read of its own.
 ///
 /// `failoverBadge` is `@MainActor` because `GlucoseSourceRegistry.descriptor(id:)` (its one
-/// dependency) is itself `@MainActor`. `shortSourceName`/`shouldPushStatus`/`snoozeGateAllows` stay
-/// free of actor isolation.
+/// dependency) is itself `@MainActor`. `shortSourceName`/`shouldPushStatus` stay free of actor
+/// isolation.
 enum FailoverBadgePresenter {
 
     /// A short source name + human reason when the live glucose is coming from a **failover** source
@@ -53,13 +53,5 @@ enum FailoverBadgePresenter {
         let connChanged = newConnection != lastConnection
         let bolusing = newConnection == .bolusing
         return newSample || connChanged || bolusing || secondsSinceLastPush > throttle
-    }
-
-    /// The SINGLE "can Snooze actually do anything right now" predicate, fed into
-    /// `WidgetPublisher.publish`'s `hasSnoozeEligibleAlert` parameter (`WidgetSnapshot`).
-    /// True only when there's at least one active alert AND none of them is `.alarm` (an `.alarm`
-    /// blocks snoozing entirely). Pure — no `AppModel` state read beyond the alerts array handed in.
-    static func snoozeGateAllows(_ alerts: [PumpAlert]) -> Bool {
-        !alerts.isEmpty && !alerts.contains(where: { !$0.kind.isAutoRuleEligible })
     }
 }

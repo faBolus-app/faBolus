@@ -23,8 +23,7 @@ enum WidgetPublisher {
         // about the IOB boundary pins it explicitly. Nothing in the app mutates
         // `CalcInputFreshness.staleAfterIob` at runtime — there is no Settings binding for it — so the
         // default cannot vary underneath a caller.
-        iobStaleAfterSec: TimeInterval = CalcInputFreshness.staleAfterIob,
-        hasSnoozeEligibleAlert: Bool = false
+        iobStaleAfterSec: TimeInterval = CalcInputFreshness.staleAfterIob
     ) -> WidgetSnapshot {
         // ~8h of 5-min-cadence points so the App-Group snapshot carries enough raw history for a
         // denser series. The Home Screen widget's own `Sparkline` renders whatever density it's given.
@@ -71,10 +70,6 @@ enum WidgetPublisher {
             // had never answered the read, and a receipt that ships with the value can't be forgotten
             // later.
             basalRateKnown: s.basalRateKnown,
-            // App-computed snooze-eligibility gate (see the field's own doc comment on
-            // `WidgetSnapshot`); passed in from the caller, which has `PumpAlertKind` on
-            // `activeNotifications`.
-            hasSnoozeEligibleAlert: hasSnoozeEligibleAlert,
             // Owner-requested toggle — stamped straight from the setting so the widget/complication/
             // Live Activity gate their persistent unit CAPTION the same way the phone does.
             showUnitLabel: AppSettings.shared.showGlucoseUnitLabels)
@@ -83,14 +78,12 @@ enum WidgetPublisher {
     @MainActor
     static func publish(
         _ s: PumpSnapshot, history: [GlucoseReading],
-        bolusLocked: Bool = false, bolusLockReason: String = "",
-        hasSnoozeEligibleAlert: Bool = false
+        bolusLocked: Bool = false, bolusLockReason: String = ""
     ) {
         let snap = makeSnapshot(
             s, history: history,
             staleAfterSec: GlucoseFreshness.staleAfter, hideAfterSec: GlucoseFreshness.hideAfter,
-            iobStaleAfterSec: CalcInputFreshness.staleAfterIob,
-            hasSnoozeEligibleAlert: hasSnoozeEligibleAlert)
+            iobStaleAfterSec: CalcInputFreshness.staleAfterIob)
         WidgetStore.save(snap)
         // Keep the Quick-Bolus widget's amount picker in sync with the pump's max + the increment.
         if s.maxBolusUnits > 0 { WidgetBolusStore.maxBolus = s.maxBolusUnits }
