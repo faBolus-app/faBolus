@@ -82,14 +82,6 @@ import faBolusCore
 
     // MARK: - RemoteCommandWireFixture local fraction compute (fail-closed)
 
-    private final class FakeLink: RemoteTransport {
-        var onReceive: (@MainActor (RemoteCommand) -> Void)?
-        var onReachabilityChange: (@MainActor (Bool) -> Void)?
-        var onUndeliverable: (@MainActor (RemoteCommand) -> Void)?
-        var isReachable: Bool = true
-        func send(_ command: RemoteCommand) {}
-    }
-
     /// Loading backstop: a freshly-constructed client BEFORE any `handle(cmd)` has no lockout — a fresh
     /// app launch before the first statusRead reply must show the bar ABSENT, never a stale/frozen one.
     @MainActor

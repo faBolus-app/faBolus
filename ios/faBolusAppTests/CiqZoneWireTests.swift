@@ -77,14 +77,6 @@ import faBolusCore
 
     // MARK: - Fail-closed — absent/cleared ciqZone yields no rendered word
 
-    private final class FakeLink: RemoteTransport {
-        var onReceive: (@MainActor (RemoteCommand) -> Void)?
-        var onReachabilityChange: (@MainActor (Bool) -> Void)?
-        var onUndeliverable: (@MainActor (RemoteCommand) -> Void)?
-        var isReachable: Bool = true
-        func send(_ command: RemoteCommand) {}
-    }
-
     /// A freshly-constructed client before any command has `ciqZone` absent — never a stale/zero placeholder.
     @MainActor
     @Test func freshClientBeforeAnyCommandHasCiqZoneAbsent() {

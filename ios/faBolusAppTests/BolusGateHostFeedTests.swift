@@ -115,14 +115,6 @@ struct BolusGateHostFeedTests {
 
     // MARK: The optional remote-only dose ceiling clamps the REMOTE `BolusGate` maximum only
 
-    private final class FakeLink: RemoteTransport {
-        var onReceive: (@MainActor (RemoteCommand) -> Void)?
-        var onReachabilityChange: (@MainActor (Bool) -> Void)?
-        var onUndeliverable: (@MainActor (RemoteCommand) -> Void)?
-        var isReachable: Bool = true
-        func send(_ command: RemoteCommand) {}
-    }
-
     @Test func remoteCeilingClampsRemoteBolusGateMaxButNotThePhone() async {
         await withClean {
             let (model, backend) = makeModel()

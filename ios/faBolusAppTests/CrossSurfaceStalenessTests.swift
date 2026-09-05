@@ -9,17 +9,6 @@ import faBolusCore
 @MainActor
 @Suite(.serialized) struct CrossSurfaceStalenessTests {
 
-    /// Minimal in-memory transport so a `RemoteCommandWireFixture` can be exercised without a real link.
-    /// The test drives `handle(_:)` directly (the same entry point the link's `onReceive` calls), so
-    /// nothing here is invoked — it only satisfies the initializer.
-    private final class FakeLink: RemoteTransport {
-        var onReceive: (@MainActor (RemoteCommand) -> Void)?
-        var onReachabilityChange: (@MainActor (Bool) -> Void)?
-        var onUndeliverable: (@MainActor (RemoteCommand) -> Void)?
-        var isReachable: Bool = true
-        func send(_ command: RemoteCommand) {}
-    }
-
     /// A `statusRead` carrying a reading whose immutable source time is `sourceEpoch` (Unix seconds),
     /// exactly as the host composes it (`AppModel.statusCommand` sets `glucoseEpochSec`).
     private func statusRead(bgMgdl: Double, sourceEpoch: Int?) -> RemoteCommand {

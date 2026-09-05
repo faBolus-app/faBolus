@@ -11,15 +11,6 @@ struct StaleRemoteDoseHostTests {
 
     // MARK: - Test harness (mirrors AppModelBehaviorTests)
 
-    @MainActor
-    final class EchoRecorder {
-        private(set) var commands: [RemoteCommand] = []
-        func attach(to model: AppModel) { model.addRemoteEcho { [weak self] c in self?.commands.append(c) } }
-        var last: RemoteCommand? { commands.last }
-        var statuses: [RemoteCommand.Status] { commands.compactMap { $0.status } }
-        func count(_ s: RemoteCommand.Status) -> Int { statuses.filter { $0 == s }.count }
-    }
-
     /// A fresh model + backend + recorder + the model's durable-ledger URL (so a test can load the ledger
     /// and assert the durable provenance the delivery recorded).
     private func makeModel(connected: Bool = false) async -> (AppModel, MockBackend, EchoRecorder, URL) {

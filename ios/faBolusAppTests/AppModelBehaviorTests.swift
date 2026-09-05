@@ -11,17 +11,6 @@ struct AppModelBehaviorTests {
 
     // MARK: - Test harness
 
-    /// Captures every `RemoteCommand` the model echoes back to a remote, so a test can assert on the
-    /// exact status sequence and messages the surface would see.
-    @MainActor
-    final class EchoRecorder {
-        private(set) var commands: [RemoteCommand] = []
-        func attach(to model: AppModel) { model.addRemoteEcho { [weak self] c in self?.commands.append(c) } }
-        var last: RemoteCommand? { commands.last }
-        var statuses: [RemoteCommand.Status] { commands.compactMap { $0.status } }
-        func count(_ s: RemoteCommand.Status) -> Int { statuses.filter { $0 == s }.count }
-    }
-
     /// A fresh model + backend + recorder. `connect()` only when the test needs delivery to succeed
     /// (rejections/gate blocks short-circuit before touching the backend).
     private func makeModel(connected: Bool = false) async -> (AppModel, MockBackend, EchoRecorder) {

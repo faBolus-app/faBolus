@@ -34,16 +34,6 @@ import faBolusCore
 
     // MARK: - RemoteCommandWireFixture.publishSnapshot() forwarding (Watch-render gap closure)
 
-    /// Minimal in-memory transport so a `RemoteCommandWireFixture` can be exercised without a real link —
-    /// mirrors `CrossSurfaceStalenessTests.FakeLink` / `ControllerDisclosureWireTests.FakeLink`.
-    private final class FakeLink: RemoteTransport {
-        var onReceive: (@MainActor (RemoteCommand) -> Void)?
-        var onReachabilityChange: (@MainActor (Bool) -> Void)?
-        var onUndeliverable: (@MainActor (RemoteCommand) -> Void)?
-        var isReachable: Bool = true
-        func send(_ command: RemoteCommand) {}
-    }
-
     /// The BASE `RemoteCommandWireFixture.publishSnapshot()` must forward ingested `batteryCharging`
     /// into the WidgetSnapshot it writes, not silently drop it back to the false default.
     @MainActor

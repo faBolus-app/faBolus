@@ -92,14 +92,6 @@ import faBolusCore
 
     // MARK: - fail-closed — absent/cleared maxBasalUnitsPerHour yields no rendered readout
 
-    private final class FakeLink: RemoteTransport {
-        var onReceive: (@MainActor (RemoteCommand) -> Void)?
-        var onReachabilityChange: (@MainActor (Bool) -> Void)?
-        var onUndeliverable: (@MainActor (RemoteCommand) -> Void)?
-        var isReachable: Bool = true
-        func send(_ command: RemoteCommand) {}
-    }
-
     /// Loading backstop: a freshly-constructed client BEFORE any `handle(cmd)` has `maxBasalUnitsPerHour`
     /// absent — a fresh app launch before the first statusRead reply must show the readout ABSENT,
     /// never a stale/zero placeholder.

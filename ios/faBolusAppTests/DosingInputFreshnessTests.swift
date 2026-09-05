@@ -199,12 +199,12 @@ struct DosingInputFreshnessTests {
 
     // MARK: - AppModel: the divergence guard now catches an INPUT change between compose and deliver
 
-    private func makeModel(connected: Bool) async -> (AppModel, MockBackend, AppModelBehaviorTests.EchoRecorder) {
+    private func makeModel(connected: Bool) async -> (AppModel, MockBackend, EchoRecorder) {
         let backend = MockBackend()
         let ledgerURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("dif-ledger-\(UUID().uuidString).json")
         let model = AppModel(source: backend, ledgerStoreURL: ledgerURL)
-        let rec = AppModelBehaviorTests.EchoRecorder()
+        let rec = EchoRecorder()
         rec.attach(to: model)
         if connected { await backend.connect() }
         return (model, backend, rec)

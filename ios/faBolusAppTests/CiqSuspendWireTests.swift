@@ -77,14 +77,6 @@ import faBolusCore
 
     // MARK: - Fail-closed on the client (RemoteCommandWireFixture parse)
 
-    private final class FakeLink: RemoteTransport {
-        var onReceive: (@MainActor (RemoteCommand) -> Void)?
-        var onReachabilityChange: (@MainActor (Bool) -> Void)?
-        var onUndeliverable: (@MainActor (RemoteCommand) -> Void)?
-        var isReachable: Bool = true
-        func send(_ command: RemoteCommand) {}
-    }
-
     /// Loading backstop: a freshly-constructed client BEFORE any `apply`/`handle(cmd)` has both suspend
     /// fields absent — a fresh app launch before the first statusRead reply must show every suspend
     /// surface ABSENT, never a stale/zero placeholder.

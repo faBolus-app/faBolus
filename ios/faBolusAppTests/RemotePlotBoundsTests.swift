@@ -12,14 +12,6 @@ import faBolusCore
 @MainActor
 @Suite(.serialized) struct RemotePlotBoundsTests {
 
-    private final class FakeLink: RemoteTransport {
-        var onReceive: (@MainActor (RemoteCommand) -> Void)?
-        var onReachabilityChange: (@MainActor (Bool) -> Void)?
-        var onUndeliverable: (@MainActor (RemoteCommand) -> Void)?
-        var isReachable: Bool = true
-        func send(_ command: RemoteCommand) {}
-    }
-
     @Test func freshModelDefaultsToTheSharedBaseline() {
         let m = RemoteCommandWireFixture(link: FakeLink())
         #expect(m.glucosePlotFloor == GlucosePlotScale.defaultFloor)

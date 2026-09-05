@@ -9,7 +9,7 @@ import Foundation
 @Suite(.serialized) struct WidgetBolusReceiverLifecycleTests {
 
     /// Counts Foundation notification deliveries without capturing a local `var` in an escaping closure
-    /// (mirrors `AppModelBehaviorTests.EchoRecorder`'s class-based recorder pattern).
+    /// (mirrors the shared `EchoRecorder`'s class-based recorder pattern).
     @MainActor
     final class Counter {
         private(set) var count = 0

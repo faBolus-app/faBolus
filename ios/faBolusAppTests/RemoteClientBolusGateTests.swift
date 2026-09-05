@@ -9,14 +9,6 @@ import faBolusCore
 @MainActor
 @Suite(.serialized) struct RemoteClientBolusGateTests {
 
-    private final class FakeLink: RemoteTransport {
-        var onReceive: (@MainActor (RemoteCommand) -> Void)?
-        var onReachabilityChange: (@MainActor (Bool) -> Void)?
-        var onUndeliverable: (@MainActor (RemoteCommand) -> Void)?
-        var isReachable: Bool = true
-        func send(_ command: RemoteCommand) {}
-    }
-
     /// Drive a status push carrying the host's connection string (`PumpConnectionState.rawValue`) and,
     /// optionally, the read-only flag — the same entry point the link's `onReceive` calls.
     private func model(connection: String, readOnly: Bool = false) -> RemoteCommandWireFixture {

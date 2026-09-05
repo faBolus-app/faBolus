@@ -11,14 +11,6 @@ import faBolusCore
 @MainActor
 @Suite(.serialized) struct RemoteBolusAuthWireTests {
 
-    private final class FakeLink: RemoteTransport {
-        var onReceive: (@MainActor (RemoteCommand) -> Void)?
-        var onReachabilityChange: (@MainActor (Bool) -> Void)?
-        var onUndeliverable: (@MainActor (RemoteCommand) -> Void)?
-        var isReachable: Bool = true
-        func send(_ command: RemoteCommand) {}
-    }
-
     @Test func freshModelFailsClosed() {
         let m = RemoteCommandWireFixture(link: FakeLink())
         #expect(!m.garminBolusEnabled)

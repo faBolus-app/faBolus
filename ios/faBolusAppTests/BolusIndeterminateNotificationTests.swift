@@ -13,13 +13,6 @@ struct BolusIndeterminateNotificationTests {
 
     // MARK: - Test harness (mirrors DeliverySurfaceOutcomeGuardTests / AppModelBehaviorTests)
 
-    @MainActor
-    final class EchoRecorder {
-        private(set) var commands: [RemoteCommand] = []
-        func attach(to model: AppModel) { model.addRemoteEcho { [weak self] c in self?.commands.append(c) } }
-        var last: RemoteCommand? { commands.last }
-    }
-
     private func makeModel(connected: Bool) async -> (AppModel, MockBackend, EchoRecorder) {
         let backend = MockBackend()
         let ledgerURL = URL(fileURLWithPath: NSTemporaryDirectory())

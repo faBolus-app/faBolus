@@ -17,17 +17,6 @@ import faBolusCore
 
     private static let now = Date(timeIntervalSince1970: 1_000_000)
 
-    /// Minimal in-memory transport so a `RemoteCommandWireFixture` can be built without a real link.
-    /// The test drives `handle(_:)` directly (the same entry point `onReceive` calls), so nothing here
-    /// is invoked — it only satisfies the initializer. Same helper shape as `CrossSurfaceStalenessTests`.
-    private final class FakeLink: RemoteTransport {
-        var onReceive: (@MainActor (RemoteCommand) -> Void)?
-        var onReachabilityChange: (@MainActor (Bool) -> Void)?
-        var onUndeliverable: (@MainActor (RemoteCommand) -> Void)?
-        var isReachable: Bool = true
-        func send(_ command: RemoteCommand) {}
-    }
-
     /// A widget snapshot with the published policy pinned to a 120 s window, so the boundary is
     /// unambiguous and independent of the global `GlucoseFreshness` default.
     private static func widgetSnap(

@@ -11,15 +11,6 @@ struct PhoneWidgetDoubleDoseTests {
 
     // MARK: - Test harness (mirrors AppModelBehaviorTests / StaleRemoteDoseHostTests)
 
-    @MainActor
-    final class EchoRecorder {
-        private(set) var commands: [RemoteCommand] = []
-        func attach(to model: AppModel) { model.addRemoteEcho { [weak self] c in self?.commands.append(c) } }
-        var last: RemoteCommand? { commands.last }
-        var statuses: [RemoteCommand.Status] { commands.compactMap { $0.status } }
-        func count(_ s: RemoteCommand.Status) -> Int { statuses.filter { $0 == s }.count }
-    }
-
     private func makeModel(connected: Bool = false) async -> (AppModel, MockBackend, EchoRecorder) {
         let backend = MockBackend()
         // Give each model its own durable-ledger file so the persisted ledger can't leak between
