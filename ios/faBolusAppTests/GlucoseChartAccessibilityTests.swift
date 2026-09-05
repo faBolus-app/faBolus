@@ -41,11 +41,6 @@ import faBolusCore
         }
     }
 
-    @Test func dataPointLabelsRespectDisplayUnit() {
-        let points = GlucoseChartAccessibility.dataPoints(for: Self.sample, unit: .mmol)
-        #expect(points[1].label == "\(Self.expectedTime(Self.sample[1])), 5.5 mmol/L, In range")
-    }
-
     @Test func perPointSymbolKindDistinctAcrossBands() {
         let kinds = Self.sample.map { GlucoseChartAccessibility.symbolKind(for: $0.mgdl) }
         // Range must be recoverable without color — every band in the sample maps to a different symbol kind.

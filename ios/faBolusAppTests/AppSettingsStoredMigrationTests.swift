@@ -285,7 +285,8 @@ struct AppSettingsStoredMigrationTests {
             key: "modeReminders", backingLabel: "__modeReminders", defaultValue: false, \.modeReminders)
     }
 
-    // MARK: Bool property WITH a side effect (WidgetPublisher.republishShowUnitLabel())
+    // MARK: Bool property (showGlucoseUnitLabels — its widget-republish side effect was removed;
+    // the setting itself and its 6 live readers stay)
 
     @Test func showGlucoseUnitLabelsStoredRoundTrip() {
         assertBoolStoredRoundTrip(

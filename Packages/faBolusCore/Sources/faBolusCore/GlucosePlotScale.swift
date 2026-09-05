@@ -76,9 +76,8 @@ public enum GlucosePlotScale {
         return fraction * unitMax
     }
 
-    /// mg/dL integer, or a clinically-rounded 1-decimal mmol label, mapped from the canonical mg/dL
-    /// `Int` via the same `GlucoseUnit` funnel every other glucose display uses — no second
-    /// conversion implementation.
+    /// The mg/dL integer label, via the same `GlucoseUnit` funnel every other glucose display
+    /// uses — no second conversion implementation.
     public static func boundLabel(_ mgdl: Int, unit: GlucoseUnit) -> String {
         unit.format(mgdl: mgdl)
     }

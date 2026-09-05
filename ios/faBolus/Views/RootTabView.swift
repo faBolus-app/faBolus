@@ -76,7 +76,7 @@ struct RootTabView: View {
                 // Display-unit funnel: this confirm approves insulin; BG must match every other
                 // glucose number on screen, never a bare mg/dL literal.
                 let unit = settings.glucoseDisplayUnit
-                let bgStr = "\(unit.format(mgdl: bg)) \(unit == .mmol ? "mmol/L" : "mg/dL")"
+                let bgStr = "\(unit.format(mgdl: bg)) mg/dL"
                 if let bgDate = p.bgDate {
                     let ageStr = "\(max(0, Int(Date().timeIntervalSince(bgDate) / 60)))"
                     parts.append(String(format: String(localized: "BG: %@ (%@ min ago)."), bgStr, ageStr))

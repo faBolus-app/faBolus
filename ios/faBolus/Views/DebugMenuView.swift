@@ -66,7 +66,7 @@ struct DebugMenuView: View {
                 row(
                     "Glucose",
                     model.snapshot.glucose.map {
-                        "\(settings.glucoseDisplayUnit.format(mgdl: $0)) \(settings.glucoseDisplayUnit == .mmol ? "mmol/L" : "mg/dL")"
+                        "\(settings.glucoseDisplayUnit.format(mgdl: $0)) mg/dL"
                     } ?? "—")
                 // `…IfRead` funnels, same reason as the Reservoir/Battery rows below: the Debug menu is
                 // where a support diagnosis starts, so a read the pump never answered must read "—",

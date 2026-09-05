@@ -3,8 +3,7 @@ import Foundation
 @testable import faBolusCore
 
 /// Covers `GlucosePlotScale`'s defaults (always floor<ceiling), its discrete preset sets, the
-/// symmetric clamp, the scaleUnits/recoverUnits round trip, and the mmol boundLabel's
-/// clinical rounding.
+/// symmetric clamp, the scaleUnits/recoverUnits round trip, and boundLabel().
 struct GlucosePlotScaleTests {
 
     // MARK: - Option sets + defaults
@@ -76,16 +75,10 @@ struct GlucosePlotScaleTests {
         }
     }
 
-    // MARK: - boundLabel() — mg/dL integer, mmol clinical rounding
+    // MARK: - boundLabel() — mg/dL integer
 
     @Test func boundLabelMgdlIsPlainInteger() {
         #expect(GlucosePlotScale.boundLabel(300, unit: .mgdl) == "300")
         #expect(GlucosePlotScale.boundLabel(40, unit: .mgdl) == "40")
-    }
-
-    @Test func boundLabelMmolIsOneDecimalClinicallyRounded() {
-        // Mirrors GlucoseUnit.format's 1-decimal mmol convention.
-        #expect(GlucosePlotScale.boundLabel(300, unit: .mmol) == GlucoseUnit.mmol.format(mgdl: 300))
-        #expect(GlucosePlotScale.boundLabel(40, unit: .mmol) == GlucoseUnit.mmol.format(mgdl: 40))
     }
 }

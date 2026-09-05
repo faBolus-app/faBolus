@@ -235,7 +235,7 @@ struct CgmStatusView: View {
         let age = Int(max(0, Date().timeIntervalSince(sample.date)))
         let ageStr = age < 60 ? "\(age)s ago" : "\(age / 60) min ago"
         let bgUnit = AppSettings.shared.glucoseDisplayUnit
-        let bgStr = "\(bgUnit.format(mgdl: sample.mgdl)) \(bgUnit == .mmol ? "mmol/L" : "mg/dL")"
+        let bgStr = "\(bgUnit.format(mgdl: sample.mgdl)) mg/dL"
         return "\(bgStr) · \(ageStr)"
     }
 

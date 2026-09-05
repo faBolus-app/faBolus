@@ -41,8 +41,7 @@ struct StaleCalcInputPromptTests {
         #expect(msg.contains(CalcInputFreshness.ageLabel(for: stale, now: now)))
     }
 
-    // MARK: - StaleTherapyPrompt's "target %d mg/dL" literal must convert via a
-    // GlucoseUnit param (no AppSettings in faBolusCore); the no-arg default must stay byte-identical.
+    // MARK: - StaleTherapyPrompt's "target %d mg/dL" literal (mg/dL is the app's only display unit)
 
     @Test func therapyWarningDefaultUnitTextIsUnchanged() {
         let stale = now.addingTimeInterval(-20 * 60)
@@ -50,17 +49,5 @@ struct StaleCalcInputPromptTests {
         // No `unit:` argument — must be byte-identical to the pre-existing "target %d mg/dL" wording.
         let msg = StaleTherapyPrompt.warningMessage(profile: profile, therapyDate: stale, now: now)
         #expect(msg.contains("target 110 mg/dL"))
-    }
-
-    @Test func therapyWarningMmolUnitConvertsIsfAndTarget() {
-        let stale = now.addingTimeInterval(-20 * 60)
-        // 45 mg/dL/U ⇒ 2.5 mmol/L/U; 110 mg/dL target ⇒ 6.1 mmol/L.
-        let profile = BolusMath.Profile(carbRatioGramsPerUnit: 12, isfMgdlPerUnit: 45, targetBgMgdl: 110, iobUnits: 0)
-        let msg = StaleTherapyPrompt.warningMessage(profile: profile, therapyDate: stale, now: now, unit: .mmol)
-        #expect(msg.contains("mg/dL") == false, "mmol mode must never leak an mg/dL label")
-        #expect(msg.contains("12 g/U"))  // carb ratio is unit-agnostic — unaffected
-        #expect(msg.contains("2.5 mmol/L"))  // ISF converted
-        #expect(msg.contains("6.1 mmol/L"))  // target converted
-        #expect(msg.contains(CalcInputFreshness.ageLabel(for: stale, now: now)))
     }
 }

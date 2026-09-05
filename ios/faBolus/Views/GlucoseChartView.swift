@@ -38,7 +38,7 @@ enum GlucoseChartAccessibility {
     /// One AXDataPoint per reading: time + value + unit + band, so VoiceOver can tell WHEN each
     /// point occurred. Locale short time honors 12/24h without a stored DateFormatter.
     static func dataPoints(for readings: [GlucoseReading], unit: GlucoseUnit) -> [AXDataPoint] {
-        let unitLabel = unit == .mmol ? "mmol/L" : "mg/dL"
+        let unitLabel = "mg/dL"
         return readings.map { r in
             let band = GlucoseRange.classify(r.mgdl)
             let time = r.date.formatted(date: .omitted, time: .shortened)
@@ -201,7 +201,7 @@ struct GlucoseChartView: View {
         .overlay(alignment: .topLeading) {
             // Only persistent unit label on the chart. Hidden entirely when off — never a bare fallback.
             if showGlucose && AppSettings.shared.showGlucoseUnitLabels {
-                Text(unit == .mmol ? String(localized: "mmol/L") : String(localized: "mg/dL"))
+                Text(String(localized: "mg/dL"))
                     .font(.caption2).foregroundStyle(.secondary).padding(.leading, 2)
             }
         }

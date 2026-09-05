@@ -19,7 +19,7 @@ struct StatusRingView: View {
 
     /// The display-unit funnel this ring's glucose number + caption route through.
     private var unit: GlucoseUnit { AppSettings.shared.glucoseDisplayUnit }
-    private var unitLabel: String { unit == .mmol ? "mmol/L" : "mg/dL" }
+    private var unitLabel: String { "mg/dL" }
     /// Gates the on-screen unit caption only — VoiceOver always speaks the unit.
     private var showUnitLabel: Bool { AppSettings.shared.showGlucoseUnitLabels }
 

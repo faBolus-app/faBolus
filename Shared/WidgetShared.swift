@@ -14,41 +14,32 @@ public enum WidgetGlucoseThresholds {
     public static let veryHigh = 250  // == GlucoseThresholds.veryHigh
 }
 
-/// The widget island's mirror of `faBolusCore.GlucoseUnit` (mmol/L display-unit support). RETAINED
-/// as-is for the same reason as `WidgetGlucoseThresholds` above, so this carries the same two-case
-/// shape, the same 18.0182 factor, and the same 1-decimal mmol format. The unit rides the App Group
-/// as a plain `String?` wire token ("mgdl"|"mmol") on `WidgetSnapshot.displayUnit` — never this enum
-/// directly (a raw enum on the wire risks a silent encoding drift if a case is ever added); a nil or
-/// unrecognized token resolves to `.mgdl` (legacy-safe, matches the mg/dL default).
+/// The widget island's mirror of `faBolusCore.GlucoseUnit`. RETAINED as-is for the same reason as
+/// `WidgetGlucoseThresholds` above. mg/dL is the only display unit `main` offers (mmol/L display
+/// was removed as dead code) — this mirror keeps the same wire-token resolution shape so a stale
+/// pre-sweep "mmol" token already sitting in an App-Group snapshot resolves safely, never a crash
+/// or a silently-wrong conversion: the unit rides the App Group as a plain `String?` wire token on
+/// `WidgetSnapshot.displayUnit` — never this enum directly — and ANY unrecognized token (including
+/// a now-retired "mmol") resolves to `.mgdl`.
 /// `WidgetGlucoseUnitMirrorTests` (app target, which links BOTH) pins this to the canonical
 /// `faBolusCore.GlucoseUnit` so the two can't drift silently.
 public enum WidgetGlucoseUnit: String {
-    case mgdl, mmol
+    case mgdl
 
-    /// mg/dL per mmol/L (locked) — mirrors `faBolusCore.GlucoseUnit.mgdlPerMmol` exactly;
-    /// pinned equal by the drift-guard test, not re-derived independently.
-    public static let mgdlPerMmol = 18.0182
-
-    /// Resolve the App-Group wire token ("mgdl"|"mmol") to a unit. `nil` or an unrecognized token
-    /// (e.g. a future third case from a newer phone build) falls back to `.mgdl` — behavior-
-    /// preserving, never a crash, never a silently-wrong conversion.
+    /// Resolve the App-Group wire token to a unit. `nil` or an unrecognized token (including a
+    /// stale "mmol" from before the sweep, or a future token from a newer phone build) falls back
+    /// to `.mgdl` — behavior-preserving, never a crash, never a silently-wrong conversion.
     public init(wireToken: String?) {
         self = wireToken.flatMap(WidgetGlucoseUnit.init(rawValue:)) ?? .mgdl
     }
 
-    /// mg/dL → a display string in this unit. Identical shape/rounding to
-    /// `faBolusCore.GlucoseUnit.format(mgdl:)`: `.mgdl` is the plain integer, `.mmol` is ALWAYS
-    /// exactly 1 decimal.
-    public func format(mgdl: Int) -> String {
-        switch self {
-        case .mgdl: return "\(mgdl)"
-        case .mmol: return String(format: "%.1f", Double(mgdl) / Self.mgdlPerMmol)
-        }
-    }
+    /// mg/dL → a display string in this unit (the plain integer). Identical shape to
+    /// `faBolusCore.GlucoseUnit.format(mgdl:)`.
+    public func format(mgdl: Int) -> String { "\(mgdl)" }
 
     /// The unit suffix shown next to a formatted value, same convention as the phone's
     /// `StatusRingView.unitLabel`.
-    public var unitLabel: String { self == .mmol ? "mmol/L" : "mg/dL" }
+    public var unitLabel: String { "mg/dL" }
 }
 
 /// Data shared from the app to its WidgetKit extension via an App Group. The app writes a

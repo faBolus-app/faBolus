@@ -89,10 +89,6 @@ public final class AppSettings {
     /// unit picker itself — those are safety/clarity/setup contexts, not ambient display, and always
     /// keep the unit regardless of this flag. A display-format preference like `glucoseDisplayUnit`
     /// (NOT a per-device feature toggle), so it iCloud-syncs the same way — see `SettingsCatalog`.
-    // `WidgetPublisher.republishShowUnitLabel()` is preserved via the post-init `onChange` hook
-    // (fired as a SEPARATE statement — see Stored.swift's onChange doc — so widgets/complication/
-    // Live Activity reflect the toggle without waiting for the next pump reading. `republishShowUnitLabel()`
-    // reads `AppSettings.shared`, so it must run after this write's exclusive access has ended).
     private var _showGlucoseUnitLabels = Stored<Bool>(wrappedValue: false, "showGlucoseUnitLabels")
     public var showGlucoseUnitLabels: Bool {
         get { _showGlucoseUnitLabels.wrappedValue }
@@ -843,6 +839,5 @@ public final class AppSettings {
         _carbIncrement.onChange = { [weak self] _ in self?.syncWidgetConfig() }
         _bolusIncrement.onChange = { [weak self] _ in self?.syncWidgetConfig() }
         _glucoseStaleMinutes.onChange = { [weak self] _ in self?.applyFreshness() }
-        _showGlucoseUnitLabels.onChange = { _ in WidgetPublisher.republishShowUnitLabel() }
     }
 }

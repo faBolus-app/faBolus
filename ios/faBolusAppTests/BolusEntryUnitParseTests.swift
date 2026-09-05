@@ -4,10 +4,11 @@ import SwiftUI
 import faBolusCore
 @testable import faBolus
 
-/// The single highest-risk unit-parsing seam: a typed mmol
-/// decimal in `BolusEntryView`'s `bg` field must reach `recommendBolus` as the NEAREST mg/dL `Int`,
-/// and MUST NEVER become `0` (the hazard a bare `Int(bg)` on a decimal string previously risked via
-/// `Int(bg) ?? 0`).
+/// The single highest-risk unit-parsing seam: a typed `bg` field must reach `recommendBolus` as
+/// mg/dL `Int`, and MUST NEVER become `0` (the hazard a bare `Int(bg) ?? 0` previously risked).
+/// mg/dL is the app's only display unit — mmol/L display was removed as dead code
+/// (`AppSettings.glucoseDisplayUnit` force-sets `.mgdl` unconditionally); the mmol-specific cases
+/// this suite used to pin were removed with the case itself.
 @MainActor
 struct BolusEntryUnitParseTests {
 
@@ -19,21 +20,7 @@ struct BolusEntryUnitParseTests {
 
     // MARK: - The dose-math boundary
 
-    /// "7.1" typed in mmol mode → nearest mg/dL Int (127.9… → 128), and that exact value is what
-    /// reaches `recommendBolus` — never `nil`-coerced-to-`0`, which would be a fabricated glucose
-    /// reading silently entering correction math.
-    @Test func mmolDecimalEntryReachesRecommendBolusAsNearestMgdlNeverZero() async {
-        let (model, _) = makeModel()
-        let bgMgdl = GlucoseUnit.mmol.parse("7.1")
-        #expect(bgMgdl == 128)
-        #expect(bgMgdl != 0)
-
-        let rec = await model.recommendBolus(carbsGrams: 0, bgMgdl: bgMgdl)
-        #expect(rec.bgMgdl == 128)
-        #expect(rec.bgMgdl != 0)
-    }
-
-    /// "128" typed in mgdl mode → unchanged behavior (byte-identical to before this phase).
+    /// "128" typed → unchanged behavior (byte-identical to before this phase).
     @Test func mgdlIntegerEntryIsUnchanged() async {
         let (model, _) = makeModel()
         let bgMgdl = GlucoseUnit.mgdl.parse("128")
@@ -43,16 +30,14 @@ struct BolusEntryUnitParseTests {
         #expect(rec.bgMgdl == 128)
     }
 
-    /// Empty / non-numeric entry → nil ("no BG entered"), in BOTH units — never a fabricated `0`.
-    @Test func emptyOrGarbageEntryIsNilNeverZeroInEitherUnit() async {
+    /// Empty / non-numeric entry → nil ("no BG entered") — never a fabricated `0`.
+    @Test func emptyOrGarbageEntryIsNilNeverZero() async {
         let (model, _) = makeModel()
         for text in ["", "abc", "--"] {
             let mgdlParsed = GlucoseUnit.mgdl.parse(text)
-            let mmolParsed = GlucoseUnit.mmol.parse(text)
             #expect(mgdlParsed == nil, "mgdl parse of \(text.debugDescription) must be nil, not 0")
-            #expect(mmolParsed == nil, "mmol parse of \(text.debugDescription) must be nil, not 0")
 
-            let rec = await model.recommendBolus(carbsGrams: 5, bgMgdl: mmolParsed)
+            let rec = await model.recommendBolus(carbsGrams: 5, bgMgdl: mgdlParsed)
             #expect(rec.bgMgdl == nil)
             #expect(rec.bgMgdl != 0)
         }
@@ -60,29 +45,15 @@ struct BolusEntryUnitParseTests {
 
     // MARK: - Field affordances (unit-aware keyboard / placeholder / accessibility label)
 
-    @Test func bgKeyboardTypeIsDecimalInMmolAndNumberInMgdl() {
-        #expect(BolusEntryView.bgKeyboardType(for: .mmol) == .decimalPad)
+    @Test func bgKeyboardTypeIsNumberPad() {
         #expect(BolusEntryView.bgKeyboardType(for: .mgdl) == .numberPad)
     }
 
     @Test func bgPlaceholderNamesTheActiveUnit() {
-        #expect(BolusEntryView.bgPlaceholder(for: .mmol).contains("mmol"))
         #expect(BolusEntryView.bgPlaceholder(for: .mgdl).contains("mg/dL"))
     }
 
     @Test func bgAccessibilityLabelNamesTheActiveUnit() {
-        #expect(BolusEntryView.bgAccessibilityLabel(for: .mmol).contains("mmol"))
         #expect(BolusEntryView.bgAccessibilityLabel(for: .mgdl).contains("mg/dL"))
-    }
-
-    // MARK: - No bare Int(bg) remains (structural)
-
-    /// Defense in depth: a mismatched round value never masquerades as a valid parse. Kept as a
-    /// belt-and-suspenders unit-scale sanity check alongside `GlucoseUnitTests`' own coverage.
-    @Test func mmolParseNeverMatchesTheRawUnconvertedNumber() {
-        // "7.1" in mmol must NOT parse to 7 (a bare-truncation bug) or 71 (a decimal-point bug).
-        let bgMgdl = GlucoseUnit.mmol.parse("7.1")
-        #expect(bgMgdl != 7)
-        #expect(bgMgdl != 71)
     }
 }

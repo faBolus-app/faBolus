@@ -107,8 +107,7 @@ struct BolusEntryView: View {
     /// reading is fresh; keeps it live as new readings arrive. No-op once the user edits the field.
     private func syncBGFromCGM() {
         guard bgSource != .manual, let g = model.snapshot.glucose, !model.snapshot.isGlucoseStale else { return }
-        // Write through the same display-unit funnel the field parses. A bare mg/dL Int into this
-        // text field is later re-parsed as mmol (e.g. 124 → 2234 mg/dL) and corrupts the correction.
+        // Write through the same display-unit funnel the field parses.
         let s = settings.glucoseDisplayUnit.format(mgdl: g)
         if bg != s {
             bg = s
@@ -136,52 +135,30 @@ struct BolusEntryView: View {
     /// RemoteCommand. `nil` means no BG entered — callers MUST NOT coerce it to `0` (a fabricated
     /// glucose silently entering correction math).
 
-    /// Keyboard: `.decimalPad` in mmol (a decimal is required), `.numberPad` in mg/dL.
-    static func bgKeyboardType(for unit: GlucoseUnit) -> UIKeyboardType {
-        unit == .mmol ? .decimalPad : .numberPad
-    }
+    /// Keyboard: `.numberPad` — mg/dL is the app's only display unit (a strict integer entry).
+    static func bgKeyboardType(for unit: GlucoseUnit) -> UIKeyboardType { .numberPad }
     /// Placeholder naming the active unit.
-    static func bgPlaceholder(for unit: GlucoseUnit) -> String {
-        unit == .mmol ? "mmol/L" : "mg/dL"
-    }
+    static func bgPlaceholder(for unit: GlucoseUnit) -> String { "mg/dL" }
     /// Accessibility label naming the active unit.
-    static func bgAccessibilityLabel(for unit: GlucoseUnit) -> String {
-        unit == .mmol ? "Blood glucose, mmol/L" : "Blood glucose, mg/dL"
-    }
+    static func bgAccessibilityLabel(for unit: GlucoseUnit) -> String { "Blood glucose, mg/dL" }
 
-    /// Stale / CGM-changed messages: whole-phrase catalog variants per display unit, not a glued
-    /// suffix. Canonical reading stays mg/dL.
+    /// Stale / CGM-changed messages: whole-phrase catalog variants, not a glued suffix. Canonical
+    /// reading stays mg/dL.
     private func staleReadingMessage(mgdl: Int, carbsOnlyLabel: String) -> String {
         let value = settings.glucoseDisplayUnit.format(mgdl: mgdl)
-        if settings.glucoseDisplayUnit == .mmol {
-            return String(
-                format: String(
-                    localized:
-                        "Your CGM reading (%@ mmol/L) is stale and was left out of this dose. Include it in the correction, deliver carbs only (%@), or cancel."
-                ), value, carbsOnlyLabel)
-        } else {
-            return String(
-                format: String(
-                    localized:
-                        "Your CGM reading (%@ mg/dL) is stale and was left out of this dose. Include it in the correction, deliver carbs only (%@), or cancel."
-                ), value, carbsOnlyLabel)
-        }
+        return String(
+            format: String(
+                localized:
+                    "Your CGM reading (%@ mg/dL) is stale and was left out of this dose. Include it in the correction, deliver carbs only (%@), or cancel."
+            ), value, carbsOnlyLabel)
     }
     private func cgmChangedMessage(mgdl: Int, newLabel: String, oldLabel: String) -> String {
         let value = settings.glucoseDisplayUnit.format(mgdl: mgdl)
-        if settings.glucoseDisplayUnit == .mmol {
-            return String(
-                format: String(
-                    localized:
-                        "Your CGM changed while this dose was on screen. The new reading (%@ mmol/L) suggests %@ instead of %@."
-                ), value, newLabel, oldLabel)
-        } else {
-            return String(
-                format: String(
-                    localized:
-                        "Your CGM changed while this dose was on screen. The new reading (%@ mg/dL) suggests %@ instead of %@."
-                ), value, newLabel, oldLabel)
-        }
+        return String(
+            format: String(
+                localized:
+                    "Your CGM changed while this dose was on screen. The new reading (%@ mg/dL) suggests %@ instead of %@."
+            ), value, newLabel, oldLabel)
     }
 
     /// Stale-CGM dialog title is three-way so "CGM unavailable" never sits above a button that
@@ -265,7 +242,7 @@ struct BolusEntryView: View {
     private var cgmReadout: String? {
         guard let g = model.snapshot.glucose else { return nil }
         let unit = settings.glucoseDisplayUnit
-        let value = "\(unit.format(mgdl: g)) \(unit == .mmol ? "mmol/L" : "mg/dL")"
+        let value = "\(unit.format(mgdl: g)) mg/dL"
         guard let d = model.snapshot.glucoseDate else { return value }
         return "\(value) · \(GlucoseFreshness.ageLabel(for: d, now: Date()))"
     }
@@ -748,7 +725,7 @@ struct BolusEntryView: View {
                         if let sbg = u.staleBG, let su = u.staleUnits {
                             // Same unit funnel as the message: button and body must show one number.
                             Button(
-                                "Include \(settings.glucoseDisplayUnit.format(mgdl: sbg)) \(settings.glucoseDisplayUnit == .mmol ? "mmol/L" : "mg/dL") → \(String(format: "%.2f U", su))"
+                                "Include \(settings.glucoseDisplayUnit.format(mgdl: sbg)) mg/dL → \(String(format: "%.2f U", su))"
                             ) {
                                 let carbsOnlyUnits = u.newUnits
                                 cgmUpdate = nil
@@ -772,7 +749,7 @@ struct BolusEntryView: View {
                     } else {
                         // Same unit funnel as the message.
                         Button(
-                            "Use \(settings.glucoseDisplayUnit.format(mgdl: u.newBG)) \(settings.glucoseDisplayUnit == .mmol ? "mmol/L" : "mg/dL") → \(String(format: "%.2f U", u.newUnits))"
+                            "Use \(settings.glucoseDisplayUnit.format(mgdl: u.newBG)) mg/dL → \(String(format: "%.2f U", u.newUnits))"
                         ) {
                             // Label already shows the converted figure; the field it writes must match.
                             bg = settings.glucoseDisplayUnit.format(mgdl: u.newBG)

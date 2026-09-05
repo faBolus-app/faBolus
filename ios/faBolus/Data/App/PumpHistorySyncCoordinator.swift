@@ -455,7 +455,7 @@ final class PumpHistorySyncCoordinator {
             // The Logbook tab is a mainline surface, not debug-only — route through the
             // display-unit funnel like every other glucose display.
             let bgUnit = AppSettings.shared.glucoseDisplayUnit
-            let bgStr = "\(bgUnit.format(mgdl: m.bg)) \(bgUnit == .mmol ? "mmol/L" : "mg/dL")"
+            let bgStr = "\(bgUnit.format(mgdl: m.bg)) mg/dL"
             return HistoryEvent(id: seq, date: date, category: .bg, title: "BG entered", detail: bgStr)
         case let m as BasalRateChangeHistoryLog:
             return HistoryEvent(

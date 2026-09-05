@@ -20,9 +20,7 @@ struct StatsCardView: View {
     private func glucoseLabel(_ mgdl: Int) -> String {
         let value = unit.format(mgdl: mgdl)
         guard AppSettings.shared.showGlucoseUnitLabels else { return value }
-        return unit == .mmol
-            ? String(format: String(localized: "%@ mmol/L"), value)
-            : String(format: String(localized: "%@ mg/dL"), value)
+        return String(format: String(localized: "%@ mg/dL"), value)
     }
 
     var body: some View {

@@ -74,20 +74,11 @@ public enum StaleTherapyPrompt {
     ) -> String {
         let age = therapyDate.map { CalcInputFreshness.ageLabel(for: $0, now: now) } ?? "of unknown age"
         if let p = profile {
-            switch unit {
-            case .mgdl:
-                return String(
-                    format: "faBolus couldn't confirm this pump's bolus settings are current "
-                        + "(last known carb ratio %.0f g/U, ISF %d, target %d mg/dL, %@). "
-                        + "Use those settings, or cancel.",
-                    p.carbRatioGramsPerUnit, p.isfMgdlPerUnit, p.targetBgMgdl, age)
-            case .mmol:
-                let carbRatioStr = String(format: "%.0f", p.carbRatioGramsPerUnit)
-                return "faBolus couldn't confirm this pump's bolus settings are current "
-                    + "(last known carb ratio \(carbRatioStr) g/U, ISF \(unit.format(mgdl: p.isfMgdlPerUnit)) mmol/L, "
-                    + "target \(unit.format(mgdl: p.targetBgMgdl)) mmol/L, \(age)). "
-                    + "Use those settings, or cancel."
-            }
+            return String(
+                format: "faBolus couldn't confirm this pump's bolus settings are current "
+                    + "(last known carb ratio %.0f g/U, ISF %d, target %d mg/dL, %@). "
+                    + "Use those settings, or cancel.",
+                p.carbRatioGramsPerUnit, p.isfMgdlPerUnit, p.targetBgMgdl, age)
         }
         return "faBolus couldn't confirm this pump's bolus settings are current (last known settings, \(age)). "
             + "Use them, or cancel."

@@ -104,7 +104,9 @@ struct SettingsCatalogTests {
         #expect(SettingsCatalog.byKey["glucoseDisplayUnit"] == nil)
     }
 
-    /// Init force-sets `.mgdl` even if UserDefaults still holds `"mmol"`.
+    /// Init force-sets `.mgdl` even if UserDefaults still holds a stale pre-sweep `"mmol"` string
+    /// (a legacy on-disk value from before mmol/L display was removed as dead code — `GlucoseUnit`
+    /// no longer has that case at all, but the raw string can still sit on disk from an old build).
     @Test @MainActor func glucoseDisplayUnitIsForceSetMgdlRegardlessOfAnyStoredValue() {
         let suiteName = "SettingsCatalogTests.glucoseDisplayUnit.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -113,10 +115,6 @@ struct SettingsCatalogTests {
 
         let fresh = AppSettings(defaults: defaults)
         #expect(fresh.glucoseDisplayUnit == .mgdl)  // force-set pin wins over the stored value
-
-        fresh.glucoseDisplayUnit = .mmol  // the property setter itself is unchanged (still writable)…
-        let reloaded = AppSettings(defaults: defaults)
-        #expect(reloaded.glucoseDisplayUnit == .mgdl)  // …but the NEXT init still force-sets .mgdl
     }
 
     /// `showGlucoseUnitLabels` is not a catalog row; the accessor remains as an unregistered flag.

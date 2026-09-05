@@ -88,7 +88,10 @@ final class RemoteCommandTests: XCTestCase {
     /// default to mgdl) without bumping schemaVersion.
     func testGlucoseDisplayUnitRoundTrips() throws {
         var cmd = RemoteCommand(kind: .statusRead)
-        cmd.glucoseDisplayUnit = GlucoseUnit.mmol.wireToken
+        // "mmol" is no longer a live GlucoseUnit case, but the wire field is a raw String? that
+        // must still round-trip whatever token another peer (an older phone build, or a Garmin
+        // producer) sends — not re-validated against the phone's current enum.
+        cmd.glucoseDisplayUnit = "mmol"
         let decoded = try RemoteCommand.decode(try cmd.encoded())
         XCTAssertEqual(decoded.glucoseDisplayUnit, "mmol")
         XCTAssertEqual(decoded.version, RemoteCommand.schemaVersion)

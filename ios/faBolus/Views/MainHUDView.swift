@@ -282,15 +282,14 @@ struct PumpDetailsCard: View {
         case "isf":
             guard let isf = snapshot.isfIfFresh(now: now) else { return "—" }
             let unit = AppSettings.shared.glucoseDisplayUnit
-            // "mmol/L/U" matches catalog / PumpWizard / Garmin — not "mmol/L·U⁻¹".
             guard AppSettings.shared.showGlucoseUnitLabels else { return unit.format(mgdl: isf) }
-            return "\(unit.format(mgdl: isf)) \(unit == .mmol ? "mmol/L/U" : "mg/dL/U")"
+            return "\(unit.format(mgdl: isf)) mg/dL/U"
         case "target":
             guard let target = snapshot.targetBgIfFresh(now: now) else { return "—" }
             let unit = AppSettings.shared.glucoseDisplayUnit
             // Bare value when labels are hidden (ambient dashboard row).
             guard AppSettings.shared.showGlucoseUnitLabels else { return unit.format(mgdl: target) }
-            return "\(unit.format(mgdl: target)) \(unit == .mmol ? "mmol/L" : "mg/dL")"
+            return "\(unit.format(mgdl: target)) mg/dL"
         case "maxBolus": return String(format: "%.1f U", snapshot.maxBolusUnits)
         default: return nil
         }

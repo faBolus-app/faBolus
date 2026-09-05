@@ -99,7 +99,7 @@ struct CgmCredentialsView: View {
         let stale = GlucoseFreshness.isStale(sample.date) ? " · STALE" : ""
         // Display-unit funnel — this screen is mainline Settings, not debug-gated.
         let bgUnit = AppSettings.shared.glucoseDisplayUnit
-        let bgStr = "\(bgUnit.format(mgdl: sample.mgdl)) \(bgUnit == .mmol ? "mmol/L" : "mg/dL")"
+        let bgStr = "\(bgUnit.format(mgdl: sample.mgdl)) mg/dL"
         return "\(bgStr) \(sample.trend?.rawValue ?? "") · \(ageStr)\(stale)"
     }
 
