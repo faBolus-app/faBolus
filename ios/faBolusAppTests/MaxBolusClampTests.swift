@@ -4,10 +4,10 @@ import faBolusCore
 import TandemMessages
 @testable import faBolus
 
-/// The absolute 25 U max-bolus cap is a HARD block enforced at the funnel AND in every backend
-/// through the one shared `Interlocks.clampMaxBolusLimit`, so a requested limit above 25 U can never take
-/// effect — on ANY backend. Previously the `MockBackend` skipped the clamp entirely and only `TandemBackend`
-/// enforced it. Distinct from the per-bolus DELIVERY block (`deliverBolus` throws), which is unchanged.
+/// The absolute 25 U max-bolus cap is a HARD block enforced in every backend through the one shared
+/// `Interlocks.clampMaxBolusLimit`, so a requested limit above 25 U can never take effect — on ANY
+/// backend. Previously the `MockBackend` skipped the clamp entirely and only `TandemBackend` enforced it.
+/// Distinct from the per-bolus DELIVERY block (`deliverBolus` throws), which is unchanged.
 @Suite(.serialized) @MainActor
 struct MaxBolusClampTests {
 
@@ -18,16 +18,6 @@ struct MaxBolusClampTests {
         #expect(mock.snapshot.maxBolusUnits == 25.0)
         try await mock.setMaxBolus(units: 8)  // a legitimate value is untouched
         #expect(mock.snapshot.maxBolusUnits == 8.0)
-    }
-
-    /// End-to-end through the app funnel: even asking for an absurd limit yields ≤ 25 U at the backend.
-    @Test func appFunnelCapsTheLimitEndToEnd() async {
-        let backend = MockBackend()
-        let ledgerURL = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("maxbolus-ledger-\(UUID().uuidString).json")
-        let model = AppModel(source: backend, ledgerStoreURL: ledgerURL)
-        await model.setMaxBolus(units: 999)
-        #expect(backend.snapshot.maxBolusUnits == 25.0)
     }
 
     /// The pump-facing proof: the actual `SetMaxBolusLimitRequest` bytes TandemBackend writes are capped to

@@ -137,10 +137,15 @@ struct ControlWriteAckTests {
         )
     }
 
-    // MARK: - Sleep-schedule write: the bespoke error chain is closed by deletion, the funnel's own
+    // MARK: - Sleep-schedule write: the bespoke error chain is closed by deletion, the ack-inspection
     // refusal message stays as specific as the retired one.
+    //
+    // Drives `TandemBackend.setSleepSchedule` directly (like every other test in this file) rather than
+    // through `AppModel` — the AppModel-level `setSleepSchedule` wrapper was retired with `AccessPolicy`
+    // Gate 1 (it was one of the 12 ack-gated writes), but the backend method + its `sendControl`
+    // ack inspection are unaffected and still the thing this suite pins.
 
-    @Test func refusedSleepScheduleWriteSurfacesTheSpecificLastErrorThroughTheFunnel() async {
+    @Test func refusedSleepScheduleWriteThrowsWithTheSpecificMessage() async {
         let fake = FakePumpTransport()
         let backend = mobiBackend(fake)
         fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
@@ -148,28 +153,17 @@ struct ControlWriteAckTests {
             SetSleepScheduleResponse.props.opCode,
             .frame(FakePumpTransport.frame(opCode: SetSleepScheduleResponse.props.opCode, cargo: [1], signed: true)))
 
-        let s = AppSettings.shared
-        let ro = s.phoneReadOnly, child = s.childModeEnabled
-        let mode = s.appMode
-        s.phoneReadOnly = false
-        s.childModeEnabled = false
-        s.appMode = .advanced
-        defer {
-            s.phoneReadOnly = ro
-            s.childModeEnabled = child
-            s.appMode = mode
+        do {
+            try await backend.setSleepSchedule(
+                slot: 0, enabled: true, activeDays: 0x7F, startMinute: 0, endMinute: 60)
+            Issue.record("a refused sleep-schedule write must throw, never report success")
+        } catch let ControlWriteError.rejected(message) {
+            #expect(
+                message == "The pump rejected the sleep-schedule change (status 1).",
+                "a rejected sleep-schedule write must surface a message as specific as the retired bespoke one; got: \(message)"
+            )
+        } catch {
+            Issue.record("expected ControlWriteError.rejected, got \(error)")
         }
-
-        let ledgerURL = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("appmodel-ledger-\(UUID().uuidString).json")
-        let model = AppModel(source: backend, ledgerStoreURL: ledgerURL)
-        model.acknowledgeUnverifiedTherapy()
-
-        await model.setSleepSchedule(slot: 0, enabled: true, activeDays: 0x7F, startMinute: 0, endMinute: 60)
-
-        #expect(
-            model.lastError == "The pump rejected the sleep-schedule change (status 1).",
-            "a rejected sleep-schedule write must surface a message as specific as the retired bespoke one; got: \(model.lastError ?? "nil")"
-        )
     }
 }

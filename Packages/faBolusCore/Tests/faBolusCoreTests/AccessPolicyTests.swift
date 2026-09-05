@@ -2,28 +2,26 @@ import Testing
 @testable import faBolusCore
 
 /// Pins AccessPolicy fail-closed behavior across every GatedPumpWrite × Surface: read-only,
-/// child-lock, capability, and ack gates.
+/// child-lock, and capability gates.
 @Suite struct AccessPolicyTests {
     typealias P = AccessPolicy
     typealias A = GatedPumpWrite
     typealias S = AccessPolicy.Surface
 
-    /// Fully locked: child on with nothing allowed, both read-only flags on, no ack, no advanced
-    /// control. Nothing consequential may happen on any surface.
+    /// Fully locked: child on with nothing allowed, both read-only flags on, no advanced control.
+    /// Nothing consequential may happen on any surface.
     private var locked: P.AccessContext {
         P.AccessContext(
             childModeEnabled: true, childAllowed: [],
             phoneReadOnly: true, remotesReadOnly: true,
-            capabilities: PumpCapabilities(),
-            hasRecentUnverifiedAck: false)
+            capabilities: PumpCapabilities())
     }
-    /// Fully permissive: child off, no read-only, advanced control available, ack present.
+    /// Fully permissive: child off, no read-only, advanced control available.
     private func openCtx() -> P.AccessContext {
         P.AccessContext(
             childModeEnabled: false, childAllowed: Set(ChildFeature.allCases),
             phoneReadOnly: false, remotesReadOnly: false,
             capabilities: .mobiAdvanced,
-            hasRecentUnverifiedAck: true,
             // "Fully permissive" must set this explicitly now that the init default is
             // fail-closed (false); openCtx asserts a Garmin deliver is ALLOWED.
             garminBolusEnabled: true)
@@ -36,7 +34,6 @@ import Testing
             childModeEnabled: false, childAllowed: Set(ChildFeature.allCases),
             phoneReadOnly: false, remotesReadOnly: false,
             capabilities: .mobiAdvanced,
-            hasRecentUnverifiedAck: true,
             garminBolusEnabled: false)
         #expect(P.evaluate(.deliverBolus, surface: .garmin, context: off).reason == .remoteBolusDisabled)
         // Not this surface — the phone is unaffected by the per-surface remote flag.
@@ -55,7 +52,6 @@ import Testing
             childModeEnabled: false, childAllowed: Set(ChildFeature.allCases),
             phoneReadOnly: false, remotesReadOnly: false,
             capabilities: .mobiAdvanced,
-            hasRecentUnverifiedAck: true,
             garminBolusEnabled: false)
         // Enable OFF ⇒ extended deliver denied on Garmin, exactly like a normal bolus.
         #expect(P.evaluate(.deliverExtendedBolus, surface: .garmin, context: off).reason == .remoteBolusDisabled)
@@ -76,8 +72,7 @@ import Testing
         let c = P.AccessContext(
             childModeEnabled: false, childAllowed: Set(ChildFeature.allCases),
             phoneReadOnly: false, remotesReadOnly: false,
-            capabilities: .mobiAdvanced,
-            hasRecentUnverifiedAck: true)  // flag OMITTED
+            capabilities: .mobiAdvanced)  // remote-bolus flag OMITTED
         #expect(P.evaluate(.deliverBolus, surface: .garmin, context: c).reason == .remoteBolusDisabled)
         #expect(P.evaluate(.deliverBolus, surface: .phoneUI, context: c).allowed)  // phone unaffected
     }
@@ -171,100 +166,6 @@ import Testing
         #expect(P.evaluate(.syncTimeToNow, surface: .phoneUI, context: noTimeSync).reason == .capabilityUnavailable)
     }
 
-    /// `setSleepSchedule` declares its own dedicated capability (`supportsSleepScheduleWrite`) rather
-    /// than the coarse advanced-control set — a t:slim-shaped context denies it even with the ack.
-    @Test func setSleepScheduleNeedsItsOwnDedicatedCapability() {
-        var noWriteCap = openCtx()
-        noWriteCap.capabilities = .full  // t:slim: no supportsSleepScheduleWrite
-        #expect(P.evaluate(.setSleepSchedule, surface: .phoneUI, context: noWriteCap).reason == .capabilityUnavailable)
-        let mobi = openCtx()  // .mobiAdvanced has supportsSleepScheduleWrite == true
-        #expect(P.evaluate(.setSleepSchedule, surface: .phoneUI, context: mobi).allowed)
-    }
-
-    @Test func unverifiedAckGatesExactlyTheAckSet() {
-        var noAck = openCtx()
-        noAck.hasRecentUnverifiedAck = false
-        for a in A.allCases where a.gate == .unverifiedAck {
-            #expect(P.evaluate(a, surface: .phoneUI, context: noAck).reason == .unverifiedAckRequired)
-            var withAck = noAck
-            withAck.hasRecentUnverifiedAck = true
-            #expect(P.evaluate(a, surface: .phoneUI, context: withAck).allowed)
-        }
-    }
-
-    // MARK: - Denial oracle: a t:slim refuses every advanced write
-
-    /// The machine-checked statement that a t:slim (`.full` capabilities) refuses every advanced pump
-    /// write and permits only the four capability-exempt actions — with the unverified-ack satisfied,
-    /// so it is the pump-capability axis ALONE that supplies the denial while the ack gate still
-    /// exists. The expected sets are hardcoded by name (never derived from `hasRequiredCapability`)
-    /// and cross-checked on `action.gate` (never on `decision.allowed`), so this cannot go vacuously
-    /// green if the capability axis is later removed.
-    @Test func tslimDeniesEveryAdvancedWriteAndPermitsOnlyTheCapabilityExemptFour() {
-        // A t:slim `.full` context with the ack set, so the ack gate cannot supply the green — only
-        // the capability axis can deny.
-        let tslim = P.AccessContext(
-            childModeEnabled: false, childAllowed: Set(ChildFeature.allCases),
-            phoneReadOnly: false, remotesReadOnly: false,
-            capabilities: .full,
-            hasRecentUnverifiedAck: true)
-
-        // Hardcoded expected sets, asserted individually below — NOT derived from the implementation
-        // this oracle exists to guard.
-        let expectedDenied: [A] = [
-            // capability-gated therapy writes (ack-tier)
-            .createProfile, .setActiveProfile, .renameProfile, .deleteProfile,
-            .addProfileSegment, .modifyProfileSegment, .deleteProfileSegment, .setCgmHighLowAlert,
-            .setControlIQ, .setMaxBolus, .setMaxBasal, .setSleepSchedule,
-            // capability-gated operational writes (control-interlock tier) — the interim survivors;
-            // the AppModel entry points for the rest of this tier were removed, taking their cases
-            // with them.
-            .suspendDelivery, .resumeDelivery, .syncTimeToNow,
-        ]
-        let expectedPermitted: [A] = [
-            .deliverBolus, .deliverExtendedBolus,  // ledgered delivery — capability-exempt
-            .cancelBolus, .dismissNotification,  // child-only STOP/clear — capability-exempt
-        ]
-
-        // Literal counts: was 34 denied / 4 permitted / 38 total. 19 `.controlInterlock` cases were
-        // removed with their AppModel entry points, leaving 15 denied / 4 permitted / 19 total.
-        let deniedCount = expectedDenied.count
-        #expect(deniedCount == 15)
-        #expect(expectedPermitted.count == 4)
-        #expect(A.allCases.count == 19)
-
-        // The two hardcoded sets partition GatedPumpWrite exactly — nothing missing, nothing double-listed.
-        #expect(Set(expectedDenied).isDisjoint(with: Set(expectedPermitted)))
-        #expect(Set(expectedDenied).union(expectedPermitted) == Set(A.allCases))
-
-        // Cross-check on `action.gate` — an independent property, NEVER the capability predicate and NEVER
-        // `decision.allowed`: the denied set is exactly the two capability-gated gates, the permitted set
-        // exactly the two capability-exempt gates.
-        for a in expectedDenied {
-            #expect(
-                a.gate == .unverifiedAck || a.gate == .controlInterlock,
-                "\(a.rawValue) is listed as denied but its gate is capability-exempt")
-        }
-        for a in expectedPermitted {
-            #expect(
-                a.gate == .ledgeredDelivery || a.gate == .childOnly,
-                "\(a.rawValue) is listed as permitted but its gate is capability-gated")
-        }
-
-        // The oracle proper, on the local phone surface: every hardcoded denied case denies with
-        // `.capabilityUnavailable`; every hardcoded permitted case is allowed.
-        for a in expectedDenied {
-            #expect(
-                P.evaluate(a, surface: .phoneUI, context: tslim).reason == .capabilityUnavailable,
-                "\(a.rawValue) must be capability-denied on a t:slim")
-        }
-        for a in expectedPermitted {
-            #expect(
-                P.evaluate(a, surface: .phoneUI, context: tslim).allowed,
-                "\(a.rawValue) must stay allowed on a t:slim (capability-exempt)")
-        }
-    }
-
     // MARK: - Mode axis
 
     @Test func defaultModeContextIsANoOp() {
@@ -283,7 +184,7 @@ import Testing
         // Core: a normal bolus is available in Simple.
         #expect(P.evaluate(.deliverBolus, surface: .phoneUI, context: ctx).allowed)
         // Advanced (min .advanced): denied specifically by the mode gate, not another gate.
-        for a in [A.setMaxBolus, .setControlIQ, .deliverExtendedBolus, .createProfile] {
+        for a in [A.deliverExtendedBolus, .syncTimeToNow] {
             #expect(
                 P.evaluate(a, surface: .phoneUI, context: ctx).reason == .modeDisallowed(required: .advanced),
                 "\(a.rawValue) must be modeDisallowed(.advanced) in Simple")
@@ -296,7 +197,7 @@ import Testing
         ctx.modeContext = P.ModeGateContext(activeMode: .standard)
         #expect(P.evaluate(.suspendDelivery, surface: .phoneUI, context: ctx).allowed)
         #expect(
-            P.evaluate(.setMaxBolus, surface: .phoneUI, context: ctx).reason == .modeDisallowed(required: .advanced))
+            P.evaluate(.syncTimeToNow, surface: .phoneUI, context: ctx).reason == .modeDisallowed(required: .advanced))
     }
 
     @Test func modeNeverBlocksSafetyStopsOnAnySurface() {
@@ -316,9 +217,9 @@ import Testing
     @Test func perFeatureToggleDeniesWithinTheMode() {
         // Owner decision #4: even in a mode that would permit an action, a per-feature toggle turns it off.
         var ctx = openCtx()
-        ctx.modeContext = P.ModeGateContext(activeMode: .advanced, disabledFeatures: [.setMaxBolus])
-        #expect(P.evaluate(.setMaxBolus, surface: .phoneUI, context: ctx).reason == .featureDisabledInMode)
-        #expect(P.evaluate(.setControlIQ, surface: .phoneUI, context: ctx).allowed)  // a different feature is unaffected
+        ctx.modeContext = P.ModeGateContext(activeMode: .advanced, disabledFeatures: [.syncTimeToNow])
+        #expect(P.evaluate(.syncTimeToNow, surface: .phoneUI, context: ctx).reason == .featureDisabledInMode)
+        #expect(P.evaluate(.deliverExtendedBolus, surface: .phoneUI, context: ctx).allowed)  // a different feature is unaffected
         // …but a toggle can never disable a safety STOP (carve-out again).
         ctx.modeContext = P.ModeGateContext(
             activeMode: .advanced, disabledFeatures: [.cancelBolus, .dismissNotification])

@@ -2,8 +2,9 @@ import Testing
 @testable import faBolusCore
 
 /// The authoritative therapy-write declared set. Pins the enumeration and its
-/// gate classification so a new `PumpBackend` write can't be added without a decided gate, and so the
-/// app-test `everyTherapyWriteEntryPointIsCentrallyGated` stays in lockstep with the `.unverifiedAck` set.
+/// gate classification so a new `PumpBackend` write can't be added without a decided gate. The standing
+/// enforcement that `AppModel`'s actual write surface stays in lockstep with this declared set is the
+/// app-test `PumpWriteFunnelGuardTests` (a source-text scan, not a table over this enum).
 @Suite struct GatedPumpWriteTests {
 
     private func names(_ g: GatedPumpWrite.Gate) -> Set<String> {
@@ -12,11 +13,11 @@ import Testing
 
     @Test func declaredSetIsStableAndFullyClassified() {
         // Pin the size: adding a reachable pump-write entry point without classifying it here fails visibly.
-        // Was 38: 19 `.controlInterlock` cases were removed because their `AppModel` entry points were
-        // deleted (the AppModel funnel-caller wrappers no test still drives), leaving suspendDelivery,
-        // resumeDelivery (held for the ack-suite commit) and syncTimeToNow (held for the clock-sync
-        // commit, per its own capability + backend removal) as the interim survivors.
-        #expect(GatedPumpWrite.allCases.count == 19)
+        // Was 19: the 12 `.unverifiedAck` cases were removed together with `AccessPolicy` Gate 1 and
+        // `AppModel.runGatedTherapy` (their sole caller), leaving the 7-case interim set — delivery,
+        // childOnly, and the three `.controlInterlock` survivors (suspendDelivery/resumeDelivery held for
+        // the ack-suite commit, syncTimeToNow held for the clock-sync commit).
+        #expect(GatedPumpWrite.allCases.count == 7)
         for w in GatedPumpWrite.allCases { _ = w.gate }  // exhaustive switch → also proves no crash
     }
 
@@ -25,36 +26,21 @@ import Testing
         // Both child-only writes are gated by child mode only (NOT read-only) — cancel is a safety STOP,
         // dismiss is low-risk. This locks the documented gap so a future BolusGate review can't forget it.
         #expect(names(.childOnly) == ["cancelBolus", "dismissNotification"])
-        #expect(
-            names(.unverifiedAck) == [
-                "createProfile", "setActiveProfile", "renameProfile", "deleteProfile",
-                "addProfileSegment", "modifyProfileSegment", "deleteProfileSegment", "setCgmHighLowAlert",
-                // The therapy-defining writes that previously bypassed the ack.
-                "setControlIQ", "setMaxBolus", "setMaxBasal",
-                // The Mobi native Sleep-schedule write — flag semantics + slots 1-3 unverified.
-                "setSleepSchedule"
-            ])
-        // Was 22: 19 removed with their AppModel entry points; suspendDelivery/resumeDelivery and
-        // syncTimeToNow are the interim survivors (see declaredSetIsStableAndFullyClassified above).
-        #expect(names(.controlInterlock).count == 3)
+        // suspendDelivery/resumeDelivery and syncTimeToNow are the interim survivors (see
+        // declaredSetIsStableAndFullyClassified above).
+        #expect(names(.controlInterlock) == ["suspendDelivery", "resumeDelivery", "syncTimeToNow"])
         // The partition is total and disjoint.
-        let total =
-            names(.ledgeredDelivery).count + names(.unverifiedAck).count
-            + names(.childOnly).count + names(.controlInterlock).count
+        let total = names(.ledgeredDelivery).count + names(.childOnly).count + names(.controlInterlock).count
         #expect(total == GatedPumpWrite.allCases.count)
     }
 
-    /// Capability axis: `hasRequiredCapability` is the split-out counterpart. syncTimeToNow declares
-    /// `supportsTimeSync` (removing the old special-case); the advanced writes require any advanced
-    /// capability; delivery + the child-only pair require none (so Gate 5 never blocks a bolus).
+    /// Capability axis: syncTimeToNow declares its own dedicated `supportsTimeSync` capability; the rest
+    /// of the `.controlInterlock` set requires any advanced capability; delivery + the child-only pair
+    /// require none (so Gate 5 never blocks a bolus).
     @Test func hasRequiredCapabilitySplitsTimeSyncFromTheAdvancedSet() {
         #expect(GatedPumpWrite.syncTimeToNow.hasRequiredCapability(in: .mobiAdvanced))
         #expect(!GatedPumpWrite.syncTimeToNow.hasRequiredCapability(in: .full))  // t:slim: no timeSync
-        // setSleepSchedule declares its OWN dedicated capability (supportsSleepScheduleWrite),
-        // not the coarse supportsAnyAdvancedControl set — mirrors the pump protocol's own MOBI_ONLY scope.
-        #expect(GatedPumpWrite.setSleepSchedule.hasRequiredCapability(in: .mobiAdvanced))
-        #expect(!GatedPumpWrite.setSleepSchedule.hasRequiredCapability(in: .full))  // t:slim: no sleep-schedule write
-        for a in [GatedPumpWrite.suspendDelivery, .resumeDelivery, .setControlIQ] {
+        for a in [GatedPumpWrite.suspendDelivery, .resumeDelivery] {
             #expect(a.hasRequiredCapability(in: .mobiAdvanced))
             #expect(!a.hasRequiredCapability(in: .full), "\(a.rawValue) needs an advanced capability")
         }
@@ -62,30 +48,5 @@ import Testing
         for a in [GatedPumpWrite.deliverBolus, .deliverExtendedBolus, .cancelBolus, .dismissNotification] {
             #expect(a.hasRequiredCapability(in: .full), "\(a.rawValue) must never require a capability")
         }
-    }
-
-    /// `.setMaxBolus`/`.setMaxBasal` are the two limit-set writes —
-    /// they must require the DEDICATED `supportsLimits` capability, not the coarser
-    /// `supportsAnyAdvancedControl` set. A capability set that has SOME advanced control (e.g. Control-IQ
-    /// settings) but NOT the basal/bolus-limit feature bit must deny both; a set WITH `supportsLimits` must
-    /// allow both. The rest of the `.unverifiedAck` set (e.g. `.setControlIQ`) is untouched by this
-    /// tightening, per `hasRequiredCapabilitySplitsTimeSyncFromTheAdvancedSet` above.
-    @Test func setMaxBolusRequiresSupportsLimits() {
-        let advancedButNoLimits = PumpCapabilities(supportsControlIQSettings: true, supportsLimits: false)
-        #expect(advancedButNoLimits.supportsAnyAdvancedControl)  // sanity: the coarse check WOULD pass
-        for a in [GatedPumpWrite.setMaxBolus, .setMaxBasal] {
-            #expect(
-                !a.hasRequiredCapability(in: advancedButNoLimits),
-                "\(a.rawValue) must deny when supportsLimits is false, even with other advanced control present")
-        }
-        let withLimits = PumpCapabilities(supportsLimits: true)
-        for a in [GatedPumpWrite.setMaxBolus, .setMaxBasal] {
-            #expect(
-                a.hasRequiredCapability(in: withLimits),
-                "\(a.rawValue) must allow when supportsLimits is true")
-        }
-        // .mobiAdvanced already carries supportsLimits: true — stays allowed (no shipped-path regression).
-        #expect(GatedPumpWrite.setMaxBolus.hasRequiredCapability(in: .mobiAdvanced))
-        #expect(GatedPumpWrite.setMaxBasal.hasRequiredCapability(in: .mobiAdvanced))
     }
 }

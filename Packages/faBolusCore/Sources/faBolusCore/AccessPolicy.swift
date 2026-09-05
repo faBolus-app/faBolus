@@ -1,10 +1,10 @@
 import Foundation
 
 /// Single access-policy evaluator: whether a `GatedPumpWrite` is permitted from a `Surface`.
-/// Folds unverified-feature ack, child mode, phone/remote read-only, pump capabilities, and modes
-/// into one ordered check. Every funnel (`runControl`, `runGatedTherapy`, `runLedgeredDelivery`,
-/// remote hosts) must go through this so a surface cannot be gated on one layer and open on
-/// another. Pure over `AccessContext` — faBolusCore must not read app globals.
+/// Folds child mode, phone/remote read-only, pump capabilities, and modes into one ordered check.
+/// Every funnel (`runControl`, `runLedgeredDelivery`, remote hosts) must go through this so a
+/// surface cannot be gated on one layer and open on another. Pure over `AccessContext` —
+/// faBolusCore must not read app globals.
 ///
 /// `remotesReadOnly` governs all remotes. Pump capability is enforced at this funnel, not only in
 /// the UI.
@@ -60,8 +60,6 @@ public enum AccessPolicy {
         // Gate 5 — pump capability. Capabilities are pump-derived (from the pump's own feature
         // bitmask) and are the sole capability signal — not a raw `isMobi` check.
         public var capabilities: PumpCapabilities
-        // Gate 1 — unverified-feature acknowledgment
-        public var hasRecentUnverifiedAck: Bool
         // Mode seam
         public var modeContext: ModeGateContext
         // Per-surface remote bolus authorization (default true so no OTHER surface/action is
@@ -81,7 +79,6 @@ public enum AccessPolicy {
             childModeEnabled: Bool, childAllowed: Set<ChildFeature>,
             phoneReadOnly: Bool, remotesReadOnly: Bool,
             capabilities: PumpCapabilities,
-            hasRecentUnverifiedAck: Bool,
             modeContext: ModeGateContext = .init(),
             // Fail-closed default: a caller that forgets to thread the per-surface remote
             // bolus enable must NOT silently arm Garmin bolusing. The one production call site
@@ -97,7 +94,6 @@ public enum AccessPolicy {
             self.phoneReadOnly = phoneReadOnly
             self.remotesReadOnly = remotesReadOnly
             self.capabilities = capabilities
-            self.hasRecentUnverifiedAck = hasRecentUnverifiedAck
             self.modeContext = modeContext
             self.garminBolusEnabled = garminBolusEnabled
             self.bolusPasscodeRequired = bolusPasscodeRequired
@@ -111,7 +107,6 @@ public enum AccessPolicy {
         case phoneReadOnly
         case remotesReadOnly
         case capabilityUnavailable
-        case unverifiedAckRequired
         case modeDisallowed(required: AppMode)  // feature not in the active mode
         case featureDisabledInMode  // user turned this feature off within the mode
         case remoteBolusDisabled  // bolusing from this remote is turned off
@@ -123,7 +118,6 @@ public enum AccessPolicy {
             case .phoneReadOnly: return "This action is disabled — the app is in read-only mode."
             case .remotesReadOnly: return "Remote control is turned off — remotes are read-only."
             case .capabilityUnavailable: return "This pump doesn't support that action."
-            case .unverifiedAckRequired: return "This needs the untested-feature warning acknowledged first."
             case .modeDisallowed(let m): return "Not available in your current mode — needs \(m.title) mode."
             case .featureDisabledInMode: return "This feature is turned off in your settings."
             case .remoteBolusDisabled:
@@ -199,11 +193,6 @@ public enum AccessPolicy {
         // so Gate 5 stays a no-op there.
         if !action.hasRequiredCapability(in: context.capabilities) {
             return .deny(.capabilityUnavailable)
-        }
-
-        // Gate 1 — unverified-feature acknowledgment (the ack-gated therapy writes).
-        if action.gate == .unverifiedAck && !context.hasRecentUnverifiedAck {
-            return .deny(.unverifiedAckRequired)
         }
 
         // Mode gate: one ordered input, evaluated last so an earlier gate's precedence and message are

@@ -272,10 +272,10 @@ public final class AppModel {
     // MARK: - Single access-policy evaluator (the one decision point for every gate)
 
     /// Build the pure `AccessContext` from live app / pump state and defer to `AccessPolicy.evaluate`.
-    /// This is the ONLY place the four gates (unverified-ack, child mode, phone/remote read-only,
-    /// pump capability) are read together, so a surface can't be gated on one layer and open on
-    /// another. Pure inputs — the evaluator itself lives in faBolusCore and touches no globals. The
-    /// evaluator's `capabilities` input is pump-derived (not a raw `isMobi` gate).
+    /// This is the ONLY place the three gates (child mode, phone/remote read-only, pump capability)
+    /// are read together, so a surface can't be gated on one layer and open on another. Pure inputs —
+    /// the evaluator itself lives in faBolusCore and touches no globals. The evaluator's `capabilities`
+    /// input is pump-derived (not a raw `isMobi` gate).
     func accessDecision(
         _ action: GatedPumpWrite,
         from surface: AccessPolicy.Surface,
@@ -293,7 +293,6 @@ public final class AppModel {
             phoneReadOnly: AppSettings.shared.phoneReadOnly,
             remotesReadOnly: AppSettings.shared.remotesReadOnly,
             capabilities: capabilities,
-            hasRecentUnverifiedAck: hasRecentUnverifiedAck,
             // The active mode flows through the ONE context-builder so modes gate every surface
             // identically, never a sixth mechanism. Per-feature toggles (`disabledFeatures`) are empty
             // here until a mode store supplies them.
@@ -1487,7 +1486,7 @@ public final class AppModel {
     /// The standard side-effects of a pump control op with NO gating (the caller has already gated via
     /// the AccessPolicy evaluator): surface a thrown error, refresh, and push the new state to remotes promptly.
     /// Control actions (suspend/resume, temp basal, modes…) are time-sensitive, so we don't wait on the
-    /// 15 s throttle. Shared tail for `runControl` / `runGatedTherapy` / the batch reconfigure.
+    /// 15 s throttle. Shared tail for `runControl`.
     private func performControl(_ op: () async throws -> Void) async {
         do {
             try await op()
@@ -1525,78 +1524,13 @@ public final class AppModel {
         await performControl(op)
     }
 
-    // MARK: Unverified-therapy central gate
-
-    /// Timestamp of the most recent user acknowledgment of the "untested feature" warning
-    /// (`UnverifiedFeatureGate`). Therapy-defining writes for unverified, hardware-unvalidated features
-    /// — IDP profile/segment CRUD and the CGM high/low alert — are refused at *this*
-    /// AppModel boundary unless a recent ack exists, so a **new caller can't bypass the on-screen
-    /// warning** by invoking the AppModel method directly (the earlier design only gated the individual
-    /// UI buttons, which a fresh caller could sidestep). `@ObservationIgnored`:
-    /// pure policy state, never rendered.
-    @ObservationIgnored private var unverifiedTherapyAckAt: Date?
-    /// How long an acknowledgment authorizes gated writes.
-    static let unverifiedAckMaxAge: TimeInterval = 120
-
-    /// Record that the user acknowledged the untested-feature warning. Called by `UnverifiedFeatureGate`
-    /// immediately before the gated action runs.
-    public func acknowledgeUnverifiedTherapy() { unverifiedTherapyAckAt = Date() }
-
-    /// Whether a recent (< `unverifiedAckMaxAge`) untested-feature acknowledgment is on record.
-    public var hasRecentUnverifiedAck: Bool {
-        guard let at = unverifiedTherapyAckAt else { return false }
-        return Date().timeIntervalSince(at) <= Self.unverifiedAckMaxAge
-    }
-
-    /// Run an unverified therapy-defining write through the single AccessPolicy evaluator, which folds the
-    /// unverified-feature ack (Gate 1) in with child-mode, phone read-only, and the capability +
-    /// advanced-control gate — so a new caller can't reach the backend without the on-screen warning AND
-    /// the other interlocks. Fails closed (surfaces `lastError`, never touches the backend). One-shot:
-    /// the ack is consumed so each acknowledgment authorizes exactly one gated gesture. `op` is the RAW
-    /// backend write — gating is entirely in the evaluator, so it must NOT re-enter `runControl` (that
-    /// would re-check the just-consumed ack and deny).
-    private func runGatedTherapy(_ action: GatedPumpWrite, _ op: () async throws -> Void) async {
-        guard allow(action, from: .phoneUI) else {
-            refresh()
-            return
-        }
-        unverifiedTherapyAckAt = nil  // consume — one ack authorizes one gated gesture
-        await performControl(op)
-    }
-
     public func suspendDelivery() async { await runControl(.suspendDelivery) { try await source.suspendDelivery() } }
     public func resumeDelivery() async { await runControl(.resumeDelivery) { try await source.resumeDelivery() } }
-    /// Set the pump's max-bolus limit. The absolute 25 U ceiling is a HARD cap: clamp at the funnel so
-    /// the invariant holds regardless of backend (the backends clamp too, as defense-in-depth). Never a
-    /// confirmation — a request above 25 U is capped, not offered. Routes through the ACK funnel
-    /// `runGatedTherapy`, and on a successful, value-changing edit records `.selfSet` provenance with the
-    /// value ACTUALLY applied (clamped), not the raw request. The 25 U absolute clamp still applies first.
-    public func setMaxBolus(units: Double) async {
-        let clamped = Interlocks.clampMaxBolusLimit(units)
-        let before = snapshot.maxBolusUnits
-        await runGatedTherapy(.setMaxBolus) { try await self.source.setMaxBolus(units: clamped) }
-        provenanceRecorder.recordClinicianEditIfChanged(
-            .global("maxBolus"), before: .double(before),
-            afterOnSuccess: .double(clamped), succeeded: lastError == nil)
-    }
-    public func setMaxBasal(unitsPerHour: Double) async {
-        // Clamp at the funnel (floor 1.0 / ceiling 15.0 U/hr, the kit's byte-verified bounds) so the
-        // invariant holds regardless of backend, mirroring setMaxBolus. Record the value ACTUALLY applied
-        // (clamped), not the raw request — a value above 15 U/hr clamps and dispatches, never throws.
-        let clamped = Interlocks.clampMaxBasalLimit(unitsPerHour)
-        let before = snapshot.maxBasalUnitsPerHour
-        await runGatedTherapy(.setMaxBasal) { try await self.source.setMaxBasal(unitsPerHour: clamped) }
-        provenanceRecorder.recordClinicianEditIfChanged(
-            .global("maxBasal"), before: .double(before),
-            afterOnSuccess: .double(clamped), succeeded: lastError == nil)
-    }
 
     // MARK: - Provenance recording
     //
     // The disclosure sidecar itself lives in `ClinicianEditProvenanceRecorder` (plain values in/out,
-    // including the write's success bit; no back-pointer). The therapy WRITES (`setMaxBolus`/
-    // `modifyProfileSegment`/…) and `revertSetting`/`revertSegmentField` stay HERE in the gated funnel
-    // — only the bookkeeping moved.
+    // including the write's success bit; no back-pointer) — only the bookkeeping moved there.
     @ObservationIgnored private let provenanceRecorder = ClinicianEditProvenanceRecorder()
 
     /// The provenance / change-log sidecar, forwarded to `ClinicianEditProvenanceRecorder` so every
@@ -1613,70 +1547,6 @@ public final class AppModel {
     /// anything.
     func segmentFieldProvenance(idpId: Int, startMinutes: Int) -> [String: SettingProvenance]? {
         provenanceRecorder.segmentFieldProvenance(idpId: idpId, startMinutes: startMinutes)
-    }
-
-    /// One-tap revert of the MOST RECENT change to a setting: re-apply its `before` value
-    /// through the SAME gated therapy-write funnel as a normal edit, so the ack + capability + read-only +
-    /// WritePolicy gates ALL still apply, and the revert is itself recorded as a new `.selfSet` change (an
-    /// honest audit trail — a revert IS a user edit). Only the latest change for a key is revertible (the
-    /// change-log UI offers it only on the current row), and only when it has a `before` value. Failures
-    /// (nothing to revert / segment gone / gate denial) surface via `lastError`; no silent no-op.
-    func revertSetting(_ key: SettingKey) async {
-        guard let target = settingChangeStore.load().revertTarget(key) else {
-            lastError = "Nothing to revert — this setting hasn't been changed from its original value."
-            return
-        }
-        switch (key.idpId, key.segmentStartMinutes, key.field) {
-        case (nil, nil, "maxBolus"):
-            if case .double(let v) = target {
-                await setMaxBolus(units: v)
-            } else {
-                lastError = "Couldn't read the previous value to revert to."
-            }
-        case (nil, nil, "maxBasal"):
-            if case .double(let v) = target {
-                await setMaxBasal(unitsPerHour: v)
-            } else {
-                lastError = "Couldn't read the previous value to revert to."
-            }
-        case let (idpId?, start?, field) where ["basalRate", "carbRatio", "isf", "targetBg"].contains(field):
-            await revertSegmentField(idpId: idpId, startMinutes: start, field: field, to: target)
-        default:
-            // Control-IQ enable/disable needs its full weight/TDI config → reverted from the Control-IQ
-            // screen, not here; anything else has no automatic write path.
-            lastError = "This setting can't be reverted automatically — adjust it from its settings screen."
-        }
-    }
-
-    /// Revert one field of a profile segment: reload the profile's current segments (to resolve the segment
-    /// by its stable START TIME and its live index, since indices renumber), substitute ONLY the reverted
-    /// field, and write the whole segment back through the gated `modifyProfileSegment`. Refuses (with a
-    /// reason) if the segment is no longer on the pump.
-    private func revertSegmentField(idpId: Int, startMinutes: Int, field: String, to target: BackupValue) async {
-        await refreshProfileSegments(idpId: idpId)
-        guard
-            let seg = snapshot.viewedProfileSegments.first(where: {
-                $0.idpId == idpId && $0.startTimeMinutes == startMinutes
-            })
-        else {
-            lastError = "The time segment for this setting is no longer on the pump — it can't be reverted."
-            return
-        }
-        var basal = seg.basalRateUnitsPerHour, cr = seg.carbRatioGramsPerUnit, isf = seg.isf, tgt = seg.targetBg
-        switch (field, target) {
-        case ("basalRate", .double(let v)): basal = v
-        case ("carbRatio", .double(let v)): cr = v
-        case ("isf", .int(let v)): isf = v
-        case ("targetBg", .int(let v)): tgt = v
-        default:
-            lastError = "Couldn't read the previous value to revert to."
-            return
-        }
-        await modifyProfileSegment(
-            idpId: idpId, segmentIndex: seg.segmentIndex,
-            startTimeMinutes: seg.startTimeMinutes,
-            basalRateUnitsPerHour: basal, carbRatioGramsPerUnit: cr,
-            isf: isf, targetBg: tgt)
     }
 
     // MARK: - Manual precedence for scheduled mode automation
@@ -1704,82 +1574,10 @@ public final class AppModel {
     }
 
     // MARK: Config wizards
-    // Control-IQ config is therapy-defining → route through the ACK funnel.
-    public func setControlIQ(enabled: Bool, weightLbs: Int, totalDailyInsulinUnits: Int) async {
-        // Firmware + Control-IQ-version compatibility pre-flight, FIRST. Refuse a config
-        // write the connected pump can't take remotely (t:slim configures Control-IQ only on the pump; a
-        // non-Control-IQ pump has none) with a plain reason, rather than issuing a write it silently
-        // rejects. Gated on the authoritative remote-config capability, NOT on `controllerVariant` (which
-        // is `.none` until the feature bits are read — see `configBlockReason`).
-        //
-        // ACCEPTED GAP: this Control-IQ compat check is the ONLY firmware-version write-gate. A GENERAL
-        // validated-firmware write-allowlist across every therapy write was deliberately NOT built — pump
-        // capabilities are already derived from the pump's own op-79 bitmask (narrow-only), so an
-        // unsupported write is refused at the capability funnel and NACKed by the pump. Reconsider if
-        // real-insulin distribution is ever pursued.
-        if let reason = ControlIQPrecondition.configBlockReason(
-            supportsControlIQConfig: capabilities.supportsControlIQSettings,
-            controllerVariant: snapshot.controllerVariant)
-        {
-            lastError = reason
-            return
-        }
-        // Therapy-defining → ACK funnel `runGatedTherapy`. Record `.selfSet` provenance on a successful,
-        // value-changing edit.
-        let before = snapshot.controlIQEnabled
-        await runGatedTherapy(.setControlIQ) {
-            try await self.source.setControlIQ(
-                enabled: enabled, weightLbs: weightLbs, totalDailyInsulinUnits: totalDailyInsulinUnits)
-        }
-        provenanceRecorder.recordClinicianEditIfChanged(
-            .global("controlIQEnabled"), before: .bool(before),
-            afterOnSuccess: .bool(enabled), succeeded: lastError == nil)
-    }
-    // Sleep schedule — universal/unsigned read: ungated passthrough, no runControl/runGatedTherapy
-    // wrapper. The write routes through runGatedTherapy.
+    // Sleep schedule — universal/unsigned read: ungated passthrough.
     public func refreshSleepSchedule() async {
         await source.refreshSleepSchedule()
         refresh()
-    }
-    /// Write one native Sleep-schedule slot — the Mobi editor for a pump with no on-pump way to set
-    /// this. Therapy-defining-adjacent unverified write → ACK funnel `runGatedTherapy` (child-mode +
-    /// phone read-only + advanced opt-in + the one-shot unverified ack + the dedicated
-    /// `supportsSleepScheduleWrite` capability, all via the single AccessPolicy evaluator). `op` is
-    /// the RAW backend write, mirroring `setControlIQ`/`createProfile` — never re-enter `runControl`.
-    ///
-    /// `sendControl` now awaits and inspects the pump's ack itself, so a rejected write throws and
-    /// `performControl`'s catch tail sets `lastError` — no separate drain needed here.
-    public func setSleepSchedule(slot: Int, enabled: Bool, activeDays: Int, startMinute: Int, endMinute: Int) async {
-        await runGatedTherapy(.setSleepSchedule) {
-            try await self.source.setSleepSchedule(
-                slot: slot, enabled: enabled, activeDays: activeDays,
-                startMinute: startMinute, endMinute: endMinute)
-        }
-    }
-    // Switching the active profile, renaming, and deleting a profile are therapy-defining
-    // (they change the active basal / carb-ratio / ISF the pump doses from), so they route through the
-    // SAME single evaluator as the rest of IDP CRUD — `runGatedTherapy(action)` folds the unverified
-    // ack in with child-mode, read-only, and the capability + advanced-control gate, then runs the RAW
-    // backend write. The op must be the raw `source` call (NOT a nested `runControl`, which would
-    // re-check the just-consumed ack and deny).
-    public func setActiveProfile(idpId: Int) async {
-        await runGatedTherapy(.setActiveProfile) { try await self.source.setActiveProfile(idpId: idpId) }
-    }
-    public func renameProfile(idpId: Int, name: String) async {
-        await runGatedTherapy(.renameProfile) { try await self.source.renameProfile(idpId: idpId, name: name) }
-    }
-    public func deleteProfile(idpId: Int) async {
-        await runGatedTherapy(.deleteProfile) { try await self.source.deleteProfile(idpId: idpId) }
-    }
-    public func createProfile(
-        name: String, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int,
-        insulinDurationMinutes: Int
-    ) async {
-        await runGatedTherapy(.createProfile) {
-            try await self.source.createProfile(
-                name: name, basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit,
-                isf: isf, targetBg: targetBg, insulinDurationMinutes: insulinDurationMinutes)
-        }
     }
     public func refreshProfileSegments(idpId: Int) async {
         await source.refreshProfileSegments(idpId: idpId)
@@ -1793,55 +1591,6 @@ public final class AppModel {
                 basalRate: seg.basalRateUnitsPerHour,
                 carbRatio: seg.carbRatioGramsPerUnit,
                 isf: seg.isf, targetBg: seg.targetBg)
-        }
-    }
-    public func addProfileSegment(
-        idpId: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int,
-        targetBg: Int
-    ) async {
-        await runGatedTherapy(.addProfileSegment) {
-            try await self.source.addProfileSegment(
-                idpId: idpId, startTimeMinutes: startTimeMinutes, basalRateUnitsPerHour: basalRateUnitsPerHour,
-                carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf, targetBg: targetBg)
-        }
-        // A new segment sets all four therapy fields (before = nil), recorded as .selfSet on success.
-        provenanceRecorder.recordSegmentEditIfChanged(
-            idpId: idpId, startMinutes: startTimeMinutes,
-            beforeBasal: nil, afterBasal: basalRateUnitsPerHour,
-            beforeCR: nil, afterCR: carbRatioGramsPerUnit,
-            beforeISF: nil, afterISF: isf,
-            beforeTarget: nil, afterTarget: targetBg,
-            succeeded: lastError == nil)
-    }
-    public func modifyProfileSegment(
-        idpId: Int, segmentIndex: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double,
-        carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int
-    ) async {
-        // Capture the pre-edit values BEFORE the write (the write then refreshes the segment array).
-        let before = snapshot.viewedProfileSegments.first { $0.segmentIndex == segmentIndex }
-        await runGatedTherapy(.modifyProfileSegment) {
-            try await self.source.modifyProfileSegment(
-                idpId: idpId, segmentIndex: segmentIndex, startTimeMinutes: startTimeMinutes,
-                basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf,
-                targetBg: targetBg)
-        }
-        provenanceRecorder.recordSegmentEditIfChanged(
-            idpId: idpId, startMinutes: startTimeMinutes,
-            beforeBasal: before?.basalRateUnitsPerHour, afterBasal: basalRateUnitsPerHour,
-            beforeCR: before?.carbRatioGramsPerUnit, afterCR: carbRatioGramsPerUnit,
-            beforeISF: before?.isf, afterISF: isf,
-            beforeTarget: before?.targetBg, afterTarget: targetBg,
-            succeeded: lastError == nil)
-    }
-    public func deleteProfileSegment(idpId: Int, segmentIndex: Int) async {
-        await runGatedTherapy(.deleteProfileSegment) {
-            try await self.source.deleteProfileSegment(idpId: idpId, segmentIndex: segmentIndex)
-        }
-    }
-    public func setCgmHighLowAlert(alertType: Int, thresholdMgdl: Int, repeatMinutes: Int, enabled: Bool) async {
-        await runGatedTherapy(.setCgmHighLowAlert) {
-            try await self.source.setCgmHighLowAlert(
-                alertType: alertType, thresholdMgdl: thresholdMgdl, repeatMinutes: repeatMinutes, enabled: enabled)
         }
     }
 
