@@ -9,19 +9,19 @@ import faBolusCore
 @MainActor
 struct CrossClientMutexTests {
 
-    private func makeModel() async -> (AppModel, MockBackend, EchoRecorder) {
+    private func makeModel() async -> (AppModel, MockBackend, RequestIdEchoRecorder) {
         let backend = MockBackend()
         let ledgerURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("s6-ledger-\(UUID().uuidString).json")
         let model = AppModel(source: backend, ledgerStoreURL: ledgerURL)
-        let rec = EchoRecorder()
+        let rec = RequestIdEchoRecorder()
         rec.attach(to: model)
         await backend.connect()
         return (model, backend, rec)
     }
 
     /// Captures echoes so we can tell which client (by requestId) got what status/message.
-    @MainActor final class EchoRecorder {
+    @MainActor final class RequestIdEchoRecorder {
         private(set) var commands: [RemoteCommand] = []
         func attach(to model: AppModel) { model.addRemoteEcho { [weak self] c in self?.commands.append(c) } }
         func delivered(_ requestId: String) -> Bool {
