@@ -15,7 +15,7 @@ import os
 /// never reaches back into `AppModel`.
 ///
 /// `AppModel` exposes a forwarding `history` computed property (`historyPersistence.store`) so
-/// `AppModel+Backup.swift` and `AppModel+HealthKit.swift` keep compiling unchanged.
+/// call sites read persisted history through `AppModel` without reaching into this coordinator.
 @MainActor
 final class HistoryPersistenceCoordinator {
     private static let log = Logger(subsystem: "com.fabolus.app", category: "history")
