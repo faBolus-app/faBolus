@@ -986,12 +986,6 @@ public final class AppModel {
     /// Wipe all persisted history (Settings → data-minimization / "Clear history").
     public func clearStoredHistory() { historyPersistence.clearStoredHistory() }
 
-    /// The app's single shared persistent store, exposed for the SiteAtlas UI so it reads/writes
-    /// the SAME on-disk SwiftData store that backup/export read — never a second `ModelContainer` over
-    /// the same file. `nil` only if the store failed to open at init, in which case the SiteAtlas UI
-    /// surfaces an error (and disables logging) rather than silently no-op'ing a placement into the void.
-    var sharedHistoryStore: GlucoseHistoryStore? { historyPersistence.store }
-
     // MARK: Complete erase of on-device health data (GATED)
     // The erase section below stays LIVE/UNGATED on every branch regardless of FABOLUS_BACKUP — the
     // on-device "Delete all on-device data" / "Full reset" affordance must survive FABOLUS_BACKUP=0.
@@ -1359,6 +1353,31 @@ public final class AppModel {
         await performLocalBolus(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl, iobUnits: iobUnits)
     }
 
+    /// The banner/ledger state common to both local delivery surfaces (standard + extended). Handles
+    /// every outcome arm except the `.indeterminate` notification, which each caller posts inline with its
+    /// own dedupe token — that heads-up carries a category/severity/copy the notification layer owns, so it
+    /// stays out of this shared state stamp. File-scoped `private` reaches both callers in this class.
+    private func applyLocalLedgeredOutcome(
+        _ outcome: DeliveryLedgerCoordinator.DeliveryOutcome, carbsGrams: Double?
+    ) {
+        switch outcome {
+        case .delivered(let delivered, let cancelled):
+            if let c = carbsGrams, c > 0 { recordCarbs(grams: c) }  // log carbs for the smart features
+            lastDeliveredUnits = delivered
+            lastDeliveredWasCancelled = cancelled
+            lastHostDeliveryAt = Date()  // stamp a completed host delivery (double-dose backstop)
+            lastError = nil
+        case .indeterminate:
+            lastError = Self.indeterminateOutcomeLockedCopy
+            lastHostDeliveryAt = Date()  // an indeterminate outcome MAY have delivered — stamp supersession too (defense-in-depth)
+        case .blocked(let msg), .failed(let msg):
+            lastError = msg
+            notifyDeliveryFailed(msg)
+        case .duplicateInFlight, .replay:
+            break  // a fresh UUID means these don't occur for the local path
+        }
+    }
+
     private func performLocalBolus(
         units: Double, carbsGrams: Double? = nil, bgMgdl: Int? = nil, iobUnits: Double? = nil
     ) async {
@@ -1377,16 +1396,8 @@ public final class AppModel {
         ) {
             try await self.source.deliverBolus(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl, iobUnits: iobUnits)
         }
-        switch outcome {
-        case .delivered(let delivered, let cancelled):
-            if let c = carbsGrams, c > 0 { recordCarbs(grams: c) }  // log carbs for the smart features
-            lastDeliveredUnits = delivered
-            lastDeliveredWasCancelled = cancelled
-            lastHostDeliveryAt = Date()  // stamp a completed host delivery (double-dose backstop)
-            lastError = nil
-        case .indeterminate:
-            lastError = Self.indeterminateOutcomeLockedCopy
-            lastHostDeliveryAt = Date()  // an indeterminate outcome MAY have delivered — stamp supersession too (defense-in-depth)
+        applyLocalLedgeredOutcome(outcome, carbsGrams: carbsGrams)
+        if case .indeterminate = outcome {
             // An immediate GOVERNED heads-up (.warning) — alongside, never replacing, the
             // AUTHORITATIVE `.bolusReconciliation` post `reconcileUnresolvedDeliveries` issues later for
             // this same durable ledger entry. Distinct dedupe namespace so neither coalesces the other.
@@ -1394,11 +1405,6 @@ public final class AppModel {
                 .bolusIndeterminate, severity: .warning,
                 title: Self.indeterminateOutcomeLockedCopy, body: Self.indeterminateOutcomeLockedCopy,
                 dedupeKey: "indeterminate-local-\(requestId)")
-        case .blocked(let msg), .failed(let msg):
-            lastError = msg
-            notifyDeliveryFailed(msg)
-        case .duplicateInFlight, .replay:
-            break  // a fresh UUID means these don't occur for the local path
         }
         refresh()
     }
@@ -1433,27 +1439,14 @@ public final class AppModel {
                 durationMinutes: durationMinutes,
                 carbsGrams: carbsGrams, bgMgdl: bgMgdl, iobUnits: iobUnits)
         }
-        switch outcome {
-        case .delivered(let delivered, let cancelled):
-            if let c = carbsGrams, c > 0 { recordCarbs(grams: c) }
-            lastDeliveredUnits = delivered
-            lastDeliveredWasCancelled = cancelled
-            lastHostDeliveryAt = Date()  // stamp a completed host delivery (double-dose backstop)
-            lastError = nil
-        case .indeterminate:
-            lastError = Self.indeterminateOutcomeLockedCopy
-            lastHostDeliveryAt = Date()  // an indeterminate outcome MAY have delivered — stamp supersession too (defense-in-depth)
+        applyLocalLedgeredOutcome(outcome, carbsGrams: carbsGrams)
+        if case .indeterminate = outcome {
             // An immediate GOVERNED heads-up (.warning), alongside — never replacing — the
             // AUTHORITATIVE `.bolusReconciliation` post issued later for this same ledger entry.
             postSafety(
                 .bolusIndeterminate, severity: .warning,
                 title: Self.indeterminateOutcomeLockedCopy, body: Self.indeterminateOutcomeLockedCopy,
                 dedupeKey: "indeterminate-local-\(requestId)")
-        case .blocked(let msg), .failed(let msg):
-            lastError = msg
-            notifyDeliveryFailed(msg)
-        case .duplicateInFlight, .replay:
-            break
         }
         refresh()
     }

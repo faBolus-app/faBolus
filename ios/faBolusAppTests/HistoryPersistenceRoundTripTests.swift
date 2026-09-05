@@ -113,7 +113,7 @@ struct HistoryPersistenceRoundTripTests {
         let wideRange = Date(timeIntervalSince1970: 0)...Date()
         let glucoseAfterFirst = model.storedGlucoseForTesting(in: wideRange)
         #expect(glucoseAfterFirst.count == 37, "the first refresh must persist every seeded reading")
-        let bolusesAfterFirst = model.sharedHistoryStore?.boluses(in: wideRange) ?? []
+        let bolusesAfterFirst = model.history?.boluses(in: wideRange) ?? []
         #expect(bolusesAfterFirst.count == 2, "the first refresh must persist both seeded bolus markers")
         let bytesAfterFirst = model.storedHistoryApproxBytes()
         #expect(bytesAfterFirst == 37 * 100)
@@ -126,7 +126,7 @@ struct HistoryPersistenceRoundTripTests {
         #expect(
             glucoseAfterSecond.count == 37,
             "an unchanged reading must never re-insert (identity-diff, Pitfall-3)")
-        let bolusesAfterSecond = model.sharedHistoryStore?.boluses(in: wideRange) ?? []
+        let bolusesAfterSecond = model.history?.boluses(in: wideRange) ?? []
         #expect(bolusesAfterSecond.count == 2, "an unchanged bolus marker must never re-insert")
         #expect(
             model.storedHistoryApproxBytes() == bytesAfterFirst,
@@ -169,7 +169,7 @@ struct HistoryPersistenceRoundTripTests {
         model.setHistoryStoreForTesting(store)
 
         model.recordCarbs(grams: 45)
-        let carbs = model.sharedHistoryStore?.carbs(in: Date(timeIntervalSince1970: 0)...Date()) ?? []
+        let carbs = model.history?.carbs(in: Date(timeIntervalSince1970: 0)...Date()) ?? []
         #expect(carbs.contains { $0.grams == 45 }, "recordCarbs must reach the persistent store")
     }
 }
