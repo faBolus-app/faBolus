@@ -132,4 +132,87 @@ import Foundation
         #expect(!decision.deliver)
         #expect(decision.reason == .categoryDisabled)
     }
+
+    // MARK: - The full pump-mirror taxonomy (the six groups on the `category` cascade level)
+
+    /// Group 1 is a KIND rule: every alarm AND every malfunction (a malfunction arrives as `.alarm`
+    /// with the dismissable flag false) resolves to the delivery-stopped group, so an unknown alarm/
+    /// malfunction bit fails safe here rather than in a routine group.
+    @Test func deliveryStoppedIsAKindRuleOverEveryAlarmAndEveryMalfunction() {
+        // A named occlusion alarm.
+        #expect(R.pumpMirrorGroup(kind: .alarm, id: 2, isMalfunction: false) == .deliveryStopped)
+        // An UNKNOWN alarm bit still lands in delivery-stopped by KIND.
+        #expect(R.pumpMirrorGroup(kind: .alarm, id: 63, isMalfunction: false) == .deliveryStopped)
+        // A malfunction (decodes as `.alarm`, dismissable false) — the discriminator makes the KIND
+        // rule statable even for an unnamed malfunction bit.
+        #expect(R.pumpMirrorGroup(kind: .alarm, id: 5, isMalfunction: true) == .deliveryStopped)
+    }
+
+    /// Every named alert / CGM-alert / reminder id lands in its group per the inventory-backed table.
+    @Test func knownIdsMapToTheirGroupRung() {
+        // Running low (insulin or power).
+        for id in [0, 1, 2, 3, 5, 7, 17] {
+            #expect(R.pumpMirrorGroup(kind: .alert, id: id, isMalfunction: false) == .runningLow)
+        }
+        // Urgent low glucose — the single CGM id.
+        #expect(R.pumpMirrorGroup(kind: .cgmAlert, id: 1, isMalfunction: false) == .urgentLowGlucose)
+        // Glucose and Control-IQ.
+        for id in [2, 3, 5, 6, 7, 8] {
+            #expect(R.pumpMirrorGroup(kind: .cgmAlert, id: id, isMalfunction: false) == .glucoseAndControlIQ)
+        }
+        for id in [35, 50, 51] {
+            #expect(R.pumpMirrorGroup(kind: .alert, id: id, isMalfunction: false) == .glucoseAndControlIQ)
+        }
+        // CGM sensor and transmitter (includes the loss-of-coverage ids force-protected before this phase).
+        for id in [4, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 22, 25, 26, 27, 39] {
+            #expect(R.pumpMirrorGroup(kind: .cgmAlert, id: id, isMalfunction: false) == .cgmSensorAndTransmitter)
+        }
+        for id in [19, 20, 22, 27, 28, 29, 39, 40, 41, 42, 44, 48] {
+            #expect(R.pumpMirrorGroup(kind: .alert, id: id, isMalfunction: false) == .cgmSensorAndTransmitter)
+        }
+        // Pump reminders and routine.
+        for id in [6, 8, 11, 12, 13, 14, 15, 18, 23, 26, 33, 34] {
+            #expect(R.pumpMirrorGroup(kind: .alert, id: id, isMalfunction: false) == .pumpRoutine)
+        }
+        #expect(R.pumpMirrorGroup(kind: .reminder, id: 0, isMalfunction: false) == .pumpRoutine)
+        #expect(R.pumpMirrorGroup(kind: .reminder, id: 63, isMalfunction: false) == .pumpRoutine)
+    }
+
+    /// The fail-safe cell (the whole reason 28.1's inventory exists): an ALERT id this table does not
+    /// name — the delivery-suspending Control-IQ Max Insulin id 52 is the proof case — must NOT resolve
+    /// to the most-ignorable group, and its default rung is loud.
+    @Test func unknownAlertIdHitsTheFailSafeCellNotTheRoutineGroup() {
+        let group = R.pumpMirrorGroup(kind: .alert, id: 52, isMalfunction: false)
+        #expect(group != .pumpRoutine, "an unnamed, delivery-suspending alert must not fall into the routine group")
+        #expect(R.defaultIntent(for: group) >= .alert, "the fail-safe rung is loud, never quiet or off")
+        // Any other unnamed alert bit shares the same fail-safe floor.
+        #expect(R.pumpMirrorGroup(kind: .alert, id: 60, isMalfunction: false) != .pumpRoutine)
+    }
+
+    /// Fatigue-averse defaults (safety = Alert, pump-alarm = Alert not Urgent, non-safety quieter): no
+    /// pump-mirror group defaults to `.off`, none to `.urgent`.
+    @Test func noGroupDefaultsToOffAndNoneToUrgent() {
+        for group in R.PumpMirrorGroup.allCases {
+            #expect(R.defaultIntent(for: group) != .off, "\(group) must not be silent by default")
+            #expect(R.defaultIntent(for: group) != .urgent, "\(group) must not pierce DND by default")
+        }
+        // The pump-alarm (delivery-stopped) category defaults to Alert, never Urgent.
+        #expect(R.defaultIntent(for: .deliveryStopped) == .alert)
+    }
+
+    /// Decision 1c — one-move silence: a source-level `Off` on the pump-mirror source drives every
+    /// group's category default to `Off`, UNLESS a category level overrides upward.
+    @Test func sourceLevelOffSilencesEveryGroupUnlessCategoryOverridesUpward() {
+        for group in R.PumpMirrorGroup.allCases {
+            let categoryDefault = R.Rule(intent: R.defaultIntent(for: group))
+            // Source Off + the group's default at the category level: the category (more specific) wins,
+            // so the group's loud default overrides the source Off upward.
+            let overriding = R.resolve(
+                source: .init(intent: .off), category: categoryDefault, timeSensitiveAvailable: true)
+            #expect(overriding.phone == R.defaultIntent(for: group))
+            // Source Off with NO category-level rule: the whole pump mirror goes silent in one move.
+            let silenced = R.resolve(source: .init(intent: .off), category: nil, timeSensitiveAvailable: true)
+            #expect(silenced.phone == .off)
+        }
+    }
 }
