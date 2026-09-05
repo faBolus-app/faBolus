@@ -163,7 +163,8 @@ struct DashboardView: View {
     /// `performControl`'s catch-all stores `error.localizedDescription`. Every other `lastError` in
     /// AppModel is already a human sentence; this maps only Foundation's raw "couldn't be completed
     /// (Domain error N)" / "domain#code" shapes. Curated strings pass through unchanged.
-    private static func humanizedDashboardError(_ raw: String) -> String {
+    /// Not `private`: the drift guard pins this exact production mapping instead of a hand-kept copy.
+    static func humanizedDashboardError(_ raw: String) -> String {
         let looksRaw =
             raw.range(
                 of: #"couldn.t be completed\. \([^)]*error -?\d+\.?\)"#, options: [.regularExpression, .caseInsensitive]

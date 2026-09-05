@@ -127,7 +127,8 @@ struct StatusRingView: View {
 
     /// Maps the one raw `domain#code` fallback from `applyClientError`. Curated sentences
     /// ("Bluetooth is off", …) pass through unchanged.
-    private static func humanized(_ detail: String) -> String {
+    /// Not `private`: the drift guard pins this exact production mapping instead of a hand-kept copy.
+    static func humanized(_ detail: String) -> String {
         detail.range(of: #"^\S+#-?\d+\s"#, options: .regularExpression) != nil
             ? "Connection error — try reconnecting"
             : detail

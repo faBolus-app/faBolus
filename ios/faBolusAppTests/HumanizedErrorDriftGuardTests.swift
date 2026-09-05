@@ -2,10 +2,11 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// Curated `lastError` / `connectionDetail` literals must not match the dashboard/connection
-/// humanizers' raw-shape patterns, or a real message is silently rewritten into a generic fallback.
-/// The matchers here copy the private production helpers; the self-checks fail if that copy stops
-/// catching a known raw shape.
+/// Curated `lastError` / `connectionDetail` literals must pass through the dashboard/connection
+/// humanizers unchanged, or a real message is silently rewritten into a generic fallback. This suite
+/// calls the REAL production humanizers (`DashboardView.humanizedDashboardError`,
+/// `StatusRingView.humanized`) directly — there is no hand-kept copy to drift from them — so it goes
+/// red the moment production starts rewriting a curated case into its fallback.
 struct HumanizedErrorDriftGuardTests {
 
     // MARK: - Repo enumeration
@@ -57,35 +58,32 @@ struct HumanizedErrorDriftGuardTests {
         return out
     }
 
-    // MARK: - Mirrored raw-shape detection (see type doc comment)
+    // MARK: - Non-vacuous self-check (the humanizers actually rewrite raw shapes, and only raw shapes)
 
-    /// Mirrors `MainHUDView.humanizedDashboardError`'s three raw-shape checks.
-    private static func looksRawDashboard(_ raw: String) -> Bool {
-        raw.range(
-            of: #"couldn.t be completed\. \([^)]*error -?\d+\.?\)"#,
-            options: [.regularExpression, .caseInsensitive]) != nil
-            || raw.range(of: #"^\S+#-?\d+\s"#, options: .regularExpression) != nil
-            || raw.contains("Error Domain=")
+    /// Anti-vacuity: a real NSError-shaped string MUST be rewritten (so the pass-through assertions
+    /// below are meaningful — they aren't trivially true because the humanizers never rewrite), and a
+    /// curated human sentence MUST pass through unchanged (the anti-misinformation invariant).
+    @Test func productionHumanizersRewriteRawShapesButPreserveCuratedCopy() {
+        for raw in [
+            "The operation couldn’t be completed. (NSURLErrorDomain error -1009.)",
+            "CBErrorDomain#-42 something failed",
+            "Error Domain=CBError Code=7"
+        ] {
+            #expect(
+                DashboardView.humanizedDashboardError(raw) != raw,
+                "raw shape \"\(raw)\" must be rewritten by humanizedDashboardError, not left verbatim")
+        }
+        #expect(
+            StatusRingView.humanized("NSPOSIXErrorDomain#-1009 offline") != "NSPOSIXErrorDomain#-1009 offline",
+            "a raw domain#code detail must be rewritten by StatusRingView.humanized")
+
+        // A curated human sentence must NOT be rewritten under either humanizer.
+        let curatedDashboard = "Bolus sent but outcome is unknown — verify on the pump before retrying."
+        #expect(DashboardView.humanizedDashboardError(curatedDashboard) == curatedDashboard)
+        #expect(StatusRingView.humanized("Bluetooth is off") == "Bluetooth is off")
     }
 
-    /// Mirrors `StatusRingView.humanized`'s single raw "domain#code " token check.
-    private static func looksRawConnection(_ detail: String) -> Bool {
-        detail.range(of: #"^\S+#-?\d+\s"#, options: .regularExpression) != nil
-    }
-
-    // MARK: - Non-vacuous self-checks (the mirror actually catches the raw shapes)
-
-    @Test func mirrorMatchesKnownRawShapes() {
-        #expect(Self.looksRawDashboard("The operation couldn’t be completed. (NSURLErrorDomain error -1009.)"))
-        #expect(Self.looksRawDashboard("CBErrorDomain#-42 something failed"))
-        #expect(Self.looksRawDashboard("Error Domain=CBError Code=7"))
-        #expect(Self.looksRawConnection("NSPOSIXErrorDomain#-1009 offline"))
-        // A curated human sentence must NOT look raw under either matcher.
-        #expect(!Self.looksRawDashboard("Bolus sent but outcome is unknown — verify on the pump before retrying."))
-        #expect(!Self.looksRawConnection("Bluetooth is off"))
-    }
-
-    // MARK: - The anti-drift assertions
+    // MARK: - The anti-drift assertions (curated copy survives the real humanizer)
 
     @Test func curatedLastErrorLiteralsPassThroughDashboardHumanizerUnchanged() throws {
         var literals: [String] = []
@@ -100,7 +98,7 @@ struct HumanizedErrorDriftGuardTests {
             "scan found no curated `lastError = \"…\"` literals — the source path or extractor broke")
         for literal in literals {
             #expect(
-                !Self.looksRawDashboard(literal),
+                DashboardView.humanizedDashboardError(literal) == literal,
                 "curated lastError copy \"\(literal)\" is rewritten by humanizedDashboardError — it must pass through unchanged"
             )
         }
@@ -119,7 +117,7 @@ struct HumanizedErrorDriftGuardTests {
             "scan found no curated `connectionDetail = \"…\"` literals — the source path or extractor broke")
         for literal in literals {
             #expect(
-                !Self.looksRawConnection(literal),
+                StatusRingView.humanized(literal) == literal,
                 "curated connectionDetail copy \"\(literal)\" is rewritten by StatusRingView.humanized — it must pass through unchanged"
             )
         }
