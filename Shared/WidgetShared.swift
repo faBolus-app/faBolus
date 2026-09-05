@@ -84,10 +84,9 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     /// unknown, never `0%`. Same origin and same additive-optional reasoning as `reservoirDate`.
     public var batteryDate: Date?
     /// Whether the pump is currently charging (op-145 `chargingStatus == 1`, mirrored verbatim from
-    /// `PumpSnapshot.batteryCharging`). Additive, fail-closed default `false` (matches
-    /// `deliverySuspended`'s own non-optional shape): absent/legacy key ⇒ never a fabricated charging
-    /// badge on an old widget/complication snapshot. Routed through `BatteryChargingPresentation` at
-    /// render — never re-derived inline.
+    /// `PumpSnapshot.batteryCharging`). Additive, fail-closed default `false`: absent/legacy key ⇒
+    /// never a fabricated charging badge on an old widget/complication snapshot. Routed through
+    /// `BatteryChargingPresentation` at render — never re-derived inline.
     public var batteryCharging: Bool
     public var lastBolusUnits: Double?
     public var lastBolusDate: Date?
@@ -95,14 +94,6 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     public var updatedAt: Date
     /// Recent readings for a sparkline (oldest→newest, capped small for App Group size).
     public var recentPoints: [Point]
-    /// Active pump alert titles (for the read-only Siri "alerts" query).
-    public var activeAlerts: [String]
-    // Extra pump settings/status exposed to Siri + Apple Shortcuts.
-    public var cgmActive: Bool
-    public var carbRatio: Double  // g/U (0 = unknown)
-    public var isf: Int  // mg/dL per U (0 = unknown)
-    public var targetBg: Int  // mg/dL (0 = unknown)
-    public var maxBolusUnits: Double  // pump's configured max
     // The publisher's freshness policy (from the phone), so a widget in its own process greys/hides
     // exactly like the app instead of assuming the 6-min default. Optional for back-compat / iOS.
     public var staleAfterSec: TimeInterval?  // grey after this age
@@ -136,11 +127,11 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     /// widget/complication ambient surfaces; the glucose number itself is unaffected.
     public var showUnitLabel: Bool
 
-    // Pump surfaces — the five faBolus-differentiator fields originally projected alongside glucose by
-    // the Live Activity (since removed); kept compiled as general PumpSnapshot mirrors. All
-    // additive-optional, defaulted below AND in the custom `init(from:)` decoder (see Codable
-    // conformance) so an old JSON snapshot missing every one of these still decodes. `iobDate` is the
-    // op-109 stamp IOB greys/ages off (mirrors `PumpSnapshot.iobDate`); the other four are dateless.
+    // Pump surfaces — faBolus-differentiator fields originally projected alongside glucose by the Live
+    // Activity (since removed); kept compiled as general PumpSnapshot mirrors. All additive-optional,
+    // defaulted below AND in the custom `init(from:)` decoder (see Codable conformance) so an old JSON
+    // snapshot missing every one of these still decodes. `iobDate` is the op-109 stamp IOB greys/ages
+    // off (mirrors `PumpSnapshot.iobDate`); the other two are dateless.
     /// When `iobUnits` was last received from the pump (op-109). `nil` ⇒ unknown age ⇒ always stale.
     public var iobDate: Date?
     /// Effective basal delivery rate (U/hr) — never an invented temp-rate percent.
@@ -156,12 +147,6 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     /// snapshot was carrying a fabricated `0` for it, and shipping the receipt alongside the value is
     /// what stops the next surface that adds a basal row from silently inheriting the defect.
     public var basalRateKnown: Bool?
-    /// Whether basal delivery is currently suspended.
-    public var deliverySuspended: Bool
-    /// Control-IQ user mode: 0 = normal, 1 = sleep, 2 = exercise.
-    public var controlIQMode: Int
-    /// Whether Control-IQ automation is enabled.
-    public var controlIQEnabled: Bool
     /// True when at least one currently-active pump alert is snooze-eligible
     /// (`PumpAlertKind.isAutoRuleEligible`, i.e. NOT `.alarm`). Computed app-side from
     /// `AppModel.activeNotifications` (which carries the per-alert `kind` this wire type doesn't) —
@@ -171,33 +156,18 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     /// since removed) — kept compiled as a general PumpSnapshot mirror.
     public var hasSnoozeEligibleAlert: Bool
 
-    /// The pump's cartridge-ready DISPLAY signal. Additive, mirroring
-    /// `deliverySuspended`: default **true** ("ready") is the SAFE decode default for a legacy
-    /// widget-extension binary that predates this field — an ABSENT key must never render as a false
-    /// "cartridge not ready" scare, matching the RemoteCommand.cartridgeReady precedent.
-    /// `WidgetPublisher.makeSnapshot` sets this from `PumpSnapshot.cartridgeReadiness == .ready`
-    /// (a CONFIRMED reply), not the fail-open
-    /// `cartridgeReadyForBolus`, so a `.unknown` state (op-20 auto-excluded / never read) maps to the
-    /// non-positive `false` — the widget never presents a fail-open "ready" from a state that was never
-    /// read. The Bool can only carry two states (not a third "unknown"), so `false` here means "omit the
-    /// positive badge". Absent-key legacy decode still defaults to `true` (below), unchanged.
-    public var cartridgeReady: Bool
-
     public init(
         glucose: Int? = nil, glucoseDate: Date? = nil, trendArrow: String = "", iobUnits: Double = 0,
         reservoirUnits: Double = 0, batteryPercent: Int = 0, batteryCharging: Bool = false,
         reservoirDate: Date? = nil, batteryDate: Date? = nil,
         lastBolusUnits: Double? = nil,
         lastBolusDate: Date? = nil, connected: Bool = false, updatedAt: Date = Date(),
-        recentPoints: [Point] = [], activeAlerts: [String] = [], cgmActive: Bool = false,
-        carbRatio: Double = 0, isf: Int = 0, targetBg: Int = 0, maxBolusUnits: Double = 0,
+        recentPoints: [Point] = [],
         staleAfterSec: TimeInterval? = nil, hideAfterSec: TimeInterval? = nil,
         iobStaleAfterSec: TimeInterval? = nil,
         displayUnit: String? = nil, iobDate: Date? = nil, basalRateUnitsPerHour: Double = 0,
         basalRateKnown: Bool? = nil,
-        deliverySuspended: Bool = false, controlIQMode: Int = 0, controlIQEnabled: Bool = false,
-        hasSnoozeEligibleAlert: Bool = false, showUnitLabel: Bool = false,
-        cartridgeReady: Bool = true
+        hasSnoozeEligibleAlert: Bool = false, showUnitLabel: Bool = false
     ) {
         self.glucose = glucose
         self.glucoseDate = glucoseDate
@@ -213,12 +183,6 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         self.connected = connected
         self.updatedAt = updatedAt
         self.recentPoints = recentPoints
-        self.activeAlerts = activeAlerts
-        self.cgmActive = cgmActive
-        self.carbRatio = carbRatio
-        self.isf = isf
-        self.targetBg = targetBg
-        self.maxBolusUnits = maxBolusUnits
         self.staleAfterSec = staleAfterSec
         self.hideAfterSec = hideAfterSec
         self.iobStaleAfterSec = iobStaleAfterSec
@@ -226,23 +190,19 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         self.iobDate = iobDate
         self.basalRateUnitsPerHour = basalRateUnitsPerHour
         self.basalRateKnown = basalRateKnown
-        self.deliverySuspended = deliverySuspended
-        self.controlIQMode = controlIQMode
-        self.controlIQEnabled = controlIQEnabled
         self.hasSnoozeEligibleAlert = hasSnoozeEligibleAlert
         self.showUnitLabel = showUnitLabel
-        self.cartridgeReady = cartridgeReady
     }
 
     private enum CodingKeys: String, CodingKey {
         case glucose, glucoseDate, trendArrow, iobUnits, reservoirUnits, batteryPercent, batteryCharging,
             reservoirDate, batteryDate,
             lastBolusUnits,
-            lastBolusDate, connected, updatedAt, recentPoints, activeAlerts, cgmActive, carbRatio, isf,
-            targetBg, maxBolusUnits, staleAfterSec, hideAfterSec, iobStaleAfterSec, displayUnit, iobDate,
+            lastBolusDate, connected, updatedAt, recentPoints,
+            staleAfterSec, hideAfterSec, iobStaleAfterSec, displayUnit, iobDate,
             basalRateUnitsPerHour, basalRateKnown,
-            deliverySuspended, controlIQMode, controlIQEnabled, hasSnoozeEligibleAlert,
-            showUnitLabel, cartridgeReady
+            hasSnoozeEligibleAlert,
+            showUnitLabel
     }
 
     /// Custom decode so EVERY field (not just the `Optional`-typed ones synthesis already tolerates)
@@ -260,8 +220,8 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         iobUnits = try c.decodeIfPresent(Double.self, forKey: .iobUnits) ?? 0
         reservoirUnits = try c.decodeIfPresent(Double.self, forKey: .reservoirUnits) ?? 0
         batteryPercent = try c.decodeIfPresent(Int.self, forKey: .batteryPercent) ?? 0
-        // A legacy/missing key falls back to `false` (not charging) — mirrors
-        // `deliverySuspended`'s own fail-closed default; an older widget-extension binary never shows
+        // A legacy/missing key falls back to `false` (not charging), the same fail-closed default
+        // every other additive Bool below uses; an older widget-extension binary never shows
         // a fabricated charging badge from a missing key.
         batteryCharging = try c.decodeIfPresent(Bool.self, forKey: .batteryCharging) ?? false
         // Absent ⇒ nil ⇒ "never read" ⇒ the surface renders "—". A pre-fix payload on disk has no
@@ -274,12 +234,6 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         connected = try c.decodeIfPresent(Bool.self, forKey: .connected) ?? false
         updatedAt = try c.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
         recentPoints = try c.decodeIfPresent([Point].self, forKey: .recentPoints) ?? []
-        activeAlerts = try c.decodeIfPresent([String].self, forKey: .activeAlerts) ?? []
-        cgmActive = try c.decodeIfPresent(Bool.self, forKey: .cgmActive) ?? false
-        carbRatio = try c.decodeIfPresent(Double.self, forKey: .carbRatio) ?? 0
-        isf = try c.decodeIfPresent(Int.self, forKey: .isf) ?? 0
-        targetBg = try c.decodeIfPresent(Int.self, forKey: .targetBg) ?? 0
-        maxBolusUnits = try c.decodeIfPresent(Double.self, forKey: .maxBolusUnits) ?? 0
         staleAfterSec = try c.decodeIfPresent(TimeInterval.self, forKey: .staleAfterSec)
         hideAfterSec = try c.decodeIfPresent(TimeInterval.self, forKey: .hideAfterSec)
         // No `??` fallback, deliberately: absent means "freshness cannot be judged", which
@@ -292,16 +246,10 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
         // the pump has not answered op-77, `true` = it has). Collapsing absent into `false` would be
         // harmless today but would make a legacy payload indistinguishable from a positively-unread one.
         basalRateKnown = try c.decodeIfPresent(Bool.self, forKey: .basalRateKnown)
-        deliverySuspended = try c.decodeIfPresent(Bool.self, forKey: .deliverySuspended) ?? false
-        controlIQMode = try c.decodeIfPresent(Int.self, forKey: .controlIQMode) ?? 0
-        controlIQEnabled = try c.decodeIfPresent(Bool.self, forKey: .controlIQEnabled) ?? false
         hasSnoozeEligibleAlert = try c.decodeIfPresent(Bool.self, forKey: .hasSnoozeEligibleAlert) ?? false
         // Owner-requested toggle: a legacy snapshot missing the key ⇒ false (labels hidden), matching
         // the setting's own default-OFF — mirrors every other additive-optional field's fallback above.
         showUnitLabel = try c.decodeIfPresent(Bool.self, forKey: .showUnitLabel) ?? false
-        // A legacy snapshot missing the key ⇒ true (safe "ready" default) — an
-        // older widget extension binary never shows a false cartridge-not-ready scare.
-        cartridgeReady = try c.decodeIfPresent(Bool.self, forKey: .cartridgeReady) ?? true
     }
 
     /// Modern glucose bands. 0 = low, 1 = in-range, 2 = high, 3 = urgent-high, -1 = unknown.
@@ -329,15 +277,6 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     /// Without the guard a future-dated reading has negative elapsed time and reads "fresh"
     /// forever, so the widget/complication would render it as the current value.
     public static let futureSkewTolerance: TimeInterval = 5 * 60
-
-    /// True when the reading is stale — older than 6 minutes, or dated more than `futureSkewTolerance`
-    /// in the future (a fast source clock) — so the number must not be shown as the live value.
-    public var isGlucoseStale: Bool {
-        guard let d = glucoseDate else { return glucose != nil }
-        let elapsed = Date().timeIntervalSince(d)
-        if elapsed < -Self.futureSkewTolerance { return true }  // future-dated beyond skew → stale
-        return elapsed > 6 * 60
-    }
 
     // Time-parameterized freshness honoring the publisher's policy — evaluated against the widget
     // entry's date (not wall-clock `Date()`, which in a widget is prep time, not the display time).
@@ -439,13 +378,6 @@ public struct WidgetSnapshot: Codable, Sendable, Equatable {
     /// connection chip stops reading "connected" and the dateless pump metrics grey once the snapshot ages.
     public func isConnectionStale(asOf now: Date) -> Bool {
         now.timeIntervalSince(updatedAt) > Self.connectionStaleAfter
-    }
-
-    /// Glucose string, or "--" when missing/stale. A non-positive value is treated as "no reading"
-    /// (defends the complication against ever rendering a literal "0").
-    public var displayGlucose: String {
-        guard let g = glucose, g > 0, !isGlucoseStale else { return "--" }
-        return "\(g)"
     }
 
     public static let placeholder = WidgetSnapshot(

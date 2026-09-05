@@ -148,7 +148,7 @@ struct IobBasalUnknownDisplayTests {
     @Test func theWidgetPublisherCarriesBothReceipts() {
         var s = PumpSnapshot()
         let published = WidgetPublisher.makeSnapshot(
-            s, history: [], alerts: [], staleAfterSec: 360, hideAfterSec: nil)
+            s, history: [], staleAfterSec: 360, hideAfterSec: nil)
         #expect(published.iobDate == nil)
         #expect(published.basalRateKnown == false, "unread, positively stated — not a fabricated 0 U/hr")
 
@@ -157,7 +157,7 @@ struct IobBasalUnknownDisplayTests {
         s.basalRateUnitsPerHour = 0
         s.basalRateKnown = true
         let confirmed = WidgetPublisher.makeSnapshot(
-            s, history: [], alerts: [], staleAfterSec: 360, hideAfterSec: nil)
+            s, history: [], staleAfterSec: 360, hideAfterSec: nil)
         #expect(confirmed.iobDate != nil)
         #expect(confirmed.basalRateKnown == true)
     }

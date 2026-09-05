@@ -49,18 +49,21 @@ import faBolusCore
         #expect(!jitter.isHidden(asOf: entry))
     }
 
-    /// The wall-clock path (`isGlucoseStale` / `displayGlucose`, used by the complication) must apply
-    /// the same future-skew guard, plus a drift guard pinning the widget's mirrored tolerance equal to
-    /// the canonical `GlucoseFreshness.futureSkewTolerance` (the widget target can't link faBolusCore).
+    /// The wall-clock path — `isStale(asOf:)` evaluated against the REAL clock (unlike
+    /// `futureDatedSnapshotIsStaleAtTheEntryDate`'s fixed entry date) — must apply the same
+    /// future-skew guard, plus a drift guard pinning the widget's mirrored tolerance equal to the
+    /// canonical `GlucoseFreshness.futureSkewTolerance` (the widget target can't link faBolusCore).
     @Test func wallClockStalenessGuardsFutureDatedAndMirrorsCanonical() {
-        // Relative to the real wall clock, since `isGlucoseStale` evaluates against `Date()`.
-        let ahead = WidgetSnapshot(glucose: 120, glucoseDate: Date().addingTimeInterval(30 * 60))
-        #expect(ahead.isGlucoseStale)  // future-dated beyond skew → stale
-        #expect(ahead.displayGlucose == "--")  // and never rendered as the live number
+        let now = Date()
+        let ahead = WidgetSnapshot(
+            glucose: 120, glucoseDate: now.addingTimeInterval(30 * 60),
+            staleAfterSec: 5 * 60, hideAfterSec: 10 * 60)
+        #expect(ahead.isStale(asOf: now))  // future-dated beyond skew → stale, never the live value
 
-        let jitter = WidgetSnapshot(glucose: 120, glucoseDate: Date().addingTimeInterval(5))
-        #expect(!jitter.isGlucoseStale)  // within skew → unaffected
-        #expect(jitter.displayGlucose == "120")
+        let jitter = WidgetSnapshot(
+            glucose: 120, glucoseDate: now.addingTimeInterval(5),
+            staleAfterSec: 5 * 60, hideAfterSec: 10 * 60)
+        #expect(!jitter.isStale(asOf: now))  // within skew → unaffected
 
         // Drift guard: the mirror must equal the canonical tolerance (this target links both).
         #expect(WidgetSnapshot.futureSkewTolerance == GlucoseFreshness.futureSkewTolerance)
@@ -72,58 +75,10 @@ import faBolusCore
         // the pure builder `publish` uses; test it directly (deterministic — no shared App-Group store,
         // so no racing sibling `refresh()`→`publish()` can overwrite it).
         let snap = WidgetPublisher.makeSnapshot(
-            MockBackend().snapshot, history: [], alerts: [],
+            MockBackend().snapshot, history: [],
             staleAfterSec: 7 * 60, hideAfterSec: 20 * 60)
         // Explicit Double literals — `7 * 60` alone binds as Int against the `TimeInterval?` field.
         #expect(snap.staleAfterSec == 420.0)  // was nil (silent 6-min fallback)
         #expect(snap.hideAfterSec == 1200.0)
-    }
-
-    // MARK: - WidgetSnapshot.cartridgeReady
-
-    /// `makeSnapshot` presents a positive widget "ready" only for a confirmed `.ready` op-20 reply,
-    /// never the fail-open default. An unknown/auto-excluded state must not show as ready.
-    @Test func makeSnapshotMapsCartridgeReadyFromTheConfirmedTriState() {
-        var pump = MockBackend().snapshot
-        pump.cartridgeLoadState = 6  // idle
-        pump.cartridgeLoadStateConfirmed = true  // a real op-20 reply → confirmed ready
-        let ready = WidgetPublisher.makeSnapshot(
-            pump, history: [], alerts: [],
-            staleAfterSec: 5 * 60, hideAfterSec: nil)
-        #expect(ready.cartridgeReady == true)
-
-        pump.cartridgeLoadState = 1  // LOAD_CARTRIDGE (confirmed loading) ⇒ not ready
-        let notReady = WidgetPublisher.makeSnapshot(
-            pump, history: [], alerts: [],
-            staleAfterSec: 5 * 60, hideAfterSec: nil)
-        #expect(notReady.cartridgeReady == false)
-
-        pump.cartridgeLoadState = 6
-        pump.cartridgeLoadStateConfirmed = false  // never read / op-20 auto-excluded ⇒ UNKNOWN
-        let unknown = WidgetPublisher.makeSnapshot(
-            pump, history: [], alerts: [],
-            staleAfterSec: 5 * 60, hideAfterSec: nil)
-        #expect(
-            unknown.cartridgeReady == false,
-            "an unknown cartridge must not present a fail-open 'ready' on the widget (WR-04)")
-    }
-
-    /// A legacy App-Group payload written before this field existed decodes with `cartridgeReady ==
-    /// true` (the safe "ready" default) — an older widget-extension binary must never render a false
-    /// "cartridge not ready" scare from a missing key. An explicit `false` round-trips unchanged.
-    @Test func cartridgeReadyDecodesToSafeDefaultOnLegacyPayloadAndRoundTripsExplicitFalse() throws {
-        // Simulate a legacy payload: encode a snapshot, then strip the key before decoding.
-        let snap = WidgetSnapshot(glucose: 120)
-        var obj = try JSONSerialization.jsonObject(with: JSONEncoder().encode(snap)) as! [String: Any]
-        obj.removeValue(forKey: "cartridgeReady")
-        let legacyData = try JSONSerialization.data(withJSONObject: obj)
-        let decodedLegacy = try JSONDecoder().decode(WidgetSnapshot.self, from: legacyData)
-        #expect(decodedLegacy.cartridgeReady == true)
-
-        // Explicit false round-trips.
-        var notReady = WidgetSnapshot(glucose: 120)
-        notReady.cartridgeReady = false
-        let decoded = try JSONDecoder().decode(WidgetSnapshot.self, from: JSONEncoder().encode(notReady))
-        #expect(decoded.cartridgeReady == false)
     }
 }

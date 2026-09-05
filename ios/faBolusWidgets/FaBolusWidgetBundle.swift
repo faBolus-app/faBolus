@@ -65,10 +65,6 @@ struct FaBolusProvider: TimelineProvider {
 // MARK: - Shared UI helpers
 
 enum WidgetUI {
-    static func glucoseText(_ snap: WidgetSnapshot) -> String { snap.displayGlucose }
-    /// True when the reading is older than 6 minutes (hide the number).
-    static func isStale(_ snap: WidgetSnapshot) -> Bool { snap.isGlucoseStale }
-
     // `now`-parameterized variants honoring the phone's PUBLISHED freshness policy,
     // evaluated at the widget entry's date (a widget renders ahead of time, so wall-clock `Date()` is
     // prep time, not display time). Band-color derivation lives at the call sites

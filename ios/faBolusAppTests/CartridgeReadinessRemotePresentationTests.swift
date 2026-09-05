@@ -15,33 +15,6 @@ struct CartridgeReadinessRemotePresentationTests {
         return s
     }
 
-    // MARK: - Widget wire (Bool — "omit the positive badge" for unknown)
-
-    @Test func widgetPresentsReadyOnlyForAConfirmedReadyState() {
-        // CONFIRMED non-loading (a real op-20 reply) → ready → true
-        let ready = WidgetPublisher.makeSnapshot(
-            snapshot(loadState: 6, confirmed: true),
-            history: [], alerts: [], staleAfterSec: 300, hideAfterSec: nil)
-        #expect(ready.cartridgeReady == true)
-    }
-
-    @Test func widgetDoesNotPresentFailOpenReadyForAnUnknownState() {
-        // op-20 never read / auto-excluded (idle default, unconfirmed) → UNKNOWN → non-positive false
-        let unknown = WidgetPublisher.makeSnapshot(
-            snapshot(loadState: 6, confirmed: false),
-            history: [], alerts: [], staleAfterSec: 300, hideAfterSec: nil)
-        #expect(
-            unknown.cartridgeReady == false,
-            "an unknown/auto-excluded cartridge must NOT present a fail-open 'ready' on the widget")
-    }
-
-    @Test func widgetPresentsNotReadyForAConfirmedLoadingState() {
-        let notReady = WidgetPublisher.makeSnapshot(
-            snapshot(loadState: 0, confirmed: true),
-            history: [], alerts: [], staleAfterSec: 300, hideAfterSec: nil)
-        #expect(notReady.cartridgeReady == false)
-    }
-
     // MARK: - Remote wire (Bool? — nil = NO SIGNAL for unknown)
 
     @Test func remoteWireMapsReadinessToTriState() {

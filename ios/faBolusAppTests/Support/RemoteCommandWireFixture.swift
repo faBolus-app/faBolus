@@ -525,9 +525,7 @@ final class RemoteCommandWireFixture {
             batteryPercent: batteryPercent, batteryCharging: batteryCharging,
             reservoirDate: reservoirDate, batteryDate: batteryDate,
             lastBolusUnits: lastBolusUnits,
-            connected: reachable, updatedAt: Date(),
-            cgmActive: cgmActive, carbRatio: carbRatio, isf: isf,
-            targetBg: targetBg, maxBolusUnits: maxBolusUnits)
+            connected: reachable, updatedAt: Date())
         WidgetStore.save(snap)
         WidgetCenter.shared.reloadAllTimelines()
     }

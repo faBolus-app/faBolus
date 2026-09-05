@@ -526,7 +526,7 @@ private func repoRoot() -> URL {
             if !name.isEmpty { decoded.insert(String(name)) }
         }
 
-        #expect(stored.count > 25, "parse looks wrong — found only \(stored.count) stored properties")
+        #expect(stored.count > 15, "parse looks wrong — found only \(stored.count) stored properties")
 
         // (1) The failure mode that kills the synthesized encoder — a build error no test can reach,
         //     which is exactly why it is asserted here at the source level instead.

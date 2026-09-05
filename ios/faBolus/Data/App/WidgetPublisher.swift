@@ -16,7 +16,7 @@ enum WidgetPublisher {
     /// call site) so the test can pin them deterministically.
     @MainActor
     static func makeSnapshot(
-        _ s: PumpSnapshot, history: [GlucoseReading], alerts: [String],
+        _ s: PumpSnapshot, history: [GlucoseReading],
         staleAfterSec: TimeInterval, hideAfterSec: TimeInterval?,
         // DEFAULTED, unlike the pair above, and deliberately: nine existing call sites (all in tests)
         // predate this parameter, and the default is exactly what `publish` passes. A test that cares
@@ -50,12 +50,6 @@ enum WidgetPublisher {
             connected: s.connection == .connected || s.connection == .bolusing,
             updatedAt: Date(),
             recentPoints: Array(points),
-            activeAlerts: alerts,
-            cgmActive: s.cgmActive,
-            carbRatio: s.carbRatio,
-            isf: s.isf,
-            targetBg: s.targetBg,
-            maxBolusUnits: s.maxBolusUnits,
             // Carry the phone's freshness policy so the iOS widgets grey/hide off the SAMPLE age
             // exactly like the app — instead of silently falling back to the 6-min hardcode
             // regardless of the user's setting.
@@ -75,37 +69,25 @@ enum WidgetPublisher {
             // The op-77 read receipt for the line above. Published even though no widget family renders
             // basal today: the carrier was otherwise publishing a fabricated `0.00 U/hr` for a pump that
             // had never answered the read, and a receipt that ships with the value can't be forgotten
-            // later. Declared order in `WidgetSnapshot.init` is basalRateUnitsPerHour -> basalRateKnown
-            // -> deliverySuspended; Swift requires call order to match.
+            // later.
             basalRateKnown: s.basalRateKnown,
-            deliverySuspended: s.deliverySuspended,
-            controlIQMode: s.controlIQMode,
-            controlIQEnabled: s.controlIQEnabled,
             // App-computed snooze-eligibility gate (see the field's own doc comment on
             // `WidgetSnapshot`); passed in from the caller, which has `PumpAlertKind` on
-            // `activeNotifications` (this function only receives bare `alerts: [String]` titles).
+            // `activeNotifications`.
             hasSnoozeEligibleAlert: hasSnoozeEligibleAlert,
             // Owner-requested toggle — stamped straight from the setting so the widget/complication/
             // Live Activity gate their persistent unit CAPTION the same way the phone does.
-            showUnitLabel: AppSettings.shared.showGlucoseUnitLabels,
-            // The pump's cartridge-ready DISPLAY signal for the widget. Present a positive "ready"
-            // ONLY for a CONFIRMED `.ready` reply — `.unknown` (op-20 never answered / auto-excluded)
-            // maps to the non-positive `false`, never a fail-open "ready" from a state that was never
-            // read (the widget Bool can't carry a third "unknown", so `false` = "omit the positive
-            // badge"). The legacy App-Group DECODE default (absent ⇒ true) is unchanged, so an older
-            // widget binary never renders a false "not ready" from a missing key. Dose-path unaffected
-            // — the gate reads `cartridgeReadyForBolus`, not this display flag.
-            cartridgeReady: s.cartridgeReadiness == .ready)
+            showUnitLabel: AppSettings.shared.showGlucoseUnitLabels)
     }
 
     @MainActor
     static func publish(
-        _ s: PumpSnapshot, history: [GlucoseReading], alerts: [String] = [],
+        _ s: PumpSnapshot, history: [GlucoseReading],
         bolusLocked: Bool = false, bolusLockReason: String = "",
         hasSnoozeEligibleAlert: Bool = false
     ) {
         let snap = makeSnapshot(
-            s, history: history, alerts: alerts,
+            s, history: history,
             staleAfterSec: GlucoseFreshness.staleAfter, hideAfterSec: GlucoseFreshness.hideAfter,
             iobStaleAfterSec: CalcInputFreshness.staleAfterIob,
             hasSnoozeEligibleAlert: hasSnoozeEligibleAlert)

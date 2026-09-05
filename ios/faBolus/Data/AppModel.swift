@@ -755,7 +755,7 @@ public final class AppModel {
             // available alongside the wire snapshot) via `FailoverBadgePresenter.snoozeGateAllows` —
             // the SAME predicate App.swift's action gate uses.
             WidgetPublisher.publish(
-                snap, history: hist, alerts: alerts.map { $0.title },
+                snap, history: hist,
                 bolusLocked: locked, bolusLockReason: reason,
                 hasSnoozeEligibleAlert: FailoverBadgePresenter.snoozeGateAllows(alerts))
         }
