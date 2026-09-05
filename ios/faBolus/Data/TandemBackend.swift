@@ -177,7 +177,19 @@ public final class TandemBackend: NSObject, PumpBackend {
     // re-nags. Truly-dismissable alerts just clear on the pump and never come back.
     private var acknowledged: [String: Date] = [:]
     private static let snoozeWindow: TimeInterval = 30 * 60  // re-nag after 30 min, like a CGM re-alert
-    private func noteKey(_ n: PumpNotification) -> String { "\(n.kind.rawValue):\(n.id)" }
+    /// The single identity-key constructor for the acknowledgement/dedupe map, called identically at
+    /// the LOOKUP site (`noteKey`, from a decoded `PumpNotification`) and the WRITE site (`ackKey` in
+    /// `dismissNotificationTyped`, from a `PumpAlert`). Two decoders share one id space — a malfunction
+    /// and an alarm both decode `kind: .alarm` — so kind+id alone is not unique; the dismissable flag
+    /// (false only for malfunctions) is the third dimension that keeps identity unique. Both keying
+    /// sites must go through this — a hand-built variant at either site lets the write and lookup keys
+    /// silently diverge, and acknowledgement stops filtering.
+    private func identityKey(kind: Int, id: Int, isDismissable: Bool) -> String {
+        "\(kind):\(id):\(isDismissable)"
+    }
+    private func noteKey(_ n: PumpNotification) -> String {
+        identityKey(kind: n.kind.rawValue, id: n.id, isDismissable: n.dismissable)
+    }
     private func mergeNotifications() {
         let raw = malfunctionList + alarmList + alertList + cgmAlertList + reminderList
         let present = Set(raw.map(noteKey))
@@ -2065,7 +2077,7 @@ public final class TandemBackend: NSObject, PumpBackend {
     public func dismissNotificationTyped(_ alert: PumpAlert) async -> DismissOutcome {
         guard isPaired else { return .noResponse }
         let kind = NotificationKind(rawValue: alert.kind.rawValue) ?? .alert
-        let ackKey = "\(alert.kind.rawValue):\(alert.id)"
+        let ackKey = identityKey(kind: alert.kind.rawValue, id: alert.id, isDismissable: alert.isDismissable)
         // On pumps that don't honor remote dismissal (t:slim X2), skip the futile signed send and just
         // snooze locally in faBolus so it stops nagging here. The pump keeps its own alert until the
         // condition clears or it's dismissed on the pump itself. NEVER authenticated — no op-184 is sent.
