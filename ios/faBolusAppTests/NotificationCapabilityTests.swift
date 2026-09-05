@@ -10,11 +10,11 @@ import faBolusCore
 @Suite struct NotificationCapabilityTests {
     @Test func theAccessorReflectsTheBuildsActiveConfigMarker() {
         #if FABOLUS_TIME_SENSITIVE
-            #expect(NotificationCapability.timeSensitiveAvailable == true)
+        #expect(NotificationCapability.timeSensitiveAvailable == true)
         #else
-            #expect(
-                NotificationCapability.timeSensitiveAvailable == false,
-                "the default main build (capability absent) must read false and still compile/run")
+        #expect(
+            NotificationCapability.timeSensitiveAvailable == false,
+            "the default main build (capability absent) must read false and still compile/run")
         #endif
     }
 

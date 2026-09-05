@@ -20,9 +20,12 @@ enum RemoteStatusComposer {
     /// re-implemented threshold. Pure static helper (no I/O, no singleton) so a test can prove
     /// both consumers trace to the ONE resolver, differing only by surface. No wire emission: this
     /// does not read or write any `RemoteCommand` field — that additive wire half is a later plan.
+    /// `timeSensitiveAvailable` defaults to `NotificationCapability.timeSensitiveAvailable` — the
+    /// real build-time signal — so an omitted argument reflects the actual build rather than a
+    /// hardcoded literal; a caller may still pass an explicit value.
     static func pumpMirrorWatchIntent(
         rules: NotificationRules.Cascade,
-        timeSensitiveAvailable: Bool
+        timeSensitiveAvailable: Bool = NotificationCapability.timeSensitiveAvailable
     ) -> NotificationRules.Intent {
         NotificationRules.resolve(rules, timeSensitiveAvailable: timeSensitiveAvailable).watch
     }

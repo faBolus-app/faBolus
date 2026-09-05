@@ -309,9 +309,9 @@ targets:
         # rejects it — this flag EXPERIMENTALLY overturns the CIQ-off precondition in AppModel.setTempBasal
         # ONLY when explicitly opted in (local/bench builds), never in a build a real user or CI runs.
         Debug:
-          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG GARMIN FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG GARMIN FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL FABOLUS_TIME_SENSITIVE
         Release:
-          SWIFT_ACTIVE_COMPILATION_CONDITIONS: GARMIN FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: GARMIN FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL FABOLUS_TIME_SENSITIVE
 
   # Phase 3 (03-03, REMOTE-03/REMOTE-04): the watchOS companion app (incl. the direct-pump/
   # subtree) and its glucose-complication extension are removed from narrow main entirely
@@ -411,7 +411,10 @@ targets:
         # own copy of the flag here to compile in under the same opt-in. Dropped by the same
         # generate-project.sh `drop_flag FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL` default-OFF strip (scoped to
         # every SWIFT_ACTIVE_COMPILATION_CONDITIONS line in the spec, not just the app target's).
-        SWIFT_ACTIVE_COMPILATION_CONDITIONS: FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL
+        # FABOLUS_TIME_SENSITIVE mirrors the same pattern for NotificationCapabilityTests.swift's
+        # `#if FABOLUS_TIME_SENSITIVE` branch, dropped by the same generate-project.sh
+        # `drop_flag FABOLUS_TIME_SENSITIVE` default-OFF strip.
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: FABOLUS_TEMPRATE_CIQ_EXPERIMENTAL FABOLUS_TIME_SENSITIVE
 
 schemes:
   # Phase 3 (03-03, REMOTE-03): the Watch-only CI scheme is retired along with the whole Watch

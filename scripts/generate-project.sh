@@ -175,6 +175,10 @@ if [ "$TIME_SENSITIVE" = 0 ]; then
   # an account without the Time Sensitive Notifications capability can then sign the device app. NotificationPoster
   # still sets .timeSensitive in code (iOS silently downgrades it to .active when the capability is absent).
   strip_block TIME_SENSITIVE
+  # Drop the FABOLUS_TIME_SENSITIVE compile flag too, so NotificationCapability.timeSensitiveAvailable
+  # (the readable runtime signal the unified notification-rules resolver's timeSensitiveAvailable input
+  # reads) moves together with the actual entitlement rather than drifting from it.
+  drop_flag FABOLUS_TIME_SENSITIVE
 fi
 
 # Per-surface app-source compile gates. Only BACKUP still gates a source FILE via this
