@@ -272,15 +272,22 @@ import Foundation
         #expect(d.nextState.deliveredToday == 1)
     }
 
-    @Test func requiresBreakthroughMatchesForceProtectedSafetyClass() {
-        // For every safety class, on an otherwise-ordinary warning-severity governed message:
-        // breakthrough fires iff the class is force-protected — and exactly 3 classes are.
-        for c in B.AlertSafetyClass.allCases {
-            let message = B.Message(
-                category: .pumpAlert, severity: .warning, title: "t", body: "b", dedupeKey: "k", safetyClass: c)
-            #expect(B.requiresBreakthrough(message) == c.isForceProtected)
+    /// The invariant that outlived the force-protection axis: the identities the old axis force-protected
+    /// each resolve to a LOUD pump-mirror rung by default — none is silent (`.off`) out of the box. Stated
+    /// through the unified resolver's classifier + default rung, not a boolean safety flag.
+    @Test func theFormerlyForceProtectedIdentitiesAreLoudByDefaultNoneSilent() {
+        typealias R = NotificationRules
+        // The identities the removed axis force-protected: alarms 2/26; alerts 0/17/40/41/42/48;
+        // CGM alerts 11/13/14/27/39 — 13 in all.
+        let alarms = [(PumpAlertKind.alarm, 2), (.alarm, 26)]
+        let alerts = [(PumpAlertKind.alert, 0), (.alert, 17), (.alert, 40), (.alert, 41), (.alert, 42), (.alert, 48)]
+        let cgm = [(PumpAlertKind.cgmAlert, 11), (.cgmAlert, 13), (.cgmAlert, 14), (.cgmAlert, 27), (.cgmAlert, 39)]
+        for (kind, id) in alarms + alerts + cgm {
+            let group = R.pumpMirrorGroup(kind: kind, id: id, isMalfunction: false)
+            let intent = R.defaultIntent(for: group)
+            #expect(intent >= .alert, "\(kind):\(id) must be loud (Alert or louder) by default")
+            #expect(intent != .off, "\(kind):\(id) must never be silent by default")
         }
-        #expect(B.AlertSafetyClass.allCases.filter { $0.isForceProtected }.count == 3)
     }
 
     @Test func snoozeSuppressesGovernedUntilTheDeadlineButNeverSafety() {
@@ -490,27 +497,32 @@ import Foundation
         #expect(!second.deliver && second.reason == .dailyBudgetReached)
     }
 
-    /// A pump ALARM (`.critical` severity) and a protected alert ID (a force-protected `safetyClass`, even
-    /// at plain `.warning` severity) both require breakthrough regardless of
-    /// `.pumpAlert.neverSuppressible == false`; an ordinary warning does not.
-    @Test func requiresBreakthroughReadsTypedSafetyFieldNotUserInfo() {
-        let alarm = B.Message(category: .pumpAlert, severity: .critical, title: "Occlusion", body: "b", dedupeKey: "a")
-        #expect(B.requiresBreakthrough(alarm), "a pump ALARM (.critical severity) must require breakthrough")
+    /// The unified resolver's phone intent — not a separate breakthrough predicate — decides how loud a
+    /// pump-mirror alert is, and the delivery gate reads the SAME resolver, so the two cannot disagree. An
+    /// unnamed, delivery-suspending alert id hits the fail-safe cell (loud), never the routine group.
+    @Test func pumpMirrorLoudnessAndDeliveryComeFromTheOneResolver() {
+        typealias R = NotificationRules
+        // A delivery-stopped alarm defaults to Alert (loud, but NOT Urgent — the pump remains the primary
+        // annunciator); the delivery gate delivers it under the same cascade.
+        let alarmGroup = R.pumpMirrorGroup(kind: .alarm, id: 2, isMalfunction: false)
+        #expect(R.defaultIntent(for: alarmGroup) == .alert)
+        let alarmCascade = R.Cascade(category: .init(intent: R.defaultIntent(for: alarmGroup)))
+        let alarmDecision = B.decide(
+            msg(.pumpAlert), settings: [:], state: B.State(), now: at(9, 0), calendar: cal,
+            rules: alarmCascade, timeSensitiveAvailable: true)
+        #expect(alarmDecision.deliver)
 
-        let protectedWarning = B.Message(
-            category: .pumpAlert, severity: .warning, title: "Fixed low", body: "b",
-            dedupeKey: "b", safetyClass: .cgmDataLoss)
-        #expect(
-            B.requiresBreakthrough(protectedWarning),
-            "a protected alert ID (typed safetyClass), even at plain .warning severity, must require breakthrough")
+        // An unnamed alert id (the delivery-suspending Control-IQ Max Insulin id 52) resolves loud, never
+        // to the most-ignorable group.
+        let unnamed = R.pumpMirrorGroup(kind: .alert, id: 52, isMalfunction: false)
+        #expect(unnamed != .pumpRoutine)
+        #expect(R.defaultIntent(for: unnamed) >= .alert)
 
-        let ordinary = B.Message(category: .pumpAlert, severity: .warning, title: "t", body: "b", dedupeKey: "c")
-        #expect(
-            !B.requiresBreakthrough(ordinary), "an ordinary warning with no safety marker must not require breakthrough"
-        )
-
-        let trio = B.Message(category: .pumpDisconnect, severity: .warning, title: "t", body: "b", dedupeKey: "d")
-        #expect(B.requiresBreakthrough(trio), "the never-suppressible trio always requires breakthrough")
+        // A source-level Off silences the mirror in one move, and the delivery gate honors it.
+        let offDecision = B.decide(
+            msg(.pumpAlert), settings: [:], state: B.State(), now: at(9, 0), calendar: cal,
+            rules: R.Cascade(source: .init(intent: .off)), timeSensitiveAvailable: true)
+        #expect(!offDecision.deliver && offDecision.reason == .ruleResolvedOff)
     }
 
     /// For every user-configurable never-suppressible category, suppression requires BOTH

@@ -12,8 +12,7 @@ import Foundation
 ///
 /// The boundary this suite defends: refusing `.cgmDataLoss` must NOT silence (a) the app-owned
 /// urgent-low backstop, which lives on its own `.urgentLowGlucose` category precisely so it survives
-/// this, or (b) a PUMP-raised CGM alert, which arrives on `.pumpAlert` carrying
-/// `safetyClass == .cgmDataLoss` and is a different thing entirely.
+/// this, or (b) a PUMP-raised CGM alert, which arrives on `.pumpAlert` and is a different thing entirely.
 @Suite struct CgmGapIsUiStateNotANotificationTests {
     typealias B = NotificationBroker
     typealias C = NotificationBroker.Category
@@ -78,17 +77,21 @@ import Foundation
         #expect(d.deliver, "the urgent-low backstop must survive the CGM-gap policy change")
     }
 
-    /// A PUMP-raised CGM alert is a `.pumpAlert` carrying `safetyClass == .cgmDataLoss` — a different
-    /// channel that must keep notifying (and keep breaking through Focus/DND).
-    @Test func aPumpRaisedCgmAlertStillNotifiesAndStillBreaksThrough() {
+    /// A PUMP-raised CGM alert is a `.pumpAlert` (which DOES surface as a notification) — a different
+    /// channel from the app's own UI-state-only CGM-gap banner. A loss-of-coverage identity (sensor
+    /// failed) classifies to a loud pump-mirror rung and the resolver-driven delivery gate posts it.
+    @Test func aPumpRaisedCgmAlertStillNotifiesAndIsLoudByDefault() {
+        typealias R = NotificationRules
+        #expect(C.pumpAlert.deliversAsNotification, "the pump-mirror channel is not the UI-only CGM-gap banner")
+        let group = R.pumpMirrorGroup(kind: .cgmAlert, id: 11, isMalfunction: false)  // sensor failed
+        #expect(R.defaultIntent(for: group) >= .alert, "a pump CGM loss-of-coverage alert is loud by default")
         let pumpCgm = B.Message(
-            category: .pumpAlert, severity: .warning, title: "CGM unavailable", body: "b",
-            dedupeKey: "pumpalert-3-48", safetyClass: .cgmDataLoss)
+            category: .pumpAlert, severity: .warning, title: "Sensor failed", body: "b", dedupeKey: "pumpalert-3-11")
         let d = B.decide(
             pumpCgm, settings: [.pumpAlert: B.CategorySettings(enabled: true)],
-            state: B.State(), now: at(9, 0), calendar: cal)
+            state: B.State(), now: at(9, 0), calendar: cal,
+            rules: R.Cascade(category: .init(intent: R.defaultIntent(for: group))), timeSensitiveAvailable: true)
         #expect(d.deliver, "the pump's own CGM alert is not the app's CGM-gap banner — it must still notify")
-        #expect(B.requiresBreakthrough(pumpCgm))
     }
 
     /// The other four never-suppressible categories are untouched: still delivered under a hostile config.

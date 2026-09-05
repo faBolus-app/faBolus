@@ -23,9 +23,9 @@ public enum NotificationBroker {
         case pumpDisconnect  // the pump link dropped while it was connected/bolusing
         case bolusReconciliation  // the AUTHORITATIVE result of a bolus, incl. a resolved indeterminate
         /// The app stopped receiving CGM data (distinct from a pump-raised CGM alert, which arrives on
-        /// `pumpAlert` with `safetyClass == .cgmDataLoss` and is unaffected by any of this). Still a
-        /// never-suppressible category, but since 2026-08-30 it never NOTIFIES — a CGM gap is UI state
-        /// only. See `deliversAsNotification` for the decision and its accepted residual.
+        /// `pumpAlert` and is unaffected by any of this). Still a never-suppressible category, but since
+        /// 2026-08-30 it never NOTIFIES — a CGM gap is UI state only. See `deliversAsNotification` for the
+        /// decision and its accepted residual.
         case cgmDataLoss
         /// The pump link keeps FLAPPING — a bounded run of live→reconnecting re-pair/re-drop cycles
         /// the reconnect ladder folds to `.connecting`, so `SafetyEdge.connection` (and the muteable
@@ -199,17 +199,9 @@ public enum NotificationBroker {
         public var dedupeKey: String
         /// Groups related events into one episode (one-notification-per-episode, §6). Defaults to `dedupeKey`.
         public var episodeKey: String
-        /// An OPTIONAL typed safety marker — the pump's OWN alert identity classified by
-        /// `TandemBackend.safetyClass` (occlusion / cgmDataLoss / lowInsulin / other) — used ONLY by
-        /// `requiresBreakthrough(_:)` to decide OS interruption level, independent of `category`
-        /// source-identity. `nil` for every non-pump-alert message and for a pump alert with no protected
-        /// classification. This is the SOLE typed channel for that information: the broker never reads
-        /// untyped `userInfo` (the Message doesn't carry one), so a caller populating this field is the
-        /// only way a protected alert ID can influence urgency.
-        public var safetyClass: AlertSafetyClass?
         public init(
             category: Category, severity: Severity, title: String, body: String,
-            dedupeKey: String, episodeKey: String? = nil, safetyClass: AlertSafetyClass? = nil
+            dedupeKey: String, episodeKey: String? = nil
         ) {
             self.category = category
             self.severity = severity
@@ -217,7 +209,6 @@ public enum NotificationBroker {
             self.body = body
             self.dedupeKey = dedupeKey
             self.episodeKey = episodeKey ?? dedupeKey
-            self.safetyClass = safetyClass
         }
     }
 
@@ -523,20 +514,6 @@ public enum NotificationBroker {
         return deliver()
     }
 
-    /// Whether `message`'s DISPLAY must break through Focus/Do Not Disturb — the never-suppressible
-    /// trio (unchanged), a CRITICAL-severity governed message (e.g. a pump ALARM surfaced as
-    /// `.pumpAlert`), or any message carrying a force-protected `safetyClass` (an urgent fixed-low /
-    /// occlusion / low-insulin / CGM-loss alert reaching the app at plain `.warning` severity).
-    /// Decoupled from `category.neverSuppressible` on purpose — a governed `.pumpAlert` qualifies exactly
-    /// like a safety-trio category once its severity/safetyClass says so. Reads ONLY typed `Message`
-    /// fields (`category`, `severity`, `safetyClass`) — never `userInfo`, which `Message` doesn't carry.
-    /// The single governed decision point for this axis — callers must not add a parallel inline check.
-    public static func requiresBreakthrough(_ message: Message) -> Bool {
-        message.category.neverSuppressible
-            || message.severity == .critical
-            || (message.safetyClass?.isForceProtected ?? false)
-    }
-
     /// Whether a DURABLE safety-alert replay record should be re-submitted on launch, or retired instead.
     ///
     /// The app persists a replay record for every never-suppressible post BEFORE handing the request to
@@ -590,19 +567,5 @@ public enum NotificationBroker {
         m[category.rawValue] = until
         out.snoozedUntil = m
         return out
-    }
-
-    // MARK: - Force-protection (§6: safety alerts a user auto-rule must never suppress)
-
-    /// Safety classification of a pump alert. Computed by the backend from the pump's OWN alert identity —
-    /// the pump notification-bit → semantics mapping lives at the decode boundary (`TandemBackend`), NOT
-    /// here, so faBolusCore never hard-codes pump bit values. Read by `requiresBreakthrough` to decide OS
-    /// interruption level for a protected class.
-    public enum AlertSafetyClass: String, Sendable, Codable, CaseIterable {
-        case occlusion  // occlusion / pump malfunction (already an alarm, protected here independently)
-        case cgmDataLoss  // CGM unavailable / sensor failed / out-of-range / failed connection
-        case lowInsulin  // low insulin / empty reservoir
-        case other
-        public var isForceProtected: Bool { self != .other }
     }
 }

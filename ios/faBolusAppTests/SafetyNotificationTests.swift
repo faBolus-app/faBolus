@@ -62,34 +62,37 @@ import TandemMessages
         #expect(SafetyEdge.freshness(wasFresh: true, isFresh: true) == .none)  // steady
     }
 
-    // MARK: Pump-identity → safety class
+    // MARK: Pump-identity → loud-by-default classification (through the unified resolver)
 
-    @Test func safetyClassMapsPumpIdentitiesToTheForceProtectedSet() {
-        typealias K = NotificationKind
-        // Occlusion (delivery stopped) — the two occlusion alarm bits.
-        #expect(TandemBackend.safetyClass(kind: K.alarm, id: 2) == .occlusion)
-        #expect(TandemBackend.safetyClass(kind: K.alarm, id: 26) == .occlusion)
-        #expect(TandemBackend.safetyClass(kind: K.alarm, id: 8) == .other)  // "Empty cartridge" ≠ occlusion class
-        // Low insulin in the cartridge.
-        #expect(TandemBackend.safetyClass(kind: K.alert, id: 0) == .lowInsulin)
-        #expect(TandemBackend.safetyClass(kind: K.alert, id: 17) == .lowInsulin)
-        // CGM loss reported on the ALERT bitmap.
-        #expect(TandemBackend.safetyClass(kind: K.alert, id: 48) == .cgmDataLoss)  // CGM unavailable
-        #expect(TandemBackend.safetyClass(kind: K.alert, id: 40) == .cgmDataLoss)  // CGM error
-        // The previously-missing loss-of-coverage variants (upstream AlertStatusResponse.java:107)
-        // — these fell through to `.other` (not force-protected) before this fix.
-        #expect(TandemBackend.safetyClass(kind: K.alert, id: 41) == .cgmDataLoss)
-        #expect(TandemBackend.safetyClass(kind: K.alert, id: 42) == .cgmDataLoss)
-        #expect(TandemBackend.safetyClass(kind: K.alert, id: 6) == .other)  // Max basal rate
-        // CGM loss on the CGM bitmap (sensor failed/expired, out of range, failed connection, transmitter expired).
-        for id in [11, 13, 14, 27, 39] {
-            #expect(TandemBackend.safetyClass(kind: K.cgmAlert, id: id) == .cgmDataLoss)
+    /// The identities the removed force-protection axis classified as protected now each resolve to a
+    /// LOUD pump-mirror rung by default (Alert or louder), and none is silent — the loudness invariant
+    /// survives the axis removal, stated through the unified resolver's classifier + default rung. The
+    /// glucose-LEVEL alerts, never protected, stay on a quieter rung.
+    @Test func formerlyProtectedIdentitiesAreLoudByDefaultGlucoseLevelIsQuieter() {
+        typealias R = NotificationRules
+        func intent(_ kind: PumpAlertKind, _ id: Int, malfunction: Bool = false) -> R.Intent {
+            R.defaultIntent(for: R.pumpMirrorGroup(kind: kind, id: id, isMalfunction: malfunction))
         }
-        // Glucose-LEVEL CGM alerts stay `.other` — force-protection is loss-of-coverage only.
-        #expect(TandemBackend.safetyClass(kind: K.cgmAlert, id: 2) == .other)  // High glucose
-        #expect(TandemBackend.safetyClass(kind: K.cgmAlert, id: 3) == .other)  // Low glucose
-        #expect(TandemBackend.safetyClass(kind: K.cgmAlert, id: 12) == .other)  // Sensor expiring (data still flows)
-        #expect(TandemBackend.safetyClass(kind: K.reminder, id: 0) == .other)
+        // Delivery-stopped alarms (the two occlusion bits) — loud, and NOT Urgent by default.
+        #expect(intent(.alarm, 2) == .alert)
+        #expect(intent(.alarm, 26) == .alert)
+        // Low insulin in the cartridge — loud.
+        #expect(intent(.alert, 0) == .alert)
+        #expect(intent(.alert, 17) == .alert)
+        // CGM loss reported on the ALERT bitmap (CGM unavailable / error and the unnamed variants).
+        for id in [40, 41, 42, 48] { #expect(intent(.alert, id) == .alert) }
+        // CGM loss on the CGM bitmap (sensor failed/expired, out of range, failed connection, tx expired).
+        for id in [11, 13, 14, 27, 39] { #expect(intent(.cgmAlert, id) == .alert) }
+        // None of the formerly-protected identities is silent by default.
+        for (k, id) in [(PumpAlertKind.alarm, 2), (.alarm, 26), (.alert, 0), (.alert, 17),
+            (.alert, 40), (.alert, 41), (.alert, 42), (.alert, 48),
+            (.cgmAlert, 11), (.cgmAlert, 13), (.cgmAlert, 14), (.cgmAlert, 27), (.cgmAlert, 39)]
+        {
+            #expect(intent(k, id) != .off)
+        }
+        // Glucose-LEVEL CGM alerts were never protected — they sit on a quieter rung.
+        #expect(intent(.cgmAlert, 2) == .quiet)  // High glucose
+        #expect(intent(.cgmAlert, 3) == .quiet)  // Low glucose
     }
 
     // MARK: S7 — pump-disconnect escalation ladder wiring (integration)

@@ -215,31 +215,50 @@ import UserNotifications
         #expect(reqs.first?.content.sound == .default)
     }
 
-    /// A pump ALARM (`.critical` on governed `.pumpAlert`) and a protected `safetyClass` must break through
-    /// Focus/DND like the never-suppressible trio — via `requiresBreakthrough`, never via `userInfo`.
-    @Test func pumpAlarmAndProtectedSafetyClassBreakThroughLikeTheSafetyTrio() {
+    /// A pump-mirror message's interruption level comes from the ONE unified resolver's phone intent —
+    /// Urgent breaks through Focus/DND, Alert is a plain banner+sound, Quiet is passive. An app-own path
+    /// (no resolver cascade) still escalates a `.critical`-severity message, unchanged.
+    @Test func pumpMirrorInterruptionComesFromTheResolverAppOwnCriticalStillEscalates() {
+        typealias R = NotificationRules
         let rt = NotificationRuntime(store: isolatedStore(#function))
         var reqs: [UNNotificationRequest] = []
-        let alarm = B.Message(
-            category: .pumpAlert, severity: .critical, title: "Occlusion", body: "b", dedupeKey: "alarm1")
-        NotificationPoster.post(alarm, runtime: rt, allowCritical: true, now: at(9, 0)) { reqs.append($0) }
+        func post(_ key: String, rules: R.Cascade, allowCritical: Bool) -> UNNotificationRequest? {
+            reqs.removeAll()
+            NotificationPoster.post(
+                msg(.pumpAlert, key: key), runtime: rt, allowCritical: allowCritical, now: at(9, 0),
+                rules: rules, timeSensitiveAvailable: true) { reqs.append($0) }
+            return reqs.first
+        }
+        let urgent = R.Cascade(category: .init(intent: .urgent))
+        // Urgent + entitled → Critical (pierces DND / ringer switch).
+        #expect(post("u1", rules: urgent, allowCritical: true)?.content.interruptionLevel == .critical)
+        // Urgent + unentitled → time-sensitive (still breaks through Focus/DND).
+        #expect(post("u2", rules: urgent, allowCritical: false)?.content.interruptionLevel == .timeSensitive)
+        // Alert → a plain banner + sound, no break-through.
+        let alertReq = post("a1", rules: R.Cascade(category: .init(intent: .alert)), allowCritical: true)
+        #expect(alertReq?.content.interruptionLevel == .active)
+        #expect(alertReq?.content.sound == .default)
+        // Quiet → passive, no sound.
+        let quietReq = post("q1", rules: R.Cascade(category: .init(intent: .quiet)), allowCritical: true)
+        #expect(quietReq?.content.interruptionLevel == .passive)
+        #expect(quietReq?.content.sound == nil)
+        // A pump alarm's default rung is Alert (not Urgent) — a 3am occlusion notifies but does not pierce
+        // DND by default (the pump remains the primary annunciator).
+        let alarmGroup = R.pumpMirrorGroup(kind: .alarm, id: 2, isMalfunction: false)
+        let alarmReq = post(
+            "alarm1", rules: R.Cascade(category: .init(intent: R.defaultIntent(for: alarmGroup))),
+            allowCritical: true)
+        #expect(alarmReq?.content.interruptionLevel == .active, "a pump alarm defaults to Alert, not breakthrough")
+
+        // App-own regression: a `.critical`-severity message with NO resolver cascade still escalates.
+        reqs.removeAll()
+        let appOwnCritical = B.Message(
+            category: .bolusReconciliation, severity: .critical, title: "Bolus not delivered", body: "b",
+            dedupeKey: "appown1")
+        NotificationPoster.post(appOwnCritical, runtime: rt, allowCritical: true, now: at(9, 0)) { reqs.append($0) }
         #expect(
             reqs.first?.content.interruptionLevel == .critical,
-            "a pump ALARM must break through exactly like a safety-trio category")
-        reqs.removeAll()
-        let protectedWarning = B.Message(
-            category: .pumpAlert, severity: .warning, title: "Fixed low",
-            body: "b", dedupeKey: "fixedlow1", safetyClass: .cgmDataLoss)
-        NotificationPoster.post(protectedWarning, runtime: rt, allowCritical: false, now: at(9, 0)) { reqs.append($0) }
-        #expect(
-            reqs.first?.content.interruptionLevel == .timeSensitive,
-            "a protected alert ID must break through even at plain .warning severity")
-        // An ordinary pump alert (no safetyClass, non-critical severity) is unaffected — still `.active`.
-        reqs.removeAll()
-        NotificationPoster.post(msg(.pumpAlert, key: "ordinary1"), runtime: rt, allowCritical: true, now: at(9, 0)) {
-            reqs.append($0)
-        }
-        #expect(reqs.first?.content.interruptionLevel == .active)
+            "an app-own .critical category must still break through, unchanged")
     }
 
     /// The pump-alarm opt-out suppresses only a pump ALARM the user opted out of — never a lower-priority ALERT.

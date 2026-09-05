@@ -160,8 +160,14 @@ final class NotificationRuntime {
         if let data = try? JSONEncoder().encode(keyed) { store.set(data, forKey: settingsKey) }
     }
 
-    /// Run the broker on `message` at `now`, persist the advanced state, and return the decision.
-    func evaluate(_ message: NotificationBroker.Message, now: Date) -> NotificationBroker.Decision {
+    /// Run the broker on `message` at `now`, persist the advanced state, and return the decision. A
+    /// pump-mirror caller supplies its resolved `rules` cascade (and the time-sensitive capability), so
+    /// the broker's single governed decision point reads the ONE unified resolver for that message; every
+    /// other caller omits them and keeps the pre-existing settings-driven path.
+    func evaluate(
+        _ message: NotificationBroker.Message, now: Date,
+        rules: NotificationRules.Cascade? = nil, timeSensitiveAvailable: Bool = false
+    ) -> NotificationBroker.Decision {
         // Re-read the store first: a sibling process (a mode-reminder intent) may have advanced the
         // counters since we loaded. Last-writer-wins is fine for notification governance.
         if let data = store.data(forKey: stateKey),
@@ -177,7 +183,7 @@ final class NotificationRuntime {
         }
         let decision = NotificationBroker.decide(
             message, settings: settings, state: state,
-            budget: budget, now: now)
+            budget: budget, now: now, rules: rules, timeSensitiveAvailable: timeSensitiveAvailable)
         state = decision.nextState
         persist()
         return decision
@@ -234,40 +240,64 @@ enum NotificationPoster {
         trigger: UNNotificationTrigger? = nil,
         allowCritical: Bool = false,
         now: Date = Date(),
+        rules: NotificationRules.Cascade? = nil,
+        timeSensitiveAvailable: Bool = false,
         add: (UNNotificationRequest) -> Void = { UNUserNotificationCenter.current().add($0) }
     ) -> NotificationBroker.Decision {
-        let decision = runtime.evaluate(message, now: now)
+        let decision = runtime.evaluate(
+            message, now: now, rules: rules, timeSensitiveAvailable: timeSensitiveAvailable)
         guard decision.deliver else { return decision }
         runtime.recordDelivered(message.category)  // telemetry (opt-in; no-op otherwise)
         let content = UNMutableNotificationContent()
         content.title = message.title
         content.body = message.body
-        // iOS Critical Alerts (alert even under Do Not Disturb / the ringer switch) for the
-        // never-suppressible SAFETY categories only, and only when the caller says the entitlement is
-        // granted + the user has it on (`allowCritical`). Everything else keeps the normal sound/level, so
-        // this can never over-escalate a routine or governed notification.
-        // Breakthrough is driven by `NotificationBroker.requiresBreakthrough` —
-        // the never-suppressible trio (unchanged), OR a `.critical`-severity message (a pump ALARM
-        // surfaced as the GOVERNED `.pumpAlert` category), OR a message carrying a force-protected typed
-        // `safetyClass` (an urgent fixed-low/occlusion/low-insulin/CGM-loss alert at plain `.warning`
-        // severity). Decoupled from `category.neverSuppressible` alone, so a governed pump alarm breaks
-        // through Focus/DND exactly like the safety trio — closing the gap where alarms couldn't break
-        // through DND and a fixed-low ALERT posted `.warning`.
-        let breakthrough = NotificationBroker.requiresBreakthrough(message)
-        if allowCritical && breakthrough {
-            content.interruptionLevel = .critical
-            content.sound = .defaultCritical
+        // iOS Critical Alerts (alert even under Do Not Disturb / the ringer switch) are used only when the
+        // caller says the entitlement is granted + the user has it on (`allowCritical`). Everything else
+        // keeps the normal sound/level, so this can never over-escalate a routine or governed notification.
+        //
+        // A pump-mirror message (the caller supplied a resolved `rules` cascade) takes its interruption
+        // level from the ONE unified resolver's phone intent — the same decision the delivery gate read —
+        // so the "how loud / does it pierce DND" answer cannot disagree with whether it was posted at all:
+        //   Urgent ⇒ break through Focus/DND (Critical when entitled, else time-sensitive)
+        //   Alert  ⇒ banner + sound, no break-through (the default level)
+        //   Quiet  ⇒ passive (no sound)
+        //   Off    ⇒ already suppressed by the delivery gate; never reaches here.
+        // Every other (app-own) message keeps its existing path: the never-suppressible safety categories
+        // and a `.critical`-severity message break through Focus/DND; ordinary ones stay at the default.
+        if let rules {
+            let phone = NotificationRules.resolve(rules, timeSensitiveAvailable: timeSensitiveAvailable).phone
+            switch phone {
+            case .urgent:
+                if allowCritical {
+                    content.interruptionLevel = .critical
+                    content.sound = .defaultCritical
+                } else {
+                    content.interruptionLevel = .timeSensitive
+                    content.sound = .default
+                }
+            case .quiet:
+                content.interruptionLevel = .passive
+                content.sound = nil
+            case .alert, .off:
+                content.sound = .default
+            }
         } else {
-            content.sound = .default
-            // Graceful degradation while the Critical-Alerts entitlement is pending (or the user
-            // hasn't opted in) — anything requiring breakthrough still must break through Focus/DND, or the
-            // "time-sensitive delivery" promise is false. `.timeSensitive` does that without requiring the
-            // special-request Critical Alerts entitlement; it only needs the lightweight Time-Sensitive
-            // Notifications capability (see faBolus.entitlements). Scoped to `breakthrough` so an ordinary
-            // governed/suppressible message is never escalated. If the app ever lacked the Time-Sensitive
-            // capability, iOS silently downgrades this to `.active` — safe by default, never a crash.
-            if breakthrough {
-                content.interruptionLevel = .timeSensitive
+            let breakthrough = message.category.neverSuppressible || message.severity == .critical
+            if allowCritical && breakthrough {
+                content.interruptionLevel = .critical
+                content.sound = .defaultCritical
+            } else {
+                content.sound = .default
+                // Graceful degradation while the Critical-Alerts entitlement is pending (or the user
+                // hasn't opted in) — anything requiring breakthrough still must break through Focus/DND, or
+                // the "time-sensitive delivery" promise is false. `.timeSensitive` does that without the
+                // special-request Critical Alerts entitlement; it needs only the lightweight Time-Sensitive
+                // Notifications capability (see faBolus.entitlements). Scoped to `breakthrough` so an
+                // ordinary governed/suppressible message is never escalated. If the app ever lacked the
+                // Time-Sensitive capability, iOS silently downgrades this to `.active` — safe, never a crash.
+                if breakthrough {
+                    content.interruptionLevel = .timeSensitive
+                }
             }
         }
         if !categoryId.isEmpty { content.categoryIdentifier = categoryId }
@@ -447,7 +477,8 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     func post(
         _ message: NotificationBroker.Message,
         userInfo: [AnyHashable: Any] = [:], categoryId: String = "",
-        trigger: UNNotificationTrigger? = nil, deadline: Date? = nil
+        trigger: UNNotificationTrigger? = nil, deadline: Date? = nil,
+        rules: NotificationRules.Cascade? = nil, timeSensitiveAvailable: Bool = false
     ) -> NotificationBroker.Decision {
         // A category that surfaces as UI state only never becomes a notification. The REFUSAL itself still
         // comes from the broker (`decide()` is the single governed decision point, and it returns
@@ -480,6 +511,7 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         return NotificationPoster.post(
             message, runtime: runtime, userInfo: userInfo,
             categoryId: cat, trigger: trigger, allowCritical: allowCritical,
+            rules: rules, timeSensitiveAvailable: timeSensitiveAvailable,
             add: { [center] in center.add($0) })
     }
 
@@ -648,19 +680,26 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
             }
             let k = key(n)
             postedPumpAlerts.insert(k)
-            // Populate the TYPED safety marker from the pump's OWN alert identity
-            // (`TandemBackend.safetyClass`) so `requiresBreakthrough` can decide interruption level from
-            // it — never from untyped userInfo.
-            // `.other` maps to `nil` (no marker) so an un-classified alert is unaffected.
-            let klass = TandemBackend.safetyClass(kind: NotificationKind(rawValue: n.kind.rawValue) ?? .alert, id: n.id)
+            // Classify this pump alert from its OWN identity (kind + bit id + the malfunction
+            // discriminator — a malfunction decodes as `.alarm` with the dismissable flag false) into its
+            // pump-mirror group, and resolve its phone/watch intent through the ONE unified resolver. The
+            // group's fatigue-averse default sits at the category cascade level; an unnamed alert id hits
+            // the resolver's fail-safe cell rather than a routine rung. This single decision drives both
+            // whether the alert posts and how loud it is — no separate breakthrough predicate.
+            let isMalfunction = !n.isDismissable
+            let group = NotificationRules.pumpMirrorGroup(
+                kind: n.kind, id: n.id, isMalfunction: isMalfunction)
+            let cascade = NotificationRules.Cascade(
+                category: NotificationRules.Rule(intent: NotificationRules.defaultIntent(for: group)))
             let msg = NotificationBroker.Message(
                 category: .pumpAlert,
                 severity: n.kind == .alarm ? .critical : .warning,
                 title: n.title,
                 body: n.detail.isEmpty ? "Active pump alert" : n.detail,
-                dedupeKey: k,
-                safetyClass: klass.isForceProtected ? klass : nil)
-            post(msg, userInfo: ["id": n.id, "kind": n.kind.rawValue], categoryId: Self.pumpAlertCategory)
+                dedupeKey: k)
+            post(
+                msg, userInfo: ["id": n.id, "kind": n.kind.rawValue], categoryId: Self.pumpAlertCategory,
+                rules: cascade, timeSensitiveAvailable: NotificationCapability.timeSensitiveAvailable)
         }
         let gone = Array(postedPumpAlerts.subtracting(active))
         if !gone.isEmpty {
