@@ -591,16 +591,12 @@ public final class AppSettings {
     public static let chartRangeOptions: [Int] = [3, 6, 12, 24]
 
     /// Restore a reorder/hide list: keep stored ids that are known + unique, in stored order; fall
-    /// back to the full list if nothing valid is stored (never leave the surface empty) — UNLESS
-    /// `emptyMeansEmpty` is true AND a value was actually persisted (`stored != nil`), in which case a
-    /// persisted `[]` is honored as an explicit empty selection rather than collapsed back to `all`.
-    /// `detailsOrder`/`watchDetailsOrder`/`pillsOrder` keep the default `false` and are unaffected.
-    /// A genuinely-absent key (`stored == nil`) ALWAYS falls back to `all`, regardless of `emptyMeansEmpty`.
-    private static func restoreOrder(_ stored: [String]?, all: [String], emptyMeansEmpty: Bool = false) -> [String] {
+    /// back to the full list if nothing valid is stored (never leave the surface empty).
+    private static func restoreOrder(_ stored: [String]?, all: [String]) -> [String] {
         guard let stored = stored else { return all }
         var order: [String] = []
         for s in stored where all.contains(s) && !order.contains(s) { order.append(s) }
-        if order.isEmpty { return emptyMeansEmpty ? [] : all }
+        if order.isEmpty { return all }
         return order
     }
 
