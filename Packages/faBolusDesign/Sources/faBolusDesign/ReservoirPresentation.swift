@@ -1,16 +1,5 @@
 import Foundation
 
-/// The pure presentation result `ReservoirPresentation.make` returns.
-public struct ReservoirDisplay: Equatable, Sendable {
-    /// The SINGLE formatted display string every reservoir-rendering surface should consume —
-    /// `"142 U"` for a reported reading, `"—"` when the pump has never reported one.
-    public let valueText: String
-    /// Whether the pump has actually reported a reading. `false` ⇒ `valueText` is the unknown
-    /// placeholder and the surface should render it in a de-emphasised/neutral treatment rather than as
-    /// live data.
-    public let isKnown: Bool
-}
-
 /// SINGLE source of truth for how a reservoir reading is displayed, including the ABSENT case. Pure and
 /// host-agnostic — no SwiftUI/UIKit — so it is trivially unit-testable and the status pill, the details
 /// card, the widgets and the Debug menu all get byte-identical treatment.
@@ -22,9 +11,7 @@ public struct ReservoirDisplay: Equatable, Sendable {
 /// meaningful state, so absence must never be able to imitate it, and the test for "is this real?" must
 /// live in exactly one place.
 public enum ReservoirPresentation {
-    /// What every surface shows when a pump-sourced value has never been reported. An EM DASH, matching
-    /// `PumpDetailsCard`'s existing unknown treatment for `carbRatio`/`isf`/`targetBg`.
-    public static let unknownText = "—"
+    public static let unknownText = PumpValuePresentation.unknownText
 
     /// - Parameter units: `PumpSnapshot.reservoirUnitsIfFresh(now:)` — the units the pump reported, or
     ///   `nil` when it has never answered the reservoir read OR has not re-answered it inside the
@@ -32,8 +19,7 @@ public enum ReservoirPresentation {
     ///   funnels, never the raw `reservoirUnits`, or the absent case collapses back into `0 U`. The
     ///   presence-only `reservoirUnitsIfRead` is the weaker gate — prefer `…IfFresh` on any surface
     ///   that reads as live data.
-    public static func make(units: Double?) -> ReservoirDisplay {
-        guard let units else { return ReservoirDisplay(valueText: unknownText, isKnown: false) }
-        return ReservoirDisplay(valueText: String(format: "%.0f U", units), isKnown: true)
+    public static func make(units: Double?) -> PumpValueDisplay {
+        PumpValuePresentation.make(units, format: "%.0f U")
     }
 }

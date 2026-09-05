@@ -16,7 +16,7 @@ public struct PumpValueDisplay: Equatable, Sendable {
 /// pill, details card, widget, Debug menu — gets byte-identical treatment for "the pump never told us".
 ///
 /// This is the generalisation of `ReservoirPresentation` (which stays as the reservoir-specific
-/// `"%.0f U"` funnel, and owns the shared placeholder literal). It exists because the reservoir/battery
+/// `"%.0f U"` funnel and forwards to this type). It exists because the reservoir/battery
 /// fix from debug session `tslim-reservoir-battery-zero` was not the only instance of the defect: the
 /// follow-up app-wide sweep found `iobUnits` and `basalRateUnitsPerHour` doing the same thing — a
 /// non-optional, zero-defaulted pump value rendered as a confident number on every surface — each with
@@ -36,11 +36,9 @@ public struct PumpValueDisplay: Equatable, Sendable {
 ///     "is that report still CURRENT". Strictly stronger; prefer it on any surface that reads as live
 ///     data (debug `pump-value-decay-to-unknown`).
 public enum PumpValuePresentation {
-    /// What every surface shows when a pump-sourced value has never been reported. Deliberately an alias
-    /// rather than a second `"—"` literal: `ReservoirPresentation` declared it first and
-    /// `BatteryChargingPresentation` already reads it from there, so the em dash exists exactly once in
-    /// the codebase and the placeholder can never drift between surfaces.
-    public static let unknownText = ReservoirPresentation.unknownText
+    /// What every surface shows when a pump-sourced value has never been reported. One literal, owned
+    /// here; the reservoir- and battery-specific funnels read it from this general type.
+    public static let unknownText = "—"
 
     /// - Parameters:
     ///   - value: the pump's reported number, or `nil` when it has never reported one. Pass a

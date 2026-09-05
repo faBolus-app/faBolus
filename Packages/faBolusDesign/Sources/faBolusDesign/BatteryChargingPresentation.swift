@@ -47,7 +47,7 @@ public enum BatteryChargingPresentation {
                 // frame there is no charging claim either (`batteryCharging` is already fail-closed).
                 showsChargingText: false,
                 usesLowTint: false,
-                valueText: ReservoirPresentation.unknownText)
+                valueText: PumpValuePresentation.unknownText)
         }
         return make(percent: percent, charging: charging)
     }
