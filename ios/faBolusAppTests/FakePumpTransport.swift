@@ -478,6 +478,20 @@ final class FakePumpTransport: PumpTransport {
         frame(opCode: AlertStatusResponse.props.opCode, cargo: Bytes.toUint64(bitmap), signed: false)
     }
 
+    /// op-71 `AlarmStatusResponse` (8-byte little-endian uint64 bitmap; bit N set = alarm id N active).
+    /// Decodes `kind: .alarm`, `dismissable: true` — used alongside `malfunctionStatusBitmap` to seed a
+    /// real alarm/malfunction id-space collision (both decode `kind: .alarm`, sharing the same bit).
+    static func alarmStatusBitmap(_ bitmap: UInt64) -> [UInt8] {
+        frame(opCode: AlarmStatusResponse.props.opCode, cargo: Bytes.toUint64(bitmap), signed: false)
+    }
+
+    /// op-119 `MalfunctionBitmaskStatusResponse` (8-byte little-endian uint64 bitmap; bit N set =
+    /// malfunction id N active). Also decodes `kind: .alarm` (an empty name table, `dismissable: false`)
+    /// — the same bit index as an alarm collides on `(kind, id)` alone.
+    static func malfunctionStatusBitmap(_ bitmap: UInt64) -> [UInt8] {
+        frame(opCode: MalfunctionBitmaskStatusResponse.props.opCode, cargo: Bytes.toUint64(bitmap), signed: false)
+    }
+
     /// op-185 `DismissNotificationResponse` ack (1 byte: status@0 — 0 = accepted, non-zero = rejected).
     /// Signed (the real response is a signed CONTROL ack — see that type's own doc comment), so this
     /// builds a VALID HMAC trailer under `signedResponseTestKey`, matching `permissionGranted`/
