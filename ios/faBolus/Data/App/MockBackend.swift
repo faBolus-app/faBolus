@@ -6,9 +6,8 @@ import faBolusCore
 /// `PumpBackend` implementation — copy it as a starting point for a new backend.
 @MainActor
 public final class MockBackend: PumpBackend {
-    // A simulator can present as a Mobi (full advanced-control surface, for trying the wizards) or a
-    // t:slim X2 (bolus/status only), selected via the backend picker. The control wizards still
-    // require AppSettings.advancedControlEnabled = on and only appear for the Mobi simulator.
+    // A simulator can present as a Mobi (broader capability set, for trying pump-specific UI) or a
+    // t:slim X2 (bolus/status only), selected via the backend picker.
     private let mobi: Bool
     public var capabilities: PumpCapabilities { .derive(isMobi: mobi, features: nil) }
     public private(set) var snapshot = PumpSnapshot()
@@ -239,8 +238,6 @@ public final class MockBackend: PumpBackend {
         snapshot.activeProfileName = d.activeProfileName
         snapshot.controlIQMode = d.controlIQMode
         snapshot.controlIQEnabled = d.controlIQEnabled
-        snapshot.controlIQWeightLbs = d.controlIQWeightLbs
-        snapshot.controlIQTotalDailyInsulin = d.controlIQTotalDailyInsulin
         snapshot.controllerVariant = d.controllerVariant
         snapshot.profiles = d.profiles
         snapshot.viewedProfileSegments = d.viewedProfileSegments
@@ -433,113 +430,21 @@ public final class MockBackend: PumpBackend {
         onChange?()
     }
 
-    // MARK: - Advanced control + Mobi workflows (fakes for Simulator testing)
-    public func suspendDelivery() async throws {
-        snapshot.deliverySuspended = true
-        onChange?()
-    }
-    public func resumeDelivery() async throws {
-        snapshot.deliverySuspended = false
-        onChange?()
-    }
-    /// Counts temp-rate writes that reach the backend — mirrors `idpWriteCount`/`controlWriteCount`.
-    /// The original headless-automation caller (`TempRateAutomation`) is gone; `AppModelBehaviorTests`
-    /// now exercises it via the manual `AppModel.setTempBasal` UI path — the counter itself stays.
-    public private(set) var tempRateWriteCount = 0
-    public func setTempBasal(percent: Int, durationMinutes: Int) async throws {
-        tempRateWriteCount += 1
-        onChange?()
-    }
-    public func stopTempBasal() async throws { onChange?() }
-    public func setMode(_ command: ModeCommand) async throws {
-        // Translate the typed command to the reported activity STATE the UI reads from controlIQMode
-        // (the collision this typing exists to prevent: command .sleepOn=1 → state .sleep=1).
-        switch command {
-        case .sleepOn: snapshot.controlIQMode = ControlIQActivity.sleep.rawValue
-        case .exerciseOn: snapshot.controlIQMode = ControlIQActivity.exercise.rawValue
-        case .sleepOff, .exerciseOff: snapshot.controlIQMode = ControlIQActivity.normal.rawValue
-        }
-        onChange?()
-    }
-    public func playFindMyPump() async throws {}
-
-    public func startG6Session(transmitterId: String, sensorCode: Int) async throws {
-        snapshot.cgmSessionActive = true
-        onChange?()
-    }
-    public func startG7Session(pairingCode: Int) async throws {
-        snapshot.cgmSessionActive = true
-        onChange?()
-    }
-    public func setSensorType(_ typeId: Int) async throws {}
-    public func stopCgmSession() async throws {
-        snapshot.cgmSessionActive = false
-        onChange?()
-    }
-
-    public func enterChangeCartridgeMode() async throws {
-        snapshot.deliverySuspended = true
-        snapshot.cartridgeLoadActive = true
-        snapshot.cartridgeLoadState = 0
-        onChange?()
-    }
-    public func exitChangeCartridgeMode() async throws {
-        snapshot.cartridgeLoadState = 1
-        onChange?()
-    }
-    public func enterFillTubingMode() async throws {
-        snapshot.cartridgeLoadState = 2
-        onChange?()
-    }
-    public func exitFillTubingMode() async throws {
-        snapshot.cartridgeLoadState = 3
-        onChange?()
-    }
-    public func fillCannula(milliunits: Int) async throws {
-        snapshot.cartridgeLoadActive = false
-        snapshot.cartridgeLoadState = 6
-        snapshot.deliverySuspended = false
-        onChange?()
-    }
-
-    /// Counts the therapy-defining control writes (max bolus/basal, Control-IQ) that reach the
-    /// backend, so a test can prove they are ack-gated the same way `idpWriteCount` proves it for IDP CRUD.
-    public private(set) var controlWriteCount = 0
-    public func setMaxBolus(units: Double) async throws {
-        controlWriteCount += 1
-        snapshot.maxBolusUnits = Interlocks.clampMaxBolusLimit(units)
-        onChange?()
-    }  // S9: clamp; S6: counted
-    public func setMaxBasal(unitsPerHour: Double) async throws { controlWriteCount += 1 }
+    // MARK: - Advanced control (fakes for Simulator testing)
     public func syncTimeToNow() async throws {}
 
-    public func setControlIQ(enabled: Bool, weightLbs: Int, totalDailyInsulinUnits: Int) async throws {
-        controlWriteCount += 1
-        snapshot.controlIQEnabled = enabled
-        snapshot.controlIQWeightLbs = weightLbs
-        snapshot.controlIQTotalDailyInsulin = totalDailyInsulinUnits
+    /// Test-only: directly set the raw `cartridgeLoadState`, mirroring
+    /// `TandemBackend.setCartridgeLoadStateForTesting` — `snapshot`'s setter is private outside this
+    /// file, so a test that needs a mid change/load/prime-tubing state (e.g. for a bolus-gate or
+    /// cartridge-readiness proof) has no other way to set it now that the cartridge-change wizard
+    /// methods that used to reach it are gone. Calls `onChange?()` (unlike TandemBackend's mirror,
+    /// whose callers drive the backend directly) so an `AppModel`-wrapped caller's own cached
+    /// snapshot actually re-merges — every other mutating method here does the same.
+    func setCartridgeLoadStateForTesting(_ state: Int) {
+        snapshot.cartridgeLoadState = state
         onChange?()
     }
-    /// Mirrors `setControlIQ` — counted via `controlWriteCount` (the therapy-defining-write counter
-    /// `everyTherapyWriteEntryPointIsCentrallyGated` asserts against), clamps minute-of-day to
-    /// 0...1439 (defense-in-depth, same bound as `TandemBackend`), and updates (or appends) the
-    /// written slot in `snapshot.sleepSchedules` so a UI round-trip reflects the write.
-    public func setSleepSchedule(slot: Int, enabled: Bool, activeDays: Int, startMinute: Int, endMinute: Int)
-        async throws
-    {
-        controlWriteCount += 1
-        let start = max(0, min(startMinute, 1439))
-        let end = max(0, min(endMinute, 1439))
-        let written = PumpSleepScheduleSlot(
-            slot: slot, enabled: enabled, activeDays: activeDays,
-            startMinute: start, endMinute: end)
-        if let idx = snapshot.sleepSchedules.firstIndex(where: { $0.slot == slot }) {
-            snapshot.sleepSchedules[idx] = written
-        } else {
-            snapshot.sleepSchedules.append(written)
-        }
-        onChange?()
-    }
+
     public func refreshSleepSchedule() async {
         if snapshot.sleepSchedules.isEmpty {
             // Representative sample data so the simulator shows a populated read (slot 0 = the
@@ -557,37 +462,6 @@ public final class MockBackend: PumpBackend {
             onChange?()
         }
     }
-    public func setActiveProfile(idpId: Int) async throws {
-        idpWriteCount += 1
-        snapshot.profiles = snapshot.profiles.map {
-            PumpProfileInfo(idpId: $0.idpId, name: $0.name, active: $0.idpId == idpId)
-        }
-        onChange?()
-    }
-    public func renameProfile(idpId: Int, name: String) async throws {
-        idpWriteCount += 1
-        snapshot.profiles = snapshot.profiles.map {
-            $0.idpId == idpId ? PumpProfileInfo(idpId: $0.idpId, name: name, active: $0.active) : $0
-        }
-        onChange?()
-    }
-    public func deleteProfile(idpId: Int) async throws {
-        idpWriteCount += 1
-        snapshot.profiles.removeAll { $0.idpId == idpId }
-        onChange?()
-    }
-    /// Test hook: counts IDP / CGM-alert writes that actually reached the backend, so a test can
-    /// prove the central unverified-therapy gate fails **closed** (count stays 0 without an ack).
-    public private(set) var idpWriteCount = 0
-    public func createProfile(
-        name: String, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double,
-        isf: Int, targetBg: Int, insulinDurationMinutes: Int
-    ) async throws {
-        idpWriteCount += 1
-        let newId = (snapshot.profiles.map { $0.idpId }.max() ?? 0) + 1
-        snapshot.profiles.append(PumpProfileInfo(idpId: newId, name: name, active: false))
-        onChange?()
-    }
     public func refreshProfileSegments(idpId: Int) async {
         if snapshot.viewedProfileSegments.isEmpty {
             snapshot.viewedProfileSegments = [
@@ -598,45 +472,4 @@ public final class MockBackend: PumpBackend {
             onChange?()
         }
     }
-    public func addProfileSegment(
-        idpId: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double,
-        carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int
-    ) async throws {
-        idpWriteCount += 1
-        let idx = (snapshot.viewedProfileSegments.map { $0.segmentIndex }.max() ?? -1) + 1
-        snapshot.viewedProfileSegments.append(
-            PumpProfileSegment(
-                idpId: idpId, segmentIndex: idx, startTimeMinutes: startTimeMinutes,
-                basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf,
-                targetBg: targetBg))
-        onChange?()
-    }
-    public func modifyProfileSegment(
-        idpId: Int, segmentIndex: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double,
-        carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int
-    ) async throws {
-        idpWriteCount += 1
-        snapshot.viewedProfileSegments = snapshot.viewedProfileSegments.map {
-            $0.segmentIndex == segmentIndex
-                ? PumpProfileSegment(
-                    idpId: idpId, segmentIndex: segmentIndex, startTimeMinutes: startTimeMinutes,
-                    basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit,
-                    isf: isf, targetBg: targetBg) : $0
-        }
-        onChange?()
-    }
-    public func deleteProfileSegment(idpId: Int, segmentIndex: Int) async throws {
-        idpWriteCount += 1
-        snapshot.viewedProfileSegments.removeAll { $0.segmentIndex == segmentIndex }
-        onChange?()
-    }
-    public func setLowInsulinAlert(thresholdUnits: Int) async throws {}
-    public func setAutoOffAlert(enabled: Bool, durationMinutes: Int) async throws {}
-    public func setSiteChangeReminder(enabled: Bool, days: Int, timeOfDayMinutes: Int) async throws {}
-    public func setAlertSnooze(enabled: Bool, durationMinutes: Int) async throws {}
-    public func setCgmHighLowAlert(alertType: Int, thresholdMgdl: Int, repeatMinutes: Int, enabled: Bool) async throws {
-        idpWriteCount += 1
-    }
-    public func setCgmOutOfRangeAlert(enabled: Bool, delayMinutes: Int) async throws {}
-    public func setCgmRiseFallAlert(alertType: Int, enabled: Bool, mgdlPerMin: Int) async throws {}
 }

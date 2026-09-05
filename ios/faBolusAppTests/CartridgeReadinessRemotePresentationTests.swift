@@ -80,7 +80,7 @@ struct CartridgeReadinessRemotePresentationTests {
     @Test func statusCommandRelaysFalseCartridgeWhenLoading() async {
         let (model, backend) = makeModel()
         await backend.connect()
-        try? await backend.enterChangeCartridgeMode()  // loadState 0 (CHANGE_CARTRIDGE) → .notReady
+        backend.setCartridgeLoadStateForTesting(0)  // loadState 0 (CHANGE_CARTRIDGE) → .notReady
         let cmd = model.statusCommand(includeHistory: false)
         #expect(cmd.cartridgeReady == false, "a confirmed loading state relays an explicit not-ready to remotes")
     }

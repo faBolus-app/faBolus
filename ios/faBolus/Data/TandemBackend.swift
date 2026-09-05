@@ -69,10 +69,8 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// outcome token — never the pairing code, derived secret, `centralChallenge`, or any frame/cargo
     /// bytes (all `.public` here are non-sensitive integers or fixed enum-like tokens).
     private static let pairingLog = Logger(subsystem: "com.fabolus.app", category: "ble")
-    /// Tandem (via TandemKit) supports the full bolus/status feature set. Advanced control
-    /// (suspend/resume, temp basal, modes, profiles, CIQ settings, limits, cartridge/fill, time
-    /// sync) is Mobi-only on real hardware, so it's advertised only once we detect a Mobi via
-    /// ApiVersionResponse. The UI still additionally gates on `AppSettings.advancedControlEnabled`.
+    /// Tandem (via TandemKit) supports the full bolus/status feature set. Time sync is Mobi-only on
+    /// real hardware, so it's advertised only once we detect a Mobi via ApiVersionResponse.
     ///
     /// Note on time sync: `ChangeTimeDateRequest` is *unannotated* in the reverse-engineered protocol,
     /// so it falls back to `SupportedDevices.ALL` — but that default is an assumption, not a tested
@@ -2196,71 +2194,16 @@ public final class TandemBackend: NSObject, PumpBackend {
         }
     }
 
-    public func suspendDelivery() async throws { try await sendControl(SuspendPumpingRequest(), delivery: true) }
-    public func resumeDelivery() async throws { try await sendControl(ResumePumpingRequest(), delivery: true) }
-    public func setTempBasal(percent: Int, durationMinutes: Int) async throws {
-        // The kit init now throws out-of-range args (15..4320 min, 0..250%) BEFORE any truncating
-        // byte-encode — a synchronous, pre-send rejection rather than a silently-converted command.
-        try await sendControl(try SetTempRateRequest(minutes: durationMinutes, percent: percent), delivery: true)
-    }
-    public func stopTempBasal() async throws { try await sendControl(StopTempRateRequest(), delivery: true) }
-    // Neutral `ModeCommand.bitmap` is 1:1 with the wire (and the kit's own `SetModesRequest.ModeCommand`),
-    // so this is a pure pass-through — the typing lives at the seam, the byte stays identical.
-    public func setMode(_ command: ModeCommand) async throws {
-        try await sendControl(SetModesRequest(bitmap: command.bitmap), delivery: true)
-    }
-    public func playFindMyPump() async throws { try await sendControl(PlaySoundRequest(), delivery: false) }
-
-    // MARK: - Mobi workflows (A4)
-
-    // CGM session — all non-insulin (`.allowNonDelivery`).
-    public func startG6Session(transmitterId: String, sensorCode: Int) async throws {
-        let tx = transmitterId.trimmingCharacters(in: .whitespaces).uppercased()
-        if !tx.isEmpty {
-            try await sendControl(SetG6TransmitterIdRequest(txId: tx), delivery: false)
-            try? await Task.sleep(nanoseconds: 750_000_000)  // let the pump store the id (per controlX2)
-        }
-        try await sendControl(StartDexcomG6SensorSessionRequest(sensorCode: sensorCode), delivery: false)
-        await refreshCgmSession()
-    }
-    public func startG7Session(pairingCode: Int) async throws {
-        try await sendControl(SetDexcomG7PairingCodeRequest(pairingCode: pairingCode), delivery: false)
-        await refreshCgmSession()
-    }
-    public func setSensorType(_ typeId: Int) async throws {
-        try await sendControl(SetSensorTypeRequest(cgmSensorType: typeId), delivery: false)
-    }
-    public func stopCgmSession() async throws {
-        try await sendControl(StopDexcomCGMSensorSessionRequest(), delivery: false)
-        await refreshCgmSession()
-    }
+    /// CGM session status read. Its former callers — the G6/G7 session-start and session-stop writes —
+    /// retired with the rest of the advanced-control backend, leaving this an inert on-demand read
+    /// (`CGMStatusRequest`, reply handled in `didReceiveFrame`). Kept rather than deleted: nothing
+    /// currently drives it, but a future CGM-session screen would reuse it unchanged.
     public func refreshCgmSession() async {
         guard snapshot.connection == .connected else { return }
         try? client.send(CGMStatusRequest())  // reply handled in didReceiveFrame
         try? await Task.sleep(nanoseconds: 600_000_000)
     }
 
-    // Cartridge / fill — enter-mode + fill-cannula are insulin-affecting (`.allowDelivery`); the
-    // exits are not. The UI runs these behind the advanced-control + Mobi gate with confirmation.
-    public func enterChangeCartridgeMode() async throws {
-        try await sendControl(EnterChangeCartridgeModeRequest(), delivery: true)
-    }
-    public func exitChangeCartridgeMode() async throws {
-        try await sendControl(ExitChangeCartridgeModeRequest(), delivery: false)
-    }
-    public func enterFillTubingMode() async throws {
-        try await sendControl(EnterFillTubingModeRequest(), delivery: true)
-    }
-    public func exitFillTubingMode() async throws {
-        try await sendControl(ExitFillTubingModeRequest(), delivery: false)
-    }
-    public func fillCannula(milliunits: Int) async throws {
-        // Shared clamp floors at 1 (0 is upstream-invalid — pumpX2's FillCannulaRequest
-        // rejects it) and caps at the deliberate 1.0U maxCannulaMilliunits (unchanged, NOT raised alongside
-        // the kit's 3000 mU ceiling). Two-layer defense: the kit init (below) is the primary boundary.
-        let clamped = FillLimits.clampPrimeSize(milliunits)
-        try await sendControl(try FillCannulaRequest(primeSize: clamped), delivery: true)
-    }
     /// On-demand guarded cartridge/load read. This method has no production caller — it is the
     /// tests' on-demand-read entry point, the canonical shape the op-77 never-resend guard, learned-opcode
     /// persistence, the static unsupported-read registry, the identity-gated read hold, and the cartridge
@@ -2277,23 +2220,6 @@ public final class TandemBackend: NSObject, PumpBackend {
         try? await Task.sleep(nanoseconds: 600_000_000)
     }
 
-    // Settings — non-insulin config.
-    public func setMaxBolus(units: Double) async throws {
-        let clamped = Interlocks.clampMaxBolusLimit(units)  // shared hard-cap clamp (defense-in-depth; funnel clamps too)
-        // clampMaxBolusLimit's floor is now 1.0 U, matching the kit's
-        // SetMaxBolusLimitRequest throwing floor — no supported value should throw here.
-        try await sendControl(
-            try SetMaxBolusLimitRequest(maxBolusMilliunits: Int((clamped * 1000).rounded())), delivery: false)
-    }
-    public func setMaxBasal(unitsPerHour: Double) async throws {
-        // Shared clamp floors at the kit's SetMaxBasalLimitRequest throwing floor (1.0 U/hr) AND
-        // caps at its throwing ceiling (15.0 U/hr), mirroring setMaxBolus/clampMaxBolusLimit. A value above
-        // 15 U/hr now clamps to 15.0 and dispatches rather than throwing a raw ValidationError (defense-in-
-        // depth; the funnel clamps too).
-        let clamped = Interlocks.clampMaxBasalLimit(unitsPerHour)
-        try await sendControl(
-            try SetMaxBasalLimitRequest(maxHourlyBasalMilliunits: UInt32((clamped * 1000).rounded())), delivery: false)
-    }
     public func syncTimeToNow() async throws {
         let tandemEpoch = UInt32(max(0, Date().timeIntervalSince1970 - 1_199_145_600))  // Jan 1 2008 base
         try await sendControl(ChangeTimeDateRequest(tandemEpochTime: tandemEpoch), delivery: false)
@@ -2322,8 +2248,6 @@ public final class TandemBackend: NSObject, PumpBackend {
         snapshot.activeProfileName = d.activeProfileName
         snapshot.controlIQMode = d.controlIQMode
         snapshot.controlIQEnabled = d.controlIQEnabled
-        snapshot.controlIQWeightLbs = d.controlIQWeightLbs
-        snapshot.controlIQTotalDailyInsulin = d.controlIQTotalDailyInsulin
         snapshot.controllerVariant = d.controllerVariant
         snapshot.profiles = d.profiles
         snapshot.viewedProfileSegments = d.viewedProfileSegments
@@ -2340,13 +2264,6 @@ public final class TandemBackend: NSObject, PumpBackend {
         pumpTimeAnchor = nil
     }
 
-    // Control-IQ settings — non-insulin config.
-    public func setControlIQ(enabled: Bool, weightLbs: Int, totalDailyInsulinUnits: Int) async throws {
-        try await sendControl(
-            ChangeControlIQSettingsRequest(
-                enabled: enabled, weightLbs: weightLbs,
-                totalDailyInsulinUnits: totalDailyInsulinUnits), delivery: false)
-    }
     // Sleep schedule — universal/unsigned read, NOT capability-gated. Fire-and-forget:
     // send the request and let the reply be handled in didReceiveFrame.
     public func refreshSleepSchedule() async {
@@ -2355,33 +2272,11 @@ public final class TandemBackend: NSObject, PumpBackend {
         try? await Task.sleep(nanoseconds: 600_000_000)
     }
 
-    /// Write one native Sleep-schedule slot (Mobi-only by capability — gated at the
-    /// `GatedPumpWrite.setSleepSchedule` funnel, not here). Settings write, not delivery:
-    /// `delivery: false` — see `SetSleepScheduleRequest.props` (signed, `.control`,
-    /// `modifiesInsulinDelivery` unset) → `operationRisk == .settings`, never `.delivery`
-    /// (proven by `SleepScheduleWriteBoundaryTests`).
-    ///
-    /// Upstream scopes this opcode Mobi-only: `SetSleepScheduleRequest.java` / `SetSleepScheduleResponse.java`
-    /// are annotated `supportedDevices=MOBI_ONLY, minApi=MOBI_API_V3_5` — identical to `SetTempRateRequest`.
-    /// The Swift port merely dropped those `MessageProps` annotation fields; the app-side capability gate
-    /// (`PumpCapabilities.supportsSleepScheduleWrite`) mirrors that device scope instead.
-    public func setSleepSchedule(slot: Int, enabled: Bool, activeDays: Int, startMinute: Int, endMinute: Int)
-        async throws
-    {
-        let start = max(0, min(startMinute, 1439))
-        let end = max(0, min(endMinute, 1439))
-        let scheduleBytes = Bytes.combine(
-            [enabled ? 1 : 0, UInt8(activeDays & 0xFF)],
-            Bytes.firstTwoBytesLittleEndian(start),
-            Bytes.firstTwoBytesLittleEndian(end))
-        // `flag: 3` is the value observed in jwoglom's captured Tandem-app writes (upstream
-        // `SetSleepScheduleRequestTest`, 2024-03-28 "Live Humans iPhone" capture; BOTH the enable and the
-        // disable of slot 0 assert `flag == 3`) — NOT the old placeholder `1`. Its semantic meaning is
-        // still undocumented, but 3 is the golden-capture value to replicate byte-for-byte.
-        try await sendControl(SetSleepScheduleRequest(slot: slot, schedule: scheduleBytes, flag: 3), delivery: false)
-    }
-
-    // Profiles (IDP). Switch/rename/delete change the active basal profile → insulin-affecting.
+    /// Profile (IDP) list read. Its former callers — the active/rename/delete/create profile writes —
+    /// retired with the rest of the advanced-control backend, leaving this an inert on-demand read
+    /// (`ProfileStatusRequest`, cascading to `IDPSettings` in `didReceiveFrame`). Kept rather than
+    /// deleted: nothing currently drives it, but a future profile-management screen would reuse it
+    /// unchanged.
     public func refreshProfiles() async {
         guard snapshot.connection == .connected else { return }
         viewedProfileId = -1  // list refresh must not trigger segment reads
@@ -2389,38 +2284,6 @@ public final class TandemBackend: NSObject, PumpBackend {
         // read path (was raw `client.send`) so it gets the `badOpcodes` backstop + op-77 correlation.
         _ = readScheduler.sendOnDemandRead(ProfileStatusRequest())  // → IDPSettings cascade in didReceiveFrame
         try? await Task.sleep(nanoseconds: 1_400_000_000)
-    }
-    public func setActiveProfile(idpId: Int) async throws {
-        try await sendControl(SetActiveIDPRequest(idpId: idpId, profileIndex: 0), delivery: true)
-        await refreshProfiles()
-    }
-    public func renameProfile(idpId: Int, name: String) async throws {
-        try await sendControl(RenameIDPRequest(idpId: idpId, profileIndex: 0, profileName: name), delivery: true)
-        await refreshProfiles()
-    }
-    public func deleteProfile(idpId: Int) async throws {
-        try await sendControl(DeleteIDPRequest(idpId: idpId, profileIndex: 0), delivery: true)
-        await refreshProfiles()
-    }
-    public func createProfile(
-        name: String, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double,
-        isf: Int, targetBg: Int, insulinDurationMinutes: Int
-    ) async throws {
-        try await sendControl(
-            CreateIDPRequest(
-                name: name,
-                firstSegmentProfileCarbRatio: UInt32(max(0, (carbRatioGramsPerUnit * 1000).rounded())),
-                firstSegmentProfileStartTime: 0,
-                firstSegmentProfileBasalRate: Int((max(0, basalRateUnitsPerHour) * 1000).rounded()),
-                firstSegmentProfileTargetBG: targetBg, firstSegmentProfileISF: isf,
-                profileInsulinDuration: insulinDurationMinutes,
-                // Reference-captured new-profile values (CreateIDPRequestTest.new1 + the field
-                // doc-comments): timeSegmentBitmask 31 = all segment fields set; bolusSettingsBitmask 5 =
-                // insulinDuration|carbEntry; idpSourceId 255 (0xFF / -1 sentinel) = brand-new profile, not a
-                // duplicate. faBolus previously sent 1 / 0 / 0, which tells the pump almost nothing is set
-                // (and idpSourceId 0 reads as "duplicate profile 0"). Still bench-gated (insulin-affecting).
-                timeSegmentBitmask: 31, bolusSettingsBitmask: 5, carbEntry: 1, idpSourceId: 255), delivery: true)
-        await refreshProfiles()
     }
     public func refreshProfileSegments(idpId: Int) async {
         guard snapshot.connection == .connected else { return }
@@ -2431,86 +2294,6 @@ public final class TandemBackend: NSObject, PumpBackend {
         _ = readScheduler.sendOnDemandRead(IDPSettingsRequest(idpId: idpId))  // → segment reads cascade in didReceiveFrame
         try? await Task.sleep(nanoseconds: 1_400_000_000)
     }
-    public func addProfileSegment(
-        idpId: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double,
-        carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int
-    ) async throws {
-        try await setSegment(
-            idpId: idpId, segmentIndex: 0, operationId: 1, startTimeMinutes: startTimeMinutes,
-            basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf,
-            targetBg: targetBg)
-    }
-    public func modifyProfileSegment(
-        idpId: Int, segmentIndex: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double,
-        carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int
-    ) async throws {
-        try await setSegment(
-            idpId: idpId, segmentIndex: segmentIndex, operationId: 0, startTimeMinutes: startTimeMinutes,
-            basalRateUnitsPerHour: basalRateUnitsPerHour, carbRatioGramsPerUnit: carbRatioGramsPerUnit, isf: isf,
-            targetBg: targetBg)
-    }
-    public func deleteProfileSegment(idpId: Int, segmentIndex: Int) async throws {
-        try await setSegment(
-            idpId: idpId, segmentIndex: segmentIndex, operationId: 2, startTimeMinutes: 0,
-            basalRateUnitsPerHour: 0, carbRatioGramsPerUnit: 0, isf: 0, targetBg: 0)
-    }
-    // operationId: 0 modify, 1 create, 2 delete (IDPSegmentOperation). idpStatusId is a CHANGED-FIELDS
-    // bitmask (IDPSegmentStatus: BASAL_RATE 1 | CARB_RATIO 2 | TARGET_BG 4 | CORRECTION_FACTOR 8 |
-    // START_TIME 16). The captured SetIDPSegmentRequest vectors pass this bitmask (a new
-    // segment used 31 = all fields); faBolus previously sent 0, telling the pump NO field changed — the
-    // likely reason segment writes didn't take. We set all fields each call, so 31 (all) for create/modify;
-    // 0 for delete (nothing to mark). Reference-aligned but still bench-gated (basal schedule).
-    private static let idpAllSegmentFields = 31
-    private func setSegment(
-        idpId: Int, segmentIndex: Int, operationId: Int, startTimeMinutes: Int,
-        basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int
-    ) async throws {
-        try await sendControl(
-            SetIDPSegmentRequest(
-                idpId: idpId, profileIndex: 0, segmentIndex: segmentIndex, operationId: operationId,
-                profileStartTime: startTimeMinutes,
-                profileBasalRate: Int((max(0, basalRateUnitsPerHour) * 1000).rounded()),
-                profileCarbRatio: UInt32(max(0, (carbRatioGramsPerUnit * 1000).rounded())),
-                profileTargetBG: targetBg, profileISF: isf,
-                idpStatusId: operationId == 2 ? 0 : Self.idpAllSegmentFields), delivery: true)
-        await refreshProfileSegments(idpId: idpId)
-    }
-
-    // Reminders / alert thresholds — non-insulin config.
-    public func setLowInsulinAlert(thresholdUnits: Int) async throws {
-        try await sendControl(SetLowInsulinAlertRequest(insulinThreshold: thresholdUnits), delivery: false)
-    }
-    public func setAutoOffAlert(enabled: Bool, durationMinutes: Int) async throws {
-        try await sendControl(
-            SetAutoOffAlertRequest(enableAutoOff: enabled, autoOffDuration: durationMinutes, bitmask: 0),
-            delivery: false)
-    }
-    public func setSiteChangeReminder(enabled: Bool, days: Int, timeOfDayMinutes: Int) async throws {
-        try await sendControl(
-            SetSiteChangeReminderRequest(
-                enable: enabled, dayCount: days,
-                timeOfDayMinutes: UInt32(max(0, timeOfDayMinutes)), bitmask: 0), delivery: false)
-    }
-    public func setAlertSnooze(enabled: Bool, durationMinutes: Int) async throws {
-        try await sendControl(
-            SetPumpAlertSnoozeRequest(snoozeEnabled: enabled, snoozeDurationMins: durationMinutes), delivery: false)
-    }
-    public func setCgmHighLowAlert(alertType: Int, thresholdMgdl: Int, repeatMinutes: Int, enabled: Bool) async throws {
-        try await sendControl(
-            CgmHighLowAlertRequest(
-                alertType: alertType, threshold: thresholdMgdl,
-                repeatDurationMinutes: repeatMinutes, enableAlert: enabled, bitmask: 0), delivery: false)
-    }
-    public func setCgmOutOfRangeAlert(enabled: Bool, delayMinutes: Int) async throws {
-        try await sendControl(
-            CgmOutOfRangeAlertRequest(enable: enabled, alertDelay: delayMinutes, bitmask: 0), delivery: false)
-    }
-    public func setCgmRiseFallAlert(alertType: Int, enabled: Bool, mgdlPerMin: Int) async throws {
-        try await sendControl(
-            CgmRiseFallAlertRequest(alertType: alertType, enable: enabled, mgPerDl: mgdlPerMin, bitmask: 0),
-            delivery: false)
-    }
-
     // MARK: - Helpers
     //
     // Tiered polling, poll cadence, and predictive-burst live on `readScheduler`.

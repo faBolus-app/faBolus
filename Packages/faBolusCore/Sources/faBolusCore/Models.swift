@@ -495,9 +495,6 @@ public struct PumpSnapshot: Sendable, Equatable {
         case .unknown: return nil
         }
     }
-    /// Control-IQ settings (from ControlIQInfoV1), for the settings screen to prefill.
-    public var controlIQWeightLbs: Int = 0
-    public var controlIQTotalDailyInsulin: Int = 0
     /// Insulin-delivery profiles (from ProfileStatus + IDPSettings), for the profile switcher.
     public var profiles: [PumpProfileInfo] = []
     /// Time-segments of the profile currently being viewed/edited (from IDPSegment reads).

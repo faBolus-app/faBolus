@@ -135,49 +135,6 @@ public protocol PumpBackend: AnyObject {
     /// history return `[]` (see the default). Populated from the pump's history backfill.
     var historyEvents: [HistoryEvent] { get }
 
-    // MARK: - Advanced control (B3)
-    // Signed, mostly insulin-affecting write commands. The UI gates each on the matching
-    // `PumpCapabilities` flag AND `AppSettings.advancedControlEnabled` (default off) AND (in
-    // practice) a Mobi pump. Insulin-affecting ones must be bench-validated on saline before use.
-    // Default implementations throw `ControlError.notSupported` so non-Tandem backends compile.
-
-    /// Suspend all insulin delivery.
-    func suspendDelivery() async throws
-    /// Resume insulin delivery.
-    func resumeDelivery() async throws
-    /// Set a temporary basal rate (`percent` 0–250) for `durationMinutes` (15–4320). Control-IQ
-    /// must be off. Insulin-affecting.
-    func setTempBasal(percent: Int, durationMinutes: Int) async throws
-    /// Stop an active temp basal.
-    func stopTempBasal() async throws
-    /// Set the pump user mode (sleep/exercise on/off). Takes the typed `ModeCommand` rather than a raw
-    /// bitmap so a caller can't confuse the command (1…4) with the reported state (0…2). Insulin-affecting
-    /// (changes Control-IQ behavior). Precondition: Control-IQ must be ON (enforced pre-flight upstream).
-    func setMode(_ command: ModeCommand) async throws
-    /// Play the "find my pump" sound. Non-insulin.
-    func playFindMyPump() async throws
-
-    // MARK: - Mobi workflows (A4) — the screenless Mobi needs a phone for these.
-
-    // CGM sensor session (non-insulin control). G6: set the transmitter id, then start with the
-    // sensor code ("0000"/0 to join an existing session). G7/ONE+: set the pairing code + sensor type.
-    func startG6Session(transmitterId: String, sensorCode: Int) async throws
-    func startG7Session(pairingCode: Int) async throws
-    func setSensorType(_ typeId: Int) async throws
-    func stopCgmSession() async throws
-
-    // Cartridge change / fill (INSULIN-AFFECTING — bench-validate on saline first). Multi-step:
-    // suspend → clear alerts → enter change mode → (swap) → exit → detect; fill tubing/cannula after.
-    func enterChangeCartridgeMode() async throws
-    func exitChangeCartridgeMode() async throws
-    func enterFillTubingMode() async throws
-    func exitFillTubingMode() async throws
-    /// Fill the cannula with `milliunits` (e.g. 300 = 0.3 U). Insulin-affecting; bounded by the UI.
-    func fillCannula(milliunits: Int) async throws
-
-    // Settings (non-insulin config).
-    func setMaxBolus(units: Double) async throws
-    func setMaxBasal(unitsPerHour: Double) async throws
     /// Set the pump clock to the phone's current time.
     func syncTimeToNow() async throws
 
@@ -192,48 +149,15 @@ public protocol PumpBackend: AnyObject {
     /// anyway).
     func resetSnapshotForPumpSwitch()
 
-    // Control-IQ settings (non-insulin config; changes closed-loop behavior).
-    func setControlIQ(enabled: Bool, weightLbs: Int, totalDailyInsulinUnits: Int) async throws
     /// Read the pump's native Sleep-schedule slots into `snapshot.sleepSchedules`. Universal/unsigned
     /// read — NOT capability-gated; sendable and harmless on any connected pump model regardless of
     /// `PumpCapabilities.supportsSleepScheduleWrite`.
     func refreshSleepSchedule() async
-    /// Write one native Sleep-schedule slot. Mobi-only by capability
-    /// (`PumpCapabilities.supportsSleepScheduleWrite`) — mirrors the pump protocol's own MOBI_ONLY
-    /// device scope. Mode-only: the underlying wire write is `.settings` risk, never `.delivery` —
-    /// this call never reaches the dose/delivery path. `activeDays` is the confirmed upstream
-    /// `MultiDay` bit mask (Monday=bit0(1)…Sunday=bit6(64)); `startMinute`/`endMinute` are
-    /// minute-of-day, clamped to 0...1439 by the implementation.
-    func setSleepSchedule(slot: Int, enabled: Bool, activeDays: Int, startMinute: Int, endMinute: Int) async throws
     // Pump sounds — annunciation level per category (0 audioHigh … 3 vibrate).
     func setPumpSounds(quickBolus: Int, general: Int, reminder: Int, alert: Int, alarm: Int, cgmA: Int, cgmB: Int)
         async throws
-    // Insulin-delivery profiles (IDP). Switch/rename/delete are insulin-affecting (change active basal).
-    func setActiveProfile(idpId: Int) async throws
-    func renameProfile(idpId: Int, name: String) async throws
-    func deleteProfile(idpId: Int) async throws
-    /// Create a new profile with one initial time-segment (starting at midnight).
-    func createProfile(
-        name: String, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double,
-        isf: Int, targetBg: Int, insulinDurationMinutes: Int) async throws
     /// Read a profile's time-segments into `snapshot.viewedProfileSegments`.
     func refreshProfileSegments(idpId: Int) async
-    func addProfileSegment(
-        idpId: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double,
-        carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async throws
-    func modifyProfileSegment(
-        idpId: Int, segmentIndex: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double,
-        carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int) async throws
-    func deleteProfileSegment(idpId: Int, segmentIndex: Int) async throws
-    // Reminders / alert thresholds (non-insulin config).
-    func setLowInsulinAlert(thresholdUnits: Int) async throws
-    func setAutoOffAlert(enabled: Bool, durationMinutes: Int) async throws
-    func setSiteChangeReminder(enabled: Bool, days: Int, timeOfDayMinutes: Int) async throws
-    func setAlertSnooze(enabled: Bool, durationMinutes: Int) async throws
-    // CGM alert thresholds.
-    func setCgmHighLowAlert(alertType: Int, thresholdMgdl: Int, repeatMinutes: Int, enabled: Bool) async throws
-    func setCgmOutOfRangeAlert(enabled: Bool, delayMinutes: Int) async throws
-    func setCgmRiseFallAlert(alertType: Int, enabled: Bool, mgdlPerMin: Int) async throws
 }
 
 /// The prime-cannula bounds the UI allows (defense-in-depth on an insulin-dispensing step).
@@ -403,65 +327,12 @@ public extension PumpBackend {
         totalUnits: Double, nowUnits: Double, durationMinutes: Int,
         carbsGrams: Double?, bgMgdl: Int?, iobUnits: Double?
     ) async throws -> Double { throw ControlError.notSupported }
-    func suspendDelivery() async throws { throw ControlError.notSupported }
-    func resumeDelivery() async throws { throw ControlError.notSupported }
-    func setTempBasal(percent: Int, durationMinutes: Int) async throws { throw ControlError.notSupported }
-    func stopTempBasal() async throws { throw ControlError.notSupported }
-    func setMode(_ command: ModeCommand) async throws { throw ControlError.notSupported }
-    func playFindMyPump() async throws { throw ControlError.notSupported }
-
-    func startG6Session(transmitterId: String, sensorCode: Int) async throws { throw ControlError.notSupported }
-    func startG7Session(pairingCode: Int) async throws { throw ControlError.notSupported }
-    func setSensorType(_ typeId: Int) async throws { throw ControlError.notSupported }
-    func stopCgmSession() async throws { throw ControlError.notSupported }
-    func enterChangeCartridgeMode() async throws { throw ControlError.notSupported }
-    func exitChangeCartridgeMode() async throws { throw ControlError.notSupported }
-    func enterFillTubingMode() async throws { throw ControlError.notSupported }
-    func exitFillTubingMode() async throws { throw ControlError.notSupported }
-    func fillCannula(milliunits: Int) async throws { throw ControlError.notSupported }
-    func setMaxBolus(units: Double) async throws { throw ControlError.notSupported }
-    func setMaxBasal(unitsPerHour: Double) async throws { throw ControlError.notSupported }
     func syncTimeToNow() async throws { throw ControlError.notSupported }
-    func setControlIQ(enabled: Bool, weightLbs: Int, totalDailyInsulinUnits: Int) async throws {
-        throw ControlError.notSupported
-    }
-    func setSleepSchedule(slot: Int, enabled: Bool, activeDays: Int, startMinute: Int, endMinute: Int) async throws {
-        throw ControlError.notSupported
-    }
     func refreshSleepSchedule() async {}
     func setPumpSounds(quickBolus: Int, general: Int, reminder: Int, alert: Int, alarm: Int, cgmA: Int, cgmB: Int)
         async throws
     { throw ControlError.notSupported }
-    func setActiveProfile(idpId: Int) async throws { throw ControlError.notSupported }
-    func renameProfile(idpId: Int, name: String) async throws { throw ControlError.notSupported }
-    func deleteProfile(idpId: Int) async throws { throw ControlError.notSupported }
-    func createProfile(
-        name: String, basalRateUnitsPerHour: Double, carbRatioGramsPerUnit: Double,
-        isf: Int, targetBg: Int, insulinDurationMinutes: Int
-    ) async throws { throw ControlError.notSupported }
     func refreshProfileSegments(idpId: Int) async {}
-    func addProfileSegment(
-        idpId: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double,
-        carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int
-    ) async throws { throw ControlError.notSupported }
-    func modifyProfileSegment(
-        idpId: Int, segmentIndex: Int, startTimeMinutes: Int, basalRateUnitsPerHour: Double,
-        carbRatioGramsPerUnit: Double, isf: Int, targetBg: Int
-    ) async throws { throw ControlError.notSupported }
-    func deleteProfileSegment(idpId: Int, segmentIndex: Int) async throws { throw ControlError.notSupported }
-    func setLowInsulinAlert(thresholdUnits: Int) async throws { throw ControlError.notSupported }
-    func setAutoOffAlert(enabled: Bool, durationMinutes: Int) async throws { throw ControlError.notSupported }
-    func setSiteChangeReminder(enabled: Bool, days: Int, timeOfDayMinutes: Int) async throws {
-        throw ControlError.notSupported
-    }
-    func setAlertSnooze(enabled: Bool, durationMinutes: Int) async throws { throw ControlError.notSupported }
-    func setCgmHighLowAlert(alertType: Int, thresholdMgdl: Int, repeatMinutes: Int, enabled: Bool) async throws {
-        throw ControlError.notSupported
-    }
-    func setCgmOutOfRangeAlert(enabled: Bool, delayMinutes: Int) async throws { throw ControlError.notSupported }
-    func setCgmRiseFallAlert(alertType: Int, enabled: Bool, mgdlPerMin: Int) async throws {
-        throw ControlError.notSupported
-    }
 }
 
 public enum BolusError: Error, LocalizedError {

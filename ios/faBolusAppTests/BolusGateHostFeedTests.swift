@@ -61,7 +61,7 @@ struct BolusGateHostFeedTests {
         await withClean {
             let (model, backend) = makeModel()
             await backend.connect()
-            try? await backend.enterChangeCartridgeMode()  // sets cartridgeLoadState = 0 (CHANGE_CARTRIDGE)
+            backend.setCartridgeLoadStateForTesting(0)  // CHANGE_CARTRIDGE
             let g = model.bolusGate(amount: 2.0, minimum: 0.05)
             #expect(!g.canBolus)
             #expect(g.reason == .noCartridge)
@@ -106,7 +106,7 @@ struct BolusGateHostFeedTests {
         await withClean {
             let (model, backend) = makeModel()
             await backend.connect()
-            try? await backend.enterChangeCartridgeMode()  // sets cartridgeLoadState = 0 (CHANGE_CARTRIDGE)
+            backend.setCartridgeLoadStateForTesting(0)  // CHANGE_CARTRIDGE
             let cmd = model.statusCommand(includeHistory: false)
             #expect(cmd.canBolus == false)
             #expect(cmd.bolusBlockReason == "noCartridge")

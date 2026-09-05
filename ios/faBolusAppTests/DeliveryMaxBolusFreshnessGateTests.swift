@@ -4,90 +4,13 @@ import faBolusCore
 import TandemMessages
 @testable import faBolus
 
-/// The absolute 25 U max-bolus cap is a HARD block enforced in every backend through the one shared
-/// `Interlocks.clampMaxBolusLimit`, so a requested limit above 25 U can never take effect — on ANY
-/// backend. Previously the `MockBackend` skipped the clamp entirely and only `TandemBackend` enforced it.
-/// Distinct from the per-bolus DELIVERY block (`deliverBolus` throws), which is unchanged.
+/// `TandemBackend.validateDeliver`'s two independent, composable delivery guards: fail-closed until the
+/// pump's own configured max-bolus (op-115) has been read at least once, and — once read — the max-bound
+/// check against that pump-reported ceiling. Distinct from the app-side `Interlocks.clampMaxBolusLimit`
+/// unit (covered by `InterlocksTests`) and from the retired `setMaxBolus`/`setMaxBasal` limit-SETTERS —
+/// this file's remaining subject is the per-bolus DELIVERY path (`deliverBolus`), never the limit writers.
 @Suite(.serialized) @MainActor
-struct MaxBolusClampTests {
-
-    /// The gap this closes: MockBackend used to store the raw value unclamped.
-    @Test func mockBackendClampsTheMaxBolusLimit() async throws {
-        let mock = MockBackend()
-        try await mock.setMaxBolus(units: 30)
-        #expect(mock.snapshot.maxBolusUnits == 25.0)
-        try await mock.setMaxBolus(units: 8)  // a legitimate value is untouched
-        #expect(mock.snapshot.maxBolusUnits == 8.0)
-    }
-
-    /// The pump-facing proof: the actual `SetMaxBolusLimitRequest` bytes TandemBackend writes are capped to
-    /// 25 U (25000 mU) even when 30 U is requested. The fake records the write before the (unscripted)
-    /// courtesy response await, so `try?` is safe — we assert on the recorded cargo.
-    @Test func tandemBackendClampsTheWrittenLimit() async throws {
-        let fake = FakePumpTransport()
-        let backend = TandemBackend(testTransport: fake)
-        backend.setConnectionForTesting(.connected)
-        fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
-        try? await backend.setMaxBolus(units: 30)
-        let sent = fake.lastSent(SetMaxBolusLimitRequest.props.opCode)
-        #expect(sent != nil, "a max-bolus-limit write must have gone out")
-        #expect(
-            sent?.cargo == (try SetMaxBolusLimitRequest(maxBolusMilliunits: 25000)).cargo,
-            "the WRITTEN limit must be capped to 25 U (25000 mU) even when 30 U is requested")
-    }
-
-    /// A max-bolus limit request below the app's OLD 0.05 U floor is aligned UP to the kit's 1.0 U
-    /// throwing floor — never throws at the kit boundary.
-    @Test func tandemBackendFloorsTheWrittenLimitToTheNewKitFloor() async throws {
-        let fake = FakePumpTransport()
-        let backend = TandemBackend(testTransport: fake)
-        backend.setConnectionForTesting(.connected)
-        fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
-        try? await backend.setMaxBolus(units: 0.1)  // below the old 0.05 U floor's neighbor, well below 1.0 U
-        let sent = fake.lastSent(SetMaxBolusLimitRequest.props.opCode)
-        #expect(sent != nil, "a max-bolus-limit write must have gone out")
-        #expect(
-            sent?.cargo == (try SetMaxBolusLimitRequest(maxBolusMilliunits: 1000)).cargo,
-            "the WRITTEN limit must be floored to 1.0 U (1000 mU) even when 0.1 U is requested")
-    }
-
-    // MARK: - setMaxBasal ceiling clamp, symmetric with setMaxBolus
-
-    /// A max-basal limit above the kit's byte-verified 15.0 U/hr throwing ceiling must be CLAMPED to
-    /// 15.0 (15000 mU/hr) at the backend and dispatched — not thrown as a raw `ValidationError`. Before this
-    /// `TandemBackend.setMaxBasal` clamped only the floor, so a 20 U/hr request threw at the kit boundary.
-    @Test func tandemBackendClampsTheWrittenMaxBasalLimit() async throws {
-        let fake = FakePumpTransport()
-        let backend = TandemBackend(testTransport: fake)
-        backend.setConnectionForTesting(.connected)
-        fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
-        fake.script(
-            SetMaxBasalLimitResponse.props.opCode,
-            .frame(FakePumpTransport.frame(opCode: SetMaxBasalLimitResponse.props.opCode, cargo: [0], signed: true)))
-        try await backend.setMaxBasal(unitsPerHour: 20)  // above the 15 U/hr ceiling → must clamp, not throw
-        let sent = fake.lastSent(SetMaxBasalLimitRequest.props.opCode)
-        #expect(sent != nil, "a max-basal-limit write must have gone out (clamped, not thrown)")
-        #expect(
-            sent?.cargo == (try SetMaxBasalLimitRequest(maxHourlyBasalMilliunits: 15000)).cargo,
-            "the WRITTEN limit must be capped to 15.0 U/hr (15000 mU) even when 20 U/hr is requested")
-    }
-
-    /// Companion: a sub-floor max-basal request is floored to the kit's 1.0 U/hr throwing floor.
-    @Test func tandemBackendFloorsTheWrittenMaxBasalLimit() async throws {
-        let fake = FakePumpTransport()
-        let backend = TandemBackend(testTransport: fake)
-        backend.setConnectionForTesting(.connected)
-        fake.script(TimeSinceResetResponse.props.opCode, .frame(FakePumpTransport.timeResponse()))
-        fake.script(
-            SetMaxBasalLimitResponse.props.opCode,
-            .frame(FakePumpTransport.frame(opCode: SetMaxBasalLimitResponse.props.opCode, cargo: [0], signed: true)))
-        try await backend.setMaxBasal(unitsPerHour: 0.1)  // below the 1.0 U/hr floor
-        let sent = fake.lastSent(SetMaxBasalLimitRequest.props.opCode)
-        #expect(sent != nil, "a max-basal-limit write must have gone out")
-        #expect(
-            sent?.cargo == (try SetMaxBasalLimitRequest(maxHourlyBasalMilliunits: 1000)).cargo,
-            "the WRITTEN limit must be floored to 1.0 U/hr (1000 mU) even when 0.1 U/hr is requested")
-    }
+struct DeliveryMaxBolusFreshnessGateTests {
 
     // MARK: - Fail-closed unread-op-115 freshness gate
 
