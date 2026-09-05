@@ -2,7 +2,8 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// Pins that `ios/faBolus/Intents/` stays gone and that no file under `ios/faBolus` conforms to
+/// Pins that `ios/faBolus/Intents/` stays gone and that no file under `ios/faBolus` OR `Shared`
+/// (the app target's second source root, per `project.yml`'s `- path: Shared`) conforms to
 /// `AppShortcutsProvider` — i.e. the APP TARGET exposes no Siri/Shortcuts surface.
 ///
 /// This is NOT a blanket "App Intents cannot dose" guarantee, and must not be read as one:
@@ -59,6 +60,22 @@ struct ShortcutsAbsenceGuardTests {
         }
     }
 
+    /// The app target's SECOND source root (`project.yml`'s `- path: Shared`) — widened here so the
+    /// "APP TARGET exposes no Siri/Shortcuts surface" invariant actually covers both roots, not just
+    /// `ios/faBolus`. Excludes `WidgetBolusIntents.swift`: it deliberately declares the Quick-Bolus
+    /// App Intents (a live dose path compiled into the widget extension), per this file's own
+    /// header paragraph — scanning it here would be exactly the wrong assertion.
+    @Test func noFileUnderSharedConformsToAppShortcutsProviderExceptWidgetBolusIntents() throws {
+        let root = Self.repoRoot.appendingPathComponent("Shared")
+        for fileURL in Self.swiftFiles(under: root) where fileURL.lastPathComponent != "WidgetBolusIntents.swift" {
+            let source = try String(contentsOf: fileURL, encoding: .utf8)
+            #expect(
+                !source.contains("AppShortcutsProvider"),
+                "\(fileURL.lastPathComponent) must not conform to AppShortcutsProvider — FaBolusShortcuts is removed in full"
+            )
+        }
+    }
+
     /// A path-resolution bug must fail loudly, not pass vacuously (mirrors the other absence guards'
     /// own `fileResolutionActuallyFound...` sanity check).
     @Test func fileResolutionActuallyFoundTheIosFaBolusDirectory() {
@@ -68,5 +85,20 @@ struct ShortcutsAbsenceGuardTests {
         #expect(
             exists && isDir.boolValue,
             "boundary test could not locate ios/faBolus — path resolution broke (#filePath=\(#filePath))")
+    }
+
+    /// Same anti-vacuity check for the widened `Shared` root — and confirms `WidgetBolusIntents.swift`
+    /// itself is actually there to be excluded, not silently absent.
+    @Test func fileResolutionActuallyFoundTheSharedDirectoryAndWidgetBolusIntents() {
+        let root = Self.repoRoot.appendingPathComponent("Shared")
+        var isDir: ObjCBool = false
+        let exists = FileManager.default.fileExists(atPath: root.path, isDirectory: &isDir)
+        #expect(
+            exists && isDir.boolValue,
+            "boundary test could not locate Shared — path resolution broke (#filePath=\(#filePath))")
+        let widgetBolusIntents = root.appendingPathComponent("WidgetBolusIntents.swift")
+        #expect(
+            FileManager.default.fileExists(atPath: widgetBolusIntents.path),
+            "Shared/WidgetBolusIntents.swift must exist — the exclusion in the scan above is vacuous otherwise")
     }
 }
