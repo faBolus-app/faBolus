@@ -624,9 +624,6 @@ public enum PumpAlertKind: Int, Sendable, Equatable, Hashable, Codable, CaseIter
         }
     }
 
-    /// Whether an auto-rule may act on this kind. **Alarms are never auto-dismissed/snoozed** — they
-    /// are the pump's most-severe, safety-critical notifications.
-    public var isAutoRuleEligible: Bool { self != .alarm }
 }
 
 public struct PumpAlert: Identifiable, Sendable, Equatable {
