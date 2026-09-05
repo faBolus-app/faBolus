@@ -159,7 +159,9 @@ final class CommsSuspensionGate {
     /// traffic itself — the existing, unremoved poll cadence's own next tick is the actual re-fetch — so
     /// this is a diagnostic/testable record, not a queue this type drains.
     private(set) var pendingRefetchOpcodes: Set<UInt8> = []
-    /// Injectable clock seam for a deterministic self-heal test.
+    /// Injectable clock seam for a deterministic self-heal test. Legitimately optional (defaulted,
+    /// not required): `Date.init` IS the correct production clock, not a placeholder standing in
+    /// for one.
     var now: () -> Date = Date.init
 
     /// A pump-declared communications suspension began: hold new routine sends. Idempotent (a second

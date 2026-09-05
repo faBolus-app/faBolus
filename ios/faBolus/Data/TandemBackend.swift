@@ -248,16 +248,6 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// `iobHistory`/`bolusMarkers` stay PUBLISHED here on `TandemBackend` — the coordinator mutates them
     /// only through the injected sinks (see its own doc comment's STATE-OWNERSHIP CONTRACT).
     private let historySyncCoordinator = PumpHistorySyncCoordinator()
-    /// The connection/pairing-lifecycle subset — extracted behind injected closures (wired in
-    /// `wireConnectionLifecycle()` right below, same two-phase-init reason as
-    /// `readScheduler`/`responseApplier`/`historySyncCoordinator`). Gate-adjacent: it borders
-    /// the auth-key lifecycle, the delivery-lock teardown, and re-pair reconciliation, so it NEVER stores
-    /// `authenticationKey`/`coordinator`/`pairingCode`/`detectedIsMobi`/the delivery lock itself — every
-    /// one of those stays owned and published here on `TandemBackend`; the lifecycle type reaches them
-    /// only through the injected get/set closures (see its own doc comment). `linkDroppedCleanup()`
-    /// itself — the shared teardown spine — also stays here, unmoved; the lifecycle
-    /// only calls OUT to it.
-    private let lifecycle = PumpConnectionLifecycle()
     /// App-side belt-and-suspenders for the kit's background reconnect. When a reconnect attempt is
     /// scheduled while the app is backgrounded, it holds ONE `beginBackgroundTask` window open so the
     /// kit's main-RunLoop `reconnectTick()` gets the runtime to establish/observe the pending
@@ -267,8 +257,21 @@ public final class TandemBackend: NSObject, PumpBackend {
     /// warm across a suspend is battery-neutral by construction — the kit keeps its notification
     /// subscriptions across background — so NO polling keep-alive read is issued. See
     /// `PumpBackgroundSession`. Wired with the real UIKit seams in the production `init()` only; the
-    /// test-transport init leaves it inert (default seams).
+    /// test-transport init leaves it inert (default seams). Declared BEFORE `lifecycle` — its
+    /// required init parameter needs the real instance to exist first.
     private let bgSession = PumpBackgroundSession()
+    /// The connection/pairing-lifecycle subset — extracted behind injected closures (wired in
+    /// `wireConnectionLifecycle()` right below, same two-phase-init reason as
+    /// `readScheduler`/`responseApplier`/`historySyncCoordinator`). Gate-adjacent: it borders
+    /// the auth-key lifecycle, the delivery-lock teardown, and re-pair reconciliation, so it NEVER stores
+    /// `authenticationKey`/`coordinator`/`pairingCode`/`detectedIsMobi`/the delivery lock itself — every
+    /// one of those stays owned and published here on `TandemBackend`; the lifecycle type reaches them
+    /// only through the injected get/set closures (see its own doc comment). `linkDroppedCleanup()`
+    /// itself — the shared teardown spine — also stays here, unmoved; the lifecycle
+    /// only calls OUT to it. No default here — `readScheduler`/`bgSession` are required init
+    /// parameters (see `PumpConnectionLifecycle`'s own doc comment), so construction happens in
+    /// BOTH initializers right before `super.init()`, passing the real instances directly.
+    private let lifecycle: PumpConnectionLifecycle
     /// App-side consumer only — see `CommsSuspensionGate`'s doc comment in `PumpBackgroundSession.swift`
     /// for why this is INERT in production today, and `handleQualifyingEventBits` below for the exact
     /// pin-bump seam that would wire it to a live signal). Gates ONLY `readScheduler.send`'s injected
@@ -741,6 +744,7 @@ public final class TandemBackend: NSObject, PumpBackend {
                     requestCodeId: requestCodeId, errorCodeId: errorCodeId, txId: txId)
                     ?? UInt8(truncatingIfNeeded: requestCodeId)
             })
+        self.lifecycle = PumpConnectionLifecycle(readScheduler: readScheduler, bgSession: bgSession)
         super.init()
         client.writePolicy = .readOnly
         client.delegate = self
@@ -1034,8 +1038,8 @@ public final class TandemBackend: NSObject, PumpBackend {
             body(&self.snapshot)
         }
         lifecycle.onChange = { [weak self] in self?.onChange?() }
-        lifecycle.readScheduler = readScheduler
-        lifecycle.bgSession = bgSession
+        // `readScheduler`/`bgSession` are bound at construction (both initializers, right before
+        // `super.init()`) — see `lifecycle`'s own doc comment.
         lifecycle.client = client
         lifecycle.linkDroppedCleanup = { [weak self] in self?.linkDroppedCleanup() }
         lifecycle.getPairingCode = { [weak self] in self?.pairingCode ?? "" }
@@ -1070,6 +1074,7 @@ public final class TandemBackend: NSObject, PumpBackend {
                     requestCodeId: requestCodeId, errorCodeId: errorCodeId, txId: txId)
                     ?? UInt8(truncatingIfNeeded: requestCodeId)
             })
+        self.lifecycle = PumpConnectionLifecycle(readScheduler: readScheduler, bgSession: bgSession)
         super.init()
         wireReadScheduler()
         wireResponseApplier()

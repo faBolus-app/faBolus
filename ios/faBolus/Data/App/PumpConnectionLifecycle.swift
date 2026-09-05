@@ -40,14 +40,19 @@ final class PumpConnectionLifecycle {
     /// Shared refs: `TandemBackend`'s own `readScheduler`/`bgSession` instances, passed
     /// through directly rather than wrapped in per-method closures — both are already independent,
     /// injected-seam collaborators, so holding a direct reference here is no different from
-    /// `TandemBackend` holding one. Defaults are inert placeholders, overwritten by the real instances in
-    /// `TandemBackend.wireConnectionLifecycle()`.
-    var readScheduler = PumpReadScheduler()
-    var bgSession = PumpBackgroundSession()
+    /// `TandemBackend` holding one. Required at construction — an unbound lifecycle would otherwise
+    /// drive a phantom scheduler/session while the real ones sit untouched.
+    let readScheduler: PumpReadScheduler
+    let bgSession: PumpBackgroundSession
     /// The raw kit client, for the two BLE calls the pairing-watchdog quartet issues
     /// (`connectKnownPeripheral`/`startScan`/`disconnect`). Optional (unlike `readScheduler`/`bgSession`)
     /// because `PumpBLEClient` has no cheap inert default; `TandemBackend` wires the real one.
     var client: PumpBLEClient?
+
+    init(readScheduler: PumpReadScheduler, bgSession: PumpBackgroundSession) {
+        self.readScheduler = readScheduler
+        self.bgSession = bgSession
+    }
 
     /// Bound to `{ [weak self] in self?.linkDroppedCleanup() }` — calls back into the shared teardown
     /// spine, which STAYS a single ordered method on `TandemBackend` (review concern #5). This type never
@@ -98,6 +103,8 @@ final class PumpConnectionLifecycle {
     var onReliabilityEvent: ((ReliabilityEvent) -> Void)?
     /// Test seam forwarded from `TandemBackend.onPairingSendForTesting` — fires with the same non-PHI
     /// facts (type name / opcode / cargo byte COUNT) the pairing send site always logged.
+    /// Legitimately optional: unbound is the correct production state (no observer means nothing
+    /// forwards), only a test sets it.
     var onPairingSendForTesting: ((_ typeName: String, _ opcode: UInt8, _ cargoBytes: Int) -> Void)?
 
     /// Seam replacing a direct `Timer` inside this type (no wall-clock here): schedule a one-shot

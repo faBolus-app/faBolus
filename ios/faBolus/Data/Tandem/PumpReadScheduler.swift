@@ -119,10 +119,11 @@ final class PumpReadScheduler {
     /// Test seam: fires each time `sendStatusRead` actually attempts a real send (regardless of
     /// `send`'s own throw/success) — reports the type name/opcode, so a test can assert send ORDER
     /// (e.g. the reference-required bootstrap trio first, per the "MARK: - Post-pair bootstrap order"
-    /// fix below) without a live `CBCentralManager`.
+    /// fix below) without a live `CBCentralManager`. Legitimately optional and `#if DEBUG`-only:
+    /// unbound is the correct production state.
     var onReadDispatchedForTesting: ((_ typeName: String, _ opcode: UInt8) -> Void)?
     /// Test seam: fires instead of `onReadDispatchedForTesting` when `sendStatusRead` SKIPS a
-    /// read because its opcode is in `badOpcodes`.
+    /// read because its opcode is in `badOpcodes`. Same DEBUG-only, legitimately-optional shape.
     var onReadSkippedForTesting: ((_ typeName: String, _ opcode: UInt8) -> Void)?
     #endif
 
