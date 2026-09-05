@@ -148,7 +148,7 @@ struct PumpResponseApplierOrderingCharacterizationTests {
             rec.steps == [
                 "setPumpTimeAnchor",
                 "setHistoryStatusRequestedThisConnection(true)",
-                "send(HistoryLogStatusRequest)",
+                "send(HistoryLogStatusRequest)"
             ])
     }
 
@@ -160,7 +160,7 @@ struct PumpResponseApplierOrderingCharacterizationTests {
         #expect(
             rec.steps == [
                 "withSnapshot", "cgmReadingDate", "withSnapshot", "withGlucoseHistory",
-                "schedulePredictiveBurst", "completeGlucoseRead",
+                "schedulePredictiveBurst", "completeGlucoseRead"
             ])
     }
 
@@ -202,9 +202,10 @@ struct PumpResponseApplierOrderingCharacterizationTests {
             // op-109
             "withSnapshot", "noteCalcInputArrived(true)", "withIOBHistory",
             // EGV (op-35)
-            "withSnapshot", "cgmReadingDate", "withSnapshot", "withGlucoseHistory", "schedulePredictiveBurst", "completeGlucoseRead",
+            "withSnapshot", "cgmReadingDate", "withSnapshot", "withGlucoseHistory", "schedulePredictiveBurst",
+            "completeGlucoseRead",
             // alert (op-69)
-            "setAlertList", "noteAlert", "mergeNotifications",
+            "setAlertList", "noteAlert", "mergeNotifications"
         ]
 
         // Anti-vacuity: the recorder must have observed the full cross-case sequence, not silently

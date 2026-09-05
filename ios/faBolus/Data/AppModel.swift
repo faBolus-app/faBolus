@@ -1068,10 +1068,10 @@ public final class AppModel {
     /// for a tester who never opens "Erase everything"; a tester who never paired a Mac or a peer
     /// phone simply has nothing here to delete.
     private static let orphanedRemoteKeychainServices = [
-        "com.fabolus.app.remoteclient.auth", "com.fabolus.app.macremote",
+        "com.fabolus.app.remoteclient.auth", "com.fabolus.app.macremote"
     ]
     private static let orphanedRemoteDefaultsKeys = [
-        "phoneRemoteClientId", "macRemotePairedNames", "appTarget",
+        "phoneRemoteClientId", "macRemotePairedNames", "appTarget"
     ]
     /// Guards the purge to at most once per install.
     static let orphanedRemoteCredentialPurgeDoneKey = "orphanedRemoteCredentialPurgeDone"
@@ -1092,7 +1092,7 @@ public final class AppModel {
             SecItemDelete(
                 [
                     kSecClass as String: kSecClassGenericPassword,
-                    kSecAttrService as String: service,
+                    kSecAttrService as String: service
                 ] as CFDictionary)
         }
         for key in orphanedRemoteDefaultsKeys { defaults.removeObject(forKey: key) }

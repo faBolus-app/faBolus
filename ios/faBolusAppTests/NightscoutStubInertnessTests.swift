@@ -29,7 +29,7 @@ struct NightscoutStubInertnessTests {
         // declaration/call shape sidesteps that.
         let deletedDeclarations = [
             "func maybeBackfillNightscout(", "var lastNSBackfill",
-            "onNightscoutSync", "NightscoutUploader.shared.sync(",
+            "onNightscoutSync", "NightscoutUploader.shared.sync("
         ]
         for declaration in deletedDeclarations {
             #expect(
@@ -56,7 +56,7 @@ struct NightscoutStubInertnessTests {
         // Scan production source only (never Tests/, which legitimately names these symbols in prose
         // describing what was removed and why).
         let deletedDeclarations = [
-            "class NightscoutUploader", "enum NightscoutBackfill", "var nightscoutUploadEnabled",
+            "class NightscoutUploader", "enum NightscoutBackfill", "var nightscoutUploadEnabled"
         ]
         var scannedFileCount = 0
         for root in ["ios/faBolus", "Shared", "Packages/faBolusCore/Sources"] {

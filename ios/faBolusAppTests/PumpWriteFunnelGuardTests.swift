@@ -54,7 +54,7 @@ struct PumpWriteFunnelGuardTests {
         "refreshSleepSchedule", "refreshProfileSegments", "refreshGlucoseNow", "refreshCalcInputsNow",
         "reconcile", "recommendBolus", "clearUnknownOutcomeAfterManualVerification",
         // Connection lifecycle.
-        "connect", "disconnect", "forgetPairing",
+        "connect", "disconnect", "forgetPairing"
     ]
 
     /// Every literal `source.<identifier>(` occurrence in `AppModel.swift`, by name (no arguments, no

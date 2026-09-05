@@ -338,7 +338,9 @@ public struct RemoteBolusLedger: Codable, Sendable {
 
     /// Requests that were mid-flight when the process stopped: `delivering` or `indeterminate`. The host
     /// reconciles these at launch (look up each `bolusId` in pump history) before allowing new deliveries.
-    public func unreconciled() -> [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool, pumpKey: String?)] {
+    public func unreconciled() -> [(
+        peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool, pumpKey: String?
+    )] {
         order.compactMap { k in
             guard let e = entries[k] else { return nil }
             // An id always means the pump was written to (only the pump mints one), and `sentToPump`

@@ -27,7 +27,8 @@ import faBolusCore
         let source = try String(contentsOf: projectYmlURL, encoding: .utf8)
         #expect(source.count > 200, "project.yml resolved implausibly short — path resolution likely broke")
 
-        let compileConditionsLines = source
+        let compileConditionsLines =
+            source
             .components(separatedBy: "\n")
             .filter { $0.contains("SWIFT_ACTIVE_COMPILATION_CONDITIONS:") }
 

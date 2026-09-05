@@ -266,7 +266,8 @@ struct ReconcileByHistoryTests {
             let bolusId = 504
             // op-45 must show this exact id NOT active for the fast path to be eligible at all.
             fake.script(
-                CurrentBolusStatusResponse.props.opCode, .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: bolusId)))
+                CurrentBolusStatusResponse.props.opCode,
+                .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: bolusId)))
             scriptLastBolus(fake, bolusId: bolusId, deliveredMilliunits: 3250)
             let result = await backend.reconcile(bolusId: bolusId)
             #expect(result == .resolved(deliveredUnits: 3.25, cancelled: false))
@@ -289,7 +290,8 @@ struct ReconcileByHistoryTests {
             let (backend, fake) = makeBackend()
             let bolusId = 520
             fake.script(
-                CurrentBolusStatusResponse.props.opCode, .frame(FakePumpTransport.currentBolusStatus(statusId: 1, bolusId: bolusId)))
+                CurrentBolusStatusResponse.props.opCode,
+                .frame(FakePumpTransport.currentBolusStatus(statusId: 1, bolusId: bolusId)))
             scriptLastBolus(fake, bolusId: bolusId, deliveredMilliunits: 1000)  // would be a partial if trusted
             scriptHistoryStatus(fake, numEntries: 1000, first: 1, last: 1000)
 
@@ -342,7 +344,8 @@ struct ReconcileByHistoryTests {
             let (backend, fake) = makeBackend()
             let bolusId = 522
             fake.script(
-                CurrentBolusStatusResponse.props.opCode, .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: bolusId)))
+                CurrentBolusStatusResponse.props.opCode,
+                .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: bolusId)))
             scriptLastBolus(fake, bolusId: bolusId, deliveredMilliunits: 2000)
             let result = await backend.reconcile(bolusId: bolusId)
             #expect(result == .resolved(deliveredUnits: 2.0, cancelled: false))
@@ -377,7 +380,7 @@ struct ReconcileByHistoryTests {
                     (
                         seq: 990, pumpTimeSec: 900_000, bolusId: reusedId, delivered: 2.5, iob: 0.9,
                         completionStatusId: 3, insulinRequested: nil
-                    ),
+                    )
                 ]))
             let result = await task.value
             #expect(
@@ -502,7 +505,8 @@ struct ReconcileByHistoryTests {
             // otherwise the fast path is skipped closed and `lastBolusStatus()` (below) is never called,
             // leaving this queued reply stuck for a LATER call to consume out of order.
             fake.script(
-                CurrentBolusStatusResponse.props.opCode, .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: firstId)))
+                CurrentBolusStatusResponse.props.opCode,
+                .frame(FakePumpTransport.currentBolusStatus(statusId: 0, bolusId: firstId)))
             scriptLastBolus(fake, bolusId: newerId)
             scriptHistoryStatus(fake, numEntries: 1000, first: 1, last: 1000)
 

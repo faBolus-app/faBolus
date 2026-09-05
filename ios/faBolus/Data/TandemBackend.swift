@@ -589,9 +589,10 @@ public final class TandemBackend: NSObject, PumpBackend {
         // A signed response now fails-closed (throws) unless its HMAC verifies under the session
         // key — a forged/tampered signed control ack is rejected here rather than trusted. NEVER build a
         // response via `init(cargo:)` directly — only through this length-gated, HMAC-verifying parse.
-        guard let parsed = try? ResponseParser.parse(
-            frame: frame, characteristic: message.characteristic,
-            authenticationKey: authenticationKey)
+        guard
+            let parsed = try? ResponseParser.parse(
+                frame: frame, characteristic: message.characteristic,
+                authenticationKey: authenticationKey)
         else {
             throw BolusError.pumpRejected("could not parse response to \(type(of: message))")
         }

@@ -62,7 +62,9 @@ struct FeatureSurfaceAbsenceGuardTests {
     @Test func settingsCatalogAndSettingsViewHaveNoGlucoseBadgeSurface() throws {
         let catalogURL = Self.repoRoot.appendingPathComponent("ios/faBolus/Data/Settings/SettingsCatalog.swift")
         let catalogSource = try String(contentsOf: catalogURL, encoding: .utf8)
-        #expect(catalogSource.count > 200, "SettingsCatalog.swift resolved implausibly short — path resolution likely broke")
+        #expect(
+            catalogSource.count > 200, "SettingsCatalog.swift resolved implausibly short — path resolution likely broke"
+        )
         #expect(
             !catalogSource.contains("glucoseBadgeEnabled"),
             "SettingsCatalog.swift must not register a glucoseBadgeEnabled descriptor")

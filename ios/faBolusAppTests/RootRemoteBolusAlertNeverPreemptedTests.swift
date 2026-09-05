@@ -37,14 +37,16 @@ struct RootRemoteBolusAlertNeverPreemptedTests {
         let count = source.components(separatedBy: ".alert(").count - 1
         #expect(
             count == 1,
-            "RootTabView must present exactly one .alert(...) — a second would risk pre-empting the remote-bolus confirm")
+            "RootTabView must present exactly one .alert(...) — a second would risk pre-empting the remote-bolus confirm"
+        )
     }
 
     @Test func rootTabViewGatesThatAlertOnPendingRemoteBolus() throws {
         let source = try Self.rootTabViewSource()
         #expect(
             source.contains("isPresented: .constant(model.pendingRemoteBolus != nil)"),
-            "the remote-bolus confirm must be gated directly on model.pendingRemoteBolus, with nothing else able to suppress it")
+            "the remote-bolus confirm must be gated directly on model.pendingRemoteBolus, with nothing else able to suppress it"
+        )
     }
 
     @Test func fileResolutionActuallyFoundTheRepoRoot() {

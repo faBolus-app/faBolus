@@ -33,7 +33,8 @@ struct HealthKitImportDosePathGuardTests {
         guard let entries = try? fm.contentsOfDirectory(at: packagesDir, includingPropertiesForKeys: nil) else {
             return []
         }
-        return entries
+        return
+            entries
             .map { $0.appendingPathComponent("Sources") }
             .filter { fm.fileExists(atPath: $0.path) }
     }
