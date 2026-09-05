@@ -24,8 +24,7 @@ struct GatedPumpWriteTierTests {
         // Delivery + operational + the cosmetic rename are user-tier (the person owns them day to day).
         for w in [
             GatedPumpWrite.deliverBolus, .cancelBolus, .dismissNotification, .suspendDelivery,
-            .resumeDelivery, .setTempBasal, .setMode, .renameProfile, .syncTimeToNow,
-            .setLowInsulinAlert, .startG7Session
+            .resumeDelivery, .renameProfile, .syncTimeToNow,
         ] {
             #expect(w.requiredTier == .user, "\(w.rawValue) should be user-tier")
         }

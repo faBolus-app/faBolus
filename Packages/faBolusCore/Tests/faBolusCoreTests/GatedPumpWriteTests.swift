@@ -12,7 +12,11 @@ import Testing
 
     @Test func declaredSetIsStableAndFullyClassified() {
         // Pin the size: adding a reachable pump-write entry point without classifying it here fails visibly.
-        #expect(GatedPumpWrite.allCases.count == 38)
+        // Was 38: 19 `.controlInterlock` cases were removed because their `AppModel` entry points were
+        // deleted (the AppModel funnel-caller wrappers no test still drives), leaving suspendDelivery,
+        // resumeDelivery (held for the ack-suite commit) and syncTimeToNow (held for the clock-sync
+        // commit, per its own capability + backend removal) as the interim survivors.
+        #expect(GatedPumpWrite.allCases.count == 19)
         for w in GatedPumpWrite.allCases { _ = w.gate }  // exhaustive switch → also proves no crash
     }
 
@@ -30,7 +34,9 @@ import Testing
                 // The Mobi native Sleep-schedule write — flag semantics + slots 1-3 unverified.
                 "setSleepSchedule"
             ])
-        #expect(names(.controlInterlock).count == 22)  // was 25, three moved to .unverifiedAck
+        // Was 22: 19 removed with their AppModel entry points; suspendDelivery/resumeDelivery and
+        // syncTimeToNow are the interim survivors (see declaredSetIsStableAndFullyClassified above).
+        #expect(names(.controlInterlock).count == 3)
         // The partition is total and disjoint.
         let total =
             names(.ledgeredDelivery).count + names(.unverifiedAck).count
@@ -48,7 +54,7 @@ import Testing
         // not the coarse supportsAnyAdvancedControl set — mirrors the pump protocol's own MOBI_ONLY scope.
         #expect(GatedPumpWrite.setSleepSchedule.hasRequiredCapability(in: .mobiAdvanced))
         #expect(!GatedPumpWrite.setSleepSchedule.hasRequiredCapability(in: .full))  // t:slim: no sleep-schedule write
-        for a in [GatedPumpWrite.setTempBasal, .suspendDelivery, .setMode, .setControlIQ] {
+        for a in [GatedPumpWrite.suspendDelivery, .resumeDelivery, .setControlIQ] {
             #expect(a.hasRequiredCapability(in: .mobiAdvanced))
             #expect(!a.hasRequiredCapability(in: .full), "\(a.rawValue) needs an advanced capability")
         }

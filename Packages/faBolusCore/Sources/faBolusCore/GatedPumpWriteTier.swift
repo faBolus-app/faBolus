@@ -9,9 +9,8 @@ import Foundation
 /// Clinician-tier writes redefine or select the parameters the pump doses from — the insulin profiles
 /// (basal / carb-ratio / correction / target, via IDP CRUD + segment edits + active-profile switch),
 /// the Control-IQ configuration, the delivery limits, and the CGM glucose thresholds. Everything else is
-/// `.user`: delivery, cancel / dismiss, suspend / resume, temp basal, user modes, CGM-session and
-/// cartridge operations, clock sync, alert reminders, and a cosmetic profile rename — the person
-/// operates these day to day.
+/// `.user`: delivery, cancel / dismiss, suspend / resume, clock sync, and a cosmetic profile rename —
+/// the person operates these day to day.
 ///
 /// This tier drives the §2.1(2) one-time clinician acknowledgment + non-blocking labeling (S8). It is
 /// deliberately NOT a `DenialReason` and NOT the every-time `UnverifiedFeatureGate`: it never blocks a

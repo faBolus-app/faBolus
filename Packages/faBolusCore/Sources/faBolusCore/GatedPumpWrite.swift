@@ -31,14 +31,12 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
     // other unverified-hardware writes above, even though it is NOT itself insulin-affecting.
     case setSleepSchedule
 
-    // Child-mode + phone read-only interlock (`runControl`) — the remaining insulin-affecting / operational
-    // writes (suspend/resume, temp basal, modes, cartridge/fill, CGM session, clock, alert reminders).
-    case suspendDelivery, resumeDelivery, setTempBasal, stopTempBasal, setMode, playFindMyPump
-    case startG6Session, startG7Session, setSensorType, stopCgmSession
-    case enterChangeCartridgeMode, exitChangeCartridgeMode, enterFillTubingMode, exitFillTubingMode, fillCannula
+    // Child-mode + phone read-only interlock (`runControl`) — the remaining insulin-affecting /
+    // operational writes reachable through AppModel: suspend/resume delivery, and the pump clock
+    // sync (held together with its own capability + backend implementations, which must be removed
+    // in the same commit as this case — see `hasRequiredCapability`).
+    case suspendDelivery, resumeDelivery
     case syncTimeToNow
-    case setLowInsulinAlert, setAutoOffAlert, setSiteChangeReminder, setAlertSnooze
-    case setCgmOutOfRangeAlert, setCgmRiseFallAlert
 
     /// The access gate an action currently routes through in `AppModel`.
     public enum Gate: String, Sendable, CaseIterable {
@@ -65,16 +63,7 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
             // it needs the same one-shot untested-feature ack as the other unverified writes above.
             .setSleepSchedule:
             return .unverifiedAck
-        case .suspendDelivery, .resumeDelivery, .setTempBasal, .stopTempBasal, .setMode, .playFindMyPump,
-            .startG6Session, .startG7Session, .setSensorType, .stopCgmSession,
-            .enterChangeCartridgeMode, .exitChangeCartridgeMode, .enterFillTubingMode, .exitFillTubingMode,
-            .fillCannula,
-            .syncTimeToNow,
-            // Operational alert reminders configure WHEN the pump warns, not how it doses, so they
-            // skip the therapy-edit ack. `setCgmHighLowAlert` is the exception — a glucose threshold —
-            // and stays ack-gated above. `syncTimeToNow` is a clock sync (its auto-path can't prompt).
-            .setLowInsulinAlert, .setAutoOffAlert, .setSiteChangeReminder, .setAlertSnooze,
-            .setCgmOutOfRangeAlert, .setCgmRiseFallAlert:
+        case .suspendDelivery, .resumeDelivery, .syncTimeToNow:
             return .controlInterlock
         }
     }
@@ -100,9 +89,8 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
     ///
     /// The advanced-control writes require any advanced capability (`supportsAnyAdvancedControl`) —
     /// preserving today's coarse check exactly, EXCEPT for the two limit-set writes below. A finer
-    /// per-action mapping (e.g. `setMode → supportsModes`) is deferred so this stays behavior-preserving
-    /// on every other reachable path. Delivery and the child-only pair require no capability (Gate 5
-    /// stays a no-op for them).
+    /// per-action mapping is deferred so this stays behavior-preserving on every other reachable path.
+    /// Delivery and the child-only pair require no capability (Gate 5 stays a no-op for them).
     public func hasRequiredCapability(in caps: PumpCapabilities) -> Bool {
         if self == .syncTimeToNow { return caps.supportsTimeSync }
         // The write's Mobi-only gate MIRRORS the pump protocol's own device scope — upstream
@@ -130,15 +118,14 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
     /// explicitly:
     ///   - `.simple`   — bolus is the core function; cancel/dismiss are STOPs (their gate is carved out, so
     ///                   this value is only a fail-safe should the carve-out ever change).
-    ///   - `.standard` — routine pump control that isn't full "advanced" (suspend/resume, activity modes,
-    ///                   Find-My-Pump).
-    ///   - `.advanced` — everything else: temp basal, IDP/profile CRUD, CGM-session control, cartridge/fill,
-    ///                   max bolus/basal, time sync, Control-IQ settings, alert config, extended (combo) bolus.
+    ///   - `.standard` — routine pump control that isn't full "advanced" (suspend/resume).
+    ///   - `.advanced` — everything else: IDP/profile CRUD, max bolus/basal, time sync, Control-IQ
+    ///                   settings, extended (combo) bolus.
     public var requiredMode: AppMode {
         switch self {
         case .deliverBolus, .cancelBolus, .dismissNotification:
             return .simple
-        case .suspendDelivery, .resumeDelivery, .setMode, .playFindMyPump:
+        case .suspendDelivery, .resumeDelivery:
             return .standard
         default:
             return .advanced

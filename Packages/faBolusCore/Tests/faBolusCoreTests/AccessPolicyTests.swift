@@ -216,25 +216,22 @@ import Testing
             .createProfile, .setActiveProfile, .renameProfile, .deleteProfile,
             .addProfileSegment, .modifyProfileSegment, .deleteProfileSegment, .setCgmHighLowAlert,
             .setControlIQ, .setMaxBolus, .setMaxBasal, .setSleepSchedule,
-            // capability-gated operational writes (control-interlock tier)
-            .suspendDelivery, .resumeDelivery, .setTempBasal, .stopTempBasal, .setMode, .playFindMyPump,
-            .startG6Session, .startG7Session, .setSensorType, .stopCgmSession,
-            .enterChangeCartridgeMode, .exitChangeCartridgeMode, .enterFillTubingMode, .exitFillTubingMode,
-            .fillCannula, .syncTimeToNow,
-            .setLowInsulinAlert, .setAutoOffAlert, .setSiteChangeReminder, .setAlertSnooze,
-            .setCgmOutOfRangeAlert, .setCgmRiseFallAlert,
+            // capability-gated operational writes (control-interlock tier) — the interim survivors;
+            // the AppModel entry points for the rest of this tier were removed, taking their cases
+            // with them.
+            .suspendDelivery, .resumeDelivery, .syncTimeToNow,
         ]
         let expectedPermitted: [A] = [
             .deliverBolus, .deliverExtendedBolus,  // ledgered delivery — capability-exempt
             .cancelBolus, .dismissNotification,  // child-only STOP/clear — capability-exempt
         ]
 
-        // Literal counts: 34 denied / 4 permitted, with the 38 total guarding against a new case slipping
-        // in unclassified.
+        // Literal counts: was 34 denied / 4 permitted / 38 total. 19 `.controlInterlock` cases were
+        // removed with their AppModel entry points, leaving 15 denied / 4 permitted / 19 total.
         let deniedCount = expectedDenied.count
-        #expect(deniedCount == 34)
+        #expect(deniedCount == 15)
         #expect(expectedPermitted.count == 4)
-        #expect(A.allCases.count == 38)
+        #expect(A.allCases.count == 19)
 
         // The two hardcoded sets partition GatedPumpWrite exactly — nothing missing, nothing double-listed.
         #expect(Set(expectedDenied).isDisjoint(with: Set(expectedPermitted)))
@@ -286,7 +283,7 @@ import Testing
         // Core: a normal bolus is available in Simple.
         #expect(P.evaluate(.deliverBolus, surface: .phoneUI, context: ctx).allowed)
         // Advanced (min .advanced): denied specifically by the mode gate, not another gate.
-        for a in [A.setTempBasal, .setControlIQ, .deliverExtendedBolus, .createProfile] {
+        for a in [A.setMaxBolus, .setControlIQ, .deliverExtendedBolus, .createProfile] {
             #expect(
                 P.evaluate(a, surface: .phoneUI, context: ctx).reason == .modeDisallowed(required: .advanced),
                 "\(a.rawValue) must be modeDisallowed(.advanced) in Simple")
@@ -299,7 +296,7 @@ import Testing
         ctx.modeContext = P.ModeGateContext(activeMode: .standard)
         #expect(P.evaluate(.suspendDelivery, surface: .phoneUI, context: ctx).allowed)
         #expect(
-            P.evaluate(.setTempBasal, surface: .phoneUI, context: ctx).reason == .modeDisallowed(required: .advanced))
+            P.evaluate(.setMaxBolus, surface: .phoneUI, context: ctx).reason == .modeDisallowed(required: .advanced))
     }
 
     @Test func modeNeverBlocksSafetyStopsOnAnySurface() {
@@ -319,8 +316,8 @@ import Testing
     @Test func perFeatureToggleDeniesWithinTheMode() {
         // Owner decision #4: even in a mode that would permit an action, a per-feature toggle turns it off.
         var ctx = openCtx()
-        ctx.modeContext = P.ModeGateContext(activeMode: .advanced, disabledFeatures: [.setTempBasal])
-        #expect(P.evaluate(.setTempBasal, surface: .phoneUI, context: ctx).reason == .featureDisabledInMode)
+        ctx.modeContext = P.ModeGateContext(activeMode: .advanced, disabledFeatures: [.setMaxBolus])
+        #expect(P.evaluate(.setMaxBolus, surface: .phoneUI, context: ctx).reason == .featureDisabledInMode)
         #expect(P.evaluate(.setControlIQ, surface: .phoneUI, context: ctx).allowed)  // a different feature is unaffected
         // …but a toggle can never disable a safety STOP (carve-out again).
         ctx.modeContext = P.ModeGateContext(

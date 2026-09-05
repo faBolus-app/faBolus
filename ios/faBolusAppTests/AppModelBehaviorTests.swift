@@ -296,11 +296,11 @@ struct AppModelBehaviorTests {
             // An advanced write is denied on every surface, through the real context-builder.
             for s in S.allCases {
                 #expect(
-                    !model.accessDecision(.setTempBasal, from: s, peerId: "mac").allowed,
-                    "setTempBasal must be denied in Simple on \(s.rawValue)")
+                    !model.accessDecision(.syncTimeToNow, from: s, peerId: "mac").allowed,
+                    "syncTimeToNow must be denied in Simple on \(s.rawValue)")
             }
             // On a local surface (everything else open) the reason is specifically the mode gate.
-            #expect(model.accessDecision(.setTempBasal, from: .phoneUI).reason == .modeDisallowed(required: .advanced))
+            #expect(model.accessDecision(.syncTimeToNow, from: .phoneUI).reason == .modeDisallowed(required: .advanced))
             // Core bolus stays available on the phone; safety STOPs survive on every surface.
             #expect(model.accessDecision(.deliverBolus, from: .phoneUI).allowed)
             for s in S.allCases {
@@ -310,7 +310,7 @@ struct AppModelBehaviorTests {
             }
             // Advanced mode restores the advanced write (proves the wiring reads the live value, not a const).
             AppSettings.shared.appMode = .advanced
-            #expect(model.accessDecision(.setTempBasal, from: .phoneUI).allowed)
+            #expect(model.accessDecision(.syncTimeToNow, from: .phoneUI).allowed)
         }
     }
 
