@@ -12,53 +12,12 @@ struct DashboardView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     var body: some View {
-        @Bindable var settings = settings  // local @Bindable for binding projection
-        return NavigationStack {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: 14) {
                     if horizontalSizeClass == .regular {
                         // Full-width alert/CTA bands stay full-width above the two-column region.
-                        if !model.hasStoredPairing {
-                            NoPumpConnectedCard(model: model)
-                        }
-
-                        if model.shouldShowLowPowerAdvisory {
-                            HStack(alignment: .top, spacing: 8) {
-                                Image(systemName: "bolt.slash").foregroundStyle(.orange)
-                                    .accessibilityHidden(true)
-                                Text(LowPowerAdvisory.message)
-                                    .font(.footnote)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                Spacer(minLength: 0)
-                                Button {
-                                    model.dismissLowPowerAdvisory()
-                                } label: {
-                                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                                }
-                                // 44×44 hit area; the glyph stays small.
-                                .frame(width: 44, height: 44)
-                                .contentShape(Rectangle())
-                                .buttonStyle(.plain)
-                                .hoverEffect(.automatic)
-                                .accessibilityLabel("Dismiss low power notice")
-                            }
-                            .padding().frame(maxWidth: .infinity)
-                            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
-                            .padding(.horizontal)
-                        }
-
-                        AlertsBannerView(model: model)
-
-                                        // Dose-affecting — no .hoverEffect / .keyboardShortcut.
-                        if model.snapshot.connection == .bolusing && model.capabilities.supportsBolusCancel {
-                            Button(role: .destructive) {
-                                Task { await model.cancelBolus() }
-                            } label: {
-                                Label("Cancel bolus", systemImage: "stop.fill").font(.headline).frame(
-                                    maxWidth: .infinity)
-                            }.buttonStyle(.borderedProminent).tint(.red).padding(.horizontal)
-                                .accessibilityLabel("Cancel bolus")
-                        }
+                        dashboardBanners
 
                         // Two-column: ring/pills/chart left, stats/details right. Double-frame
                         // centers the capped region (a single frame left-aligns on a 13" iPad).
@@ -69,30 +28,12 @@ struct DashboardView: View {
                                 StatusPillsView(snapshot: model.snapshot)
 
                                 // Chart at the column's full width — never a clipped sub-fraction.
-                                VStack(spacing: 6) {
-                                    GlucoseChartView(
-                                        readings: model.glucoseHistory, iob: model.iobHistory,
-                                        boluses: model.bolusMarkers, windowHours: windowHours,
-                                        showGlucose: settings.showGlucoseAxis, showIOB: settings.showIOBAxis,
-                                        showBolusBars: settings.showBolusBars)
-                                    Picker("Window", selection: $windowHours) {
-                                        ForEach(windows, id: \.self) { Text("\($0)h").tag($0) }
-                                    }.pickerStyle(.segmented)
-                                    HStack(spacing: 16) {
-                                        Toggle("Glucose", isOn: $settings.showGlucoseAxis)
-                                        Toggle("IOB", isOn: $settings.showIOBAxis)
-                                        Toggle("Bolus", isOn: $settings.showBolusBars)
-                                    }.font(.caption).toggleStyle(.button).controlSize(.small)
-                                }
+                                chartCard
                             }
                             .frame(maxWidth: .infinity, alignment: .top)
 
                             VStack(spacing: 14) {
-                                if settings.showStats {
-                                    StatsCardView(history: model.glucoseHistory)
-                                }
-
-                                PumpDetailsCard(snapshot: model.snapshot)
+                                detailsColumn(detailsPadded: false)
                             }
                             .frame(maxWidth: .infinity, alignment: .top)
                         }
@@ -104,77 +45,13 @@ struct DashboardView: View {
                         // and Garmin setup live in the Settings tab now (not the toolbar).
                         StatusRingView(snapshot: model.snapshot, failover: model.failoverBadge)
 
-                        // Persistent re-entry when unpaired — no dismiss; stays until pairing exists.
-                        if !model.hasStoredPairing {
-                            NoPumpConnectedCard(model: model)
-                        }
-
-                        // Low Power Mode may delay background pump/CGM updates. Advisory only —
-                        // never changes cadence and never gates a dose.
-                        if model.shouldShowLowPowerAdvisory {
-                            HStack(alignment: .top, spacing: 8) {
-                                Image(systemName: "bolt.slash").foregroundStyle(.orange)
-                                    .accessibilityHidden(true)
-                                Text(LowPowerAdvisory.message)
-                                    .font(.footnote)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                Spacer(minLength: 0)
-                                Button {
-                                    model.dismissLowPowerAdvisory()
-                                } label: {
-                                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                                }
-                                // 44×44 hit area; the glyph stays small.
-                                .frame(width: 44, height: 44)
-                                .contentShape(Rectangle())
-                                .buttonStyle(.plain)
-                                .hoverEffect(.automatic)
-                                .accessibilityLabel("Dismiss low power notice")
-                            }
-                            .padding().frame(maxWidth: .infinity)
-                            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
-                            .padding(.horizontal)
-                        }
-
-                        AlertsBannerView(model: model)
-
-                                        // Dose-affecting — no .hoverEffect / .keyboardShortcut.
-                        if model.snapshot.connection == .bolusing && model.capabilities.supportsBolusCancel {
-                            Button(role: .destructive) {
-                                Task { await model.cancelBolus() }
-                            } label: {
-                                Label("Cancel bolus", systemImage: "stop.fill").font(.headline).frame(
-                                    maxWidth: .infinity)
-                            }.buttonStyle(.borderedProminent).tint(.red).padding(.horizontal)
-                                .accessibilityLabel("Cancel bolus")
-                        }
+                        dashboardBanners
 
                         StatusPillsView(snapshot: model.snapshot).padding(.horizontal)
 
-                        VStack(spacing: 6) {
-                            GlucoseChartView(
-                                readings: model.glucoseHistory, iob: model.iobHistory,
-                                boluses: model.bolusMarkers, windowHours: windowHours,
-                                showGlucose: settings.showGlucoseAxis, showIOB: settings.showIOBAxis,
-                                showBolusBars: settings.showBolusBars)
-                            Picker("Window", selection: $windowHours) {
-                                ForEach(windows, id: \.self) { Text("\($0)h").tag($0) }
-                            }.pickerStyle(.segmented)
-                            HStack(spacing: 16) {
-                                Toggle("Glucose", isOn: $settings.showGlucoseAxis)
-                                Toggle("IOB", isOn: $settings.showIOBAxis)
-                                Toggle("Bolus", isOn: $settings.showBolusBars)
-                            }.font(.caption).toggleStyle(.button).controlSize(.small)
-                        }
-                        .padding(.horizontal)
+                        chartCard.padding(.horizontal)
 
-                        // Opt-in statistics card (Settings → Display). Hidden by default.
-                        if settings.showStats {
-                            StatsCardView(history: model.glucoseHistory)
-                        }
-
-                        // Scroll target: everything else from the pump.
-                        PumpDetailsCard(snapshot: model.snapshot).padding(.horizontal)
+                        detailsColumn(detailsPadded: true)
                     }
 
                     if let err = model.lastError {
@@ -192,6 +69,95 @@ struct DashboardView: View {
         // Mobi reject-at-pairing: observe at this root so it outlives the transient PairingSheet
         // (the sheet dismisses via `onDone()` without awaiting `connectWithCode`).
         .onChange(of: model.snapshot.pumpModel) { _, _ in model.rejectMobiIfDetected() }
+    }
+
+    /// Full-width alert/CTA bands shared by both size classes, in render order: the persistent
+    /// unpaired re-entry card, the Low Power advisory, the alerts banner, and the in-progress bolus
+    /// cancel. Extracted so a fix to any band lands once instead of being copied into both layouts.
+    @ViewBuilder private var dashboardBanners: some View {
+        // Persistent re-entry when unpaired — no dismiss; stays until pairing exists.
+        if !model.hasStoredPairing {
+            NoPumpConnectedCard(model: model)
+        }
+
+        // Low Power Mode may delay background pump/CGM updates. Advisory only —
+        // never changes cadence and never gates a dose.
+        if model.shouldShowLowPowerAdvisory {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "bolt.slash").foregroundStyle(.orange)
+                    .accessibilityHidden(true)
+                Text(LowPowerAdvisory.message)
+                    .font(.footnote)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                Button {
+                    model.dismissLowPowerAdvisory()
+                } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                }
+                // 44×44 hit area; the glyph stays small.
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .hoverEffect(.automatic)
+                .accessibilityLabel("Dismiss low power notice")
+            }
+            .padding().frame(maxWidth: .infinity)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .padding(.horizontal)
+        }
+
+        AlertsBannerView(model: model)
+
+        // Dose-affecting — no .hoverEffect / .keyboardShortcut.
+        if model.snapshot.connection == .bolusing && model.capabilities.supportsBolusCancel {
+            Button(role: .destructive) {
+                Task { await model.cancelBolus() }
+            } label: {
+                Label("Cancel bolus", systemImage: "stop.fill").font(.headline).frame(
+                    maxWidth: .infinity)
+            }.buttonStyle(.borderedProminent).tint(.red).padding(.horizontal)
+                .accessibilityLabel("Cancel bolus")
+        }
+    }
+
+    /// Glucose chart at full column width + window picker + axis toggles. Identical in both layouts;
+    /// the compact branch adds `.padding(.horizontal)` at the call site, while the regular branch
+    /// inherits horizontal insets from the two-column region.
+    @ViewBuilder private var chartCard: some View {
+        @Bindable var settings = settings  // local @Bindable for binding projection
+        VStack(spacing: 6) {
+            GlucoseChartView(
+                readings: model.glucoseHistory, iob: model.iobHistory,
+                boluses: model.bolusMarkers, windowHours: windowHours,
+                showGlucose: settings.showGlucoseAxis, showIOB: settings.showIOBAxis,
+                showBolusBars: settings.showBolusBars)
+            Picker("Window", selection: $windowHours) {
+                ForEach(windows, id: \.self) { Text("\($0)h").tag($0) }
+            }.pickerStyle(.segmented)
+            HStack(spacing: 16) {
+                Toggle("Glucose", isOn: $settings.showGlucoseAxis)
+                Toggle("IOB", isOn: $settings.showIOBAxis)
+                Toggle("Bolus", isOn: $settings.showBolusBars)
+            }.font(.caption).toggleStyle(.button).controlSize(.small)
+        }
+    }
+
+    /// Opt-in statistics card (hidden by default) + the pump-details scroll target, shared by both
+    /// layouts. Only the details card's horizontal inset differs: the flat compact layout applies it
+    /// here (`detailsPadded: true`), while the regular layout inherits it from the two-column region.
+    @ViewBuilder private func detailsColumn(detailsPadded: Bool) -> some View {
+        // Opt-in statistics card (Settings → Display). Hidden by default.
+        if settings.showStats {
+            StatsCardView(history: model.glucoseHistory)
+        }
+
+        // Scroll target: everything else from the pump.
+        if detailsPadded {
+            PumpDetailsCard(snapshot: model.snapshot).padding(.horizontal)
+        } else {
+            PumpDetailsCard(snapshot: model.snapshot)
+        }
     }
 
     /// `performControl`'s catch-all stores `error.localizedDescription`. Every other `lastError` in
