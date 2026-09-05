@@ -125,12 +125,6 @@ struct SettingsCatalogTests {
 
     // MARK: Catalog absences
 
-    /// `stackingGuardFrictionEnabled` is not a catalog row (force-set-false init pin).
-    @Test func stackingGuardFrictionEnabledIsNoLongerRegistered() {
-        #expect(SettingsCatalog.byKey["stackingGuardFrictionEnabled"] == nil)
-    }
-
-
     /// `glucoseDisplayUnit` is not a catalog row; init force-sets `.mgdl`.
     @Test func glucoseDisplayUnitIsNoLongerRegistered() {
         #expect(SettingsCatalog.byKey["glucoseDisplayUnit"] == nil)

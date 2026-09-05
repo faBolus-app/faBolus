@@ -392,18 +392,6 @@ struct AppSettingsStoredMigrationTests {
         #expect(settings2.historyRetentionDays == 1)  // …but the NEXT init still force-sets 1
     }
 
-    @Test func stackingGuardFrictionEnabledIsForceSetFalseRegardlessOfAnyStoredValue() {
-        let d = freshSuite("stackingGuardFrictionEnabled")
-        d.set(true, forKey: "stackingGuardFrictionEnabled")
-        let settings = AppSettings(defaults: d)
-        expectStoredBacking(settings, label: "__stackingGuardFrictionEnabled", valueType: Bool.self)
-        #expect(settings.stackingGuardFrictionEnabled == false)  // force-set false wins
-        settings.stackingGuardFrictionEnabled = true
-        #expect(d.object(forKey: "stackingGuardFrictionEnabled") as? Bool == true)
-        let settings2 = AppSettings(defaults: d)
-        #expect(settings2.stackingGuardFrictionEnabled == false)
-    }
-
     // MARK: One-time force-reset migration guard (`criticalAlertsEnabled`)
 
     @Test func criticalAlertsEnabledStoredRoundTripAndOneTimeForceReset() {

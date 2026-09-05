@@ -417,19 +417,6 @@ public final class AppSettings {
         set { _showBolusReasoning.wrappedValue = newValue }
     }
 
-    /// **Insulin Stacking Guard SG3a escalating friction, `.user` tier, Simple minimum mode.**
-    /// Default ON in product intent; force-set false at launch. Gates only whether SG3a's ESCALATED
-    /// friction tiers (`.confirmExtra`/`.reenter`) are applied on the bolus screen — SG1/SG2's plain
-    /// disclosures and SG3a's own `.disclose` line still render when this is OFF; turning it off never
-    /// disables the underlying `StackingGuard.escalation` computation, only the UI wiring that reads
-    /// this flag.
-    // Force-set-false pin lives in `init` as an explicit assignment through this setter.
-    private var _stackingGuardFrictionEnabled = Stored<Bool>(wrappedValue: false, "stackingGuardFrictionEnabled")
-    public var stackingGuardFrictionEnabled: Bool {
-        get { _stackingGuardFrictionEnabled.wrappedValue }
-        set { _stackingGuardFrictionEnabled.wrappedValue = newValue }
-    }
-
     /// Child (locked) mode: a PIN-protected mode a parent enables on a child's device. When on, only
     /// the features in `childAllowed` are permitted; everything that dispenses insulin is blocked by
     /// default. The PIN hash lived in the Keychain (`ChildModeStore`, now removed along with
@@ -794,7 +781,6 @@ public final class AppSettings {
         _historyRetentionDays.store = defaults
         _historySyncEnabled.store = defaults
         _criticalAlertsEnabled.store = defaults
-        _stackingGuardFrictionEnabled.store = defaults
         _autoExerciseMode.store = defaults
         _autoSleepMode.store = defaults
         _modeReminders.store = defaults
@@ -865,9 +851,6 @@ public final class AppSettings {
             for key in Self.retiredEatingResidueKeys { d.removeObject(forKey: key) }
             d.set(true, forKey: "eatingResiduePurgeV1")
         }
-        // Force-set OFF — a restored/legacy `true` must not re-arm the extra-confirmation step.
-        // Never disables `StackingGuard.escalation`'s own disclosure computation.
-        stackingGuardFrictionEnabled = false
         autoExerciseMode = (d.object(forKey: "autoExerciseMode") as? Bool) ?? false
         autoSleepMode = (d.object(forKey: "autoSleepMode") as? Bool) ?? false
         modeReminders = (d.object(forKey: "modeReminders") as? Bool) ?? false

@@ -91,11 +91,22 @@ Pin `appMode = .advanced` (settings-forced-value) and hide the mode picker in `M
 changes which surfaces are shown, never how a command is authorized. Named suites: `BolusMathParityTests`,
 the relevant `*ScopeGuard` suites, `KeyboardShortcutDoseGuardTests`.
 
-### 6. stacking-guard-hide  (Phase 8)
-Suppress the SG1/SG2/SG3a stacking-guard disclosures in `BolusEntryView` (a UI-hide of the escalating
-friction presentation). `StackingGuard.swift` and its `StackingGuardDeliverInvariantTests` /
-`StackingGuardTests` stay **byte-identical and green**; the guard still runs and still blocks/decides
-exactly as before; only its disclosure UI is hidden. Hiding the disclosure must never weaken the guard.
+### 6. stacking-guard-hide  (Phase 8; **RETIRED**)
+Retired: the `stackingGuardFrictionEnabled` pin and the whole escalated-friction UI it gated
+(`sgReenter`/`sgConfirmExtra` state, their dialogs, `reenterMatches`, `standardConfirmRoute`, the
+`StandardConfirmRoute` enum) are deleted. **Correction to this gate's original description above:**
+while the pin existed, the previous text here claimed *"the guard still runs and still
+blocks/decides exactly as before; only its disclosure UI is hidden"* — that was false. With the
+pin force-set false, `sg3aAppliedFriction` already collapsed every escalated tier to `.disclose`,
+and `.disclose` never gated anything: no SG text rendered and no SG tier blocked delivery. The
+escalated tiers were already fully inert before this retirement, which is what made deleting them
+behavior-free. Retiring this gate is honestly "giving up the *option* to re-arm friction the app
+was not applying" — not "removing dead code that was still protecting something."
+`sg3aAppliedFriction` now returns `.disclose` unconditionally instead of reading the pin.
+`Packages/faBolusCore/Sources/faBolusCore/StackingGuard.swift` itself is **not touched** —
+`StackingGuard.escalation`'s own computation, `StackingGuardTests`, and the retargeted
+`StackingGuardDeliverInvariantTests` stay **byte-identical and green**. Preserved on the
+`dev/stacking-guard` branch.
 
 ### 7. alert-rules-engine-removal  (Phase 7, complete)
 The one row that becomes a real removal rather than a pure runtime gate. **§6d precondition:** before

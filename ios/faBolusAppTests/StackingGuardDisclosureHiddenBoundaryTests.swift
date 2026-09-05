@@ -102,6 +102,6 @@ struct StackingGuardDisclosureHiddenBoundaryTests {
         #expect(source.contains("private var sg2Disclosure: StackingGuard.Disclosure?"))
         #expect(source.contains("private var sg3aDisclosure: StackingGuard.Disclosure?"))
         #expect(source.contains("private var sg3aAppliedFriction: StackingGuard.Friction"))
-        #expect(source.contains("return settings.stackingGuardFrictionEnabled ? f : .disclose"))
+        #expect(source.contains("return .disclose"))
     }
 }

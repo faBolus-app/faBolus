@@ -7,8 +7,8 @@ import Foundation
 /// dependency-free mapping from an ALREADY-RESOLVED delivery outcome to display text — it must NEVER
 /// synthesize a "delivered" banner for a pending or failed outcome (the core safety property).
 ///
-/// Mirrors this repo's `RootTabView.resolveSelection` / `BolusEntryView.reenterMatches` static-for-test
-/// idiom: no `AppModel`, no async, no SwiftUI — just `Signal` in, `BolusSuccessBanner?` out.
+/// Mirrors this repo's `RootTabView.resolveSelection` static-for-test idiom: no `AppModel`, no
+/// async, no SwiftUI — just `Signal` in, `BolusSuccessBanner?` out.
 @Suite
 struct BolusConfirmationTests {
 

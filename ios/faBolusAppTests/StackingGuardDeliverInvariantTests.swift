@@ -143,7 +143,9 @@ struct StackingGuardDeliverInvariantTests {
         _ = fake
     }
 
-    /// With stacking-guard friction at `.reenter`, deliver still sends exactly the consented units. A mismatched re-type cannot satisfy the same check the phone screen uses, so it never reaches this path as a resized amount.
+    /// With the stacking-guard calculator escalation reaching `.reenter` severity, deliver still sends
+    /// exactly the consented units — the calculator's own escalation computation is unaffected by
+    /// which UI tier (if any) the app chooses to apply at the confirm seam.
     @Test func deliveredEqualsConsentedWhileSG3aReenterFires() async throws {
         let entered = 8.0
         let recommended = 2.0  // ratio 4.0 — far above the default reenterOverrideRatio (2.0)
@@ -158,25 +160,10 @@ struct StackingGuardDeliverInvariantTests {
             maxBolusUnits: maxBolusUnits)
         #expect(escalation.friction == .reenter)
 
-        // The re-type gate: only an EXACT match of the originally-entered/consented dose proceeds.
-        #expect(BolusEntryView.reenterMatches(retyped: entered, original: entered))
-        // A mismatched re-type (any different number) fails the SAME rule — it can never be the value the
-        // gate lets through to the deliver call below.
-        let mismatched = entered + 1.0
-        #expect(!BolusEntryView.reenterMatches(retyped: mismatched, original: entered))
-
         let (backend, fake) = makeDeliveringBackend(deliveredMilliunits: 8000)
         let delivered = try await backend.deliverBolus(units: entered, carbsGrams: nil, bgMgdl: glucose, iobUnits: 0.4)
-        #expect(delivered == entered)  // exactly the consented dose, never the mismatched retype
+        #expect(delivered == entered)  // exactly the consented dose
         #expect(!backend.deliveryOutcomeUnknown)
         _ = fake
-    }
-
-    /// `standardConfirmRoute` maps each stacking-guard tier to its own gate: `.reenter`/`.confirmExtra` keep their dialogs; `.disclose`/`.none` go to `.deliver`.
-    @Test func standardConfirmRouteMapsEachSG3aTierToItsOwnGate() {
-        #expect(BolusEntryView.standardConfirmRoute(for: .reenter) == .reenter)
-        #expect(BolusEntryView.standardConfirmRoute(for: .confirmExtra) == .confirmExtra)
-        #expect(BolusEntryView.standardConfirmRoute(for: .disclose) == .deliver)
-        #expect(BolusEntryView.standardConfirmRoute(for: .none) == .deliver)
     }
 }
