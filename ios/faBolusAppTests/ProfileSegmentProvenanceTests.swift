@@ -14,7 +14,6 @@ struct ProfileSegmentProvenanceTests {
         let s = AppSettings.shared
         s.phoneReadOnly = false
         s.childModeEnabled = false
-        s.advancedControlEnabled = true
         s.appMode = .advanced
         let backend = MockBackend()  // Mobi / .mobiAdvanced
         let ledgerURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(

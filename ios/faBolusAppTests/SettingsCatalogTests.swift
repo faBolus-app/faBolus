@@ -130,29 +130,6 @@ struct SettingsCatalogTests {
         #expect(SettingsCatalog.byKey["stackingGuardFrictionEnabled"] == nil)
     }
 
-    /// `advancedControlEnabled` is not a catalog row. The accessor remains; `advancedControlAllowed`
-    /// stays false via `capabilities.supportsAnyAdvancedControl`.
-    @Test func advancedControlEnabledIsNoLongerRegisteredButAccessorSurvives() {
-        #expect(SettingsCatalog.byKey["advancedControlEnabled"] == nil)
-        #expect(!SettingsCatalog.commandAdjacentFlags.contains("advancedControlEnabled"))
-    }
-
-    @Test @MainActor func advancedControlEnabledIsForceSetFalseAcrossReinitAndAllowedStaysFalse() {
-        let suiteName = "SettingsCatalogTests.advancedControlEnabled.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        let fresh = AppSettings(defaults: defaults)
-        #expect(fresh.advancedControlEnabled == false)  // default OFF, unchanged
-
-        fresh.advancedControlEnabled = true  // the property setter itself is unchanged (still writable)…
-        let reloaded = AppSettings(defaults: defaults)
-        #expect(reloaded.advancedControlEnabled == false)  // …but the NEXT init force-sets it back to false
-
-        // `advancedControlAllowed` also stays false via the OTHER operand — the t:slim-only `.full`
-        // capability preset in `Models.swift` floors every advanced capability OFF.
-        #expect(reloaded.advancedControlAllowed(capabilities: .full) == false)
-    }
 
     /// `glucoseDisplayUnit` is not a catalog row; init force-sets `.mgdl`.
     @Test func glucoseDisplayUnitIsNoLongerRegistered() {

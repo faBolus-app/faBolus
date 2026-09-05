@@ -38,30 +38,6 @@ import Testing
         #expect(total == GatedPumpWrite.allCases.count)
     }
 
-    /// Opt-in axis: `requiresAdvancedControlOptIn` must match, exactly, the set of actions the app
-    /// reaches ONLY behind `advancedControlAllowed` — verified against the live UI 2026-08-05 — so
-    /// routing it through the funnel changes no shipped t:slim behavior. The one trap this pins:
-    /// `syncTimeToNow` is reachable on Mobi from Settings WITHOUT the opt-in, so it must be EXCLUDED, or
-    /// the funnel would regress Mobi time-sync.
-    @Test func requiresAdvancedControlOptInMatchesTheOptInGatedSet() {
-        // Never opt-in-gated: delivery + the child-only pair.
-        for a in [GatedPumpWrite.deliverBolus, .deliverExtendedBolus, .cancelBolus, .dismissNotification] {
-            #expect(!a.requiresAdvancedControlOptIn, "\(a.rawValue) must not require the advanced opt-in")
-        }
-        // The deliberate exclusion — Settings → Pump clock reaches this on Mobi without the opt-in.
-        #expect(
-            !GatedPumpWrite.syncTimeToNow.requiresAdvancedControlOptIn,
-            "syncTimeToNow is capability-gated (supportsTimeSync), NOT opt-in-gated — must be excluded")
-        // Every other control / unverified-ack write DOES require it (opt-in-gated in the UI).
-        let advanced = Set(GatedPumpWrite.allCases.filter { $0.requiresAdvancedControlOptIn }.map(\.rawValue))
-        let expected = names(.controlInterlock).union(names(.unverifiedAck)).subtracting(["syncTimeToNow"])
-        #expect(advanced == expected)
-        #expect(!advanced.contains("syncTimeToNow"))
-        // Sanity on the count: 22 controlInterlock + 12 unverifiedAck − 1 (syncTimeToNow) = 33.
-        // (setSleepSchedule joined .unverifiedAck, growing the union by one over the previous 32.)
-        #expect(advanced.count == 33)
-    }
-
     /// Capability axis: `hasRequiredCapability` is the split-out counterpart. syncTimeToNow declares
     /// `supportsTimeSync` (removing the old special-case); the advanced writes require any advanced
     /// capability; delivery + the child-only pair require none (so Gate 5 never blocks a bolus).

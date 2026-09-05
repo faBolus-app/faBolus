@@ -13,19 +13,16 @@ struct BolusGateHostFeedTests {
         let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("bg-\(UUID().uuidString).json")
         return (AppModel(source: backend, ledgerStoreURL: url), backend)
     }
-    /// Clean gate state so a sibling test can't leave child/read-only set; advanced-control on (the Mobi
-    /// MockBackend needs it for the funnel's capability gate, matching the shipped UI).
+    /// Clean gate state so a sibling test can't leave child/read-only set.
     private func withClean(_ body: () async -> Void) async {
         let s = AppSettings.shared
-        let child = s.childModeEnabled, ro = s.phoneReadOnly, adv = s.advancedControlEnabled, rro = s.remotesReadOnly
+        let child = s.childModeEnabled, ro = s.phoneReadOnly, rro = s.remotesReadOnly
         s.childModeEnabled = false
         s.phoneReadOnly = false
-        s.advancedControlEnabled = true
         s.remotesReadOnly = false
         await body()
         s.childModeEnabled = child
         s.phoneReadOnly = ro
-        s.advancedControlEnabled = adv
         s.remotesReadOnly = rro
     }
 

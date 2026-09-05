@@ -26,18 +26,16 @@ struct ClinicianTierAckTests {
 
     @Test func clinicianTierWriteIsNotBlockedByAMissingAcknowledgment() async {
         let s = AppSettings.shared
-        let ro = s.phoneReadOnly, child = s.childModeEnabled, adv = s.advancedControlEnabled,
+        let ro = s.phoneReadOnly, child = s.childModeEnabled,
             ack = s.clinicianTierAckAt, mode = s.appMode
         defer {
             s.phoneReadOnly = ro
             s.childModeEnabled = child
-            s.advancedControlEnabled = adv
             s.clinicianTierAckAt = ack
             s.appMode = mode
         }
         s.phoneReadOnly = false
         s.childModeEnabled = false
-        s.advancedControlEnabled = true
         s.appMode = .advanced  // setMaxBolus is an Advanced-mode write (P14 S2 gate)
         s.clinicianTierAckAt = nil  // deliberately NOT acknowledged
 
@@ -61,16 +59,14 @@ struct ClinicianTierAckTests {
     /// before/after revert target) in the S7 store; a BLOCKED edit records nothing.
     @Test func clinicianTierEditRecordsSelfSetProvenanceOnlyOnSuccess() async {
         let s = AppSettings.shared
-        let ro = s.phoneReadOnly, child = s.childModeEnabled, adv = s.advancedControlEnabled, mode = s.appMode
+        let ro = s.phoneReadOnly, child = s.childModeEnabled, mode = s.appMode
         defer {
             s.phoneReadOnly = ro
             s.childModeEnabled = child
-            s.advancedControlEnabled = adv
             s.appMode = mode
         }
         s.phoneReadOnly = false
         s.childModeEnabled = false
-        s.advancedControlEnabled = true
         s.appMode = .advanced  // setMaxBolus is an Advanced-mode write (P14 S2 gate)
 
         let backend = MockBackend()  // Mobi
@@ -94,9 +90,9 @@ struct ClinicianTierAckTests {
         #expect(rec?.before == .double(before))
         #expect(rec?.after == .double(10))
 
-        // A BLOCKED edit records nothing: drop the advanced-control opt-in → the write is denied, so the
+        // A BLOCKED edit records nothing: flip phone read-only → the write is denied, so the
         // stored record stays the previous one (no `.selfSet` for an edit that never reached the pump).
-        s.advancedControlEnabled = false
+        s.phoneReadOnly = true
         await model.setMaxBolus(units: 7)
         #expect(model.lastError != nil)
         #expect(store.load().current(.global("maxBolus"))?.after == .double(10))

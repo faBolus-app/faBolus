@@ -262,18 +262,6 @@ struct AppSettingsStoredMigrationTests {
         #expect(settings2.extendedBolusEnabled == false)
     }
 
-    @Test func advancedControlEnabledIsForceSetFalseRegardlessOfAnyStoredValue() {
-        let d = freshSuite("advancedControlEnabled")
-        d.set(true, forKey: "advancedControlEnabled")  // simulate a pre-existing stored `true`
-        let settings = AppSettings(defaults: d)
-        expectStoredBacking(settings, label: "__advancedControlEnabled", valueType: Bool.self)
-        #expect(settings.advancedControlEnabled == false)  // force-set pin wins over the stored value
-        settings.advancedControlEnabled = true  // the setter itself is unchanged (still writable)…
-        #expect(d.object(forKey: "advancedControlEnabled") as? Bool == true)
-        let settings2 = AppSettings(defaults: d)
-        #expect(settings2.advancedControlEnabled == false)  // …but the NEXT init still force-sets false
-    }
-
     @Test func appModeIsForceSetAdvancedRegardlessOfAnyStoredValue() {
         let d = freshSuite("appMode")
         d.set("simple", forKey: "appMode")

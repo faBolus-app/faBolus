@@ -273,11 +273,9 @@ public final class AppModel {
 
     /// Build the pure `AccessContext` from live app / pump state and defer to `AccessPolicy.evaluate`.
     /// This is the ONLY place the four gates (unverified-ack, child mode, phone/remote read-only,
-    /// pump-capability + advanced-control opt-in) are read together, so a surface can't be gated on one
-    /// layer and open on another. Pure inputs — the evaluator itself lives in faBolusCore and touches no
-    /// globals. `advancedControlOptIn` is the raw opt-in (`advancedControlEnabled`); the evaluator
-    /// composes it with the pump-derived `capabilities` (not a raw `isMobi` gate), matching
-    /// the UI's `advancedControlAllowed`.
+    /// pump capability) are read together, so a surface can't be gated on one layer and open on
+    /// another. Pure inputs — the evaluator itself lives in faBolusCore and touches no globals. The
+    /// evaluator's `capabilities` input is pump-derived (not a raw `isMobi` gate).
     func accessDecision(
         _ action: GatedPumpWrite,
         from surface: AccessPolicy.Surface,
@@ -294,7 +292,6 @@ public final class AppModel {
             childAllowed: AppSettings.shared.childAllowed,
             phoneReadOnly: AppSettings.shared.phoneReadOnly,
             remotesReadOnly: AppSettings.shared.remotesReadOnly,
-            advancedControlOptIn: AppSettings.shared.advancedControlEnabled,
             capabilities: capabilities,
             hasRecentUnverifiedAck: hasRecentUnverifiedAck,
             // The active mode flows through the ONE context-builder so modes gate every surface
@@ -1483,15 +1480,6 @@ public final class AppModel {
         refresh()
     }
 
-    // MARK: Advanced control — gated in the UI by `advancedControlAllowed`.
-
-    /// The single gate the control UI uses: opt-in ON and the pump advertises at least one
-    /// advanced-control capability (pump-derived capabilities, not the raw `isMobi` model check).
-    public var advancedControlAllowed: Bool {
-        AppSettings.shared.advancedControlAllowed(capabilities: capabilities)
-            && !AppSettings.shared.phoneReadOnly  // read-only hides the Pump Control entry entirely
-    }
-
     /// True only while the pump is actively connected — the gate every pump-touching action + control
     /// screen uses so nothing that requires the pump is tappable when it isn't there.
     public var pumpReady: Bool { snapshot.connection == .connected }
@@ -1523,10 +1511,9 @@ public final class AppModel {
 
     /// Run a control write only if the single `AccessPolicy` evaluator permits it from `surface`.
     /// Replaces the old inline child + read-only pair with the one
-    /// decision point, and ADDS the pump-capability + advanced-control-opt-in gate at the funnel
-    /// (defense-in-depth) — matching what the UI's `advancedControlAllowed`
-    /// already composes, so no shipped t:slim/Mobi behavior changes for reachable actions. `surface`
-    /// defaults to `.phoneUI` (the phone's own control screens); remotes pass their own surface.
+    /// decision point, and ADDS the pump-capability gate at the funnel (defense-in-depth), so no
+    /// shipped t:slim/Mobi behavior changes for reachable actions. `surface` defaults to `.phoneUI`
+    /// (the phone's own control screens); remotes pass their own surface.
     private func runControl(
         _ action: GatedPumpWrite, from surface: AccessPolicy.Surface = .phoneUI,
         peerId: String? = nil, _ op: () async throws -> Void

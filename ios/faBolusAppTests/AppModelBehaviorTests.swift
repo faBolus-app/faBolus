@@ -40,19 +40,16 @@ struct AppModelBehaviorTests {
     /// Run `body` with the global `AppSettings` gates in a known-clean state, restoring them after so
     /// the serialized suite never leaks child/read-only state between tests.
     ///
-    /// `advancedControlEnabled` is ON as the baseline: every advanced / IDP-CRUD write is reachable
-    /// only behind `advancedControlAllowed` (opt-in + Mobi). The `MockBackend` is already a Mobi with
-    /// `.mobiAdvanced`, so ON here matches the UI; without it the funnel would (correctly) refuse
-    /// them with `.capabilityUnavailable`. A test that wants to prove the capability gate itself
-    /// sets it false.
+    /// The `MockBackend` is already a Mobi with `.mobiAdvanced`, so every advanced / IDP-CRUD write is
+    /// capability-reachable here; a test that wants to prove the capability gate itself sets
+    /// `capabilities` to `.full` instead.
     private func withCleanSettings(_ body: () async throws -> Void) async rethrows {
         let s = AppSettings.shared
-        let ro = s.phoneReadOnly, child = s.childModeEnabled, allowed = s.childAllowed, adv = s.advancedControlEnabled
+        let ro = s.phoneReadOnly, child = s.childModeEnabled, allowed = s.childAllowed
         let rro = s.remotesReadOnly, clr = s.readOnlyAllowAlertClear
         let mode = s.appMode
         s.phoneReadOnly = false
         s.childModeEnabled = false
-        s.advancedControlEnabled = true
         s.remotesReadOnly = false
         s.readOnlyAllowAlertClear = false
         // Baseline Advanced so the mode gate is a no-op for every existing test; a mode test sets
@@ -62,7 +59,6 @@ struct AppModelBehaviorTests {
             s.phoneReadOnly = ro
             s.childModeEnabled = child
             s.childAllowed = allowed
-            s.advancedControlEnabled = adv
             s.remotesReadOnly = rro
             s.readOnlyAllowAlertClear = clr
             s.appMode = mode
@@ -348,31 +344,6 @@ struct AppModelBehaviorTests {
             AppSettings.shared.phoneReadOnly = true
             await m.dismissAlert(id: 1, kind: 1, from: .garmin, peerId: "garmin")
             #expect(m.lastError != block)
-        }
-    }
-
-    /// Behavior change (1): the pump-capability + advanced-control-opt-in gate is enforced AT THE FUNNEL
-    /// (not only the UI). A control write is refused with `.capabilityUnavailable` when the opt-in is off
-    /// — even on a Mobi with the capability — and allowed once it is on.
-    @Test func controlWriteBlockedAtFunnelWhenAdvancedControlOptInOff() async {
-        try? await withCleanSettings {
-            let (m, _, _) = await makeModel(connected: true)  // MockBackend: Mobi + .mobiAdvanced
-            AppSettings.shared.advancedControlEnabled = false
-            #expect(m.accessDecision(.setTempBasal, from: .phoneUI).reason == .capabilityUnavailable)
-            AppSettings.shared.advancedControlEnabled = true
-            #expect(m.accessDecision(.setTempBasal, from: .phoneUI).allowed)
-        }
-    }
-
-    /// Behavior change (4): `syncTimeToNow` is capability-gated (supportsTimeSync) but NOT opt-in-gated —
-    /// reachable on a Mobi from Settings with advanced control OFF. Pinned AT THE FUNNEL (not just the
-    /// enum flag): with the opt-in off it is allowed, while a genuine advanced control write is refused.
-    @Test func syncTimeToNowIsNotOptInGatedAtFunnel() async {
-        try? await withCleanSettings {
-            let (m, _, _) = await makeModel(connected: true)
-            AppSettings.shared.advancedControlEnabled = false
-            #expect(m.accessDecision(.syncTimeToNow, from: .phoneUI).allowed)
-            #expect(m.accessDecision(.setTempBasal, from: .phoneUI).reason == .capabilityUnavailable)
         }
     }
 

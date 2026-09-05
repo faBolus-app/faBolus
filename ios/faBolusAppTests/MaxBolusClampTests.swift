@@ -22,10 +22,6 @@ struct MaxBolusClampTests {
 
     /// End-to-end through the app funnel: even asking for an absurd limit yields ≤ 25 U at the backend.
     @Test func appFunnelCapsTheLimitEndToEnd() async {
-        let s = AppSettings.shared
-        let savedAdv = s.advancedControlEnabled
-        s.advancedControlEnabled = true  // .setMaxBolus is advanced-gated; Mock is .mobiAdvanced
-        defer { s.advancedControlEnabled = savedAdv }
         let backend = MockBackend()
         let ledgerURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("maxbolus-ledger-\(UUID().uuidString).json")

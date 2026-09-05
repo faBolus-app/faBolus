@@ -14,7 +14,7 @@ import Testing
         P.AccessContext(
             childModeEnabled: true, childAllowed: [],
             phoneReadOnly: true, remotesReadOnly: true,
-            advancedControlOptIn: false, capabilities: PumpCapabilities(),
+            capabilities: PumpCapabilities(),
             hasRecentUnverifiedAck: false)
     }
     /// Fully permissive: child off, no read-only, advanced control available, ack present.
@@ -22,7 +22,7 @@ import Testing
         P.AccessContext(
             childModeEnabled: false, childAllowed: Set(ChildFeature.allCases),
             phoneReadOnly: false, remotesReadOnly: false,
-            advancedControlOptIn: true, capabilities: .mobiAdvanced,
+            capabilities: .mobiAdvanced,
             hasRecentUnverifiedAck: true,
             // "Fully permissive" must set this explicitly now that the init default is
             // fail-closed (false); openCtx asserts a Garmin deliver is ALLOWED.
@@ -35,7 +35,7 @@ import Testing
         let off = P.AccessContext(
             childModeEnabled: false, childAllowed: Set(ChildFeature.allCases),
             phoneReadOnly: false, remotesReadOnly: false,
-            advancedControlOptIn: true, capabilities: .mobiAdvanced,
+            capabilities: .mobiAdvanced,
             hasRecentUnverifiedAck: true,
             garminBolusEnabled: false)
         #expect(P.evaluate(.deliverBolus, surface: .garmin, context: off).reason == .remoteBolusDisabled)
@@ -54,7 +54,7 @@ import Testing
         let off = P.AccessContext(
             childModeEnabled: false, childAllowed: Set(ChildFeature.allCases),
             phoneReadOnly: false, remotesReadOnly: false,
-            advancedControlOptIn: true, capabilities: .mobiAdvanced,
+            capabilities: .mobiAdvanced,
             hasRecentUnverifiedAck: true,
             garminBolusEnabled: false)
         // Enable OFF ⇒ extended deliver denied on Garmin, exactly like a normal bolus.
@@ -76,7 +76,7 @@ import Testing
         let c = P.AccessContext(
             childModeEnabled: false, childAllowed: Set(ChildFeature.allCases),
             phoneReadOnly: false, remotesReadOnly: false,
-            advancedControlOptIn: true, capabilities: .mobiAdvanced,
+            capabilities: .mobiAdvanced,
             hasRecentUnverifiedAck: true)  // flag OMITTED
         #expect(P.evaluate(.deliverBolus, surface: .garmin, context: c).reason == .remoteBolusDisabled)
         #expect(P.evaluate(.deliverBolus, surface: .phoneUI, context: c).allowed)  // phone unaffected
@@ -154,37 +154,17 @@ import Testing
             P.evaluate(.dismissNotification, surface: .phoneUI, context: ctx).reason == .childLocked(.dismissAlerts))
     }
 
-    // Gate 5 has two independent axes; these are split into one test per axis so the opt-in half can be
-    // removed wholesale when the advanced-control opt-in is retired, leaving the capability half — the
-    // surviving denier of advanced writes on a t:slim — untouched.
-    @Test func advancedControlRequiresOptIn() {
-        // Opt-in axis: opt-in off ⇒ an advanced write is denied even on a fully-capable pump.
-        var noOptIn = openCtx()
-        noOptIn.advancedControlOptIn = false
-        #expect(P.evaluate(.setTempBasal, surface: .phoneUI, context: noOptIn).reason == .capabilityUnavailable)
-        // Delivery + the childOnly pair never require advanced control (Gate 5 is a no-op for them).
-        #expect(P.evaluate(.deliverBolus, surface: .phoneUI, context: noOptIn).allowed)
-        #expect(P.evaluate(.cancelBolus, surface: .phoneUI, context: noOptIn).allowed)
-    }
-
+    // Gate 5's opt-in axis is retired; only the capability axis remains — the surviving denier of
+    // advanced writes on a t:slim.
     @Test func advancedControlRequiresCapability() {
         // Capability axis: a pump with no advanced capability (e.g. a t:slim, `.full`) denies advanced
-        // writes regardless of opt-in — this keys on capabilities, not a pump-family flag.
+        // writes — this keys on capabilities, not a pump-family flag.
         var noCap = openCtx()
         noCap.capabilities = .full
         #expect(P.evaluate(.suspendDelivery, surface: .phoneUI, context: noCap).reason == .capabilityUnavailable)
     }
 
-    // `syncTimeToNow` is split the same way: it never needed the opt-in (its opt-in half retires with the
-    // opt-in), but it DOES need `supportsTimeSync`. That capability half is the only evaluator-level proof
-    // anywhere that a t:slim refuses a pump-clock write, so it must outlive the opt-in cut.
-    @Test func syncTimeToNowDoesNotNeedOptIn() {
-        // syncTimeToNow requires `supportsTimeSync` but NOT the advanced-control opt-in.
-        var noOptIn = openCtx()
-        noOptIn.advancedControlOptIn = false  // caps = .mobiAdvanced (has timeSync)
-        #expect(P.evaluate(.syncTimeToNow, surface: .phoneUI, context: noOptIn).allowed)
-    }
-
+    /// The only evaluator-level proof anywhere that a t:slim refuses a pump-clock write.
     @Test func syncTimeToNowNeedsCapability() {
         var noTimeSync = openCtx()
         noTimeSync.capabilities = .full  // t:slim: no supportsTimeSync
@@ -192,7 +172,7 @@ import Testing
     }
 
     /// `setSleepSchedule` declares its own dedicated capability (`supportsSleepScheduleWrite`) rather
-    /// than the coarse advanced-control set — a t:slim-shaped context denies it even with opt-in + ack.
+    /// than the coarse advanced-control set — a t:slim-shaped context denies it even with the ack.
     @Test func setSleepScheduleNeedsItsOwnDedicatedCapability() {
         var noWriteCap = openCtx()
         noWriteCap.capabilities = .full  // t:slim: no supportsSleepScheduleWrite
@@ -215,18 +195,18 @@ import Testing
     // MARK: - Denial oracle: a t:slim refuses every advanced write
 
     /// The machine-checked statement that a t:slim (`.full` capabilities) refuses every advanced pump
-    /// write and permits only the four capability-exempt actions — with the advanced-control opt-in AND
-    /// the unverified-ack BOTH satisfied, so it is the pump-capability axis ALONE that supplies the
-    /// denial while the other two gates still exist. The expected sets are hardcoded by name (never
-    /// derived from `hasRequiredCapability`) and cross-checked on `action.gate` (never on
-    /// `decision.allowed`), so this cannot go vacuously green if the capability axis is later removed.
+    /// write and permits only the four capability-exempt actions — with the unverified-ack satisfied,
+    /// so it is the pump-capability axis ALONE that supplies the denial while the ack gate still
+    /// exists. The expected sets are hardcoded by name (never derived from `hasRequiredCapability`)
+    /// and cross-checked on `action.gate` (never on `decision.allowed`), so this cannot go vacuously
+    /// green if the capability axis is later removed.
     @Test func tslimDeniesEveryAdvancedWriteAndPermitsOnlyTheCapabilityExemptFour() {
-        // A t:slim `.full` context with BOTH the opt-in and the ack set, so neither the opt-in axis nor
-        // the ack gate can supply the green — only the capability axis can deny.
+        // A t:slim `.full` context with the ack set, so the ack gate cannot supply the green — only
+        // the capability axis can deny.
         let tslim = P.AccessContext(
             childModeEnabled: false, childAllowed: Set(ChildFeature.allCases),
             phoneReadOnly: false, remotesReadOnly: false,
-            advancedControlOptIn: true, capabilities: .full,
+            capabilities: .full,
             hasRecentUnverifiedAck: true)
 
         // Hardcoded expected sets, asserted individually below — NOT derived from the implementation

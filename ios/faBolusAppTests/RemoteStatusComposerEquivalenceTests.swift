@@ -17,19 +17,17 @@ struct RemoteStatusComposerEquivalenceTests {
         return (AppModel(source: backend, ledgerStoreURL: url), backend)
     }
 
-    /// Clean gate state so a sibling test can't leave child/read-only set; advanced-control on (matches
+    /// Clean gate state so a sibling test can't leave child/read-only set (matches
     /// `BolusGateHostFeedTests.withClean` exactly — same funnel, same need for a clean baseline).
     private func withClean(_ body: () async throws -> Void) async rethrows {
         let s = AppSettings.shared
-        let child = s.childModeEnabled, ro = s.phoneReadOnly, adv = s.advancedControlEnabled, rro = s.remotesReadOnly
+        let child = s.childModeEnabled, ro = s.phoneReadOnly, rro = s.remotesReadOnly
         s.childModeEnabled = false
         s.phoneReadOnly = false
-        s.advancedControlEnabled = true
         s.remotesReadOnly = false
         defer {
             s.childModeEnabled = child
             s.phoneReadOnly = ro
-            s.advancedControlEnabled = adv
             s.remotesReadOnly = rro
         }
         try await body()

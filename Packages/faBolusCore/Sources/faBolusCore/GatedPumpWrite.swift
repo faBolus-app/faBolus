@@ -93,25 +93,10 @@ public enum GatedPumpWrite: String, CaseIterable, Sendable {
         }
     }
 
-    /// The **opt-in axis**: whether this action needs the user's advanced-control opt-in
-    /// (`advancedControlEnabled`) at the funnel. Delivery (`.ledgeredDelivery`) and the child-only pair
-    /// (`.childOnly`) never need the opt-in; neither does `syncTimeToNow` — it is reachable on a Mobi
-    /// from Settings → "Pump clock" WITHOUT the opt-in, gated only by its own `supportsTimeSync`
-    /// capability (see `hasRequiredCapability`). Requiring the opt-in for it would tighten shipped
-    /// Mobi behavior.
-    public var requiresAdvancedControlOptIn: Bool {
-        if self == .syncTimeToNow { return false }
-        switch gate {
-        case .controlInterlock, .unverifiedAck: return true
-        case .ledgeredDelivery, .childOnly: return false
-        }
-    }
-
-    /// The **capability axis**: whether the connected pump's capability set permits this action,
-    /// independent of the opt-in. A Mobi-only-by-capability action declares its capability
-    /// (`supportsTimeSync`) instead of masquerading as "not advanced". Capabilities are pump-derived
-    /// (`PumpCapabilities.derive` reads the pump's own feature bitmask), so this axis no longer leans
-    /// on `isMobi`.
+    /// Whether the connected pump's capability set permits this action. Capabilities are
+    /// pump-derived (`PumpCapabilities.derive` reads the pump's own feature bitmask); the bitmask's
+    /// own input is a BLE-name substring match, with an `ApiVersionResponse` fallback on the wire —
+    /// the accepted residual is a pump whose model can't be read from either signal.
     ///
     /// The advanced-control writes require any advanced capability (`supportsAnyAdvancedControl`) —
     /// preserving today's coarse check exactly, EXCEPT for the two limit-set writes below. A finer

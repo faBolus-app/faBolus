@@ -35,12 +35,11 @@ struct StaleRemoteDoseHostTests {
 
     private func withCleanSettings(_ body: () async throws -> Void) async rethrows {
         let s = AppSettings.shared
-        let ro = s.phoneReadOnly, child = s.childModeEnabled, allowed = s.childAllowed, adv = s.advancedControlEnabled
+        let ro = s.phoneReadOnly, child = s.childModeEnabled, allowed = s.childAllowed
         let rro = s.remotesReadOnly, clr = s.readOnlyAllowAlertClear
         let mode = s.appMode
         s.phoneReadOnly = false
         s.childModeEnabled = false
-        s.advancedControlEnabled = true
         s.remotesReadOnly = false
         s.readOnlyAllowAlertClear = false
         s.appMode = .advanced
@@ -48,7 +47,6 @@ struct StaleRemoteDoseHostTests {
             s.phoneReadOnly = ro
             s.childModeEnabled = child
             s.childAllowed = allowed
-            s.advancedControlEnabled = adv
             s.remotesReadOnly = rro
             s.readOnlyAllowAlertClear = clr
             s.appMode = mode

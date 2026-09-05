@@ -114,16 +114,14 @@ struct ControlWriteAckTests {
             .frame(FakePumpTransport.frame(opCode: SuspendPumpingResponse.props.opCode, cargo: [1], signed: true)))
 
         let s = AppSettings.shared
-        let ro = s.phoneReadOnly, child = s.childModeEnabled, adv = s.advancedControlEnabled
+        let ro = s.phoneReadOnly, child = s.childModeEnabled
         let mode = s.appMode
         s.phoneReadOnly = false
         s.childModeEnabled = false
-        s.advancedControlEnabled = true
         s.appMode = .advanced
         defer {
             s.phoneReadOnly = ro
             s.childModeEnabled = child
-            s.advancedControlEnabled = adv
             s.appMode = mode
         }
 
@@ -151,16 +149,14 @@ struct ControlWriteAckTests {
             .frame(FakePumpTransport.frame(opCode: SetSleepScheduleResponse.props.opCode, cargo: [1], signed: true)))
 
         let s = AppSettings.shared
-        let ro = s.phoneReadOnly, child = s.childModeEnabled, adv = s.advancedControlEnabled
+        let ro = s.phoneReadOnly, child = s.childModeEnabled
         let mode = s.appMode
         s.phoneReadOnly = false
         s.childModeEnabled = false
-        s.advancedControlEnabled = true
         s.appMode = .advanced
         defer {
             s.phoneReadOnly = ro
             s.childModeEnabled = child
-            s.advancedControlEnabled = adv
             s.appMode = mode
         }
 

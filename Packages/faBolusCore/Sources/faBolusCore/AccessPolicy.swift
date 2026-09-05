@@ -6,8 +6,8 @@ import Foundation
 /// remote hosts) must go through this so a surface cannot be gated on one layer and open on
 /// another. Pure over `AccessContext` — faBolusCore must not read app globals.
 ///
-/// `remotesReadOnly` governs all remotes. Pump-capability + advanced-control opt-in is enforced at
-/// this funnel, not only in the UI.
+/// `remotesReadOnly` governs all remotes. Pump capability is enforced at this funnel, not only in
+/// the UI.
 public enum AccessPolicy {
 
     /// Where an action originates. Determines which read-only flag applies.
@@ -57,9 +57,8 @@ public enum AccessPolicy {
         // Gate 3 — read-only
         public var phoneReadOnly: Bool
         public var remotesReadOnly: Bool
-        // Gate 5 — pump capability + advanced-control opt-in. Capabilities are pump-derived (from the
-        // pump's own feature bitmask) and are the sole capability signal — not a raw `isMobi` check.
-        public var advancedControlOptIn: Bool
+        // Gate 5 — pump capability. Capabilities are pump-derived (from the pump's own feature
+        // bitmask) and are the sole capability signal — not a raw `isMobi` check.
         public var capabilities: PumpCapabilities
         // Gate 1 — unverified-feature acknowledgment
         public var hasRecentUnverifiedAck: Bool
@@ -81,7 +80,7 @@ public enum AccessPolicy {
         public init(
             childModeEnabled: Bool, childAllowed: Set<ChildFeature>,
             phoneReadOnly: Bool, remotesReadOnly: Bool,
-            advancedControlOptIn: Bool, capabilities: PumpCapabilities,
+            capabilities: PumpCapabilities,
             hasRecentUnverifiedAck: Bool,
             modeContext: ModeGateContext = .init(),
             // Fail-closed default: a caller that forgets to thread the per-surface remote
@@ -97,7 +96,6 @@ public enum AccessPolicy {
             self.childAllowed = childAllowed
             self.phoneReadOnly = phoneReadOnly
             self.remotesReadOnly = remotesReadOnly
-            self.advancedControlOptIn = advancedControlOptIn
             self.capabilities = capabilities
             self.hasRecentUnverifiedAck = hasRecentUnverifiedAck
             self.modeContext = modeContext
@@ -124,7 +122,7 @@ public enum AccessPolicy {
             case .childLocked(let f): return "Locked (child mode): \(f.label.lowercased()) is disabled."
             case .phoneReadOnly: return "This action is disabled — the app is in read-only mode."
             case .remotesReadOnly: return "Remote control is turned off — remotes are read-only."
-            case .capabilityUnavailable: return "This pump doesn't support that action, or advanced control is off."
+            case .capabilityUnavailable: return "This pump doesn't support that action."
             case .unverifiedAckRequired: return "This needs the untested-feature warning acknowledged first."
             case .modeDisallowed(let m): return "Not available in your current mode — needs \(m.title) mode."
             case .featureDisabledInMode: return "This feature is turned off in your settings."
@@ -194,15 +192,11 @@ public enum AccessPolicy {
             return .deny(.remoteBolusPasscodeRequired)
         }
 
-        // Gate 5 — pump capability + advanced-control opt-in, enforced at the funnel. Two independent
-        // axes: the opt-in axis matches `advancedControlAllowed`; the capability axis is driver-derived
-        // from the pump's own feature bitmask (`isMobi` is gone). `syncTimeToNow` needs `supportsTimeSync`
-        // but NOT the opt-in — the funnel also refuses it on a pump lacking that capability, which the UI
-        // already hides and no remote verb can reach. Delivery + childOnly require neither axis, so Gate 5
-        // stays a no-op there.
-        if action.requiresAdvancedControlOptIn && !context.advancedControlOptIn {
-            return .deny(.capabilityUnavailable)
-        }
+        // Gate 5 — pump capability, enforced at the funnel. One axis: the capability set is
+        // driver-derived from the connected pump's own feature bitmask (`PumpCapabilities.derive`),
+        // whose own input is a BLE-name substring match with an `ApiVersionResponse` fallback on the
+        // wire. `syncTimeToNow` needs `supportsTimeSync`; delivery + childOnly require no capability,
+        // so Gate 5 stays a no-op there.
         if !action.hasRequiredCapability(in: context.capabilities) {
             return .deny(.capabilityUnavailable)
         }

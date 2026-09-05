@@ -676,9 +676,8 @@ public struct PumpCapabilities: Sendable, Equatable {
     public var supportsExtendedBolus: Bool
 
     // Advanced pump control (Workstream B / controlX2 parity) — write commands beyond bolus, mostly
-    // Mobi-only on real hardware. The UI must gate each on BOTH the flag here AND
-    // `AppSettings.advancedControlEnabled` (opt-in, default off). Defaults false so a backend only
-    // advertises what it (and the connected pump model) actually supports.
+    // Mobi-only on real hardware. The UI gates each on the flag here. Defaults false so a backend
+    // only advertises what it (and the connected pump model) actually supports.
     public var supportsSuspendResume: Bool
     public var supportsTempBasal: Bool
     public var supportsModes: Bool

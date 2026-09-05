@@ -254,18 +254,6 @@ public final class AppSettings {
         GlucoseFreshness.hideAfter = glucoseHideDelayMinutes.map { GlucoseFreshness.staleAfter + TimeInterval($0) * 60 }
     }
 
-    /// Master opt-in for advanced pump control (suspend/resume, temp basal, modes, profiles,
-    /// Control-IQ settings, limits, cartridge/fill, time sync). **Default OFF.** Even when on, each
-    /// action is additionally gated on the pump advertising the capability via
-    /// `advancedControlAllowed(capabilities:)`. Insulin-affecting actions still go through
-    /// the confirm/hold + max-bolus-clamp + WritePolicy interlocks.
-    /// No Settings UI writer remains; `advancedControlAllowed` is already always-false via
-    /// `capabilities.supportsAnyAdvancedControl` on the t:slim-only model.
-    private var _advancedControlEnabled = Stored<Bool>(wrappedValue: false, "advancedControlEnabled")
-    public var advancedControlEnabled: Bool {
-        get { _advancedControlEnabled.wrappedValue }
-        set { _advancedControlEnabled.wrappedValue = newValue }
-    }
 
     /// The active experience **mode**, the axis `AccessPolicy` gates on. Deliberately not a
     /// `SettingsCatalog` row and **never** backed up or iCloud-synced (a synced mode could silently
@@ -334,8 +322,8 @@ public final class AppSettings {
     /// immediately when the phone's clock or time zone changes (travel / DST). **Default OFF**
     /// so a first connect never silently writes the pump clock without an explicit opt-in.
     /// Only active on pumps that honor the time write (**Mobi** — t:slim X2 doesn't accept it), gated on
-    /// `capabilities.supportsTimeSync`; not insulin-affecting and **independent of** `advancedControlEnabled`
-    /// (the opt-in is a plain preference, never re-coupled to the advanced-control gate).
+    /// `capabilities.supportsTimeSync`; not insulin-affecting. This opt-in is a plain preference,
+    /// independent of any advanced-control gate.
     // Force-set-false pin lives in `init` as an explicit assignment through this setter.
     private var _autoSyncPumpTime = Stored<Bool>(wrappedValue: false, "autoSyncPumpTime")
     public var autoSyncPumpTime: Bool {
@@ -478,14 +466,6 @@ public final class AppSettings {
     /// Whether `feature` is currently permitted (always true when child mode is off).
     public func childAllows(_ feature: ChildFeature) -> Bool {
         !childModeEnabled || childAllowed.contains(feature)
-    }
-
-    /// Whether the advanced-control surface should be shown/enabled: opt-in ON **and** the pump
-    /// advertises at least one advanced-control capability. Capabilities are pump-derived
-    /// (`PumpCapabilities.derive` reads the pump's own feature bitmask), replacing the old raw `isMobi`
-    /// model check. This is the single gate the control UI uses.
-    public func advancedControlAllowed(capabilities: PumpCapabilities) -> Bool {
-        advancedControlEnabled && capabilities.supportsAnyAdvancedControl
     }
 
     /// Garmin remote layout: the swipe order of its screens and which one opens first. Pushed to
@@ -801,7 +781,6 @@ public final class AppSettings {
         _glucosePlotFloor.store = defaults
         _showStats.store = defaults
         _glucoseStaleMinutes.store = defaults
-        _advancedControlEnabled.store = defaults
         _appMode.store = defaults
         _phoneReadOnly.store = defaults
         _readOnlyAllowAlertClear.store = defaults
@@ -839,8 +818,6 @@ public final class AppSettings {
         glucosePlotCeiling = plotBounds.ceiling
         showStats = (d.object(forKey: "showStats") as? Bool) ?? false
         glucoseStaleMinutes = (d.object(forKey: "glucoseStaleMinutes") as? Int) ?? 6
-        // Force-set OFF — a restored/legacy `true` must not silently re-arm advanced control.
-        advancedControlEnabled = false
         // Force-set `.advanced` — a restored/legacy `.simple`/`.standard` must not silently downgrade
         // the mode before `ModeStore` runs.
         appMode = .advanced

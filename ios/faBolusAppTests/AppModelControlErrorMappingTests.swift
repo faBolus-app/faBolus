@@ -57,22 +57,20 @@ struct AppModelControlErrorMappingTests {
     }
 
     /// Mirrors `AppModelBehaviorTests.withCleanSettings`: `suspendDelivery` routes through the
-    /// `controlInterlock` gate, which requires `advancedControlEnabled` opt-in AND the backend's
-    /// capability set to include `supportsAnyAdvancedControl` (the wrapped `MockBackend()` defaults to a
-    /// Mobi, `.mobiAdvanced` — satisfying this) — plus `phoneReadOnly == false`, `childModeEnabled ==
-    /// false`, and `appMode == .advanced` (the funnel's mode-gate default floor).
+    /// `controlInterlock` gate, which requires the backend's capability set to include
+    /// `supportsAnyAdvancedControl` (the wrapped `MockBackend()` defaults to a Mobi, `.mobiAdvanced` —
+    /// satisfying this) — plus `phoneReadOnly == false`, `childModeEnabled == false`, and
+    /// `appMode == .advanced` (the funnel's mode-gate default floor).
     private func withCleanSettings(_ body: () async -> Void) async {
         let s = AppSettings.shared
-        let ro = s.phoneReadOnly, child = s.childModeEnabled, adv = s.advancedControlEnabled
+        let ro = s.phoneReadOnly, child = s.childModeEnabled
         let mode = s.appMode
         s.phoneReadOnly = false
         s.childModeEnabled = false
-        s.advancedControlEnabled = true
         s.appMode = .advanced
         defer {
             s.phoneReadOnly = ro
             s.childModeEnabled = child
-            s.advancedControlEnabled = adv
             s.appMode = mode
         }
         await body()

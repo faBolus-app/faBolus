@@ -25,15 +25,14 @@ struct BolusPasscodeGateTests {
         return (model, backend, box)
     }
 
-    /// Clean gate state (Garmin bolusing ON, no read-only/child, advanced on for the Mobi mock) with
-    /// the in-memory Keychain seam armed; restore everything after (incl. clearing the passcode + counters).
+    /// Clean gate state (Garmin bolusing ON, no read-only/child) with the in-memory Keychain seam
+    /// armed; restore everything after (incl. clearing the passcode + counters).
     private func withClean(_ body: () async -> Void) async {
         let s = AppSettings.shared
-        let child = s.childModeEnabled, ro = s.phoneReadOnly, adv = s.advancedControlEnabled
+        let child = s.childModeEnabled, ro = s.phoneReadOnly
         let rro = s.remotesReadOnly, gbe = s.garminBolusEnabled
         s.childModeEnabled = false
         s.phoneReadOnly = false
-        s.advancedControlEnabled = true
         s.remotesReadOnly = false
         s.garminBolusEnabled = true
         BolusPasscodeStore.useInMemoryBackingForTests = true
@@ -42,7 +41,6 @@ struct BolusPasscodeGateTests {
         BolusPasscodeStore.useInMemoryBackingForTests = false
         s.childModeEnabled = child
         s.phoneReadOnly = ro
-        s.advancedControlEnabled = adv
         s.remotesReadOnly = rro
         s.garminBolusEnabled = gbe
     }

@@ -89,24 +89,21 @@ struct CrossClientMutexTests {
 }
 
 /// Minimal helper to run a body with the `AppSettings` gates in a state that allows an authenticated
-/// remote bolus (child off, read-only off, advanced control on so the funnel's capability gate passes on
-/// the Mobi `MockBackend`, and the per-surface Garmin bolus enable ON so the evaluator
+/// remote bolus (child off, read-only off, and the per-surface Garmin bolus enable ON so the evaluator
 /// doesn't fail-closed on the default-OFF flag), restoring them after so the serialized suite can't
 /// leak gate state.
 @MainActor
 private enum AppSettingsGate {
     static func withCleanRemoteBolusAllowed(_ body: () async -> Void) async {
         let s = AppSettings.shared
-        let child = s.childModeEnabled, ro = s.remotesReadOnly, adv = s.advancedControlEnabled
+        let child = s.childModeEnabled, ro = s.remotesReadOnly
         let gb = s.garminBolusEnabled
         s.childModeEnabled = false
         s.remotesReadOnly = false
-        s.advancedControlEnabled = true
         s.garminBolusEnabled = true
         await body()
         s.childModeEnabled = child
         s.remotesReadOnly = ro
-        s.advancedControlEnabled = adv
         s.garminBolusEnabled = gb
     }
 }
