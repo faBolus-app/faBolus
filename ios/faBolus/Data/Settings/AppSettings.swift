@@ -358,11 +358,7 @@ public final class AppSettings {
     /// old default was "ON for a Mobi" — Simulated Mobi and all Mobi backends are gone, so
     /// that coupling is now to a permanently-stale flag). The user can still turn it on explicitly — the
     /// capability path (`NotificationCoordinator` read, `NotificationSettingsView` toggle)
-    /// is KEPT. A persisted `true` from before that decoupling is force-reset to `false` exactly once
-    /// on upgrade (see the `criticalAlertsForceResetV050` guard in `init`) — uniform state over leaving
-    /// stale persisted values. Local device pref: not backed up / iCloud-synced.
-    // The one-time force-reset migration lives in `init` (`criticalAlertsForceResetV050`) and
-    // still runs after this setter's init-time assignment.
+    /// is KEPT. Local device pref: not backed up / iCloud-synced.
     private var _criticalAlertsEnabled = Stored<Bool>(wrappedValue: false, "criticalAlertsEnabled")
     public var criticalAlertsEnabled: Bool {
         get { _criticalAlertsEnabled.wrappedValue }
@@ -806,21 +802,11 @@ public final class AppSettings {
         // Default ON — a fresh install (and any device with no stored value) auto-syncs.
         historySyncEnabled = (d.object(forKey: "historySyncEnabled") as? Bool) ?? true
         criticalAlertsEnabled = (d.object(forKey: "criticalAlertsEnabled") as? Bool) ?? false
-        // One-time force-reset — a persisted `criticalAlertsEnabled == true` from before the
-        // Mobi-default decoupling is force-reset to the uniform OFF default EXACTLY ONCE via the
-        // dedicated idempotent-once `criticalAlertsForceResetV050` guard key (checked, set once,
-        // never cleared, so a user's LATER re-enable is never re-clobbered). The setter writes
-        // through to the store immediately, so a separate raw `d.set` is not needed.
-        if d.object(forKey: "criticalAlertsForceResetV050") == nil {
-            criticalAlertsEnabled = false
-            d.set(true, forKey: "criticalAlertsForceResetV050")
-        }
         // One-time purge of the five UserDefaults keys the retired eating/Nudge surface left behind —
         // no code can read, display, or delete them once the surface is gone, so an upgrading tester's
         // learned coarse meal-place coordinates would otherwise survive as unreadable, undeletable
-        // residue. Same idempotent-once shape as `criticalAlertsForceResetV050` above: checked, removed
-        // once, never re-fires (a later key of the same name is never clobbered because the guard only
-        // ever runs while its own marker is absent).
+        // residue. Idempotent-once: checked, removed once, never re-fires (a later key of the same
+        // name is never clobbered because the guard only ever runs while its own marker is absent).
         if d.object(forKey: "eatingResiduePurgeV1") == nil {
             for key in Self.retiredEatingResidueKeys { d.removeObject(forKey: key) }
             d.set(true, forKey: "eatingResiduePurgeV1")

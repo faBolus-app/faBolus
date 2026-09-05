@@ -364,29 +364,20 @@ struct AppSettingsStoredMigrationTests {
         #expect(settings2.historyRetentionDays == 1)  // …but the NEXT init still force-sets 1
     }
 
-    // MARK: One-time force-reset migration guard (`criticalAlertsEnabled`)
+    // MARK: `criticalAlertsEnabled` — default + round trip
 
-    @Test func criticalAlertsEnabledStoredRoundTripAndOneTimeForceReset() {
-        // 1. Fresh install (no keys): default OFF, and the one-time guard is recorded.
+    @Test func criticalAlertsEnabledStoredRoundTrip() {
+        // Fresh install (no keys): default OFF.
         let d1 = freshSuite("criticalAlertsEnabled.fresh")
         let s1 = AppSettings(defaults: d1)
         expectStoredBacking(s1, label: "__criticalAlertsEnabled", valueType: Bool.self)
         #expect(s1.criticalAlertsEnabled == false)
-        #expect(d1.object(forKey: "criticalAlertsForceResetV050") as? Bool == true)
 
-        // 2. Migration: a leftover stored `true` with no guard is force-reset to false exactly once.
-        let d2 = freshSuite("criticalAlertsEnabled.migrate")
-        d2.set(true, forKey: "criticalAlertsEnabled")  // legacy Mobi-derived ON
-        let s2 = AppSettings(defaults: d2)
-        #expect(s2.criticalAlertsEnabled == false)
-        #expect(d2.object(forKey: "criticalAlertsForceResetV050") as? Bool == true)
-
-        // 3. Round-trip + re-enable respected: once the guard has fired, a later user re-enable persists
-        //    and is NOT re-clobbered by the next init.
-        s2.criticalAlertsEnabled = true
-        #expect(d2.object(forKey: "criticalAlertsEnabled") as? Bool == true)
-        let s3 = AppSettings(defaults: d2)
-        #expect(s3.criticalAlertsEnabled == true)
+        // Round trip: a user enable persists and survives the next init.
+        s1.criticalAlertsEnabled = true
+        #expect(d1.object(forKey: "criticalAlertsEnabled") as? Bool == true)
+        let s2 = AppSettings(defaults: d1)
+        #expect(s2.criticalAlertsEnabled == true)
     }
 
     // MARK: - SettingsCatalog counts unchanged by Stored conversion
