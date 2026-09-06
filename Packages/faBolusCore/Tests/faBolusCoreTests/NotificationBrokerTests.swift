@@ -502,6 +502,21 @@ import Foundation
         #expect(!offDecision.deliver && offDecision.reason == .ruleResolvedOff)
     }
 
+    /// The resolver routing in `decide()` is CATEGORY-AGNOSTIC — any category with a
+    /// supplied cascade resolves through it, not through an enumerated allowlist of category names.
+    /// Proven with a category that is neither `.pumpAlert` nor in the safety set.
+    @Test func anyCategoryWithASuppliedCascadeRoutesThroughTheResolver() {
+        typealias R = NotificationRules
+        let offCascade = R.Cascade(category: .init(intent: .off))
+        let d = B.decide(
+            msg(.mealReminder), settings: enabled(.mealReminder), state: B.State(), now: at(9, 0), calendar: cal,
+            rules: offCascade, timeSensitiveAvailable: true)
+        #expect(
+            !d.deliver && d.reason == .ruleResolvedOff,
+            "a governed category outside the pumpAlert/safety-set allowlist must still resolve through the SAME resolver when a caller supplies a cascade — the routing is not hardcoded per category"
+        )
+    }
+
     /// For every user-configurable never-suppressible category, suppression requires BOTH
     /// `enabled == false` AND `userAcknowledgedSafetyDisable == true`; either alone still delivers.
     @Test func trioSuppressedOnlyByAcknowledgedDisable() {

@@ -408,15 +408,16 @@ public enum NotificationBroker {
         func deliver() -> Decision { Decision(deliver: true, reason: nil, nextState: record()) }
         func suppress(_ r: SuppressionReason) -> Decision { Decision(deliver: false, reason: r, nextState: s) }
 
-        // The unified notification-rules resolver is the SINGLE governed decision point for a
-        // category once a caller supplies a rule cascade — no parallel inline check alongside it, so
-        // the phone can never assert two different answers about the same notification again.
-        // `rules == nil` (every caller that hasn't migrated a category onto the ladder yet) falls
-        // straight through to the pre-existing settings-driven / never-suppressible path below
-        // unchanged. Today the caller supplies a cascade only for `.pumpAlert` (pump-mirror) and the
-        // app-own safety-set categories (`Category.isSafetySet`, `.pumpDisconnect` first) — every
-        // other category is expanded onto the resolver later, at the CALLER, not here.
-        if (message.category == .pumpAlert || message.category.isSafetySet), let rules {
+        // The unified notification-rules resolver is the SINGLE governed decision point for ANY
+        // category once a caller supplies a rule cascade — no parallel inline check alongside it, and
+        // no per-category or per-source branch here either — `source` is an attribute and a
+        // cascade scope the CALLER resolves against, never a reason to fork this function. `rules ==
+        // nil` (every caller that hasn't migrated a category onto the ladder yet) falls straight
+        // through to the pre-existing settings-driven / never-suppressible path below, unchanged.
+        // Whether a category's caller builds a cascade for it — `.pumpAlert` (pump-mirror) and the
+        // app-own safety-set categories (`Category.isSafetySet`, `.pumpDisconnect` first) today — is
+        // entirely the caller's decision; a future category needs no change here to join.
+        if let rules {
             let resolved = NotificationRules.resolve(rules, timeSensitiveAvailable: timeSensitiveAvailable)
             return resolved.phone == .off ? suppress(.ruleResolvedOff) : deliver()
         }
