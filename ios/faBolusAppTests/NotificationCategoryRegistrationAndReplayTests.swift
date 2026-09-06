@@ -111,6 +111,25 @@ import UserNotifications
         }
     }
 
+    /// The explicit `cgmDataLoss` disposition (the awkward safety-set case, named directly rather than only as a
+    /// side effect of the generic safety-set loop above): it is safety-set and gets a registered,
+    /// action-empty identifier it will NEVER actually use — `deliversAsNotification == false` means no
+    /// message in this category ever reaches `NotificationPoster.post`, so the identifier's only job is to
+    /// keep the "every safety category resolves to a registered identifier" invariant non-vacuous rather
+    /// than carving out an exemption for it.
+    @Test func cgmDataLossIsRegisteredWithAnActionLessIdentifierItWillNeverActuallyUse() {
+        #expect(C.cgmDataLoss.isSafetySet, "precondition: cgmDataLoss is still in the safety set")
+        #expect(!C.cgmDataLoss.deliversAsNotification, "precondition: cgmDataLoss never posts a notification")
+        let owned = ownedByIdentifier()
+        let id = NotificationCoordinator.categoryIdentifier(for: .cgmDataLoss)
+        let registered = owned[id]
+        #expect(registered != nil, "cgmDataLoss must still resolve to a registered identifier")
+        #expect(registered?.actions.isEmpty == true, "cgmDataLoss's registered category must carry no actions")
+        #expect(
+            registered?.options.contains(.customDismissAction) == true,
+            "cgmDataLoss registers .customDismissAction like every other safety category, even though it never fires")
+    }
+
     /// The pump-alert category registers `.customDismissAction` so an explicit swipe-dismiss is reported
     /// back as `UNNotificationDismissActionIdentifier` — without it, iOS never delivers that identifier
     /// at all, and a dismissal is structurally unrecordable. Every safety-set category gets the

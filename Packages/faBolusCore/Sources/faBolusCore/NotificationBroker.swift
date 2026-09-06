@@ -22,6 +22,13 @@ public enum NotificationBroker {
         /// `pumpAlert` and is unaffected by any of this). A safety-set category, but since 2026-08-30 it
         /// never NOTIFIES — a CGM gap is UI state only. See `deliversAsNotification` for the decision and
         /// its accepted residual; it renders no settings row and no lowering dialog.
+        ///
+        /// Registration disposition (the awkward safety-set member for the app-side registration
+        /// invariant "every safety category resolves to a registered, action-empty identifier"): this
+        /// category IS given that registered identifier, exactly like every other safety category — it
+        /// simply never actually posts a request under it, since `deliversAsNotification == false` means
+        /// no message in this category ever reaches the poster. Registered-but-unused, not exempted:
+        /// there is no separate carve-out anywhere in the registration/attribution path for this one case.
         case cgmDataLoss
         /// The pump link keeps FLAPPING — a bounded run of live→reconnecting re-pair/re-drop cycles
         /// the reconnect ladder folds to `.connecting`, so `SafetyEdge.connection` (and the
