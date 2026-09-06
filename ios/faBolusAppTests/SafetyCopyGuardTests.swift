@@ -72,6 +72,25 @@ import Foundation
         )
     }
 
+    /// The first-run disclosure's breakthrough copy is best-effort ("when allowed"), never a promise
+    /// ("will") — Decision 3 — and stays consistent with the ladder's capability-hidden Urgent rung.
+    @Test func notificationDisclosureViewUsesBestEffortBreakthroughCopyNeverAPromise() throws {
+        guard let root = Self.repoRootURL() else {
+            Issue.record("SafetyCopyGuardTests could not resolve repo root — scan would pass vacuously")
+            return
+        }
+        let source = try Self.sourceText(relativeTo: root, path: "ios/faBolus/Views/NotificationDisclosureView.swift")
+        #expect(!source.isEmpty, "NotificationDisclosureView.swift read as empty — scan would pass vacuously")
+        #expect(
+            source.contains("when allowed"),
+            "the first-run disclosure's breakthrough copy must be best-effort (\"when allowed\"), never a promise (Decision 3)"
+        )
+        #expect(
+            !source.contains("will break through") && !source.contains("will always break through"),
+            "the first-run disclosure must never promise breakthrough will happen"
+        )
+    }
+
     /// The decorative hero antenna glyph on the first-run pump-connect screen must be
     /// `.accessibilityHidden(true)` so VoiceOver does not announce its raw SF Symbol name. Windowed
     /// after the symbol so an unrelated `.accessibilityHidden` elsewhere cannot satisfy it.
