@@ -421,6 +421,17 @@ final class DeliveryLedgerCoordinator {
         var changed = remoteBolusLedger.collapseLegacyMultiEntryUnresolved()
         let unresolved = remoteBolusLedger.unreconciled()
         guard !unresolved.isEmpty else {
+            // The ledger read completed above (the lazy load ran), so `ledgerFailedClosed` is now
+            // authoritative. An UNREADABLE ledger may be hiding an unresolved delivery — disclose it (it
+            // has no entry, so no peerId/requestId: use the FIXED family key). A genuinely-empty-but-
+            // READABLE ledger has nothing to disclose and posts nothing.
+            if ledgerFailedClosed {
+                postSafety(
+                    .bolusIndeterminate, .warning, "Bolus outcome unknown",
+                    "A previous bolus can’t be reconciled — the safety record is unreadable. Verify on the "
+                        + "pump/t:connect before dosing again.",
+                    RemoteBolusLedger.unreadableLedgerReconciliationDedupeKey)
+            }
             refreshDeliveryBlock()
             return
         }
@@ -453,7 +464,18 @@ final class DeliveryLedgerCoordinator {
                 changed = true
                 continue
             }
-            guard let bolusId = entry.bolusId else { continue }  // sent but no id (rare) → stay blocked
+            guard let bolusId = entry.bolusId else {
+                // Sent but no id (rare) → stay blocked, but do NOT stay silent: the outcome is genuinely
+                // unknown, so disclose it (condition-shaped `.bolusIndeterminate`, keyed on the reconcile
+                // family so the eventual settle supersedes it under the same key).
+                postSafety(
+                    .bolusIndeterminate, .warning, "Bolus outcome unknown",
+                    "A previous bolus was sent but its outcome is unknown. Verify on the pump/t:connect "
+                        + "before dosing again.",
+                    RemoteBolusLedger.reconciliationDedupeKey(peerId: entry.peerId, requestId: entry.requestId))
+                recordReconciliation(.unavailable)
+                continue
+            }
             // Scope reconciliation to the pump that wrote the entry: a nil key is GRANDFATHERED
             // (identity unknown, not a mismatch — settle as today, note it in the record); a DIFFERENT
             // key is refused — never search THIS pump's history for an id another pump minted.
@@ -495,7 +517,15 @@ final class DeliveryLedgerCoordinator {
                 recordReconciliation(cancelled ? .cancelled : .delivered)
                 changed = true
             case .unavailable:
-                // Stay blocked; retry on next reconnect / manual verification.
+                // Stay blocked; retry on next reconnect / manual verification. Disclose the unknown
+                // outcome so a user who already closed the app is not left unaware insulin state is
+                // unknown — condition-shaped `.bolusIndeterminate`, keyed on the reconcile family so the
+                // eventual authoritative settle supersedes it under the same key.
+                postSafety(
+                    .bolusIndeterminate, .warning, "Bolus outcome unknown",
+                    "A previous bolus couldn’t be confirmed with the pump. Verify on the pump/t:connect "
+                        + "before dosing again.",
+                    RemoteBolusLedger.reconciliationDedupeKey(peerId: entry.peerId, requestId: entry.requestId))
                 recordReconciliation(.unavailable)  // stayed unresolved
             }
         }

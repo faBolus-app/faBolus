@@ -321,6 +321,15 @@ public struct RemoteBolusLedger: Codable, Sendable {
         dedupeKey.hasPrefix(reconciliationDedupeKeyPrefix)
     }
 
+    /// The FIXED dedupe key for the unresolved-dose disclosure posted when the durable ledger itself is
+    /// UNREADABLE (fail-closed) — a path with no entry, hence no peerId/requestId to build a per-delivery
+    /// key from. One stable key from the same prefix, still matched by `isReconciliationDedupeKey`, so the
+    /// single recognizer/withdrawal path addresses the whole family. Fixed (never random) so a
+    /// still-unreadable relaunch coalesces onto the same slot instead of stacking, and a now-readable
+    /// relaunch can withdraw exactly it.
+    public static let unreadableLedgerReconciliationDedupeKey =
+        "\(reconciliationDedupeKeyPrefix)ledger-unreadable"
+
     /// True when the request has a recorded terminal outcome (test/introspection helper).
     public func isSettled(peerId: String, requestId: String) -> Bool {
         entries[key(peerId, requestId)]?.state == .terminal
@@ -471,7 +480,7 @@ public extension RemoteBolusLedger {
         }
         if ledgerFailedClosed {
             return "Delivery is locked: the safety ledger is unreadable. Check the pump/t:connect for any "
-                + "unconfirmed bolus, then clear the lock in Settings."
+                + "unconfirmed bolus before dosing again."
         }
         if terminalSaveFailed {
             return "Delivery is locked: the last bolus outcome could not be saved. Check the pump/t:connect; "

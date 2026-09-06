@@ -173,7 +173,7 @@ final class RemoteBolusLedgerTests: XCTestCase {
         + "disabled until a storage location can be created."
     private static let ledgerFailedClosedMessage =
         "Delivery is locked: the safety ledger is unreadable. Check the pump/t:connect for any "
-        + "unconfirmed bolus, then clear the lock in Settings."
+        + "unconfirmed bolus before dosing again."
     private static let terminalSaveFailedMessage =
         "Delivery is locked: the last bolus outcome could not be saved. Check the pump/t:connect; "
         + "delivery resumes once the safety ledger is written."
