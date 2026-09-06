@@ -39,4 +39,34 @@ struct CapabilityDiagnosticsTests {
         #expect(!block.contains("supports"))
         #expect(!block.contains("47"))
     }
+
+    /// The effective time-sensitive interruption level must be observable at both capability
+    /// states, read from the injected `timeSensitiveAvailable` value (never a live
+    /// `UNUserNotificationCenter` probe), and the copy must never promise breakthrough.
+    @Test func timeSensitiveCapabilityPresentReportsUrgentAsBestEffort() {
+        let block = CapabilityDiagnostics.section(
+            capabilities: .full, badOpcodes: [], enabled: true, timeSensitiveAvailable: true)
+        #expect(block.contains("timeSensitiveCapability: yes"))
+        #expect(block.contains("effectiveInterruptionLevel: urgent (breaks through Focus/Do Not Disturb when allowed by iOS Settings — never guaranteed)"))
+        #expect(!block.contains("will break through"))
+    }
+
+    @Test func timeSensitiveCapabilityAbsentReportsLadderToppingOutAtAlert() {
+        let block = CapabilityDiagnostics.section(
+            capabilities: .full, badOpcodes: [], enabled: true, timeSensitiveAvailable: false)
+        #expect(block.contains("timeSensitiveCapability: no"))
+        #expect(block.contains("effectiveInterruptionLevel: alert (no Urgent rung on this build — time-sensitive capability absent)"))
+    }
+
+    @Test func timeSensitiveLineIsGatedOnTheSharedOptInLikeEveryOtherValue() {
+        let block = CapabilityDiagnostics.section(
+            capabilities: .full, badOpcodes: [], enabled: false, timeSensitiveAvailable: true)
+        #expect(!block.contains("timeSensitiveCapability"))
+        #expect(!block.contains("effectiveInterruptionLevel"))
+    }
+
+    @Test func omittedArgumentReflectsTheRealBuildAccessor() {
+        let block = CapabilityDiagnostics.section(capabilities: .full, badOpcodes: [], enabled: true)
+        #expect(block.contains("timeSensitiveCapability: \(NotificationCapability.timeSensitiveAvailable ? "yes" : "no")"))
+    }
 }

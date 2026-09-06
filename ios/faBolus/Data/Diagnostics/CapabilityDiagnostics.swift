@@ -51,13 +51,27 @@ enum CapabilityDiagnostics {
     ///   - enabled: the SAME shared "Share local diagnostics" opt-in every other section gates on.
     ///     When `false`, no capability or opcode value is ever rendered — only the header plus the
     ///     shared empty-state prompt.
-    static func section(capabilities: PumpCapabilities, badOpcodes: Set<UInt8>, enabled: Bool) -> String {
+    ///   - timeSensitiveAvailable: the build's time-sensitive notification capability, read from
+    ///     `NotificationCapability.timeSensitiveAvailable` by default. Never a gate on app behavior —
+    ///     this is observation only, so the ladder's Urgent rung is never a promise the binary cannot
+    ///     keep. Overridable for tests; production callers omit it and get the real build value.
+    static func section(
+        capabilities: PumpCapabilities,
+        badOpcodes: Set<UInt8>,
+        enabled: Bool,
+        timeSensitiveAvailable: Bool = NotificationCapability.timeSensitiveAvailable
+    ) -> String {
         var lines: [String] = ["", "[Capability/opcode]"]
         guard enabled else {
             lines.append("Turn on “Share local diagnostics” above to start collecting capability/opcode data.")
             return lines.joined(separator: "\n")
         }
         lines.append(contentsOf: flagLines(capabilities))
+        lines.append("timeSensitiveCapability: \(timeSensitiveAvailable ? "yes" : "no")")
+        lines.append(
+            timeSensitiveAvailable
+                ? "effectiveInterruptionLevel: urgent (breaks through Focus/Do Not Disturb when allowed by iOS Settings — never guaranteed)"
+                : "effectiveInterruptionLevel: alert (no Urgent rung on this build — time-sensitive capability absent)")
         if badOpcodes.isEmpty {
             lines.append("Rejected opcodes: none")
         } else {
