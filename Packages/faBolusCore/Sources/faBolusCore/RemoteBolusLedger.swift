@@ -381,8 +381,9 @@ public struct RemoteBolusLedger: Codable, Sendable {
         /// The entry's key matches the currently-connected pump — reconcile normally.
         case matches
         /// The entry's key names a DIFFERENT pump than the one connected now — never settle by id
-        /// across pumps. Refuse; the block stays; route to a durable human-verify reason rather than a
-        /// silent per-reconnect retry.
+        /// across pumps. Reconcile refuses it (it cannot search THIS pump's history for an id another
+        /// pump minted), so the entry persists as unresolved and stays surfaced by the non-blocking
+        /// disclosure rather than being durably blocked.
         case mismatch
     }
 
@@ -392,13 +393,6 @@ public struct RemoteBolusLedger: Codable, Sendable {
         guard let pumpKey else { return .grandfathered }
         return pumpKey == currentPumpIdentity ? .matches : .mismatch
     }
-
-    /// The durable block-reason string for a pump-key mismatch — distinct from the generic
-    /// "check the pump" wording, since the user needs to know WHY it stays blocked rather than watch an
-    /// unexplained retry every reconnect.
-    public static let pumpMismatchBlockReason =
-        "A previous bolus outcome belongs to a different pump than the one connected now — verify on "
-        + "that pump/t:connect before dosing again."
 
     /// The terminal outcomes recorded for `peerId`, oldest→newest, for re-echoing to a remote that may
     /// have missed them across an app restart. Read-only; does not mutate ledger state.
@@ -465,15 +459,10 @@ public extension RemoteBolusLedger {
     ///     (evaluating it triggers the lazy ledger load that sets `ledgerFailedClosed`, so the caller must
     ///     compute it before calling this function).
     ///   - inFlightDeliveryKey: the (peer, requestId) currently delivering in THIS process, if any.
-    ///   - pumpMismatchReason: non-nil when the caller has found an unresolved entry whose `pumpKey`
-    ///     names a different pump than the one connected now (`comparePumpKey(_:to:) == .mismatch`).
-    ///     Takes precedence over the live-in-flight mutex arm below — a mismatch is never the live
-    ///     delivery in THIS process.
     static func blockReason(
         noDurableStore: Bool, ledgerFailedClosed: Bool, terminalSaveFailed: Bool,
         unresolved: [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool)],
-        inFlightDeliveryKey: (peerId: String, requestId: String)?,
-        pumpMismatchReason: String? = nil
+        inFlightDeliveryKey: (peerId: String, requestId: String)?
     ) -> String? {
         if noDurableStore {
             return "Delivery is locked: no durable safety store is available on this device. Delivery stays "
@@ -488,7 +477,6 @@ public extension RemoteBolusLedger {
                 + "delivery resumes once the safety ledger is written."
         }
         if !unresolved.isEmpty {
-            if let pumpMismatchReason { return pumpMismatchReason }
             // This global "one delivery at a time" block IS the cross-client mutex: it lives at this
             // funnel (not in a PumpBackend, which a second backend would not share) and rejects a
             // concurrent request BEFORE it writes the durable ledger, so two different clients requesting

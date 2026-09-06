@@ -205,14 +205,6 @@ final class DeliveryLedgerCoordinator {
     private func computeDeliveryBlockReason() -> String? {
         // Evaluate `unreconciled()` first so the lazy ledger load runs (which sets `ledgerFailedClosed`).
         let unresolved = remoteBolusLedger.unreconciled()
-        // A different-pump key takes precedence over the live-in-flight/genuinely-unresolved split —
-        // `blockReason`'s `unresolved:` parameter predates the ledger's `pumpKey` field, so the
-        // comparison is done here and only its RESULT (a reason string, or nil) is passed through.
-        let current = currentPumpIdentity()
-        let pumpMismatchReason =
-            unresolved.contains { RemoteBolusLedger.comparePumpKey($0.pumpKey, to: current) == .mismatch }
-            ? RemoteBolusLedger.pumpMismatchBlockReason
-            : nil
         // The precedence itself is a pure faBolusCore function (`RemoteBolusLedger.blockReason`) —
         // this is the ONLY caller in the app target, so the strings have one source of truth with
         // zero-`AppModel` unit coverage in `RemoteBolusLedgerTests`.
@@ -222,8 +214,7 @@ final class DeliveryLedgerCoordinator {
         return RemoteBolusLedger.blockReason(
             noDurableStore: noDurableStore, ledgerFailedClosed: ledgerFailedClosed,
             terminalSaveFailed: terminalSaveFailed, unresolved: narrowed,
-            inFlightDeliveryKey: inFlightDeliveryKey,
-            pumpMismatchReason: pumpMismatchReason)
+            inFlightDeliveryKey: inFlightDeliveryKey)
     }
     /// Recompute the current block reason and push it through `onDeliveryBlockChanged`. Exposed
     /// (not `private`) so `AppModel.init` can force one SYNCHRONOUS publish of any ledger state restored
@@ -527,8 +518,9 @@ final class DeliveryLedgerCoordinator {
             // Scope reconciliation to the pump that wrote the entry: a nil key is GRANDFATHERED
             // (identity unknown, not a mismatch — settle as today, note it in the record); a DIFFERENT
             // key is refused — never search THIS pump's history for an id another pump minted.
-            // `computeDeliveryBlockReason()` already surfaces the durable mismatch reason, so this just
-            // avoids the pointless per-reconnect history search.
+            // A cross-pump entry is no longer durably blocked; it stays unresolved and is surfaced by
+            // the non-blocking disclosure, so skipping it here just avoids a pointless per-reconnect
+            // history search while the entry remains honestly disclosed.
             let pumpKeyComparison = RemoteBolusLedger.comparePumpKey(entry.pumpKey, to: currentPumpIdentity())
             if pumpKeyComparison == .mismatch {
                 recordReconciliation(.unavailable)
