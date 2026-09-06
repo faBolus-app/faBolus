@@ -137,12 +137,12 @@ public final class AppModel {
     /// display state — excluded from observation since nothing renders off it directly.
     @ObservationIgnored private var pendingSafety: [NotificationBroker.Message] = []
 
-    /// Post a governed notification through the broker-owned poster. For the three
-    /// `neverSuppressible` safety categories the broker always delivers them (and they are durably
-    /// persisted to `SafetyAlertStore` for replay). For a suppressible/governed category — e.g.
-    /// `.bolusIndeterminate` — normal governance applies (enable / quiet-hours / budget / rate-limit)
-    /// and nothing is persisted for replay; the per-category routing lives downstream in
-    /// `NotificationCoordinator.post`, which branches on `message.category.neverSuppressible`. Routing
+    /// Post a governed notification through the broker-owned poster. The five app-own `isSafetySet`
+    /// safety categories resolve delivery + loudness through the unified ladder (defaulting to Alert,
+    /// tunable to Off) and are durably persisted to `SafetyAlertStore` for replay. For a
+    /// suppressible/governed category — e.g. `.bolusIndeterminate` — normal governance applies (enable /
+    /// budget) and nothing is persisted for replay; the per-category routing lives downstream in
+    /// `NotificationCoordinator.post`, which branches on `message.category.isSafetySet`. Routing
     /// everything through the sink keeps it in the one governed path (dedupe / withdrawal / the single
     /// `UNNotificationRequest` builder). When no sink is attached yet (a viewless restoration launch
     /// before `NotificationCoordinator` wires up), the message is buffered in `pendingSafety` instead of

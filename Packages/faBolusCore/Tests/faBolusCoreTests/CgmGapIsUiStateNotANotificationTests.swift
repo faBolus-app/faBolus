@@ -63,7 +63,7 @@ import Foundation
         #expect(d.nextState.lastDeliveredAt["cgmDataLoss"] == nil)
     }
 
-    /// The urgent-low backstop is on its OWN never-suppressible category and still alarms during a gap —
+    /// The urgent-low backstop is on its OWN safety-set category and still alarms during a gap —
     /// this is the whole reason it was decoupled from `.cgmDataLoss`.
     @Test func theUrgentLowBackstopStillAlarmsDuringACgmGap() {
         #expect(C.urgentLowGlucose.deliversAsNotification)
@@ -94,14 +94,14 @@ import Foundation
         #expect(d.deliver, "the pump's own CGM alert is not the app's CGM-gap banner — it must still notify")
     }
 
-    /// The other four never-suppressible categories are untouched: still delivered under a hostile config.
-    @Test func everyOtherNeverSuppressibleCategoryStillAlwaysDelivers() {
+    /// The other four safety-set categories are untouched: still delivered under a hostile config.
+    @Test func everyOtherSafetySetCategoryStillAlwaysDelivers() {
         let hostile = Dictionary(
             uniqueKeysWithValues: C.allCases.map {
                 ($0, B.CategorySettings(enabled: false))
             })
         var delivered: Set<String> = []
-        for c in C.allCases where c.neverSuppressible && c.deliversAsNotification {
+        for c in C.allCases where c.isSafetySet && c.deliversAsNotification {
             let d = B.decide(
                 msg(c, key: c.rawValue), settings: hostile,
                 state: B.State(), now: at(3, 0), calendar: cal)

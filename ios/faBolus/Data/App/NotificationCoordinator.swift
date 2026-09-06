@@ -6,20 +6,19 @@ import UIKit
 
 /// The single owner of the local-notification path.
 ///
-/// Before this, three independent posters built `UNNotificationRequest`s directly (`PumpAlertNotifier`,
-/// `AppModel.notifyRemoteBolusRejected`, `ModeAutomation.remind`), only one handled authorization or a
-/// notification category, and none shared any governance. Now **every** notification — pump alerts, the
-/// three never-suppressible safety categories, remote-bolus rejections and mode reminders — is decided by
+/// Before this, three independent posters built `UNNotificationRequest`s directly, only one handled
+/// authorization or a notification category, and none shared any governance. Now **every** notification —
+/// pump alerts, the five app-own safety-set categories and remote-bolus rejections — is decided by
 /// `NotificationBroker` and built in exactly one place (`NotificationPoster.post`), so per-category
-/// enable / quiet-hours / rate-limit, the daily & meal budgets, one-per-episode, and the safety
-/// guarantee (disconnect / bolus-reconciliation / CGM-loss can never be dropped) apply uniformly.
+/// enable, the daily budget, one-per-episode, and the unified Off/Quiet/Alert/Urgent ladder apply
+/// uniformly. Safety categories resolve through that same ladder (defaulting to Alert, tunable to Off).
 ///
 /// Three collaborators:
 /// - `NotificationRuntime` holds and persists the broker's mutable `State` (+ the per-category settings
 ///   and budget). Backed by the **App Group** so the main app and an out-of-process App Intent share one
 ///   governed state. Pure enough to unit-test without a notification center.
 /// - `NotificationPoster` is the one function that turns a governed `Message` into a real request — usable
-///   both in-process (the coordinator) and out-of-process (a mode-reminder intent when the app isn't live).
+///   both in-process (the coordinator) and out-of-process (an App Intent when the app isn't live).
 /// - `NotificationCoordinator` owns the `UNUserNotificationCenter` plumbing: the sole delegate,
 ///   non-destructive category registration, the pump-alert fan-in, and the "Clear" action.
 
@@ -216,8 +215,8 @@ final class NotificationRuntime {
     /// Snooze a category until `until`, persisted (App-Group) so the next `evaluate` in any process honors
     /// it. Re-reads first (like `evaluate`) so a concurrent counter advance isn't clobbered.
     ///
-    /// Refuses any category that `permitsSilencingAction == false` — every `neverSuppressible` one as
-    /// before, and now also the two unresolved-dose categories, so a "Snooze 2h" button on a notification
+    /// Refuses any category that `permitsSilencingAction == false` — every safety-set one, and the two
+    /// unresolved-dose categories, so a "Snooze 2h" button on a notification
     /// DELIVERED by an older build (still sitting in Notification Center with the actions it was
     /// delivered with) is inert when tapped. `NotificationBroker.snooze` enforces the same rule, so
     /// nothing is written even if this guard were bypassed.
@@ -294,7 +293,7 @@ enum NotificationPoster {
                 content.sound = .default
             }
         } else {
-            let breakthrough = message.category.neverSuppressible || message.severity == .critical
+            let breakthrough = message.category.isSafetySet || message.severity == .critical
             content.sound = .default
             // Anything requiring breakthrough must break through Focus/DND, or the "time-sensitive
             // delivery" promise is false. `.timeSensitive` does that without the Critical Alerts
@@ -369,7 +368,7 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         model.flushPendingSafety()
         model.notificationWithdrawSink = { [weak self] keys in self?.withdraw(keys) }
         // Withdraw every OS-outstanding request for a whole CATEGORY (used when the user
-        // disables a safety-trio category via the confirm-on-disable dialog) — distinct from `withdraw(_:)`
+        // lowers a safety category to Off on the ladder) — distinct from `withdraw(_:)`
         // above, which only knows a fixed list of dedupe keys.
         model.notificationWithdrawCategorySink = { [weak self] category in self?.withdrawAll(for: category) }
         // Schedule the pump-disconnect escalation ladder as OS-delivered notifications.
@@ -435,8 +434,8 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     }
 
     /// Withdraw every OS-outstanding (pending OR already-delivered) notification for
-    /// `category` — called when the user disables a safety-trio category via the confirm-on-disable
-    /// dialog, so the dialog's "faBolus will no longer alert you" promise is immediately true rather than
+    /// `category` — called when the user lowers a safety category to Off on the ladder, so the
+    /// "faBolus will be quieter about this" promise is immediately true rather than
     /// only for the NEXT event (a pump-disconnect escalation step scheduled BEFORE the disable would
     /// otherwise still fire after it). Unlike `withdraw(_:)`, this doesn't need a fixed list of dedupe
     /// keys: it queries the OS directly and filters by the `brokerCategory` userInfo every request is
@@ -490,10 +489,10 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         // A category that surfaces as UI state only never becomes a notification. The REFUSAL itself still
         // comes from the broker (`decide()` is the single governed decision point, and it returns
         // `.uiStateOnly` for exactly these categories — this does not re-derive the policy, it only routes
-        // around the persist). What this early return buys is the SIDE EFFECT: the `neverSuppressible`
-        // branch below persists a durable replay record BEFORE the broker decides (the persist-before-post
-        // guarantee), so reaching it would leave behind a record that nothing ever posts and nothing ever
-        // prunes — the exact defect this round is fixing for `bolusReconciliation`.
+        // around the persist). What this early return buys is the SIDE EFFECT: the safety-set branch below
+        // persists a durable replay record BEFORE the broker decides (the persist-before-post guarantee),
+        // so reaching it would leave behind a record that nothing ever posts and nothing ever prunes —
+        // the exact defect this round is fixing for `bolusReconciliation`.
         guard message.category.deliversAsNotification else {
             return runtime.evaluate(message, now: Date())
         }
@@ -501,20 +500,16 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         // alerts pass PUMP_ALERT for their CLEAR action). Whether that registered category carries a
         // SNOOZE action is decided by `Category.permitsSilencingAction` in `registerCategories()`.
         let cat = categoryId.isEmpty ? Self.categoryIdentifier(for: message.category) : categoryId
-        // A never-suppressible safety category is persisted (persist-before-post) through
-        // SafetyAlertPoster so it can be replayed on the next launch; every other category keeps
-        // using the plain poster unchanged. `deadline` (the absolute fire time for a delayed escalation
-        // step) is meaningful only on this branch — ignored otherwise.
-        if message.category.neverSuppressible {
-            // A category wired onto the unified ladder (the "safety set") resolves its
-            // OWN cascade from the persisted app-own rules — never a bare hardcoded default — the
-            // same way `syncPumpAlerts` resolves the pump-mirror cascade below. A category not yet
-            // migrated (`isSafetySet == false`) keeps `rules == nil`, so `decide()`/`post()` fall
-            // straight through to the pre-existing unconditional-deliver / breakthrough path.
-            let cascade =
-                rules
-                ?? (message.category.isSafetySet
-                    ? AppSettings.shared.notificationRules.cascade(for: message.category) : nil)
+        // A safety-set category is persisted (persist-before-post) through SafetyAlertPoster so it can be
+        // replayed on the next launch; every other category keeps using the plain poster unchanged.
+        // `deadline` (the absolute fire time for a delayed escalation step) is meaningful only on this
+        // branch — ignored otherwise.
+        if message.category.isSafetySet {
+            // Every safety-set category resolves its OWN cascade from the persisted app-own rules —
+            // never a bare hardcoded default — the same way `syncPumpAlerts` resolves the pump-mirror
+            // cascade below. A caller that already supplied `rules` wins; otherwise the app-own cascade
+            // is built here, so a ladder Off (aimed or inherited from a source/global rule) suppresses.
+            let cascade = rules ?? AppSettings.shared.notificationRules.cascade(for: message.category)
             return SafetyAlertPoster.post(
                 message, store: safetyAlertStore, runtime: runtime, userInfo: userInfo,
                 categoryId: cat, trigger: trigger, deadline: deadline, rules: cascade,
@@ -587,13 +582,13 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     /// ones that do not are retired here rather than re-evaluated on every future launch.
     private func replayPersistedSafetyAlerts(now: Date = Date()) {
         // `SafetyAlertPoster.post` persists the durable entry BEFORE the broker decides (the
-        // persist-before-post guarantee, which must NOT be weakened for the enabled case). The one way a
-        // never-suppressible entry is still suppressed is the user's own acknowledged-disable of that trio
-        // category — in which case the entry is dead state with no natural pruning path other than a
-        // condition-resolve/toggle. Opportunistically prune any entry whose replay decision comes back
-        // `.categoryDisabled`, so a permanently-unresolved, user-disabled entry can't be
+        // persist-before-post guarantee, which must NOT be weakened for the delivered case). The one way a
+        // safety-set entry is still suppressed is the user's own ladder Off for that category (aimed or an
+        // inherited source rule) — in which case the entry is dead state with no natural pruning path
+        // other than a condition-resolve. Opportunistically prune any entry whose replay decision comes
+        // back `.ruleResolvedOff`, so a permanently-unresolved, user-lowered entry can't be
         // re-loaded/re-evaluated/re-suppressed on every launch forever. This touches only the replay path
-        // — the persist-before-post ordering for the enabled case is unchanged.
+        // — the persist-before-post ordering for the delivered case is unchanged.
         var retiredKeys: [String] = []
         for entry in safetyAlertStore.unresolvedEntries() {
             // Does this record still have a job to do? `shouldReplayPersistedAlert` is the one place that
@@ -613,9 +608,10 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
                 category: entry.category, severity: entry.severity,
                 title: entry.title, body: entry.body, dedupeKey: entry.dedupeKey)
             let trigger = Self.replayTrigger(deadline: entry.deadline, now: now)
-            // A category wired onto the ladder resolves its cascade here too — the persisted
-            // entry's `.critical` fields aside, a replay must honor the SAME resolved intent the
-            // live post used, so a category the user lowered to Off never replays anyway.
+            // Every persisted safety-set entry resolves its cascade here too — a replay must honor the
+            // SAME resolved intent the live post used, so a category the user lowered to Off (aimed or an
+            // inherited source rule) never replays anyway. The ternary stays defensive: only safety-set
+            // entries are ever persisted, but a corrupt store must not build a cascade for anything else.
             let cascade =
                 entry.category.isSafetySet
                 ? AppSettings.shared.notificationRules.cascade(for: entry.category) : nil
@@ -631,11 +627,12 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
                 // the next, so a settled dose is re-announced at most once.
                 retiredKeys.append(entry.dedupeKey)
             }
-            if !decision.deliver, decision.reason == .categoryDisabled || decision.reason == .ruleResolvedOff {
-                // `.categoryDisabled` is the pre-ladder ack-gate suppression; `.ruleResolvedOff` is its
-                // ladder equivalent (a category the user lowered to Off) — both are a permanent,
-                // deliberate user choice with no natural resolve-path, so both retire the entry rather
-                // than re-evaluating it (and never re-delivering it) on every future launch forever.
+            if !decision.deliver, decision.reason == .ruleResolvedOff || decision.reason == .categoryDisabled {
+                // `.ruleResolvedOff` is a safety category the user lowered to Off (aimed or an inherited
+                // source rule); `.categoryDisabled` is kept only as a defensive catch for a corrupt
+                // non-safety entry. Both are a permanent, deliberate suppression with no natural
+                // resolve-path, so both retire the entry rather than re-evaluating it (and never
+                // re-delivering it) on every future launch forever.
                 retiredKeys.append(entry.dedupeKey)
             }
         }
@@ -643,8 +640,8 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     }
 
     /// The registered notification-category id for a broker category: `PUMP_ALERT` for pump alerts (CLEAR
-    /// + SNOOZE), the raw value for every other category — INCLUDING the never-suppressible safety ones,
-    /// which `ownedCategories()` now registers too (with an EMPTY action set, so they still can never be
+    /// + SNOOZE), the raw value for every other category — INCLUDING the safety-set ones, which
+    /// `ownedCategories()` now registers too (with an EMPTY action set, so they still can never be
     /// snoozed from a banner). Every category resolves to a registered identifier; none resolves to "".
     static func categoryIdentifier(for c: NotificationBroker.Category) -> String {
         c == .pumpAlert ? pumpAlertCategory : c.rawValue
@@ -739,23 +736,23 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         // stays attributable) but no buttons — iOS still provides its own default tap and
         // swipe-to-dismiss, so nothing became harder to act on.
         //
-        // Never-suppressible safety categories are registered too, under their raw value: an EMPTY action
-        // set (no actions ⇒ no visible silencing — they must never be snoozeable from a banner) plus
-        // `.customDismissAction`, so a swipe-dismiss on one of them is reportable the same way a pump
-        // alert's is, and the category becomes attributable instead of resolving to no registered
-        // identifier at all.
+        // Safety-set categories are registered too, under their raw value: an EMPTY action set (no
+        // actions ⇒ no visible silencing — a fired safety alert must never be snoozeable from a banner,
+        // a mechanism distinct from the settings-level ladder Off) plus `.customDismissAction`, so a
+        // swipe-dismiss on one of them is reportable the same way a pump alert's is, and the category
+        // becomes attributable instead of resolving to no registered identifier at all.
         var cats: Set<UNNotificationCategory> = [
             UNNotificationCategory(
                 identifier: Self.pumpAlertCategory, actions: [clear, snooze],
                 intentIdentifiers: [], options: [.customDismissAction])
         ]
-        for c in NotificationBroker.Category.allCases where !c.neverSuppressible && c != .pumpAlert {
+        for c in NotificationBroker.Category.allCases where !c.isSafetySet && c != .pumpAlert {
             cats.insert(
                 UNNotificationCategory(
                     identifier: c.rawValue, actions: c.permitsSilencingAction ? [snooze] : [],
                     intentIdentifiers: [], options: []))
         }
-        for c in NotificationBroker.Category.allCases where c.neverSuppressible {
+        for c in NotificationBroker.Category.allCases where c.isSafetySet {
             cats.insert(
                 UNNotificationCategory(
                     identifier: c.rawValue, actions: [],

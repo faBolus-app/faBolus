@@ -48,7 +48,7 @@ import Foundation
     // MARK: - "Resolved" for the replay log
 
     /// `.bolusReconciliation` is the only category that announces an already-settled result. Every other
-    /// never-suppressible category tracks an ongoing CONDITION whose withdrawal comes from the condition
+    /// safety-set category tracks an ongoing CONDITION whose withdrawal comes from the condition
     /// clearing, so it must keep replaying.
     @Test func bolusReconciliationIsTheOnlyCategoryThatAnnouncesASettledResult() {
         #expect(C.bolusReconciliation.announcesSettledResult)
@@ -70,7 +70,7 @@ import Foundation
     /// the condition, and the cold-launch edge detectors deliberately do not re-raise, so the durable
     /// replay is the only thing that keeps an unresolved disconnect visible across a relaunch.
     @Test func aConditionTrackingSafetyAlertAlwaysReplays() {
-        for c in C.allCases where c.neverSuppressible && !c.announcesSettledResult && c.deliversAsNotification {
+        for c in C.allCases where c.isSafetySet && !c.announcesSettledResult && c.deliversAsNotification {
             #expect(B.shouldReplayPersistedAlert(category: c, alreadyPresented: false), "\(c.rawValue)")
             #expect(
                 B.shouldReplayPersistedAlert(category: c, alreadyPresented: true),
@@ -82,7 +82,7 @@ import Foundation
     @Test func theConditionCategorySetIsNotEmpty() {
         let conditions = Set(
             C.allCases
-                .filter { $0.neverSuppressible && !$0.announcesSettledResult && $0.deliversAsNotification }
+                .filter { $0.isSafetySet && !$0.announcesSettledResult && $0.deliversAsNotification }
                 .map(\.rawValue))
         #expect(conditions == ["pumpDisconnect", "pumpConnectionUnstable", "urgentLowGlucose"])
     }

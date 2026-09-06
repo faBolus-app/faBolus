@@ -92,8 +92,8 @@ import UserNotifications
         }
     }
 
-    /// Every category resolves to a REGISTERED identifier — including the never-suppressible safety ones,
-    /// which used to resolve to "" and could never be attributed. A never-suppressible category's
+    /// Every category resolves to a REGISTERED identifier — including the safety-set safety ones,
+    /// which used to resolve to "" and could never be attributed. A safety-set category's
     /// registered actions are EMPTY (no snooze/silencing affordance — they must never be snoozeable from a
     /// banner), which is how attribution and the safety property can both hold at once.
     @Test func everyResolvedCategoryIdentifierIsRegisteredAndNoSafetyCategoryIs() {
@@ -103,24 +103,24 @@ import UserNotifications
         for c in C.allCases {
             let id = NotificationCoordinator.categoryIdentifier(for: c)
             #expect(identifiers.contains(id), "\(c.rawValue) resolves to \(id), which is not registered")
-            if c.neverSuppressible {
+            if c.isSafetySet {
                 #expect(
                     owned[id]?.actions.isEmpty == true,
-                    "\(c.rawValue) is never-suppressible — its registered category must carry no actions")
+                    "\(c.rawValue) is safety-set — its registered category must carry no actions")
             }
         }
     }
 
     /// The pump-alert category registers `.customDismissAction` so an explicit swipe-dismiss is reported
     /// back as `UNNotificationDismissActionIdentifier` — without it, iOS never delivers that identifier
-    /// at all, and a dismissal is structurally unrecordable. Every never-suppressible category gets the
+    /// at all, and a dismissal is structurally unrecordable. Every safety-set category gets the
     /// same option, for the same reason.
-    @Test func pumpAlertAndEveryNeverSuppressibleCategoryRegisterCustomDismissAction() {
+    @Test func pumpAlertAndEverySafetySetCategoryRegisterCustomDismissAction() {
         let owned = ownedByIdentifier()
         #expect(
             owned[NotificationCoordinator.pumpAlertCategory]?.options.contains(.customDismissAction) == true,
             "the pump-alert category must register .customDismissAction so a dismiss is recordable")
-        for c in C.allCases where c.neverSuppressible {
+        for c in C.allCases where c.isSafetySet {
             let registered = owned[NotificationCoordinator.categoryIdentifier(for: c)]
             #expect(
                 registered?.options.contains(.customDismissAction) == true,

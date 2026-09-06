@@ -33,11 +33,11 @@ import Foundation
         #expect(!C.bolusDeliveryFailed.permitsSilencingAction)
     }
 
-    /// A never-suppressible safety category already carried no snooze action — encoded here so the
+    /// A safety-set safety category already carried no snooze action — encoded here so the
     /// registration table derives from ONE predicate instead of two independent rules.
-    @Test func noNeverSuppressibleCategoryPermitsASilencingAction() {
-        for c in C.allCases where c.neverSuppressible {
-            #expect(!c.permitsSilencingAction, "\(c.rawValue) is never-suppressible and must offer no snooze")
+    @Test func noSafetySetCategoryPermitsASilencingAction() {
+        for c in C.allCases where c.isSafetySet {
+            #expect(!c.permitsSilencingAction, "\(c.rawValue) is safety-set and must offer no snooze")
         }
     }
 
@@ -80,10 +80,10 @@ import Foundation
 
     /// Everything ELSE about these two categories is unchanged — they stay GOVERNED (a deliberate
     /// per-category disable still works), so removing the snooze did not smuggle in a promotion to
-    /// never-suppressible.
+    /// safety-set.
     @Test func bothCategoriesRemainGovernedAndUserDisableable() {
         for c in [C.bolusIndeterminate, C.bolusDeliveryFailed] {
-            #expect(!c.neverSuppressible)
+            #expect(!c.isSafetySet)
             #expect(c.defaultEnabled)
             let d = B.decide(
                 msg(c), settings: [c: B.CategorySettings(enabled: false)],

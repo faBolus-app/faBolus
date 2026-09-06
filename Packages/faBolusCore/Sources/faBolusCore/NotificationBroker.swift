@@ -12,75 +12,55 @@ public enum NotificationBroker {
 
     // MARK: - Categories
 
-    /// The notification categories the broker governs. `neverSuppressible` marks the three §6 safety
-    /// categories that must reach the user regardless of settings/budget.
+    /// The notification categories the broker governs. `isSafetySet` marks the app-own safety
+    /// categories that resolve delivery + loudness through the unified ladder, defaulting to `Alert`.
     public enum Category: String, CaseIterable, Sendable, Codable {
-        // The §6 never-disableable safety categories.
+        // The app-own SAFETY categories (the "safety set").
         case pumpDisconnect  // the pump link dropped while it was connected/bolusing
         case bolusReconciliation  // the AUTHORITATIVE result of a bolus, incl. a resolved indeterminate
         /// The app stopped receiving CGM data (distinct from a pump-raised CGM alert, which arrives on
-        /// `pumpAlert` and is unaffected by any of this). Still a never-suppressible category, but since
-        /// 2026-08-30 it never NOTIFIES — a CGM gap is UI state only. See `deliversAsNotification` for the
-        /// decision and its accepted residual.
+        /// `pumpAlert` and is unaffected by any of this). A safety-set category, but since 2026-08-30 it
+        /// never NOTIFIES — a CGM gap is UI state only. See `deliversAsNotification` for the decision and
+        /// its accepted residual; it renders no settings row and no lowering dialog.
         case cgmDataLoss
         /// The pump link keeps FLAPPING — a bounded run of live→reconnecting re-pair/re-drop cycles
-        /// the reconnect ladder folds to `.connecting`, so `SafetyEdge.connection` (and the muteable
-        /// `pumpDisconnect` alert) stay silent through it. This is a SEPARATE never-suppressible
-        /// category on purpose, so it fires even when the user has muted `pumpDisconnect`; and it is
-        /// deliberately NOT user-configurable (`isUserConfigurable == false`), so there is no
-        /// acknowledged-disable path — it is truly non-muteable.
+        /// the reconnect ladder folds to `.connecting`, so `SafetyEdge.connection` (and the
+        /// `pumpDisconnect` alert) stay silent through it. A SEPARATE safety-set category on purpose, so
+        /// it can fire even when the user has lowered `pumpDisconnect`. It gains a settings row and is
+        /// user-tunable down to Off through the same ladder as the rest of the safety set.
         case pumpConnectionUnstable
-        /// The app-owned "urgent low glucose during CGM failover" alarm. Given its OWN
-        /// never-suppressible category — decoupled from `.cgmDataLoss` — so a user who disables the
-        /// plain "CGM data lost" banner does NOT also silence this urgent-low backstop. It is
-        /// user-configurable like the original trio (its own enable/disable + confirm-on-disable row,
-        /// `isUserConfigurable == true` via the default), but can only be silenced through the explicit
-        /// acknowledged-disable flow `decide()` reads — never by a snooze, rate-limit, budget, or the
-        /// `.cgmDataLoss` toggle.
+        /// The app-owned "urgent low glucose during CGM failover" alarm. Its OWN safety-set category —
+        /// decoupled from `.cgmDataLoss` — so a user who lowers the plain "CGM data lost" banner does NOT
+        /// also silence this urgent-low backstop. It defaults to Alert and is user-tunable down to Off
+        /// through the ladder, and can be silenced only through a deliberate ladder Off (aimed or an
+        /// inherited source rule), never by a transient snooze / rate-limit / budget.
         case urgentLowGlucose
         // Governed (suppressible) categories.
         case pumpAlert  // a pump-raised alert/alarm/reminder surfaced as a notification
         case remoteBolusRejected  // a remote-initiated bolus was REFUSED before delivery (policy / divergence / stale approval — never reached the pump)
-        case bolusDeliveryFailed  // a bolus that was ATTEMPTED-but-failed or BLOCKED and did NOT dose — distinct from an INDETERMINATE outcome, whose authoritative resolution the never-suppressible `bolusReconciliation` owns
+        case bolusDeliveryFailed  // a bolus that was ATTEMPTED-but-failed or BLOCKED and did NOT dose — distinct from an INDETERMINATE outcome, whose authoritative resolution the safety-set `bolusReconciliation` owns
         /// An outcome we do not YET know — a point-in-time heads-up, immediate + GOVERNED
         /// (user-silenceable, honors budget, does NOT break through DND). The AUTHORITATIVE
-        /// resolution is `bolusReconciliation` (never-suppressible, durable, DND-breaking) — this
+        /// resolution is `bolusReconciliation` (safety-set, durable, ladder-resolved) — this
         /// category is never persisted and never replayed on relaunch.
         case bolusIndeterminate
 
-        /// A safety category the user cannot turn off and that bypasses rate-limit / budget.
-        public var neverSuppressible: Bool {
+        /// The **safety set**: the app-own categories that default to `Alert` (louder than a pump-mirror
+        /// category's default, because faBolus is these categories' only annunciator) and are
+        /// user-tunable all the way down to `Off` through the unified Off/Quiet/Alert/Urgent ladder —
+        /// including by an inherited source/global rule that cascades to them like any other level. This
+        /// is NOT an "un-suppressible" tier: lowering one below its `Alert` default is gated in the UI by
+        /// a one-time warning (the pump remains the primary annunciator), never immune by construction.
+        /// What IS structural is the TRANSIENT-suppression invariant kept in `decide()`/`snooze(_:)`: a
+        /// snooze / rate-limit / daily-budget can never silence a safety category — only a deliberate
+        /// LADDER Off/Quiet can. Every member resolves delivery + loudness through the ONE resolver
+        /// (`NotificationRules`) at its call site (`NotificationCoordinator` supplies the cascade).
+        public var isSafetySet: Bool {
             switch self {
             case .pumpDisconnect, .bolusReconciliation, .cgmDataLoss, .pumpConnectionUnstable,
                 .urgentLowGlucose:
                 return true
             default: return false
-            }
-        }
-
-        /// The **safety set**: app-own categories wired onto the unified
-        /// Off/Quiet/Alert/Urgent ladder — defaulting to `Alert` (louder than a pump-mirror
-        /// category's default, because faBolus is these categories' only annunciator) and
-        /// user-tunable all the way down to `Off`, replacing the retired never-suppressible tier's
-        /// semantics for a category that has migrated here. `.pumpDisconnect` is the first member
-        /// (this tracer); a later plan generalizes the remaining four `neverSuppressible` categories
-        /// onto this same marker. A category NOT yet in this set still reads the old
-        /// `neverSuppressible` short-circuit in `decide()` unchanged.
-        public var isSafetySet: Bool {
-            switch self {
-            case .pumpDisconnect: return true
-            default: return false
-            }
-        }
-
-        /// All governed categories and the three original safety-trio categories are configurable (the
-        /// trio via the explicit acknowledged-disable flow). `pumpConnectionUnstable` is the sole
-        /// exception: it is never shown in settings and has NO acknowledged-disable path, so `decide()`
-        /// can never suppress it — it is truly NON-MUTEABLE. The settings UI filters on this.
-        public var isUserConfigurable: Bool {
-            switch self {
-            case .pumpConnectionUnstable: return false
-            default: return true
             }
         }
 
@@ -121,14 +101,17 @@ public enum NotificationBroker {
         /// provides the default tap (open the app) and swipe-to-dismiss, so nothing became harder to deal
         /// with — only the one-tap silence is gone.
         ///
-        /// False for every `neverSuppressible` category too. Those already carried no snooze action, but
-        /// deriving BOTH the registered actions and the snooze WRITE side from this one predicate means the
-        /// affordance and the governance can no longer disagree — including for a notification that was
-        /// DELIVERED by an older build and still sits in Notification Center with its old snooze button
-        /// (`setNotificationCategories` replaces the registered set at launch, but an already-delivered
-        /// notification keeps the actions it was delivered with).
+        /// False for every safety-set category too — a fired safety alert must never carry a tappable
+        /// snooze BUTTON (a different, narrower mechanism from the settings-level ladder Off, which IS
+        /// allowed). Deriving BOTH the registered actions and the snooze WRITE side from this one
+        /// predicate means the affordance and the governance can no longer disagree — including for a
+        /// notification that was DELIVERED by an older build and still sits in Notification Center with
+        /// its old snooze button (`setNotificationCategories` replaces the registered set at launch, but
+        /// an already-delivered notification keeps the actions it was delivered with). After the two
+        /// reminders were deleted, the sole app-own category that still permits a snooze is
+        /// `remoteBolusRejected` (plus the pump-mirror `pumpAlert`).
         public var permitsSilencingAction: Bool {
-            if neverSuppressible { return false }
+            if isSafetySet { return false }
             switch self {
             case .bolusIndeterminate, .bolusDeliveryFailed: return false
             default: return true
@@ -153,10 +136,10 @@ public enum NotificationBroker {
         /// ladder), and the governed ones default ON.
         public var defaultEnabled: Bool { true }
 
-        /// A pure display/classification axis driving the settings UI's pump-vs-app two-section split.
+        /// A pure display/classification axis driving the settings UI's pump-vs-app source split.
         /// `pumpAlert` is the only category relayed FROM the pump; every other category (incl. all
-        /// three never-suppressible trio categories) is GENERATED BY the app. This is display-only —
-        /// `decide()` never reads it, so it cannot influence governance.
+        /// five safety-set categories) is GENERATED BY the app. This is display-only — `decide()` never
+        /// reads it, so it cannot influence governance.
         public var isPumpSourced: Bool {
             switch self {
             case .pumpAlert: return true
@@ -180,7 +163,8 @@ public enum NotificationBroker {
     }
 
     /// Severity, for ordering + rendering (today the app renders everything identically red — this gives the
-    /// broker model a real axis). Safety categories are `.critical` by construction.
+    /// broker model a real axis). It is independent of the ladder: loudness comes from the resolved
+    /// intent, not from severity.
     public enum Severity: Int, Comparable, Sendable, Codable, CaseIterable {
         case info = 0, warning = 1, error = 2, critical = 3
         public static func < (a: Severity, b: Severity) -> Bool { a.rawValue < b.rawValue }
@@ -214,28 +198,21 @@ public enum NotificationBroker {
 
     // MARK: - Per-category settings
 
-    /// User-configurable governance for one category.
+    /// User-configurable governance for one GOVERNED category (the safety set resolves through the
+    /// ladder, not this struct). Just the per-category enable flag: the acknowledged-safety-disable field
+    /// was retired with the never-suppressible tier — a safety category is now lowered (including to Off)
+    /// through the unified rules ladder, gated by a one-time warning in the UI, not by an ack flag here.
+    ///
+    /// **Future-field warning:** any field added to this struct must use the `Optional`-typed-property
+    /// idiom, because Swift's synthesized `Decodable` only tolerates a missing key for `Optional`-typed
+    /// properties, not a non-optional one with a memberwise-init default — decoding an already-persisted
+    /// pre-this-field blob would otherwise fail the whole decode. Removing a field this struct once
+    /// carried is always safe either way: synthesized `Decodable` silently ignores an unrecognized key in
+    /// an old persisted blob (which is what makes retiring `userAcknowledgedSafetyDisable` here safe).
     public struct CategorySettings: Sendable, Equatable, Codable {
         public var enabled: Bool
-        /// The ONLY field that lets a `neverSuppressible` trio category
-        /// (`pumpDisconnect`/`cgmDataLoss`/`bolusReconciliation`) be suppressed. `decide()` suppresses a
-        /// trio message iff `enabled == false && userAcknowledgedSafetyDisable == true` — `enabled ==
-        /// false` alone is NEVER enough, so a stray/partial write can't silently drop a safety alert.
-        /// **Optional-typed**: the `notificationBroker.settings.v1` blob has already been persisted, so a
-        /// non-optional `= false` default would fail the whole decode of an already-persisted blob — a
-        /// missing key decodes to `nil`, which reads as "not acknowledged" (safe). Consulted ONLY at the
-        /// trio short-circuit in `decide()`, nowhere else.
-        ///
-        /// **Future-field warning:** any field added to this struct must use the `Optional`-typed-property
-        /// idiom too, because Swift's synthesized `Decodable` only tolerates a missing key for
-        /// `Optional`-typed properties, not a non-optional one with a memberwise-init default — decoding an
-        /// already-persisted pre-this-field blob would otherwise fail the whole decode. Removing a field
-        /// this struct once carried is always safe either way: synthesized `Decodable` silently ignores an
-        /// unrecognized key in an old persisted blob.
-        public var userAcknowledgedSafetyDisable: Bool?
-        public init(enabled: Bool, userAcknowledgedSafetyDisable: Bool? = nil) {
+        public init(enabled: Bool) {
             self.enabled = enabled
-            self.userAcknowledgedSafetyDisable = userAcknowledgedSafetyDisable
         }
         /// The default governance for a category (respecting its `defaultEnabled`).
         public static func defaults(for category: Category) -> CategorySettings {
@@ -341,16 +318,14 @@ public enum NotificationBroker {
         public let nextState: State
     }
 
-    /// Decide whether `message` should be delivered now, and return the state to persist. **Fail-safe on
-    /// the safety side**: a `neverSuppressible` category is ALWAYS delivered (and still recorded, so its
-    /// dedupe/episode tracking works) — no setting, snooze, or budget can drop it. Ordering for governed
-    /// categories: category enabled → snooze → episode-not-already-notified → budget. `settings` is
-    /// looked up per category (falling back to that category's defaults).
-    ///
-    /// The ONE thing checked above that guarantee is `Category.deliversAsNotification`: a category that
-    /// surfaces as UI state only is not a notification channel at all, so "always delivered" does not apply
-    /// to it. Today that is `cgmDataLoss` alone, and it is a POLICY refusal (`.uiStateOnly`) with no user
-    /// setting behind it — not a suppression a setting, snooze, or budget produced.
+    /// Decide whether `message` should be delivered now, and return the state to persist. A caller that
+    /// supplies a `rules` cascade (production always does for `.pumpAlert` and every safety-set category)
+    /// resolves entirely through the ONE resolver — a ladder Off (aimed OR inherited from a source/global
+    /// rule) suppresses, everything else delivers. Without a cascade: a UI-state-only category is refused
+    /// (`.uiStateOnly`); a safety-set category is delivered unconditionally (the TRANSIENT-suppression
+    /// invariant fallback — no snooze/rate-limit/budget can silence it); and a governed category runs the
+    /// ordering category-enabled → snooze → episode-not-already-notified → budget. `settings` is looked up
+    /// per category (falling back to that category's defaults).
     public static func decide(
         _ message: Message,
         settings: [Category: CategorySettings],
@@ -372,16 +347,16 @@ public enum NotificationBroker {
         func record() -> State {
             var out = s
             out.lastDeliveredAt[message.category.rawValue] = now
-            // A never-suppressible OR `.error`-severity delivery does NOT consume the daily/meal
-            // budget — a flapping disconnect (posting repeated `.error` escalation steps on the
-            // already-neverSuppressible `.pumpDisconnect` category) must never be able to exhaust the
-            // budget that gates a genuine `bolusDeliveryFailed`. Because these deliveries never consume a
-            // slot, a later withdrawal of one has nothing to "refund" — deliberately NOT adding a blind
-            // decrement-per-dedupeKey refund here: `withdraw` only ever sees identifiers and cannot tell
-            // whether a given key consumed a budget slot or maps to multiple counted notifications, so a
-            // blind decrement would UNDERCOUNT ordinary notifications. `lastDeliveredAt` and
-            // `notifiedEpisodes` still advance below so dedupe/episode tracking stays coherent.
-            let budgetExempt = message.category.neverSuppressible || message.severity == .error
+            // A safety-set OR `.error`-severity delivery does NOT consume the daily budget — a flapping
+            // disconnect (posting repeated `.error` escalation steps on the safety-set `.pumpDisconnect`
+            // category) must never be able to exhaust the budget that gates a genuine
+            // `bolusDeliveryFailed`. Because these deliveries never consume a slot, a later withdrawal of
+            // one has nothing to "refund" — deliberately NOT adding a blind decrement-per-dedupeKey
+            // refund here: `withdraw` only ever sees identifiers and cannot tell whether a given key
+            // consumed a budget slot or maps to multiple counted notifications, so a blind decrement
+            // would UNDERCOUNT ordinary notifications. `lastDeliveredAt` and `notifiedEpisodes` still
+            // advance below so dedupe/episode tracking stays coherent.
+            let budgetExempt = message.category.isSafetySet || message.severity == .error
             if !budgetExempt {
                 out.deliveredToday += 1
             }
@@ -395,44 +370,35 @@ public enum NotificationBroker {
         // category once a caller supplies a rule cascade — no parallel inline check alongside it, and
         // no per-category or per-source branch here either — `source` is an attribute and a
         // cascade scope the CALLER resolves against, never a reason to fork this function. `rules ==
-        // nil` (every caller that hasn't migrated a category onto the ladder yet) falls straight
-        // through to the pre-existing settings-driven / never-suppressible path below, unchanged.
-        // Whether a category's caller builds a cascade for it — `.pumpAlert` (pump-mirror) and the
-        // app-own safety-set categories (`Category.isSafetySet`, `.pumpDisconnect` first) today — is
-        // entirely the caller's decision; a future category needs no change here to join.
+        // nil` (a caller that did not build a cascade) falls straight through to the settings-driven /
+        // safety-fallback path below. In production every safety-set category IS given a cascade
+        // (`NotificationCoordinator` builds it), so a safety category's ladder Off — aimed OR inherited
+        // from a source/global rule (Amendment B: the cascade reaches safety like everything else) —
+        // resolves here to `.off` and suppresses; nothing is immune-to-cascade by construction.
         if let rules {
             let resolved = NotificationRules.resolve(rules, timeSensitiveAvailable: timeSensitiveAvailable)
             return resolved.phone == .off ? suppress(.ruleResolvedOff) : deliver()
         }
 
         // A category that surfaces as UI state only never becomes a notification — checked ABOVE the
-        // never-suppressible short-circuit, because "always delivered" is a statement about a category
-        // that notifies at all, and this one does not. Placed at the single governed decision point so it
-        // holds for every poster (the app's coordinator, a replayed durable record, an out-of-process
-        // intent) rather than at one call site. `suppress` advances no counter and records no episode, so
-        // a silent category can never consume the budget that gates a genuine `bolusDeliveryFailed`.
+        // safety fallback, because "always delivered" is a statement about a category that notifies at
+        // all, and this one does not. Placed at the single governed decision point so it holds for every
+        // poster (the app's coordinator, a replayed durable record, an out-of-process intent) rather
+        // than at one call site. `suppress` advances no counter and records no episode, so a silent
+        // category can never consume the budget that gates a genuine `bolusDeliveryFailed`.
         // Owner decision 2026-08-30 — see `Category.deliversAsNotification` for the accepted residual.
         if !message.category.deliversAsNotification { return suppress(.uiStateOnly) }
 
         let cfg = settings[message.category] ?? .defaults(for: message.category)
 
-        // Safety categories bypass EVERYTHING (still recorded so dedupe/episode/counters stay coherent) —
-        // UNLESS the user explicitly acknowledged turning this specific safety alert off.
-        // `enabled == false` alone is never enough: suppression requires BOTH `enabled == false` AND
-        // `userAcknowledgedSafetyDisable == true`, so a stray/partial write (or an old pre-this-field
-        // blob, where the ack field decodes to `nil`) can never silently drop a safety alert. This is
-        // the ONLY place a trio category is suppressible.
-        if message.category.neverSuppressible {
-            // The acknowledged-disable escape applies ONLY to user-configurable safety categories (the
-            // original trio). A never-suppressible category that is NOT user-configurable
-            // (`pumpConnectionUnstable`) has no UI toggle and no acknowledged-disable path, so it is
-            // delivered UNCONDITIONALLY here — truly non-muteable by construction, robust even against a
-            // forged/corrupt settings blob that sets the ack flag.
-            if message.category.isUserConfigurable, !cfg.enabled, cfg.userAcknowledgedSafetyDisable == true {
-                return suppress(.categoryDisabled)
-            }
-            return deliver()
-        }
+        // TRANSIENT-suppression invariant (the safety fallback): a safety-set category reached WITHOUT a
+        // supplied cascade is delivered unconditionally, so no transient snooze / rate-limit / daily
+        // budget below can ever silence it. This is the fail-safe path only — a safety category's
+        // deliberate ladder Off (including one inherited from a source/global rule) is honored above via
+        // the resolver, which production always supplies. It is NOT an ack-gate: the retired
+        // never-suppressible tier's `enabled`/`userAcknowledgedSafetyDisable` escape is gone; lowering a
+        // safety category is a ladder action, not a settings-blob write consulted here.
+        if message.category.isSafetySet { return deliver() }
 
         // A governed message's severity no longer has a special bypass here (Decision 4 — the
         // `.critical`-severity budget/snooze/disable exemption is retired: the ladder's top rung is
@@ -441,8 +407,8 @@ public enum NotificationBroker {
         // production always supplies one — so ordinary governance applies uniformly.
         if !cfg.enabled { return suppress(.categoryDisabled) }
 
-        // User snooze: suppress this category until its deadline. Placed BELOW the `neverSuppressible`
-        // return above, so neither a snooze nor a disable can silence a safety alarm.
+        // User snooze: suppress this category until its deadline. Placed BELOW the safety fallback
+        // above, so neither a snooze nor a disable can silence a safety alarm.
         //
         // Also gated on `permitsSilencingAction`, so an unresolved-dose category can never be silenced by
         // a snooze that already exists in the persisted map — one written by a build that still offered the
@@ -464,7 +430,7 @@ public enum NotificationBroker {
 
     /// Whether a DURABLE safety-alert replay record should be re-submitted on launch, or retired instead.
     ///
-    /// The app persists a replay record for every never-suppressible post BEFORE handing the request to
+    /// The app persists a replay record for every safety-set post BEFORE handing the request to
     /// the OS, so an alert issued moments before a cold-restoration relaunch cannot silently vanish. That
     /// log had exactly one pruning route — the condition resolving — which meant `bolusReconciliation`,
     /// whose per-delivery dedupe key (`RemoteBolusLedger.reconciliationDedupeKey`) no caller could
@@ -499,16 +465,15 @@ public enum NotificationBroker {
     }
 
     /// Record a "snooze this category until `until`" into `state`, returning the next state. **Refuses a
-    /// `neverSuppressible` category** — the write side guards the safety invariant in addition to `decide`
-    /// bypassing it on the read side, so no TRANSIENT snooze (or corrupt/forged snooze map) can ever
-    /// suppress a safety alert. The user CAN deliberately disable a trio category, but only through the
-    /// explicit, acknowledged path `decide()` reads at the trio short-circuit
-    /// (`CategorySettings.userAcknowledgedSafetyDisable`), never through this snooze mechanism. A
-    /// transient snooze/rate-limit/budget still cannot suppress a trio member.
+    /// safety-set category** — the write side guards the TRANSIENT-suppression invariant in addition to
+    /// `decide` bypassing it on the read side, so no transient snooze (or corrupt/forged snooze map) can
+    /// ever suppress a safety alert. The user CAN deliberately lower a safety category, including to Off,
+    /// but only through the unified ladder (aimed or an inherited source/global rule), never through this
+    /// snooze mechanism. A transient snooze/rate-limit/budget still cannot suppress a safety member.
     public static func snooze(_ state: State, category: Category, until: Date) -> State {
-        // Generalized from `!neverSuppressible` to `permitsSilencingAction`, which is a strict widening
-        // (every never-suppressible category permits no silencing action) and additionally refuses the two
-        // unresolved-dose categories. See `Category.permitsSilencingAction`.
+        // `permitsSilencingAction` refuses every safety-set category (a strict superset of the old
+        // never-suppressible refusal) and additionally the two unresolved-dose categories. See
+        // `Category.permitsSilencingAction`.
         guard category.permitsSilencingAction else { return state }
         var out = state
         var m = out.snoozedUntil ?? [:]

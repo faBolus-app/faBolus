@@ -34,16 +34,18 @@ import UserNotifications
             store: isolatedStore(#function), settings: hostile,
             budget: B.Budget(dailyTotal: 0))
         var posted: [String] = []
-        // `.cgmDataLoss` is excluded: it is never-suppressible AND, since 2026-08-30, never a
-        // notification at all (a CGM gap is UI state only), so "always posts" does not apply to it. Its
-        // refusal is asserted directly below so the coverage is not merely dropped.
-        for c in C.allCases where c.neverSuppressible && c.deliversAsNotification {
+        // `.cgmDataLoss` is excluded: it is safety-set AND, since 2026-08-30, never a notification at all
+        // (a CGM gap is UI state only), so "always posts" does not apply to it. Its refusal is asserted
+        // directly below so the coverage is not merely dropped. The poster is called WITHOUT a cascade
+        // here, so the safety fallback delivers regardless of the hostile settings — the transient
+        // gates cannot silence a safety category.
+        for c in C.allCases where c.isSafetySet && c.deliversAsNotification {
             let d = NotificationPoster.post(msg(c, key: c.rawValue), runtime: rt, now: at(3, 0)) {
                 posted.append($0.identifier)
             }
             #expect(d.deliver, "\(c.rawValue) must always post")
         }
-        // `pumpConnectionUnstable` and `urgentLowGlucose` are never-suppressible too — they post under the hostile config.
+        // `pumpConnectionUnstable` and `urgentLowGlucose` are safety-set too — they post under the hostile config.
         #expect(
             Set(posted) == ["pumpDisconnect", "bolusReconciliation", "pumpConnectionUnstable", "urgentLowGlucose"])
         // The UI-state-only category builds no request at all, and says so.
@@ -257,43 +259,27 @@ import UserNotifications
         #expect(reqs.isEmpty)
     }
 
-    /// The safety trio is user-disableable only behind an acknowledged-disable flag, honored by a fresh runtime + the real poster.
-    @Test func acknowledgedSafetyDisablePersistsAndIsHonoredByAFreshRuntimeAndTheRealPoster() {
-        let store = isolatedStore(#function)
-        let rt1 = NotificationRuntime(store: store)
-        var cfg = rt1.settings[.pumpDisconnect] ?? .defaults(for: .pumpDisconnect)
-        cfg.enabled = false
-        cfg.userAcknowledgedSafetyDisable = true
-        rt1.updateSettings(cfg, for: .pumpDisconnect)
-        // A FRESH runtime on the same App-Group store (a relaunch, or an out-of-process poster).
-        let rt2 = NotificationRuntime(store: store)
-        let disabled = NotificationPoster.post(msg(.pumpDisconnect, key: "pd1"), runtime: rt2, now: at(9, 0)) { _ in }
-        #expect(
-            !disabled.deliver && disabled.reason == .categoryDisabled,
-            "an acknowledged safety-disable is honored by a fresh runtime + the real poster")
-        // bolusReconciliation (untouched) still delivers on the same runtime.
-        let untouched = NotificationPoster.post(
-            msg(.bolusReconciliation, key: "recon1"), runtime: rt2, now: at(9, 0)
+    /// A safety category lowered to Off on the ladder is honored by the real poster when the caller
+    /// supplies that cascade (the coordinator does), while a safety category at its default cascade
+    /// delivers — the ladder Off, not an ack flag, is what suppresses.
+    @Test func aLadderOffIsHonoredByTheRealPoster() {
+        typealias R = NotificationRules
+        let rt = NotificationRuntime(store: isolatedStore(#function))
+        var lowered = R.PersistedRules()
+        lowered.appOwnCategoryOverrides[C.pumpDisconnect.rawValue] = R.Rule(intent: .off)
+        let disabled = NotificationPoster.post(
+            msg(.pumpDisconnect, key: "pd1"), runtime: rt, now: at(9, 0),
+            rules: lowered.cascade(for: .pumpDisconnect), timeSensitiveAvailable: true
         ) { _ in }
-        #expect(untouched.deliver, "an untouched trio category is unaffected by another category's disable")
-    }
-
-    /// decide(): `!enabled` alone must NEVER suppress a trio — only the paired acknowledgment does.
-    @Test func decideRequiresBothEnabledFalseAndAcknowledgedTrueToSuppressATrioCategory() {
-        typealias B = NotificationBroker
-        // enabled==false, ack unset (nil) → still delivers.
-        let notAcked = B.decide(
-            msg(.pumpDisconnect),
-            settings: [.pumpDisconnect: B.CategorySettings(enabled: false)],
-            state: B.State(), now: at(9, 0))
-        #expect(notAcked.deliver, "the ack flag is the mandatory gate — !enabled alone must never suppress a trio")
-        // enabled==false, ack==true → suppressed.
-        var ackedCfg = B.CategorySettings(enabled: false)
-        ackedCfg.userAcknowledgedSafetyDisable = true
-        let acked = B.decide(
-            msg(.pumpDisconnect), settings: [.pumpDisconnect: ackedCfg],
-            state: B.State(), now: at(9, 0))
-        #expect(!acked.deliver && acked.reason == .categoryDisabled)
+        #expect(
+            !disabled.deliver && disabled.reason == .ruleResolvedOff,
+            "a safety category lowered to Off on the ladder must be suppressed by the real poster")
+        // A different safety category at its default cascade is unaffected — it delivers.
+        let untouched = NotificationPoster.post(
+            msg(.bolusReconciliation, key: "recon1"), runtime: rt, now: at(9, 0),
+            rules: R.PersistedRules().cascade(for: .bolusReconciliation), timeSensitiveAvailable: true
+        ) { _ in }
+        #expect(untouched.deliver, "a category at its default cascade is unaffected by another's lowering")
     }
 
     // MARK: - Pump-mirror settings ladder
@@ -358,9 +344,9 @@ import UserNotifications
     }
 
     /// `.cgmDataLoss` never notifies (`deliversAsNotification == false`), so the Notifications screen
-    /// must not render it as a live, deliverable safety category anywhere: no trio row (driven off
-    /// `deliversAsNotification` rather than a hard-coded exclusion), no footer mention, no
-    /// confirm-on-disable dialog title or message. Source-text scan since `trioCategories` is private.
+    /// must not render it as a live, deliverable safety category anywhere: no ladder row (the app-own
+    /// safety section filters on `deliversAsNotification` rather than a hard-coded exclusion), no footer
+    /// mention, no confirm-on-lower dialog message. Source-text scan since the filter is private.
     @Test func cgmDataLossIsNotRenderedAsADeliverableNotificationCategoryAnywhere() throws {
         guard let url = Self.notificationSettingsViewFileURL(),
             let source = try? String(contentsOf: url, encoding: .utf8)
@@ -371,11 +357,11 @@ import UserNotifications
         #expect(!source.isEmpty, "path resolution broke — read zero bytes from NotificationSettingsView.swift")
         #expect(
             source.contains("$0.deliversAsNotification"),
-            "trioCategories must filter on deliversAsNotification so a non-delivering category is excluded by construction, not by a hard-coded exclusion"
+            "the app-own safety filter must drive off deliversAsNotification so a non-delivering category is excluded by construction, not by a hard-coded exclusion"
         )
         #expect(
             !source.contains("Turn off CGM-data-loss alerts?"),
-            "the confirm-on-disable dialog must not offer to turn off an alert that never fires"
+            "the confirm-on-lower dialog must not offer to turn off an alert that never fires"
         )
         #expect(
             !source.contains("(pump disconnected, CGM data lost")
@@ -383,10 +369,8 @@ import UserNotifications
             "no copy in NotificationSettingsView may still name CGM data loss among alerts that reach the user"
         )
         #expect(
-            source.contains(
-                "Urgent-low backup alarm and bolus result reach you even during Do Not Disturb"
-            ),
-            "the safety-alerts footer must name the urgent-low backup alarm (which does reach the user) in place of CGM data loss"
+            source.contains("Alerts faBolus raises itself"),
+            "the app-own \"faBolus alerts\" section must describe alerts faBolus raises itself (which do reach the user) rather than naming CGM data loss"
         )
     }
 
@@ -403,70 +387,6 @@ import UserNotifications
             runtime: rt, now: at(9, 0)
         ) { ids.append($0.identifier) }
         #expect(ids == ["remoteBolusRejected-1", "remoteBolusRejected-2"])  // old fixed id collapsed both
-    }
-
-    // MARK: - Safety-trio toggle cancel/snap-back and trioIsSuppressed AND-gate
-
-    /// Turning a safety-trio toggle OFF must request confirm and must not write `enabled` until confirm fires.
-    @Test func safetyTrioToggleCancelSnapsBackWithoutWritingEnabled() {
-        var backing = true  // currently ON (protection active)
-        var setCalls: [Bool] = []
-        var confirmRequested = 0
-        let binding = NotificationSettingsView.safetyTrioToggleBinding(
-            enabled: { backing },
-            setEnabled: { on in
-                setCalls.append(on)
-                backing = on
-            },
-            requestConfirmDisable: { confirmRequested += 1 }
-        )
-        #expect(binding.wrappedValue == true)
-        binding.wrappedValue = false  // user taps the toggle OFF
-        #expect(confirmRequested == 1, "turning off must request confirm before writing anything")
-        #expect(setCalls.isEmpty, "must not write `enabled` until the confirm button explicitly fires")
-        // Simulate Cancel: no dialog action ever calls setEnabled. A re-read must snap back to ON.
-        #expect(binding.wrappedValue == true, "Cancel must snap the toggle back to its prior (on) state")
-        #expect(backing == true, "Cancel must never have written the backing value")
-    }
-
-    /// Confirming (not cancelling) does write through `setEnabled`, so the snap-back test isn't vacuously passing.
-    @Test func safetyTrioToggleConfirmWritesThroughSetEnabled() {
-        var backing = true
-        var setCalls: [Bool] = []
-        let binding = NotificationSettingsView.safetyTrioToggleBinding(
-            enabled: { backing },
-            setEnabled: { on in
-                setCalls.append(on)
-                backing = on
-            },
-            requestConfirmDisable: {}
-        )
-        binding.wrappedValue = false  // requests confirm, no write yet
-        setCalls.append(false)
-        backing = false  // simulate the confirm button's own explicit action
-        #expect(binding.wrappedValue == false)
-        #expect(setCalls == [false])
-    }
-
-    /// `trioIsSuppressed` must match `decide()`'s AND-gate so the UI can never diverge from what actually delivers.
-    @Test func trioIsSuppressedMirrorsDecidesExactAndGate() {
-        typealias B = NotificationBroker
-        #expect(!NotificationSettingsView.trioIsSuppressed(cfg: nil))
-        #expect(!NotificationSettingsView.trioIsSuppressed(cfg: B.CategorySettings(enabled: true)))
-        // enabled == false, ack unset (nil) → NOT suppressed.
-        #expect(!NotificationSettingsView.trioIsSuppressed(cfg: B.CategorySettings(enabled: false)))
-        // enabled == false, ack explicitly false → still NOT suppressed.
-        var ackedFalse = B.CategorySettings(enabled: false)
-        ackedFalse.userAcknowledgedSafetyDisable = false
-        #expect(!NotificationSettingsView.trioIsSuppressed(cfg: ackedFalse))
-        // enabled == false AND ack == true → suppressed (the only true case).
-        var acked = B.CategorySettings(enabled: false)
-        acked.userAcknowledgedSafetyDisable = true
-        #expect(NotificationSettingsView.trioIsSuppressed(cfg: acked))
-        // enabled == true (regardless of ack) → never suppressed.
-        var enabledButAcked = B.CategorySettings(enabled: true)
-        enabledButAcked.userAcknowledgedSafetyDisable = true
-        #expect(!NotificationSettingsView.trioIsSuppressed(cfg: enabledButAcked))
     }
 
     /// `withdrawAll` matches by the `brokerCategory` stamp, so it also finds `.bolusReconciliation`'s per-attempt dynamic keys.
@@ -586,19 +506,23 @@ import UserNotifications
         #expect(store.entries["reconcile-watch-r1"] == nil, "withdrawAll(for:) must prune the durable entry")
     }
 
-    /// Replay must prune an entry whose decision is `.categoryDisabled`, or a disabled trio would re-suppress forever.
-    @Test func replayPrunesEntriesTheBrokerSuppressesAsCategoryDisabled() {
+    /// Replay must prune an entry whose decision is `.ruleResolvedOff`, or a safety category the user
+    /// lowered to Off on the ladder would re-suppress (and re-load/re-evaluate) forever.
+    @Test func replayPrunesEntriesTheBrokerSuppressesAsRuleResolvedOff() {
         let defaults = isolatedStore(#function)
-        // The user has explicitly disabled + acknowledged the `.urgentLowGlucose` safety category.
-        // (`.urgentLowGlucose`, not `.cgmDataLoss` — the latter is now retired by the UI-state-only rule
-        // instead, which would make this test pass without exercising the `.categoryDisabled` prune.)
-        var cfg = NotificationBroker.CategorySettings.defaults(for: .urgentLowGlucose)
-        cfg.enabled = false
-        cfg.userAcknowledgedSafetyDisable = true
-        let rt = NotificationRuntime(store: defaults, settings: [.urgentLowGlucose: cfg])
+        // The user lowered `.urgentLowGlucose` to Off on the ladder. The replay path resolves against
+        // `AppSettings.shared.notificationRules`, so drive it there and restore it afterward.
+        typealias R = NotificationRules
+        let savedRules = AppSettings.shared.notificationRules
+        defer { AppSettings.shared.notificationRules = savedRules }
+        var lowered = R.PersistedRules()
+        lowered.appOwnCategoryOverrides[C.urgentLowGlucose.rawValue] = R.Rule(intent: .off)
+        AppSettings.shared.notificationRules = lowered
+
+        let rt = NotificationRuntime(store: defaults)
         let store = SafetyAlertStore(store: defaults)
-        // A durable entry for that now-disabled category (will decide `.categoryDisabled` on replay) plus
-        // one for an unconfigured category that still delivers (default-enabled) and must be kept.
+        // A durable entry for that now-lowered category (will decide `.ruleResolvedOff` on replay) plus
+        // one for a category at its default cascade that still delivers and must be kept.
         store.record(
             .init(
                 category: .urgentLowGlucose, severity: .critical, title: "t", body: "b",
@@ -616,7 +540,7 @@ import UserNotifications
         let coordinator = NotificationCoordinator(model: model, runtime: rt, safetyAlertStore: store)
         #expect(
             store.entries["safety.urgentLowGlucose"] == nil,
-            "a replay decision of .categoryDisabled must prune the dead durable entry")
+            "a replay decision of .ruleResolvedOff must prune the dead durable entry")
         #expect(
             store.entries["safety.pumpDisconnect"] != nil,
             "an entry that still delivers on replay must NOT be pruned")

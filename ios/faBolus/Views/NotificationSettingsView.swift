@@ -1,29 +1,29 @@
 import SwiftUI
 import faBolusCore
 
-/// Notification controls. Pump-sourced (`pumpAlert`) vs app-generated categories. `pumpDisconnect` is
-/// wired onto the unified Off/Quiet/Alert/Urgent ladder (the app-own "safety set") and
-/// rendered in `appOwnSafetyLadderSection`; the remaining never-suppressible categories
-/// (`bolusReconciliation` / `urgentLowGlucose` / `cgmDataLoss`) still render through the older
-/// always-on-unless-acknowledged toggle in `safetyAlertsSection`. Governance lives in
-/// `NotificationBroker.decide()`, unchanged by this view.
+/// Notification controls, all on the unified Off/Quiet/Alert/Urgent ladder. Pump-mirror alerts
+/// (`pumpAlert`) render grouped in `pumpMirrorSection`; the app's OWN alerts render in
+/// `appOwnSafetyLadderSection` (the five-member safety set — `pumpDisconnect`, `bolusReconciliation`,
+/// `pumpConnectionUnstable`, `urgentLowGlucose`; `cgmDataLoss` never notifies so it has no row) and
+/// `categorySection` (the governed rest). Lowering any safety category below its Alert default —
+/// aimed OR via the app-own source one-move control (an inherited rule that cascades to safety per
+/// Amendment B) — fires the one-time safety-lowering warning. Governance lives in
+/// `NotificationBroker.decide()` and `NotificationRules`, unchanged by this view.
 struct NotificationSettingsView: View {
-    /// Read-only handle for `model.notificationWithdrawCategorySink` when the user disables a
-    /// safety-trio category. Nothing else here binds `model`.
+    /// Read-only handle for `model.notificationWithdrawCategorySink` when the user lowers a safety
+    /// category to Off. Nothing else here binds `model`.
     let model: AppModel
     @Bindable var settings: AppSettings
     @State private var runtime: NotificationRuntime
     /// Local mirror of `runtime.settings`. `NotificationRuntime` isn't `@Observable`, so this
     /// `@State` copy drives the UI and refreshes after every write-through.
     @State private var categorySettings: [NotificationBroker.Category: NotificationBroker.CategorySettings]
-    /// Safety trio is disableable behind confirm-on-disable. Nil ⇒ no dialog.
-    @State private var safetyDisableOffCategory: NotificationBroker.Category?
-    /// A pump-mirror ladder change that would lower a safety group below its default is held here
+    /// A ladder change that would lower a safety group/category below its default is held here
     /// pending confirmation (Decision 2) — nil ⇒ no dialog. The read always reflects the last-applied
     /// value until confirmed, so Cancel's snap-back is free.
     @State private var pendingSafetyLower: PendingSafetyLower?
 
-    /// A pending, not-yet-applied ladder change that would lower a safety group below its default.
+    /// A pending, not-yet-applied ladder change that would lower a safety group/category below its default.
     enum PendingSafetyLower: Equatable {
         case group(NotificationRules.PumpMirrorGroup, NotificationRules.Intent)
         case source(NotificationRules.Intent)
@@ -31,6 +31,9 @@ struct NotificationSettingsView: View {
         /// pump-mirror cases above because the confirm message must not claim the pump alarms on its
         /// own screen for these (it does not; faBolus is their only annunciator).
         case appOwnCategory(NotificationBroker.Category, NotificationRules.Intent)
+        /// The app-own SOURCE one-move control lowered below the safety default — an inherited rule
+        /// that cascades to every app-own safety category (Amendment B), so it warns like an aimed one.
+        case appOwnSource(NotificationRules.Intent)
     }
 
     init(model: AppModel, settings: AppSettings) {
@@ -43,36 +46,33 @@ struct NotificationSettingsView: View {
 
     // MARK: - Category groupings
 
-    private var trioCategories: [NotificationBroker.Category] {
-        // `pumpConnectionUnstable` is never-suppressible and has no user toggle. `deliversAsNotification`
-        // excludes any category that never notifies (currently `cgmDataLoss`): rendering a
-        // toggle/caption/dialog for a condition that cannot notify is a false statement, so the filter
-        // drives off the same predicate `decide()` reads rather than a hard-coded exclusion. `isSafetySet`
-        // excludes a category migrated onto the unified ladder (currently `pumpDisconnect`, rendered by
-        // `appOwnSafetyLadderSection` instead) — its old enable/ack toggle no longer drives `decide()`.
+    /// The app-own SAFETY categories that render a ladder row: the safety set minus any that never
+    /// notify. `cgmDataLoss` is safety-set but `deliversAsNotification == false`, so it renders no row
+    /// and no lowering dialog — offering controls for a condition that cannot notify is a false
+    /// statement, so the filter drives off the same predicate `decide()` reads.
+    private var appOwnSafetyCategories: [NotificationBroker.Category] {
         NotificationBroker.Category.allCases.filter {
-            !$0.isPumpSourced && $0.neverSuppressible && $0.isUserConfigurable && $0.deliversAsNotification
-                && !$0.isSafetySet
+            !$0.isPumpSourced && $0.isSafetySet && $0.deliversAsNotification
         }
     }
+    /// The app-own GOVERNED (non-safety) categories — everything app-generated that is not on the
+    /// safety set and does notify.
     private var tunableAppCategories: [NotificationBroker.Category] {
         NotificationBroker.Category.allCases.filter {
-            !$0.isPumpSourced && !$0.neverSuppressible && $0.isUserConfigurable
+            !$0.isPumpSourced && !$0.isSafetySet && $0.deliversAsNotification
         }
     }
 
     // MARK: - Per-category bindings
 
     private func enabledBinding(for category: NotificationBroker.Category) -> Binding<Bool> {
-        // Writes `enabled` without `userAcknowledgedSafetyDisable` — a trio routed here would
-        // desync `decide()`'s AND-gate (toggle "Off" while delivery still happens). Trio categories
-        // must use `safetyEnabledBinding`, which writes both. Fail loudly (`precondition`, not
-        // `assert`) so a future call site cannot reintroduce that desync.
+        // Only GOVERNED (non-safety) categories use a plain enable toggle. A safety-set category
+        // resolves through the ladder, never this flag — fail loudly (`precondition`, not `assert`) so a
+        // future call site cannot route one here and desync it from what `decide()` actually reads.
         precondition(
-            !category.neverSuppressible,
-            "enabledBinding(for:) must never be used for a never-suppressible trio category "
-                + "(\(category.rawValue)) — use safetyEnabledBinding(for:) instead, which keeps "
-                + "`enabled` and `userAcknowledgedSafetyDisable` paired.")
+            !category.isSafetySet,
+            "enabledBinding(for:) must never be used for a safety-set category "
+                + "(\(category.rawValue)) — safety categories are tuned through the ladder, not `enabled`.")
         return Binding(
             get: { categorySettings[category]?.enabled ?? category.defaultEnabled },
             set: { on in
@@ -81,87 +81,6 @@ struct NotificationSettingsView: View {
                 updateCategorySettings(cfg, for: category)
             }
         )
-    }
-
-    /// Trio confirm-on-disable — same inversion as the trio's own toggle. Uses `guardedToggle`,
-    /// not the dose-path ack gate (that would write a therapy acknowledgment on this screen).
-    private func safetyEnabledBinding(for category: NotificationBroker.Category) -> Binding<Bool> {
-        Self.safetyTrioToggleBinding(
-            enabled: { categorySettings[category]?.enabled ?? true },
-            setEnabled: { on in setSafetyEnabled(on, for: category) },
-            requestConfirmDisable: { safetyDisableOffCategory = category }
-        )
-    }
-
-    /// Trio toggle inversion as a factory over closures so Cancel/snap-back (OFF requests confirm
-    /// and does not write `enabled` until confirm) is unit-testable without a live view.
-    static func safetyTrioToggleBinding(
-        enabled: @escaping () -> Bool,
-        setEnabled: @escaping (Bool) -> Void,
-        requestConfirmDisable: @escaping () -> Void
-    ) -> Binding<Bool> {
-        let offToggle = guardedToggle(
-            get: { !enabled() },
-            set: { off in setEnabled(!off) },
-            requestConfirm: requestConfirmDisable
-        )
-        return Binding(
-            get: { !offToggle.wrappedValue },
-            set: { on in offToggle.wrappedValue = !on }
-        )
-    }
-
-    /// Write `enabled` and `userAcknowledgedSafetyDisable` together so `decide()`'s AND-gate sees a
-    /// coherent pair: disable sets both; re-enable clears the ack so the next disable needs a fresh confirm.
-    private func setSafetyEnabled(_ on: Bool, for category: NotificationBroker.Category) {
-        var cfg = categorySettings[category] ?? .defaults(for: category)
-        cfg.enabled = on
-        cfg.userAcknowledgedSafetyDisable = on ? nil : true
-        updateCategorySettings(cfg, for: category)
-        // Withdraw already-scheduled banners for this category so "faBolus will no longer alert
-        // you" is immediately true. Re-enable needs no symmetric restore — the next event posts normally.
-        if !on {
-            model.notificationWithdrawCategorySink?(category)
-        }
-    }
-
-    /// Per-category disable title — each trio warning is specific, not one generic sentence.
-    private func safetyDisableDialogTitle(for category: NotificationBroker.Category?) -> Text {
-        switch category {
-        case .bolusReconciliation: return Text("Turn off bolus-result alerts?")
-        case .urgentLowGlucose: return Text("Turn off urgent-low backup alarm?")
-        default: return Text("")
-        }
-    }
-
-    /// Effective-state caption as a String so the same value feeds `.accessibilityValue`.
-    private func safetyEffectiveStateCaptionText(for category: NotificationBroker.Category) -> String {
-        Self.trioIsSuppressed(cfg: categorySettings[category])
-            ? "⚠ Off — you turned off this safety protection."
-            : "On — always delivered, even during Do Not Disturb."
-    }
-
-    /// Mirrors `NotificationBroker.decide()`'s trio AND-gate (`!enabled && ack == true`) so the
-    /// caption never reads `enabled` alone. Display only — `decide()` still decides delivery.
-    static func trioIsSuppressed(cfg: NotificationBroker.CategorySettings?) -> Bool {
-        guard let cfg else { return false }
-        return !cfg.enabled && cfg.userAcknowledgedSafetyDisable == true
-    }
-
-    /// The trio's computed effective-state caption, rendered
-    /// below each trio row.
-    @ViewBuilder
-    private func safetyEffectiveStateCaption(for category: NotificationBroker.Category) -> some View {
-        if !Self.trioIsSuppressed(cfg: categorySettings[category]) {
-            Text(safetyEffectiveStateCaptionText(for: category))
-                .font(.caption).foregroundStyle(.secondary)
-        } else {
-            HStack(spacing: 8) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                Text(safetyEffectiveStateCaptionText(for: category))
-            }
-            .foregroundStyle(.red)
-        }
     }
 
     /// One write-through: local mirror for UI, then `runtime.updateSettings` for out-of-process posters.
@@ -179,7 +98,6 @@ struct NotificationSettingsView: View {
         Form {
             pumpMirrorSection
             appOwnSafetyLadderSection
-            safetyAlertsSection
             ForEach(tunableAppCategories, id: \.self) { category in
                 categorySection(for: category)
             }
@@ -201,43 +119,16 @@ struct NotificationSettingsView: View {
             Button("Cancel", role: .cancel) { pendingSafetyLower = nil }
         } message: {
             switch pendingSafetyLower {
-            case .appOwnCategory:
+            case .appOwnCategory(let category, _):
+                appOwnCategoryLowerMessage(for: category)
+            case .appOwnSource:
                 Text(
-                    "faBolus is the only thing watching for this — your pump does not alarm for it. Lowering this makes faBolus quieter (or silent) about it. You can raise this back to its default anytime."
+                    "faBolus is the only thing watching for these — your pump does not alarm for them. Lowering all of them at once makes faBolus quieter (or silent) about a dropped pump link, a bolus result, an unstable connection, and the backup urgent-low alarm. You can raise them back to their defaults anytime."
                 )
             default:
                 Text(
                     "Your pump keeps alarming on its own screen for this — faBolus will just be quieter (or silent) about it here. You can raise this back to its default anytime."
                 )
-            }
-        }
-        // Trio confirm-on-disable: category-specific title and body.
-        .confirmationDialog(
-            safetyDisableDialogTitle(for: safetyDisableOffCategory),
-            isPresented: Binding(
-                get: { safetyDisableOffCategory != nil },
-                set: { if !$0 { safetyDisableOffCategory = nil } }),
-            titleVisibility: .visible
-        ) {
-            if let category = safetyDisableOffCategory {
-                Button("Turn off protection", role: .destructive) {
-                    setSafetyEnabled(false, for: category)
-                    safetyDisableOffCategory = nil
-                }
-            }
-            Button("Cancel", role: .cancel) { safetyDisableOffCategory = nil }
-        } message: {
-            switch safetyDisableOffCategory {
-            case .bolusReconciliation:
-                Text(
-                    "faBolus will no longer alert you with the final, authoritative result of a bolus (including an indeterminate delivery that resolves later) — including during Do Not Disturb. You may not learn whether insulin was actually delivered until you check the app yourself. You can turn this back on anytime."
-                )
-            case .urgentLowGlucose:
-                Text(
-                    "faBolus will no longer sound its backup urgent-low-glucose alarm — the safety net that fires when your pump's CGM feed goes stale and a backup source (e.g. Dexcom Share) reports a dangerously low reading — including during Do Not Disturb. This is separate from the \"CGM data loss\" alert; turning it off means a low caught only by the backup feed may reach you silently or not at all. You can turn this back on anytime."
-                )
-            default:
-                EmptyView()
             }
         }
     }
@@ -382,10 +273,11 @@ struct NotificationSettingsView: View {
         case .group(let group, let newValue): applyGroupIntent(newValue, for: group)
         case .source(let newValue): applySourceOverride(newValue)
         case .appOwnCategory(let category, let newValue): applyAppOwnCategoryIntent(newValue, for: category)
+        case .appOwnSource(let newValue): applyAppOwnSourceOverride(newValue)
         }
     }
 
-    // MARK: - App-own safety ladder — one wired category so far (`.pumpDisconnect`)
+    // MARK: - App-own safety ladder (the five-member safety set)
 
     /// Read/write one app-own safety category's phone-side ladder rung. Reading always returns the
     /// real resolved value (the user's override, or `appOwnSafetyDefaultIntent`); writing a value
@@ -415,9 +307,68 @@ struct NotificationSettingsView: View {
         rule.intent = newValue
         settings.notificationRules.appOwnCategoryOverrides[category.rawValue] = rule
         // Withdraw any already-outstanding banner for this category so "faBolus will be quieter about
-        // this" is immediately true, mirroring `setSafetyEnabled`'s withdraw-on-disable behavior above.
+        // this" is immediately true.
         if newValue == .off {
             model.notificationWithdrawCategorySink?(category)
+        }
+    }
+
+    /// The one-move app-own SOURCE override (Decision 1c / Amendment B): "follow each category below"
+    /// (no override — the default) or a single rung that lowers/raises every app-own safety category at
+    /// once. Because the source level cascades to safety categories that have no override of their own,
+    /// a rung below the safety default here is gated by the same one-time warning as an aimed lowering.
+    private var appOwnSourceOverrideChoiceBinding: Binding<SourceOverrideChoice> {
+        Binding(
+            get: {
+                if let intent = settings.notificationRules.appOwnSourceOverride?.intent {
+                    return .intent(intent)
+                }
+                return .followEachCategory
+            },
+            set: { choice in
+                switch choice {
+                case .followEachCategory:
+                    applyAppOwnSourceOverride(nil)
+                case .intent(let newValue):
+                    if newValue < NotificationRules.appOwnSafetyDefaultIntent {
+                        pendingSafetyLower = .appOwnSource(newValue)
+                    } else {
+                        applyAppOwnSourceOverride(newValue)
+                    }
+                }
+            }
+        )
+    }
+
+    private func applyAppOwnSourceOverride(_ newValue: NotificationRules.Intent?) {
+        settings.notificationRules.appOwnSourceOverride = newValue.map { NotificationRules.Rule(intent: $0) }
+    }
+
+    /// Per-category wording for the one-time safety-lowering warning. Each safety category is specific —
+    /// what faBolus alone watches for — so the user understands exactly what goes quiet. `cgmDataLoss`
+    /// never renders a row, so it never reaches this dialog.
+    private func appOwnCategoryLowerMessage(for category: NotificationBroker.Category) -> Text {
+        switch category {
+        case .pumpDisconnect:
+            return Text(
+                "faBolus is the only thing watching your phone's link to the pump — your pump does not alarm when that link drops. Lowering this makes faBolus quieter (or silent) when it can no longer reach your pump. You can raise it back to its default anytime."
+            )
+        case .bolusReconciliation:
+            return Text(
+                "faBolus is the only thing that tells you the final, authoritative result of a bolus (including an indeterminate delivery that resolves later). Lowering this makes it quieter (or silent) — you may not learn whether insulin was actually delivered until you check the app yourself. You can raise it back to its default anytime."
+            )
+        case .pumpConnectionUnstable:
+            return Text(
+                "faBolus is the only thing watching for a pump link that keeps flapping — your pump does not alarm for it. Lowering this makes faBolus quieter (or silent) about an unstable connection. You can raise it back to its default anytime."
+            )
+        case .urgentLowGlucose:
+            return Text(
+                "faBolus is the only thing that sounds this backup urgent-low-glucose alarm — the safety net that fires when your pump's CGM feed goes stale and a backup source reports a dangerously low reading. Lowering it means a low caught only by the backup feed may reach you quietly or not at all. You can raise it back to its default anytime."
+            )
+        default:
+            return Text(
+                "faBolus is the only thing watching for this — your pump does not alarm for it. Lowering this makes faBolus quieter (or silent) about it. You can raise it back to its default anytime."
+            )
         }
     }
 
@@ -435,19 +386,28 @@ struct NotificationSettingsView: View {
         }
     }
 
-    /// The app-own safety-set section: faBolus is the ONLY annunciator for these
-    /// categories, so they default to Alert and are individually tunable down to Off, unlike the
-    /// pump-mirror ladder's "your pump alarms too" framing.
+    /// The app-own "faBolus alerts" section (Decision 1c source grouping): faBolus is the ONLY
+    /// annunciator for these categories, so they default to Alert and are tunable down to Off — a
+    /// one-move source control at the top, then each safety category's own rung. `cgmDataLoss` is
+    /// deliberately absent (it never notifies, so a row for it would be a false statement).
     private var appOwnSafetyLadderSection: some View {
-        Section {
-            ForEach(NotificationBroker.Category.allCases.filter { $0.isSafetySet }, id: \.self) { category in
+        let sourceIntents = Self.availablePhoneIntents(
+            timeSensitiveAvailable: NotificationCapability.timeSensitiveAvailable)
+        return Section {
+            Picker("All faBolus alerts", selection: appOwnSourceOverrideChoiceBinding) {
+                Text("Follow each category below").tag(SourceOverrideChoice.followEachCategory)
+                ForEach(sourceIntents, id: \.self) { intent in
+                    Text(Self.intentLabel(intent)).tag(SourceOverrideChoice.intent(intent))
+                }
+            }
+            ForEach(appOwnSafetyCategories, id: \.self) { category in
                 appOwnSafetyCategoryRow(category)
             }
         } header: {
-            Text("App safety alerts")
+            Text("faBolus alerts")
         } footer: {
             Text(
-                "faBolus is the only thing watching for these — your pump does not alarm for them. They default to Alert and can be raised to break through Do Not Disturb (where allowed), or lowered, even to Off."
+                "Alerts faBolus raises itself — your pump does not alarm for these. They default to Alert and can be raised to break through Do Not Disturb (where allowed), or lowered, even to Off. Lowering one below its default asks you to confirm, because faBolus is your only annunciator for it."
             )
         }
     }
@@ -499,28 +459,7 @@ struct NotificationSettingsView: View {
         }
     }
 
-    /// Never-suppressible trio, disableable behind confirm. Caption always discloses effective state.
-    private var safetyAlertsSection: some View {
-        Section {
-            ForEach(trioCategories, id: \.self) { category in
-                VStack(alignment: .leading, spacing: 2) {
-                    Toggle(category.label, isOn: safetyEnabledBinding(for: category))
-                        // VoiceOver: switch state + the same on-screen caption.
-                        .accessibilityValue(Text(safetyEffectiveStateCaptionText(for: category)))
-                    safetyEffectiveStateCaption(for: category)
-                }
-            }
-        } header: {
-            Text("Safety alerts")
-        } footer: {
-            Text(
-                "Urgent-low backup alarm and bolus result reach you even during Do Not Disturb or a full daily budget — unless you explicitly turn one off above. Pump-disconnect alerts moved to their own tunable rung below."
-            )
-        }
-    }
-
-    /// One section per tunable (non-trio, non-pump) category — enable only. The old per-category
-    /// "Allow critical break-through" toggle is retired with the force-protection axis it tuned.
+    /// One section per governed (non-safety, non-pump) app-own category — enable only.
     @ViewBuilder
     private func categorySection(for category: NotificationBroker.Category) -> some View {
         Section {
