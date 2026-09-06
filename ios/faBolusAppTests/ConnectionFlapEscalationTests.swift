@@ -224,4 +224,97 @@ struct ConnectionFlapEscalationTests {
         let fifth = d.recordFlap(at: quiet.addingTimeInterval(4))
         #expect(fifth, "a fresh storm after a full quiet window re-escalates exactly once")
     }
+
+    // MARK: - The flap alert PERSISTS across a storm (the withdraw is gated on flap-window decay)
+
+    /// The whole point of the persistence fix: during a sustained storm the flap-window fact must remain
+    /// active across the intermediate reconnects, so the reconnect (`.clear`) edge does NOT withdraw the
+    /// "can't hold a connection" alert and it stays outstanding — instead of the pre-fix
+    /// one-notification-then-silence. Drives the REAL recovery half (`markUsableAndStartPolling()`), not the
+    /// `setConnectionForTesting` false-gate bypass.
+    @Test func fiveRecoverThenReflapCyclesKeepTheFlapWindowActiveSoTheAlertPersists() {
+        let b = TandemBackend(testTransport: FakePumpTransport())
+        var events: [ReliabilityEvent] = []
+        b.onReliabilityEvent = { events.append($0) }
+
+        for cycle in 1...5 {
+            recoverForReal(b)  // REAL recovery half of the flap cycle
+            #expect(
+                b.snapshot.connection == .connected,
+                "cycle \(cycle): the recovery half must publish the usable link")
+            b.applyClientState(.connecting)  // the drop → one live→`.connecting` flap cycle
+        }
+        #expect(
+            events.filter { $0 == .connectionUnstable }.count == 1,
+            "5 flap cycles through the REAL recovery path escalate exactly once")
+
+        // One more reconnect: the flap window is still populated, so the alert must remain outstanding.
+        recoverForReal(b)
+        #expect(
+            b.snapshot.pumpLinkFlapWindowActive,
+            "the flap window is still active across the intermediate reconnects, so the withdraw is gated")
+
+        b.applyClientState(.disconnected)  // cleanup: release any poll timer this test armed
+    }
+
+    /// The other half of the gate: once the flap window has genuinely decayed, a reconnect (`.clear` edge)
+    /// DOES withdraw the flap alert. Exercised at the `RefreshEffectsCoordinator` seam so the decayed state
+    /// is set explicitly rather than driven through 120 s of real time.
+    @Test func aReconnectAfterTheFlapWindowDecaysWithdrawsTheFlapAlert() {
+        let withdrawn = runClearEdge(flapWindowActive: false)
+        #expect(
+            withdrawn.contains(Self.unstableKey),
+            "with the window decayed, a reconnect withdraws the pumpConnectionUnstable alert")
+        #expect(withdrawn.contains(Self.disconnectKey), "pumpDisconnect is always withdrawn on reconnect")
+        #expect(
+            DisconnectEscalation.stepIds.allSatisfy { withdrawn.contains($0) },
+            "the escalation steps are always withdrawn on reconnect")
+    }
+
+    /// While the flap window is active, the reconnect withdraws pumpDisconnect + the escalation steps
+    /// exactly as before, but the pumpConnectionUnstable withdraw is gated out — that gate is the whole fix.
+    @Test func aReconnectDuringAnActiveFlapWindowWithdrawsDisconnectButNotTheFlapAlert() {
+        let withdrawn = runClearEdge(flapWindowActive: true)
+        #expect(withdrawn.contains(Self.disconnectKey), "pumpDisconnect is still withdrawn on reconnect")
+        #expect(
+            DisconnectEscalation.stepIds.allSatisfy { withdrawn.contains($0) },
+            "the escalation steps are still withdrawn on reconnect")
+        #expect(
+            !withdrawn.contains(Self.unstableKey),
+            "the flap alert must NOT be withdrawn while the window is still active — it persists")
+    }
+
+    private static let disconnectKey = "test.pumpDisconnect"
+    private static let unstableKey = "test.pumpConnectionUnstable"
+    private static let cgmKey = "test.cgmDataLoss"
+
+    /// Runs a reconnect (`.clear` connection edge) through `RefreshEffectsCoordinator` with the given
+    /// flap-window state and returns the dedupe keys the coordinator asked to withdraw.
+    private func runClearEdge(flapWindowActive: Bool) -> [String] {
+        let coord = RefreshEffectsCoordinator()
+        var withdrawn: [String] = []
+        coord.withdrawNotifications = { withdrawn.append(contentsOf: $0) }
+        var snap = PumpSnapshot()
+        snap.connection = .connected
+        snap.pumpLinkFlapWindowActive = flapWindowActive
+        coord.performEffects(
+            snapshot: snap,
+            glucoseHistory: [],
+            provenance: .pump,
+            bolusMarkers: [],
+            activeNotifications: [],
+            widgetBolusLocked: false,
+            widgetBolusLockReason: "",
+            cgmFresh: true,
+            urgentLowNow: false,
+            alertsChanged: false,
+            pumpDisconnectKey: Self.disconnectKey,
+            pumpConnectionUnstableKey: Self.unstableKey,
+            cgmDataLossKey: Self.cgmKey,
+            prevConnection: .connecting,  // prev != .connected, now == .connected ⇒ .clear edge
+            prevGlucoseFresh: true,
+            prevUrgentLowActive: false,
+            prevLastArmedGlucoseDate: nil)
+        return withdrawn
+    }
 }

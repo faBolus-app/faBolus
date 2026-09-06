@@ -127,6 +127,13 @@ public struct PumpSnapshot: Sendable, Equatable {
     /// every down state. Not on any wire type — surfacing it changes no schema and no remote/Garmin
     /// behavior.
     public var connectionDetail: String?
+    /// Whether a connection-flap storm window is currently open (the flap detector still holds recorded
+    /// re-pair/re-drop cycles). Display/notification fact only — set from `PumpConnectionLifecycle`'s flap
+    /// detector, read by the effects tail to decide whether a reconnect may withdraw the "can't hold a
+    /// connection" alert. Gating the withdraw on this is what keeps that alert outstanding through the
+    /// intermediate reconnects of a storm instead of clearing it on the first reconnect. Not on any wire
+    /// type; never a dose-path input.
+    public var pumpLinkFlapWindowActive: Bool = false
     /// The pump LINK is healthy — connected, or actively delivering. The single definition of "link is
     /// up", replacing hand-rolled `== .connected || == .bolusing` checks (group D). `connection` conflates
     /// link-health with in-flight because `.bolusing` is a peer of the link states; these two computed
