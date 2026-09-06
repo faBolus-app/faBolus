@@ -19,11 +19,20 @@ struct BolusOutcomeBannerTests {
             "a non-delivered outcome must never show the success banner's primary line")
     }
 
-    /// The indeterminate outcome is distinguished only inside AppModel — this banner surfaces the same `.failed` + `message` path.
+    /// The indeterminate outcome now routes to the explicit `.unconfirmed` banner — an honest,
+    /// never-silent disclosure that claims neither delivery nor non-delivery and directs the user to
+    /// verify on the pump (previously it rode the `.failed` "Bolus not delivered" path, a false claim).
     @Test func indeterminateCopyFlowsThroughUnchanged() {
         let indeterminateMessage = "Bolus sent but outcome is unknown — verify on the pump before retrying."
-        let banner = BolusConfirmation.banner(for: .failed, units: 2.50, message: indeterminateMessage)
+        let banner = BolusConfirmation.banner(for: .unconfirmed, units: 2.50, message: indeterminateMessage)
         #expect(banner != nil)
+        #expect(banner?.kind == .warning)
+        #expect(
+            banner?.primary != "Bolus delivered",
+            "an indeterminate outcome must never claim the dose was delivered")
+        #expect(
+            banner?.primary != "Bolus not delivered",
+            "an indeterminate outcome must never claim the dose was not delivered")
         #expect(
             banner?.secondary == indeterminateMessage,
             "the indeterminate copy (from AppModel's already-accurate lastError) must surface verbatim")

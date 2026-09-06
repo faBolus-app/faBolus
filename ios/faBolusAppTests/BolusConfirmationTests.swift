@@ -16,7 +16,32 @@ struct BolusConfirmationTests {
 
     @Test func failedSignalProducesNoBanner() {
         let banner = BolusConfirmation.banner(for: .failed, units: 2.50)
-        #expect(banner == nil, "a blocked/indeterminate/rejected/timed-out outcome must never show a success banner")
+        #expect(banner == nil, "a blocked/rejected/timed-out outcome must never show a success banner")
+    }
+
+    // MARK: - Unconfirmed outcome (honest, never-silent disclosure)
+
+    /// An unconfirmed outcome is a GUARANTEED disclosure — unlike `.failed` it is never silent even
+    /// without a message. Its primary claims neither delivery nor non-delivery; the secondary directs
+    /// the user to the pump's own history/IOB before dosing again.
+    @Test func unconfirmedSignalProducesNonNilWarningBanner() {
+        let banner = BolusConfirmation.banner(for: .unconfirmed, units: 2.50)
+        #expect(banner != nil, "an unconfirmed outcome is a guaranteed disclosure — never silent")
+        #expect(banner?.kind == .warning)
+        #expect(banner?.primary != "Bolus delivered", "must not claim the dose was delivered")
+        #expect(banner?.primary != "Bolus not delivered", "must not claim the dose was not delivered")
+        #expect(
+            banner?.secondary.contains("verify on the pump") == true,
+            "the unconfirmed banner must direct the user to verify on the pump")
+    }
+
+    /// When the caller supplies the already-resolved copy (`AppModel.lastError`), it surfaces verbatim.
+    @Test func unconfirmedSignalSurfacesSuppliedMessage() {
+        let msg = "Bolus sent but outcome is unknown — verify on the pump before retrying."
+        let banner = BolusConfirmation.banner(for: .unconfirmed, units: 2.50, message: msg)
+        #expect(banner != nil)
+        #expect(banner?.kind == .warning)
+        #expect(banner?.secondary == msg)
     }
 
     // MARK: - Truthful confirmation (only on real .delivered)
