@@ -175,6 +175,57 @@ public enum NotificationRules {
             return .quiet
         }
     }
+
+    // MARK: - Persisted rules model (D-13, Amendment A)
+
+    /// The persisted pump-mirror rules blob. Starts from FRESH fatigue-averse defaults and has no
+    /// code path that reads or translates the legacy `notificationBroker.settings.v1` /
+    /// `CategorySettings` blob — there is no migration (owner Amendment A: "existing users can just
+    /// reset the app"). An absent override is NOT `.off` — it is "not yet overridden," and resolves
+    /// through `defaultIntent(for:)` at `cascade(for:)`'s category level, so a fresh install, an
+    /// upgrading install, and a decode failure all land in the same place: loud enough, never silent.
+    public struct PersistedRules: Sendable, Equatable, Codable {
+        /// The pump-mirror SOURCE-level override — Decision 1c's one-move "silence everything
+        /// mirrored from the pump." `nil` ⇒ no source-level override; each group resolves at its
+        /// own category-level default/override instead.
+        public var sourceOverride: Rule?
+        /// Per-`PumpMirrorGroup` category-level overrides, keyed by `PumpMirrorGroup.rawValue` (a
+        /// `String`-keyed dictionary, mirroring `NotificationBroker.CategorySettings`'s own
+        /// `[String: …]` persistence idiom — Swift's synthesized `Codable` for an enum-keyed
+        /// dictionary is markedly less forgiving of an unrecognized/removed key than a `String` one).
+        /// An absent group here is "not yet overridden," never "off."
+        public var groupOverrides: [String: Rule]
+
+        public init(sourceOverride: Rule? = nil, groupOverrides: [String: Rule] = [:]) {
+            self.sourceOverride = sourceOverride
+            self.groupOverrides = groupOverrides
+        }
+
+        // Hand-written, `decodeIfPresent`-based decode FROM THE START (the `ConnectionTelemetry`
+        // pattern one file away) — so a field added to this struct later is automatically
+        // decode-tolerant: it is one more `decodeIfPresent` line here, never a synthesized
+        // non-optional property an older persisted blob could fail to satisfy.
+        private enum CodingKeys: String, CodingKey {
+            case sourceOverride, groupOverrides
+        }
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            sourceOverride = try c.decodeIfPresent(Rule.self, forKey: .sourceOverride)
+            groupOverrides = try c.decodeIfPresent([String: Rule].self, forKey: .groupOverrides) ?? [:]
+        }
+
+        /// The resolved cascade for `group`. The fatigue-averse default sits at the LEAST specific
+        /// (`global`) level — never at `category` — so an explicit `sourceOverride` (more specific
+        /// than `global`, less specific than `category`) can still silence the group in one move
+        /// per Decision 1c; a `category`-level override, when the user has set one, wins over both.
+        /// Never `.off` by omission: the only way any level is `.off` is an explicit user choice.
+        public func cascade(for group: PumpMirrorGroup) -> Cascade {
+            Cascade(
+                global: Rule(intent: NotificationRules.defaultIntent(for: group)),
+                source: sourceOverride,
+                category: groupOverrides[group.rawValue])
+        }
+    }
 }
 
 extension NotificationBroker.Category {
