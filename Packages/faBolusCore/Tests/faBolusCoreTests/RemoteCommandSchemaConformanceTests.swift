@@ -101,4 +101,84 @@ struct RemoteCommandSchemaConformanceTests {
             )
         }
     }
+
+    // MARK: - additive per-surface watch-intent wire property
+
+    /// The additive field must exist in the schema (so a receiver can rely on it) while the version
+    /// stays pinned — adding a property is safe, bumping the const would break every older watch.
+    @Test func schemaDeclaresTheAdditiveWatchIntentPropertyUnderAnUnchangedVersion() throws {
+        let schema = try Self.loadSchema()
+        guard let properties = schema["properties"] as? [String: Any] else {
+            Issue.record("schema/command.schema.json has no top-level properties object")
+            return
+        }
+        #expect(
+            properties["watchNotificationIntents"] != nil,
+            "schema/command.schema.json must declare the additive watchNotificationIntents property"
+        )
+
+        // version.const is unchanged (== 1); a bump breaks the watch immediately.
+        guard let version = properties["version"] as? [String: Any] else {
+            Issue.record("schema has no properties.version")
+            return
+        }
+        #expect(
+            version["const"] as? Int == 1,
+            "version.const must stay 1 — bumping it breaks every older watch; this landing is additive"
+        )
+
+        // Root additionalProperties stays false — an additive field never loosens the guard.
+        #expect(
+            schema["additionalProperties"] as? Bool == false,
+            "root additionalProperties must stay false; the new field is a declared property, not an escape hatch"
+        )
+    }
+
+    /// The Swift mirror carries the field as an Optional (so a legacy host simply omits it) and it
+    /// round-trips through the same JSON encode/decode the wire uses.
+    @Test func watchNotificationIntentsIsOptionalAndRoundTrips() throws {
+        var cmd = RemoteCommand(kind: .statusRead)
+        #expect(cmd.watchNotificationIntents == nil, "the field must be Optional and default to absent")
+
+        cmd.watchNotificationIntents = ["deliveryStopped": "alert", "pumpRoutine": "quiet"]
+        let data = try cmd.encoded()
+        let decoded = try JSONDecoder().decode(RemoteCommand.self, from: data)
+        #expect(
+            decoded.watchNotificationIntents == cmd.watchNotificationIntents,
+            "watchNotificationIntents must round-trip encode/decode on the wire"
+        )
+    }
+
+    /// The contract enforced downstream: an absent field, an absent key, or an unrecognized token all
+    /// resolve to the vibrating rung — never silence — so an old host or a corrupted value can never
+    /// quiet a pump safety alert. An explicit, recognized value (including an intentional "off") is the
+    /// user's own choice and is honored verbatim.
+    @Test func absentOrMalformedWatchIntentFailsSafeToVibrateNeverSilent() {
+        // Legacy host: the field is absent entirely.
+        let legacy = RemoteCommand(kind: .statusRead)
+        #expect(
+            legacy.resolvedWatchIntent(for: "deliveryStopped") == .alert,
+            "an absent field must fail safe to the vibrating rung, never to silence"
+        )
+
+        // New host, but this category's key is missing from the map.
+        var cmd = RemoteCommand(kind: .statusRead)
+        cmd.watchNotificationIntents = ["runningLow": "quiet"]
+        #expect(
+            cmd.resolvedWatchIntent(for: "deliveryStopped") == .alert,
+            "an absent key must fail safe to the vibrating rung"
+        )
+
+        // Malformed / unrecognized token.
+        cmd.watchNotificationIntents = ["deliveryStopped": "banana"]
+        #expect(
+            cmd.resolvedWatchIntent(for: "deliveryStopped") == .alert,
+            "an unrecognized token must fail safe to the vibrating rung"
+        )
+
+        // Explicit recognized values are honored — including an intentional silence.
+        cmd.watchNotificationIntents = ["deliveryStopped": "off", "runningLow": "quiet"]
+        #expect(cmd.resolvedWatchIntent(for: "deliveryStopped") == .off, "an explicit off is the user's own choice")
+        #expect(cmd.resolvedWatchIntent(for: "runningLow") == .quiet, "an explicit quiet is honored verbatim")
+    }
 }
