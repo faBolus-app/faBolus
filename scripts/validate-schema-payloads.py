@@ -56,6 +56,7 @@ VALID = [
         "lockoutUntilEpochSec": 1700003600, "maxBasalUnitsPerHour": 3.0, "controlIQMode": 0,
         "alertIntensityMode": "vibrate", "alertAudibleMinSeverity": "critical",
         "alertCriticalOverridesDnd": False,
+        "watchNotificationIntents": {"deliveryStopped": "alert", "glucoseAndControlIQ": "quiet", "pumpRoutine": "off"},
     },
     {"version": 1, "kind": "bolusRequest", "requestId": "r2", "units": 2.5},
     # C2 §2.3: a Garmin bolusRequest may carry the entered passcode (remote → host).
