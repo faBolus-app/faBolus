@@ -35,6 +35,11 @@ final class DeliveryLedgerCoordinator {
     var postSafety: (NotificationBroker.Category, NotificationBroker.Severity, String, String, String) -> Void = {
         _, _, _, _, _ in
     }
+    /// Bound to `AppModel`'s `withdrawNotifications(_:)`. Used ONLY to idempotently withdraw the
+    /// fixed-key unreadable-ledger disclosure once the ledger reads cleanly again (see
+    /// `reconcileUnresolvedDeliveries`) — the per-delivery reconcile records supersede themselves under
+    /// their own key when the ledger settles, so they never need this.
+    var withdrawSafety: ([String]) -> Void = { _ in }
     /// Bound to `AppModel`'s private `echo(_:)` — the SAME broadcast an immediate (live) delivery
     /// already uses to reach every registered remote (Garmin today). Invoked once per terminal
     /// settle below, so a dose resolved silently from pump history reaches the wrist too, not only
@@ -420,6 +425,15 @@ final class DeliveryLedgerCoordinator {
         // so more than one predates it entirely and needs re-establishing, not reconciling by id.
         var changed = remoteBolusLedger.collapseLegacyMultiEntryUnresolved()
         let unresolved = remoteBolusLedger.unreconciled()
+        // Withdraw the fixed-key unreadable-ledger disclosure by an idempotent CONDITION check (not a
+        // true→false transition hook, which never fires: `ledgerFailedClosed` only clears in the
+        // callerless clearDeliveryBlockAfterVerification()). Whenever the ledger reads cleanly, remove any
+        // stale fixed-key record — a no-op if none is persisted — so a record a prior UNREADABLE session
+        // persisted cannot replay "outcome unknown" against a now-readable ledger across a relaunch. Runs
+        // BEFORE the empty-ledger early return so the readable-but-empty relaunch withdraws it too.
+        if !ledgerFailedClosed {
+            withdrawSafety([RemoteBolusLedger.unreadableLedgerReconciliationDedupeKey])
+        }
         guard !unresolved.isEmpty else {
             // The ledger read completed above (the lazy load ran), so `ledgerFailedClosed` is now
             // authoritative. An UNREADABLE ledger may be hiding an unresolved delivery — disclose it (it

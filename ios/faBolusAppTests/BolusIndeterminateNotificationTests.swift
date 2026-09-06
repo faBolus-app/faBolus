@@ -252,4 +252,39 @@ struct BolusIndeterminateNotificationTests {
             dRecon.deliver,
             "the never-suppressible .bolusReconciliation is unaffected by the governed category's settings")
     }
+
+    // MARK: - Per-post persistence: ONLY the reconcile-keyed unresolved-dose posts are durable
+
+    /// The durable/loud upgrade is PER-POST (keyed on the `reconcile-*` family), NOT a category promotion:
+    /// a reconcile-keyed `.bolusIndeterminate` post is persisted for launch replay through the real
+    /// coordinator gate, while a send-time `indeterminate-*` post on the SAME category is not (so the four
+    /// gentle send-time posts never persist + replay — the forever-replay defect this avoids).
+    @Test func onlyTheReconcileKeyedBolusIndeterminatePostIsPersistedForReplayNotTheSendTimeOne() {
+        let ledgerURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("29-05-persist-\(UUID().uuidString).json")
+        let model = AppModel(source: MockBackend(), ledgerStoreURL: ledgerURL)
+        let store = SafetyAlertStore(store: isolatedStore(#function))
+        let coordinator = NotificationCoordinator(
+            model: model, runtime: NotificationRuntime(store: isolatedStore(#function + "-rt")),
+            safetyAlertStore: store)
+
+        _ = coordinator.post(
+            NotificationBroker.Message(
+                category: .bolusIndeterminate, severity: .warning, title: "Bolus outcome unknown",
+                body: "b", dedupeKey: "reconcile-watch-p1"))
+        #expect(
+            store.unresolvedEntries().contains {
+                $0.dedupeKey == "reconcile-watch-p1" && $0.category == .bolusIndeterminate
+            },
+            "a reconcile-keyed unresolved-dose post must be persisted for replay, even on a governed category")
+
+        _ = coordinator.post(
+            NotificationBroker.Message(
+                category: .bolusIndeterminate, severity: .warning, title: Self.lockedCopy, body: Self.lockedCopy,
+                dedupeKey: "indeterminate-local-p1"))
+        #expect(
+            !store.unresolvedEntries().contains { $0.dedupeKey == "indeterminate-local-p1" },
+            "a send-time indeterminate-* post must NOT be persisted (no forever-replay of the gentle heads-up)")
+        _ = coordinator  // keep the coordinator alive for the duration of the test
+    }
 }

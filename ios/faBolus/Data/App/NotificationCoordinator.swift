@@ -500,11 +500,14 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         // alerts pass PUMP_ALERT for their CLEAR action). Whether that registered category carries a
         // SNOOZE action is decided by `Category.permitsSilencingAction` in `registerCategories()`.
         let cat = categoryId.isEmpty ? Self.categoryIdentifier(for: message.category) : categoryId
-        // A safety-set category is persisted (persist-before-post) through SafetyAlertPoster so it can be
-        // replayed on the next launch; every other category keeps using the plain poster unchanged.
-        // `deadline` (the absolute fire time for a delayed escalation step) is meaningful only on this
-        // branch — ignored otherwise.
-        if message.category.isSafetySet {
+        // Persist-before-post (for launch replay) through SafetyAlertPoster for the safety set AND —
+        // PER-POST — for any reconcile/unresolved-dose post (a `reconcile-*` key): the condition-shaped
+        // `.bolusIndeterminate` unresolved-dose disclosures must survive a relaunch and resolve loud
+        // through the app-own ladder, WITHOUT promoting the whole `.bolusIndeterminate` category (which
+        // would persist + replay the four gentle send-time `indeterminate-*` posts forever). Every other
+        // category keeps the plain poster unchanged. `deadline` (the absolute fire time for a delayed
+        // escalation step) is meaningful only on this branch — ignored otherwise.
+        if message.category.isSafetySet || RemoteBolusLedger.isReconciliationDedupeKey(message.dedupeKey) {
             // Every safety-set category resolves its OWN cascade from the persisted app-own rules —
             // never a bare hardcoded default — the same way `syncPumpAlerts` resolves the pump-mirror
             // cascade below. A caller that already supplied `rules` wins; otherwise the app-own cascade

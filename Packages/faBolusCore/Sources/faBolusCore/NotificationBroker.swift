@@ -356,7 +356,14 @@ public enum NotificationBroker {
             // consumed a budget slot or maps to multiple counted notifications, so a blind decrement
             // would UNDERCOUNT ordinary notifications. `lastDeliveredAt` and `notifiedEpisodes` still
             // advance below so dedupe/episode tracking stays coherent.
-            let budgetExempt = message.category.isSafetySet || message.severity == .error
+            // A reconcile/unresolved-dose post (any `reconcile-*`-keyed message — the settled
+            // `.bolusReconciliation` arms AND the condition-shaped `.bolusIndeterminate` unresolved arms)
+            // is a durable dose-safety disclosure and must not burn the governed daily budget that gates an
+            // ordinary notification — the same exemption `isSafetySet` already grants the settled arms,
+            // extended per-post to the unresolved arms so promoting the CATEGORY is unnecessary.
+            let budgetExempt =
+                message.category.isSafetySet || message.severity == .error
+                || RemoteBolusLedger.isReconciliationDedupeKey(message.dedupeKey)
             if !budgetExempt {
                 out.deliveredToday += 1
             }

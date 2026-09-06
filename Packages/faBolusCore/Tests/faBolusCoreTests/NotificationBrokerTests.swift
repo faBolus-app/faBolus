@@ -514,4 +514,77 @@ import Foundation
             rules: aimed.cascade(for: .pumpConnectionUnstable), timeSensitiveAvailable: true)
         #expect(!lowered.deliver && lowered.reason == .ruleResolvedOff, "the flap alert is tunable to Off")
     }
+
+    // MARK: - The reconcile-keyed unresolved-dose disclosure: durable + loud PER-POST, not by category
+
+    private func reconcileIndeterminate(key: String) -> B.Message {
+        B.Message(
+            category: .bolusIndeterminate, severity: .warning, title: "Bolus outcome unknown",
+            body: "b", dedupeKey: key)
+    }
+
+    /// A reconcile-keyed unresolved-dose `.bolusIndeterminate` post resolves through the app-own ladder
+    /// exactly like a safety category (the coordinator gives it that cascade), so a TRANSIENT
+    /// rate-limit/daily-budget can never silence it — the resolver returns before the budget gate. A
+    /// send-time `indeterminate-*` post carries no cascade and IS budget-limited (unchanged), proving the
+    /// difference is PER-POST, not a category promotion.
+    @Test func aReconcileKeyedUnresolvedDosePostSurvivesAHostileTransientBudgetButASendTimeOneDoesNot() {
+        typealias R = NotificationRules
+        let hostile = B.State(dayKey: B.dayKey(at(9, 0), calendar: cal), deliveredToday: 999)
+        let budget = B.Budget(dailyTotal: 0)
+        // Reconcile-keyed, WITH the app-own cascade the coordinator supplies (default Alert).
+        let durable = B.decide(
+            reconcileIndeterminate(key: "reconcile-watch-r1"), settings: [:], state: hostile,
+            budget: budget, now: at(9, 0), calendar: cal,
+            rules: R.PersistedRules().cascade(for: .bolusIndeterminate), timeSensitiveAvailable: true)
+        #expect(
+            durable.deliver,
+            "a reconcile-keyed unresolved-dose post must deliver through the ladder despite an exhausted budget")
+        // Send-time keyed, no cascade (the plain-poster path) → governed, and the exhausted budget eats it.
+        let sendTime = B.decide(
+            reconcileIndeterminate(key: "indeterminate-local-r1"),
+            settings: enabled(.bolusIndeterminate), state: hostile,
+            budget: budget, now: at(9, 0), calendar: cal)
+        #expect(
+            !sendTime.deliver && sendTime.reason == .dailyBudgetReached,
+            "a send-time indeterminate-* post stays governed and budget-limited — unchanged")
+    }
+
+    /// Amendment B: a global/source ladder Off DOES cascade to the reconcile-keyed unresolved-dose post
+    /// (nothing is immune-by-construction) — it is user-tunable to Off, but only through a deliberate
+    /// ladder choice (the UI gates that behind the one-time warning), never a transient.
+    @Test func aLadderOffCascadesToTheReconcileKeyedUnresolvedDosePost() {
+        typealias R = NotificationRules
+        var sourceOff = R.PersistedRules()
+        sourceOff.appOwnSourceOverride = R.Rule(intent: .off)
+        let d = B.decide(
+            reconcileIndeterminate(key: "reconcile-watch-r2"), settings: [:], state: B.State(),
+            now: at(9, 0), calendar: cal,
+            rules: sourceOff.cascade(for: .bolusIndeterminate), timeSensitiveAvailable: true)
+        #expect(
+            !d.deliver && d.reason == .ruleResolvedOff,
+            "an app-own source Off must cascade to the unresolved-dose post (Amendment B) — the one thing that CAN lower it")
+    }
+
+    /// A reconcile-keyed post does not consume the daily budget (the durable dose-safety disclosure must
+    /// not burn the slot that gates an ordinary notification) — the same exemption the settled
+    /// `.bolusReconciliation` arms already get via `isSafetySet`, extended per-post to the unresolved arms.
+    @Test func aReconcileKeyedUnresolvedDosePostIsBudgetExempt() {
+        typealias R = NotificationRules
+        let state = B.State(dayKey: B.dayKey(at(9, 0), calendar: cal))
+        let d = B.decide(
+            reconcileIndeterminate(key: "reconcile-watch-r3"), settings: [:], state: state,
+            now: at(9, 0), calendar: cal,
+            rules: R.PersistedRules().cascade(for: .bolusIndeterminate), timeSensitiveAvailable: true)
+        #expect(
+            d.deliver && d.nextState.deliveredToday == 0,
+            "a reconcile-keyed unresolved-dose delivery must not increment deliveredToday")
+        // A send-time indeterminate-* delivery, by contrast, DOES consume a slot (unchanged governance).
+        let sendTime = B.decide(
+            reconcileIndeterminate(key: "indeterminate-local-r3"),
+            settings: enabled(.bolusIndeterminate), state: state, now: at(9, 1), calendar: cal)
+        #expect(
+            sendTime.deliver && sendTime.nextState.deliveredToday == 1,
+            "a send-time indeterminate-* delivery still consumes a budget slot")
+    }
 }

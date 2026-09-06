@@ -153,4 +153,47 @@ struct DeliveryLedgerCoordinatorTests {
             #expect(!model.deliveryGloballyBlocked)
         }
     }
+
+    // MARK: - Idempotent withdrawal of the fixed-key unreadable disclosure once the ledger reads cleanly
+
+    /// A readable ledger idempotently withdraws the FIXED-key unreadable disclosure — the condition check
+    /// (`ledgerFailedClosed == false`), NOT a true→false transition hook (which never fires, since
+    /// `ledgerFailedClosed` only clears in the callerless `clearDeliveryBlockAfterVerification()`). This is
+    /// what stops a stale record a prior unreadable session persisted from replaying forever against a
+    /// now-readable ledger.
+    @Test func aReadableLedgerIdempotentlyWithdrawsTheFixedKeyUnreadableDisclosure() async {
+        await withCleanSettings {
+            let backend = MockBackend()
+            await backend.connect()
+            let model = AppModel(source: backend, ledgerStoreURL: tempLedgerURL())  // readable, empty
+            var withdrawn: [String] = []
+            model.notificationWithdrawSink = { withdrawn = $0 }
+
+            await model.reconcileUnresolvedDeliveries()
+
+            #expect(
+                withdrawn.contains(RemoteBolusLedger.unreadableLedgerReconciliationDedupeKey),
+                "a readable ledger must idempotently withdraw the fixed-key unreadable disclosure")
+        }
+    }
+
+    /// An UNREADABLE ledger must NOT withdraw the fixed-key disclosure — it is genuinely fail-closed, so the
+    /// disclosure must stay up.
+    @Test func anUnreadableLedgerNeverWithdrawsTheFixedKeyDisclosure() async {
+        await withCleanSettings {
+            let store = R3CLedgerFaultTests.FakeLedgerStore()
+            store.reportCorruptLoad = true
+            let backend = MockBackend()
+            await backend.connect()
+            let model = AppModel(source: backend, ledgerStore: store)
+            var withdrawn: [String] = []
+            model.notificationWithdrawSink = { withdrawn = $0 }
+
+            await model.reconcileUnresolvedDeliveries()
+
+            #expect(
+                !withdrawn.contains(RemoteBolusLedger.unreadableLedgerReconciliationDedupeKey),
+                "an unreadable ledger must keep the disclosure — never withdraw it")
+        }
+    }
 }
