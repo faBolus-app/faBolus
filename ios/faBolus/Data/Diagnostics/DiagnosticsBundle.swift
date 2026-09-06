@@ -100,11 +100,20 @@ enum DiagnosticsBundle {
     }
 
     /// `[Notification telemetry]` — flows through the same pure-aggregator array rather than staying
-    /// an inline `View` block.
+    /// an inline `View` block. `windowStartFormatted` follows `connectionTelemetrySection`'s own
+    /// convention: already-rendered, never derived here, never backfilled with today's date.
+    ///
+    /// `requested` (never `delivered`/`presented`/`seen`) counts a broker-approved OS submission, not a
+    /// confirmed presentation. `dismissed` is a LOWER BOUND — iOS reports a dismiss only for an explicit
+    /// per-notification swipe-away, never "Clear All" or an app-side withdrawal — and the fix that made it
+    /// move at all is NOT retroactive: a replay record persisted by an earlier build carries no
+    /// attributable category until it churns, so nothing before this window start could ever have counted.
     static func notificationTelemetrySection(
-        counts: [(category: String, requested: Int, dismissed: Int, actedUpon: Int)]
+        counts: [(category: String, requested: Int, dismissed: Int, actedUpon: Int)],
+        windowStartFormatted: String
     ) -> String {
         var lines: [String] = ["", "[Notification telemetry]"]
+        lines.append("Window start: \(windowStartFormatted)")
         if counts.isEmpty {
             lines.append("—")
         } else {
@@ -112,6 +121,18 @@ enum DiagnosticsBundle {
                 lines.append("\(c.category): requested \(c.requested), dismissed \(c.dismissed), acted \(c.actedUpon)")
             }
         }
+        lines.append("")
+        lines.append(notificationTelemetryLimitation)
         return lines.joined(separator: "\n")
     }
+
+    /// Shared verbatim by the export section and the on-screen footer (`DebugMenuView`) so they can never
+    /// disagree about what these counters mean.
+    static let notificationTelemetryLimitation =
+        "requested counts a broker-approved submission to the OS, not a confirmed presentation. dismissed "
+        + "is a LOWER BOUND, not an exact count: iOS reports a dismiss only for an explicit "
+        + "per-notification swipe-away — \"Clear All\" and an app-side withdrawal are never reported — and "
+        + "the fix that made it move at all is NOT retroactive, since a replay record persisted by an "
+        + "earlier build carries no attributable category until it churns. Read each counter against the "
+        + "window start above, never as a count since install."
 }

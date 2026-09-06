@@ -230,8 +230,10 @@ struct DebugMenuView: View {
     }
 
     @ViewBuilder private var notificationTelemetrySection: some View {
-        let telemetry = NotificationRuntime().telemetry
+        let runtime = NotificationRuntime()
+        let telemetry = runtime.telemetry
         Section {
+            row("Window start", Self.formatWindowStart(runtime.telemetryWindowStart))
             if telemetry.isEmpty {
                 row("Notifications", "—")
             } else {
@@ -242,7 +244,12 @@ struct DebugMenuView: View {
         } header: {
             Text("Notification telemetry")
         } footer: {
-            Text("Per-category counts: requested (req), dismissed (x), acted-upon (a). Local-only, never uploaded.")
+            // Shares the export's exact limitation prose (`DiagnosticsBundle.notificationTelemetryLimitation`)
+            // so the screen and the export can never disagree about what these counters mean — the same
+            // pattern `connectionTelemetrySection` above already follows.
+            Text(
+                "Per-category counts: requested (req), dismissed (x), acted-upon (a). Local-only, never "
+                    + "uploaded. \(DiagnosticsBundle.notificationTelemetryLimitation)")
         }
     }
 
@@ -387,7 +394,8 @@ struct DebugMenuView: View {
     /// Clipboard/share/file all consume this same string — no second export path.
     private var diagnosticsText: String {
         let t = model.connectionTelemetry.snapshot
-        let notif = NotificationRuntime().telemetry
+        let notifRuntime = NotificationRuntime()
+        let notif = notifRuntime.telemetry
 
         // Already-tracked Garmin state; never issues a new ConnectIQ send.
         let garminState: GarminDiagnostics.BridgeState? = {
@@ -421,7 +429,8 @@ struct DebugMenuView: View {
                         category: $0.key, requested: $0.value.requested, dismissed: $0.value.dismissed,
                         actedUpon: $0.value.actedUpon
                     )
-                }),
+                },
+                windowStartFormatted: Self.formatWindowStart(notifRuntime.telemetryWindowStart)),
             Self.bleSessionLogExportLines(entries: model.bleSessionLog.entries, capacity: model.bleSessionLog.capacity),
             // Cached backend state, same opt-in as the other gated sections.
             CapabilityDiagnostics.section(

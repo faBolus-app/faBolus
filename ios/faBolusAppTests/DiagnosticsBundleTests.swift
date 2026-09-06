@@ -129,4 +129,47 @@ struct DiagnosticsBundleTests {
         #expect(block.contains("timeout: 0"))
     }
 
+    // MARK: - Notification telemetry
+
+    /// The printed field is `requested`, never `delivered`/`presented`/`seen` — the rename this
+    /// export section owes once `CategoryTelemetry.requested` lands.
+    @Test func notificationTelemetrySectionPrintsRequestedNotDelivered() {
+        let block = DiagnosticsBundle.notificationTelemetrySection(
+            counts: [(category: "pumpDisconnect", requested: 5, dismissed: 1, actedUpon: 2)],
+            windowStartFormatted: "Sep 1, 2026 at 3:04 PM")
+
+        #expect(block.contains("pumpDisconnect: requested 5, dismissed 1, acted 2"))
+        #expect(!block.lowercased().contains("delivered"), "the old field name must not appear anywhere in the export")
+    }
+
+    /// An already-formatted window-start string renders verbatim, exactly like
+    /// `connectionTelemetrySection`'s own convention — never derived here, never backfilled.
+    @Test func notificationTelemetrySectionRendersSuppliedWindowStart() {
+        let block = DiagnosticsBundle.notificationTelemetrySection(
+            counts: [], windowStartFormatted: "Sep 1, 2026 at 3:04 PM")
+
+        #expect(block.contains("Window start: Sep 1, 2026 at 3:04 PM"))
+    }
+
+    /// The export always carries the lower-bound + not-retroactive caveat, even with zero counts —
+    /// a future reader holding only the export must not read `dismissed` as an exact, complete count.
+    @Test func notificationTelemetrySectionAlwaysCarriesTheLowerBoundAndNotRetroactiveCaveat() {
+        let block = DiagnosticsBundle.notificationTelemetrySection(
+            counts: [(category: "pumpAlert", requested: 1, dismissed: 0, actedUpon: 0)],
+            windowStartFormatted: "unknown — accrued across an unknown set of builds")
+
+        #expect(block.lowercased().contains("lower bound"))
+        #expect(block.lowercased().contains("not retroactive") || block.lowercased().contains("never reported"))
+    }
+
+    /// Non-vacuity for the empty case: the header + window start + caveat still render with no counts at
+    /// all, exactly like the connection-telemetry section's own empty-state row.
+    @Test func notificationTelemetrySectionRendersPlaceholderAndCaveatWhenCountsIsEmpty() {
+        let block = DiagnosticsBundle.notificationTelemetrySection(
+            counts: [], windowStartFormatted: "unknown — accrued across an unknown set of builds")
+
+        #expect(block.contains("[Notification telemetry]"))
+        #expect(block.contains("—"))
+        #expect(block.lowercased().contains("lower bound"))
+    }
 }
