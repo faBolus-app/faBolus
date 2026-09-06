@@ -238,6 +238,16 @@ enum RemoteStatusComposer {
         cmd.alertAudibleMinSeverity = settings.alertAudibleMinSeverity
         cmd.alertCriticalOverridesDnd = settings.alertCriticalOverridesDnd
         cmd.garminComplicationSlots = settings.garminComplicationSlots
+        // The resolved per-surface WATCH intent for every relayed category, derived from the SAME
+        // unified resolver the phone reads (never a parallel threshold), keyed source-agnostically by
+        // category so every watch-facing surface consumes the one field. Emitted ALONGSIDE the legacy
+        // alert-intensity fields above — the watch still reads those until the consumer adopts this.
+        var watchIntents: [String: String] = [:]
+        for group in NotificationRules.PumpMirrorGroup.allCases {
+            let intent = pumpMirrorWatchIntent(rules: settings.notificationRules.cascade(for: group))
+            watchIntents[group.rawValue] = RemoteCommand.watchIntentWireToken(intent)
+        }
+        cmd.watchNotificationIntents = watchIntents
         if let requestId = inputs.requestId { cmd.requestId = requestId }  // echo the incoming statusRead id
         return cmd
     }
@@ -303,4 +313,9 @@ struct RemoteStatusSettings {
     let alertAudibleMinSeverity: String
     let alertCriticalOverridesDnd: Bool
     let garminComplicationSlots: [String]
+    /// The persisted per-surface notification rules, so the composer can resolve each relayed
+    /// category's watch intent through the SAME resolver the phone reads. Defaulted to fresh
+    /// fatigue-averse rules so a caller that predates this field still compiles and emits safe
+    /// defaults; the live adapter passes the real persisted rules.
+    var notificationRules: NotificationRules.PersistedRules = NotificationRules.PersistedRules()
 }

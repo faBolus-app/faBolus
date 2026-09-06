@@ -427,7 +427,8 @@ public final class AppModel {
             alertIntensityMode: AppSettings.shared.garminAlertIntensityMode,
             alertAudibleMinSeverity: AppSettings.shared.garminAlertAudibleMinSeverity,
             alertCriticalOverridesDnd: AppSettings.shared.garminAlertCriticalOverridesDnd,
-            garminComplicationSlots: AppSettings.shared.garminComplicationSlots)
+            garminComplicationSlots: AppSettings.shared.garminComplicationSlots,
+            notificationRules: AppSettings.shared.notificationRules)
         let inputs = RemoteStatusInputs(
             includeHistory: includeHistory,
             requestId: requestId,
