@@ -181,4 +181,52 @@ struct RemoteCommandSchemaConformanceTests {
         #expect(cmd.resolvedWatchIntent(for: "deliveryStopped") == .off, "an explicit off is the user's own choice")
         #expect(cmd.resolvedWatchIntent(for: "runningLow") == .quiet, "an explicit quiet is honored verbatim")
     }
+
+    // MARK: - additive source-agnostic app-own alert relay property
+
+    /// The additive app-own relay property must exist in the schema (so the watch can annunciate the
+    /// app-generated subset) while the version stays pinned — adding a property is safe, bumping the
+    /// const would break every older watch.
+    @Test func schemaDeclaresTheAdditiveAppOwnAlertsPropertyUnderAnUnchangedVersion() throws {
+        let schema = try Self.loadSchema()
+        guard let properties = schema["properties"] as? [String: Any] else {
+            Issue.record("schema/command.schema.json has no top-level properties object")
+            return
+        }
+        #expect(
+            properties["appOwnAlerts"] != nil,
+            "schema/command.schema.json must declare the additive appOwnAlerts property"
+        )
+
+        guard let version = properties["version"] as? [String: Any] else {
+            Issue.record("schema has no properties.version")
+            return
+        }
+        #expect(
+            version["const"] as? Int == 1,
+            "version.const must stay 1 — bumping it breaks every older watch; this landing is additive"
+        )
+        #expect(
+            schema["additionalProperties"] as? Bool == false,
+            "root additionalProperties must stay false; the new field is a declared property, not an escape hatch"
+        )
+    }
+
+    /// The Swift mirror carries the field as an Optional (so a legacy host simply omits it) and each
+    /// item round-trips through the same JSON encode/decode the wire uses.
+    @Test func appOwnAlertsIsOptionalAndRoundTrips() throws {
+        var cmd = RemoteCommand(kind: .statusRead)
+        #expect(cmd.appOwnAlerts == nil, "the field must be Optional and default to absent")
+
+        cmd.appOwnAlerts = [
+            RemoteCommand.AppOwnAlert(key: "appOwn:bolusIndeterminate", title: "Bolus outcome unknown"),
+            RemoteCommand.AppOwnAlert(key: "appOwn:pumpDisconnect", title: "Pump disconnected"),
+        ]
+        let data = try cmd.encoded()
+        let decoded = try JSONDecoder().decode(RemoteCommand.self, from: data)
+        #expect(
+            decoded.appOwnAlerts == cmd.appOwnAlerts,
+            "appOwnAlerts must round-trip encode/decode on the wire"
+        )
+    }
 }
