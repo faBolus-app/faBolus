@@ -72,8 +72,9 @@ struct RemoteStatusComposerAppOwnRelayTests {
         }
     }
 
-    /// The durable unresolved-dose category (`.bolusIndeterminate`) — the record Phase 27 consumes — is in
-    /// the relayed subset when active, defaulting to the app-own safety intent (Alert = vibrate).
+    /// The durable unresolved-dose category (`.bolusIndeterminate`) — the record the unresolved-dose
+    /// disclosure consumes — is in the relayed subset when active, defaulting to the app-own safety intent
+    /// (Alert = vibrate).
     @Test func theRelayedAppOwnSubsetIncludesBolusIndeterminate() {
         let cmd = compose(
             rules: NotificationRules.PersistedRules(),

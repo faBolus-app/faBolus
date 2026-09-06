@@ -68,6 +68,25 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         public var identity: String { "\(kind)-\(id)" }
     }
 
+    /// An app-GENERATED (faBolus's own) alert summarized for the watch to annunciate — its content only
+    /// (a namespaced category `key` + a `title`). Source-agnostic and distinct from `RemoteAlert` (which
+    /// mirrors a pump alarm): the pump knows nothing about a dropped link, a failover-CGM low, or the app's
+    /// own dose ledger, so faBolus is these alerts' only annunciator. The `key` is the identity the watch
+    /// dedupes on AND the key it reads the resolved per-surface WATCH intent under in
+    /// `watchNotificationIntents` — namespaced (`appOwn:<category>`) so an app-own category can never
+    /// collide with a pump-mirror group of the same name. The how-loud lives in `watchNotificationIntents`;
+    /// this carries the WHAT. Never a dose input.
+    public struct AppOwnAlert: Codable, Equatable, Sendable {
+        /// The namespaced category identifier (`appOwn:<category rawValue>`) — the watch's dedupe identity
+        /// and its `watchNotificationIntents` lookup key.
+        public var key: String
+        public var title: String
+        public init(key: String, title: String) {
+            self.key = key
+            self.title = title
+        }
+    }
+
     /// The alert identities in `current` that are NOT in `previous` — a newly-arrived pump alert a remote
     /// (watch / Mac / Garmin) should actively surface (S8), rather than let sit in a silent list. Keys on
     /// `(kind, id)` so an equal-count REPLACEMENT (alert B arriving as A clears, same count) still registers
@@ -453,6 +472,17 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// recognized value, including `"off"`, is the user's own choice and is honored. Additive,
     /// auto-Codable, post-init settable. SETTINGS-ONLY — never a dose input.
     public var watchNotificationIntents: [String: String]?
+    /// The ACTIVE app-GENERATED (faBolus's own) alert subset to annunciate on the watch (statusRead
+    /// reply) — the app-own analog of `alerts` (which mirrors the pump's own alarms). Each item carries its
+    /// content (a namespaced `key` + a `title`); its resolved per-surface WATCH intent rides
+    /// `watchNotificationIntents` under the same namespaced key. The subset includes the durable
+    /// unresolved-dose record (`appOwn:bolusIndeterminate`). CONTRACT (paired with
+    /// `watchNotificationIntents`'s fail-safe): a watch that receives an app-own alert whose intent is
+    /// absent/unrecognized fails safe to the vibrating rung — it never falls through to silence an app-own
+    /// safety annunciation; the watch ladder has no breakthrough/urgent rung. Absent ⇒ a legacy host that
+    /// predates the field; an empty array is the authoritative "no active app-own alerts." Additive,
+    /// auto-Codable, post-init settable. Never a dose input.
+    public var appOwnAlerts: [AppOwnAlert]?
     /// Which pump-status fields (ordered, ≤3) fill the Garmin's three user-assignable
     /// complication slots. Absent ⇒ the watch keeps its default (iob/reservoir/battery). Display-only.
     public var garminComplicationSlots: [String]?

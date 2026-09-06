@@ -242,10 +242,46 @@ enum RemoteStatusComposer {
             let intent = pumpMirrorWatchIntent(rules: settings.notificationRules.cascade(for: group))
             watchIntents[group.rawValue] = RemoteCommand.watchIntentWireToken(intent)
         }
+        // The ACTIVE app-GENERATED alert subset, relayed so the watch annunciates faBolus's own safety
+        // notifications (incl. the durable unresolved-dose record) consistently with the phone. The WHAT
+        // (content: key + title) rides `appOwnAlerts`; the how-loud rides `watchNotificationIntents` under
+        // the SAME namespaced key, resolved through the ONE unified resolver the phone reads (follow-phone
+        // default + optional override; the watch cap has no Urgent rung). The key is namespaced
+        // (`appOwn:<category>`) so an app-own category never overwrites a pump-mirror group of the same name.
+        // Deduped by category (one relayed item per active app-own category); always emitted (an empty array
+        // is the authoritative "no active app-own alerts", never a fabricated absence).
+        var appOwnAlerts: [RemoteCommand.AppOwnAlert] = []
+        var relayedAppOwnKeys = Set<String>()
+        for active in inputs.activeAppOwnAlerts {
+            let key = Self.appOwnWatchIntentKey(for: active.category)
+            let intent = NotificationRules.resolve(
+                settings.notificationRules.cascade(for: active.category),
+                timeSensitiveAvailable: NotificationCapability.timeSensitiveAvailable).watch
+            watchIntents[key] = RemoteCommand.watchIntentWireToken(intent)
+            if relayedAppOwnKeys.insert(key).inserted {
+                appOwnAlerts.append(RemoteCommand.AppOwnAlert(key: key, title: active.title))
+            }
+        }
         cmd.watchNotificationIntents = watchIntents
+        cmd.appOwnAlerts = appOwnAlerts
         if let requestId = inputs.requestId { cmd.requestId = requestId }  // echo the incoming statusRead id
         return cmd
     }
+
+    /// The namespaced key an app-own category rides under on both `appOwnAlerts` and
+    /// `watchNotificationIntents`. Namespacing keeps an app-own category from ever colliding with a
+    /// pump-mirror group of the same name (both `urgentLowGlucose`, for instance) on the one shared map.
+    static func appOwnWatchIntentKey(for category: NotificationBroker.Category) -> String {
+        "appOwn:" + category.rawValue
+    }
+}
+
+/// One active app-GENERATED alert the composer relays to the watch: its category (for per-category watch
+/// intent resolution) + the phone-authoritative title. Snapshotted into `RemoteStatusInputs` from the
+/// durable safety-alert store, never re-derived downstream.
+struct ActiveAppOwnAlert: Equatable {
+    let category: NotificationBroker.Category
+    let title: String
 }
 
 /// Immutable snapshot of every value `RemoteStatusComposer.compose` reads. `AppModel.statusCommand`
@@ -280,6 +316,10 @@ struct RemoteStatusInputs {
     let rawActiveNotifications: [PumpAlert]?
     /// Every `AppSettings.shared` read the original body performed, snapshotted as immutable values.
     let settings: RemoteStatusSettings
+    /// The active app-GENERATED alert subset (from the durable safety-alert store) to relay to the watch.
+    /// Defaulted empty so a caller that predates this field — and every test call site — still compiles and
+    /// emits an empty (never fabricated) relay; the live adapter passes the real active set.
+    var activeAppOwnAlerts: [ActiveAppOwnAlert] = []
 }
 
 /// Immutable snapshot of every `AppSettings.shared` field `statusCommand` reads. Names/types

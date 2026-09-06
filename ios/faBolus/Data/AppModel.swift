@@ -97,6 +97,12 @@ public final class AppModel {
     /// the app is suspended. Like the other sinks, nil when no coordinator is installed. Notification-only
     /// — it never blocks, delays, or affects a dose or pump command.
     public var notificationScheduleSink: (([DisconnectEscalation.Step]) -> Void)?
+    /// The active app-GENERATED alert subset to relay to the watch, read live at compose time from the
+    /// durable safety-alert store the coordinator owns (`SafetyAlertStore.unresolvedEntries`). Nil (an
+    /// empty relay) when no coordinator is installed — the watch then simply annunciates nothing app-own,
+    /// never a fabricated set. Set once in `NotificationCoordinator.init`. Internal (not `public` like the
+    /// sinks above) because `ActiveAppOwnAlert` is an app-module composer type, not a faBolusCore wire type.
+    var activeAppOwnAlertsProvider: (() -> [ActiveAppOwnAlert])?
     /// Monotonic sequence so each remote-bolus rejection gets a DISTINCT notification id — the old fixed
     /// identifier meant a second rejection silently replaced the first.
     private var rejectionSeq = 0
@@ -429,7 +435,11 @@ public final class AppModel {
             supportsRemoteAlertDismiss: capabilities.supportsRemoteAlertDismiss,
             // The AppModel MIRROR (never a live `source.` read; same-poll invariant).
             rawActiveNotifications: rawActiveNotifications,
-            settings: settings)
+            settings: settings,
+            // The active app-own subset from the durable safety-alert store (incl. the durable
+            // unresolved-dose record), so the watch annunciates faBolus's own alerts consistently with the
+            // phone. Empty when no coordinator is installed.
+            activeAppOwnAlerts: activeAppOwnAlertsProvider?() ?? [])
         return RemoteStatusComposer.compose(inputs)
     }
 

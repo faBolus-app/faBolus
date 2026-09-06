@@ -388,6 +388,16 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         model.notificationWithdrawCategorySink = { [weak self] category in self?.withdrawAll(for: category) }
         // Schedule the pump-disconnect escalation ladder as OS-delivered notifications.
         model.notificationScheduleSink = { [weak self] steps in self?.scheduleDisconnectEscalation(steps) }
+        // Relay the ACTIVE app-own alert subset to the watch: the durably-persisted, still-unresolved
+        // app-generated safety notifications (incl. the reconcile-keyed unresolved-dose record). Deduped by
+        // category downstream in the composer; a category that never notifies (`cgmDataLoss`) is excluded so
+        // the watch stays consistent with the phone (which does not notify it either).
+        model.activeAppOwnAlertsProvider = { [weak self] in
+            guard let self else { return [] }
+            return self.safetyAlertStore.unresolvedEntries()
+                .filter { $0.category.deliversAsNotification }
+                .map { ActiveAppOwnAlert(category: $0.category, title: $0.title) }
+        }
         model.addNotificationsSubscriber { [weak self] alerts in self?.syncPumpAlerts(alerts) }
         // Clean up what earlier builds left behind, BEFORE the replay below reads the store.
         //

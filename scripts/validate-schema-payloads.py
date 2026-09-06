@@ -54,7 +54,8 @@ VALID = [
         "ciqZone": "maintains", "ciqSuspendedForLow": True, "ciqSuspendStartEpochSec": 1699998000,
         "lastAutoCorrectionEpochSec": 1699999000, "ciqLastCouldNotDeliverEpochSec": 1699990000,
         "lockoutUntilEpochSec": 1700003600, "maxBasalUnitsPerHour": 3.0, "controlIQMode": 0,
-        "watchNotificationIntents": {"deliveryStopped": "alert", "glucoseAndControlIQ": "quiet", "pumpRoutine": "off"},
+        "watchNotificationIntents": {"deliveryStopped": "alert", "glucoseAndControlIQ": "quiet", "pumpRoutine": "off", "appOwn:bolusIndeterminate": "alert"},
+        "appOwnAlerts": [{"key": "appOwn:bolusIndeterminate", "title": "Bolus outcome unknown"}],
     },
     {"version": 1, "kind": "bolusRequest", "requestId": "r2", "units": 2.5},
     # C2 §2.3: a Garmin bolusRequest may carry the entered passcode (remote → host).
@@ -86,6 +87,7 @@ INVALID = [
     {"version": 1, "kind": "statusRead", "requestId": "b4c", "glucoseDisplayUnit": "mg/dL"},          # bad enum — wire token is "mgdl", not the display string
     {"version": 1, "kind": "bolusRequest", "requestId": "b5c", "bolusPasscode": 1234},         # C2: passcode must be a string, not a number
     {"version": 1, "kind": "bolusRequest", "requestId": "b5d", "carbsGrams": 30, "includeStaleBG": "yes"}, # Addendum B: include-stale intent must be a boolean, not a string
+    {"version": 1, "kind": "statusRead", "requestId": "b4d", "appOwnAlerts": [{"title": "no key"}]}, # app-own relay item missing required 'key'
     {"version": 1, "kind": "statusRead", "requestId": "b5", "surpriseKey": 1},                # additionalProperties
     {"version": 1, "kind": "statusRead"},                                                     # missing required requestId
     {"version": 1, "kind": "statusRead", "requestId": "b6", "exerciseTimeRemainingSec": 120}, # emitted-but-undeclared: not a schema property today
