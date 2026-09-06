@@ -600,19 +600,34 @@ final class RemoteBolusLedgerTests: XCTestCase {
             RemoteBolusLedger.comparePumpKey("real|OLD-PUMP", to: "real|NEW-PUMP"), .mismatch)
     }
 
-    /// `blockReason`'s existing precedence (all 8 tests above this MARK) is untouched by the new
-    /// `pumpMismatchReason` parameter's default — this test proves the parameter itself takes effect
-    /// (and outranks the live-in-flight/genuinely-unresolved split) only when a caller supplies it.
-    func testBlockReasonPumpMismatchReasonOutranksTheLiveInFlightSplit() {
+    /// A cross-pump unresolved entry — one whose ledger `pumpKey` names a DIFFERENT pump than the one
+    /// connected now — is no longer converted into a durable delivery block. The caller
+    /// (`DeliveryLedgerCoordinator`) hands it through as an ordinary unresolved entry, so with nothing
+    /// in flight `blockReason` returns nil and the entry is carried by the non-blocking disclosure
+    /// instead of gating a legitimate dose.
+    func testBlockReasonCrossPumpUnresolvedEntryWithNilInFlightNoLongerBlocks() {
         let unresolved: [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool)] =
-            [("local", "r1", 42, true)]
+            [("watch", "cross-pump-dose", 42, true)]
+        XCTAssertNil(
+            RemoteBolusLedger.blockReason(
+                noDurableStore: false, ledgerFailedClosed: false,
+                terminalSaveFailed: false, unresolved: unresolved,
+                inFlightDeliveryKey: nil))
+    }
+
+    /// The live cross-client mutex still holds when a cross-pump entry co-exists with a delivery in
+    /// flight: a concurrent request gets the transient "already being delivered" message, never a
+    /// pass-through (the removed cross-pump branch sat ABOVE this check, so its removal must not open a
+    /// mutex hole).
+    func testBlockReasonCrossPumpUnresolvedEntryWithInFlightUsesTheLiveMessage() {
+        let unresolved: [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool)] =
+            [("local", "r1", nil, true), ("watch", "cross-pump-dose", 42, true)]
         XCTAssertEqual(
             RemoteBolusLedger.blockReason(
                 noDurableStore: false, ledgerFailedClosed: false,
                 terminalSaveFailed: false, unresolved: unresolved,
-                inFlightDeliveryKey: (peerId: "local", requestId: "r1"),
-                pumpMismatchReason: RemoteBolusLedger.pumpMismatchBlockReason),
-            RemoteBolusLedger.pumpMismatchBlockReason)
+                inFlightDeliveryKey: (peerId: "local", requestId: "r1")),
+            Self.liveInFlightMessage)
     }
 
     /// Pre-permission entries (`sentToPump == false`, no bolus id) are the not-delivered loop's
