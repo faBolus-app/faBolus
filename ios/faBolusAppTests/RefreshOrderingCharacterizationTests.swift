@@ -28,7 +28,7 @@ struct RefreshOrderingCharacterizationTests {
     /// constrains WHERE it may appear.
     private static let spine: [String] = [
         "maybeHandlePumpSwitch", "merge", "facadeAssign",
-        "connectionEdge:", "freshnessEdge:", "stalenessWatchdog:", "urgentLowEdge:",
+        "connectionEdge:", "freshnessEdge:", "urgentLowEdge:",
         "widgetPublish", "historyPersist",
         "statusPush"
     ]

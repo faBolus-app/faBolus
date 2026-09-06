@@ -26,11 +26,6 @@ final class RefreshEffectsCoordinator {
     var onConnectionDropped: (String?) -> Void = { _ in }
     /// Reconnect (`.clear`) connection telemetry + BLE session-log.
     var onConnectionRestored: () -> Void = {}
-    /// Fused write+dispatch sink for the staleness watchdog: `AppModel` writes its own
-    /// `lastArmedGlucoseDate` AND calls `notificationStalenessSink`. This is the ONE bookkeeping
-    /// field whose new value only exists inside this coordinator's `StalenessWatchdogEdge.decide` call.
-    var onStalenessWatchdogArm: (Date) -> Void = { _ in }
-    var onStalenessWatchdogCancel: () -> Void = {}
 
     // MARK: - Cross-surface fan-out sinks
     var onWidgetPublish: (PumpSnapshot, [GlucoseReading], [PumpAlert], Bool, String) -> Void = { _, _, _, _, _ in }
@@ -41,9 +36,9 @@ final class RefreshEffectsCoordinator {
 
     // MARK: - Single entry point
 
-    /// Run the full effects tail in fixed order. All inputs are EXPLICIT parameters (the four
+    /// Run the full effects tail in fixed order. All inputs are EXPLICIT parameters (the three
     /// `prev*` values are the pre-assignment bookkeeping the caller captured BEFORE this tick's
-    /// reassignment); the coordinator computes the four safety edges itself and dispatches only
+    /// reassignment); the coordinator computes the safety edges itself and dispatches only
     /// the resulting actions. `pumpDisconnectKey`/`cgmDataLossKey` are `AppModel`'s private
     /// dedupe-key constants, passed in so their single source of truth stays on `AppModel`.
     func performEffects(
@@ -62,8 +57,7 @@ final class RefreshEffectsCoordinator {
         cgmDataLossKey: String,
         prevConnection: PumpConnectionState?,
         prevGlucoseFresh: Bool,
-        prevUrgentLowActive: Bool,
-        prevLastArmedGlucoseDate: Date?
+        prevUrgentLowActive: Bool
     ) {
         // §6 safety (never-suppressible): pump-link drop, fired once on the edge; withdrawn on reconnect.
         let connectionEdge = SafetyEdge.connection(prev: prevConnection, now: snapshot.connection)
@@ -98,20 +92,6 @@ final class RefreshEffectsCoordinator {
                 cgmDataLossKey)
         case .clear: withdrawNotifications([cgmDataLossKey])
         case .none: break
-        }
-        // Pre-arm/cancel the background staleness watchdog off the SAME cgmFresh signal.
-        let stalenessEdge = StalenessWatchdogEdge.decide(
-            cgmFresh: cgmFresh, glucoseDate: snapshot.glucoseDate,
-            lastArmedDate: prevLastArmedGlucoseDate)
-        switch stalenessEdge {
-        case .arm(let date):
-            recordStep("stalenessWatchdog:arm")
-            onStalenessWatchdogArm(date)
-        case .cancel:
-            recordStep("stalenessWatchdog:cancel")
-            onStalenessWatchdogCancel()
-        case .none:
-            recordStep("stalenessWatchdog:none")
         }
         // App-owned urgent-low alarm — edge over `urgentLowNow` (computed by AppModel, which owns
         // `glucoseSource`/the sentinel). Advisory only: never feeds any dose-path input.

@@ -313,8 +313,7 @@ struct ConnectionFlapEscalationTests {
             cgmDataLossKey: Self.cgmKey,
             prevConnection: .connecting,  // prev != .connected, now == .connected ⇒ .clear edge
             prevGlucoseFresh: true,
-            prevUrgentLowActive: false,
-            prevLastArmedGlucoseDate: nil)
+            prevUrgentLowActive: false)
         return withdrawn
     }
 }

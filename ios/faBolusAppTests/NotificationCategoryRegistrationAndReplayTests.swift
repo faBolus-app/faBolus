@@ -173,23 +173,29 @@ import UserNotifications
         #expect(rt.telemetry["cgmDataLoss"] == nil, "and must not be counted as delivered")
     }
 
-    /// Arming the staleness watchdog must post nothing and — the specific regression in the 2026-08-29
-    /// export — must not increment a counter named `delivered`. 720 of those increments were watchdog
-    /// re-arms the wearer never saw (one per advanced CGM datum ≈ 60 h of normal operation).
-    @Test func armingTheStalenessWatchdogCountsNoDeliveryAndPersistsNothing() {
+    /// The arm path is retired, but the launch-time legacy cleanup that clears a watchdog armed by an
+    /// EARLIER build must survive: OS-pending requests AND their durable replay records outlive an app
+    /// update, so a build that no longer arms one still has to withdraw what a prior build left behind —
+    /// and clearing it counts no delivery (the 2026-08-29 export's 720 phantom `delivered` increments).
+    @Test func theLaunchCleanupClearsAStalenessWatchdogArmedByAnEarlierBuild() {
         let defaults = isolatedStore(#function)
         let rt = NotificationRuntime(store: defaults)
         defaults.set(true, forKey: NotificationRuntime.telemetryEnabledKey)
         let store = SafetyAlertStore(store: defaults)
+        // A durable record a PRIOR build persisted when it still armed the watchdog.
+        store.record(entry(.cgmDataLoss, key: StalenessWatchdog.dedupeKey))
+        #expect(
+            store.entries[StalenessWatchdog.dedupeKey] != nil,
+            "precondition: a prior build left a durable watchdog record")
+
         let model = AppModel(source: MockBackend(), ledgerStoreURL: tempLedgerURL())
+        // Constructing the coordinator runs the launch cleanup.
         let coordinator = NotificationCoordinator(model: model, runtime: rt, safetyAlertStore: store)
-        #expect(model.notificationStalenessSink != nil, "the coordinator must own the arm sink")
 
-        // Ten advanced CGM readings' worth of re-arms.
-        for i in 0..<10 { model.notificationStalenessSink?(Date().addingTimeInterval(Double(i) * 300)) }
-
-        #expect(rt.telemetry["cgmDataLoss"] == nil, "a watchdog re-arm is not a delivered notification")
-        #expect(store.entries[StalenessWatchdog.dedupeKey] == nil, "and it persists no replay record")
+        #expect(
+            store.entries[StalenessWatchdog.dedupeKey] == nil,
+            "the launch cleanup must prune a stale watchdog replay record")
+        #expect(rt.telemetry["cgmDataLoss"] == nil, "clearing a stale watchdog is not a delivered notification")
         _ = coordinator
     }
 

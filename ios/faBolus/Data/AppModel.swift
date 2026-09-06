@@ -97,13 +97,6 @@ public final class AppModel {
     /// the app is suspended. Like the other sinks, nil when no coordinator is installed. Notification-only
     /// — it never blocks, delays, or affects a dose or pump command.
     public var notificationScheduleSink: (([DisconnectEscalation.Step]) -> Void)?
-    /// Arm/re-arm the pre-armed background staleness watchdog (a single delayed OS notification that
-    /// fires if no fresher glucose datum re-arms it first) with the date of the fresh datum that just
-    /// (re-)armed it. Nil when no coordinator is installed — a no-op then.
-    public var notificationStalenessSink: ((Date) -> Void)?
-    /// Cancel a pre-armed staleness watchdog (the feed is no longer fresh, or the real `.cgmDataLoss`
-    /// edge already alarmed). Nil when no coordinator is installed.
-    public var notificationStalenessCancelSink: (() -> Void)?
     /// Monotonic sequence so each remote-bolus rejection gets a DISTINCT notification id — the old fixed
     /// identifier meant a second rejection silently replaced the first.
     private var rejectionSeq = 0
@@ -132,10 +125,6 @@ public final class AppModel {
         "Bolus sent but outcome is unknown — verify on the pump."
     /// Was the CGM feed fresh on the previous refresh — for edge-detecting data loss (see `SafetyEdge`).
     @ObservationIgnored private var previousGlucoseFresh = false
-    /// The fresh glucose datum's date the staleness watchdog is CURRENTLY armed against, or nil while
-    /// cancelled. Lets `refresh()` re-arm only on a genuinely ADVANCED reading (not every ~20s heartbeat
-    /// re-affirming the same one) and cancel exactly once when the feed stops being fresh.
-    @ObservationIgnored private var lastArmedGlucoseDate: Date?
     /// Whether the app-owned urgent-low alarm is CURRENTLY active (failover + at/below threshold, OR the
     /// sub-40 `UrgentLowSentinel` fresh during failover) — for edge-detecting raise/clear exactly once
     /// per episode, mirroring `previousGlucoseFresh`/`SafetyEdge.freshness` above.
@@ -738,16 +727,6 @@ public final class AppModel {
             self?.connectionTelemetry.recordConnected()  // connect count + start the uptime clock
             self?.bleSessionLog.record(.reconnect)  // link returned to connected (prev was not)
         }
-        // Fused write+dispatch: the ONE bookkeeping field whose new value exists only inside the
-        // coordinator's StalenessWatchdogEdge.decide — AppModel stays its sole owner.
-        refreshEffectsCoordinator.onStalenessWatchdogArm = { [weak self] date in
-            self?.lastArmedGlucoseDate = date
-            self?.notificationStalenessSink?(date)
-        }
-        refreshEffectsCoordinator.onStalenessWatchdogCancel = { [weak self] in
-            self?.lastArmedGlucoseDate = nil
-            self?.notificationStalenessCancelSink?()
-        }
         refreshEffectsCoordinator.onWidgetPublish = { snap, hist, _, locked, reason in
             WidgetPublisher.publish(
                 snap, history: hist,
@@ -1204,7 +1183,6 @@ public final class AppModel {
         let prevConnection = previousConnection
         let prevGlucoseFresh = previousGlucoseFresh
         let prevUrgentLowActive = urgentLowActive
-        let prevLastArmedGlucoseDate = lastArmedGlucoseDate
         let cgmFresh = snapshot.glucose != nil && !snapshot.isGlucoseStale
         // Urgent-low sentinel (advisory only — never feeds a dose-path input). Reads `glucoseSource`, which
         // AppModel owns, so `urgentLowNow` is computed HERE and passed to the coordinator as a value:
@@ -1251,13 +1229,11 @@ public final class AppModel {
             cgmDataLossKey: Self.cgmDataLossKey,
             prevConnection: prevConnection,
             prevGlucoseFresh: prevGlucoseFresh,
-            prevUrgentLowActive: prevUrgentLowActive,
-            prevLastArmedGlucoseDate: prevLastArmedGlucoseDate)
+            prevUrgentLowActive: prevUrgentLowActive)
         // Bookkeeping reassignment — batched AFTER the coordinator call (each field is
         // read exactly once, before the call, within this synchronous @MainActor invocation, so batching is
         // behavior-identical). `urgentLowActive = urgentLowNow` matches the old per-edge writes
-        // (raise→true / clear→false / none→unchanged). `lastArmedGlucoseDate` is NOT reassigned here — it is
-        // written only inside the fused `onStalenessWatchdogArm`/`onStalenessWatchdogCancel` sink.
+        // (raise→true / clear→false / none→unchanged).
         previousConnection = snap.connection
         previousGlucoseFresh = cgmFresh
         urgentLowActive = urgentLowNow

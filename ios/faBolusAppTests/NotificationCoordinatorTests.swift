@@ -639,25 +639,4 @@ import UserNotifications
         #expect(SafetyEdge.edge(wasActive: false, isActive: false) == .none)
         #expect(SafetyEdge.edge(wasActive: true, isActive: true) == .none, "a steady active condition must not re-fire")
     }
-
-    // MARK: - Pre-armed staleness-watchdog arm/cancel decision
-
-    @Test func stalenessWatchdogEdgeArmsOnAnAdvancedFreshReadingAndDoesNotReArmOnTheSameOne() {
-        let d1 = at(9, 0)
-        #expect(StalenessWatchdogEdge.decide(cgmFresh: true, glucoseDate: d1, lastArmedDate: nil) == .arm(d1))
-        // A heartbeat re-affirming the SAME already-armed reading must be a no-op, not a re-arm.
-        #expect(StalenessWatchdogEdge.decide(cgmFresh: true, glucoseDate: d1, lastArmedDate: d1) == .none)
-        // A genuinely NEWER fresh reading re-arms from the new date.
-        let d2 = at(9, 5)
-        #expect(StalenessWatchdogEdge.decide(cgmFresh: true, glucoseDate: d2, lastArmedDate: d1) == .arm(d2))
-    }
-
-    @Test func stalenessWatchdogEdgeCancelsExactlyOnceWhenNoLongerFresh() {
-        let d1 = at(9, 0)
-        #expect(StalenessWatchdogEdge.decide(cgmFresh: false, glucoseDate: nil, lastArmedDate: d1) == .cancel)
-        // Already cancelled (nothing armed) → no-op, not a repeated cancel.
-        #expect(StalenessWatchdogEdge.decide(cgmFresh: false, glucoseDate: nil, lastArmedDate: nil) == .none)
-        // Never fresh at all (cold launch, no reading yet) → no-op.
-        #expect(StalenessWatchdogEdge.decide(cgmFresh: false, glucoseDate: nil, lastArmedDate: nil) == .none)
-    }
 }

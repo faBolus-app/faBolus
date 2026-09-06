@@ -368,9 +368,6 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         model.notificationWithdrawCategorySink = { [weak self] category in self?.withdrawAll(for: category) }
         // Schedule the pump-disconnect escalation ladder as OS-delivered notifications.
         model.notificationScheduleSink = { [weak self] steps in self?.scheduleDisconnectEscalation(steps) }
-        // Arm/cancel the pre-armed background staleness watchdog.
-        model.notificationStalenessSink = { [weak self] date in self?.scheduleStalenessWatchdog(from: date) }
-        model.notificationStalenessCancelSink = { [weak self] in self?.cancelStalenessWatchdog() }
         model.addNotificationsSubscriber { [weak self] alerts in self?.syncPumpAlerts(alerts) }
         // Clean up what earlier builds left behind, BEFORE the replay below reads the store.
         //
@@ -381,8 +378,12 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         //    already-delivered banner, a staleness watchdog armed before the update (OS-pending requests
         //    survive an app update), and its durable records all go. Also idempotent — after the first
         //    launch there is nothing to find, because no `.cgmDataLoss` request is ever created again.
+        //    Nothing arms a staleness watchdog any more, but `cancelStalenessWatchdog()` still runs here as
+        //    legacy cleanup: an earlier build's watchdog carries the fixed watchdog key, so withdraw it by
+        //    that key directly rather than relying only on the category-wide sweep.
         safetyAlertStore.purgeLegacyReconciliationEntriesOnce()
         withdrawAll(for: .cgmDataLoss)
+        cancelStalenessWatchdog()
         // Replay any still-unresolved safety alert persisted from a prior launch, AFTER the sink is
         // wired + the pending-safety buffer flushed above, so a restoration launch reconstructs and
         // re-submits every not-yet-resolved entry.
@@ -537,39 +538,13 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         }
     }
 
-    // MARK: Pre-armed background CGM-staleness watchdog
+    // MARK: Legacy CGM-staleness watchdog cleanup
 
-    /// Pre-arm (or re-arm) `StalenessWatchdog`'s single delayed notification to fire
-    /// `GlucoseFreshness.staleAfter` seconds past `date` (the fresh datum that just triggered the
-    /// re-arm), using the SAME `UNTimeIntervalNotificationTrigger` + persist-then-replay `deadline` path
-    /// `scheduleDisconnectEscalation` uses — a fixed identifier (`StalenessWatchdog.dedupeKey`) means
-    /// each re-arm REPLACES the previous pending request rather than stacking. If `date` is somehow
-    /// already at/past the staleness window (shouldn't happen — `refresh()` only calls this while
-    /// `cgmFresh` is true, which itself requires the reading to be within the window), `replayTrigger`
-    /// returns nil and nothing is scheduled — never a crash on an invalid 0/negative-interval trigger.
-    private func scheduleStalenessWatchdog(from date: Date, now: Date = Date()) {
-        // A CGM gap is UI state only — `.cgmDataLoss` never notifies (owner decision 2026-08-30). Arming a
-        // pre-armed OS request the poster is guaranteed to refuse is pure waste, and, before this, each
-        // re-arm also incremented the category's `delivered` telemetry counter (once per ADVANCED CGM
-        // datum — 720 of them in the 2026-08-29 export, none of which the wearer ever saw). Returning here
-        // stops both. The arm/cancel sinks stay wired: `cancelStalenessWatchdog()` still has legacy work
-        // to do (see its note), and removing the watchdog machinery outright touches `AppModel` and
-        // `faBolusCore`, which is a separate change.
-        guard NotificationBroker.Category.cgmDataLoss.deliversAsNotification else { return }
-        let deadline = date.addingTimeInterval(GlucoseFreshness.staleAfter)
-        guard let trigger = Self.replayTrigger(deadline: deadline, now: now) else { return }
-        let msg = NotificationBroker.Message(
-            category: .cgmDataLoss, severity: .warning,
-            title: StalenessWatchdog.title, body: StalenessWatchdog.body,
-            dedupeKey: StalenessWatchdog.dedupeKey)
-        post(msg, trigger: trigger, deadline: deadline)
-    }
-
-    /// Cancel a pre-armed staleness watchdog. Nothing arms one any more (see `scheduleStalenessWatchdog`),
-    /// but this is still load-bearing as CLEANUP: a `UNTimeIntervalNotificationTrigger` armed by a
-    /// PREVIOUS build survives an app update, so without this a watchdog scheduled before the update could
-    /// still fire afterwards. Withdrawing by its fixed key removes both the pending OS request and the
-    /// durable replay record.
+    /// Clear a pre-armed staleness watchdog left behind by an earlier build. Nothing arms one any more, but
+    /// this is still load-bearing as CLEANUP: a `UNTimeIntervalNotificationTrigger` armed by a PREVIOUS
+    /// build survives an app update, so without this a watchdog scheduled before the update could still fire
+    /// afterwards. Withdrawing by its fixed key removes both the pending OS request and the durable replay
+    /// record. Called once at launch.
     private func cancelStalenessWatchdog() {
         withdraw([StalenessWatchdog.dedupeKey])
     }
@@ -860,7 +835,7 @@ enum SafetyEdge: Equatable {
 /// and escalates ONCE (latched) when they cross a threshold, so the app can raise a user-visible,
 /// NON-MUTEABLE "can't hold a connection to this pump" state instead of flapping in silence.
 ///
-/// Pure + value-typed (mirrors `SafetyEdge`/`StalenessWatchdogEdge`): the owner
+/// Pure + value-typed (mirrors `SafetyEdge`): the owner
 /// (`PumpConnectionLifecycle`, which observes every kit state transition — not the sampled
 /// `refresh()` tick, so it never misses a fast ~2 s cycle) feeds each flap and acts on the returned
 /// decision. Unit-testable without any BLE/transport.
@@ -914,24 +889,5 @@ struct ConnectionFlapDetector: Equatable {
         flapTimes.removeAll()
         escalated = false
         return was
-    }
-}
-
-/// Pure decision for the pre-armed background staleness watchdog (`StalenessWatchdog`,
-/// faBolusCore) — arm/re-arm on an ADVANCED fresh glucose datum, cancel once the feed is no longer
-/// fresh (the real `SafetyEdge.freshness` → `.cgmDataLoss` edge has already alarmed for real by then).
-/// Kept beside `SafetyEdge` for the same reason: unit-testable without driving a full `refresh()` cycle.
-/// Distinct from `SafetyEdge` (whose cases are about POSTING/WITHDRAWING an immediate alert): this is
-/// about a DELAYED, pre-armed OS notification that may fire later even if this process never runs again.
-enum StalenessWatchdogEdge: Equatable {
-    case none, arm(Date), cancel
-
-    /// `lastArmedDate` is the fresh-datum date the watchdog is CURRENTLY armed against (nil while
-    /// cancelled). Re-arms only when `glucoseDate` genuinely ADVANCES (not on every heartbeat
-    /// re-affirming the same already-armed reading); cancels exactly once when `cgmFresh` goes false.
-    static func decide(cgmFresh: Bool, glucoseDate: Date?, lastArmedDate: Date?) -> StalenessWatchdogEdge {
-        if cgmFresh, let date = glucoseDate, date != lastArmedDate { return .arm(date) }
-        if !cgmFresh, lastArmedDate != nil { return .cancel }
-        return .none
     }
 }

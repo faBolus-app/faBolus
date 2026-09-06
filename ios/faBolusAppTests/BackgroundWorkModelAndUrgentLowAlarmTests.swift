@@ -3,8 +3,7 @@ import Foundation
 @testable import faBolus
 import faBolusCore
 
-/// refresh() arms the background staleness watchdog off cgmFresh, and raises the urgent-low alarm once
-/// per episode without touching the dose path.
+/// refresh() raises the app-owned urgent-low alarm once per episode without touching the dose path.
 @MainActor
 @Suite(.serialized) struct BackgroundWorkModelAndUrgentLowAlarmTests {
 
@@ -32,52 +31,6 @@ import faBolusCore
         }
         func start() async {}
         func stop() {}
-    }
-
-    // MARK: - Staleness-watchdog arm/re-arm/cancel wiring
-
-    @Test func refreshArmsTheStalenessWatchdogOnAFreshReadingAndCancelsItOnceNoLongerFresh() {
-        let savedStale = GlucoseFreshness.staleAfter
-        defer { GlucoseFreshness.staleAfter = savedStale }
-        GlucoseFreshness.staleAfter = 300  // 5 min — plenty of margin for the "still fresh" seeds below
-
-        let backend = MockBackend()
-        let model = AppModel(source: backend, ledgerStoreURL: tempLedgerURL())
-        let coordinator = NotificationCoordinator(model: model)  // proves the sinks are actually wired
-        #expect(model.notificationStalenessSink != nil)
-        #expect(model.notificationStalenessCancelSink != nil)
-
-        var armedDates: [Date] = []
-        var cancelCount = 0
-        model.notificationStalenessSink = { armedDates.append($0) }
-        model.notificationStalenessCancelSink = { cancelCount += 1 }
-
-        let d1 = Date()
-        backend.seedFreshGlucose(120, at: d1)  // fires onChange -> refresh()
-        #expect(armedDates == [d1])
-        #expect(cancelCount == 0)
-
-        // A heartbeat re-affirming the SAME reading (no new datum) must not re-arm.
-        model.publicRefresh()
-        #expect(armedDates == [d1])
-
-        // A genuinely NEWER fresh reading re-arms from the new date. A fresh `Date()` capture (not an
-        // offset into the future) — real wall-clock time has elapsed since `d1` was captured, so `d2 >
-        // d1` holds without ever being future-dated relative to the `now` `isStale` reads below.
-        let d2 = Date()
-        backend.seedFreshGlucose(122, at: d2)
-        #expect(armedDates == [d1, d2])
-
-        // Force staleness (shrink the window below the reading's already-elapsed age) and re-publish —
-        // the real `.cgmDataLoss` edge fires too, but the watchdog-cancel is the assertion here.
-        GlucoseFreshness.staleAfter = 0
-        model.publicRefresh()
-        #expect(cancelCount == 1, "once the feed is no longer fresh the pre-armed watchdog must be cancelled")
-
-        // Already cancelled — a further stale heartbeat must not re-cancel.
-        model.publicRefresh()
-        #expect(cancelCount == 1)
-        _ = coordinator
     }
 
     // MARK: - The app-owned urgent-low alarm
