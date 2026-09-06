@@ -43,6 +43,11 @@ enum BolusConfirmation {
         /// The bolus actually completed with `lastError == nil` and no pending approval. The ONLY
         /// signal that produces a `.success` banner.
         case delivered
+        /// The outcome is genuinely indeterminate — neither confirmed delivered nor confirmed failed.
+        /// UNLIKE `.failed`, this ALWAYS produces a banner (never silent): it is a guaranteed
+        /// disclosure. Its primary claims neither delivery nor non-delivery, and its secondary directs
+        /// the user to the pump's own history before dosing again.
+        case unconfirmed
     }
 
     /// Extended (combo) bolus detail for the "{now} U now, {total} U total over {duration} min"
@@ -85,6 +90,18 @@ enum BolusConfirmation {
                 secondary = String(format: String(localized: "%@ delivered"), String(format: "%.2f U", units))
             }
             return BolusSuccessBanner(kind: .success, primary: primary, secondary: secondary)
+        case .unconfirmed:
+            // Never silent: an unconfirmed outcome is a guaranteed disclosure. The primary claims
+            // NEITHER delivery nor non-delivery; the secondary carries the caller's already-resolved
+            // honest copy (`AppModel.lastError`). The fallback mirrors the model's user-facing
+            // unknown-outcome copy verbatim so the message-nil case is never blank — the pure display
+            // layer can't reach the MainActor-isolated model static, so the literal lives here too.
+            let fallback = String(
+                localized: "Bolus sent but outcome is unknown — verify on the pump before retrying.")
+            return BolusSuccessBanner(
+                kind: .warning,
+                primary: String(localized: "Bolus outcome unconfirmed"),
+                secondary: message ?? fallback)
         }
     }
 }

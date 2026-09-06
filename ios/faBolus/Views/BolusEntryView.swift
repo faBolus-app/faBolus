@@ -1036,9 +1036,12 @@ struct BolusEntryView: View {
         finishDelivery()
     }
 
-    /// Outcome of a just-completed attempt, read from the model — never a delivery decision.
+    /// Outcome of a just-completed attempt, read from the model — never a delivery decision. An
+    /// indeterminate outcome (its `lastError` is the shared unknown-outcome copy) routes to the honest,
+    /// never-silent `.unconfirmed` banner rather than the "Bolus not delivered" failed banner.
     private func confirmationSignal() -> BolusConfirmation.Signal {
-        return model.lastError == nil ? .delivered : .failed
+        guard let error = model.lastError else { return .delivered }
+        return error == AppModel.indeterminateOutcomeLockedCopy ? .unconfirmed : .failed
     }
 
     /// Present the toast, announce it, auto-dismiss after ~4s (~6s with VoiceOver).
