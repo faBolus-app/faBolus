@@ -215,4 +215,66 @@ import Foundation
             #expect(silenced.phone == .off)
         }
     }
+
+    // MARK: - Persisted rules model (fresh defaults, decode-tolerant, no migration — D-13, Amendment A)
+
+    /// A fresh install AND an upgrading install (no override for any group) both resolve through
+    /// `defaultIntent(for:)` — never through the legacy `notificationBroker.settings.v1` blob, which
+    /// this model has no code path to read at all.
+    @Test func freshAndUpgradingInstallsBothLandOnFreshDefaults_noMigrationPath() {
+        let fresh = R.PersistedRules()
+        for group in R.PumpMirrorGroup.allCases {
+            let resolved = R.resolve(fresh.cascade(for: group), timeSensitiveAvailable: true)
+            #expect(resolved.phone == R.defaultIntent(for: group))
+        }
+    }
+
+    /// A blob missing a key (simulating a build that predates a later-added field) decodes without
+    /// reverting any OTHER field — the hand-written `decodeIfPresent` decoder, not the legacy
+    /// per-field-Optional discipline, is what buys this.
+    @Test func aBlobMissingAKeyDecodesWithoutRevertingOtherFields() throws {
+        let json = Data(#"{"sourceOverride":{"intent":1}}"#.utf8)
+        let decoded = try JSONDecoder().decode(R.PersistedRules.self, from: json)
+        #expect(decoded.sourceOverride?.intent == .quiet)
+        #expect(decoded.groupOverrides.isEmpty, "the missing key must default to empty, not fail the whole decode")
+    }
+
+    /// A malformed/unparseable blob (the caller's `try?` fallback) never yields a SAFETY group at
+    /// `.off` — the fallback is `.init()` (no overrides), which resolves every group through its
+    /// fatigue-averse default, never silence.
+    @Test func decodeFailureFallsBackToDefaultsNeverASilentSafetyOff() {
+        let garbage = Data([0xFF, 0x00, 0x13, 0x42])
+        let decoded = (try? JSONDecoder().decode(R.PersistedRules.self, from: garbage)) ?? R.PersistedRules()
+        for group in R.PumpMirrorGroup.allCases {
+            let resolved = R.resolve(decoded.cascade(for: group), timeSensitiveAvailable: true)
+            #expect(resolved.phone != .off, "\(group) must never resolve to Off from a decode failure")
+        }
+    }
+
+    /// Round-trip: encode → decode preserves a user's chosen non-default rung for a group.
+    @Test func roundTripPreservesAUsersChosenNonDefaultRungForAGroup() throws {
+        var rules = R.PersistedRules()
+        rules.groupOverrides[R.PumpMirrorGroup.pumpRoutine.rawValue] = R.Rule(intent: .urgent)
+        let decoded = try JSONDecoder().decode(R.PersistedRules.self, from: JSONEncoder().encode(rules))
+        #expect(decoded == rules)
+        #expect(decoded.cascade(for: .pumpRoutine).category?.intent == .urgent)
+        #expect(R.resolve(decoded.cascade(for: .pumpRoutine), timeSensitiveAvailable: true).phone == .urgent)
+        // An un-overridden group in the SAME blob is unaffected — still its fatigue-averse default.
+        #expect(decoded.cascade(for: .glucoseAndControlIQ).category == nil)
+        #expect(
+            R.resolve(decoded.cascade(for: .glucoseAndControlIQ), timeSensitiveAvailable: true).phone
+                == R.defaultIntent(for: .glucoseAndControlIQ))
+    }
+
+    /// The one-move pump-mirror source override still yields to a category-level override (more
+    /// specific wins), exactly as `resolve`'s cascade already proves — pinned here through the
+    /// persisted model's own `cascade(for:)` construction, not just the raw resolver call.
+    @Test func sourceOverridePersistsAndCategoryOverrideStillWinsWhenBothSet() {
+        var rules = R.PersistedRules(sourceOverride: .init(intent: .off))
+        rules.groupOverrides[R.PumpMirrorGroup.deliveryStopped.rawValue] = R.Rule(intent: .urgent)
+        let silencedGroup = R.resolve(rules.cascade(for: .runningLow), timeSensitiveAvailable: true)
+        #expect(silencedGroup.phone == .off, "no category override for this group — the source Off wins")
+        let overriddenGroup = R.resolve(rules.cascade(for: .deliveryStopped), timeSensitiveAvailable: true)
+        #expect(overriddenGroup.phone == .urgent, "a category-level override still beats the source Off")
+    }
 }
