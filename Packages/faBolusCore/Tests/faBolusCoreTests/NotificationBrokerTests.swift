@@ -120,14 +120,14 @@ import Foundation
         let settings = Dictionary(
             uniqueKeysWithValues: C.allCases.map { ($0, B.CategorySettings(enabled: false)) })
         // Day already blown past a zero budget.
-        let state = B.State(dayKey: B.dayKey(at(3, 0), calendar: cal), deliveredToday: 999, mealDeliveredToday: 999)
+        let state = B.State(dayKey: B.dayKey(at(3, 0), calendar: cal), deliveredToday: 999)
         // `.cgmDataLoss` is excluded: it is never-suppressible AND never a notification at all since
         // 2026-08-30 (`deliversAsNotification == false`), so "always delivers" does not apply to it. Its
         // own refusal is asserted explicitly at the end of this test, so the coverage is not just dropped.
         for c in C.allCases where c.neverSuppressible && c.deliversAsNotification {
             let d = B.decide(
                 msg(c), settings: settings, state: state,
-                budget: B.Budget(dailyTotal: 0, dailyMeal: 0), now: at(3, 0), calendar: cal)
+                budget: B.Budget(dailyTotal: 0), now: at(3, 0), calendar: cal)
             #expect(d.deliver, "\(c.rawValue) must always deliver when the ack flag is unset")
             // A never-suppressible delivery is budget-exempt: lastDeliveredAt/notifiedEpisodes advance,
             // but the budget counter must stay untouched so a flapping safety category can never exhaust
@@ -153,7 +153,7 @@ import Foundation
         for c in C.allCases where c.neverSuppressible && c.isUserConfigurable && c.deliversAsNotification {
             let d = B.decide(
                 msg(c), settings: acknowledged, state: state,
-                budget: B.Budget(dailyTotal: 0, dailyMeal: 0), now: at(3, 0), calendar: cal)
+                budget: B.Budget(dailyTotal: 0), now: at(3, 0), calendar: cal)
             #expect(
                 !d.deliver && d.reason == .categoryDisabled,
                 "\(c.rawValue) must suppress once the user acknowledged disabling it")
@@ -163,7 +163,7 @@ import Foundation
         // consumes no budget slot and records no episode on the way out.
         let cgm = B.decide(
             msg(.cgmDataLoss), settings: settings, state: state,
-            budget: B.Budget(dailyTotal: 0, dailyMeal: 0), now: at(3, 0), calendar: cal)
+            budget: B.Budget(dailyTotal: 0), now: at(3, 0), calendar: cal)
         #expect(!cgm.deliver && cgm.reason == .uiStateOnly)
         #expect(cgm.nextState.lastDeliveredAt["cgmDataLoss"] == nil)
         #expect(cgm.nextState.notifiedEpisodes.isEmpty)
@@ -172,7 +172,7 @@ import Foundation
         for c in C.allCases where c.neverSuppressible && !c.isUserConfigurable {
             let d = B.decide(
                 msg(c), settings: acknowledged, state: state,
-                budget: B.Budget(dailyTotal: 0, dailyMeal: 0), now: at(3, 0), calendar: cal)
+                budget: B.Budget(dailyTotal: 0), now: at(3, 0), calendar: cal)
             #expect(d.deliver, "\(c.rawValue) is non-configurable — a forged acknowledged-disable must NOT suppress it")
         }
     }
@@ -198,15 +198,6 @@ import Foundation
                 msg(.pumpDisconnect), settings: [:], state: state, budget: budget,
                 now: at(9, 0), calendar: cal
             ).deliver)
-    }
-
-    @Test func mealSubBudgetCapsMealRemindersBeforeTheTotal() {
-        let state = B.State(dayKey: B.dayKey(at(9, 0), calendar: cal), deliveredToday: 3, mealDeliveredToday: 2)
-        let budget = B.Budget(dailyTotal: 40, dailyMeal: 2)  // total has room; meal is spent
-        let d = B.decide(
-            msg(.mealReminder), settings: enabled(.mealReminder), state: state, budget: budget,
-            now: at(9, 0), calendar: cal)
-        #expect(d.reason == .mealBudgetReached)
     }
 
     @Test func oneNotificationPerEpisodeForGovernedButSafetyStillRepeats() {
@@ -334,13 +325,13 @@ import Foundation
     @Test func stateAndSettingsRoundTripCodable() throws {
         let state = B.State(
             lastDeliveredAt: ["pumpAlert": at(9, 0)], dayKey: "2026-1-1",
-            deliveredToday: 3, mealDeliveredToday: 1, notifiedEpisodes: ["ep1"],
+            deliveredToday: 3, notifiedEpisodes: ["ep1"],
             snoozedUntil: ["pumpAlert": at(9, 0)])
         let s2 = try JSONDecoder().decode(B.State.self, from: JSONEncoder().encode(state))
         #expect(s2 == state)
         let cfg = B.CategorySettings(enabled: true)
         #expect((try JSONDecoder().decode(B.CategorySettings.self, from: JSONEncoder().encode(cfg))) == cfg)
-        let budget = B.Budget(dailyTotal: 40, dailyMeal: 6)
+        let budget = B.Budget(dailyTotal: 40)
         #expect((try JSONDecoder().decode(B.Budget.self, from: JSONEncoder().encode(budget))) == budget)
         // userAcknowledgedSafetyDisable round-trips when set…
         let cfg3 = B.CategorySettings(enabled: false, userAcknowledgedSafetyDisable: true)
@@ -511,7 +502,8 @@ import Foundation
         typealias R = NotificationRules
         let offCascade = R.Cascade(category: .init(intent: .off))
         let d = B.decide(
-            msg(.mealReminder), settings: enabled(.mealReminder), state: B.State(), now: at(9, 0), calendar: cal,
+            msg(.remoteBolusRejected), settings: enabled(.remoteBolusRejected), state: B.State(),
+            now: at(9, 0), calendar: cal,
             rules: offCascade, timeSensitiveAvailable: true)
         #expect(
             !d.deliver && d.reason == .ruleResolvedOff,

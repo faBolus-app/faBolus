@@ -32,7 +32,7 @@ import UserNotifications
             uniqueKeysWithValues: C.allCases.map { ($0, B.CategorySettings(enabled: false)) })
         let rt = NotificationRuntime(
             store: isolatedStore(#function), settings: hostile,
-            budget: B.Budget(dailyTotal: 0, dailyMeal: 0))
+            budget: B.Budget(dailyTotal: 0))
         var posted: [String] = []
         // `.cgmDataLoss` is excluded: it is never-suppressible AND, since 2026-08-30, never a
         // notification at all (a CGM gap is UI state only), so "always posts" does not apply to it. Its

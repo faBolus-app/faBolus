@@ -71,6 +71,24 @@ final class NotificationRuntime {
             self.state = .init()
         }
         self.telemetry = Self.loadTelemetry(store, telemetryKey)
+        reencodePersistedBlobsOnce()
+    }
+
+    /// One-shot, at first construction on a given App-Group store: re-encode the persisted `state` and
+    /// `settings` blobs so fields the app-own notification rewrite retired (the meal sub-budget counter,
+    /// the safety-ack flag) do not linger as unread keys in JSON an older build wrote. `decode` already
+    /// tolerates those extra keys, and `settings` is round-tripped through the current struct here, so no
+    /// value is translated — this only rewrites what is already loaded, then marks itself done so it
+    /// never runs again (owner Amendment A: no migration code).
+    private func reencodePersistedBlobsOnce() {
+        guard !store.bool(forKey: AppGroupKeys.notificationBrokerBlobReencoded) else { return }
+        if store.data(forKey: stateKey) != nil, let data = try? JSONEncoder().encode(state) {
+            store.set(data, forKey: stateKey)
+        }
+        if store.data(forKey: settingsKey) != nil {
+            persistSettings()
+        }
+        store.set(true, forKey: AppGroupKeys.notificationBrokerBlobReencoded)
     }
 
     /// True when the user has opted into local notification telemetry (default false).

@@ -45,7 +45,7 @@ import Foundation
     /// blanket `false` cannot make the two assertions above pass while silently stripping every snooze.
     @Test func exactlyTheRoutineGovernedCategoriesStillPermitASnooze() {
         let snoozeable = Set(C.allCases.filter { $0.permitsSilencingAction }.map(\.rawValue))
-        #expect(snoozeable == ["pumpAlert", "remoteBolusRejected", "modeReminder", "mealReminder"])
+        #expect(snoozeable == ["pumpAlert", "remoteBolusRejected"])
     }
 
     /// The WRITE side refuses the snooze, so a notification DELIVERED BEFORE this change — still sitting

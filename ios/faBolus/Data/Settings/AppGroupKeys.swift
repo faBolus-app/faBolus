@@ -11,6 +11,13 @@ public enum AppGroupKeys {
     /// exist to answer. The loader reads only this key; a v1 blob is left in place and ignored.
     public static let notificationBrokerTelemetry = "notificationBroker.telemetry.v2"
     public static let notificationBrokerSettings = "notificationBroker.settings.v1"
+    /// Set once, after the first-launch one-shot re-encode of the persisted `state`/`settings` blobs.
+    /// The app-own notification rewrite dropped several fields (the meal sub-budget counter, the
+    /// safety-ack flag); a synthesized `Decodable` silently ignores those now-unrecognized keys, but a
+    /// blob written by an older build keeps carrying them until it is next persisted. This one-shot
+    /// re-encode rewrites both blobs with only the current fields so the stale keys do not linger — no
+    /// value is translated (owner Amendment A: no migration code), the blobs are simply round-tripped.
+    public static let notificationBrokerBlobReencoded = "notificationBroker.blobReencoded.v1"
     /// Shared opt-in — also read directly by `BLESessionLog`/`ConnectionTelemetryStore` (one
     /// "share local diagnostics" switch governs all three; App-Group-backed so the out-of-process
     /// mode-reminder intent honors the same choice the main app made).

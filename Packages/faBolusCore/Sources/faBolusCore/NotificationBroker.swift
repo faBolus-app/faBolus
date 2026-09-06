@@ -47,8 +47,6 @@ public enum NotificationBroker {
         /// resolution is `bolusReconciliation` (never-suppressible, durable, DND-breaking) — this
         /// category is never persisted and never replayed on relaunch.
         case bolusIndeterminate
-        case modeReminder  // an activity/sleep mode reminder
-        case mealReminder  // meal-timing reminders — the tightest defaults + their own sub-budget
 
         /// A safety category the user cannot turn off and that bypasses rate-limit / budget.
         public var neverSuppressible: Bool {
@@ -150,17 +148,10 @@ public enum NotificationBroker {
         /// re-raise. See `shouldReplayPersistedAlert`.
         public var announcesSettledResult: Bool { self == .bolusReconciliation }
 
-        /// Whether the category is ON by default. The never-suppressible ones are always on (and can't be
-        /// turned off); meal reminders default OFF (tightest defaults, §6); the rest default ON.
-        public var defaultEnabled: Bool {
-            switch self {
-            case .mealReminder: return false
-            default: return true
-            }
-        }
-
-        /// Meal reminders draw from a separate, tighter daily sub-budget (§6's M-series bucket).
-        public var usesMealSubBudget: Bool { self == .mealReminder }
+        /// Whether the category is ON by default. Every remaining app-own category is ON by default;
+        /// safety categories cannot be turned off through this flag at all (they resolve through the
+        /// ladder), and the governed ones default ON.
+        public var defaultEnabled: Bool { true }
 
         /// A pure display/classification axis driving the settings UI's pump-vs-app two-section split.
         /// `pumpAlert` is the only category relayed FROM the pump; every other category (incl. all
@@ -184,8 +175,6 @@ public enum NotificationBroker {
             case .remoteBolusRejected: return "Remote bolus rejected"
             case .bolusDeliveryFailed: return "Bolus delivery failed"
             case .bolusIndeterminate: return "Bolus outcome unknown"
-            case .modeReminder: return "Activity / sleep reminders"
-            case .mealReminder: return "Meal reminders"
             }
         }
     }
@@ -254,13 +243,11 @@ public enum NotificationBroker {
         }
     }
 
-    /// Global daily budgets (§6): a total cap with a visible counter, plus a tighter meal sub-budget.
+    /// The global daily budget (§6): a total cap with a visible counter.
     public struct Budget: Sendable, Equatable, Codable {
         public var dailyTotal: Int
-        public var dailyMeal: Int
-        public init(dailyTotal: Int = 40, dailyMeal: Int = 6) {
+        public init(dailyTotal: Int = 40) {
             self.dailyTotal = dailyTotal
-            self.dailyMeal = dailyMeal
         }
     }
 
@@ -273,7 +260,6 @@ public enum NotificationBroker {
         public var lastDeliveredAt: [String: Date]  // keyed by Category.rawValue
         public var dayKey: String  // the calendar day the counters belong to
         public var deliveredToday: Int
-        public var mealDeliveredToday: Int
         public var notifiedEpisodes: Set<String>
         /// User "snooze this category until T", keyed by `Category.rawValue`. **Optional on purpose** so an
         /// already-persisted v1 blob (written before this field existed) still decodes — a missing key →
@@ -281,13 +267,12 @@ public enum NotificationBroker {
         public var snoozedUntil: [String: Date]?
         public init(
             lastDeliveredAt: [String: Date] = [:], dayKey: String = "",
-            deliveredToday: Int = 0, mealDeliveredToday: Int = 0,
+            deliveredToday: Int = 0,
             notifiedEpisodes: Set<String> = [], snoozedUntil: [String: Date]? = nil
         ) {
             self.lastDeliveredAt = lastDeliveredAt
             self.dayKey = dayKey
             self.deliveredToday = deliveredToday
-            self.mealDeliveredToday = mealDeliveredToday
             self.notifiedEpisodes = notifiedEpisodes
             self.snoozedUntil = snoozedUntil
         }
@@ -335,7 +320,7 @@ public enum NotificationBroker {
     // MARK: - Decision
 
     public enum SuppressionReason: String, Sendable, Equatable {
-        case categoryDisabled, snoozed, dailyBudgetReached, mealBudgetReached,
+        case categoryDisabled, snoozed, dailyBudgetReached,
             episodeAlreadyNotified
         /// The category surfaces as UI state only and never as a notification
         /// (`Category.deliversAsNotification == false`). Distinct from `categoryDisabled`, which is a
@@ -382,7 +367,6 @@ public enum NotificationBroker {
         if s.dayKey != today {
             s.dayKey = today
             s.deliveredToday = 0
-            s.mealDeliveredToday = 0
         }
 
         func record() -> State {
@@ -400,7 +384,6 @@ public enum NotificationBroker {
             let budgetExempt = message.category.neverSuppressible || message.severity == .error
             if !budgetExempt {
                 out.deliveredToday += 1
-                if message.category.usesMealSubBudget { out.mealDeliveredToday += 1 }
             }
             out.notifiedEpisodes.insert(message.episodeKey)
             return out
@@ -476,9 +459,6 @@ public enum NotificationBroker {
         if s.notifiedEpisodes.contains(message.episodeKey) { return suppress(.episodeAlreadyNotified) }
 
         if s.deliveredToday >= budget.dailyTotal { return suppress(.dailyBudgetReached) }
-        if message.category.usesMealSubBudget, s.mealDeliveredToday >= budget.dailyMeal {
-            return suppress(.mealBudgetReached)
-        }
         return deliver()
     }
 

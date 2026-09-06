@@ -275,10 +275,6 @@ struct AppSettingsStoredMigrationTests {
         assertBoolStoredRoundTrip(
             key: "autoSleepMode", backingLabel: "__autoSleepMode", defaultValue: false, \.autoSleepMode)
     }
-    @Test func modeRemindersStoredRoundTrip() {
-        assertBoolStoredRoundTrip(
-            key: "modeReminders", backingLabel: "__modeReminders", defaultValue: false, \.modeReminders)
-    }
 
     // MARK: Bool property (showGlucoseUnitLabels — its widget-republish side effect was removed;
     // the setting itself and its 6 live readers stay)

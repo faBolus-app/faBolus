@@ -317,8 +317,7 @@ public final class AppSettings {
 
     /// **Auto Exercise mode** — switches the pump into Control-IQ Exercise mode when a workout starts,
     /// and back to normal when it ends. **Default OFF.** Auto-switching applies only to a **Mobi**
-    /// (t:slim X2 can't; it gets a reminder if `modeReminders` is on). Hidden and unregistered;
-    /// `ModeAutomation.swift` still reads it.
+    /// (t:slim X2 cannot). Hidden and unregistered.
     private var _autoExerciseMode = Stored<Bool>(wrappedValue: false, "autoExerciseMode")
     public var autoExerciseMode: Bool {
         get { _autoExerciseMode.wrappedValue }
@@ -330,14 +329,6 @@ public final class AppSettings {
     public var autoSleepMode: Bool {
         get { _autoSleepMode.wrappedValue }
         set { _autoSleepMode.wrappedValue = newValue }
-    }
-    /// **Mode reminders** — when an auto mode-switch can't be applied automatically (a t:slim, or the
-    /// pump isn't connected), post a notification reminding the user to switch modes on the pump
-    /// themselves. **Default OFF.** Hidden and unregistered.
-    private var _modeReminders = Stored<Bool>(wrappedValue: false, "modeReminders")
-    public var modeReminders: Bool {
-        get { _modeReminders.wrappedValue }
-        set { _modeReminders.wrappedValue = newValue }
     }
 
     /// Use iOS **Critical Alerts** (which alert even under Do Not Disturb / the ringer switch)
@@ -736,7 +727,6 @@ public final class AppSettings {
         _criticalAlertsEnabled.store = defaults
         _autoExerciseMode.store = defaults
         _autoSleepMode.store = defaults
-        _modeReminders.store = defaults
         _garminDefaultScreen.store = defaults
         _garminTargetApp.store = defaults
         defaultBolusMode = BolusMode(rawValue: d.string(forKey: "defaultBolusMode") ?? "carbs") ?? .carbs
@@ -790,7 +780,6 @@ public final class AppSettings {
         }
         autoExerciseMode = (d.object(forKey: "autoExerciseMode") as? Bool) ?? false
         autoSleepMode = (d.object(forKey: "autoSleepMode") as? Bool) ?? false
-        modeReminders = (d.object(forKey: "modeReminders") as? Bool) ?? false
         garminDefaultScreen = order.contains(def) ? def : (order.first ?? "glance")
         garminTargetApp = (gt == "official") ? "official" : "beta"
 

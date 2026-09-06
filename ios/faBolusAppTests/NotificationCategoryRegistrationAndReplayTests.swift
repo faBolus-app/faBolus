@@ -66,7 +66,7 @@ import UserNotifications
     /// buttons. A blanket "register nothing" would pass the test above and fail this one.
     @Test func theRoutineCategoriesKeepTheirSnoozeAndPumpAlertsKeepClearAndSnooze() {
         let owned = ownedByIdentifier()
-        for raw in ["remoteBolusRejected", "modeReminder", "mealReminder"] {
+        for raw in ["remoteBolusRejected"] {
             #expect(owned[raw]?.actions.map(\.identifier) == ["SNOOZE"], "\(raw) keeps its snooze")
         }
         #expect(
