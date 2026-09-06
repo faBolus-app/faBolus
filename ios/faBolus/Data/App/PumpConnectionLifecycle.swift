@@ -179,6 +179,7 @@ final class PumpConnectionLifecycle {
             if wasLive, flapDetector.recordFlap(at: Date()) {
                 onReliabilityEvent?(.connectionUnstable)
             }
+            snapshot.pumpLinkFlapWindowActive = pumpLinkFlapWindowActive
             // This is the SINGLE hook that covers all THREE `didDiscover`-bypass
             // reconnect shapes (silent retrieve, CoreBluetooth state restoration, watchdog-rescan-direct-
             // connect — 15.5-RESEARCH.md §A2) — `state` transitions to `.connecting`/`.discovering`
@@ -305,16 +306,19 @@ final class PumpConnectionLifecycle {
     /// exactly when polling begins — never at bare BLE `.ready` (which now maps to `.connecting`).
     private func markUsableAndStartPolling() {
         snapshot.connection = .connected
+        // Publish the current flap-window state at the reconnect (`.clear`) edge the effects tail reads, so
+        // the flap-alert withdraw is gated on whether the storm has decayed — never cleared by the reconnect
+        // itself.
+        snapshot.pumpLinkFlapWindowActive = pumpLinkFlapWindowActive
         // Deliberately NO `flapDetector.reset()` here. A reconnect is the SECOND HALF of every flap
         // cycle, so clearing the window at this exact point put exactly one clear between any two
         // `recordFlap` calls, pinned `flapTimes.count` at 1 against a `threshold` of 5, and made
         // escalation unreachable — this detector shipped inert (`2443fd6`) for precisely that reason.
         // A genuine recovery now needs no call at all: the window, and with it the `escalated` latch,
         // decays by AGE inside `recordFlap`, so the arithmetic cannot be defeated by what this path
-        // does or forgets to do. The user-visible alert is still withdrawn on the `.clear` connection
-        // edge in `RefreshEffectsCoordinator` (verified: it withdraws `pumpConnectionUnstableKey`
-        // alongside `pumpDisconnectKey`) — see the KNOWN LIMITATION on that withdraw in the
-        // `pump-link-thrash-190-connects` debug session.
+        // does or forgets to do. The user-visible alert is withdrawn on the `.clear` connection edge in
+        // `RefreshEffectsCoordinator`, but ONLY once the flap window (published just above) has decayed —
+        // so a storm's reconnects keep it outstanding instead of clearing it on the first reconnect.
         onChange?()
         readScheduler.startPolling()
     }
@@ -324,6 +328,12 @@ final class PumpConnectionLifecycle {
     /// the second half of a flap cycle and clearing it there is what shipped this inert); the window
     /// self-decays by age. Force-cleared only on a pump IDENTITY change, in `applyDidDiscover`.
     private var flapDetector = ConnectionFlapDetector()
+
+    /// Whether a flap-storm window is currently open — true while the detector still holds recorded flap
+    /// cycles. Surfaced onto `PumpSnapshot.pumpLinkFlapWindowActive` so the effects tail can gate the
+    /// flap-alert withdraw on it: the alert stays outstanding through a storm's reconnects and is
+    /// withdrawn only once this decays.
+    var pumpLinkFlapWindowActive: Bool { !flapDetector.flapTimes.isEmpty }
 
     // MARK: - Pairing-handshake watchdog
     //
@@ -455,6 +465,7 @@ final class PumpConnectionLifecycle {
         // pump currently being measured.
         if let previous = PumpPeripheralStore.id(), previous != peripheral.identifier {
             flapDetector.reset()
+            snapshot.pumpLinkFlapWindowActive = pumpLinkFlapWindowActive
         }
         // C1: remember this peripheral so a future cold launch can retrieve-before-scan (see connect()).
         // The scan is service-UUID-filtered to the pump, so the discovered peripheral IS the pump.

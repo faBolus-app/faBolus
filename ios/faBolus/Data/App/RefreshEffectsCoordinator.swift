@@ -77,9 +77,13 @@ final class RefreshEffectsCoordinator {
             scheduleDisconnectEscalation()  // S7: delayed re-notification ladder
             onConnectionDropped(snapshot.connectionDetail)  // §5.2.8 telemetry + F7 BLE session-log
         case .clear:
-            // A genuine reconnect withdraws the non-muteable `pumpConnectionUnstable` flap alert
-            // on the SAME edge as `pumpDisconnect` + its escalation steps.
-            withdrawNotifications([pumpDisconnectKey, pumpConnectionUnstableKey] + DisconnectEscalation.stepIds)
+            // `pumpDisconnect` + its escalation steps clear on the reconnect edge. The flap alert is
+            // DIFFERENT: a reconnect is the second half of EVERY flap cycle, so withdrawing it here
+            // silenced a storm after a single notification. Withdraw it only once the flap window has
+            // decayed — after a genuine span of stability, not on the first reconnect.
+            var toWithdraw = [pumpDisconnectKey] + DisconnectEscalation.stepIds
+            if !snapshot.pumpLinkFlapWindowActive { toWithdraw.append(pumpConnectionUnstableKey) }
+            withdrawNotifications(toWithdraw)
             onConnectionRestored()
         case .none: break
         }
