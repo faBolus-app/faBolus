@@ -179,8 +179,6 @@ final class RemoteBolusLedgerTests: XCTestCase {
         + "delivery resumes once the safety ledger is written."
     private static let liveInFlightMessage =
         "A bolus is already being delivered — wait for it to finish before sending another."
-    private static let genuinelyUnresolvedMessage =
-        "A previous bolus outcome is unconfirmed — check the pump/t:connect before dosing again."
 
     func testBlockReasonIsNilWhenNothingIsSetAndNothingIsUnresolved() {
         XCTAssertNil(
@@ -231,21 +229,24 @@ final class RemoteBolusLedgerTests: XCTestCase {
             Self.liveInFlightMessage)
     }
 
-    func testBlockReasonGenuinelyUnresolvedEntryUsesTheCheckThePumpMessage() {
-        // Unresolved entry is NOT the live in-flight one (no in-flight key at all — e.g. surfaced at
-        // relaunch after a crash).
+    func testBlockReasonGenuinelyUnresolvedEntryReturnsNilAfterDurableStaleArmRemoved() {
+        // A genuinely unresolved entry with NO delivery in flight (e.g. surfaced at relaunch after a
+        // crash) no longer produces a durable block — it is carried by the non-blocking inline
+        // disclosure instead, so a new legitimate delivery is not gated by it.
         let unresolved: [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool)] =
             [("watch", "crashed-mid-delivery", 5555, true)]
-        XCTAssertEqual(
+        XCTAssertNil(
             RemoteBolusLedger.blockReason(
                 noDurableStore: false, ledgerFailedClosed: false,
                 terminalSaveFailed: false, unresolved: unresolved,
-                inFlightDeliveryKey: nil), Self.genuinelyUnresolvedMessage)
+                inFlightDeliveryKey: nil))
     }
 
-    func testBlockReasonMixedInFlightAndUnresolvedEntriesUsesTheCheckThePumpMessage() {
-        // The in-flight key matches ONE entry but a SECOND, different entry is also unresolved — the
-        // `allSatisfy` gate must fail closed to the "check the pump" wording, not the transient one.
+    func testBlockReasonInFlightWithCoexistingStaleEntryUsesTheLiveMessage() {
+        // A delivery is in flight (matches ONE entry) while a SECOND, different entry is also
+        // unresolved. The cross-client mutex must still fire whenever a delivery is in flight — even
+        // with a co-existing stale entry — so a concurrent request is blocked with the transient
+        // "already being delivered" message and never let through (no mutex hole).
         let unresolved: [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool)] =
             [("local", "r1", nil, true), ("watch", "crashed-mid-delivery", 5555, true)]
         XCTAssertEqual(
@@ -253,7 +254,7 @@ final class RemoteBolusLedgerTests: XCTestCase {
                 noDurableStore: false, ledgerFailedClosed: false,
                 terminalSaveFailed: false, unresolved: unresolved,
                 inFlightDeliveryKey: (peerId: "local", requestId: "r1")),
-            Self.genuinelyUnresolvedMessage)
+            Self.liveInFlightMessage)
     }
 
     // MARK: - Terminal-outcome re-echo query (terminalOutcomes)
@@ -510,27 +511,33 @@ final class RemoteBolusLedgerTests: XCTestCase {
         XCTAssertEqual(l.state(peerId: "local", requestId: "only"), .delivering)
     }
 
-    /// Invariant this whole phase relies on: a collapse can NEVER release the delivery block —
-    /// `RemoteBolusLedger.blockReason`'s `!unresolved.isEmpty` arm must still fire afterwards.
-    func testCollapseCanNeverReleaseTheGlobalDeliveryBlock() {
+    /// Once the durable stale-outcome block was removed, a new delivery can proceed while a prior entry
+    /// is still unresolved, so two unresolved id-bearing entries can accumulate in NORMAL operation, not
+    /// only in a legacy ledger. `collapseLegacyMultiEntryUnresolved` is now the routine invariant-maintainer
+    /// that collapses such an accumulation back to at-most-one, and the surviving entry produces no durable
+    /// block when nothing is in flight — the non-blocking disclosure carries it instead.
+    func testCollapseOfAPostRemovalTwoEntryAccumulationKeepsExactlyOneUnresolvedAndDoesNotBlock() {
         var l = RemoteBolusLedger()
         _ = l.begin(peerId: "local", requestId: "old", doseKey: key(1.0))
         l.markDelivering(peerId: "local", requestId: "old", bolusId: 100)
         _ = l.begin(peerId: "local", requestId: "new", doseKey: key(2.0))
         l.markDelivering(peerId: "local", requestId: "new", bolusId: 200)
 
-        _ = l.collapseLegacyMultiEntryUnresolved()
+        let changed = l.collapseLegacyMultiEntryUnresolved()
         let stillUnresolved = l.unreconciled()
 
-        XCTAssertEqual(stillUnresolved.count, 1, "the newest entry must survive unresolved")
+        XCTAssertTrue(changed)
+        XCTAssertEqual(stillUnresolved.count, 1, "only the newest unresolved id-bearing entry survives")
+        XCTAssertEqual(stillUnresolved.first?.requestId, "new")
+        XCTAssertEqual(l.state(peerId: "local", requestId: "old"), .terminal)
         let narrowed = stillUnresolved.map {
             (peerId: $0.peerId, requestId: $0.requestId, bolusId: $0.bolusId, sentToPump: $0.sentToPump)
         }
-        XCTAssertNotNil(
+        XCTAssertNil(
             RemoteBolusLedger.blockReason(
                 noDurableStore: false, ledgerFailedClosed: false, terminalSaveFailed: false,
                 unresolved: narrowed, inFlightDeliveryKey: nil),
-            "a collapse must never be able to release the delivery block")
+            "a genuinely unresolved entry with nothing in flight no longer produces a durable block")
     }
 
     // MARK: - Pump-identity scoping

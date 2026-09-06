@@ -22,8 +22,6 @@ struct LedgerBlockPrecedenceGuardTests {
         + "delivery resumes once the safety ledger is written."
     private static let liveInFlightMessage =
         "A bolus is already being delivered — wait for it to finish before sending another."
-    private static let genuinelyUnresolvedMessage =
-        "A previous bolus outcome is unconfirmed — check the pump/t:connect before dosing again."
 
     /// Mirrors `R3CLedgerFaultTests.withCleanSettings` — restore the global gates after each test so the
     /// serialized suite never leaks state.
@@ -124,8 +122,9 @@ struct LedgerBlockPrecedenceGuardTests {
     }
 
     /// A genuinely unresolved entry — NOT the live in-flight one (e.g. surfaced at relaunch after a
-    /// crash) — resolves to the distinct "check the pump" message.
-    @Test func genuinelyUnresolvedEntryUsesTheCheckThePumpMessage() async throws {
+    /// crash) — no longer produces a durable delivery block: it is carried by the non-blocking inline
+    /// disclosure instead, so a new legitimate delivery is not gated by it.
+    @Test func genuinelyUnresolvedEntryNoLongerBlocksAndFeedsTheInlineDisclosure() async throws {
         try await withCleanSettings {
             let ledgerURL = URL(fileURLWithPath: NSTemporaryDirectory())
                 .appendingPathComponent("a2-unresolved-\(UUID().uuidString).json")
@@ -138,7 +137,8 @@ struct LedgerBlockPrecedenceGuardTests {
             await backend.connect()  // no reconcileResultsById[5555] ⇒ .unavailable
             let model = AppModel(source: backend, ledgerStoreURL: ledgerURL)
             await model.reconcileUnresolvedDeliveries()
-            #expect(model.deliveryBlockedReason == Self.genuinelyUnresolvedMessage)
+            #expect(model.deliveryBlockedReason == nil)
+            #expect(model.unconfirmedDeliveryDisclosure == AppModel.indeterminateOutcomeLockedCopy)
         }
     }
 }
