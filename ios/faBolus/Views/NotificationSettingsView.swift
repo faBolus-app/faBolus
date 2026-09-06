@@ -1,8 +1,11 @@
 import SwiftUI
 import faBolusCore
 
-/// Notification controls. Pump-sourced (`pumpAlert`) vs app-generated categories; the never-suppressible
-/// trio (`pumpDisconnect` / `cgmDataLoss` / `bolusReconciliation`) is always-on. Governance lives in
+/// Notification controls. Pump-sourced (`pumpAlert`) vs app-generated categories. `pumpDisconnect` is
+/// wired onto the unified Off/Quiet/Alert/Urgent ladder (the app-own "safety set") and
+/// rendered in `appOwnSafetyLadderSection`; the remaining never-suppressible categories
+/// (`bolusReconciliation` / `urgentLowGlucose` / `cgmDataLoss`) still render through the older
+/// always-on-unless-acknowledged toggle in `safetyAlertsSection`. Governance lives in
 /// `NotificationBroker.decide()`, unchanged by this view.
 struct NotificationSettingsView: View {
     /// Read-only handle for `model.notificationWithdrawCategorySink` when the user disables a
@@ -24,6 +27,10 @@ struct NotificationSettingsView: View {
     enum PendingSafetyLower: Equatable {
         case group(NotificationRules.PumpMirrorGroup, NotificationRules.Intent)
         case source(NotificationRules.Intent)
+        /// An app-own safety category lowered below its default — distinct from the
+        /// pump-mirror cases above because the confirm message must not claim the pump alarms on its
+        /// own screen for these (it does not; faBolus is their only annunciator).
+        case appOwnCategory(NotificationBroker.Category, NotificationRules.Intent)
     }
 
     init(model: AppModel, settings: AppSettings) {
@@ -40,9 +47,12 @@ struct NotificationSettingsView: View {
         // `pumpConnectionUnstable` is never-suppressible and has no user toggle. `deliversAsNotification`
         // excludes any category that never notifies (currently `cgmDataLoss`): rendering a
         // toggle/caption/dialog for a condition that cannot notify is a false statement, so the filter
-        // drives off the same predicate `decide()` reads rather than a hard-coded exclusion.
+        // drives off the same predicate `decide()` reads rather than a hard-coded exclusion. `isSafetySet`
+        // excludes a category migrated onto the unified ladder (currently `pumpDisconnect`, rendered by
+        // `appOwnSafetyLadderSection` instead) — its old enable/ack toggle no longer drives `decide()`.
         NotificationBroker.Category.allCases.filter {
             !$0.isPumpSourced && $0.neverSuppressible && $0.isUserConfigurable && $0.deliversAsNotification
+                && !$0.isSafetySet
         }
     }
     private var tunableAppCategories: [NotificationBroker.Category] {
@@ -123,7 +133,6 @@ struct NotificationSettingsView: View {
     /// Per-category disable title — each trio warning is specific, not one generic sentence.
     private func safetyDisableDialogTitle(for category: NotificationBroker.Category?) -> Text {
         switch category {
-        case .pumpDisconnect: return Text("Turn off pump-disconnect alerts?")
         case .bolusReconciliation: return Text("Turn off bolus-result alerts?")
         case .urgentLowGlucose: return Text("Turn off urgent-low backup alarm?")
         default: return Text("")
@@ -175,6 +184,7 @@ struct NotificationSettingsView: View {
         Form {
             pumpMirrorSection
             criticalAlertsSection
+            appOwnSafetyLadderSection
             safetyAlertsSection
             ForEach(tunableAppCategories, id: \.self) { category in
                 categorySection(for: category)
@@ -196,9 +206,16 @@ struct NotificationSettingsView: View {
             }
             Button("Cancel", role: .cancel) { pendingSafetyLower = nil }
         } message: {
-            Text(
-                "Your pump keeps alarming on its own screen for this — faBolus will just be quieter (or silent) about it here. You can raise this back to its default anytime."
-            )
+            switch pendingSafetyLower {
+            case .appOwnCategory:
+                Text(
+                    "faBolus is the only thing watching for this — your pump does not alarm for it. Lowering this makes faBolus quieter (or silent) about it. You can raise this back to its default anytime."
+                )
+            default:
+                Text(
+                    "Your pump keeps alarming on its own screen for this — faBolus will just be quieter (or silent) about it here. You can raise this back to its default anytime."
+                )
+            }
         }
         // Trio confirm-on-disable: category-specific title and body.
         .confirmationDialog(
@@ -217,10 +234,6 @@ struct NotificationSettingsView: View {
             Button("Cancel", role: .cancel) { safetyDisableOffCategory = nil }
         } message: {
             switch safetyDisableOffCategory {
-            case .pumpDisconnect:
-                Text(
-                    "If your pump disconnects, faBolus will no longer alert you — including during Do Not Disturb. You may not notice a lost connection until you check the app yourself. You can turn this back on anytime."
-                )
             case .bolusReconciliation:
                 Text(
                     "faBolus will no longer alert you with the final, authoritative result of a bolus (including an indeterminate delivery that resolves later) — including during Do Not Disturb. You may not learn whether insulin was actually delivered until you check the app yourself. You can turn this back on anytime."
@@ -374,6 +387,74 @@ struct NotificationSettingsView: View {
         switch pending {
         case .group(let group, let newValue): applyGroupIntent(newValue, for: group)
         case .source(let newValue): applySourceOverride(newValue)
+        case .appOwnCategory(let category, let newValue): applyAppOwnCategoryIntent(newValue, for: category)
+        }
+    }
+
+    // MARK: - App-own safety ladder — one wired category so far (`.pumpDisconnect`)
+
+    /// Read/write one app-own safety category's phone-side ladder rung. Reading always returns the
+    /// real resolved value (the user's override, or `appOwnSafetyDefaultIntent`); writing a value
+    /// BELOW the default holds it pending confirmation instead of applying it immediately.
+    private func appOwnCategoryIntentBinding(
+        _ category: NotificationBroker.Category
+    ) -> Binding<NotificationRules.Intent> {
+        Binding(
+            get: {
+                settings.notificationRules.appOwnCategoryOverrides[category.rawValue]?.intent
+                    ?? NotificationRules.appOwnSafetyDefaultIntent
+            },
+            set: { newValue in
+                if newValue < NotificationRules.appOwnSafetyDefaultIntent {
+                    pendingSafetyLower = .appOwnCategory(category, newValue)
+                } else {
+                    applyAppOwnCategoryIntent(newValue, for: category)
+                }
+            }
+        )
+    }
+
+    private func applyAppOwnCategoryIntent(
+        _ newValue: NotificationRules.Intent, for category: NotificationBroker.Category
+    ) {
+        var rule = settings.notificationRules.appOwnCategoryOverrides[category.rawValue] ?? NotificationRules.Rule()
+        rule.intent = newValue
+        settings.notificationRules.appOwnCategoryOverrides[category.rawValue] = rule
+        // Withdraw any already-outstanding banner for this category so "faBolus will be quieter about
+        // this" is immediately true, mirroring `setSafetyEnabled`'s withdraw-on-disable behavior above.
+        if newValue == .off {
+            model.notificationWithdrawCategorySink?(category)
+        }
+    }
+
+    /// One row per app-own SAFETY category wired onto the unified ladder: the phone-side
+    /// Off/Quiet/Alert/Urgent picker. No watch row — zero app-own categories reach the watch relay yet,
+    /// so there is nothing to override here.
+    @ViewBuilder
+    private func appOwnSafetyCategoryRow(_ category: NotificationBroker.Category) -> some View {
+        let phoneIntents = Self.availablePhoneIntents(
+            timeSensitiveAvailable: NotificationCapability.timeSensitiveAvailable)
+        Picker(category.label, selection: appOwnCategoryIntentBinding(category)) {
+            ForEach(phoneIntents, id: \.self) { intent in
+                Text(Self.intentLabel(intent)).tag(intent)
+            }
+        }
+    }
+
+    /// The app-own safety-set section: faBolus is the ONLY annunciator for these
+    /// categories, so they default to Alert and are individually tunable down to Off, unlike the
+    /// pump-mirror ladder's "your pump alarms too" framing.
+    private var appOwnSafetyLadderSection: some View {
+        Section {
+            ForEach(NotificationBroker.Category.allCases.filter { $0.isSafetySet }, id: \.self) { category in
+                appOwnSafetyCategoryRow(category)
+            }
+        } header: {
+            Text("App safety alerts")
+        } footer: {
+            Text(
+                "faBolus is the only thing watching for these — your pump does not alarm for them. They default to Alert and can be raised to break through Do Not Disturb (where allowed), or lowered, even to Off."
+            )
         }
     }
 
@@ -470,7 +551,7 @@ struct NotificationSettingsView: View {
             Text("Safety alerts")
         } footer: {
             Text(
-                "Pump disconnected, urgent-low backup alarm, and bolus result reach you even during Do Not Disturb or a full daily budget — unless you explicitly turn one off above."
+                "Urgent-low backup alarm and bolus result reach you even during Do Not Disturb or a full daily budget — unless you explicitly turn one off above. Pump-disconnect alerts moved to their own tunable rung below."
             )
         }
     }

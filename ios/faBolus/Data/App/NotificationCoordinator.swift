@@ -504,10 +504,21 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         // using the plain poster unchanged. `deadline` (the absolute fire time for a delayed escalation
         // step) is meaningful only on this branch — ignored otherwise.
         if message.category.neverSuppressible {
+            // A category wired onto the unified ladder (the "safety set") resolves its
+            // OWN cascade from the persisted app-own rules — never a bare hardcoded default — the
+            // same way `syncPumpAlerts` resolves the pump-mirror cascade below. A category not yet
+            // migrated (`isSafetySet == false`) keeps `rules == nil`, so `decide()`/`post()` fall
+            // straight through to the pre-existing unconditional-deliver / breakthrough path.
+            let cascade =
+                rules
+                ?? (message.category.isSafetySet
+                    ? AppSettings.shared.notificationRules.cascade(for: message.category) : nil)
             return SafetyAlertPoster.post(
                 message, store: safetyAlertStore, runtime: runtime, userInfo: userInfo,
                 categoryId: cat, trigger: trigger, deadline: deadline,
-                allowCritical: allowCritical, add: { [center] in center.add($0) })
+                allowCritical: allowCritical, rules: cascade,
+                timeSensitiveAvailable: NotificationCapability.timeSensitiveAvailable,
+                add: { [center] in center.add($0) })
         }
         return NotificationPoster.post(
             message, runtime: runtime, userInfo: userInfo,
@@ -602,18 +613,30 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
                 category: entry.category, severity: entry.severity,
                 title: entry.title, body: entry.body, dedupeKey: entry.dedupeKey)
             let trigger = Self.replayTrigger(deadline: entry.deadline, now: now)
+            // A category wired onto the ladder resolves its cascade here too — the persisted
+            // entry's `.critical` fields aside, a replay must honor the SAME resolved intent the
+            // live post used, so a category the user lowered to Off never replays anyway.
+            let cascade =
+                entry.category.isSafetySet
+                ? AppSettings.shared.notificationRules.cascade(for: entry.category) : nil
             let decision = NotificationPoster.post(
                 msg, runtime: runtime,
                 userInfo: entry.userInfo.mapValues { $0 as Any },
                 categoryId: entry.categoryIdentifier, trigger: trigger,
-                allowCritical: allowCritical, now: now, add: { [center] in center.add($0) })
+                allowCritical: allowCritical, now: now,
+                rules: cascade, timeSensitiveAvailable: NotificationCapability.timeSensitiveAvailable,
+                add: { [center] in center.add($0) })
             if decision.deliver, entry.category.announcesSettledResult {
                 // The one guaranteed presentation the durable log exists to provide has now happened, so
                 // this announcement is finished. Retired in THIS launch rather than marked and retired in
                 // the next, so a settled dose is re-announced at most once.
                 retiredKeys.append(entry.dedupeKey)
             }
-            if !decision.deliver, decision.reason == .categoryDisabled {
+            if !decision.deliver, decision.reason == .categoryDisabled || decision.reason == .ruleResolvedOff {
+                // `.categoryDisabled` is the pre-ladder ack-gate suppression; `.ruleResolvedOff` is its
+                // ladder equivalent (a category the user lowered to Off) — both are a permanent,
+                // deliberate user choice with no natural resolve-path, so both retire the entry rather
+                // than re-evaluating it (and never re-delivering it) on every future launch forever.
                 retiredKeys.append(entry.dedupeKey)
             }
         }

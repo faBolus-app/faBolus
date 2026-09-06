@@ -456,6 +456,52 @@ import Foundation
         #expect(!offDecision.deliver && offDecision.reason == .ruleResolvedOff)
     }
 
+    /// Exactly `.pumpDisconnect` is in the "safety set" so far — the marker that
+    /// replaces `neverSuppressible` semantics for a category wired onto the unified ladder. Every
+    /// safety-set member is (for now, this tracer) also `neverSuppressible`; a later plan generalizes.
+    @Test func isSafetySetMarksExactlyPumpDisconnectForNow() {
+        #expect(Set(C.allCases.filter { $0.isSafetySet }.map(\.rawValue)) == ["pumpDisconnect"])
+        for c in C.allCases where c.isSafetySet {
+            #expect(c.neverSuppressible, "\(c.rawValue) is in the safety set but not neverSuppressible")
+        }
+    }
+
+    /// TRACER: `.pumpDisconnect` — the first app-own category wired onto the unified
+    /// ladder — resolves delivery through the SAME resolver a pump-mirror category uses, source=appOwn.
+    /// The Alert DEFAULT delivers on BOTH capability states (never capability-dependent); a
+    /// user-RAISED Urgent resolves to `.urgent` only when the capability is present (else the ladder
+    /// tops out at Alert); Off suppresses.
+    @Test func pumpDisconnectResolvesThroughTheUnifiedLadderEndToEnd() {
+        typealias R = NotificationRules
+        // Default (no override): Alert, delivered, on BOTH capability states — never capability-dependent.
+        let defaultCascade = R.PersistedRules().cascade(for: .pumpDisconnect)
+        for capability in [true, false] {
+            let d = B.decide(
+                msg(.pumpDisconnect), settings: [:], state: B.State(), now: at(9, 0), calendar: cal,
+                rules: defaultCascade, timeSensitiveAvailable: capability)
+            #expect(d.deliver, "the Alert default must deliver regardless of the time-sensitive capability")
+            #expect(
+                R.resolve(defaultCascade, timeSensitiveAvailable: capability).phone == .alert,
+                "the Alert default must never depend on the capability")
+        }
+        // A user-raised Urgent, WITH the capability: resolves to `.urgent`.
+        var raised = R.PersistedRules()
+        raised.appOwnCategoryOverrides[C.pumpDisconnect.rawValue] = R.Rule(intent: .urgent)
+        let raisedCascade = raised.cascade(for: .pumpDisconnect)
+        #expect(R.resolve(raisedCascade, timeSensitiveAvailable: true).phone == .urgent)
+        // The SAME user-raised Urgent, WITHOUT the capability: the ladder tops out at Alert — never a
+        // silently-degraded Urgent (Decision 3).
+        #expect(R.resolve(raisedCascade, timeSensitiveAvailable: false).phone == .alert)
+        // Lowering to Off suppresses the post.
+        var lowered = R.PersistedRules()
+        lowered.appOwnCategoryOverrides[C.pumpDisconnect.rawValue] = R.Rule(intent: .off)
+        let loweredCascade = lowered.cascade(for: .pumpDisconnect)
+        let offDecision = B.decide(
+            msg(.pumpDisconnect), settings: [:], state: B.State(), now: at(9, 0), calendar: cal,
+            rules: loweredCascade, timeSensitiveAvailable: true)
+        #expect(!offDecision.deliver && offDecision.reason == .ruleResolvedOff)
+    }
+
     /// For every user-configurable never-suppressible category, suppression requires BOTH
     /// `enabled == false` AND `userAcknowledgedSafetyDisable == true`; either alone still delivers.
     @Test func trioSuppressedOnlyByAcknowledgedDisable() {

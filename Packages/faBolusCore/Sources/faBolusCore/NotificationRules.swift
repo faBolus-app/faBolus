@@ -176,6 +176,16 @@ public enum NotificationRules {
         }
     }
 
+    // MARK: - App-own safety taxonomy (the `category` level of the cascade)
+
+    /// The default intent for an app-own SAFETY category — the "safety set" that replaces the
+    /// retired never-suppressible tier for a category wired onto this ladder:
+    /// louder than a pump-mirror category's default because faBolus is these categories' ONLY
+    /// annunciator (the pump knows nothing about a dropped phone link, a failover-CGM low, or the
+    /// app's own dose ledger). Never `.off` by construction; the user may still lower it, including
+    /// to `.off`, through an explicit override — omission is never silence.
+    public static let appOwnSafetyDefaultIntent: Intent = .alert
+
     // MARK: - Persisted rules model (fresh defaults, decode-tolerant, no migration)
 
     /// The persisted pump-mirror rules blob. Starts from FRESH fatigue-averse defaults and has no
@@ -195,10 +205,23 @@ public enum NotificationRules {
         /// dictionary is markedly less forgiving of an unrecognized/removed key than a `String` one).
         /// An absent group here is "not yet overridden," never "off."
         public var groupOverrides: [String: Rule]
+        /// The app-own SOURCE-level override — the one-move analog of `sourceOverride` (Decision 1c)
+        /// for the `appOwn` side of the cascade. `nil` ⇒ no source-level override; each safety
+        /// category resolves at its own category-level default/override instead.
+        public var appOwnSourceOverride: Rule?
+        /// Per-`NotificationBroker.Category` overrides for the app-own safety set, keyed by
+        /// `Category.rawValue` — the category-keyed analog of `groupOverrides`. An absent category
+        /// here is "not yet overridden," never "off"; it resolves through `appOwnSafetyDefaultIntent`.
+        public var appOwnCategoryOverrides: [String: Rule]
 
-        public init(sourceOverride: Rule? = nil, groupOverrides: [String: Rule] = [:]) {
+        public init(
+            sourceOverride: Rule? = nil, groupOverrides: [String: Rule] = [:],
+            appOwnSourceOverride: Rule? = nil, appOwnCategoryOverrides: [String: Rule] = [:]
+        ) {
             self.sourceOverride = sourceOverride
             self.groupOverrides = groupOverrides
+            self.appOwnSourceOverride = appOwnSourceOverride
+            self.appOwnCategoryOverrides = appOwnCategoryOverrides
         }
 
         // Hand-written, `decodeIfPresent`-based decode FROM THE START (the `ConnectionTelemetry`
@@ -206,12 +229,15 @@ public enum NotificationRules {
         // decode-tolerant: it is one more `decodeIfPresent` line here, never a synthesized
         // non-optional property an older persisted blob could fail to satisfy.
         private enum CodingKeys: String, CodingKey {
-            case sourceOverride, groupOverrides
+            case sourceOverride, groupOverrides, appOwnSourceOverride, appOwnCategoryOverrides
         }
         public init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             sourceOverride = try c.decodeIfPresent(Rule.self, forKey: .sourceOverride)
             groupOverrides = try c.decodeIfPresent([String: Rule].self, forKey: .groupOverrides) ?? [:]
+            appOwnSourceOverride = try c.decodeIfPresent(Rule.self, forKey: .appOwnSourceOverride)
+            appOwnCategoryOverrides =
+                try c.decodeIfPresent([String: Rule].self, forKey: .appOwnCategoryOverrides) ?? [:]
         }
 
         /// The resolved cascade for `group`. The fatigue-averse default sits at the LEAST specific
@@ -224,6 +250,18 @@ public enum NotificationRules {
                 global: Rule(intent: NotificationRules.defaultIntent(for: group)),
                 source: sourceOverride,
                 category: groupOverrides[group.rawValue])
+        }
+
+        /// The resolved cascade for an app-own SAFETY category — the category-keyed analog of
+        /// `cascade(for group:)` for the `appOwn` side. `.pumpDisconnect` is the first
+        /// category wired onto this overload (a later plan generalizes to the remaining four); the shape
+        /// is source-scoped and category-agnostic, so no engine change is needed as more categories
+        /// join. Never `.off` by omission — only an explicit override reaches `.off`.
+        public func cascade(for category: NotificationBroker.Category) -> Cascade {
+            Cascade(
+                global: Rule(intent: NotificationRules.appOwnSafetyDefaultIntent),
+                source: appOwnSourceOverride,
+                category: appOwnCategoryOverrides[category.rawValue])
         }
     }
 }

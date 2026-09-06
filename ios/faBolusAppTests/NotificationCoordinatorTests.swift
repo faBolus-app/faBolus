@@ -236,6 +236,47 @@ import UserNotifications
         #expect(NotificationSettingsView.shouldShowHonestStatus(enabled: false, grantActive: true) == false)
     }
 
+    /// TRACER: `.pumpDisconnect` — the first app-own category wired onto the ladder — maps
+    /// through `NotificationPoster.post` exactly like a pump-mirror category: the Alert DEFAULT maps to
+    /// `.active` on BOTH capability states; a raised Urgent maps to `.timeSensitive` only when the
+    /// capability is present, else it tops out at Alert (`.active`) — never a silently-downgraded
+    /// time-sensitive request. Off suppresses (no request built at all).
+    @Test func pumpDisconnectPosterMapsTheResolvedIntentJustLikeAPumpMirrorCategory() {
+        typealias R = NotificationRules
+        let rt = NotificationRuntime(store: isolatedStore(#function))
+        var reqs: [UNNotificationRequest] = []
+        func post(_ key: String, rules: R.Cascade, timeSensitiveAvailable: Bool) -> UNNotificationRequest? {
+            reqs.removeAll()
+            NotificationPoster.post(
+                msg(.pumpDisconnect, key: key), runtime: rt, now: at(9, 0),
+                rules: rules, timeSensitiveAvailable: timeSensitiveAvailable) { reqs.append($0) }
+            return reqs.first
+        }
+        let alertCascade = R.Cascade(global: .init(intent: R.appOwnSafetyDefaultIntent))
+        for capability in [true, false] {
+            let req = post("d-\(capability)", rules: alertCascade, timeSensitiveAvailable: capability)
+            #expect(
+                req?.content.interruptionLevel == .active,
+                "the Alert default must map to .active regardless of the time-sensitive capability")
+        }
+        let urgentCascade = R.Cascade(category: .init(intent: .urgent))
+        let urgentEntitled = post("u1", rules: urgentCascade, timeSensitiveAvailable: true)
+        #expect(urgentEntitled?.content.interruptionLevel == .timeSensitive)
+        let urgentUnentitled = post("u2", rules: urgentCascade, timeSensitiveAvailable: false)
+        #expect(
+            urgentUnentitled?.content.interruptionLevel == .active,
+            "Urgent tops out at Alert (.active) when unentitled — never a silently-downgraded time-sensitive request"
+        )
+        // Off suppresses — no request built at all.
+        let offCascade = R.Cascade(category: .init(intent: .off))
+        reqs.removeAll()
+        let decision = NotificationPoster.post(
+            msg(.pumpDisconnect, key: "off1"), runtime: rt, now: at(9, 0),
+            rules: offCascade, timeSensitiveAvailable: true) { reqs.append($0) }
+        #expect(!decision.deliver && decision.reason == .ruleResolvedOff)
+        #expect(reqs.isEmpty)
+    }
+
     /// The safety trio is user-disableable only behind an acknowledged-disable flag, honored by a fresh runtime + the real poster.
     @Test func acknowledgedSafetyDisablePersistsAndIsHonoredByAFreshRuntimeAndTheRealPoster() {
         let store = isolatedStore(#function)
@@ -392,7 +433,7 @@ import UserNotifications
         )
         #expect(
             source.contains(
-                "Pump disconnected, urgent-low backup alarm, and bolus result reach you even during Do Not Disturb"
+                "Urgent-low backup alarm and bolus result reach you even during Do Not Disturb"
             ),
             "the safety-alerts footer must name the urgent-low backup alarm (which does reach the user) in place of CGM data loss"
         )

@@ -60,6 +60,21 @@ public enum NotificationBroker {
             }
         }
 
+        /// The **safety set**: app-own categories wired onto the unified
+        /// Off/Quiet/Alert/Urgent ladder — defaulting to `Alert` (louder than a pump-mirror
+        /// category's default, because faBolus is these categories' only annunciator) and
+        /// user-tunable all the way down to `Off`, replacing the retired never-suppressible tier's
+        /// semantics for a category that has migrated here. `.pumpDisconnect` is the first member
+        /// (this tracer); a later plan generalizes the remaining four `neverSuppressible` categories
+        /// onto this same marker. A category NOT yet in this set still reads the old
+        /// `neverSuppressible` short-circuit in `decide()` unchanged.
+        public var isSafetySet: Bool {
+            switch self {
+            case .pumpDisconnect: return true
+            default: return false
+            }
+        }
+
         /// All governed categories and the three original safety-trio categories are configurable (the
         /// trio via the explicit acknowledged-disable flow). `pumpConnectionUnstable` is the sole
         /// exception: it is never shown in settings and has NO acknowledged-disable path, so `decide()`
@@ -393,14 +408,15 @@ public enum NotificationBroker {
         func deliver() -> Decision { Decision(deliver: true, reason: nil, nextState: record()) }
         func suppress(_ r: SuppressionReason) -> Decision { Decision(deliver: false, reason: r, nextState: s) }
 
-        // The unified notification-rules resolver is the SINGLE governed decision point for the
-        // pump-mirror category once a caller supplies a rule cascade — no parallel inline check
-        // alongside it, so the phone can never assert two different answers about the same
-        // notification again. `rules == nil` (every existing caller, since the parameter defaults
-        // to `nil`) falls straight through to the pre-existing settings-driven path below
-        // unchanged; only `.pumpAlert` is routed here today — every other category is expanded
-        // onto the resolver later.
-        if message.category == .pumpAlert, let rules {
+        // The unified notification-rules resolver is the SINGLE governed decision point for a
+        // category once a caller supplies a rule cascade — no parallel inline check alongside it, so
+        // the phone can never assert two different answers about the same notification again.
+        // `rules == nil` (every caller that hasn't migrated a category onto the ladder yet) falls
+        // straight through to the pre-existing settings-driven / never-suppressible path below
+        // unchanged. Today the caller supplies a cascade only for `.pumpAlert` (pump-mirror) and the
+        // app-own safety-set categories (`Category.isSafetySet`, `.pumpDisconnect` first) — every
+        // other category is expanded onto the resolver later, at the CALLER, not here.
+        if (message.category == .pumpAlert || message.category.isSafetySet), let rules {
             let resolved = NotificationRules.resolve(rules, timeSensitiveAvailable: timeSensitiveAvailable)
             return resolved.phone == .off ? suppress(.ruleResolvedOff) : deliver()
         }

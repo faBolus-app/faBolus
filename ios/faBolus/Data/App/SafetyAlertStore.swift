@@ -220,6 +220,8 @@ enum SafetyAlertPoster {
         deadline: Date? = nil,
         allowCritical: Bool = false,
         now: Date = Date(),
+        rules: NotificationRules.Cascade? = nil,
+        timeSensitiveAvailable: Bool = false,
         add: (UNNotificationRequest) -> Void = { UNUserNotificationCenter.current().add($0) }
     ) -> NotificationBroker.Decision {
         let entry = SafetyAlertStore.Entry(
@@ -231,7 +233,8 @@ enum SafetyAlertPoster {
         store.record(entry)  // persist BEFORE post — never the reverse order
         let decision = NotificationPoster.post(
             message, runtime: runtime, userInfo: userInfo, categoryId: categoryId,
-            trigger: trigger, allowCritical: allowCritical, now: now, add: add)
+            trigger: trigger, allowCritical: allowCritical, now: now,
+            rules: rules, timeSensitiveAvailable: timeSensitiveAvailable, add: add)
         // The OS has the request: mark it presented. This is what lets an announcement of an
         // already-settled dose (`Category.announcesSettledResult`) be retired instead of replayed at
         // every launch forever, and it is deliberately AFTER the post, so an entry stuck at `.issued`
