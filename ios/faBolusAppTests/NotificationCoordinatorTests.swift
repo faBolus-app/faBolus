@@ -147,35 +147,22 @@ import UserNotifications
         #expect(immediate.first?.trigger == nil)
     }
 
-    /// The OS Critical Alert level applies only to never-suppressible safety categories, and only when
-    /// allowed. When not allowed, safety degrades to `.timeSensitive` (breaks through Focus), not `.active`.
-    @Test func criticalLevelOnlyForSafetyAndOnlyWhenAllowed() {
+    /// Decision 4: `.critical` is retired — nothing maps to it any more, for any category, under any
+    /// config. A never-suppressible safety category (no resolver cascade) always breaks through as
+    /// `.timeSensitive`; a governed category without one never breaks through at all.
+    @Test func noCategoryEverReachesCriticalInterruptionLevel() {
         let rt = NotificationRuntime(store: isolatedStore(#function))
         var reqs: [UNNotificationRequest] = []
-        // Safety category + allowed → .critical / .defaultCritical.
-        NotificationPoster.post(msg(.pumpDisconnect, key: "s1"), runtime: rt, allowCritical: true, now: at(9, 0)) {
-            reqs.append($0)
-        }
-        #expect(reqs.first?.content.interruptionLevel == .critical)
-        #expect(reqs.first?.content.sound == .defaultCritical)
-        // Safety category but NOT allowed → degrades to .timeSensitive, which still breaks through Focus/DND.
-        // (`.urgentLowGlucose`, not `.cgmDataLoss` — the latter no longer builds a request at all.)
-        reqs.removeAll()
-        NotificationPoster.post(msg(.urgentLowGlucose, key: "s2"), runtime: rt, allowCritical: false, now: at(9, 0)) {
+        // Safety category, no resolver cascade → time-sensitive (still breaks through Focus/DND),
+        // never `.critical`. (`.urgentLowGlucose`, not `.cgmDataLoss` — the latter builds no request.)
+        NotificationPoster.post(msg(.urgentLowGlucose, key: "s2"), runtime: rt, now: at(9, 0)) {
             reqs.append($0)
         }
         #expect(reqs.first?.content.interruptionLevel == .timeSensitive)
         #expect(reqs.first?.content.sound == .default)
-        // A governed (suppressible) category never gets .critical, even when allowed.
+        // A governed (suppressible) category never breaks through at all.
         reqs.removeAll()
-        NotificationPoster.post(msg(.pumpAlert, key: "g1"), runtime: rt, allowCritical: true, now: at(9, 0)) {
-            reqs.append($0)
-        }
-        #expect(reqs.first?.content.interruptionLevel == .active)
-        #expect(reqs.first?.content.sound == .default)
-        // A governed category with allowCritical:false stays at the plain default — it must not pick up .timeSensitive.
-        reqs.removeAll()
-        NotificationPoster.post(msg(.pumpAlert, key: "g2"), runtime: rt, allowCritical: false, now: at(9, 0)) {
+        NotificationPoster.post(msg(.pumpAlert, key: "g1"), runtime: rt, now: at(9, 0)) {
             reqs.append($0)
         }
         #expect(reqs.first?.content.interruptionLevel == .active)
@@ -183,57 +170,50 @@ import UserNotifications
     }
 
     /// A pump-mirror message's interruption level comes from the ONE unified resolver's phone intent —
-    /// Urgent breaks through Focus/DND, Alert is a plain banner+sound, Quiet is passive. An app-own path
-    /// (no resolver cascade) still escalates a `.critical`-severity message, unchanged.
-    @Test func pumpMirrorInterruptionComesFromTheResolverAppOwnCriticalStillEscalates() {
+    /// Urgent breaks through Focus/DND as `.timeSensitive` (Decision 4: there is no `.critical` rung
+    /// any more), Alert is a plain banner+sound, Quiet is passive. An app-own path (no resolver
+    /// cascade) still escalates a `.critical`-severity message, but to `.timeSensitive`, never
+    /// `.critical`.
+    @Test func pumpMirrorInterruptionComesFromTheResolverNeverCritical() {
         typealias R = NotificationRules
         let rt = NotificationRuntime(store: isolatedStore(#function))
         var reqs: [UNNotificationRequest] = []
-        func post(_ key: String, rules: R.Cascade, allowCritical: Bool) -> UNNotificationRequest? {
+        func post(_ key: String, rules: R.Cascade) -> UNNotificationRequest? {
             reqs.removeAll()
             NotificationPoster.post(
-                msg(.pumpAlert, key: key), runtime: rt, allowCritical: allowCritical, now: at(9, 0),
+                msg(.pumpAlert, key: key), runtime: rt, now: at(9, 0),
                 rules: rules, timeSensitiveAvailable: true) { reqs.append($0) }
             return reqs.first
         }
         let urgent = R.Cascade(category: .init(intent: .urgent))
-        // Urgent + entitled → Critical (pierces DND / ringer switch).
-        #expect(post("u1", rules: urgent, allowCritical: true)?.content.interruptionLevel == .critical)
-        // Urgent + unentitled → time-sensitive (still breaks through Focus/DND).
-        #expect(post("u2", rules: urgent, allowCritical: false)?.content.interruptionLevel == .timeSensitive)
+        // Urgent → time-sensitive (pierces Focus/DND), never `.critical` — faBolus holds no Critical
+        // Alerts entitlement.
+        #expect(post("u1", rules: urgent)?.content.interruptionLevel == .timeSensitive)
         // Alert → a plain banner + sound, no break-through.
-        let alertReq = post("a1", rules: R.Cascade(category: .init(intent: .alert)), allowCritical: true)
+        let alertReq = post("a1", rules: R.Cascade(category: .init(intent: .alert)))
         #expect(alertReq?.content.interruptionLevel == .active)
         #expect(alertReq?.content.sound == .default)
         // Quiet → passive, no sound.
-        let quietReq = post("q1", rules: R.Cascade(category: .init(intent: .quiet)), allowCritical: true)
+        let quietReq = post("q1", rules: R.Cascade(category: .init(intent: .quiet)))
         #expect(quietReq?.content.interruptionLevel == .passive)
         #expect(quietReq?.content.sound == nil)
         // A pump alarm's default rung is Alert (not Urgent) — a 3am occlusion notifies but does not pierce
         // DND by default (the pump remains the primary annunciator).
         let alarmGroup = R.pumpMirrorGroup(kind: .alarm, id: 2, isMalfunction: false)
         let alarmReq = post(
-            "alarm1", rules: R.Cascade(category: .init(intent: R.defaultIntent(for: alarmGroup))),
-            allowCritical: true)
+            "alarm1", rules: R.Cascade(category: .init(intent: R.defaultIntent(for: alarmGroup))))
         #expect(alarmReq?.content.interruptionLevel == .active, "a pump alarm defaults to Alert, not breakthrough")
 
-        // App-own regression: a `.critical`-severity message with NO resolver cascade still escalates.
+        // App-own regression: a `.critical`-severity message with NO resolver cascade still escalates
+        // — to `.timeSensitive`, never `.critical` (Decision 4).
         reqs.removeAll()
         let appOwnCritical = B.Message(
             category: .bolusReconciliation, severity: .critical, title: "Bolus not delivered", body: "b",
             dedupeKey: "appown1")
-        NotificationPoster.post(appOwnCritical, runtime: rt, allowCritical: true, now: at(9, 0)) { reqs.append($0) }
+        NotificationPoster.post(appOwnCritical, runtime: rt, now: at(9, 0)) { reqs.append($0) }
         #expect(
-            reqs.first?.content.interruptionLevel == .critical,
-            "an app-own .critical category must still break through, unchanged")
-    }
-
-    /// The honest "pending Apple approval" status shows only when the user opted in and the OS grant is not active.
-    @Test func honestStatusShownOnlyWhenEnabledAndNotGranted() {
-        #expect(NotificationSettingsView.shouldShowHonestStatus(enabled: true, grantActive: false) == true)
-        #expect(NotificationSettingsView.shouldShowHonestStatus(enabled: true, grantActive: true) == false)
-        #expect(NotificationSettingsView.shouldShowHonestStatus(enabled: false, grantActive: false) == false)
-        #expect(NotificationSettingsView.shouldShowHonestStatus(enabled: false, grantActive: true) == false)
+            reqs.first?.content.interruptionLevel == .timeSensitive,
+            "an app-own .critical-severity category breaks through as time-sensitive, never .critical")
     }
 
     /// TRACER: `.pumpDisconnect` — the first app-own category wired onto the ladder — maps
@@ -359,13 +339,11 @@ import UserNotifications
         return nil
     }
 
-    /// The Interruption Strength section must gate nothing else on screen — no `.disabled(...)` may
-    /// read `criticalAlertsEnabled`. The toggle binding and `shouldShowHonestStatus` are not `.disabled` calls.
-    /// Anti-vacuity is anchored on the "Use Critical Alerts" control itself (the row this test is really
-    /// guarding), NOT on a `.disabled(` occurrence count — the file may legitimately carry zero `.disabled(`
-    /// sites (e.g. once the per-category "Allow critical break-through" greyed sub-row this test's guard
-    /// once counted on was retired), and that must not make this scan pass vacuously in either direction.
-    @Test func interruptionStrengthSectionGatesNoOtherRow() throws {
+    /// Decision 4: the retired "Use Critical Alerts" toggle (and `criticalAlertsEnabled` generally)
+    /// must leave no trace in `NotificationSettingsView.swift`'s source text — replaces
+    /// `interruptionStrengthSectionGatesNoOtherRow`, whose subject (the "Interruption Strength"
+    /// section) no longer exists on screen.
+    @Test func criticalAlertsEnabledHasNoSourceReferenceInNotificationSettingsView() throws {
         guard let url = Self.notificationSettingsViewFileURL(),
             let source = try? String(contentsOf: url, encoding: .utf8)
         else {
@@ -374,36 +352,9 @@ import UserNotifications
         }
         #expect(!source.isEmpty, "path resolution broke — read zero bytes from NotificationSettingsView.swift")
         #expect(
-            source.contains("Toggle(\"Use Critical Alerts\", isOn: $settings.criticalAlertsEnabled)"),
-            "the Use Critical Alerts toggle this test guards is missing — anchor is stale, scan would pass vacuously"
+            !source.contains("criticalAlertsEnabled"),
+            "NotificationSettingsView.swift still references criticalAlertsEnabled — the retired \"Use Critical Alerts\" toggle must leave no trace (Decision 4)"
         )
-
-        var searchStart = source.startIndex
-        while let range = source.range(of: ".disabled(", range: searchStart..<source.endIndex) {
-            // Extract the parenthesized argument up to its own matching close paren — every
-            // `.disabled(...)` call site in this file is a simple boolean expression, so a single-level
-            // balance counter is sufficient (no need for a full expression parser).
-            var depth = 0
-            var i = range.upperBound
-            var argEnd = i
-            while i < source.endIndex {
-                let ch = source[i]
-                if ch == "(" { depth += 1 }
-                if ch == ")" {
-                    if depth == 0 {
-                        argEnd = i
-                        break
-                    }
-                    depth -= 1
-                }
-                i = source.index(after: i)
-            }
-            let arg = String(source[range.upperBound..<argEnd])
-            #expect(
-                !arg.contains("criticalAlertsEnabled"),
-                "found .disabled(...) reading criticalAlertsEnabled: \(arg)")
-            searchStart = source.index(after: range.lowerBound)
-        }
     }
 
     /// `.cgmDataLoss` never notifies (`deliversAsNotification == false`), so the Notifications screen

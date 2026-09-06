@@ -218,7 +218,6 @@ enum SafetyAlertPoster {
         categoryId: String = "",
         trigger: UNNotificationTrigger? = nil,
         deadline: Date? = nil,
-        allowCritical: Bool = false,
         now: Date = Date(),
         rules: NotificationRules.Cascade? = nil,
         timeSensitiveAvailable: Bool = false,
@@ -233,7 +232,7 @@ enum SafetyAlertPoster {
         store.record(entry)  // persist BEFORE post — never the reverse order
         let decision = NotificationPoster.post(
             message, runtime: runtime, userInfo: userInfo, categoryId: categoryId,
-            trigger: trigger, allowCritical: allowCritical, now: now,
+            trigger: trigger, now: now,
             rules: rules, timeSensitiveAvailable: timeSensitiveAvailable, add: add)
         // The OS has the request: mark it presented. This is what lets an announcement of an
         // already-settled dose (`Category.announcesSettledResult`) be retired instead of replayed at

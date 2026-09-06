@@ -451,42 +451,33 @@ public enum NotificationBroker {
             return deliver()
         }
 
-        // A CRITICAL-severity governed message (e.g. an occlusion / empty-cartridge /
-        // pump-error alarm — surfaced as the `.pumpAlert` category, which is `Severity.critical` by
-        // construction for `kind == .alarm`) must NOT be droppable by the category being disabled, a user
-        // snooze, or the daily/meal budget. The handoff requires critical
-        // alarms to bypass the budget. It is NOT `neverSuppressible`, so it still honors
-        // one-notification-per-episode: an ACTIVE alarm the pump re-raises every poll does not spam
-        // (re-notification is driven by `forgetEpisode`, not by re-delivering here). Only the
-        // user/budget suppressions below are skipped for it.
-        let critical = message.severity == .critical
-
-        if !critical, !cfg.enabled { return suppress(.categoryDisabled) }
+        // A governed message's severity no longer has a special bypass here (Decision 4 — the
+        // `.critical`-severity budget/snooze/disable exemption is retired: the ladder's top rung is
+        // Urgent, `.timeSensitive` at most, and nothing in `decide()` maps to `.critical` any more).
+        // A pump-mirror category reaches this point only when the caller omitted a rules cascade —
+        // production always supplies one — so ordinary governance applies uniformly.
+        if !cfg.enabled { return suppress(.categoryDisabled) }
 
         // User snooze: suppress this category until its deadline. Placed BELOW the `neverSuppressible`
-        // return above (and skipped for `.critical`), so neither a snooze nor a disable can silence a
-        // safety alarm — even one carried by a governed category.
+        // return above, so neither a snooze nor a disable can silence a safety alarm.
         //
         // Also gated on `permitsSilencingAction`, so an unresolved-dose category can never be silenced by
         // a snooze that already exists in the persisted map — one written by a build that still offered the
         // button, or tapped on a notification delivered before the button was removed. The write side
         // (`snooze(_:category:until:)`) refuses to record new ones; this is the read-side half, and it is
         // what makes the removal retroactive rather than only forward-looking.
-        if !critical, message.category.permitsSilencingAction,
+        if message.category.permitsSilencingAction,
             let until = s.snoozedUntil?[message.category.rawValue], now < until
         {
             return suppress(.snoozed)
         }
 
         // One-notification-per-episode: a governed repeat of an already-notified episode is dropped.
-        // Applies to `.critical` too (re-raise of an active alarm is driven by `forgetEpisode`).
         if s.notifiedEpisodes.contains(message.episodeKey) { return suppress(.episodeAlreadyNotified) }
 
-        if !critical {
-            if s.deliveredToday >= budget.dailyTotal { return suppress(.dailyBudgetReached) }
-            if message.category.usesMealSubBudget, s.mealDeliveredToday >= budget.dailyMeal {
-                return suppress(.mealBudgetReached)
-            }
+        if s.deliveredToday >= budget.dailyTotal { return suppress(.dailyBudgetReached) }
+        if message.category.usesMealSubBudget, s.mealDeliveredToday >= budget.dailyMeal {
+            return suppress(.mealBudgetReached)
         }
         return deliver()
     }

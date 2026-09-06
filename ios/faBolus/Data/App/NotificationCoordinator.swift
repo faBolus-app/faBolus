@@ -238,7 +238,6 @@ enum NotificationPoster {
         userInfo: [AnyHashable: Any] = [:],
         categoryId: String = "",
         trigger: UNNotificationTrigger? = nil,
-        allowCritical: Bool = false,
         now: Date = Date(),
         rules: NotificationRules.Cascade? = nil,
         timeSensitiveAvailable: Bool = false,
@@ -251,30 +250,25 @@ enum NotificationPoster {
         let content = UNMutableNotificationContent()
         content.title = message.title
         content.body = message.body
-        // iOS Critical Alerts (alert even under Do Not Disturb / the ringer switch) are used only when the
-        // caller says the entitlement is granted + the user has it on (`allowCritical`). Everything else
-        // keeps the normal sound/level, so this can never over-escalate a routine or governed notification.
+        // The ladder's top rung is Urgent, which maps to `.timeSensitive` — faBolus holds no Apple
+        // Critical Alerts entitlement (`faBolus.entitlements` carries only `application-groups`), so
+        // there is no `.critical` interruption level to request anywhere in this function (Decision 4).
         //
         // A pump-mirror message (the caller supplied a resolved `rules` cascade) takes its interruption
         // level from the ONE unified resolver's phone intent — the same decision the delivery gate read —
         // so the "how loud / does it pierce DND" answer cannot disagree with whether it was posted at all:
-        //   Urgent ⇒ break through Focus/DND (Critical when entitled, else time-sensitive)
+        //   Urgent ⇒ break through Focus/DND (`.timeSensitive`)
         //   Alert  ⇒ banner + sound, no break-through (the default level)
         //   Quiet  ⇒ passive (no sound)
         //   Off    ⇒ already suppressed by the delivery gate; never reaches here.
-        // Every other (app-own) message keeps its existing path: the never-suppressible safety categories
-        // and a `.critical`-severity message break through Focus/DND; ordinary ones stay at the default.
+        // Every other (app-own) message keeps its existing path: a never-suppressible safety category
+        // or a `.critical`-severity message breaks through Focus/DND; ordinary ones stay at the default.
         if let rules {
             let phone = NotificationRules.resolve(rules, timeSensitiveAvailable: timeSensitiveAvailable).phone
             switch phone {
             case .urgent:
-                if allowCritical {
-                    content.interruptionLevel = .critical
-                    content.sound = .defaultCritical
-                } else {
-                    content.interruptionLevel = .timeSensitive
-                    content.sound = .default
-                }
+                content.interruptionLevel = .timeSensitive
+                content.sound = .default
             case .quiet:
                 content.interruptionLevel = .passive
                 content.sound = nil
@@ -283,21 +277,15 @@ enum NotificationPoster {
             }
         } else {
             let breakthrough = message.category.neverSuppressible || message.severity == .critical
-            if allowCritical && breakthrough {
-                content.interruptionLevel = .critical
-                content.sound = .defaultCritical
-            } else {
-                content.sound = .default
-                // Graceful degradation while the Critical-Alerts entitlement is pending (or the user
-                // hasn't opted in) — anything requiring breakthrough still must break through Focus/DND, or
-                // the "time-sensitive delivery" promise is false. `.timeSensitive` does that without the
-                // special-request Critical Alerts entitlement; it needs only the lightweight Time-Sensitive
-                // Notifications capability (see faBolus.entitlements). Scoped to `breakthrough` so an
-                // ordinary governed/suppressible message is never escalated. If the app ever lacked the
-                // Time-Sensitive capability, iOS silently downgrades this to `.active` — safe, never a crash.
-                if breakthrough {
-                    content.interruptionLevel = .timeSensitive
-                }
+            content.sound = .default
+            // Anything requiring breakthrough must break through Focus/DND, or the "time-sensitive
+            // delivery" promise is false. `.timeSensitive` does that without the Critical Alerts
+            // entitlement; it needs only the lightweight Time-Sensitive Notifications capability (see
+            // faBolus.entitlements). Scoped to `breakthrough` so an ordinary governed/suppressible
+            // message is never escalated. If the app ever lacked the Time-Sensitive capability, iOS
+            // silently downgrades this to `.active` — safe, never a crash.
+            if breakthrough {
+                content.interruptionLevel = .timeSensitive
             }
         }
         if !categoryId.isEmpty { content.categoryIdentifier = categoryId }
@@ -396,8 +384,8 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     /// is granted AND the user authorized critical alerts; any other value (`.notSupported`/`.disabled`) is
     /// treated identically by the honest-status logic (`AlertRulesView.shouldShowHonestStatus`).
     ///
-    /// UI-only: this cache is NEVER read by `post`'s `allowCritical` gate or by `NotificationBroker.decide`
-    /// — it exists solely to drive `AppSettings.criticalAlertGrantActive` for display.
+    /// UI-only: this cache is NEVER read by any poster or by `NotificationBroker.decide` — it exists
+    /// solely to drive `AppSettings.criticalAlertGrantActive` for display.
     private func refreshGrantState() async {
         // Swift 6 strict concurrency (CI's Xcode 16.4): `UNNotificationSettings` is non-Sendable, so
         // awaiting `notificationSettings()` directly here would send it back onto this `@MainActor` type —
@@ -495,10 +483,6 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         // alerts pass PUMP_ALERT for their CLEAR action). Whether that registered category carries a
         // SNOOZE action is decided by `Category.permitsSilencingAction` in `registerCategories()`.
         let cat = categoryId.isEmpty ? Self.categoryIdentifier(for: message.category) : categoryId
-        // Request the OS Critical Alert level when the user opted in; the poster restricts it to the
-        // never-suppressible safety categories, and iOS ignores it unless the app holds the entitlement
-        // (graceful degradation at the OS level — see the note in `init`).
-        let allowCritical = AppSettings.shared.criticalAlertsEnabled
         // A never-suppressible safety category is persisted (persist-before-post) through
         // SafetyAlertPoster so it can be replayed on the next launch; every other category keeps
         // using the plain poster unchanged. `deadline` (the absolute fire time for a delayed escalation
@@ -515,14 +499,13 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
                     ? AppSettings.shared.notificationRules.cascade(for: message.category) : nil)
             return SafetyAlertPoster.post(
                 message, store: safetyAlertStore, runtime: runtime, userInfo: userInfo,
-                categoryId: cat, trigger: trigger, deadline: deadline,
-                allowCritical: allowCritical, rules: cascade,
+                categoryId: cat, trigger: trigger, deadline: deadline, rules: cascade,
                 timeSensitiveAvailable: NotificationCapability.timeSensitiveAvailable,
                 add: { [center] in center.add($0) })
         }
         return NotificationPoster.post(
             message, runtime: runtime, userInfo: userInfo,
-            categoryId: cat, trigger: trigger, allowCritical: allowCritical,
+            categoryId: cat, trigger: trigger,
             rules: rules, timeSensitiveAvailable: timeSensitiveAvailable,
             add: { [center] in center.add($0) })
     }
@@ -585,7 +568,6 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     /// Which entries still have a job is `NotificationBroker.shouldReplayPersistedAlert`'s decision; the
     /// ones that do not are retired here rather than re-evaluated on every future launch.
     private func replayPersistedSafetyAlerts(now: Date = Date()) {
-        let allowCritical = AppSettings.shared.criticalAlertsEnabled
         // `SafetyAlertPoster.post` persists the durable entry BEFORE the broker decides (the
         // persist-before-post guarantee, which must NOT be weakened for the enabled case). The one way a
         // never-suppressible entry is still suppressed is the user's own acknowledged-disable of that trio
@@ -622,8 +604,7 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
             let decision = NotificationPoster.post(
                 msg, runtime: runtime,
                 userInfo: entry.userInfo.mapValues { $0 as Any },
-                categoryId: entry.categoryIdentifier, trigger: trigger,
-                allowCritical: allowCritical, now: now,
+                categoryId: entry.categoryIdentifier, trigger: trigger, now: now,
                 rules: cascade, timeSensitiveAvailable: NotificationCapability.timeSensitiveAvailable,
                 add: { [center] in center.add($0) })
             if decision.deliver, entry.category.announcesSettledResult {

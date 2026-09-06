@@ -61,11 +61,6 @@ struct NotificationSettingsView: View {
         }
     }
 
-    // MARK: - Relocated bindings
-
-    /// Show "pending Apple approval" only when the user opted in and the OS grant isn't active yet.
-    static func shouldShowHonestStatus(enabled: Bool, grantActive: Bool) -> Bool { enabled && !grantActive }
-
     // MARK: - Per-category bindings
 
     private func enabledBinding(for category: NotificationBroker.Category) -> Binding<Bool> {
@@ -183,7 +178,6 @@ struct NotificationSettingsView: View {
     var body: some View {
         Form {
             pumpMirrorSection
-            criticalAlertsSection
             appOwnSafetyLadderSection
             safetyAlertsSection
             ForEach(tunableAppCategories, id: \.self) { category in
@@ -501,37 +495,6 @@ struct NotificationSettingsView: View {
         } footer: {
             Text(
                 "Alerts and alarms relayed from your pump, grouped the way your pump groups them. Set each group's rung for how faBolus notifies you here on your phone and watch — the top rung, when available and allowed by iOS, breaks through Focus/Do Not Disturb. Your pump keeps alarming on its own screen no matter what you choose here. Set a group to \"Off\" to stop faBolus re-notifying you for alerts the pump already sounds itself."
-            )
-        }
-    }
-
-    /// Interruption-strength, not a disable master. `criticalAlertsEnabled` stays reachable for
-    /// `SettingsReachabilityGuardTests`. No other row may `.disabled` off this flag.
-    private var criticalAlertsSection: some View {
-        Section {
-            Toggle("Use Critical Alerts", isOn: $settings.criticalAlertsEnabled)
-            Text(
-                "Makes safety alerts break through Silence and Do Not Disturb. Does not turn any alert "
-                    + "on or off — use Safety Alerts and the category sections above to control what's "
-                    + "delivered."
-            )
-            .font(.caption).foregroundStyle(.secondary)
-            if Self.shouldShowHonestStatus(
-                enabled: settings.criticalAlertsEnabled,
-                grantActive: settings.criticalAlertGrantActive)
-            {
-                Text(
-                    "Critical Alerts aren't active yet — pending Apple approval. Your safety alerts "
-                        + "(pump disconnected, urgent-low backup alarm, unresolved bolus) currently use "
-                        + "time-sensitive delivery."
-                )
-                .font(.caption).foregroundStyle(.secondary)
-            }
-        } header: {
-            Text("Interruption Strength")
-        } footer: {
-            Text(
-                "Lets faBolus's safety alerts (pump disconnected, urgent-low backup alarm, unresolved bolus) alert even when your phone is on silent or Do Not Disturb, where your phone and this build support it. It does not turn any alert on or off by itself."
             )
         }
     }

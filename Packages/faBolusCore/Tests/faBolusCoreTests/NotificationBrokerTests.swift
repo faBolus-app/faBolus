@@ -294,12 +294,12 @@ import Foundation
         }
     }
 
-    @Test func criticalGovernedAlarmBypassesEveryUserAndBudgetSuppression() {
-        // An occlusion / empty-cartridge / pump-error alarm is surfaced as the GOVERNED
-        // `.pumpAlert` category but with `Severity.critical`. It must survive a maximally hostile config —
-        // category disabled, a snooze in force, and a day past a zero budget — because critical alarms
-        // bypass the budget unconditionally (the axis that once made this toggle-able is retired). A
-        // `.warning` in the SAME config is suppressed (proving the config is genuinely hostile).
+    /// Decision 4 finalizes the still-open cross-phase question on the `.critical` axis: the
+    /// `.critical`-severity budget/snooze/disable BYPASS is retired —
+    /// nothing in `decide()` special-cases `.critical` any more. A GOVERNED `.pumpAlert` message
+    /// (surfaced without a resolver cascade, mirroring an occlusion/empty-cartridge/pump-error alarm)
+    /// is now suppressed by a hostile config REGARDLESS of severity — exactly like `.warning`.
+    @Test func criticalSeverityGovernedAlarmIsNoLongerSpecialCased() {
         let settings: [C: B.CategorySettings] = [.pumpAlert: B.CategorySettings(enabled: false)]
         var state = B.State(
             lastDeliveredAt: ["pumpAlert": at(3, 0)],
@@ -308,11 +308,13 @@ import Foundation
         let budget = B.Budget(dailyTotal: 0)
         let crit = B.decide(
             criticalAlarm(), settings: settings, state: state, budget: budget, now: at(3, 30), calendar: cal)
-        #expect(crit.deliver, "a CRITICAL pump alarm must not be droppable by disable/snooze/budget")
-        #expect(crit.nextState.deliveredToday == 1000, "still recorded")
-        let warn = B.Message(category: .pumpAlert, severity: .warning, title: "t", body: "b", dedupeKey: "occ")
         #expect(
-            !B.decide(warn, settings: settings, state: state, budget: budget, now: at(3, 30), calendar: cal).deliver)
+            !crit.deliver && crit.reason == .categoryDisabled,
+            "a `.critical`-severity governed alarm with no resolver cascade is suppressed just like any other severity — the bypass no longer exists")
+        let warn = B.Message(category: .pumpAlert, severity: .warning, title: "t", body: "b", dedupeKey: "occ")
+        let warnDecision = B.decide(
+            warn, settings: settings, state: state, budget: budget, now: at(3, 30), calendar: cal)
+        #expect(!warnDecision.deliver && warnDecision.reason == crit.reason, "severity no longer changes the outcome")
     }
 
     @Test func criticalAlarmStillHonorsOneNotificationPerEpisode() {
