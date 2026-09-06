@@ -365,6 +365,39 @@ import UserNotifications
         }
     }
 
+    /// `.cgmDataLoss` never notifies (`deliversAsNotification == false`), so the Notifications screen
+    /// must not render it as a live, deliverable safety category anywhere: no trio row (driven off
+    /// `deliversAsNotification` rather than a hard-coded exclusion), no footer mention, no
+    /// confirm-on-disable dialog title or message. Source-text scan since `trioCategories` is private.
+    @Test func cgmDataLossIsNotRenderedAsADeliverableNotificationCategoryAnywhere() throws {
+        guard let url = Self.notificationSettingsViewFileURL(),
+            let source = try? String(contentsOf: url, encoding: .utf8)
+        else {
+            Issue.record("could not resolve/read NotificationSettingsView.swift from #filePath=\(#filePath)")
+            return
+        }
+        #expect(!source.isEmpty, "path resolution broke — read zero bytes from NotificationSettingsView.swift")
+        #expect(
+            source.contains("$0.deliversAsNotification"),
+            "trioCategories must filter on deliversAsNotification so a non-delivering category is excluded by construction, not by a hard-coded exclusion"
+        )
+        #expect(
+            !source.contains("Turn off CGM-data-loss alerts?"),
+            "the confirm-on-disable dialog must not offer to turn off an alert that never fires"
+        )
+        #expect(
+            !source.contains("(pump disconnected, CGM data lost")
+                && !source.contains("CGM data loss, and bolus result"),
+            "no copy in NotificationSettingsView may still name CGM data loss among alerts that reach the user"
+        )
+        #expect(
+            source.contains(
+                "Pump disconnected, urgent-low backup alarm, and bolus result reach you even during Do Not Disturb"
+            ),
+            "the safety-alerts footer must name the urgent-low backup alarm (which does reach the user) in place of CGM data loss"
+        )
+    }
+
     @Test func posterUsesTheMessageDedupeKeyAsIdentifierSoRejectionsAreDistinct() {
         let rt = NotificationRuntime(store: isolatedStore(#function))
         var ids: [String] = []

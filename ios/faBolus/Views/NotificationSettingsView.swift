@@ -37,9 +37,12 @@ struct NotificationSettingsView: View {
     // MARK: - Category groupings
 
     private var trioCategories: [NotificationBroker.Category] {
-        // `pumpConnectionUnstable` is never-suppressible and has no user toggle.
+        // `pumpConnectionUnstable` is never-suppressible and has no user toggle. `deliversAsNotification`
+        // excludes any category that never notifies (currently `cgmDataLoss`): rendering a
+        // toggle/caption/dialog for a condition that cannot notify is a false statement, so the filter
+        // drives off the same predicate `decide()` reads rather than a hard-coded exclusion.
         NotificationBroker.Category.allCases.filter {
-            !$0.isPumpSourced && $0.neverSuppressible && $0.isUserConfigurable
+            !$0.isPumpSourced && $0.neverSuppressible && $0.isUserConfigurable && $0.deliversAsNotification
         }
     }
     private var tunableAppCategories: [NotificationBroker.Category] {
@@ -121,7 +124,6 @@ struct NotificationSettingsView: View {
     private func safetyDisableDialogTitle(for category: NotificationBroker.Category?) -> Text {
         switch category {
         case .pumpDisconnect: return Text("Turn off pump-disconnect alerts?")
-        case .cgmDataLoss: return Text("Turn off CGM-data-loss alerts?")
         case .bolusReconciliation: return Text("Turn off bolus-result alerts?")
         case .urgentLowGlucose: return Text("Turn off urgent-low backup alarm?")
         default: return Text("")
@@ -218,10 +220,6 @@ struct NotificationSettingsView: View {
             case .pumpDisconnect:
                 Text(
                     "If your pump disconnects, faBolus will no longer alert you — including during Do Not Disturb. You may not notice a lost connection until you check the app yourself. You can turn this back on anytime."
-                )
-            case .cgmDataLoss:
-                Text(
-                    "If faBolus stops receiving CGM data, you will no longer be alerted — including during Do Not Disturb. You could miss a sensor failure or an extended gap in your glucose readings. You can turn this back on anytime."
                 )
             case .bolusReconciliation:
                 Text(
@@ -443,7 +441,7 @@ struct NotificationSettingsView: View {
             {
                 Text(
                     "Critical Alerts aren't active yet — pending Apple approval. Your safety alerts "
-                        + "(pump disconnected, CGM data lost, unresolved bolus) currently use "
+                        + "(pump disconnected, urgent-low backup alarm, unresolved bolus) currently use "
                         + "time-sensitive delivery."
                 )
                 .font(.caption).foregroundStyle(.secondary)
@@ -452,7 +450,7 @@ struct NotificationSettingsView: View {
             Text("Interruption Strength")
         } footer: {
             Text(
-                "Lets faBolus's safety alerts (pump disconnected, CGM data lost, unresolved bolus) alert even when your phone is on silent or Do Not Disturb, where your phone and this build support it. It does not turn any alert on or off by itself."
+                "Lets faBolus's safety alerts (pump disconnected, urgent-low backup alarm, unresolved bolus) alert even when your phone is on silent or Do Not Disturb, where your phone and this build support it. It does not turn any alert on or off by itself."
             )
         }
     }
@@ -472,7 +470,7 @@ struct NotificationSettingsView: View {
             Text("Safety alerts")
         } footer: {
             Text(
-                "Pump disconnected, CGM data loss, and bolus result reach you even during Do Not Disturb or a full daily budget — unless you explicitly turn one off above."
+                "Pump disconnected, urgent-low backup alarm, and bolus result reach you even during Do Not Disturb or a full daily budget — unless you explicitly turn one off above."
             )
         }
     }
