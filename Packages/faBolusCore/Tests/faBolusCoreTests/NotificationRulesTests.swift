@@ -216,7 +216,7 @@ import Foundation
         }
     }
 
-    // MARK: - Persisted rules model (fresh defaults, decode-tolerant, no migration — D-13, Amendment A)
+    // MARK: - Persisted rules model (fresh defaults, decode-tolerant, no migration)
 
     /// A fresh install AND an upgrading install (no override for any group) both resolve through
     /// `defaultIntent(for:)` — never through the legacy `notificationBroker.settings.v1` blob, which

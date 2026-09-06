@@ -176,7 +176,7 @@ public enum NotificationRules {
         }
     }
 
-    // MARK: - Persisted rules model (D-13, Amendment A)
+    // MARK: - Persisted rules model (fresh defaults, decode-tolerant, no migration)
 
     /// The persisted pump-mirror rules blob. Starts from FRESH fatigue-averse defaults and has no
     /// code path that reads or translates the legacy `notificationBroker.settings.v1` /
