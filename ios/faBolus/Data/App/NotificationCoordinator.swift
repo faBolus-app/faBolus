@@ -686,11 +686,15 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
             // group's fatigue-averse default sits at the category cascade level; an unnamed alert id hits
             // the resolver's fail-safe cell rather than a routine rung. This single decision drives both
             // whether the alert posts and how loud it is — no separate breakthrough predicate.
+            //
+            // `AppSettings.notificationRules.cascade(for:)` layers the user's persisted source/category
+            // overrides (the settings-screen ladder) UNDER their own default at the cascade's global
+            // level — never a bare hardcoded default — so a rung the user actually sets there takes
+            // effect here, not merely in the settings screen's own display.
             let isMalfunction = !n.isDismissable
             let group = NotificationRules.pumpMirrorGroup(
                 kind: n.kind, id: n.id, isMalfunction: isMalfunction)
-            let cascade = NotificationRules.Cascade(
-                category: NotificationRules.Rule(intent: NotificationRules.defaultIntent(for: group)))
+            let cascade = AppSettings.shared.notificationRules.cascade(for: group)
             let msg = NotificationBroker.Message(
                 category: .pumpAlert,
                 severity: n.kind == .alarm ? .critical : .warning,
