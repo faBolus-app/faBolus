@@ -236,13 +236,13 @@ struct DebugMenuView: View {
                 row("Notifications", "—")
             } else {
                 ForEach(telemetry.sorted(by: { $0.key < $1.key }), id: \.key) { cat, c in
-                    row(cat, "d\(c.delivered) · x\(c.dismissed) · a\(c.actedUpon)")
+                    row(cat, "req\(c.requested) · x\(c.dismissed) · a\(c.actedUpon)")
                 }
             }
         } header: {
             Text("Notification telemetry")
         } footer: {
-            Text("Per-category counts: delivered (d), dismissed (x), acted-upon (a). Local-only, never uploaded.")
+            Text("Per-category counts: requested (req), dismissed (x), acted-upon (a). Local-only, never uploaded.")
         }
     }
 
@@ -418,7 +418,7 @@ struct DebugMenuView: View {
             DiagnosticsBundle.notificationTelemetrySection(
                 counts: notif.sorted(by: { $0.key < $1.key }).map {
                     (
-                        category: $0.key, delivered: $0.value.delivered, dismissed: $0.value.dismissed,
+                        category: $0.key, requested: $0.value.requested, dismissed: $0.value.dismissed,
                         actedUpon: $0.value.actedUpon
                     )
                 }),

@@ -119,10 +119,25 @@ import UserNotifications
         rt.recordResponse(categoryRawValue: "pumpAlert", actionIdentifier: UNNotificationDismissActionIdentifier)  // dismissed
         rt.recordResponse(categoryRawValue: "pumpAlert", actionIdentifier: "SNOOZE")  // acted-upon
         #expect(
-            rt.telemetry["pumpAlert"] == NotificationBroker.CategoryTelemetry(delivered: 1, dismissed: 1, actedUpon: 1))
+            rt.telemetry["pumpAlert"] == NotificationBroker.CategoryTelemetry(requested: 1, dismissed: 1, actedUpon: 1))
         // Persists across a runtime restart on the same App-Group store.
         let rt2 = NotificationRuntime(store: store)
-        #expect(rt2.telemetry["pumpAlert"]?.delivered == 1)
+        #expect(rt2.telemetry["pumpAlert"]?.requested == 1)
+    }
+
+    /// The accrual window start is seeded exactly once, by the FIRST opted-in telemetry event, and
+    /// never moves again — mirroring `ConnectionTelemetryStore`'s own `windowStart` idiom.
+    @Test func telemetryWindowStartIsSeededOnceByTheFirstEventAndNeverMovesAgain() {
+        let store = isolatedStore(#function)
+        let rt = NotificationRuntime(store: store)
+        store.set(true, forKey: NotificationRuntime.telemetryEnabledKey)
+        #expect(rt.telemetryWindowStart == nil, "no window start before any opted-in event")
+
+        NotificationPoster.post(msg(.pumpAlert, key: "a"), runtime: rt, now: at(9, 0)) { _ in }
+        #expect(rt.telemetryWindowStart == at(9, 0), "the first event seeds the window start")
+
+        NotificationPoster.post(msg(.pumpAlert, key: "b"), runtime: rt, now: at(10, 0)) { _ in }
+        #expect(rt.telemetryWindowStart == at(9, 0), "a later event must never move an already-seeded window start")
     }
 
     /// An escalation step posts with a delayed trigger so the OS can deliver it while the app is suspended.

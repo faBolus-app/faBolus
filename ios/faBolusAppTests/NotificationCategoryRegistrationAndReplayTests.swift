@@ -257,13 +257,13 @@ import UserNotifications
         let model = AppModel(source: MockBackend(), ledgerStoreURL: tempLedgerURL())
 
         let first = NotificationCoordinator(model: model, runtime: rt, safetyAlertStore: store)
-        #expect(rt.telemetry["bolusReconciliation"]?.delivered == 1, "the never-shown record must replay once")
+        #expect(rt.telemetry["bolusReconciliation"]?.requested == 1, "the never-shown record must replay once")
         #expect(store.entries[key] == nil, "and must be retired in the same launch, not left for the next one")
 
         // A second launch on the same store announces nothing further.
         let model2 = AppModel(source: MockBackend(), ledgerStoreURL: tempLedgerURL())
         let second = NotificationCoordinator(model: model2, runtime: rt, safetyAlertStore: store)
-        #expect(rt.telemetry["bolusReconciliation"]?.delivered == 1, "no further re-announcement, ever")
+        #expect(rt.telemetry["bolusReconciliation"]?.requested == 1, "no further re-announcement, ever")
         _ = (first, second)
     }
 
@@ -282,7 +282,7 @@ import UserNotifications
 
         let coordinator = NotificationCoordinator(model: model, runtime: rt, safetyAlertStore: store)
 
-        #expect(rt.telemetry["pumpDisconnect"]?.delivered == 1, "an unresolved condition must still replay")
+        #expect(rt.telemetry["pumpDisconnect"]?.requested == 1, "an unresolved condition must still replay")
         #expect(
             store.entries["safety.pumpDisconnect"] != nil,
             "and its record must survive — only the condition clearing may prune it")
@@ -320,7 +320,7 @@ import UserNotifications
         let model2 = AppModel(source: MockBackend(), ledgerStoreURL: tempLedgerURL())
         let second = NotificationCoordinator(model: model2, runtime: rt, safetyAlertStore: store)
         #expect(
-            rt.telemetry["bolusReconciliation"]?.delivered == 1,
+            rt.telemetry["bolusReconciliation"]?.requested == 1,
             "the purge is spent — a later reconciliation is announced normally")
         _ = (first, second)
     }

@@ -102,14 +102,14 @@ enum DiagnosticsBundle {
     /// `[Notification telemetry]` — flows through the same pure-aggregator array rather than staying
     /// an inline `View` block.
     static func notificationTelemetrySection(
-        counts: [(category: String, delivered: Int, dismissed: Int, actedUpon: Int)]
+        counts: [(category: String, requested: Int, dismissed: Int, actedUpon: Int)]
     ) -> String {
         var lines: [String] = ["", "[Notification telemetry]"]
         if counts.isEmpty {
             lines.append("—")
         } else {
             for c in counts {
-                lines.append("\(c.category): delivered \(c.delivered), dismissed \(c.dismissed), acted \(c.actedUpon)")
+                lines.append("\(c.category): requested \(c.requested), dismissed \(c.dismissed), acted \(c.actedUpon)")
             }
         }
         return lines.joined(separator: "\n")

@@ -40,9 +40,16 @@ final class NotificationRuntime {
     /// out-of-process mode-reminder intent honors the same choice the main app made.
     static let telemetryEnabledKey = AppGroupKeys.notificationTelemetryEnabled
     private(set) var state: NotificationBroker.State
-    /// Per-category delivered/dismissed/acted-upon counts (§6 #7). A separate blob from `state` so it never
-    /// affects the decision round-trip; cumulative + local-only; accrued only when opted in.
-    private(set) var telemetry: [String: NotificationBroker.CategoryTelemetry]
+    /// Per-category requested/dismissed/acted-upon counts PLUS the real accrual window start (§6 #7). A
+    /// separate blob from `state` so it never affects the decision round-trip; cumulative + local-only;
+    /// accrued only when opted in.
+    private(set) var telemetrySnapshot: NotificationBroker.TelemetrySnapshot
+    /// The per-category counts, unwrapped for the many call sites that only ever want `telemetry[key]` —
+    /// unchanged shape from before the window-start field existed.
+    var telemetry: [String: NotificationBroker.CategoryTelemetry] { telemetrySnapshot.perCategory }
+    /// When this install's notification telemetry began accruing — `nil` until the first opted-in
+    /// requested/dismissed/acted-upon event, exactly like `ConnectionTelemetry.windowStart`.
+    var telemetryWindowStart: Date? { telemetrySnapshot.windowStart }
     var settings: [NotificationBroker.Category: NotificationBroker.CategorySettings]
     var budget: NotificationBroker.Budget
 
@@ -69,7 +76,7 @@ final class NotificationRuntime {
         } else {
             self.state = .init()
         }
-        self.telemetry = Self.loadTelemetry(store, telemetryKey)
+        self.telemetrySnapshot = Self.loadTelemetrySnapshot(store, telemetryKey)
         reencodePersistedBlobsOnce()
     }
 
@@ -107,15 +114,17 @@ final class NotificationRuntime {
         SafetyAlertStore.eraseStoredBlob(store: store)
     }
 
-    /// Record a delivered notification for `category` (opt-in only). Called from the poster's deliver path.
-    func recordDelivered(_ category: NotificationBroker.Category) {
-        bumpTelemetry(category.rawValue) { $0.delivered += 1 }
+    /// Record a broker-approved notification REQUEST for `category` (opt-in only) — named for what it
+    /// counts (a submission), not for what it cannot prove (a presentation). Called from the poster's
+    /// deliver path, before the OS `add(_:)` call.
+    func recordRequested(_ category: NotificationBroker.Category, now: Date = Date()) {
+        bumpTelemetry(category.rawValue, now: now) { $0.requested += 1 }
     }
 
     /// Record the user's response to a notification (opt-in only): a system dismiss (swipe) → `dismissed`;
     /// opening it or tapping an action (CLEAR / SNOOZE / default) → `actedUpon`.
-    func recordResponse(categoryRawValue raw: String, actionIdentifier: String) {
-        bumpTelemetry(raw) {
+    func recordResponse(categoryRawValue raw: String, actionIdentifier: String, now: Date = Date()) {
+        bumpTelemetry(raw, now: now) {
             if actionIdentifier == UNNotificationDismissActionIdentifier {
                 $0.dismissed += 1
             } else {
@@ -124,21 +133,27 @@ final class NotificationRuntime {
         }
     }
 
-    private func bumpTelemetry(_ key: String, _ mutate: (inout NotificationBroker.CategoryTelemetry) -> Void) {
+    /// `now` seeds `telemetrySnapshot.windowStart` on the first mutate that finds it `nil` (a fresh opt-in,
+    /// or the first event after "Delete all on-device data" erased the blob) and is left untouched on
+    /// every later call — mirrors `ConnectionTelemetryStore.bump`'s window-start idiom exactly.
+    private func bumpTelemetry(
+        _ key: String, now: Date = Date(), _ mutate: (inout NotificationBroker.CategoryTelemetry) -> Void
+    ) {
         guard telemetryEnabled else { return }
-        telemetry = Self.loadTelemetry(store, telemetryKey)  // read-modify-write (sibling processes)
-        var t = telemetry[key] ?? .init()
+        telemetrySnapshot = Self.loadTelemetrySnapshot(store, telemetryKey)  // read-modify-write (sibling processes)
+        if telemetrySnapshot.windowStart == nil { telemetrySnapshot.windowStart = now }
+        var t = telemetrySnapshot.perCategory[key] ?? .init()
         mutate(&t)
-        telemetry[key] = t
-        if let data = try? JSONEncoder().encode(telemetry) { store.set(data, forKey: telemetryKey) }
+        telemetrySnapshot.perCategory[key] = t
+        if let data = try? JSONEncoder().encode(telemetrySnapshot) { store.set(data, forKey: telemetryKey) }
     }
 
-    private static func loadTelemetry(_ store: UserDefaults, _ key: String) -> [String: NotificationBroker
-        .CategoryTelemetry]
+    private static func loadTelemetrySnapshot(_ store: UserDefaults, _ key: String)
+        -> NotificationBroker.TelemetrySnapshot
     {
         guard let data = store.data(forKey: key),
-            let decoded = try? JSONDecoder().decode([String: NotificationBroker.CategoryTelemetry].self, from: data)
-        else { return [:] }
+            let decoded = try? JSONDecoder().decode(NotificationBroker.TelemetrySnapshot.self, from: data)
+        else { return .init() }
         return decoded
     }
 
@@ -263,7 +278,7 @@ enum NotificationPoster {
         let decision = runtime.evaluate(
             message, now: now, rules: rules, timeSensitiveAvailable: timeSensitiveAvailable)
         guard decision.deliver else { return decision }
-        runtime.recordDelivered(message.category)  // telemetry (opt-in; no-op otherwise)
+        runtime.recordRequested(message.category, now: now)  // telemetry (opt-in; no-op otherwise)
         let content = UNMutableNotificationContent()
         content.title = message.title
         content.body = message.body
@@ -578,7 +593,7 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
     /// it goes through the plain `NotificationPoster`, so `issuedDate` is never clobbered by a replay.
     ///
     /// "Plain" means it skips the persist-before-post wrapper, NOT that it is silent: a delivered replay
-    /// still increments the category's `delivered` telemetry counter like any other post, which is why a
+    /// still increments the category's `requested` telemetry counter like any other post, which is why a
     /// forever-replaying entry inflated its own count in the diagnostics export.
     ///
     /// Which entries still have a job is `NotificationBroker.shouldReplayPersistedAlert`'s decision; the
@@ -766,6 +781,13 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
 
     // MARK: Delegate
 
+    /// Apple's documented contract: the system calls this ONLY while the app is running in the
+    /// foreground. It does NOT fire for a notification delivered while the app is backgrounded or not
+    /// running — the majority case for this app's own safety categories, which are built precisely to
+    /// reach the wearer while the app is not the thing they're looking at. A "presentation-confirmed"
+    /// telemetry counter built on this callback would therefore systematically UNDER-count the
+    /// deliveries that matter most, not merely approximate them — which is why `requested` stays a
+    /// submission count rather than gaining a `willPresent`-derived sibling.
     nonisolated func userNotificationCenter(
         _ c: UNUserNotificationCenter, willPresent n: UNNotification,
         withCompletionHandler h: @escaping (UNNotificationPresentationOptions) -> Void

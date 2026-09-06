@@ -264,22 +264,32 @@ public enum NotificationBroker {
 
     // MARK: - Telemetry (§6 responsibility #7)
 
-    /// Per-category counts used to tune notification defaults: how many were delivered, how many the user
-    /// dismissed (swiped away), and how many they acted on (opened / tapped an action). **Kept separate
-    /// from `State`** so it never perturbs the decision/equality semantics `decide` round-trips; it is
-    /// write-only accounting. Cumulative (lifetime), local-only, and gathered only when the user opts in.
+    /// Per-category counts used to tune notification defaults: how many were successfully REQUESTED of
+    /// the OS, how many the user dismissed (swiped away), and how many they acted on (opened / tapped an
+    /// action). **Kept separate from `State`** so it never perturbs the decision/equality semantics
+    /// `decide` round-trips; it is write-only accounting. Cumulative (lifetime), local-only, and gathered
+    /// only when the user opts in.
+    ///
+    /// `requested` is named for what it counts — a broker-approved `UNNotificationRequest` submission,
+    /// BEFORE the OS confirms presentation and with any submission error discarded — never `delivered`,
+    /// `presented`, or `seen`, which would claim the wearer was shown something the counter cannot prove.
+    /// A genuinely presentation-confirmed count is not offered here: it would need `willPresent`, which
+    /// only fires while the app is running in the FOREGROUND (Apple's documented contract), so it would
+    /// systematically miss exactly the background/terminated deliveries this app's own safety categories
+    /// rely on most — a counter built on it would UNDER-count, not merely approximate, the presentations
+    /// that matter. If a genuinely presentation-confirmed counter is ever added, it must be a SEPARATE
+    /// field so `requested` keeps its own, narrower, honest meaning.
     ///
     /// `dismissed` is a LOWER BOUND, not an exact count, and the fix that made it move at all is not
     /// retroactive: iOS reports a dismiss only for an explicit per-notification swipe-away — "Clear All"
     /// and app-side withdrawal are never reported — and a replayed entry persisted by an earlier build
-    /// carries no attributable category until it churns. Neither counter is a rename of "delivered" for
-    /// an error-free submission; that would just reproduce the same defect one abstraction higher.
+    /// carries no attributable category until it churns.
     public struct CategoryTelemetry: Sendable, Equatable, Codable {
-        public var delivered: Int
+        public var requested: Int
         public var dismissed: Int
         public var actedUpon: Int
-        public init(delivered: Int = 0, dismissed: Int = 0, actedUpon: Int = 0) {
-            self.delivered = delivered
+        public init(requested: Int = 0, dismissed: Int = 0, actedUpon: Int = 0) {
+            self.requested = requested
             self.dismissed = dismissed
             self.actedUpon = actedUpon
         }
@@ -290,14 +300,41 @@ public enum NotificationBroker {
         // too, not just the one missing the new field. Decoding each field with `decodeIfPresent`
         // (defaulting to its current value) means a later required-field addition upgrades a persisted
         // blob in place instead of erasing it. Encoding stays the default (all keys written).
+        //
+        // The `requested` key is a rename, not a migration: a blob an earlier build wrote under the old
+        // `delivered` key decodes this field to 0 (the key is simply absent under its new name) while
+        // `dismissed`/`actedUpon` carry over unaffected — consistent with the counter having been reset,
+        // never a silent reinterpretation of an old count under a new name.
         private enum CodingKeys: String, CodingKey {
-            case delivered, dismissed, actedUpon
+            case requested, dismissed, actedUpon
         }
         public init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
-            delivered = try c.decodeIfPresent(Int.self, forKey: .delivered) ?? 0
+            requested = try c.decodeIfPresent(Int.self, forKey: .requested) ?? 0
             dismissed = try c.decodeIfPresent(Int.self, forKey: .dismissed) ?? 0
             actedUpon = try c.decodeIfPresent(Int.self, forKey: .actedUpon) ?? 0
+        }
+    }
+
+    /// The complete persisted telemetry blob: every category's counters plus a REAL accrual window
+    /// start — mirrors `ConnectionTelemetry`'s own dict-of-counters-plus-`windowStart` shape (one file
+    /// away) so both diagnostics blobs answer "how far back do these counts reach" the same way, rather
+    /// than leaving notification telemetry undatable while connection telemetry is not. `windowStart` is
+    /// seeded exactly once — on the first mutate that finds it `nil` — and is never a per-event
+    /// timestamp; see `NotificationRuntime.bumpTelemetry` (the app-target caller).
+    public struct TelemetrySnapshot: Sendable, Equatable, Codable {
+        public var perCategory: [String: CategoryTelemetry]
+        public var windowStart: Date?
+        public init(perCategory: [String: CategoryTelemetry] = [:], windowStart: Date? = nil) {
+            self.perCategory = perCategory
+            self.windowStart = windowStart
+        }
+
+        private enum CodingKeys: String, CodingKey { case perCategory, windowStart }
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            perCategory = try c.decodeIfPresent([String: CategoryTelemetry].self, forKey: .perCategory) ?? [:]
+            windowStart = try c.decodeIfPresent(Date.self, forKey: .windowStart)
         }
     }
 
