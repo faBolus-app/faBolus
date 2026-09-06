@@ -5,7 +5,7 @@ import faBolusCore
 /// (`pumpAlert`) render grouped in `pumpMirrorSection`; the app's OWN alerts render in
 /// `appOwnSafetyLadderSection` (the five-member safety set — `pumpDisconnect`, `bolusReconciliation`,
 /// `pumpConnectionUnstable`, `urgentLowGlucose`; `cgmDataLoss` never notifies so it has no row) and
-/// `categorySection` (the governed rest). Lowering any safety category below its Alert default —
+/// `governedAppOwnSection` (the governed rest, grouped together). Lowering any safety category below its Alert default —
 /// aimed OR via the app-own source one-move control (an inherited rule that cascades to safety per
 /// Amendment B) — fires the one-time safety-lowering warning. Governance lives in
 /// `NotificationBroker.decide()` and `NotificationRules`, unchanged by this view.
@@ -98,9 +98,7 @@ struct NotificationSettingsView: View {
         Form {
             pumpMirrorSection
             appOwnSafetyLadderSection
-            ForEach(tunableAppCategories, id: \.self) { category in
-                categorySection(for: category)
-            }
+            governedAppOwnSection
         }
         .navigationTitle("Notifications")
         .confirmationDialog(
@@ -459,13 +457,22 @@ struct NotificationSettingsView: View {
         }
     }
 
-    /// One section per governed (non-safety, non-pump) app-own category — enable only.
-    @ViewBuilder
-    private func categorySection(for category: NotificationBroker.Category) -> some View {
+    /// The governed (non-safety) app-own categories, grouped in ONE section under the same app-own source
+    /// (Decision 1c) rather than a separate per-category section each. These are not safety-set: they keep
+    /// their own enable governance (and, where they permit it, their snooze — `remoteBolusRejected`'s 2 h
+    /// snooze), so they render an enable toggle rather than the ladder, whose resolver path would bypass
+    /// that snooze and the daily budget. Lowering one never trips the safety-lowering warning.
+    private var governedAppOwnSection: some View {
         Section {
-            Toggle("Enabled", isOn: enabledBinding(for: category))
+            ForEach(tunableAppCategories, id: \.self) { category in
+                Toggle(category.label, isOn: enabledBinding(for: category))
+            }
         } header: {
-            Text(category.label)
+            Text("Other faBolus notifications")
+        } footer: {
+            Text(
+                "Other notifications faBolus raises itself, such as a rejected remote bolus or an unresolved dose. Turn any off here; these are not safety alarms and do not break through Do Not Disturb."
+            )
         }
     }
 }
