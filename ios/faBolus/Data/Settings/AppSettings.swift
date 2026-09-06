@@ -344,16 +344,6 @@ public final class AppSettings {
         get { _criticalAlertsEnabled.wrappedValue }
         set { _criticalAlertsEnabled.wrappedValue = newValue }
     }
-    /// OS-DERIVED CACHE, not a user pref — whether `UNUserNotificationCenter`'s async
-    /// `notificationSettings().criticalAlertSetting` last reported `.enabled` (the entitlement is granted
-    /// AND the user authorized it). `NotificationCoordinator.refreshGrantState()` is the sole writer.
-    /// Defaults `false` so the app never over-claims critical delivery before the first OS query resolves.
-    /// Deliberately NOT persisted to `UserDefaults` —
-    /// `@Observable` tracks it automatically for `AlertRulesView`'s honest-status read. UI-only: NEVER
-    /// consulted by `NotificationCoordinator.post`'s `allowCritical` gate or `NotificationBroker.decide`
-    /// (the cache can never suppress the never-suppressible trio).
-    public var criticalAlertGrantActive: Bool = false
-
     /// Opt-in (default OFF) for local notification telemetry — per-category delivered/dismissed/
     /// acted-upon counts the broker uses to tune defaults. Stored in the **App Group** (not `d`) so the
     /// broker, incl. the out-of-process mode-reminder intent, reads the same choice. Local-only, never

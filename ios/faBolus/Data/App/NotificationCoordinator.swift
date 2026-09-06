@@ -364,15 +364,6 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         // `.badge` so `UNUserNotificationCenter.setBadgeCount` is actually honored — without it
         // iOS silently ignores every `setBadgeCount` call, regardless of any future opt-in.
         center.requestAuthorization(options: [.alert, .sound, .criticalAlert, .badge]) { _, _ in }
-        // Query the OS grant state for the honest-status UI (AlertRulesView). Uses ONLY the async
-        // `notificationSettings()` API — the older completion-handler form runs its block on a background
-        // queue, and a `@MainActor`-inferred closure there is the exact SIGTRAP CI's Xcode 16.4 hit at
-        // launch (see `registerCategories`'s note on the same hazard). The async form resumes on the
-        // calling (main) actor, so there is no background-thread/`@MainActor` mismatch.
-        Task { @MainActor [weak self] in await self?.refreshGrantState() }
-        NotificationCenter.default.addObserver(
-            forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
-        ) { [weak self] _ in Task { @MainActor in await self?.refreshGrantState() } }
         // The broker is now the sink for the two ad-hoc posters, and the sole pump-alert subscriber.
         model.notificationSink = { [weak self] msg, userInfo, categoryId in
             self?.post(msg, userInfo: userInfo, categoryId: categoryId)
@@ -418,33 +409,6 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         // wired + the pending-safety buffer flushed above, so a restoration launch reconstructs and
         // re-submits every not-yet-resolved entry.
         replayPersistedSafetyAlerts()
-    }
-
-    /// Query the OS grant state via the modern async API and cache it for the honest-status UI
-    /// (`AlertRulesView`). Called from `init` and again on foreground so a user who flips OS notification
-    /// permissions in Settings sees the status update without relaunching. `.enabled` means the entitlement
-    /// is granted AND the user authorized critical alerts; any other value (`.notSupported`/`.disabled`) is
-    /// treated identically by the honest-status logic (`AlertRulesView.shouldShowHonestStatus`).
-    ///
-    /// UI-only: this cache is NEVER read by any poster or by `NotificationBroker.decide` — it exists
-    /// solely to drive `AppSettings.criticalAlertGrantActive` for display.
-    private func refreshGrantState() async {
-        // Swift 6 strict concurrency (CI's Xcode 16.4): `UNNotificationSettings` is non-Sendable, so
-        // awaiting `notificationSettings()` directly here would send it back onto this `@MainActor` type —
-        // rejected at build. Read it inside a `nonisolated` helper where the non-Sendable value never leaves
-        // its own isolation region; only the `Bool` crosses back to the main actor. Behavior is identical.
-        AppSettings.shared.criticalAlertGrantActive = await Self.fetchCriticalAlertGranted()
-    }
-
-    /// Read the OS critical-alert grant flag off the main actor (see `refreshGrantState`). `nonisolated` so
-    /// the non-Sendable `UNNotificationSettings` stays contained; returns only the Sendable `Bool`.
-    private nonisolated static func fetchCriticalAlertGranted() async -> Bool {
-        let settings = await UNUserNotificationCenter.current().notificationSettings()
-        #if DEBUG
-        print(
-            "NotificationCoordinator.refreshGrantState: criticalAlertSetting=\(settings.criticalAlertSetting.rawValue)")
-        #endif
-        return settings.criticalAlertSetting == .enabled
     }
 
     /// Remove delivered + pending notifications for these dedupe keys — used when a safety condition
