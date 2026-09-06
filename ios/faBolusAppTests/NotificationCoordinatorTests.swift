@@ -342,6 +342,37 @@ import UserNotifications
         #expect(NotificationSettingsView.silenceMirrorCaption(pumpEnabled: true) == nil)
     }
 
+    // MARK: - Pump-mirror settings ladder
+
+    /// The Urgent (break-through-Focus) rung is ABSENT — never merely disabled — from the phone-side
+    /// rung list when the build lacks the time-sensitive capability, and present when it has it
+    /// (Decision 3). The watch-side list never includes it either way (§1a/§1d).
+    @Test func urgentRungIsAbsentWithoutTheTimeSensitiveCapabilityAndPresentWithIt() {
+        typealias R = NotificationRules
+        #expect(
+            NotificationSettingsView.availablePhoneIntents(timeSensitiveAvailable: false)
+                == [R.Intent.off, .quiet, .alert])
+        #expect(
+            NotificationSettingsView.availablePhoneIntents(timeSensitiveAvailable: true)
+                == [R.Intent.off, .quiet, .alert, .urgent])
+        #expect(NotificationSettingsView.availableWatchIntents == [R.Intent.off, .quiet, .alert])
+    }
+
+    /// The UI's safety-group predicate must agree with the resolver's own fatigue-averse defaults —
+    /// exactly the groups defaulting to `.alert` (delivery-stopped, running-low, urgent-low-glucose,
+    /// CGM sensor/transmitter), never the two quieter, non-safety groups.
+    @Test func isSafetyGroupMatchesExactlyTheAlertDefaultGroups() {
+        typealias R = NotificationRules
+        for group in R.PumpMirrorGroup.allCases {
+            #expect(
+                NotificationSettingsView.isSafetyGroup(group) == (R.defaultIntent(for: group) == .alert),
+                "\(group) disagrees with its own fatigue-averse default")
+        }
+        #expect(NotificationSettingsView.isSafetyGroup(.deliveryStopped))
+        #expect(!NotificationSettingsView.isSafetyGroup(.glucoseAndControlIQ))
+        #expect(!NotificationSettingsView.isSafetyGroup(.pumpRoutine))
+    }
+
     /// Resolves `NotificationSettingsView.swift` by walking up from `#filePath`.
     private static func notificationSettingsViewFileURL() -> URL? {
         let fm = FileManager.default

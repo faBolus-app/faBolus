@@ -19,6 +19,16 @@ struct NotificationSettingsView: View {
     @State private var breakThroughOffCategory: NotificationBroker.Category?
     /// Safety trio is disableable behind confirm-on-disable. Nil ⇒ no dialog.
     @State private var safetyDisableOffCategory: NotificationBroker.Category?
+    /// A pump-mirror ladder change that would lower a safety group below its default is held here
+    /// pending confirmation (Decision 2) — nil ⇒ no dialog. The read always reflects the last-applied
+    /// value until confirmed, so Cancel's snap-back is free.
+    @State private var pendingSafetyLower: PendingSafetyLower?
+
+    /// A pending, not-yet-applied ladder change that would lower a safety group below its default.
+    enum PendingSafetyLower: Equatable {
+        case group(NotificationRules.PumpMirrorGroup, NotificationRules.Intent)
+        case source(NotificationRules.Intent)
+    }
 
     init(model: AppModel, settings: AppSettings) {
         self.model = model
@@ -208,7 +218,7 @@ struct NotificationSettingsView: View {
 
     var body: some View {
         Form {
-            pumpSection
+            pumpMirrorSection
             criticalAlertsSection
             safetyAlertsSection
             ForEach(tunableAppCategories, id: \.self) { category in
@@ -216,6 +226,25 @@ struct NotificationSettingsView: View {
             }
         }
         .navigationTitle("Notifications")
+        .confirmationDialog(
+            "Lower this safety alert?",
+            isPresented: Binding(
+                get: { pendingSafetyLower != nil },
+                set: { if !$0 { pendingSafetyLower = nil } }),
+            titleVisibility: .visible
+        ) {
+            if let pending = pendingSafetyLower {
+                Button("Lower it", role: .destructive) {
+                    applyPendingSafetyLower(pending)
+                    pendingSafetyLower = nil
+                }
+            }
+            Button("Cancel", role: .cancel) { pendingSafetyLower = nil }
+        } message: {
+            Text(
+                "Your pump keeps alarming on its own screen for this — faBolus will just be quieter (or silent) about it here. You can raise this back to its default anytime."
+            )
+        }
         .confirmationDialog(
             "Silence pump alarms in the app?", isPresented: $showSuppressWarning,
             titleVisibility: .visible
@@ -289,33 +318,201 @@ struct NotificationSettingsView: View {
 
     // MARK: - Sections
 
-    /// Pump-sourced `pumpAlert` plus the mirror opt-out. One bucket — no per-alarm-type list.
-    private var pumpSection: some View {
-        // Master enable greys every member via native `.disabled` (never manual opacity).
-        let masterOn = enabledBinding(for: .pumpAlert).wrappedValue
-        let breakThroughCaption = Self.breakThroughCaption(
-            enabled: masterOn, allow: categorySettings[.pumpAlert]?.allowCriticalBreakthrough ?? true)
+    // MARK: - Pump-mirror ladder (Off/Quiet/Alert/Urgent), source-labeled, capability-gated
+
+    /// The phone-side rungs a build can offer: the top (Urgent / break-through-Focus) rung is ABSENT
+    /// — never disabled/greyed — when this build lacks the time-sensitive capability, so the ladder
+    /// simply tops out at Alert (Decision 3).
+    static func availablePhoneIntents(timeSensitiveAvailable: Bool) -> [NotificationRules.Intent] {
+        timeSensitiveAvailable ? [.off, .quiet, .alert, .urgent] : [.off, .quiet, .alert]
+    }
+
+    /// The watch-side rungs, independent of the phone's capability: the Garmin ladder has no
+    /// Urgent/breakthrough rung at all (§1a/§1d), so this list never includes it either way.
+    static let availableWatchIntents: [NotificationRules.Intent] = [.off, .quiet, .alert]
+
+    /// A safety group is one whose fatigue-averse default is `Alert` — exactly
+    /// `NotificationRules.defaultIntent(for:)`'s own grouping, kept as a separate accessor here so the
+    /// UI's "lower than default" check names the safety set explicitly rather than re-deriving it.
+    static func isSafetyGroup(_ group: NotificationRules.PumpMirrorGroup) -> Bool {
+        NotificationRules.defaultIntent(for: group) == .alert
+    }
+
+    static func pumpMirrorGroupLabel(_ group: NotificationRules.PumpMirrorGroup) -> String {
+        switch group {
+        case .deliveryStopped: return "Delivery stopped / pump alarm"
+        case .runningLow: return "Running low (insulin or power)"
+        case .urgentLowGlucose: return "Urgent low glucose"
+        case .glucoseAndControlIQ: return "Glucose level and Control-IQ"
+        case .cgmSensorAndTransmitter: return "CGM sensor and transmitter"
+        case .pumpRoutine: return "Pump reminders and routine"
+        }
+    }
+
+    static func intentLabel(_ intent: NotificationRules.Intent) -> String {
+        switch intent {
+        case .off: return "Off"
+        case .quiet: return "Quiet"
+        case .alert: return "Alert"
+        case .urgent: return "Urgent"
+        }
+    }
+
+    /// Whether the `deliveryStopped` group (every pump alarm + malfunction) currently resolves above
+    /// Off — used only to caption the legacy "silence pump alarms" toggle honestly; it does not gate
+    /// any other row.
+    private var deliveryStoppedGroupOn: Bool {
+        pumpMirrorGroupIntentBinding(.deliveryStopped).wrappedValue != .off
+    }
+
+    /// Read/write one group's phone-side ladder rung. Reading always returns the real resolved value
+    /// (the user's override, or the group's fatigue-averse default); writing a value BELOW a safety
+    /// group's default holds it pending confirmation instead of applying it immediately.
+    private func pumpMirrorGroupIntentBinding(
+        _ group: NotificationRules.PumpMirrorGroup
+    ) -> Binding<NotificationRules.Intent> {
+        Binding(
+            get: {
+                settings.notificationRules.groupOverrides[group.rawValue]?.intent
+                    ?? NotificationRules.defaultIntent(for: group)
+            },
+            set: { newValue in
+                if Self.isSafetyGroup(group), newValue < NotificationRules.defaultIntent(for: group) {
+                    pendingSafetyLower = .group(group, newValue)
+                } else {
+                    applyGroupIntent(newValue, for: group)
+                }
+            }
+        )
+    }
+
+    private func applyGroupIntent(_ newValue: NotificationRules.Intent, for group: NotificationRules.PumpMirrorGroup) {
+        var rule = settings.notificationRules.groupOverrides[group.rawValue] ?? NotificationRules.Rule()
+        rule.intent = newValue
+        settings.notificationRules.groupOverrides[group.rawValue] = rule
+    }
+
+    /// One optional per-group watch override (§1d) — `nil` ⇒ "follow phone" (the default); an explicit
+    /// choice pins the watch to its own rung on the no-Urgent watch ladder, independent of the phone.
+    private enum WatchOverrideChoice: Hashable {
+        case followPhone
+        case intent(NotificationRules.Intent)
+    }
+
+    private func pumpMirrorGroupWatchOverrideBinding(
+        _ group: NotificationRules.PumpMirrorGroup
+    ) -> Binding<WatchOverrideChoice> {
+        Binding(
+            get: {
+                if let watch = settings.notificationRules.groupOverrides[group.rawValue]?.watchOverride {
+                    return .intent(watch)
+                }
+                return .followPhone
+            },
+            set: { choice in
+                var rule = settings.notificationRules.groupOverrides[group.rawValue] ?? NotificationRules.Rule()
+                switch choice {
+                case .followPhone: rule.watchOverride = nil
+                case .intent(let value): rule.watchOverride = value
+                }
+                settings.notificationRules.groupOverrides[group.rawValue] = rule
+            }
+        )
+    }
+
+    /// The one-move pump-mirror SOURCE override (Decision 1c): "follow each category below" (no
+    /// override — the default) or a single rung that silences/quiets/raises every group at once,
+    /// unless a group has its own category-level override (which still wins).
+    private enum SourceOverrideChoice: Hashable {
+        case followEachCategory
+        case intent(NotificationRules.Intent)
+    }
+
+    private var sourceOverrideChoiceBinding: Binding<SourceOverrideChoice> {
+        Binding(
+            get: {
+                if let intent = settings.notificationRules.sourceOverride?.intent {
+                    return .intent(intent)
+                }
+                return .followEachCategory
+            },
+            set: { choice in
+                switch choice {
+                case .followEachCategory:
+                    applySourceOverride(nil)
+                case .intent(let newValue):
+                    // Amendment B: a source-level rule cascades to safety groups too, so a rung below
+                    // the safety default here can silence/quiet a group that has no category override
+                    // of its own — conservatively gate on it the same way a direct group edit is.
+                    if newValue < .alert {
+                        pendingSafetyLower = .source(newValue)
+                    } else {
+                        applySourceOverride(newValue)
+                    }
+                }
+            }
+        )
+    }
+
+    private func applySourceOverride(_ newValue: NotificationRules.Intent?) {
+        settings.notificationRules.sourceOverride = newValue.map { NotificationRules.Rule(intent: $0) }
+    }
+
+    private func applyPendingSafetyLower(_ pending: PendingSafetyLower) {
+        switch pending {
+        case .group(let group, let newValue): applyGroupIntent(newValue, for: group)
+        case .source(let newValue): applySourceOverride(newValue)
+        }
+    }
+
+    /// One row per pump-mirror group: the phone-side ladder Picker plus its optional watch override.
+    @ViewBuilder
+    private func pumpMirrorGroupRow(_ group: NotificationRules.PumpMirrorGroup) -> some View {
+        let phoneIntents = Self.availablePhoneIntents(
+            timeSensitiveAvailable: NotificationCapability.timeSensitiveAvailable)
+        VStack(alignment: .leading, spacing: 2) {
+            Picker(Self.pumpMirrorGroupLabel(group), selection: pumpMirrorGroupIntentBinding(group)) {
+                ForEach(phoneIntents, id: \.self) { intent in
+                    Text(Self.intentLabel(intent)).tag(intent)
+                }
+            }
+            Picker("Watch", selection: pumpMirrorGroupWatchOverrideBinding(group)) {
+                Text("Follow phone").tag(WatchOverrideChoice.followPhone)
+                ForEach(Self.availableWatchIntents, id: \.self) { intent in
+                    Text(Self.intentLabel(intent)).tag(WatchOverrideChoice.intent(intent))
+                }
+            }
+            .font(.caption)
+        }
+    }
+
+    /// Pump-mirror categories, grouped and labeled as coming from the pump (Decision 1c): a per-group
+    /// Off/Quiet/Alert/(Urgent) ladder driven by the persisted rules store, a one-move source-level
+    /// override, and the legacy alarm-only mirror opt-out.
+    private var pumpMirrorSection: some View {
+        let sourceIntents = Self.availablePhoneIntents(
+            timeSensitiveAvailable: NotificationCapability.timeSensitiveAvailable)
         return Section {
-            Toggle(NotificationBroker.Category.pumpAlert.label, isOn: enabledBinding(for: .pumpAlert))
-            VStack(alignment: .leading, spacing: 2) {
-                Toggle("Allow critical break-through", isOn: breakThroughBinding(for: .pumpAlert))
-                    .disabled(!masterOn)
-                    // Same on-screen caption for VoiceOver.
-                    .accessibilityValue(Text(breakThroughCaption))
-                Text(breakThroughCaption).font(.caption).foregroundStyle(.secondary)
+            Picker("All pump alerts", selection: sourceOverrideChoiceBinding) {
+                Text("Follow each category below").tag(SourceOverrideChoice.followEachCategory)
+                ForEach(sourceIntents, id: \.self) { intent in
+                    Text(Self.intentLabel(intent)).tag(SourceOverrideChoice.intent(intent))
+                }
+            }
+            ForEach(NotificationRules.PumpMirrorGroup.allCases, id: \.self) { group in
+                pumpMirrorGroupRow(group)
             }
             VStack(alignment: .leading, spacing: 2) {
                 Toggle("Silence pump alarms in the app", isOn: suppressBinding)
-                    .disabled(!masterOn)
-                if let silenceCaption = Self.silenceMirrorCaption(pumpEnabled: masterOn) {
+                if let silenceCaption = Self.silenceMirrorCaption(pumpEnabled: deliveryStoppedGroupOn) {
                     Text(silenceCaption).font(.caption).foregroundStyle(.secondary)
                 }
             }
         } header: {
-            Text("Pump alerts")
+            Text("Pump alerts (mirrored from your pump's own alarms)")
         } footer: {
             Text(
-                "Alerts and alarms relayed from your pump. Pump alarms (occlusion, low insulin, etc.) are always critical-severity and — like faBolus's own safety alerts — break through Focus/Do Not Disturb, where your phone and this build support it; an urgent protected alert (e.g. a CGM-loss alert) gets the same treatment even before it rises to alarm-level. \"Silence pump alarms in the app\" stops faBolus re-notifying you for pump alarms the pump already sounds itself — the pump keeps alarming, and faBolus's own safety alerts are unaffected."
+                "Alerts and alarms relayed from your pump, grouped the way your pump groups them. Set each group's rung for how faBolus notifies you here on your phone and watch — the top rung, when available and allowed by iOS, breaks through Focus/Do Not Disturb. Your pump keeps alarming on its own screen no matter what you choose here. \"Silence pump alarms in the app\" stops faBolus re-notifying you for pump alarms the pump already sounds itself."
             )
         }
     }
