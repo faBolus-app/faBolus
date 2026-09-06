@@ -5,7 +5,7 @@ import TandemMessages
 import TandemBLE
 @testable import faBolus
 
-/// The malfunction/alarm collision the phase owes (28.1-CONTEXT §"The test the phone half owes"):
+/// The malfunction/alarm collision this suite proves:
 /// a malfunction and an alarm decode from DIFFERENT status responses (op-119 vs op-71) but land in
 /// the SAME `(kind, id)` id space, because a malfunction frame carries no kind of its own on the
 /// wire — TandemKit's `MalfunctionBitmaskStatusResponse` decodes it as `kind: .alarm` too, with an
@@ -16,7 +16,7 @@ import TandemBLE
 @Suite(.serialized) @MainActor
 struct PumpAlertIdentityTests {
 
-    /// Test A (the collision AND the write/lookup key identity, D-03): a malfunction and an alarm
+    /// Test A (the collision AND the write/lookup key identity): a malfunction and an alarm
     /// share bit index 5. Acknowledge the MALFUNCTION through the real write path
     /// (`dismissNotificationTyped`) and re-poll the SAME bitmaps. Two assertions, each independently
     /// non-vacuous against the pre-fix code: (1) the acked malfunction is ABSENT — proving the
