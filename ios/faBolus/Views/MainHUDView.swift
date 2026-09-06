@@ -109,6 +109,25 @@ struct DashboardView: View {
 
         AlertsBannerView(model: model)
 
+        // Non-blocking "outcome unconfirmed" disclosure for an unresolved dose faBolus cannot confirm —
+        // shown in place of / alongside the "delivery confirmed" state. It NEVER gates a dose; it directs
+        // the user to the pump's own history/IOB, and claims neither delivery nor non-delivery.
+        if let disclosure = model.unconfirmedDeliveryDisclosure {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "questionmark.circle.fill").foregroundStyle(.orange)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Bolus outcome unconfirmed").font(.footnote.weight(.semibold))
+                    Text(disclosure).font(.footnote).fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding().frame(maxWidth: .infinity)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .padding(.horizontal)
+            .accessibilityElement(children: .combine)
+        }
+
         // Dose-affecting — no .hoverEffect / .keyboardShortcut.
         if model.snapshot.connection == .bolusing && model.capabilities.supportsBolusCancel {
             Button(role: .destructive) {

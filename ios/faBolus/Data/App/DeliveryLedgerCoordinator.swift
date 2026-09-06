@@ -52,6 +52,10 @@ final class DeliveryLedgerCoordinator {
     /// (source of the published `deliveryBlockedReason`/`deliveryGloballyBlocked`), so SwiftUI
     /// observation is unbroken.
     var onDeliveryBlockChanged: (String?) -> Void = { _ in }
+    /// Mirrors the non-blocking "outcome unconfirmed" disclosure flag into `AppModel` so a View can
+    /// surface it inline. True when an unresolved delivery exists that is NOT the one currently in
+    /// flight — the honest disclosure that replaced the durable stale-outcome block. Gates no dose.
+    var onUnconfirmedDeliveryChanged: (Bool) -> Void = { _ in }
     /// Bound to `AppModel.currentPumpIdentity()` — the stable identity of the pump connected RIGHT NOW.
     /// Used to scope a ledger entry's outcome to the pump that wrote it: no new
     /// pump-protocol read, and the identity concept `PumpSwitchStore.decide` already compares.
@@ -227,7 +231,30 @@ final class DeliveryLedgerCoordinator {
     /// where a caller could read `deliveryBlockedReason`/`deliveryGloballyBlocked` immediately after
     /// construction, before the async `reconcileUnresolvedDeliveries()` launched at the end of `init`
     /// completes.
-    func refreshDeliveryBlock() { onDeliveryBlockChanged(computeDeliveryBlockReason()) }
+    func refreshDeliveryBlock() {
+        onDeliveryBlockChanged(computeDeliveryBlockReason())
+        onUnconfirmedDeliveryChanged(hasUnconfirmedUnresolvedDelivery)
+    }
+
+    /// A non-blocking disclosure: true when an unresolved delivery exists that is NOT the one currently
+    /// in flight. A View surfaces it as an inline "outcome unconfirmed" state in place of / alongside the
+    /// "delivery confirmed" state — it gates no dose. False while nothing is unresolved, or the only
+    /// unresolved entry is the live in-flight delivery (shown as an active delivery, not an unconfirmed
+    /// one).
+    var hasUnconfirmedUnresolvedDelivery: Bool {
+        let unresolved = remoteBolusLedger.unreconciled()
+        guard !unresolved.isEmpty else { return false }
+        if let live = inFlightDeliveryKey,
+            unresolved.allSatisfy({ $0.peerId == live.peerId && $0.requestId == live.requestId })
+        {
+            return false
+        }
+        return true
+    }
+
+    /// Whether any delivery entry is still unresolved — the non-blocking signal the fresh-connect
+    /// reconcile trigger fires on now that a genuinely-unresolved entry no longer sets the block reason.
+    var hasUnresolvedDelivery: Bool { !remoteBolusLedger.unreconciled().isEmpty }
 
     /// Escape hatch: the user has checked the pump/t:connect and confirms there is no unconfirmed
     /// delivery. Settle every unresolved entry as verified and clear a fail-closed (corrupt-ledger) lock,

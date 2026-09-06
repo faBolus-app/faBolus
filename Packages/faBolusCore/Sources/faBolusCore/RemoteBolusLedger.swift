@@ -398,7 +398,7 @@ public struct RemoteBolusLedger: Codable, Sendable {
     /// unexplained retry every reconnect.
     public static let pumpMismatchBlockReason =
         "A previous bolus outcome belongs to a different pump than the one connected now — verify on "
-        + "that pump/t:connect, then use Settings once you've confirmed its outcome."
+        + "that pump/t:connect before dosing again."
 
     /// The terminal outcomes recorded for `peerId`, oldest→newest, for re-echoing to a remote that may
     /// have missed them across an app restart. Read-only; does not mutate ledger state.
@@ -451,8 +451,9 @@ public struct RemoteBolusLedger: Codable, Sendable {
 
 public extension RemoteBolusLedger {
     /// The PURE global delivery-block precedence
-    /// `noDurableStore > ledgerFailedClosed > terminalSaveFailed > unresolved`, plus the live-in-flight vs
-    /// genuinely-unresolved message split. Same strings as
+    /// `noDurableStore > ledgerFailedClosed > terminalSaveFailed > unresolved`, plus the live-in-flight
+    /// cross-client mutex arm (a genuinely-unresolved entry with nothing in flight no longer blocks — it
+    /// is disclosed inline, not gated). Same strings as
     /// `DeliveryLedgerCoordinator.computeDeliveryBlockReason()` so they have one source of truth with
     /// unit coverage (see `RemoteBolusLedgerTests`).
     ///
@@ -466,8 +467,8 @@ public extension RemoteBolusLedger {
     ///   - inFlightDeliveryKey: the (peer, requestId) currently delivering in THIS process, if any.
     ///   - pumpMismatchReason: non-nil when the caller has found an unresolved entry whose `pumpKey`
     ///     names a different pump than the one connected now (`comparePumpKey(_:to:) == .mismatch`).
-    ///     Takes precedence over the live-in-flight/genuinely-unresolved split below — a mismatch is
-    ///     never the live delivery in THIS process.
+    ///     Takes precedence over the live-in-flight mutex arm below — a mismatch is never the live
+    ///     delivery in THIS process.
     static func blockReason(
         noDurableStore: Bool, ledgerFailedClosed: Bool, terminalSaveFailed: Bool,
         unresolved: [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool)],
@@ -493,16 +494,15 @@ public extension RemoteBolusLedger {
             // concurrent request BEFORE it writes the durable ledger, so two different clients requesting
             // the same (or any) dose can never double-deliver. Verified by CrossClientMutexTests.
             //
-            // Message: distinguish a LIVE in-flight delivery (this process is delivering right now — a
-            // concurrent request should simply wait) from a genuinely unresolved/indeterminate outcome
-            // (e.g. a crash mid-delivery, found at relaunch) that needs manual pump verification. Only the
-            // latter should tell the user to check the pump.
-            if let live = inFlightDeliveryKey,
-                unresolved.allSatisfy({ $0.peerId == live.peerId && $0.requestId == live.requestId })
-            {
+            // The mutex fires whenever a delivery is in flight in THIS process — INCLUDING when an
+            // additional, non-matching unresolved entry co-exists, so it can never develop a hole. A
+            // genuinely unresolved/indeterminate outcome with NO delivery in flight (e.g. a crash
+            // mid-delivery found at relaunch) no longer produces a durable block; it is carried by a
+            // non-blocking inline disclosure the app surfaces instead.
+            if inFlightDeliveryKey != nil {
                 return "A bolus is already being delivered — wait for it to finish before sending another."
             }
-            return "A previous bolus outcome is unconfirmed — check the pump/t:connect before dosing again."
+            return nil
         }
         return nil
     }

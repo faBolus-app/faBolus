@@ -541,6 +541,12 @@ public final class AppModel {
     /// True when delivery is globally blocked by an unresolved/unreadable transaction. UI convenience.
     public var deliveryGloballyBlocked: Bool { deliveryBlockedReason != nil }
 
+    /// The non-blocking inline "outcome unconfirmed" disclosure — non-nil when an unresolved dose exists
+    /// whose outcome faBolus cannot confirm and no delivery is in flight. It replaced the durable
+    /// stale-outcome block: a View surfaces it in place of / alongside the "delivery confirmed" state,
+    /// but it NEVER gates a dose. Mirrored from `DeliveryLedgerCoordinator` via `onUnconfirmedDeliveryChanged`.
+    public private(set) var unconfirmedDeliveryDisclosure: String?
+
     #if DEBUG
     /// Test seam: forwards to `DeliveryLedgerCoordinator.retryTerminalPersistForTesting()` — see its doc
     /// comment. Test scaffolding only; compiles to nothing in Release and never changes production
@@ -698,6 +704,9 @@ public final class AppModel {
         deliveryLedgerCoordinator.echo = { [weak self] cmd in self?.echo(cmd) }
         deliveryLedgerCoordinator.refresh = { [weak self] in self?.refresh() }
         deliveryLedgerCoordinator.onDeliveryBlockChanged = { [weak self] reason in self?.deliveryBlockedReason = reason
+        }
+        deliveryLedgerCoordinator.onUnconfirmedDeliveryChanged = { [weak self] show in
+            self?.unconfirmedDeliveryDisclosure = show ? Self.indeterminateOutcomeLockedCopy : nil
         }
         // Pump-identity scoping: the same identity concept `maybeHandlePumpSwitch` already
         // compares, with no new pump-protocol read.
