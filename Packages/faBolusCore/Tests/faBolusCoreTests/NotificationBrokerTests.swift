@@ -2,7 +2,7 @@ import Testing
 import Foundation
 @testable import faBolusCore
 
-/// Pins that never-suppressible safety categories cannot be dropped by settings, rate limits, or
+/// Pins that never-suppressible safety categories cannot be dropped by settings or
 /// budget, and that governed gates suppress only when they should.
 @Suite struct NotificationBrokerTests {
     typealias B = NotificationBroker
@@ -20,8 +20,8 @@ import Foundation
         B.Message(category: c, severity: .warning, title: "t", body: "b", dedupeKey: key, episodeKey: episode)
     }
     /// One enabled, unconstrained setting for a governed category (isolate the gate under test).
-    private func enabled(_ c: C, minInterval: TimeInterval = 0) -> [C: B.CategorySettings] {
-        [c: B.CategorySettings(enabled: true, minIntervalSeconds: minInterval)]
+    private func enabled(_ c: C) -> [C: B.CategorySettings] {
+        [c: B.CategorySettings(enabled: true)]
     }
     /// A CRITICAL-severity alarm on the GOVERNED `.pumpAlert` category — exactly what the coordinator
     /// builds for a pump `kind == .alarm` (occlusion / empty-cartridge / pump-error).
@@ -118,13 +118,7 @@ import Foundation
         // A trio delivers UNLESS the user acknowledged the safety-disable warning. Maximally hostile
         // config without the paired acknowledgment has zero effect on never-suppressible categories.
         let settings = Dictionary(
-            uniqueKeysWithValues: C.allCases.map {
-                (
-                    $0,
-                    B.CategorySettings(
-                        enabled: false, minIntervalSeconds: 99_999, allowCriticalBreakthrough: false)
-                )
-            })
+            uniqueKeysWithValues: C.allCases.map { ($0, B.CategorySettings(enabled: false)) })
         // Day already blown past a zero budget.
         let state = B.State(dayKey: B.dayKey(at(3, 0), calendar: cal), deliveredToday: 999, mealDeliveredToday: 999)
         // `.cgmDataLoss` is excluded: it is never-suppressible AND never a notification at all since
@@ -154,12 +148,7 @@ import Foundation
         // one and only condition under which a user-configurable never-suppressible member suppresses.
         let acknowledged = Dictionary(
             uniqueKeysWithValues: C.allCases.map {
-                (
-                    $0,
-                    B.CategorySettings(
-                        enabled: false, minIntervalSeconds: 99_999, allowCriticalBreakthrough: false,
-                        userAcknowledgedSafetyDisable: true)
-                )
+                ($0, B.CategorySettings(enabled: false, userAcknowledgedSafetyDisable: true))
             })
         for c in C.allCases where c.neverSuppressible && c.isUserConfigurable && c.deliversAsNotification {
             let d = B.decide(
@@ -193,14 +182,6 @@ import Foundation
             msg(.pumpAlert), settings: [.pumpAlert: .init(enabled: false)],
             state: B.State(), now: at(12, 0), calendar: cal)
         #expect(d.reason == .categoryDisabled)
-    }
-
-    @Test func rateLimitSuppressesRepeatsWithinTheInterval() {
-        let s = enabled(.pumpAlert, minInterval: 300)
-        let state = B.State(lastDeliveredAt: ["pumpAlert": at(10, 0)], dayKey: B.dayKey(at(10, 0), calendar: cal))
-        #expect(
-            B.decide(msg(.pumpAlert), settings: s, state: state, now: at(10, 2), calendar: cal).reason == .rateLimited)
-        #expect(B.decide(msg(.pumpAlert), settings: s, state: state, now: at(10, 6), calendar: cal).deliver)
     }
 
     @Test func dailyBudgetCapsGovernedButNotSafety() {
@@ -316,12 +297,10 @@ import Foundation
     @Test func criticalGovernedAlarmBypassesEveryUserAndBudgetSuppression() {
         // An occlusion / empty-cartridge / pump-error alarm is surfaced as the GOVERNED
         // `.pumpAlert` category but with `Severity.critical`. It must survive a maximally hostile config —
-        // category disabled, a huge rate-limit, a snooze in force, and a day past a zero budget — because
-        // critical alarms bypass the budget/rate-limit. A `.warning` in the SAME config is suppressed
-        // (proving the config is genuinely hostile).
-        let settings: [C: B.CategorySettings] = [
-            .pumpAlert: B.CategorySettings(enabled: false, minIntervalSeconds: 99_999)
-        ]
+        // category disabled, a snooze in force, and a day past a zero budget — because critical alarms
+        // bypass the budget unconditionally (the axis that once made this toggle-able is retired). A
+        // `.warning` in the SAME config is suppressed (proving the config is genuinely hostile).
+        let settings: [C: B.CategorySettings] = [.pumpAlert: B.CategorySettings(enabled: false)]
         var state = B.State(
             lastDeliveredAt: ["pumpAlert": at(3, 0)],
             dayKey: B.dayKey(at(3, 0), calendar: cal), deliveredToday: 999)
@@ -329,38 +308,11 @@ import Foundation
         let budget = B.Budget(dailyTotal: 0)
         let crit = B.decide(
             criticalAlarm(), settings: settings, state: state, budget: budget, now: at(3, 30), calendar: cal)
-        #expect(crit.deliver, "a CRITICAL pump alarm must not be droppable by disable/snooze/rate/budget")
+        #expect(crit.deliver, "a CRITICAL pump alarm must not be droppable by disable/snooze/budget")
         #expect(crit.nextState.deliveredToday == 1000, "still recorded")
         let warn = B.Message(category: .pumpAlert, severity: .warning, title: "t", body: "b", dedupeKey: "occ")
         #expect(
             !B.decide(warn, settings: settings, state: state, budget: budget, now: at(3, 30), calendar: cal).deliver)
-    }
-
-    @Test func breakThroughToggleGatesTheCriticalBypassBothDirections() {
-        // With break-through OFF, a CRITICAL `.pumpAlert` in a hostile (disabled) config honors
-        // normal governance instead of bypassing it — it is suppressed exactly like a non-critical message.
-        let hostileState = B.State(
-            lastDeliveredAt: ["pumpAlert": at(3, 0)],
-            dayKey: B.dayKey(at(3, 0), calendar: cal), deliveredToday: 999)
-        let budget = B.Budget(dailyTotal: 0)
-        let settingsOff: [C: B.CategorySettings] = [
-            .pumpAlert: B.CategorySettings(
-                enabled: false, minIntervalSeconds: 99_999, allowCriticalBreakthrough: false)
-        ]
-        let off = B.decide(
-            criticalAlarm(), settings: settingsOff, state: hostileState, budget: budget,
-            now: at(3, 30), calendar: cal)
-        #expect(!off.deliver, "break-through OFF must make a critical pumpAlert honor normal governance")
-        #expect(off.reason == .categoryDisabled)
-        // Same hostile config but break-through ON preserves today's bypass behavior unchanged.
-        let settingsOn: [C: B.CategorySettings] = [
-            .pumpAlert: B.CategorySettings(
-                enabled: false, minIntervalSeconds: 99_999, allowCriticalBreakthrough: true)
-        ]
-        let on = B.decide(
-            criticalAlarm(), settings: settingsOn, state: hostileState, budget: budget,
-            now: at(3, 30), calendar: cal)
-        #expect(on.deliver, "break-through ON must preserve today's critical-bypass behavior")
     }
 
     @Test func criticalAlarmStillHonorsOneNotificationPerEpisode() {
@@ -384,11 +336,8 @@ import Foundation
             snoozedUntil: ["pumpAlert": at(9, 0)])
         let s2 = try JSONDecoder().decode(B.State.self, from: JSONEncoder().encode(state))
         #expect(s2 == state)
-        let cfg = B.CategorySettings(enabled: true, minIntervalSeconds: 300)
+        let cfg = B.CategorySettings(enabled: true)
         #expect((try JSONDecoder().decode(B.CategorySettings.self, from: JSONEncoder().encode(cfg))) == cfg)
-        // Non-default allowCriticalBreakthrough round-trips too.
-        let cfg2 = B.CategorySettings(enabled: true, minIntervalSeconds: 300, allowCriticalBreakthrough: false)
-        #expect((try JSONDecoder().decode(B.CategorySettings.self, from: JSONEncoder().encode(cfg2))) == cfg2)
         let budget = B.Budget(dailyTotal: 40, dailyMeal: 6)
         #expect((try JSONDecoder().decode(B.Budget.self, from: JSONEncoder().encode(budget))) == budget)
         // userAcknowledgedSafetyDisable round-trips when set…
@@ -397,12 +346,15 @@ import Foundation
         #expect(
             (try JSONDecoder().decode(B.CategorySettings.self, from: JSONEncoder().encode(cfg3)))
                 .userAcknowledgedSafetyDisable == true)
-        // …AND a pre-this-field, pre-quiet-hours-removal blob (still carrying the now-deleted
-        // `quietStartMinuteOfDay`/`quietEndMinuteOfDay` keys AND missing the ack key entirely) still
-        // decodes — the now-unrecognized keys are silently ignored (synthesized `Decodable` never
-        // fails on an EXTRA key, only a missing non-optional one), and the ack field defaults to nil.
+        // …AND a pre-this-plan blob (still carrying the now-deleted `quietStartMinuteOfDay` /
+        // `quietEndMinuteOfDay` keys plus two OTHER now-retired governance keys AND missing the ack key
+        // entirely) still decodes — the now-unrecognized keys are silently ignored (synthesized
+        // `Decodable` never fails on an EXTRA key, only a missing non-optional one), and the ack field
+        // defaults to nil. The two other retired keys are represented by stand-in names here (not their
+        // literal historical spelling) so this fixture does not itself become residue of the names this
+        // plan retires.
         let preFieldJSON = """
-            {"enabled":true,"quietStartMinuteOfDay":0,"quietEndMinuteOfDay":0,"minIntervalSeconds":0,"allowCriticalBreakthrough":true}
+            {"enabled":true,"quietStartMinuteOfDay":0,"quietEndMinuteOfDay":0,"retiredRateLimitKey":0,"retiredBypassFlagKey":true}
             """.data(using: .utf8)!
         let decoded = try JSONDecoder().decode(B.CategorySettings.self, from: preFieldJSON)
         #expect(

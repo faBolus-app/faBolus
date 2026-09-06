@@ -442,15 +442,6 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// initializer stays untouched.
     public var controlIQMode: Int?
 
-    /// The phone-owned Garmin alert-intensity setting, mirrored to the watch on
-    /// the statusRead reply (the watch's fail-closed gate consumes them). `alertIntensityMode` is a frozen
-    /// 3-token enum ("silent"|"vibrate"|"audible", DEFAULT "vibrate"); `alertAudibleMinSeverity` the audible
-    /// severity floor (DEFAULT "critical"); `alertCriticalOverridesDnd` the critical-DND opt-in (DEFAULT
-    /// false). Additive, auto-Codable, post-init settable (mirrors the ciq* flags). SETTINGS-ONLY — never a
-    /// dose input.
-    public var alertIntensityMode: String?
-    public var alertAudibleMinSeverity: String?
-    public var alertCriticalOverridesDnd: Bool?
     /// The resolved per-surface WATCH notification intent for each relayed category (statusRead
     /// reply), keyed by an opaque category identifier so the field is SOURCE-AGNOSTIC — a value is
     /// the watch's resolved intent for that category whether it is mirrored from the pump or
@@ -729,9 +720,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         let strings: [(String, String?)] = [
             ("message", message), ("confirmToken", confirmToken), ("trend", trend),
             ("bolusMode", bolusMode), ("defaultScreen", defaultScreen),
-            ("garminComplicationDisplay", garminComplicationDisplay), ("bolusPasscode", bolusPasscode),
-            // Short frozen-enum settings tokens (fail-closed to defaults on the watch).
-            ("alertIntensityMode", alertIntensityMode), ("alertAudibleMinSeverity", alertAudibleMinSeverity)
+            ("garminComplicationDisplay", garminComplicationDisplay), ("bolusPasscode", bolusPasscode)
         ]
         for (name, s) in strings where s != nil {
             guard s!.count <= Self.maxStringLength else { throw ValidationError.oversizedString(name) }

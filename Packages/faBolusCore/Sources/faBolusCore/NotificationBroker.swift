@@ -1,23 +1,19 @@
 import Foundation
 
 /// **The notification-governance policy core (§6).** One pure decision point that resolves whether a
-/// candidate notification should be DELIVERED right now, folding in the per-category enable/style/rate-limit
+/// candidate notification should be DELIVERED right now, folding in the per-category enable/snooze
 /// settings and a global (+ meal sub-) daily budget — with the three safety categories hard-wired so no
 /// setting, rule, or budget can ever suppress them.
 ///
 /// This is the analog of P8's `AccessPolicy`: a **pure function over explicit state** (faBolusCore reads no
 /// app globals and calls no clock — `now` is passed in). It is INERT until the app-side broker routes its
 /// posters through it; this file changes no behavior on its own.
-///
-/// The rate-limit logic is reimplemented here (pure, in faBolusCore) rather than depending on an optional
-/// external package — a safety-adjacent governance layer must not be gated on an optional dependency, and
-/// it must apply to every channel.
 public enum NotificationBroker {
 
     // MARK: - Categories
 
     /// The notification categories the broker governs. `neverSuppressible` marks the three §6 safety
-    /// categories that must reach the user regardless of settings/rate-limit/budget.
+    /// categories that must reach the user regardless of settings/budget.
     public enum Category: String, CaseIterable, Sendable, Codable {
         // The §6 never-disableable safety categories.
         case pumpDisconnect  // the pump link dropped while it was connected/bolusing
@@ -214,39 +210,27 @@ public enum NotificationBroker {
 
     // MARK: - Per-category settings
 
-    /// User-configurable governance for one category. `minIntervalSeconds` rate-limits repeats of
-    /// the SAME category.
+    /// User-configurable governance for one category.
     public struct CategorySettings: Sendable, Equatable, Codable {
         public var enabled: Bool
-        public var minIntervalSeconds: TimeInterval
-        /// Per-category critical break-through tuning. When `true` (default), a `.critical`-severity
-        /// message for this category bypasses enable/snooze/rate-limit exactly as it does today. When
-        /// `false`, a critical message for this category honors normal governance instead
-        /// of bypassing it. Defaults to `true` so shipping this field changes zero existing delivery
-        /// behavior.
-        ///
-        /// **Future-field warning:** any field added to this struct AFTER this one ships must use the
-        /// `Optional`-typed-property idiom instead (mirror `State.snoozedUntil`), because Swift's
-        /// synthesized `Decodable` only tolerates a missing key for `Optional`-typed properties, not a
-        /// non-optional one with a memberwise-init default — decoding an already-persisted pre-this-field
-        /// blob would otherwise fail the whole decode.
-        public var allowCriticalBreakthrough: Bool
         /// The ONLY field that lets a `neverSuppressible` trio category
         /// (`pumpDisconnect`/`cgmDataLoss`/`bolusReconciliation`) be suppressed. `decide()` suppresses a
         /// trio message iff `enabled == false && userAcknowledgedSafetyDisable == true` — `enabled ==
         /// false` alone is NEVER enough, so a stray/partial write can't silently drop a safety alert.
-        /// **Optional-typed per the Future-field warning above**: the `notificationBroker.settings.v1`
-        /// blob has already been persisted, so a non-optional `= false` default would fail the whole
-        /// decode of an already-persisted blob — a missing key decodes to `nil`, which reads as "not
-        /// acknowledged" (safe). Consulted ONLY at the trio short-circuit in `decide()`, nowhere else.
+        /// **Optional-typed**: the `notificationBroker.settings.v1` blob has already been persisted, so a
+        /// non-optional `= false` default would fail the whole decode of an already-persisted blob — a
+        /// missing key decodes to `nil`, which reads as "not acknowledged" (safe). Consulted ONLY at the
+        /// trio short-circuit in `decide()`, nowhere else.
+        ///
+        /// **Future-field warning:** any field added to this struct must use the `Optional`-typed-property
+        /// idiom too, because Swift's synthesized `Decodable` only tolerates a missing key for
+        /// `Optional`-typed properties, not a non-optional one with a memberwise-init default — decoding an
+        /// already-persisted pre-this-field blob would otherwise fail the whole decode. Removing a field
+        /// this struct once carried is always safe either way: synthesized `Decodable` silently ignores an
+        /// unrecognized key in an old persisted blob.
         public var userAcknowledgedSafetyDisable: Bool?
-        public init(
-            enabled: Bool, minIntervalSeconds: TimeInterval = 0, allowCriticalBreakthrough: Bool = true,
-            userAcknowledgedSafetyDisable: Bool? = nil
-        ) {
+        public init(enabled: Bool, userAcknowledgedSafetyDisable: Bool? = nil) {
             self.enabled = enabled
-            self.minIntervalSeconds = minIntervalSeconds
-            self.allowCriticalBreakthrough = allowCriticalBreakthrough
             self.userAcknowledgedSafetyDisable = userAcknowledgedSafetyDisable
         }
         /// The default governance for a category (respecting its `defaultEnabled`).
@@ -336,7 +320,7 @@ public enum NotificationBroker {
     // MARK: - Decision
 
     public enum SuppressionReason: String, Sendable, Equatable {
-        case categoryDisabled, snoozed, rateLimited, dailyBudgetReached, mealBudgetReached,
+        case categoryDisabled, snoozed, dailyBudgetReached, mealBudgetReached,
             episodeAlreadyNotified
         /// The category surfaces as UI state only and never as a notification
         /// (`Category.deliversAsNotification == false`). Distinct from `categoryDisabled`, which is a
@@ -359,14 +343,14 @@ public enum NotificationBroker {
 
     /// Decide whether `message` should be delivered now, and return the state to persist. **Fail-safe on
     /// the safety side**: a `neverSuppressible` category is ALWAYS delivered (and still recorded, so its
-    /// dedupe/episode tracking works) — no setting, rate-limit, or budget can drop it. Ordering for governed
-    /// categories: category enabled → episode-not-already-notified → rate-limit → budget. `settings` is
+    /// dedupe/episode tracking works) — no setting, snooze, or budget can drop it. Ordering for governed
+    /// categories: category enabled → snooze → episode-not-already-notified → budget. `settings` is
     /// looked up per category (falling back to that category's defaults).
     ///
     /// The ONE thing checked above that guarantee is `Category.deliversAsNotification`: a category that
     /// surfaces as UI state only is not a notification channel at all, so "always delivered" does not apply
     /// to it. Today that is `cgmDataLoss` alone, and it is a POLICY refusal (`.uiStateOnly`) with no user
-    /// setting behind it — not a suppression a setting, snooze, rate-limit or budget produced.
+    /// setting behind it — not a suppression a setting, snooze, or budget produced.
     public static func decide(
         _ message: Message,
         settings: [Category: CategorySettings],
@@ -453,12 +437,12 @@ public enum NotificationBroker {
         // A CRITICAL-severity governed message (e.g. an occlusion / empty-cartridge /
         // pump-error alarm — surfaced as the `.pumpAlert` category, which is `Severity.critical` by
         // construction for `kind == .alarm`) must NOT be droppable by the category being disabled, a user
-        // snooze, a rate limit, or the daily/meal budget. The handoff requires critical
+        // snooze, or the daily/meal budget. The handoff requires critical
         // alarms to bypass the budget. It is NOT `neverSuppressible`, so it still honors
         // one-notification-per-episode: an ACTIVE alarm the pump re-raises every poll does not spam
         // (re-notification is driven by `forgetEpisode`, not by re-delivering here). Only the
         // user/budget suppressions below are skipped for it.
-        let critical = message.severity == .critical && cfg.allowCriticalBreakthrough
+        let critical = message.severity == .critical
 
         if !critical, !cfg.enabled { return suppress(.categoryDisabled) }
 
@@ -482,12 +466,6 @@ public enum NotificationBroker {
         if s.notifiedEpisodes.contains(message.episodeKey) { return suppress(.episodeAlreadyNotified) }
 
         if !critical {
-            if cfg.minIntervalSeconds > 0, let last = s.lastDeliveredAt[message.category.rawValue],
-                now.timeIntervalSince(last) < cfg.minIntervalSeconds
-            {
-                return suppress(.rateLimited)
-            }
-
             if s.deliveredToday >= budget.dailyTotal { return suppress(.dailyBudgetReached) }
             if message.category.usesMealSubBudget, s.mealDeliveredToday >= budget.dailyMeal {
                 return suppress(.mealBudgetReached)

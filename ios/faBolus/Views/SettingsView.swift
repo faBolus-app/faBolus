@@ -879,27 +879,6 @@ struct RemotesSettingsView: View {
                     "Customize the Garmin Details page and the history-chart tap ranges — separate from the phone. \"Garmin plot range\" lets the small screens use a different glucose-chart range than the phone; \"Same as phone\" (default) keeps them matched. \"Garmin complications\" picks which pump-status readouts fill the watch face's three slots (alongside glucose). Mirrored to the remotes on the next update."
                 )
             }
-            Section {
-                Picker("Alert intensity", selection: $settings.garminAlertIntensityMode) {
-                    ForEach(AppSettings.alertIntensityModeOptions, id: \.self) {
-                        Text(AppSettings.alertIntensityModeLabel($0)).tag($0)
-                    }
-                }
-                if settings.garminAlertIntensityMode == "audible" {
-                    Picker("Play tone for", selection: $settings.garminAlertAudibleMinSeverity) {
-                        Text("All alerts").tag("info")
-                        Text("High & critical").tag("high")
-                        Text("Critical only").tag("critical")
-                    }
-                }
-                Toggle("Critical alerts override Do Not Disturb", isOn: $settings.garminAlertCriticalOverridesDnd)
-            } header: {
-                Text("Garmin alerts")
-            } footer: {
-                Text(
-                    "How the Garmin watch alerts you. **Vibration only** (default) buzzes for every alert; **Audible** adds a tone + backlight at/above the level you pick; **Silent** means the watch stays quiet and your phone is the only alert. \"Critical alerts override Do Not Disturb\" is off by default — turn it on to let a critical alert buzz through DND (in Silent mode that adds a vibration for critical alerts, never a tone). The phone always alerts regardless of this setting."
-                )
-            }
             if let g = model.garminStatus {
                 Section { Text(g).font(.caption).foregroundStyle(.secondary) }
             }

@@ -213,9 +213,7 @@ import faBolusCore
             garminClockAnalog: false, glucoseDisplayUnitWireToken: "mgdl",
             glucosePlotFloor: 40, glucosePlotCeiling: 300,
             glucosePlotFloorSmall: nil, glucosePlotCeilingSmall: nil,
-            garminBolusEnabled: false,
-            alertIntensityMode: "vibrate", alertAudibleMinSeverity: "critical",
-            alertCriticalOverridesDnd: false, garminComplicationSlots: ["iob", "reservoir", "battery"])
+            garminBolusEnabled: false, garminComplicationSlots: ["iob", "reservoir", "battery"])
     }
 
     /// `requestId` is pinned by default because `RemoteCommand.init` defaults it to a fresh

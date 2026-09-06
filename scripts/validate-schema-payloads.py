@@ -54,8 +54,6 @@ VALID = [
         "ciqZone": "maintains", "ciqSuspendedForLow": True, "ciqSuspendStartEpochSec": 1699998000,
         "lastAutoCorrectionEpochSec": 1699999000, "ciqLastCouldNotDeliverEpochSec": 1699990000,
         "lockoutUntilEpochSec": 1700003600, "maxBasalUnitsPerHour": 3.0, "controlIQMode": 0,
-        "alertIntensityMode": "vibrate", "alertAudibleMinSeverity": "critical",
-        "alertCriticalOverridesDnd": False,
         "watchNotificationIntents": {"deliveryStopped": "alert", "glucoseAndControlIQ": "quiet", "pumpRoutine": "off"},
     },
     {"version": 1, "kind": "bolusRequest", "requestId": "r2", "units": 2.5},

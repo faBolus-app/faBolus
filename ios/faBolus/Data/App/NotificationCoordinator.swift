@@ -657,27 +657,13 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
 
     private func key(_ n: PumpAlert) -> String { "pumpalert-\(n.kind.rawValue)-\(n.id)" }
 
-    /// Whether a pump notification is a user-opted-out MIRRORED ALARM and should NOT be
-    /// re-notified by the app. True ONLY for a pump ALARM (`.alarm`, which the pump annunciates itself)
-    /// when the user opted out. Lower-priority pump ALERTS still surface, and this can never match the
-    /// app-only never-suppressible safety trio (they aren't `PumpAlert`s and post on other paths). Pure.
-    static func suppressesMirroredAlarm(kind: PumpAlertKind, optedOut: Bool) -> Bool {
-        kind == .alarm && optedOut
-    }
-
     /// Post newly-active pump alerts through the broker; withdraw the ones that have cleared. Preserves the
     /// prior identity-keyed dedupe (`postedPumpAlerts`) so re-evaluation only happens on a real transition.
+    /// The former per-alarm opt-out (silence mirrored pump alarms) is subsumed by the unified cascade: a
+    /// user who wants pump alarms silent on the phone sets the `deliveryStopped` group to `Off` instead.
     private func syncPumpAlerts(_ notifications: [PumpAlert]) {
         let active = Set(notifications.map(key))
         for n in notifications where !postedPumpAlerts.contains(key(n)) {
-            // The user can opt out of the app RE-notifying pump ALARMS (kind `.alarm`) — the pump
-            // itself already annunciates them audibly, so mirroring them can be notification fatigue (esp.
-            // on a t:slim). Lower-priority pump ALERTS still surface. We skip WITHOUT recording it as posted,
-            // so turning the opt-out back off re-surfaces a still-active alarm on the next sync. This gates
-            // ONLY the pump-mirrored `.pumpAlert` path; the never-suppressible safety trio posts elsewhere.
-            if Self.suppressesMirroredAlarm(kind: n.kind, optedOut: AppSettings.shared.suppressMirroredPumpAlarms) {
-                continue
-            }
             let k = key(n)
             postedPumpAlerts.insert(k)
             // Classify this pump alert from its OWN identity (kind + bit id + the malfunction

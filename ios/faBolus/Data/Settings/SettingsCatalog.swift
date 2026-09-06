@@ -95,9 +95,6 @@ enum SettingsCatalog {
         .init("garminComplicationDisplay", .remotes, backsUp: true),
         .init("garminClockAnalog", .remotes, backsUp: true),
         .init("garminTargetApp", .remotes, backsUp: true),
-        .init("garminAlertIntensityMode", .remotes, backsUp: true),
-        .init("garminAlertAudibleMinSeverity", .remotes, backsUp: true),
-        .init("garminAlertCriticalOverridesDnd", .remotes, backsUp: true),
         .init("garminComplicationSlots", .remotes, backsUp: true)
 
         // MARK: — Not backed up (caches + advisory/experimental toggles). syncsToICloud false by rule.

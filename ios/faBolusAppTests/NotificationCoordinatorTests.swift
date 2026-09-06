@@ -29,12 +29,7 @@ import UserNotifications
 
     @Test func safetyCategoriesPostEvenWhenEverythingIsLocked() {
         let hostile = Dictionary(
-            uniqueKeysWithValues: C.allCases.map {
-                (
-                    $0,
-                    B.CategorySettings(enabled: false, minIntervalSeconds: 99_999)
-                )
-            })
+            uniqueKeysWithValues: C.allCases.map { ($0, B.CategorySettings(enabled: false)) })
         let rt = NotificationRuntime(
             store: isolatedStore(#function), settings: hostile,
             budget: B.Budget(dailyTotal: 0, dailyMeal: 0))
@@ -78,39 +73,10 @@ import UserNotifications
         let rt1 = NotificationRuntime(store: store)
         var cfg = rt1.settings[.pumpAlert] ?? .defaults(for: .pumpAlert)
         cfg.enabled = false
-        cfg.allowCriticalBreakthrough = false
         rt1.updateSettings(cfg, for: .pumpAlert)
         // A fresh runtime on the same store (a relaunch, or a sibling out-of-process poster) sees it.
         let rt2 = NotificationRuntime(store: store)
         #expect(rt2.settings[.pumpAlert]?.enabled == false)
-        #expect(rt2.settings[.pumpAlert]?.allowCriticalBreakthrough == false)
-    }
-
-    @Test func breakThroughOffPersistsAndIsHonoredByThePosterAcrossARuntimeRestart() {
-        // End-to-end: model -> persistence -> decide, proven through the real poster.
-        let store = isolatedStore(#function)
-        let rt1 = NotificationRuntime(store: store)
-        var cfg = rt1.settings[.pumpAlert] ?? .defaults(for: .pumpAlert)
-        // Otherwise-enabled config (enabled stays true) — only the rate limit + break-through change,
-        // so the suppression below is provably caused by the break-through toggle unmasking normal
-        // (rate-limit) governance rather than by the category itself being disabled.
-        cfg.minIntervalSeconds = 99_999
-        cfg.allowCriticalBreakthrough = false
-        rt1.updateSettings(cfg, for: .pumpAlert)
-        let rt2 = NotificationRuntime(store: store)
-        // Seed a recent pumpAlert delivery so the rate limit is actually in force for the critical
-        // post below.
-        _ = NotificationPoster.post(msg(.pumpAlert, key: "seed"), runtime: rt2, now: at(8, 59)) { _ in }
-        let critical = B.Message(
-            category: .pumpAlert, severity: .critical, title: "Occlusion", body: "b",
-            dedupeKey: "occ2")
-        let d = NotificationPoster.post(critical, runtime: rt2, now: at(9, 0)) { _ in }
-        #expect(
-            !d.deliver && d.reason == .rateLimited,
-            "persisted break-through OFF is honored by a fresh runtime + the real poster")
-        // A trio post on rt2 still delivers, unaffected by the pumpAlert-only settings mutation.
-        let trio = NotificationPoster.post(msg(.pumpDisconnect, key: "trio1"), runtime: rt2, now: at(9, 0)) { _ in }
-        #expect(trio.deliver)
     }
 
     @Test func onePerEpisodeThenForgetReEnables() {
@@ -262,14 +228,6 @@ import UserNotifications
             "an app-own .critical category must still break through, unchanged")
     }
 
-    /// The pump-alarm opt-out suppresses only a pump ALARM the user opted out of — never a lower-priority ALERT.
-    @Test func mirroredAlarmOptOutSuppressesOnlyAlarmsAndOnlyWhenOptedOut() {
-        #expect(NotificationCoordinator.suppressesMirroredAlarm(kind: .alarm, optedOut: true))
-        #expect(!NotificationCoordinator.suppressesMirroredAlarm(kind: .alarm, optedOut: false))
-        #expect(!NotificationCoordinator.suppressesMirroredAlarm(kind: .alert, optedOut: true))
-        #expect(!NotificationCoordinator.suppressesMirroredAlarm(kind: .cgmAlert, optedOut: true))
-    }
-
     /// The honest "pending Apple approval" status shows only when the user opted in and the OS grant is not active.
     @Test func honestStatusShownOnlyWhenEnabledAndNotGranted() {
         #expect(NotificationSettingsView.shouldShowHonestStatus(enabled: true, grantActive: false) == true)
@@ -317,31 +275,6 @@ import UserNotifications
         #expect(!acked.deliver && acked.reason == .categoryDisabled)
     }
 
-    /// A disabled category's break-through row must read as moot, not silently ignored.
-    @Test func breakThroughCaptionCoversAllThreeEffectiveStateBranches() {
-        #expect(
-            NotificationSettingsView.breakThroughCaption(enabled: true, allow: true)
-                == "On — this category's urgent/critical alerts always break through Do Not Disturb and limits.")
-        #expect(
-            NotificationSettingsView.breakThroughCaption(enabled: true, allow: false)
-                == "Off — this category's urgent/critical alerts follow the normal enabled/limit rules below.")
-        #expect(
-            NotificationSettingsView.breakThroughCaption(enabled: false, allow: true)
-                == "Off — category is disabled, so break-through has no effect.")
-        // `allow` is moot once the master is off — same string regardless of its value.
-        #expect(
-            NotificationSettingsView.breakThroughCaption(enabled: false, allow: false)
-                == "Off — category is disabled, so break-through has no effect.")
-    }
-
-    /// The silence-pump-alarms caption is non-nil only when the pump section's master is off.
-    @Test func silenceMirrorCaptionOnlyWhenPumpDisabled() {
-        #expect(
-            NotificationSettingsView.silenceMirrorCaption(pumpEnabled: false)
-                == "No effect — pump alerts are disabled.")
-        #expect(NotificationSettingsView.silenceMirrorCaption(pumpEnabled: true) == nil)
-    }
-
     // MARK: - Pump-mirror settings ladder
 
     /// The Urgent (break-through-Focus) rung is ABSENT — never merely disabled — from the phone-side
@@ -387,6 +320,10 @@ import UserNotifications
 
     /// The Interruption Strength section must gate nothing else on screen — no `.disabled(...)` may
     /// read `criticalAlertsEnabled`. The toggle binding and `shouldShowHonestStatus` are not `.disabled` calls.
+    /// Anti-vacuity is anchored on the "Use Critical Alerts" control itself (the row this test is really
+    /// guarding), NOT on a `.disabled(` occurrence count — the file may legitimately carry zero `.disabled(`
+    /// sites (e.g. once the per-category "Allow critical break-through" greyed sub-row this test's guard
+    /// once counted on was retired), and that must not make this scan pass vacuously in either direction.
     @Test func interruptionStrengthSectionGatesNoOtherRow() throws {
         guard let url = Self.notificationSettingsViewFileURL(),
             let source = try? String(contentsOf: url, encoding: .utf8)
@@ -395,11 +332,13 @@ import UserNotifications
             return
         }
         #expect(!source.isEmpty, "path resolution broke — read zero bytes from NotificationSettingsView.swift")
+        #expect(
+            source.contains("Toggle(\"Use Critical Alerts\", isOn: $settings.criticalAlertsEnabled)"),
+            "the Use Critical Alerts toggle this test guards is missing — anchor is stale, scan would pass vacuously"
+        )
 
         var searchStart = source.startIndex
-        var disabledSitesFound = 0
         while let range = source.range(of: ".disabled(", range: searchStart..<source.endIndex) {
-            disabledSitesFound += 1
             // Extract the parenthesized argument up to its own matching close paren — every
             // `.disabled(...)` call site in this file is a simple boolean expression, so a single-level
             // balance counter is sufficient (no need for a full expression parser).
@@ -424,10 +363,6 @@ import UserNotifications
                 "found .disabled(...) reading criticalAlertsEnabled: \(arg)")
             searchStart = source.index(after: range.lowerBound)
         }
-        #expect(
-            disabledSitesFound > 0,
-            "found zero .disabled( occurrences in NotificationSettingsView.swift — parent-master greying may have regressed"
-        )
     }
 
     @Test func posterUsesTheMessageDedupeKeyAsIdentifierSoRejectionsAreDistinct() {

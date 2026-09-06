@@ -13,10 +13,6 @@ struct NotificationSettingsView: View {
     /// Local mirror of `runtime.settings`. `NotificationRuntime` isn't `@Observable`, so this
     /// `@State` copy drives the UI and refreshes after every write-through.
     @State private var categorySettings: [NotificationBroker.Category: NotificationBroker.CategorySettings]
-    /// Pump-alarm opt-out is safety-reducing — confirm to enable; turning off is immediate.
-    @State private var showSuppressWarning = false
-    /// Turning critical break-through OFF is safety-reducing — confirm-gated. Nil ⇒ no dialog.
-    @State private var breakThroughOffCategory: NotificationBroker.Category?
     /// Safety trio is disableable behind confirm-on-disable. Nil ⇒ no dialog.
     @State private var safetyDisableOffCategory: NotificationBroker.Category?
     /// A pump-mirror ladder change that would lower a safety group below its default is held here
@@ -54,30 +50,8 @@ struct NotificationSettingsView: View {
 
     // MARK: - Relocated bindings
 
-    /// Pump-alarm opt-out: confirm to enable; off is immediate. Cancel leaves the flag false.
-    private var suppressBinding: Binding<Bool> {
-        guardedToggle(
-            get: { settings.suppressMirroredPumpAlarms },
-            set: { settings.suppressMirroredPumpAlarms = $0 },
-            requestConfirm: { showSuppressWarning = true }
-        )
-    }
-
     /// Show "pending Apple approval" only when the user opted in and the OS grant isn't active yet.
     static func shouldShowHonestStatus(enabled: Bool, grantActive: Bool) -> Bool { enabled && !grantActive }
-
-    /// Effective-state caption so break-through cannot silently override a disabled category.
-    static func breakThroughCaption(enabled: Bool, allow: Bool) -> String {
-        guard enabled else { return "Off — category is disabled, so break-through has no effect." }
-        return allow
-            ? "On — this category's urgent/critical alerts always break through Do Not Disturb and limits."
-            : "Off — this category's urgent/critical alerts follow the normal enabled/limit rules below."
-    }
-
-    /// Silence-pump-alarms caption: non-nil only when the pump master is off (row has no effect).
-    static func silenceMirrorCaption(pumpEnabled: Bool) -> String? {
-        pumpEnabled ? nil : "No effect — pump alerts are disabled."
-    }
 
     // MARK: - Per-category bindings
 
@@ -101,28 +75,7 @@ struct NotificationSettingsView: View {
         )
     }
 
-    /// Confirm on turning break-through OFF (safety-reducing), unlike other `guardedToggle` sites
-    /// that confirm ON. Built by inverting the boolean around `guardedToggle`; the outer Binding
-    /// still reads/writes the real `allowCriticalBreakthrough`.
-    private func breakThroughBinding(for category: NotificationBroker.Category) -> Binding<Bool> {
-        let offToggle = guardedToggle(
-            get: { !(categorySettings[category]?.allowCriticalBreakthrough ?? true) },
-            set: { off in setBreakThrough(!off, for: category) },
-            requestConfirm: { breakThroughOffCategory = category }
-        )
-        return Binding(
-            get: { !offToggle.wrappedValue },
-            set: { allow in offToggle.wrappedValue = !allow }
-        )
-    }
-
-    private func setBreakThrough(_ allow: Bool, for category: NotificationBroker.Category) {
-        var cfg = categorySettings[category] ?? .defaults(for: category)
-        cfg.allowCriticalBreakthrough = allow
-        updateCategorySettings(cfg, for: category)
-    }
-
-    /// Trio confirm-on-disable — same inversion as `breakThroughBinding`. Uses `guardedToggle`,
+    /// Trio confirm-on-disable — same inversion as the trio's own toggle. Uses `guardedToggle`,
     /// not the dose-path ack gate (that would write a therapy acknowledgment on this screen).
     private func safetyEnabledBinding(for category: NotificationBroker.Category) -> Binding<Bool> {
         Self.safetyTrioToggleBinding(
@@ -245,38 +198,6 @@ struct NotificationSettingsView: View {
                 "Your pump keeps alarming on its own screen for this — faBolus will just be quieter (or silent) about it here. You can raise this back to its default anytime."
             )
         }
-        .confirmationDialog(
-            "Silence pump alarms in the app?", isPresented: $showSuppressWarning,
-            titleVisibility: .visible
-        ) {
-            Button("Silence in the app", role: .destructive) { settings.suppressMirroredPumpAlarms = true }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(
-                "faBolus will stop showing a phone notification for pump alarms (like occlusion or low insulin) that your pump already alarms for. Make sure you'll notice the pump's own alarm. faBolus's own safety alerts — pump disconnected, CGM data lost, and unresolved bolus — are not affected."
-            )
-        }
-        .confirmationDialog(
-            "Turn off critical break-through?",
-            isPresented: Binding(
-                get: { breakThroughOffCategory != nil },
-                set: { if !$0 { breakThroughOffCategory = nil } }),
-            titleVisibility: .visible
-        ) {
-            if let category = breakThroughOffCategory {
-                Button("Turn off", role: .destructive) {
-                    setBreakThrough(false, for: category)
-                    breakThroughOffCategory = nil
-                }
-            }
-            Button("Cancel", role: .cancel) { breakThroughOffCategory = nil }
-        } message: {
-            if let category = breakThroughOffCategory {
-                Text(
-                    "\(category.label)'s urgent/critical alerts will follow your normal enabled/rate-limit settings instead of always breaking through. You can turn this back on anytime."
-                )
-            }
-        }
         // Trio confirm-on-disable: category-specific title and body.
         .confirmationDialog(
             safetyDisableDialogTitle(for: safetyDisableOffCategory),
@@ -356,13 +277,6 @@ struct NotificationSettingsView: View {
         case .alert: return "Alert"
         case .urgent: return "Urgent"
         }
-    }
-
-    /// Whether the `deliveryStopped` group (every pump alarm + malfunction) currently resolves above
-    /// Off — used only to caption the legacy "silence pump alarms" toggle honestly; it does not gate
-    /// any other row.
-    private var deliveryStoppedGroupOn: Bool {
-        pumpMirrorGroupIntentBinding(.deliveryStopped).wrappedValue != .off
     }
 
     /// Read/write one group's phone-side ladder rung. Reading always returns the real resolved value
@@ -487,8 +401,9 @@ struct NotificationSettingsView: View {
     }
 
     /// Pump-mirror categories, grouped and labeled as coming from the pump (Decision 1c): a per-group
-    /// Off/Quiet/Alert/(Urgent) ladder driven by the persisted rules store, a one-move source-level
-    /// override, and the legacy alarm-only mirror opt-out.
+    /// Off/Quiet/Alert/(Urgent) ladder driven by the persisted rules store plus a one-move source-level
+    /// override. The old standalone "silence pump alarms" opt-out is subsumed by this ladder — setting
+    /// the `deliveryStopped` group to `Off` is the equivalent, unified move.
     private var pumpMirrorSection: some View {
         let sourceIntents = Self.availablePhoneIntents(
             timeSensitiveAvailable: NotificationCapability.timeSensitiveAvailable)
@@ -502,17 +417,11 @@ struct NotificationSettingsView: View {
             ForEach(NotificationRules.PumpMirrorGroup.allCases, id: \.self) { group in
                 pumpMirrorGroupRow(group)
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Toggle("Silence pump alarms in the app", isOn: suppressBinding)
-                if let silenceCaption = Self.silenceMirrorCaption(pumpEnabled: deliveryStoppedGroupOn) {
-                    Text(silenceCaption).font(.caption).foregroundStyle(.secondary)
-                }
-            }
         } header: {
             Text("Pump alerts (mirrored from your pump's own alarms)")
         } footer: {
             Text(
-                "Alerts and alarms relayed from your pump, grouped the way your pump groups them. Set each group's rung for how faBolus notifies you here on your phone and watch — the top rung, when available and allowed by iOS, breaks through Focus/Do Not Disturb. Your pump keeps alarming on its own screen no matter what you choose here. \"Silence pump alarms in the app\" stops faBolus re-notifying you for pump alarms the pump already sounds itself."
+                "Alerts and alarms relayed from your pump, grouped the way your pump groups them. Set each group's rung for how faBolus notifies you here on your phone and watch — the top rung, when available and allowed by iOS, breaks through Focus/Do Not Disturb. Your pump keeps alarming on its own screen no matter what you choose here. Set a group to \"Off\" to stop faBolus re-notifying you for alerts the pump already sounds itself."
             )
         }
     }
@@ -543,7 +452,7 @@ struct NotificationSettingsView: View {
             Text("Interruption Strength")
         } footer: {
             Text(
-                "Lets faBolus's safety alerts (pump disconnected, CGM data lost, unresolved bolus) alert even when your phone is on silent or Do Not Disturb, where your phone and this build support it. The per-category \"Allow critical break-through\" toggles below control whether an OTHER category's urgent/critical alerts also bypass your limits — the safety alerts above are never affected by those toggles."
+                "Lets faBolus's safety alerts (pump disconnected, CGM data lost, unresolved bolus) alert even when your phone is on silent or Do Not Disturb, where your phone and this build support it. It does not turn any alert on or off by itself."
             )
         }
     }
@@ -568,28 +477,14 @@ struct NotificationSettingsView: View {
         }
     }
 
-    /// One section per tunable (non-trio) category — enable, confirm-gated OFF break-through.
+    /// One section per tunable (non-trio, non-pump) category — enable only. The old per-category
+    /// "Allow critical break-through" toggle is retired with the force-protection axis it tuned.
     @ViewBuilder
     private func categorySection(for category: NotificationBroker.Category) -> some View {
-        // Master enable greys every member via native `.disabled` (never manual opacity).
-        let masterOn = enabledBinding(for: category).wrappedValue
-        let breakThroughCaption = Self.breakThroughCaption(
-            enabled: masterOn, allow: categorySettings[category]?.allowCriticalBreakthrough ?? true)
         Section {
             Toggle("Enabled", isOn: enabledBinding(for: category))
-            VStack(alignment: .leading, spacing: 2) {
-                Toggle("Allow critical break-through", isOn: breakThroughBinding(for: category))
-                    .disabled(!masterOn)
-                    // Same on-screen caption for VoiceOver.
-                    .accessibilityValue(Text(breakThroughCaption))
-                Text(breakThroughCaption).font(.caption).foregroundStyle(.secondary)
-            }
         } header: {
             Text(category.label)
-        } footer: {
-            Text(
-                "Turning off critical break-through means this category's urgent/critical alerts follow your normal enabled/rate-limit settings instead of always breaking through."
-            )
         }
     }
 }

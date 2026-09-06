@@ -424,9 +424,6 @@ public final class AppModel {
             glucosePlotFloorSmall: AppSettings.shared.glucosePlotFloorSmall,
             glucosePlotCeilingSmall: AppSettings.shared.glucosePlotCeilingSmall,
             garminBolusEnabled: AppSettings.shared.garminBolusEnabled,
-            alertIntensityMode: AppSettings.shared.garminAlertIntensityMode,
-            alertAudibleMinSeverity: AppSettings.shared.garminAlertAudibleMinSeverity,
-            alertCriticalOverridesDnd: AppSettings.shared.garminAlertCriticalOverridesDnd,
             garminComplicationSlots: AppSettings.shared.garminComplicationSlots,
             notificationRules: AppSettings.shared.notificationRules)
         let inputs = RemoteStatusInputs(

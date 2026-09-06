@@ -231,17 +231,12 @@ enum RemoteStatusComposer {
         // Live Sleep/Exercise mode. Unconditional: `0` = normal is a known fact, not absent.
         // Display-only.
         cmd.controlIQMode = s.controlIQMode
-        // Phone-owned Garmin alert intensity + complication slots. Unconditional; "absent"
-        // is a legacy host. Watch fails closed to vibration-only and iob/reservoir/battery
-        // slots. Settings only — never a dose input.
-        cmd.alertIntensityMode = settings.alertIntensityMode
-        cmd.alertAudibleMinSeverity = settings.alertAudibleMinSeverity
-        cmd.alertCriticalOverridesDnd = settings.alertCriticalOverridesDnd
+        // Complication slots. Unconditional; "absent" is a legacy host, which keeps its default
+        // iob/reservoir/battery slots. Settings only — never a dose input.
         cmd.garminComplicationSlots = settings.garminComplicationSlots
         // The resolved per-surface WATCH intent for every relayed category, derived from the SAME
         // unified resolver the phone reads (never a parallel threshold), keyed source-agnostically by
-        // category so every watch-facing surface consumes the one field. Emitted ALONGSIDE the legacy
-        // alert-intensity fields above — the watch still reads those until the consumer adopts this.
+        // category so every watch-facing surface consumes the one field.
         var watchIntents: [String: String] = [:]
         for group in NotificationRules.PumpMirrorGroup.allCases {
             let intent = pumpMirrorWatchIntent(rules: settings.notificationRules.cascade(for: group))
@@ -308,10 +303,6 @@ struct RemoteStatusSettings {
     let glucosePlotFloorSmall: Int?
     let glucosePlotCeilingSmall: Int?
     let garminBolusEnabled: Bool
-    // Phone-owned Garmin alert intensity + complication slots, watch-synced.
-    let alertIntensityMode: String
-    let alertAudibleMinSeverity: String
-    let alertCriticalOverridesDnd: Bool
     let garminComplicationSlots: [String]
     /// The persisted per-surface notification rules, so the composer can resolve each relayed
     /// category's watch intent through the SAME resolver the phone reads. Defaulted to fresh

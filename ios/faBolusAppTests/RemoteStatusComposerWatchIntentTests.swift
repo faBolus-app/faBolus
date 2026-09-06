@@ -5,8 +5,7 @@ import faBolusCore
 
 /// Pins that `RemoteStatusComposer.compose` populates the additive `watchNotificationIntents` wire
 /// field from the SAME unified resolver the phone reads (via `pumpMirrorWatchIntent`), for every
-/// relayed pump-mirror category — and that it does so WITHOUT dropping the legacy alert-intensity
-/// emission (the watch still reads those until the consumer lands).
+/// relayed pump-mirror category.
 struct RemoteStatusComposerWatchIntentTests {
 
     private func settings(rules: NotificationRules.PersistedRules) -> RemoteStatusSettings {
@@ -19,9 +18,7 @@ struct RemoteStatusComposerWatchIntentTests {
             garminClockAnalog: false, glucoseDisplayUnitWireToken: "mgdl",
             glucosePlotFloor: 40, glucosePlotCeiling: 300,
             glucosePlotFloorSmall: nil, glucosePlotCeilingSmall: nil,
-            garminBolusEnabled: false,
-            alertIntensityMode: "vibrate", alertAudibleMinSeverity: "critical",
-            alertCriticalOverridesDnd: false, garminComplicationSlots: ["iob", "reservoir", "battery"],
+            garminBolusEnabled: false, garminComplicationSlots: ["iob", "reservoir", "battery"],
             notificationRules: rules)
     }
 
@@ -69,15 +66,6 @@ struct RemoteStatusComposerWatchIntentTests {
         #expect(cmd.watchNotificationIntents?["runningLow"] == "quiet", "a per-group watch override wins")
         // pumpRoutine has no override -> its fatigue-averse default is .quiet.
         #expect(cmd.watchNotificationIntents?["pumpRoutine"] == "quiet", "a default group emits its default token")
-    }
-
-    /// The legacy alert-intensity properties are STILL emitted in this step — the watch reads them
-    /// until the consumer lands; this landing is additive only.
-    @Test func legacyAlertIntensityPropertiesAreStillEmitted() {
-        let cmd = compose(rules: NotificationRules.PersistedRules())
-        #expect(cmd.alertIntensityMode == "vibrate")
-        #expect(cmd.alertAudibleMinSeverity == "critical")
-        #expect(cmd.alertCriticalOverridesDnd == false)
     }
 
     /// The emitted field round-trips over the wire and the fail-safe accessor reads it back.

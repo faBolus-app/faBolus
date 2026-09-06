@@ -168,11 +168,6 @@ struct AppSettingsStoredMigrationTests {
         assertBoolStoredRoundTrip(
             key: "garminBolusEnabled", backingLabel: "__garminBolusEnabled", defaultValue: false, \.garminBolusEnabled)
     }
-    @Test func suppressMirroredPumpAlarmsStoredRoundTrip() {
-        assertBoolStoredRoundTrip(
-            key: "suppressMirroredPumpAlarms", backingLabel: "__suppressMirroredPumpAlarms", defaultValue: false,
-            \.suppressMirroredPumpAlarms)
-    }
     @Test func showBolusReasoningStoredRoundTrip() {
         assertBoolStoredRoundTrip(
             key: "showBolusReasoning", backingLabel: "__showBolusReasoning", defaultValue: true, \.showBolusReasoning)
@@ -383,8 +378,8 @@ struct AppSettingsStoredMigrationTests {
     // MARK: - SettingsCatalog counts unchanged by Stored conversion
 
     @Test func settingsCatalogCountsUnchangedByStoredConversion() {
-        // Four phone-owned Garmin settings were added; both counts must stay in lockstep.
-        #expect(SettingsCatalog.descriptors.count == 35)
-        #expect(SettingsCatalog.backedUpKeys.count == 35)
+        // Three retired Garmin alert-intensity settings were removed; both counts must stay in lockstep.
+        #expect(SettingsCatalog.descriptors.count == 32)
+        #expect(SettingsCatalog.backedUpKeys.count == 32)
     }
 }

@@ -340,17 +340,6 @@ public final class AppSettings {
         set { _modeReminders.wrappedValue = newValue }
     }
 
-    /// Opt-out — suppress the APP's re-notification of pump ALARMS (`PumpAlert.kind == .alarm`),
-    /// which the pump itself already annunciates audibly (esp. relevant on a t:slim, where the alarm sounds
-    /// on the pump). **Default OFF**; enabling it is behind a warning + explicit confirm (safety-reducing).
-    /// It NEVER touches the app-only never-suppressible safety trio (pump disconnect / CGM data loss /
-    /// bolus reconciliation) — those post on separate paths. A LOCAL device pref: deliberately NOT backed
-    /// up and NOT iCloud-synced (a synced value must not silently silence alarms on another device).
-    private var _suppressMirroredPumpAlarms = Stored<Bool>(wrappedValue: false, "suppressMirroredPumpAlarms")
-    public var suppressMirroredPumpAlarms: Bool {
-        get { _suppressMirroredPumpAlarms.wrappedValue }
-        set { _suppressMirroredPumpAlarms.wrappedValue = newValue }
-    }
     /// Use iOS **Critical Alerts** (which alert even under Do Not Disturb / the ringer switch)
     /// for the never-suppressible safety notifications — WHEN the app holds the critical-alerts entitlement;
     /// it degrades gracefully to a normal notification when the entitlement isn't granted.
@@ -464,40 +453,7 @@ public final class AppSettings {
         id == "stringTrend" ? "Value + trend (no color)" : "Value + color + trend"
     }
 
-    // MARK: Garmin alert intensity + complication slots
-
-    /// The phone-owned Garmin alert-intensity mode, synced to the watch on the statusRead reply. DEFAULT
-    /// "vibrate" (vibration-only for every severity). Frozen 3-token enum; the watch re-validates + fails
-    /// closed. SETTINGS-ONLY, never a dose input.
-    private var _garminAlertIntensityMode = Stored<String>(wrappedValue: "vibrate", "garminAlertIntensityMode")
-    public var garminAlertIntensityMode: String {
-        get { _garminAlertIntensityMode.wrappedValue }
-        set { _garminAlertIntensityMode.wrappedValue = newValue }
-    }
-    /// In "audible" mode, the minimum severity tier that plays a tone + backlight. DEFAULT "critical".
-    private var _garminAlertAudibleMinSeverity = Stored<String>(
-        wrappedValue: "critical", "garminAlertAudibleMinSeverity")
-    public var garminAlertAudibleMinSeverity: String {
-        get { _garminAlertAudibleMinSeverity.wrappedValue }
-        set { _garminAlertAudibleMinSeverity.wrappedValue = newValue }
-    }
-    /// Whether a CRITICAL Garmin alert may pierce Do-Not-Disturb / vibrateOn=off. User opt-in, DEFAULT
-    /// false (turn-off-able). In Silent mode + false the watch stays fully silent even for critical.
-    /// SETTINGS-ONLY, never a dose input.
-    private var _garminAlertCriticalOverridesDnd = Stored<Bool>(wrappedValue: false, "garminAlertCriticalOverridesDnd")
-    public var garminAlertCriticalOverridesDnd: Bool {
-        get { _garminAlertCriticalOverridesDnd.wrappedValue }
-        set { _garminAlertCriticalOverridesDnd.wrappedValue = newValue }
-    }
-    public static let alertIntensityModeOptions = ["silent", "vibrate", "audible"]
-    public static let alertSeverityTierOptions = ["info", "high", "critical"]
-    public static func alertIntensityModeLabel(_ id: String) -> String {
-        switch id {
-        case "silent": return "Silent (phone alerts only)"
-        case "audible": return "Audible tone + backlight"
-        default: return "Vibration only"
-        }
-    }
+    // MARK: Garmin complication slots
 
     /// Which pump-status fields (ordered, ≤3) fill the Garmin's three user-assignable complication slots,
     /// mirrored to the watch. Connect IQ caps an app at 4 complications, so glucose (fixed) + these ≤3.
@@ -767,13 +723,9 @@ public final class AppSettings {
         _remotesReadOnly.store = defaults
         _garminBolusEnabled.store = defaults
         _autoSyncPumpTime.store = defaults
-        _suppressMirroredPumpAlarms.store = defaults
         _showBolusReasoning.store = defaults
         _garminComplicationDisplay.store = defaults
         _garminClockAnalog.store = defaults
-        _garminAlertIntensityMode.store = defaults
-        _garminAlertAudibleMinSeverity.store = defaults
-        _garminAlertCriticalOverridesDnd.store = defaults
         _watchDefaultBolusMode.store = defaults
         _bolusIncrement.store = defaults
         _watchBolusIncrement.store = defaults
@@ -802,7 +754,6 @@ public final class AppSettings {
         // Defaults OFF so a fresh install (and any device with no stored value) cannot bolus from a
         // remote until the user explicitly opts in.
         garminBolusEnabled = (d.object(forKey: "garminBolusEnabled") as? Bool) ?? false
-        suppressMirroredPumpAlarms = (d.object(forKey: "suppressMirroredPumpAlarms") as? Bool) ?? false
         showBolusReasoning = (d.object(forKey: "showBolusReasoning") as? Bool) ?? true
         garminComplicationDisplay = Self.complicationDisplayOptions.contains(cd) ? cd : "numericColor"
         garminClockAnalog = (d.object(forKey: "garminClockAnalog") as? Bool) ?? false
