@@ -622,6 +622,22 @@ public final class AppSettings {
         }
     }
 
+    /// The persisted pump-mirror notification-rules overrides (Amendment A of the 2026-09-02
+    /// notification redesign): a NEW blob key, entirely independent of the legacy
+    /// `notificationBroker.settings.v1` / `CategorySettings` blob — this property has no code path
+    /// that reads or translates it, so there is no migration. A decode failure (corrupt/partial
+    /// data) falls back to `.init()` (no overrides), which resolves every pump-mirror group through
+    /// its fatigue-averse default (`NotificationRules.defaultIntent(for:)`) — never a silent safety
+    /// `Off`. Assigned in `init` (see `notificationRulesKey`); `didSet` persists the whole blob.
+    public var notificationRules: NotificationRules.PersistedRules {
+        didSet {
+            if let data = try? JSONEncoder().encode(notificationRules) {
+                d.set(data, forKey: Self.notificationRulesKey)
+            }
+        }
+    }
+    private static let notificationRulesKey = "notificationRules.v1"
+
     /// The backing store. `.standard` in the app (via `.shared`); a fresh throwaway suite in tests so
     /// first-launch defaults can be asserted without touching the real user defaults.
     private let d: UserDefaults
@@ -654,6 +670,16 @@ public final class AppSettings {
     /// still funnels everything through `.shared`.
     init(defaults: UserDefaults = .standard) {
         self.d = defaults
+        // Fresh defaults, decode-tolerant, no migration (Amendment A): a missing key or a
+        // corrupt/malformed blob both fall back to `.init()` (no overrides) rather than reading —
+        // let alone translating — the legacy `notificationBroker.settings.v1` blob.
+        if let data = d.data(forKey: Self.notificationRulesKey),
+            let decoded = try? JSONDecoder().decode(NotificationRules.PersistedRules.self, from: data)
+        {
+            notificationRules = decoded
+        } else {
+            notificationRules = .init()
+        }
         // Raw increment reads consumed by the relocated `@Stored` assignment block at the end of `init`
         // (`watchDefaultBolusMode`/`bolusIncrement`/`watchBolusIncrement`/`watchCarbIncrement`
         // assignments live there per Swift's two-phase-init rule). The `max(0.05, …)` clamps and
