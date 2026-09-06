@@ -1,23 +1,23 @@
 import Foundation
 
 /// **The notification-governance policy core (§6).** One pure decision point that resolves whether a
-/// candidate notification should be DELIVERED right now, folding in the per-category enable/style/quiet-
-/// hours/rate-limit settings and a global (+ meal sub-) daily budget — with the three safety categories
-/// hard-wired so no setting, rule, quiet-hour, or budget can ever suppress them.
+/// candidate notification should be DELIVERED right now, folding in the per-category enable/style/rate-limit
+/// settings and a global (+ meal sub-) daily budget — with the three safety categories hard-wired so no
+/// setting, rule, or budget can ever suppress them.
 ///
 /// This is the analog of P8's `AccessPolicy`: a **pure function over explicit state** (faBolusCore reads no
 /// app globals and calls no clock — `now` is passed in). It is INERT until the app-side broker routes its
 /// posters through it; this file changes no behavior on its own.
 ///
-/// The rate-limit / quiet-hours logic is reimplemented here (pure, in faBolusCore) rather than depending on
-/// an optional external package — a safety-adjacent governance layer must not be gated on an optional
-/// dependency, and it must apply to every channel.
+/// The rate-limit logic is reimplemented here (pure, in faBolusCore) rather than depending on an optional
+/// external package — a safety-adjacent governance layer must not be gated on an optional dependency, and
+/// it must apply to every channel.
 public enum NotificationBroker {
 
     // MARK: - Categories
 
     /// The notification categories the broker governs. `neverSuppressible` marks the three §6 safety
-    /// categories that must reach the user regardless of settings/quiet-hours/rate-limit/budget.
+    /// categories that must reach the user regardless of settings/rate-limit/budget.
     public enum Category: String, CaseIterable, Sendable, Codable {
         // The §6 never-disableable safety categories.
         case pumpDisconnect  // the pump link dropped while it was connected/bolusing
@@ -39,22 +39,22 @@ public enum NotificationBroker {
         /// plain "CGM data lost" banner does NOT also silence this urgent-low backstop. It is
         /// user-configurable like the original trio (its own enable/disable + confirm-on-disable row,
         /// `isUserConfigurable == true` via the default), but can only be silenced through the explicit
-        /// acknowledged-disable flow `decide()` reads — never by a snooze, quiet-hours, rate-limit,
-        /// budget, or the `.cgmDataLoss` toggle.
+        /// acknowledged-disable flow `decide()` reads — never by a snooze, rate-limit, budget, or the
+        /// `.cgmDataLoss` toggle.
         case urgentLowGlucose
         // Governed (suppressible) categories.
         case pumpAlert  // a pump-raised alert/alarm/reminder surfaced as a notification
         case remoteBolusRejected  // a remote-initiated bolus was REFUSED before delivery (policy / divergence / stale approval — never reached the pump)
         case bolusDeliveryFailed  // a bolus that was ATTEMPTED-but-failed or BLOCKED and did NOT dose — distinct from an INDETERMINATE outcome, whose authoritative resolution the never-suppressible `bolusReconciliation` owns
         /// An outcome we do not YET know — a point-in-time heads-up, immediate + GOVERNED
-        /// (user-silenceable, honors quiet-hours/budget, does NOT break through DND). The AUTHORITATIVE
+        /// (user-silenceable, honors budget, does NOT break through DND). The AUTHORITATIVE
         /// resolution is `bolusReconciliation` (never-suppressible, durable, DND-breaking) — this
         /// category is never persisted and never replayed on relaunch.
         case bolusIndeterminate
         case modeReminder  // an activity/sleep mode reminder
         case mealReminder  // meal-timing reminders — the tightest defaults + their own sub-budget
 
-        /// A safety category the user cannot turn off and that bypasses quiet-hours / rate-limit / budget.
+        /// A safety category the user cannot turn off and that bypasses rate-limit / budget.
         public var neverSuppressible: Bool {
             switch self {
             case .pumpDisconnect, .bolusReconciliation, .cgmDataLoss, .pumpConnectionUnstable,
@@ -214,16 +214,14 @@ public enum NotificationBroker {
 
     // MARK: - Per-category settings
 
-    /// User-configurable governance for one category. Quiet-hours use minutes past midnight
-    /// (`start == end` ⇒ no quiet window). `minIntervalSeconds` rate-limits repeats of the SAME category.
+    /// User-configurable governance for one category. `minIntervalSeconds` rate-limits repeats of
+    /// the SAME category.
     public struct CategorySettings: Sendable, Equatable, Codable {
         public var enabled: Bool
-        public var quietStartMinuteOfDay: Int
-        public var quietEndMinuteOfDay: Int
         public var minIntervalSeconds: TimeInterval
         /// Per-category critical break-through tuning. When `true` (default), a `.critical`-severity
-        /// message for this category bypasses enable/snooze/quiet-hours/rate-limit exactly as it does
-        /// today. When `false`, a critical message for this category honors normal governance instead
+        /// message for this category bypasses enable/snooze/rate-limit exactly as it does today. When
+        /// `false`, a critical message for this category honors normal governance instead
         /// of bypassing it. Defaults to `true` so shipping this field changes zero existing delivery
         /// behavior.
         ///
@@ -243,13 +241,10 @@ public enum NotificationBroker {
         /// acknowledged" (safe). Consulted ONLY at the trio short-circuit in `decide()`, nowhere else.
         public var userAcknowledgedSafetyDisable: Bool?
         public init(
-            enabled: Bool, quietStartMinuteOfDay: Int = 0, quietEndMinuteOfDay: Int = 0,
-            minIntervalSeconds: TimeInterval = 0, allowCriticalBreakthrough: Bool = true,
+            enabled: Bool, minIntervalSeconds: TimeInterval = 0, allowCriticalBreakthrough: Bool = true,
             userAcknowledgedSafetyDisable: Bool? = nil
         ) {
             self.enabled = enabled
-            self.quietStartMinuteOfDay = quietStartMinuteOfDay
-            self.quietEndMinuteOfDay = quietEndMinuteOfDay
             self.minIntervalSeconds = minIntervalSeconds
             self.allowCriticalBreakthrough = allowCriticalBreakthrough
             self.userAcknowledgedSafetyDisable = userAcknowledgedSafetyDisable
@@ -257,15 +252,6 @@ public enum NotificationBroker {
         /// The default governance for a category (respecting its `defaultEnabled`).
         public static func defaults(for category: Category) -> CategorySettings {
             CategorySettings(enabled: category.defaultEnabled)
-        }
-        /// True when `minute` (minutes past midnight) is inside the quiet window
-        /// (same-day / midnight-wrap / none-when-equal).
-        public func inQuietHours(minute: Int) -> Bool {
-            guard quietStartMinuteOfDay != quietEndMinuteOfDay else { return false }
-            if quietStartMinuteOfDay < quietEndMinuteOfDay {
-                return minute >= quietStartMinuteOfDay && minute < quietEndMinuteOfDay
-            }
-            return minute >= quietStartMinuteOfDay || minute < quietEndMinuteOfDay
         }
     }
 
@@ -350,7 +336,7 @@ public enum NotificationBroker {
     // MARK: - Decision
 
     public enum SuppressionReason: String, Sendable, Equatable {
-        case categoryDisabled, snoozed, quietHours, rateLimited, dailyBudgetReached, mealBudgetReached,
+        case categoryDisabled, snoozed, rateLimited, dailyBudgetReached, mealBudgetReached,
             episodeAlreadyNotified
         /// The category surfaces as UI state only and never as a notification
         /// (`Category.deliversAsNotification == false`). Distinct from `categoryDisabled`, which is a
@@ -373,14 +359,14 @@ public enum NotificationBroker {
 
     /// Decide whether `message` should be delivered now, and return the state to persist. **Fail-safe on
     /// the safety side**: a `neverSuppressible` category is ALWAYS delivered (and still recorded, so its
-    /// dedupe/episode tracking works) — no setting, quiet-hour, rate-limit, or budget can drop it. Ordering
-    /// for governed categories: category enabled → episode-not-already-notified → quiet-hours → rate-limit →
-    /// budget. `settings` is looked up per category (falling back to that category's defaults).
+    /// dedupe/episode tracking works) — no setting, rate-limit, or budget can drop it. Ordering for governed
+    /// categories: category enabled → episode-not-already-notified → rate-limit → budget. `settings` is
+    /// looked up per category (falling back to that category's defaults).
     ///
     /// The ONE thing checked above that guarantee is `Category.deliversAsNotification`: a category that
     /// surfaces as UI state only is not a notification channel at all, so "always delivered" does not apply
     /// to it. Today that is `cgmDataLoss` alone, and it is a POLICY refusal (`.uiStateOnly`) with no user
-    /// setting behind it — not a suppression a setting, snooze, quiet-hour, rate-limit or budget produced.
+    /// setting behind it — not a suppression a setting, snooze, rate-limit or budget produced.
     public static func decide(
         _ message: Message,
         settings: [Category: CategorySettings],
@@ -467,7 +453,7 @@ public enum NotificationBroker {
         // A CRITICAL-severity governed message (e.g. an occlusion / empty-cartridge /
         // pump-error alarm — surfaced as the `.pumpAlert` category, which is `Severity.critical` by
         // construction for `kind == .alarm`) must NOT be droppable by the category being disabled, a user
-        // snooze, quiet-hours, a rate limit, or the daily/meal budget. The handoff requires critical
+        // snooze, a rate limit, or the daily/meal budget. The handoff requires critical
         // alarms to bypass the budget. It is NOT `neverSuppressible`, so it still honors
         // one-notification-per-episode: an ACTIVE alarm the pump re-raises every poll does not spam
         // (re-notification is driven by `forgetEpisode`, not by re-delivering here). Only the
@@ -496,10 +482,6 @@ public enum NotificationBroker {
         if s.notifiedEpisodes.contains(message.episodeKey) { return suppress(.episodeAlreadyNotified) }
 
         if !critical {
-            let comps = calendar.dateComponents([.hour, .minute], from: now)
-            let minute = (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
-            if cfg.inQuietHours(minute: minute) { return suppress(.quietHours) }
-
             if cfg.minIntervalSeconds > 0, let last = s.lastDeliveredAt[message.category.rawValue],
                 now.timeIntervalSince(last) < cfg.minIntervalSeconds
             {
@@ -556,7 +538,7 @@ public enum NotificationBroker {
     /// suppress a safety alert. The user CAN deliberately disable a trio category, but only through the
     /// explicit, acknowledged path `decide()` reads at the trio short-circuit
     /// (`CategorySettings.userAcknowledgedSafetyDisable`), never through this snooze mechanism. A
-    /// transient snooze/quiet-hour/rate-limit/budget still cannot suppress a trio member.
+    /// transient snooze/rate-limit/budget still cannot suppress a trio member.
     public static func snooze(_ state: State, category: Category, until: Date) -> State {
         // Generalized from `!neverSuppressible` to `permitsSilencingAction`, which is a strict widening
         // (every never-suppressible category permits no silencing action) and additionally refuses the two

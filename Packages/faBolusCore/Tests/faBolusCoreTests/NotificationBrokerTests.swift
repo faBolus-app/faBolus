@@ -2,8 +2,8 @@ import Testing
 import Foundation
 @testable import faBolusCore
 
-/// Pins that never-suppressible safety categories cannot be dropped by settings, quiet hours, rate
-/// limits, or budget, and that governed gates suppress only when they should.
+/// Pins that never-suppressible safety categories cannot be dropped by settings, rate limits, or
+/// budget, and that governed gates suppress only when they should.
 @Suite struct NotificationBrokerTests {
     typealias B = NotificationBroker
     typealias C = NotificationBroker.Category
@@ -20,12 +20,8 @@ import Foundation
         B.Message(category: c, severity: .warning, title: "t", body: "b", dedupeKey: key, episodeKey: episode)
     }
     /// One enabled, unconstrained setting for a governed category (isolate the gate under test).
-    private func enabled(_ c: C, quiet: (Int, Int) = (0, 0), minInterval: TimeInterval = 0) -> [C: B.CategorySettings] {
-        [
-            c: B.CategorySettings(
-                enabled: true, quietStartMinuteOfDay: quiet.0, quietEndMinuteOfDay: quiet.1,
-                minIntervalSeconds: minInterval)
-        ]
+    private func enabled(_ c: C, minInterval: TimeInterval = 0) -> [C: B.CategorySettings] {
+        [c: B.CategorySettings(enabled: true, minIntervalSeconds: minInterval)]
     }
     /// A CRITICAL-severity alarm on the GOVERNED `.pumpAlert` category — exactly what the coordinator
     /// builds for a pump `kind == .alarm` (occlusion / empty-cartridge / pump-error).
@@ -126,8 +122,7 @@ import Foundation
                 (
                     $0,
                     B.CategorySettings(
-                        enabled: false, quietStartMinuteOfDay: 0, quietEndMinuteOfDay: 1,
-                        minIntervalSeconds: 99_999, allowCriticalBreakthrough: false)
+                        enabled: false, minIntervalSeconds: 99_999, allowCriticalBreakthrough: false)
                 )
             })
         // Day already blown past a zero budget.
@@ -162,8 +157,7 @@ import Foundation
                 (
                     $0,
                     B.CategorySettings(
-                        enabled: false, quietStartMinuteOfDay: 0, quietEndMinuteOfDay: 1,
-                        minIntervalSeconds: 99_999, allowCriticalBreakthrough: false,
+                        enabled: false, minIntervalSeconds: 99_999, allowCriticalBreakthrough: false,
                         userAcknowledgedSafetyDisable: true)
                 )
             })
@@ -199,17 +193,6 @@ import Foundation
             msg(.pumpAlert), settings: [.pumpAlert: .init(enabled: false)],
             state: B.State(), now: at(12, 0), calendar: cal)
         #expect(d.reason == .categoryDisabled)
-    }
-
-    @Test func quietHoursSuppressInsideTheWindowOnly() {
-        let s = enabled(.pumpAlert, quiet: (22 * 60, 7 * 60))  // 22:00–07:00, wraps midnight
-        #expect(
-            B.decide(msg(.pumpAlert), settings: s, state: B.State(), now: at(23, 0), calendar: cal).reason
-                == .quietHours)
-        #expect(
-            B.decide(msg(.pumpAlert), settings: s, state: B.State(), now: at(3, 0), calendar: cal).reason == .quietHours
-        )
-        #expect(B.decide(msg(.pumpAlert), settings: s, state: B.State(), now: at(12, 0), calendar: cal).deliver)
     }
 
     @Test func rateLimitSuppressesRepeatsWithinTheInterval() {
@@ -333,12 +316,11 @@ import Foundation
     @Test func criticalGovernedAlarmBypassesEveryUserAndBudgetSuppression() {
         // An occlusion / empty-cartridge / pump-error alarm is surfaced as the GOVERNED
         // `.pumpAlert` category but with `Severity.critical`. It must survive a maximally hostile config —
-        // category disabled, all-day quiet-hours, huge rate-limit, a snooze in force, and a day past a zero
-        // budget — because critical alarms bypass the budget/quiet-hours. A `.warning` in the SAME config
-        // is suppressed (proving the config is genuinely hostile).
+        // category disabled, a huge rate-limit, a snooze in force, and a day past a zero budget — because
+        // critical alarms bypass the budget/rate-limit. A `.warning` in the SAME config is suppressed
+        // (proving the config is genuinely hostile).
         let settings: [C: B.CategorySettings] = [
-            .pumpAlert: B.CategorySettings(
-                enabled: false, quietStartMinuteOfDay: 0, quietEndMinuteOfDay: 1, minIntervalSeconds: 99_999)
+            .pumpAlert: B.CategorySettings(enabled: false, minIntervalSeconds: 99_999)
         ]
         var state = B.State(
             lastDeliveredAt: ["pumpAlert": at(3, 0)],
@@ -347,7 +329,7 @@ import Foundation
         let budget = B.Budget(dailyTotal: 0)
         let crit = B.decide(
             criticalAlarm(), settings: settings, state: state, budget: budget, now: at(3, 30), calendar: cal)
-        #expect(crit.deliver, "a CRITICAL pump alarm must not be droppable by disable/snooze/quiet-hours/rate/budget")
+        #expect(crit.deliver, "a CRITICAL pump alarm must not be droppable by disable/snooze/rate/budget")
         #expect(crit.nextState.deliveredToday == 1000, "still recorded")
         let warn = B.Message(category: .pumpAlert, severity: .warning, title: "t", body: "b", dedupeKey: "occ")
         #expect(
@@ -363,8 +345,7 @@ import Foundation
         let budget = B.Budget(dailyTotal: 0)
         let settingsOff: [C: B.CategorySettings] = [
             .pumpAlert: B.CategorySettings(
-                enabled: false, quietStartMinuteOfDay: 0, quietEndMinuteOfDay: 1, minIntervalSeconds: 99_999,
-                allowCriticalBreakthrough: false)
+                enabled: false, minIntervalSeconds: 99_999, allowCriticalBreakthrough: false)
         ]
         let off = B.decide(
             criticalAlarm(), settings: settingsOff, state: hostileState, budget: budget,
@@ -374,8 +355,7 @@ import Foundation
         // Same hostile config but break-through ON preserves today's bypass behavior unchanged.
         let settingsOn: [C: B.CategorySettings] = [
             .pumpAlert: B.CategorySettings(
-                enabled: false, quietStartMinuteOfDay: 0, quietEndMinuteOfDay: 1, minIntervalSeconds: 99_999,
-                allowCriticalBreakthrough: true)
+                enabled: false, minIntervalSeconds: 99_999, allowCriticalBreakthrough: true)
         ]
         let on = B.decide(
             criticalAlarm(), settings: settingsOn, state: hostileState, budget: budget,
@@ -404,13 +384,10 @@ import Foundation
             snoozedUntil: ["pumpAlert": at(9, 0)])
         let s2 = try JSONDecoder().decode(B.State.self, from: JSONEncoder().encode(state))
         #expect(s2 == state)
-        let cfg = B.CategorySettings(
-            enabled: true, quietStartMinuteOfDay: 1320, quietEndMinuteOfDay: 420, minIntervalSeconds: 300)
+        let cfg = B.CategorySettings(enabled: true, minIntervalSeconds: 300)
         #expect((try JSONDecoder().decode(B.CategorySettings.self, from: JSONEncoder().encode(cfg))) == cfg)
         // Non-default allowCriticalBreakthrough round-trips too.
-        let cfg2 = B.CategorySettings(
-            enabled: true, quietStartMinuteOfDay: 1320, quietEndMinuteOfDay: 420,
-            minIntervalSeconds: 300, allowCriticalBreakthrough: false)
+        let cfg2 = B.CategorySettings(enabled: true, minIntervalSeconds: 300, allowCriticalBreakthrough: false)
         #expect((try JSONDecoder().decode(B.CategorySettings.self, from: JSONEncoder().encode(cfg2))) == cfg2)
         let budget = B.Budget(dailyTotal: 40, dailyMeal: 6)
         #expect((try JSONDecoder().decode(B.Budget.self, from: JSONEncoder().encode(budget))) == budget)
@@ -420,8 +397,10 @@ import Foundation
         #expect(
             (try JSONDecoder().decode(B.CategorySettings.self, from: JSONEncoder().encode(cfg3)))
                 .userAcknowledgedSafetyDisable == true)
-        // …AND a pre-this-field blob (missing the new key entirely) decodes with the ack field
-        // defaulting to nil — a missing key must never fail the whole decode.
+        // …AND a pre-this-field, pre-quiet-hours-removal blob (still carrying the now-deleted
+        // `quietStartMinuteOfDay`/`quietEndMinuteOfDay` keys AND missing the ack key entirely) still
+        // decodes — the now-unrecognized keys are silently ignored (synthesized `Decodable` never
+        // fails on an EXTRA key, only a missing non-optional one), and the ack field defaults to nil.
         let preFieldJSON = """
             {"enabled":true,"quietStartMinuteOfDay":0,"quietEndMinuteOfDay":0,"minIntervalSeconds":0,"allowCriticalBreakthrough":true}
             """.data(using: .utf8)!

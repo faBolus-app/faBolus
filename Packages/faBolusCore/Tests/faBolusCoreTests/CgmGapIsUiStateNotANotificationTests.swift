@@ -69,7 +69,7 @@ import Foundation
         #expect(C.urgentLowGlucose.deliversAsNotification)
         let hostile = Dictionary(
             uniqueKeysWithValues: C.allCases.map {
-                ($0, B.CategorySettings(enabled: false, quietStartMinuteOfDay: 0, quietEndMinuteOfDay: 1439))
+                ($0, B.CategorySettings(enabled: false))
             })
         let d = B.decide(
             msg(.urgentLowGlucose, severity: .critical), settings: hostile,
@@ -98,7 +98,7 @@ import Foundation
     @Test func everyOtherNeverSuppressibleCategoryStillAlwaysDelivers() {
         let hostile = Dictionary(
             uniqueKeysWithValues: C.allCases.map {
-                ($0, B.CategorySettings(enabled: false, quietStartMinuteOfDay: 0, quietEndMinuteOfDay: 1439))
+                ($0, B.CategorySettings(enabled: false))
             })
         var delivered: Set<String> = []
         for c in C.allCases where c.neverSuppressible && c.deliversAsNotification {

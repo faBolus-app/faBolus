@@ -60,8 +60,8 @@ struct NotificationSettingsView: View {
     static func breakThroughCaption(enabled: Bool, allow: Bool) -> String {
         guard enabled else { return "Off — category is disabled, so break-through has no effect." }
         return allow
-            ? "On — this category's urgent/critical alerts always break through quiet hours and limits."
-            : "Off — this category's urgent/critical alerts follow the normal quiet-hours/limit rules below."
+            ? "On — this category's urgent/critical alerts always break through Do Not Disturb and limits."
+            : "Off — this category's urgent/critical alerts follow the normal enabled/limit rules below."
     }
 
     /// Silence-pump-alarms caption: non-nil only when the pump master is off (row has no effect).
@@ -89,60 +89,6 @@ struct NotificationSettingsView: View {
                 updateCategorySettings(cfg, for: category)
             }
         )
-    }
-
-    /// Whether `category` has an active quiet-hours window (`start != end`, per
-    /// `CategorySettings.inQuietHours`'s own "equal ⇒ no window" convention).
-    private func quietHoursEnabledBinding(for category: NotificationBroker.Category) -> Binding<Bool> {
-        Binding(
-            get: {
-                let cfg = categorySettings[category] ?? .defaults(for: category)
-                return cfg.quietStartMinuteOfDay != cfg.quietEndMinuteOfDay
-            },
-            set: { on in
-                var cfg = categorySettings[category] ?? .defaults(for: category)
-                if on {
-                    // start==end is "no window"; seed overnight so the toggle isn't a silent no-op.
-                    if cfg.quietStartMinuteOfDay == cfg.quietEndMinuteOfDay {
-                        cfg.quietStartMinuteOfDay = 22 * 60
-                        cfg.quietEndMinuteOfDay = 7 * 60
-                    }
-                } else {
-                    cfg.quietStartMinuteOfDay = 0
-                    cfg.quietEndMinuteOfDay = 0
-                }
-                updateCategorySettings(cfg, for: category)
-            }
-        )
-    }
-
-    // DatePicker <-> minute-of-day plumbing (mirrors AlertRuleEditorView's startBinding/endBinding).
-    private func quietStartBinding(for category: NotificationBroker.Category) -> Binding<Date> {
-        Binding(
-            get: { Self.date(fromMinute: categorySettings[category]?.quietStartMinuteOfDay ?? 0) },
-            set: { date in
-                var cfg = categorySettings[category] ?? .defaults(for: category)
-                cfg.quietStartMinuteOfDay = Self.minute(from: date)
-                updateCategorySettings(cfg, for: category)
-            }
-        )
-    }
-    private func quietEndBinding(for category: NotificationBroker.Category) -> Binding<Date> {
-        Binding(
-            get: { Self.date(fromMinute: categorySettings[category]?.quietEndMinuteOfDay ?? 0) },
-            set: { date in
-                var cfg = categorySettings[category] ?? .defaults(for: category)
-                cfg.quietEndMinuteOfDay = Self.minute(from: date)
-                updateCategorySettings(cfg, for: category)
-            }
-        )
-    }
-    private static func date(fromMinute m: Int) -> Date {
-        Calendar.current.date(bySettingHour: m / 60, minute: m % 60, second: 0, of: Date()) ?? Date()
-    }
-    private static func minute(from d: Date) -> Int {
-        let c = Calendar.current.dateComponents([.hour, .minute], from: d)
-        return (c.hour ?? 0) * 60 + (c.minute ?? 0)
     }
 
     /// Confirm on turning break-through OFF (safety-reducing), unlike other `guardedToggle` sites
@@ -223,7 +169,7 @@ struct NotificationSettingsView: View {
     private func safetyEffectiveStateCaptionText(for category: NotificationBroker.Category) -> String {
         Self.trioIsSuppressed(cfg: categorySettings[category])
             ? "⚠ Off — you turned off this safety protection."
-            : "On — always delivered, even during quiet hours or Do Not Disturb."
+            : "On — always delivered, even during Do Not Disturb."
     }
 
     /// Mirrors `NotificationBroker.decide()`'s trio AND-gate (`!enabled && ack == true`) so the
@@ -298,7 +244,7 @@ struct NotificationSettingsView: View {
         } message: {
             if let category = breakThroughOffCategory {
                 Text(
-                    "\(category.label)'s urgent/critical alerts will follow your normal enabled/quiet-hours/rate-limit settings instead of always breaking through. You can turn this back on anytime."
+                    "\(category.label)'s urgent/critical alerts will follow your normal enabled/rate-limit settings instead of always breaking through. You can turn this back on anytime."
                 )
             }
         }
@@ -321,19 +267,19 @@ struct NotificationSettingsView: View {
             switch safetyDisableOffCategory {
             case .pumpDisconnect:
                 Text(
-                    "If your pump disconnects, faBolus will no longer alert you — including during quiet hours or Do Not Disturb. You may not notice a lost connection until you check the app yourself. You can turn this back on anytime."
+                    "If your pump disconnects, faBolus will no longer alert you — including during Do Not Disturb. You may not notice a lost connection until you check the app yourself. You can turn this back on anytime."
                 )
             case .cgmDataLoss:
                 Text(
-                    "If faBolus stops receiving CGM data, you will no longer be alerted — including during quiet hours or Do Not Disturb. You could miss a sensor failure or an extended gap in your glucose readings. You can turn this back on anytime."
+                    "If faBolus stops receiving CGM data, you will no longer be alerted — including during Do Not Disturb. You could miss a sensor failure or an extended gap in your glucose readings. You can turn this back on anytime."
                 )
             case .bolusReconciliation:
                 Text(
-                    "faBolus will no longer alert you with the final, authoritative result of a bolus (including an indeterminate delivery that resolves later) — including during quiet hours or Do Not Disturb. You may not learn whether insulin was actually delivered until you check the app yourself. You can turn this back on anytime."
+                    "faBolus will no longer alert you with the final, authoritative result of a bolus (including an indeterminate delivery that resolves later) — including during Do Not Disturb. You may not learn whether insulin was actually delivered until you check the app yourself. You can turn this back on anytime."
                 )
             case .urgentLowGlucose:
                 Text(
-                    "faBolus will no longer sound its backup urgent-low-glucose alarm — the safety net that fires when your pump's CGM feed goes stale and a backup source (e.g. Dexcom Share) reports a dangerously low reading — including during quiet hours or Do Not Disturb. This is separate from the \"CGM data loss\" alert; turning it off means a low caught only by the backup feed may reach you silently or not at all. You can turn this back on anytime."
+                    "faBolus will no longer sound its backup urgent-low-glucose alarm — the safety net that fires when your pump's CGM feed goes stale and a backup source (e.g. Dexcom Share) reports a dangerously low reading — including during Do Not Disturb. This is separate from the \"CGM data loss\" alert; turning it off means a low caught only by the backup feed may reach you silently or not at all. You can turn this back on anytime."
                 )
             default:
                 EmptyView()
@@ -351,14 +297,6 @@ struct NotificationSettingsView: View {
             enabled: masterOn, allow: categorySettings[.pumpAlert]?.allowCriticalBreakthrough ?? true)
         return Section {
             Toggle(NotificationBroker.Category.pumpAlert.label, isOn: enabledBinding(for: .pumpAlert))
-            Toggle("Quiet hours", isOn: quietHoursEnabledBinding(for: .pumpAlert))
-                .disabled(!masterOn)
-            if quietHoursEnabledBinding(for: .pumpAlert).wrappedValue {
-                DatePicker("From", selection: quietStartBinding(for: .pumpAlert), displayedComponents: .hourAndMinute)
-                    .disabled(!masterOn)
-                DatePicker("To", selection: quietEndBinding(for: .pumpAlert), displayedComponents: .hourAndMinute)
-                    .disabled(!masterOn)
-            }
             VStack(alignment: .leading, spacing: 2) {
                 Toggle("Allow critical break-through", isOn: breakThroughBinding(for: .pumpAlert))
                     .disabled(!masterOn)
@@ -408,7 +346,7 @@ struct NotificationSettingsView: View {
             Text("Interruption Strength")
         } footer: {
             Text(
-                "Lets faBolus's safety alerts (pump disconnected, CGM data lost, unresolved bolus) alert even when your phone is on silent or Do Not Disturb, where your phone and this build support it. The per-category \"Allow critical break-through\" toggles below control whether an OTHER category's urgent/critical alerts also bypass your quiet hours and limits — the safety alerts above are never affected by those toggles."
+                "Lets faBolus's safety alerts (pump disconnected, CGM data lost, unresolved bolus) alert even when your phone is on silent or Do Not Disturb, where your phone and this build support it. The per-category \"Allow critical break-through\" toggles below control whether an OTHER category's urgent/critical alerts also bypass your limits — the safety alerts above are never affected by those toggles."
             )
         }
     }
@@ -428,12 +366,12 @@ struct NotificationSettingsView: View {
             Text("Safety alerts")
         } footer: {
             Text(
-                "Pump disconnected, CGM data loss, and bolus result reach you even during quiet hours, Do Not Disturb, or a full daily budget — unless you explicitly turn one off above."
+                "Pump disconnected, CGM data loss, and bolus result reach you even during Do Not Disturb or a full daily budget — unless you explicitly turn one off above."
             )
         }
     }
 
-    /// One section per tunable (non-trio) category — enable, quiet hours, confirm-gated OFF break-through.
+    /// One section per tunable (non-trio) category — enable, confirm-gated OFF break-through.
     @ViewBuilder
     private func categorySection(for category: NotificationBroker.Category) -> some View {
         // Master enable greys every member via native `.disabled` (never manual opacity).
@@ -442,14 +380,6 @@ struct NotificationSettingsView: View {
             enabled: masterOn, allow: categorySettings[category]?.allowCriticalBreakthrough ?? true)
         Section {
             Toggle("Enabled", isOn: enabledBinding(for: category))
-            Toggle("Quiet hours", isOn: quietHoursEnabledBinding(for: category))
-                .disabled(!masterOn)
-            if quietHoursEnabledBinding(for: category).wrappedValue {
-                DatePicker("From", selection: quietStartBinding(for: category), displayedComponents: .hourAndMinute)
-                    .disabled(!masterOn)
-                DatePicker("To", selection: quietEndBinding(for: category), displayedComponents: .hourAndMinute)
-                    .disabled(!masterOn)
-            }
             VStack(alignment: .leading, spacing: 2) {
                 Toggle("Allow critical break-through", isOn: breakThroughBinding(for: category))
                     .disabled(!masterOn)
@@ -461,7 +391,7 @@ struct NotificationSettingsView: View {
             Text(category.label)
         } footer: {
             Text(
-                "Turning off critical break-through means this category's urgent/critical alerts follow your normal enabled/quiet-hours/rate-limit settings instead of always breaking through."
+                "Turning off critical break-through means this category's urgent/critical alerts follow your normal enabled/rate-limit settings instead of always breaking through."
             )
         }
     }

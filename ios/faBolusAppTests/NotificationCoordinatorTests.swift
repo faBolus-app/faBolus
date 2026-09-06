@@ -5,7 +5,7 @@ import UserNotifications
 @testable import faBolus
 
 /// Pins that safety notification categories still post under a hostile config, that governed
-/// categories honor disable/quiet/snooze, and that each message uses its own dedupeKey. A shared id would collapse distinct remote-bolus rejections onto one banner.
+/// categories honor disable/rate-limit/snooze, and that each message uses its own dedupeKey. A shared id would collapse distinct remote-bolus rejections onto one banner.
 @MainActor
 @Suite(.serialized) struct NotificationCoordinatorTests {
     typealias B = NotificationBroker
@@ -32,9 +32,7 @@ import UserNotifications
             uniqueKeysWithValues: C.allCases.map {
                 (
                     $0,
-                    B.CategorySettings(
-                        enabled: false, quietStartMinuteOfDay: 0, quietEndMinuteOfDay: 1,
-                        minIntervalSeconds: 99_999)
+                    B.CategorySettings(enabled: false, minIntervalSeconds: 99_999)
                 )
             })
         let rt = NotificationRuntime(
@@ -93,19 +91,22 @@ import UserNotifications
         let store = isolatedStore(#function)
         let rt1 = NotificationRuntime(store: store)
         var cfg = rt1.settings[.pumpAlert] ?? .defaults(for: .pumpAlert)
-        // Otherwise-enabled config (enabled stays true) — only quiet-hours + break-through change, so the
-        // suppression below is provably caused by the break-through toggle unmasking quiet-hours governance.
-        cfg.quietStartMinuteOfDay = 0
-        cfg.quietEndMinuteOfDay = 1439
+        // Otherwise-enabled config (enabled stays true) — only the rate limit + break-through change,
+        // so the suppression below is provably caused by the break-through toggle unmasking normal
+        // (rate-limit) governance rather than by the category itself being disabled.
+        cfg.minIntervalSeconds = 99_999
         cfg.allowCriticalBreakthrough = false
         rt1.updateSettings(cfg, for: .pumpAlert)
         let rt2 = NotificationRuntime(store: store)
+        // Seed a recent pumpAlert delivery so the rate limit is actually in force for the critical
+        // post below.
+        _ = NotificationPoster.post(msg(.pumpAlert, key: "seed"), runtime: rt2, now: at(8, 59)) { _ in }
         let critical = B.Message(
             category: .pumpAlert, severity: .critical, title: "Occlusion", body: "b",
             dedupeKey: "occ2")
         let d = NotificationPoster.post(critical, runtime: rt2, now: at(9, 0)) { _ in }
         #expect(
-            !d.deliver && d.reason == .quietHours,
+            !d.deliver && d.reason == .rateLimited,
             "persisted break-through OFF is honored by a fresh runtime + the real poster")
         // A trio post on rt2 still delivers, unaffected by the pumpAlert-only settings mutation.
         let trio = NotificationPoster.post(msg(.pumpDisconnect, key: "trio1"), runtime: rt2, now: at(9, 0)) { _ in }
@@ -320,10 +321,10 @@ import UserNotifications
     @Test func breakThroughCaptionCoversAllThreeEffectiveStateBranches() {
         #expect(
             NotificationSettingsView.breakThroughCaption(enabled: true, allow: true)
-                == "On — this category's urgent/critical alerts always break through quiet hours and limits.")
+                == "On — this category's urgent/critical alerts always break through Do Not Disturb and limits.")
         #expect(
             NotificationSettingsView.breakThroughCaption(enabled: true, allow: false)
-                == "Off — this category's urgent/critical alerts follow the normal quiet-hours/limit rules below.")
+                == "Off — this category's urgent/critical alerts follow the normal enabled/limit rules below.")
         #expect(
             NotificationSettingsView.breakThroughCaption(enabled: false, allow: true)
                 == "Off — category is disabled, so break-through has no effect.")
