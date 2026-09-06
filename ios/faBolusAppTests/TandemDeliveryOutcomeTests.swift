@@ -109,13 +109,13 @@ struct TandemDeliveryOutcomeTests {
     /// Ledger half — end-to-end through the durable ledger (`AppModel` over the REAL
     /// `TandemBackend`, driven by the deterministic `FakePumpTransport`): a CRC-valid, matching-bolus-id,
     /// non-accepted (forged/garbled) `InitiateBolusResponse` must settle the ledgered delivery as
-    /// INDETERMINATE and keep the GLOBAL unresolved-delivery block HELD — never release it as a clean
+    /// INDETERMINATE and surface the non-blocking inline disclosure — never release it as a clean
     /// `.failed`. Placed here (not in the LedgerFault/BlockPrecedence suites) because those drive
     /// `MockBackend`, which cannot emit a signed NACK frame; only this suite has the `FakePumpTransport`
     /// NACK-scripting machinery. It reuses the ledger idiom from those suites: `withCleanSettings`,
-    /// `R3CLedgerFaultTests.FakeLedgerStore`, and the `deliveryGloballyBlocked`/`deliveryBlockedReason`
-    /// public surface (the `computeDeliveryBlockReason() != nil` equivalent).
-    @Test func unauthenticatedInitiateNackHoldsTheGlobalLedgerBlock() async {
+    /// `R3CLedgerFaultTests.FakeLedgerStore`, and the `deliveryGloballyBlocked`/`unconfirmedDeliveryDisclosure`
+    /// public surface.
+    @Test func unauthenticatedInitiateNackSurfacesTheIndeterminateDisclosure() async {
         await withCleanSettings {
             let fake = FakePumpTransport()
             let backend = TandemBackend(testTransport: fake)
@@ -129,9 +129,12 @@ struct TandemDeliveryOutcomeTests {
             // The ledgered outcome is .indeterminate (surfaced as the verify-on-pump message) — a .failed
             // outcome would carry the error's own message AND release the block instead.
             #expect(model.lastError == "Bolus sent but outcome is unknown — verify on the pump before retrying.")
-            // …and the GLOBAL block stays HELD; only authoritative reconciliation clears it.
-            #expect(model.deliveryGloballyBlocked)
-            #expect(model.deliveryBlockedReason != nil)
+            // …and the genuinely-unresolved outcome surfaces as the non-blocking inline disclosure (a clean
+            // .failed would carry the error's message and disclose nothing). The backend's own in-session
+            // unknown-outcome layer still refuses the next attempt; the durable stale block is gone.
+            #expect(!model.deliveryGloballyBlocked)
+            #expect(model.unconfirmedDeliveryDisclosure != nil)
+            #expect(model.deliveryBlockedReason == nil)
         }
     }
 

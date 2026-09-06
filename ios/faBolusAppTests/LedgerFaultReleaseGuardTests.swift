@@ -88,10 +88,14 @@ struct LedgerFaultReleaseGuardTests {
             let backend = MockBackend()
             await backend.connect()  // no reconcileResultsById[4242] ⇒ .unavailable
             let model = AppModel(source: backend, ledgerStore: store)
-            #expect(model.deliveryGloballyBlocked)  // blocked on load by the still-unresolved entry
+            // The still-unresolved entry no longer durably blocks on load — it is disclosed inline.
+            #expect(!model.deliveryGloballyBlocked)
+            #expect(model.unconfirmedDeliveryDisclosure != nil)
 
             model.clearDeliveryBlockAfterVerification()
-            #expect(model.deliveryGloballyBlocked)  // retained, not released
+            // The clear's save throws ⇒ terminalSaveFailed is SET and THAT fault layer blocks (never
+            // released on an unsaved "verified clean" state).
+            #expect(model.deliveryGloballyBlocked)  // retained via terminalSaveFailed, not released
             #expect(model.deliveryBlockedReason == Self.terminalSaveFailedMessage)
         }
     }
@@ -109,10 +113,14 @@ struct LedgerFaultReleaseGuardTests {
             let backend = MockBackend()
             await backend.connect()
             let model = AppModel(source: backend, ledgerStore: store)
-            #expect(model.deliveryGloballyBlocked)
+            // The unresolved entry is disclosed inline, not durably blocked, on load.
+            #expect(!model.deliveryGloballyBlocked)
+            #expect(model.unconfirmedDeliveryDisclosure != nil)
 
             model.clearDeliveryBlockAfterVerification()
+            // A clean save settles every unresolved entry, so the disclosure clears and nothing blocks.
             #expect(!model.deliveryGloballyBlocked)
+            #expect(model.unconfirmedDeliveryDisclosure == nil)
             #expect(model.deliveryBlockedReason == nil)
         }
     }

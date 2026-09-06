@@ -25,7 +25,11 @@ import faBolusCore
         try RemoteBolusLedgerStore(url: url).save(seed)
 
         let model = AppModel(source: MockBackend(), ledgerStoreURL: url)
-        #expect(model.deliveryGloballyBlocked)  // the seeded unresolved entry blocks delivery synchronously
+        // A seeded genuinely-unresolved entry (no delivery in flight) no longer GLOBALLY blocks delivery —
+        // it feeds the non-blocking inline disclosure instead. Erase must STILL refuse over it, via the
+        // re-based refusal gate that reads the unreconciled set directly.
+        #expect(!model.deliveryGloballyBlocked)
+        #expect(model.unconfirmedDeliveryDisclosure != nil)
 
         let outcome = model.eraseAllOnDeviceHealthData()
         guard case .refused = outcome else {
@@ -92,7 +96,9 @@ import faBolusCore
         try RemoteBolusLedgerStore(url: url).save(seed)
 
         let model = AppModel(source: MockBackend(), ledgerStoreURL: url)
-        #expect(model.deliveryGloballyBlocked)
+        // The seeded unresolved entry no longer GLOBALLY blocks (disclosure carries it); the full reset
+        // must STILL refuse over it via the same re-based refusal gate erase uses.
+        #expect(!model.deliveryGloballyBlocked)
 
         model.settingChangeStore = StoredSettingChangeStore(url: dir.appendingPathComponent("scl.json"))
         model.settingChangeStore.record(

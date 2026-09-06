@@ -167,11 +167,12 @@ struct R3CLedgerFaultTests {
             // transport's scripted drop, same as a real remote delivery.
             await model.remoteDeliver(requestId: "f6", units: 2.0, peerId: "watch")
             #expect(backend.deliveryOutcomeUnknown)  // the indeterminate exit set the in-memory flag
-            #expect(model.deliveryGloballyBlocked)  // …and the durable ledger block too
+            #expect(model.unconfirmedDeliveryDisclosure != nil)  // …and the durable-block-replacing disclosure
 
             model.clearDeliveryBlockAfterVerification()
 
-            #expect(!backend.deliveryOutcomeUnknown)  // both layers released together
+            #expect(!backend.deliveryOutcomeUnknown)  // the in-session layer released…
+            #expect(model.unconfirmedDeliveryDisclosure == nil)  // …and the unresolved entry settled, disclosure gone
             #expect(!model.deliveryGloballyBlocked)
         }
     }

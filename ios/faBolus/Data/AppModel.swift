@@ -1189,9 +1189,14 @@ public final class AppModel {
         // immediately after merge and before the safety edges — NOT at the later façade mirrors below, which
         // would put `facadeAssign` after the safety-edge tags and break the recorded top-level order.
         refreshEffectOrderRecorderForTesting?("facadeAssign")
-        // On a fresh connect, reconcile any unresolved delivery against the pump so the global block
-        // can release once the outcome is authoritatively known.
-        if previousConnection != .connected, snap.connection == .connected, deliveryBlockedReason != nil {
+        // On a fresh connect, reconcile any unresolved delivery against the pump so its outcome becomes
+        // authoritatively known (and any surviving block/disclosure clears). Edge-gated on the
+        // disconnect→connect transition, so it fires at most once per connect. Keyed on the unreconciled
+        // set — NOT the block reason — because a genuinely-unresolved entry no longer sets a block, and
+        // this reconcile is the automation that justifies dropping that block; leaving it on the block
+        // reason would silently stop it for exactly the case it exists to resolve.
+        if previousConnection != .connected, snap.connection == .connected,
+            deliveryLedgerCoordinator.hasUnresolvedDelivery {
             Task { @MainActor [weak self] in await self?.reconcileUnresolvedDeliveries() }
         }
         // Capture the four PRE-assignment bookkeeping values, compute the source-derived facts the

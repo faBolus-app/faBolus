@@ -46,16 +46,18 @@ struct DeliveryLedgerCoordinatorTests {
     // MARK: - The `.unavailable` reconcile arm (id-bearing, pump can't confirm it)
 
     /// An id-bearing entry the pump cannot resolve (`reconcile(bolusId:)` → `.unavailable`) must disclose a
-    /// durable `.bolusIndeterminate` keyed on the reconcile family — and stay blocked. Before this the arm
-    /// only recorded telemetry and stayed blocked with no notification at all.
-    @Test func unavailableArmPostsADurableUnknownOutcomeNotificationAndKeepsTheBlockOn() async {
+    /// durable `.bolusIndeterminate` keyed on the reconcile family — and surface the inline disclosure.
+    /// Before this the arm only recorded telemetry with no notification at all.
+    @Test func unavailableArmPostsADurableUnknownOutcomeNotificationAndDisclosesInline() async {
         await withCleanSettings {
             let backend = MockBackend()
             await backend.connect()
             backend.forceIndeterminateNextDelivery = true  // no reconcileResultsById ⇒ reconcile → .unavailable
             let model = AppModel(source: backend, ledgerStoreURL: tempLedgerURL())
             await model.remoteDeliver(requestId: "unavail-1", units: 1.0, peerId: "watch")
-            #expect(model.deliveryGloballyBlocked)  // an id-bearing indeterminate entry blocks
+            // An id-bearing indeterminate entry is no longer a durable block — it is disclosed inline.
+            #expect(!model.deliveryGloballyBlocked)
+            #expect(model.unconfirmedDeliveryDisclosure != nil)
 
             // Capture ONLY the reconcile-pass post (the send-time indeterminate-* post already happened).
             var posted: [NotificationBroker.Message] = []
@@ -68,16 +70,19 @@ struct DeliveryLedgerCoordinatorTests {
             }
             #expect(disclosures.count >= 1, "the .unavailable arm must disclose the unknown outcome")
             #expect(disclosures.first?.dedupeKey == "reconcile-watch-unavail-1")
-            #expect(model.deliveryGloballyBlocked, "a genuinely-unresolved state stays blocked")
+            #expect(
+                model.unconfirmedDeliveryDisclosure != nil,
+                "a genuinely-unresolved state stays disclosed (no longer a durable block)")
         }
     }
 
     // MARK: - The sent-but-no-id arm (sentToPump == true, no bolusId)
 
     /// A ledger entry that is `sentToPump == true` yet carries no `bolusId` (the rare interrupted-mid-commit
-    /// record) must ALSO disclose rather than `continue` silently, keyed on the reconcile family, and stay
-    /// blocked. Seeded via a hand-crafted ledger blob because no public mutator produces that exact phase.
-    @Test func sentButNoIdArmPostsADurableUnknownOutcomeNotificationAndKeepsTheBlockOn() async {
+    /// record) must ALSO disclose rather than `continue` silently, keyed on the reconcile family, and
+    /// surface the inline disclosure. Seeded via a hand-crafted ledger blob because no public mutator
+    /// produces that exact phase.
+    @Test func sentButNoIdArmPostsADurableUnknownOutcomeNotificationAndDisclosesInline() async {
         await withCleanSettings {
             // `key(peerId, requestId)` joins the two with U+001F; JSON-escape it so the decoded dict key
             // matches the ledger's own composite key exactly.
@@ -104,7 +109,9 @@ struct DeliveryLedgerCoordinatorTests {
             }
             #expect(disclosures.count >= 1, "the sent-but-no-id arm must disclose the unknown outcome")
             #expect(disclosures.first?.dedupeKey == "reconcile-watch-noid-1")
-            #expect(model.deliveryGloballyBlocked, "the sent-but-no-id entry stays blocked")
+            #expect(
+                model.unconfirmedDeliveryDisclosure != nil,
+                "the sent-but-no-id entry stays disclosed (no longer a durable block)")
         }
     }
 

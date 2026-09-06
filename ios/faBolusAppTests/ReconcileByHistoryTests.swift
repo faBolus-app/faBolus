@@ -667,7 +667,7 @@ struct ReconcileByHistoryTests {
             model.periodicReconcileIntervalOverrideForTesting = 0.05
             // The edge trigger every real launch/reconnect already makes — arms the driver.
             await model.reconcileUnresolvedDeliveries()
-            #expect(model.deliveryGloballyBlocked)  // still unavailable — stays unresolved
+            #expect(model.unconfirmedDeliveryDisclosure != nil)  // still unavailable — stays unresolved (disclosed)
             try? await Task.sleep(nanoseconds: 300_000_000)
             #expect(
                 model.periodicReconcileCallCountForTesting >= 1,

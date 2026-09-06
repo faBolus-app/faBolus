@@ -289,10 +289,14 @@ final class DeliveryLedgerCoordinator {
     /// A read-only snapshot of the ledger for the unified privacy-data export. Pure read.
     var currentLedgerSnapshot: RemoteBolusLedger { remoteBolusLedger }
 
-    /// True while a delivery is in flight or the global block is set — used by callers (pump-switch
-    /// handling) that must DEFER rather than disturb ledger/snapshot state a crash-recovery reconcile
-    /// still needs. No message; see `eraseRefusalReason()` for the erase path's own worded refusal.
-    var hasInFlightOrUnresolvedDelivery: Bool { inFlightDeliveryKey != nil || computeDeliveryBlockReason() != nil }
+    /// True while a delivery is in flight or ANY ledger entry is still unresolved — used by callers
+    /// (pump-switch handling) that must DEFER rather than disturb ledger/snapshot state a crash-recovery
+    /// reconcile still needs. Reads the unreconciled set directly (not the delivery block) so it keeps
+    /// firing on an unresolved entry now that a genuinely-unresolved entry no longer sets the block.
+    /// No message; see `eraseRefusalReason()` for the erase path's own worded refusal.
+    var hasInFlightOrUnresolvedDelivery: Bool {
+        inFlightDeliveryKey != nil || !remoteBolusLedger.unreconciled().isEmpty
+    }
 
     /// Whether the given (peer, requestId) already reached a terminal outcome (used by
     /// `presentRemoteBolus` to ignore a duplicate/already-handled remote request).
@@ -331,10 +335,13 @@ final class DeliveryLedgerCoordinator {
         if inFlightDeliveryKey != nil {
             return "A bolus is being delivered right now. Wait for it to finish, then try again."
         }
-        if let reason = computeDeliveryBlockReason() {
-            return "Can't erase while a delivery is unresolved — this data is needed to reconcile it. \(reason)"
-        }
-        return nil
+        // Read the unreconciled set directly (not the delivery block) so erase still refuses over a
+        // genuinely-unresolved entry now that such an entry no longer sets the block. When a block
+        // reason IS present (a pump-mismatch or a ledger fault), append it for the richer explanation.
+        guard !remoteBolusLedger.unreconciled().isEmpty else { return nil }
+        let detail = computeDeliveryBlockReason()
+            ?? "Check the pump/t:connect for any unconfirmed bolus before dosing again."
+        return "Can't erase while a delivery is unresolved — this data is needed to reconcile it. \(detail)"
     }
 
     /// Reset the ledger audit trail to fresh/empty, persisted durably (best-effort — the caller has
