@@ -14,6 +14,13 @@ public protocol PumpBackend: AnyObject {
     /// What this backend supports, so the UI adapts (carbs mode, cancel, alerts, pairing).
     var capabilities: PumpCapabilities { get }
     var snapshot: PumpSnapshot { get }
+    /// The backend's LIVE, age-pruned flap-storm-window fact, read fresh each host heartbeat. Distinct from
+    /// `snapshot.pumpLinkFlapWindowActive` (a stored field the backend only writes at a BLE transition, so
+    /// it never decays on a steady link): this getter re-evaluates the rolling window as of now, so a
+    /// stabilised link decays it to `false` once a full quiet window has elapsed. The host re-publishes it
+    /// onto the per-tick snapshot so the effects tail can withdraw a stale "can't hold a connection" alert.
+    /// Default `false` — a backend with no flap detector (mocks, community backends) never raised one.
+    var pumpLinkFlapWindowActive: Bool { get }
     var glucoseHistory: [GlucoseReading] { get }
     /// IOB over time + delivered-bolus markers, for the chart's insulin overlay.
     var iobHistory: [IOBSample] { get }
@@ -261,6 +268,8 @@ public enum BolusReconciliation: Sendable, Equatable {
 
 public extension PumpBackend {
     var historyEvents: [HistoryEvent] { [] }
+    /// Default: a backend with no connection-flap detector never has a flap window open.
+    var pumpLinkFlapWindowActive: Bool { false }
     /// Default: a conformer with no local-snooze concept reports its filtered set as
     /// the always-known raw truth — see the protocol requirement's doc comment for the fail-open caveat
     /// a backend that DOES locally filter must heed by overriding this.

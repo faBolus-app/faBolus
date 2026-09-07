@@ -879,14 +879,14 @@ struct ConnectionFlapDetector: Equatable {
     /// via `escalated`) when the count reaches `threshold` within the window — so a sustained storm raises
     /// the alarm a single time, not on every subsequent cycle.
     ///
-    /// The latch is released HERE, by the passage of time, and nowhere else on the live path: when the
-    /// prune leaves the window EMPTY the link held a full `window` without a single flap, so the previous
-    /// storm is over and this flap opens a fresh one. Releasing by decay rather than on the owner's
-    /// reconnect is deliberate and load-bearing — a reconnect is the SECOND HALF of every flap cycle, so an
-    /// owner that cleared the window on reconnect (which `markUsableAndStartPolling()` used to do) left
-    /// exactly one clear between any two `recordFlap` calls, capped the count at 1 against a `threshold` of
-    /// 5, and made escalation unreachable. Nothing the owner does — or forgets to do — can defeat the
-    /// arithmetic now.
+    /// The latch is released by the passage of time — on WRITE here (this prune) and on READ via
+    /// `hasActiveWindow(at:)` — and nowhere else on the live path: when the prune leaves the window EMPTY
+    /// the link held a full `window` without a single flap, so the previous storm is over and this flap
+    /// opens a fresh one. Releasing by decay rather than on the owner's reconnect is deliberate and
+    /// load-bearing — a reconnect is the SECOND HALF of every flap cycle, so an owner that cleared the
+    /// window on reconnect (which `markUsableAndStartPolling()` used to do) left exactly one clear between
+    /// any two `recordFlap` calls, capped the count at 1 against a `threshold` of 5, and made escalation
+    /// unreachable. Nothing the owner does — or forgets to do — can defeat the arithmetic now.
     mutating func recordFlap(at: Date) -> Bool {
         let cutoff = at.addingTimeInterval(-Self.window)
         flapTimes.removeAll { $0 < cutoff }
@@ -898,6 +898,16 @@ struct ConnectionFlapDetector: Equatable {
         return true
     }
 
+    /// Pure, NON-mutating age check: whether any recorded flap still falls within `[at - window, at]`. This
+    /// lets the window decay on READ, so a stabilised link that has held a full quiet `window` reads
+    /// `false` here WITHOUT needing a `recordFlap` call to prune it — which is what lets the owner withdraw
+    /// the "can't hold a connection" alert on a steady heartbeat rather than only on a reconnect edge.
+    /// Boundary-inclusive, matching `recordFlap`'s prune cutoff (a flap exactly `window` old is still in).
+    func hasActiveWindow(at: Date) -> Bool {
+        let cutoff = at.addingTimeInterval(-Self.window)
+        return flapTimes.contains { $0 >= cutoff }
+    }
+
     /// Unconditional teardown of the window AND the latch, for an owner abandoning this link's flap history
     /// outright. Returns whether it had been escalated, so such an owner can withdraw the alarm only when
     /// there was one to withdraw. Its ONE production caller is the pump-IDENTITY-change branch of
@@ -907,8 +917,10 @@ struct ConnectionFlapDetector: Equatable {
     ///
     /// **NOT the recovery path, and it must never be called from one.** Every flap cycle ENDS in a
     /// reconnect, so clearing the window there is what shipped this detector inert. A genuine recovery needs
-    /// no call at all: the window (and with it the latch) decays by age in `recordFlap`, and the
-    /// user-visible alert is withdrawn on the `.clear` connection edge in `RefreshEffectsCoordinator`.
+    /// no call at all: the window (and with it the latch) decays by age — on write in `recordFlap` and on
+    /// read in `hasActiveWindow(at:)` — and the user-visible alert is withdrawn by
+    /// `RefreshEffectsCoordinator` once the window has aged out, on a steady connected heartbeat (not only
+    /// on a reconnect edge).
     @discardableResult
     mutating func reset() -> Bool {
         let was = escalated

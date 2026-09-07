@@ -1179,10 +1179,16 @@ public final class AppModel {
         // Tell the source whether the primary is healthy so cloud pollers throttle (battery-aware).
         let pumpFresh = source.snapshot.glucose != nil && !GlucoseFreshness.isStale(source.snapshot.glucoseDate)
         glucoseSource?.setPrimaryHealthy(pumpFresh)
-        let (snap, hist, provenance) = GlucoseArbiter.merge(
+        let (mergedSnap, hist, provenance) = GlucoseArbiter.merge(
             pumpSnapshot: source.snapshot,
             pumpHistory: source.glucoseHistory,
             source: glucoseSource)
+        var snap = mergedSnap
+        // Re-publish the backend's LIVE, age-pruned flap-window fact each heartbeat. The merged snapshot
+        // carries whatever the lifecycle last wrote at a BLE transition, which never decays on a steady
+        // link; reading it fresh here lets the effects tail withdraw a stale "can't hold a connection"
+        // alert once a stabilised link has held a full quiet window. Read-only — no dose/signed state.
+        snap.pumpLinkFlapWindowActive = source.pumpLinkFlapWindowActive
         refreshEffectOrderRecorderForTesting?("merge")
         snapshot = snap
         // Fire the SINGLE `facadeAssign` tag HERE, at the first façade write (`snapshot = snap`),

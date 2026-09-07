@@ -71,6 +71,70 @@ struct ConnectionFlapEscalationTests {
         #expect(reEscalate, "a fresh storm after reset re-escalates")
     }
 
+    // MARK: - Pure age-decay on READ (no recordFlap needed to prune)
+
+    /// The window decays on READ: strictly more than `window` after the last flap, `hasActiveWindow(at:)`
+    /// returns false WITHOUT any intervening `recordFlap` — and it is non-mutating (prunes nothing). This is
+    /// what lets a stabilised link go quiet on a steady heartbeat instead of only on a reconnect edge.
+    @Test func hasActiveWindowDecaysByAgeOnReadWithoutARecordFlapCall() {
+        var d = ConnectionFlapDetector()
+        let t0 = Date()
+        for i in 0..<5 { _ = d.recordFlap(at: t0.addingTimeInterval(Double(i))) }  // last flap at t0+4
+        #expect(d.hasActiveWindow(at: t0.addingTimeInterval(4 + 10)), "inside the window: still active")
+        #expect(
+            d.hasActiveWindow(at: t0.addingTimeInterval(4 + ConnectionFlapDetector.window)),
+            "exactly `window` after the last flap is boundary-inclusive: still active")
+        #expect(
+            !d.hasActiveWindow(at: t0.addingTimeInterval(4 + ConnectionFlapDetector.window + 1)),
+            "strictly more than `window` after the last flap decays to false, with no recordFlap call")
+        #expect(d.flapTimes.count == 5, "hasActiveWindow is non-mutating — it prunes nothing")
+    }
+
+    // MARK: - Withdrawal on a steady CONNECTED heartbeat (not only the reconnect edge)
+
+    /// A still-connected tick (`connectionEdge == .none`, connection `.connected`) with an aged-out window
+    /// withdraws the flap alert; the same tick with the window still active does NOT. Pre-fix the withdrawal
+    /// existed only on the `.clear` edge, so a steady heartbeat never cleared it.
+    @Test func aSteadyConnectedHeartbeatWithdrawsTheFlapAlertOnlyOnceTheWindowHasDecayed() {
+        let decayed = runSteadyConnectedTick(flapWindowActive: false)
+        #expect(
+            decayed.contains(Self.unstableKey),
+            "a steady connected tick with an aged-out window withdraws the pumpConnectionUnstable alert")
+        let active = runSteadyConnectedTick(flapWindowActive: true)
+        #expect(
+            !active.contains(Self.unstableKey),
+            "a steady connected tick with the window still active must NOT withdraw it")
+    }
+
+    /// Runs a steady CONNECTED heartbeat (`.none` connection edge — prev and now both `.connected`) through
+    /// `RefreshEffectsCoordinator` with the given flap-window state and returns the withdrawn dedupe keys.
+    private func runSteadyConnectedTick(flapWindowActive: Bool) -> [String] {
+        let coord = RefreshEffectsCoordinator()
+        var withdrawn: [String] = []
+        coord.withdrawNotifications = { withdrawn.append(contentsOf: $0) }
+        var snap = PumpSnapshot()
+        snap.connection = .connected
+        snap.pumpLinkFlapWindowActive = flapWindowActive
+        coord.performEffects(
+            snapshot: snap,
+            glucoseHistory: [],
+            provenance: .pump,
+            bolusMarkers: [],
+            activeNotifications: [],
+            widgetBolusLocked: false,
+            widgetBolusLockReason: "",
+            cgmFresh: true,
+            urgentLowNow: false,
+            alertsChanged: false,
+            pumpDisconnectKey: Self.disconnectKey,
+            pumpConnectionUnstableKey: Self.unstableKey,
+            cgmDataLossKey: Self.cgmKey,
+            prevConnection: .connected,  // prev == now == .connected ⇒ .none edge (a steady heartbeat)
+            prevGlucoseFresh: true,
+            prevUrgentLowActive: false)
+        return withdrawn
+    }
+
     // MARK: - Wiring: a real flap storm through the backend emits the typed edge
 
     /// Drives `TandemBackend.applyClientState` (which delegates to `PumpConnectionLifecycle`) through five

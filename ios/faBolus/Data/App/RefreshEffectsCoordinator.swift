@@ -72,14 +72,25 @@ final class RefreshEffectsCoordinator {
             onConnectionDropped(snapshot.connectionDetail)  // §5.2.8 telemetry + F7 BLE session-log
         case .clear:
             // `pumpDisconnect` + its escalation steps clear on the reconnect edge. The flap alert is
-            // DIFFERENT: a reconnect is the second half of EVERY flap cycle, so withdrawing it here
-            // silenced a storm after a single notification. Withdraw it only once the flap window has
-            // decayed — after a genuine span of stability, not on the first reconnect.
+            // DIFFERENT: a reconnect is the second half of EVERY flap cycle, so withdrawing it on the edge
+            // silenced a storm after a single notification. It is withdrawn instead on a steady connected
+            // heartbeat once the flap window has aged out (below) — this edge only piggy-backs the withdraw
+            // when the window has already decayed by the time a reconnect lands.
             var toWithdraw = [pumpDisconnectKey] + DisconnectEscalation.stepIds
             if !snapshot.pumpLinkFlapWindowActive { toWithdraw.append(pumpConnectionUnstableKey) }
             withdrawNotifications(toWithdraw)
             onConnectionRestored()
         case .none: break
+        }
+        // Drive the flap-alert withdrawal off a steady CONNECTED heartbeat, not only the reconnect edge:
+        // once a stabilised link has held a full quiet flap window, `pumpLinkFlapWindowActive` has aged out
+        // on read, so withdraw the "can't hold a connection" alert here — banner AND durable replay record
+        // (the withdraw sink routes through the store-purging path). Idempotent: withdrawing an absent key
+        // is a no-op, so this is safe to run every tick. Gated on a live link so a genuine down state never
+        // clears the alert prematurely.
+        let linkIsLive = snapshot.connection == .connected || snapshot.connection == .bolusing
+        if linkIsLive, !snapshot.pumpLinkFlapWindowActive {
+            withdrawNotifications([pumpConnectionUnstableKey])
         }
         // §6 safety: CGM data loss — raised when a previously-fresh feed goes stale/absent; cleared on resume.
         let freshnessEdge = SafetyEdge.freshness(wasFresh: prevGlucoseFresh, isFresh: cgmFresh)

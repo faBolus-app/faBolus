@@ -2288,6 +2288,11 @@ extension TandemBackend: PumpBLEClientDelegate {
         lifecycle.applyClientState(state)
     }
 
+    /// Read-only passthrough of the lifecycle's LIVE, age-pruned flap-storm-window fact, so the host can
+    /// re-publish a decayed value each heartbeat (the stored `snapshot.pumpLinkFlapWindowActive` only
+    /// updates at a BLE transition). Pure read — touches no auth key, delivery lock, or signed/dose state.
+    public var pumpLinkFlapWindowActive: Bool { lifecycle.pumpLinkFlapWindowActive }
+
     /// Shared cleanup for every "the link is genuinely down" state (`applyClientState`'s plain-disconnect
     /// case and `.reconnectExhausted`): resume any in-flight read/signed-flow waiters so nothing hangs,
     /// and re-arm backfill/model-detection for the next connect. Factored out so `.reconnectExhausted`

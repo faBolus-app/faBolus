@@ -315,10 +315,10 @@ final class PumpConnectionLifecycle {
         // `recordFlap` calls, pinned `flapTimes.count` at 1 against a `threshold` of 5, and made
         // escalation unreachable — this detector shipped inert (`2443fd6`) for precisely that reason.
         // A genuine recovery now needs no call at all: the window, and with it the `escalated` latch,
-        // decays by AGE inside `recordFlap`, so the arithmetic cannot be defeated by what this path
-        // does or forgets to do. The user-visible alert is withdrawn on the `.clear` connection edge in
-        // `RefreshEffectsCoordinator`, but ONLY once the flap window (published just above) has decayed —
-        // so a storm's reconnects keep it outstanding instead of clearing it on the first reconnect.
+        // decays by AGE — on write in `recordFlap` and on read via `hasActiveWindow(at:)` — so the
+        // arithmetic cannot be defeated by what this path does or forgets to do. The user-visible alert is
+        // withdrawn by `RefreshEffectsCoordinator` once the flap window has aged out on a steady connected
+        // heartbeat — not on the reconnect itself — so a storm's reconnects keep it outstanding.
         onChange?()
         readScheduler.startPolling()
     }
@@ -329,11 +329,13 @@ final class PumpConnectionLifecycle {
     /// self-decays by age. Force-cleared only on a pump IDENTITY change, in `applyDidDiscover`.
     private var flapDetector = ConnectionFlapDetector()
 
-    /// Whether a flap-storm window is currently open — true while the detector still holds recorded flap
-    /// cycles. Surfaced onto `PumpSnapshot.pumpLinkFlapWindowActive` so the effects tail can gate the
-    /// flap-alert withdraw on it: the alert stays outstanding through a storm's reconnects and is
-    /// withdrawn only once this decays.
-    var pumpLinkFlapWindowActive: Bool { !flapDetector.flapTimes.isEmpty }
+    /// Whether a flap-storm window is currently open — true while any recorded flap cycle still falls
+    /// within the rolling window as of NOW. Age-pruned on read (`hasActiveWindow(at:)`), so on a stabilised
+    /// link it decays to false once a full quiet window has elapsed, even with no further flap to prune it.
+    /// Surfaced onto `PumpSnapshot.pumpLinkFlapWindowActive` (and read live by the backend each heartbeat)
+    /// so the effects tail can gate the flap-alert withdraw on it: the alert stays outstanding through a
+    /// storm's reconnects and is withdrawn only once this decays.
+    var pumpLinkFlapWindowActive: Bool { flapDetector.hasActiveWindow(at: Date()) }
 
     // MARK: - Pairing-handshake watchdog
     //
