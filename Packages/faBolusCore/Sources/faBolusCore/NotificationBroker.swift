@@ -417,28 +417,34 @@ public enum NotificationBroker {
         func deliver() -> Decision { Decision(deliver: true, reason: nil, nextState: record()) }
         func suppress(_ r: SuppressionReason) -> Decision { Decision(deliver: false, reason: r, nextState: s) }
 
+        // A category that surfaces as UI state only never becomes a notification — refused HERE, ahead of
+        // BOTH the resolver and the safety fallback, because "delivers per its cascade" and "always
+        // delivered when uncascaded" are each statements about a category that notifies at all, and this
+        // one does not. Placed as a precondition at the single governed decision point so the refusal
+        // holds for EVERY poster (the app's coordinator, a replayed durable record, an out-of-process
+        // intent) AND every caller — including one that supplies a rule cascade. In production the
+        // safety-set `cgmDataLoss` always carries a cascade (`NotificationCoordinator` builds one for
+        // every safety category), and with the refusal below the resolver a non-Off cascade took the
+        // resolver's deliver path and re-posted the removed per-datum CGM-gap spam; enforcing it first
+        // closes that. `suppress` advances no counter and records no episode, so a silent category can
+        // never consume the budget that gates a genuine `bolusDeliveryFailed`.
+        // Owner decision 2026-08-30 — see `Category.deliversAsNotification` for the accepted residual.
+        if !message.category.deliversAsNotification { return suppress(.uiStateOnly) }
+
         // The unified notification-rules resolver is the SINGLE governed decision point for ANY
         // category once a caller supplies a rule cascade — no parallel inline check alongside it, and
         // no per-category or per-source branch here either — `source` is an attribute and a
-        // cascade scope the CALLER resolves against, never a reason to fork this function. `rules ==
-        // nil` (a caller that did not build a cascade) falls straight through to the settings-driven /
-        // safety-fallback path below. In production every safety-set category IS given a cascade
-        // (`NotificationCoordinator` builds it), so a safety category's ladder Off — aimed OR inherited
-        // from a source/global rule (Amendment B: the cascade reaches safety like everything else) —
-        // resolves here to `.off` and suppresses; nothing is immune-to-cascade by construction.
+        // cascade scope the CALLER resolves against, never a reason to fork this function. By here the
+        // category is one that notifies at all (the UI-state-only refusal is a precondition above).
+        // `rules == nil` (a caller that did not build a cascade) falls straight through to the
+        // settings-driven / safety-fallback path below. In production every safety-set category IS given
+        // a cascade (`NotificationCoordinator` builds it), so a safety category's ladder Off — aimed OR
+        // inherited from a source/global rule (Amendment B: the cascade reaches safety like everything
+        // else) — resolves here to `.off` and suppresses; nothing is immune-to-cascade by construction.
         if let rules {
             let resolved = NotificationRules.resolve(rules, timeSensitiveAvailable: timeSensitiveAvailable)
             return resolved.phone == .off ? suppress(.ruleResolvedOff) : deliver()
         }
-
-        // A category that surfaces as UI state only never becomes a notification — checked ABOVE the
-        // safety fallback, because "always delivered" is a statement about a category that notifies at
-        // all, and this one does not. Placed at the single governed decision point so it holds for every
-        // poster (the app's coordinator, a replayed durable record, an out-of-process intent) rather
-        // than at one call site. `suppress` advances no counter and records no episode, so a silent
-        // category can never consume the budget that gates a genuine `bolusDeliveryFailed`.
-        // Owner decision 2026-08-30 — see `Category.deliversAsNotification` for the accepted residual.
-        if !message.category.deliversAsNotification { return suppress(.uiStateOnly) }
 
         let cfg = settings[message.category] ?? .defaults(for: message.category)
 

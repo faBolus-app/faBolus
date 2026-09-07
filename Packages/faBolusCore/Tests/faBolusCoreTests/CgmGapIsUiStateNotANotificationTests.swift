@@ -63,6 +63,37 @@ import Foundation
         #expect(d.nextState.lastDeliveredAt["cgmDataLoss"] == nil)
     }
 
+    /// The exposure this fix closes: `.cgmDataLoss` IS safety-set, so in production it always carries a
+    /// rule cascade. When the UI-state-only refusal sat BELOW the resolver, a supplied cascade whose
+    /// resolved intent was not Off took the resolver's deliver path — re-posting the very per-datum
+    /// CGM-gap spam the category was made silent to stop. The refusal must win at the one governed
+    /// decision point regardless of any supplied cascade, while a DELIVERING safety category with the
+    /// same cascade must still deliver.
+    @Test func decideRefusesCgmDataLossEvenWhenASuppliedCascadeWouldOtherwiseDeliver() {
+        typealias R = NotificationRules
+        let loudCascade = R.Cascade(category: .init(intent: .alert))
+        #expect(
+            R.resolve(loudCascade, timeSensitiveAvailable: true).phone != .off,
+            "the cascade must resolve to a delivering intent, else the test proves nothing")
+        let d = B.decide(
+            msg(.cgmDataLoss, key: "safety.cgmDataLoss"),
+            settings: [.cgmDataLoss: B.CategorySettings(enabled: true)],
+            state: B.State(), now: at(9, 0), calendar: cal,
+            rules: loudCascade, timeSensitiveAvailable: true)
+        #expect(
+            !d.deliver && d.reason == .uiStateOnly,
+            "a supplied cascade must not let a UI-state-only category resurrect its notification")
+        #expect(d.nextState.deliveredToday == 0)
+        #expect(d.nextState.notifiedEpisodes.isEmpty)
+        #expect(d.nextState.lastDeliveredAt["cgmDataLoss"] == nil)
+        // The guard refuses only NON-delivering categories: a delivering safety-set category carrying
+        // the same cascade still delivers.
+        let pump = B.decide(
+            msg(.pumpDisconnect), settings: [:], state: B.State(), now: at(9, 0), calendar: cal,
+            rules: loudCascade, timeSensitiveAvailable: true)
+        #expect(pump.deliver, "moving the refusal above the resolver must not refuse a delivering safety category")
+    }
+
     /// The urgent-low backstop is on its OWN safety-set category and still alarms during a gap —
     /// this is the whole reason it was decoupled from `.cgmDataLoss`.
     @Test func theUrgentLowBackstopStillAlarmsDuringACgmGap() {
