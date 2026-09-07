@@ -175,4 +175,78 @@ final class RemoteCommandValidationTests: XCTestCase {
         XCTAssertEqual(back.alertId, 3)
         XCTAssertEqual(back.alertKind, 1)
     }
+
+    // MARK: - App-own alert + watch-intent field caps (additive validation)
+    //
+    // The two watch-facing fields carrying untrusted per-item strings must fail closed on element count
+    // and per-item string length like their length-validated siblings — previously they were bounded only
+    // by the 32 KB envelope. Count caps are checked against validate() directly so the element bound (not
+    // the byte cap) is the assertion under test.
+
+    func testTooManyAppOwnAlertsRejected() {
+        var cmd = RemoteCommand(kind: .bolusStatus, requestId: "r1")
+        cmd.appOwnAlerts = (0...RemoteCommand.maxArrayCount).map {
+            RemoteCommand.AppOwnAlert(key: "appOwn:c\($0)", title: "t")
+        }
+        XCTAssertThrowsError(try cmd.validate()) {
+            XCTAssertEqual($0 as? RemoteCommand.ValidationError, .tooManyElements("appOwnAlerts"))
+        }
+    }
+
+    func testTooManyWatchNotificationIntentsRejected() {
+        var cmd = RemoteCommand(kind: .bolusStatus, requestId: "r1")
+        var intents: [String: String] = [:]
+        for i in 0...RemoteCommand.maxArrayCount { intents["k\(i)"] = "alert" }
+        cmd.watchNotificationIntents = intents
+        XCTAssertThrowsError(try cmd.validate()) {
+            XCTAssertEqual($0 as? RemoteCommand.ValidationError, .tooManyElements("watchNotificationIntents"))
+        }
+    }
+
+    func testOversizedAppOwnAlertKeyOrTitleRejected() {
+        let big = String(repeating: "x", count: RemoteCommand.maxStringLength + 1)
+        var keyCmd = RemoteCommand(kind: .bolusStatus, requestId: "r1")
+        keyCmd.appOwnAlerts = [RemoteCommand.AppOwnAlert(key: big, title: "t")]
+        XCTAssertThrowsError(try keyCmd.validate()) {
+            XCTAssertEqual($0 as? RemoteCommand.ValidationError, .oversizedString("appOwnAlerts"))
+        }
+        var titleCmd = RemoteCommand(kind: .bolusStatus, requestId: "r1")
+        titleCmd.appOwnAlerts = [RemoteCommand.AppOwnAlert(key: "appOwn:c", title: big)]
+        XCTAssertThrowsError(try titleCmd.validate()) {
+            XCTAssertEqual($0 as? RemoteCommand.ValidationError, .oversizedString("appOwnAlerts"))
+        }
+    }
+
+    func testOversizedWatchNotificationIntentKeyOrValueRejected() {
+        let big = String(repeating: "x", count: RemoteCommand.maxStringLength + 1)
+        var valueCmd = RemoteCommand(kind: .bolusStatus, requestId: "r1")
+        valueCmd.watchNotificationIntents = ["appOwn:c": big]
+        XCTAssertThrowsError(try valueCmd.validate()) {
+            XCTAssertEqual($0 as? RemoteCommand.ValidationError, .oversizedString("watchNotificationIntents"))
+        }
+        var keyCmd = RemoteCommand(kind: .bolusStatus, requestId: "r1")
+        keyCmd.watchNotificationIntents = [big: "alert"]
+        XCTAssertThrowsError(try keyCmd.validate()) {
+            XCTAssertEqual($0 as? RemoteCommand.ValidationError, .oversizedString("watchNotificationIntents"))
+        }
+    }
+
+    func testWithinCapsAppOwnAndWatchIntentFieldsValidate() throws {
+        var cmd = RemoteCommand(kind: .bolusStatus, requestId: "r1")
+        cmd.appOwnAlerts = [
+            RemoteCommand.AppOwnAlert(key: "appOwn:bolusIndeterminate", title: "Bolus outcome unknown")
+        ]
+        cmd.watchNotificationIntents = ["appOwn:bolusIndeterminate": "alert", "pumpMirror:alarm:2": "alert"]
+        let back = try RemoteCommand.decodeValidated(try cmd.encoded())
+        XCTAssertEqual(back.appOwnAlerts?.count, 1)
+        XCTAssertEqual(back.watchNotificationIntents?.count, 2)
+    }
+
+    /// Both fields absent still validates — the caps are additive and never require the fields.
+    func testAppOwnAndWatchIntentFieldsAbsentValidate() throws {
+        let cmd = RemoteCommand(kind: .bolusStatus, requestId: "r1")
+        let back = try RemoteCommand.decodeValidated(try cmd.encoded())
+        XCTAssertNil(back.appOwnAlerts)
+        XCTAssertNil(back.watchNotificationIntents)
+    }
 }

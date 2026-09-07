@@ -756,12 +756,32 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
             guard s!.count <= Self.maxStringLength else { throw ValidationError.oversizedString(name) }
         }
 
+        // The two watch-facing fields carry untrusted per-item strings that the flat `strings` list above
+        // cannot express (a struct array and a dictionary). Cap each item's length like every other
+        // string field, so a hostile host cannot smuggle an oversized key/title/value that is bounded only
+        // by the 32 KB envelope. The element-count bound is enforced in the `arrays` list below.
+        if let appOwnAlerts {
+            for a in appOwnAlerts {
+                guard a.key.count <= Self.maxStringLength, a.title.count <= Self.maxStringLength else {
+                    throw ValidationError.oversizedString("appOwnAlerts")
+                }
+            }
+        }
+        if let watchNotificationIntents {
+            for (k, v) in watchNotificationIntents {
+                guard k.count <= Self.maxStringLength, v.count <= Self.maxStringLength else {
+                    throw ValidationError.oversizedString("watchNotificationIntents")
+                }
+            }
+        }
+
         // Array element caps.
         let arrays: [(String, Int?)] = [
             ("history", history?.count), ("historyEpochs", historyEpochs?.count),
             ("alerts", alerts?.count), ("rawAlerts", rawAlerts?.count), ("screenOrder", screenOrder?.count),
             ("detailsOrder", detailsOrder?.count), ("watchChartRanges", watchChartRanges?.count),
-            ("garminComplicationSlots", garminComplicationSlots?.count)
+            ("garminComplicationSlots", garminComplicationSlots?.count),
+            ("appOwnAlerts", appOwnAlerts?.count), ("watchNotificationIntents", watchNotificationIntents?.count)
         ]
         for (name, c) in arrays where c != nil {
             guard c! <= Self.maxArrayCount else { throw ValidationError.tooManyElements(name) }
