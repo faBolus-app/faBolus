@@ -136,8 +136,12 @@ import TandemMessages
         await backend.connect()  // → connected
         backend.disconnect()  // → disconnected (raise; uncaptured)
 
+        // The reconnect edge now fires more than one withdraw batch: the disconnect T0 + escalation
+        // chain on the `.clear` edge, then the "can't hold a connection" flap key on the steady
+        // connected tick. Accumulate every batch so the assertions below observe all of them, not only
+        // whichever batch landed last.
         var withdrawn: [String] = []
-        model.notificationWithdrawSink = { withdrawn = $0 }
+        model.notificationWithdrawSink = { withdrawn.append(contentsOf: $0) }
 
         await backend.connect()  // final transition → .clear
 
