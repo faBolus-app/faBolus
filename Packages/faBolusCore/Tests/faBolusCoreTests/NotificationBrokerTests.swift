@@ -210,10 +210,14 @@ import Foundation
     }
 
     @Test func dailyCountersRollOverAtADayBoundary() {
+        // `remoteBolusRejected` is the ordinary governed consumer here — it is neither safety-set nor
+        // budget-exempt, so it both counts and can be budget-limited. (`.pumpAlert` no longer works as this
+        // exemplar: a pump-mirror delivery is budget-exempt so pump volume cannot starve the dose-failure
+        // alert.)
         let state = B.State(dayKey: B.dayKey(at(23, 0, day: 1), calendar: cal), deliveredToday: 39)
         // Next day, same message: the day key differs, so the counter resets before this delivery.
         let d = B.decide(
-            msg(.pumpAlert), settings: enabled(.pumpAlert), state: state,
+            msg(.remoteBolusRejected), settings: enabled(.remoteBolusRejected), state: state,
             budget: B.Budget(dailyTotal: 40), now: at(0, 5, day: 2), calendar: cal)
         #expect(d.deliver)
         #expect(d.nextState.deliveredToday == 1)
@@ -377,8 +381,11 @@ import Foundation
             state = d.nextState
         }
         #expect(state.deliveredToday == 0, "five budget-exempt safety deliveries must not touch deliveredToday")
+        // `remoteBolusRejected` is the genuinely-counted ordinary delivery (a pump-mirror `.pumpAlert` is now
+        // budget-exempt, so it would not serve as the counted control here).
         let ordinary = B.decide(
-            msg(.pumpAlert), settings: enabled(.pumpAlert), state: state, now: at(9, 1), calendar: cal)
+            msg(.remoteBolusRejected), settings: enabled(.remoteBolusRejected), state: state, now: at(9, 1),
+            calendar: cal)
         #expect(ordinary.deliver)
         #expect(
             ordinary.nextState.deliveredToday == 1,
@@ -390,16 +397,70 @@ import Foundation
     /// the exemption above must not have
     /// accidentally widened to cover governed, non-`.error`, non-safety messages.
     @Test func ordinarySuppressibleDeliveryStillIncrementsAndIsBudgetLimited() {
+        // Exemplified with `remoteBolusRejected`, a governed non-exempt category: the pump-mirror
+        // exemption must not have widened to cover an ordinary governed message. (`.pumpAlert` is now
+        // budget-exempt, so it can no longer stand in for "ordinary consumer" here.)
         let budget = B.Budget(dailyTotal: 1)
         let state = B.State(dayKey: B.dayKey(at(9, 0), calendar: cal))
         let first = B.decide(
-            msg(.pumpAlert, key: "a"), settings: enabled(.pumpAlert), state: state,
+            msg(.remoteBolusRejected, key: "a"), settings: enabled(.remoteBolusRejected), state: state,
             budget: budget, now: at(9, 0), calendar: cal)
         #expect(first.deliver && first.nextState.deliveredToday == 1)
         let second = B.decide(
-            msg(.pumpAlert, key: "b"), settings: enabled(.pumpAlert), state: first.nextState,
+            msg(.remoteBolusRejected, key: "b"), settings: enabled(.remoteBolusRejected), state: first.nextState,
             budget: budget, now: at(9, 1), calendar: cal)
         #expect(!second.deliver && second.reason == .dailyBudgetReached)
+    }
+
+    /// Pump-mirror volume must never exhaust the shared daily budget that gates a genuine dose-failure
+    /// alert. A pump-alert burst is delivered UNGATED on the resolver path, so counting each one against
+    /// `deliveredToday` let a flood of pump alerts consume the budget that `bolusDeliveryFailed` is gated
+    /// by on the non-cascade governed path — silently suppressing the dose-failure notification. A
+    /// pump-mirror delivery must therefore leave the counter untouched.
+    @Test func pumpMirrorVolumeCannotBudgetSuppressBolusDeliveryFailed() {
+        typealias R = NotificationRules
+        let budget = B.Budget(dailyTotal: 3)
+        let loud = R.Cascade(category: .init(intent: .alert))
+        var state = B.State(dayKey: B.dayKey(at(9, 0), calendar: cal))
+        // Enough pump-mirror deliveries to exhaust the daily budget, each through the resolver path.
+        for i in 0..<3 {
+            let d = B.decide(
+                B.Message(category: .pumpAlert, severity: .warning, title: "t", body: "b", dedupeKey: "pa-\(i)"),
+                settings: [:], state: state, budget: budget, now: at(9, 0), calendar: cal,
+                rules: loud, timeSensitiveAvailable: true)
+            #expect(d.deliver, "a loud pump-mirror alert delivers through the resolver")
+            #expect(
+                d.nextState.deliveredToday == 0,
+                "a pump-mirror delivery must not consume the shared daily budget")
+            state = d.nextState
+        }
+        // From that accumulated state, a genuine dose-failure alert on the non-cascade governed path still delivers.
+        let failed = B.decide(
+            B.Message(
+                category: .bolusDeliveryFailed, severity: .error, title: "Bolus not delivered", body: "b",
+                dedupeKey: "bolusDeliveryFailed-1"),
+            settings: enabled(.bolusDeliveryFailed), state: state, budget: budget, now: at(9, 1), calendar: cal)
+        #expect(
+            failed.deliver,
+            "pump-mirror volume must never exhaust the budget that gates a genuine bolusDeliveryFailed")
+    }
+
+    /// The `.error` budget exemption is load-bearing, not vestigial. `bolusDeliveryFailed` is governed and
+    /// NOT in the safety set, yet it posts at `.error` (the app's `notifyDeliveryFailed`), so the exemption
+    /// is what keeps the dose-failure alert from consuming the very budget that gates it. This
+    /// characterization pin guards the `.error` clause against a future "dead code" removal.
+    @Test func aDeliveredBolusDeliveryFailedAtErrorSeverityIsBudgetExempt() {
+        #expect(!C.bolusDeliveryFailed.isSafetySet, "governed, not safety-set — exempt only via the .error clause")
+        let state = B.State(dayKey: B.dayKey(at(9, 0), calendar: cal))
+        let d = B.decide(
+            B.Message(
+                category: .bolusDeliveryFailed, severity: .error, title: "Bolus not delivered", body: "b",
+                dedupeKey: "bolusDeliveryFailed-9"),
+            settings: enabled(.bolusDeliveryFailed), state: state, now: at(9, 0), calendar: cal)
+        #expect(d.deliver)
+        #expect(
+            d.nextState.deliveredToday == 0,
+            "a delivered bolusDeliveryFailed at .error must not consume a budget slot (exemption retained)")
     }
 
     /// The unified resolver's phone intent — not a separate breakthrough predicate — decides how loud a

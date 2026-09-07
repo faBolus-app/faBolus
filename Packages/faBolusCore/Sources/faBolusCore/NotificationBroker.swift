@@ -391,15 +391,19 @@ public enum NotificationBroker {
         func record() -> State {
             var out = s
             out.lastDeliveredAt[message.category.rawValue] = now
-            // A safety-set OR `.error`-severity delivery does NOT consume the daily budget — a flapping
-            // disconnect (posting repeated `.error` escalation steps on the safety-set `.pumpDisconnect`
-            // category) must never be able to exhaust the budget that gates a genuine
-            // `bolusDeliveryFailed`. Because these deliveries never consume a slot, a later withdrawal of
-            // one has nothing to "refund" — deliberately NOT adding a blind decrement-per-dedupeKey
-            // refund here: `withdraw` only ever sees identifiers and cannot tell whether a given key
-            // consumed a budget slot or maps to multiple counted notifications, so a blind decrement
-            // would UNDERCOUNT ordinary notifications. `lastDeliveredAt` and `notifiedEpisodes` still
-            // advance below so dedupe/episode tracking stays coherent.
+            // A safety-set delivery, a governed `.error`-severity delivery, or a pump-mirror
+            // (`.pumpAlert`) delivery does NOT consume the daily budget. The `.error` clause is
+            // load-bearing for the one governed, NON-safety-set category that posts at `.error` — the
+            // dose-failure alert (`bolusDeliveryFailed`, via the app's `notifyDeliveryFailed`) — so a
+            // delivered dose-failure notification never burns the very budget that gates it. The
+            // pump-mirror clause matters because a `.pumpAlert` resolves through the cascade and is
+            // DELIVERED UNGATED, so counting each one would let a burst of pump alerts exhaust that same
+            // budget and silently suppress a genuine `bolusDeliveryFailed`. Because these deliveries never
+            // consume a slot, a later withdrawal of one has nothing to "refund" — deliberately NOT adding a
+            // blind decrement-per-dedupeKey refund here: `withdraw` only ever sees identifiers and cannot
+            // tell whether a given key consumed a budget slot or maps to multiple counted notifications, so
+            // a blind decrement would UNDERCOUNT ordinary notifications. `lastDeliveredAt` and
+            // `notifiedEpisodes` still advance below so dedupe/episode tracking stays coherent.
             // A reconcile/unresolved-dose post (any `reconcile-*`-keyed message — the settled
             // `.bolusReconciliation` arms AND the condition-shaped `.bolusIndeterminate` unresolved arms)
             // is a durable dose-safety disclosure and must not burn the governed daily budget that gates an
@@ -407,6 +411,7 @@ public enum NotificationBroker {
             // extended per-post to the unresolved arms so promoting the CATEGORY is unnecessary.
             let budgetExempt =
                 message.category.isSafetySet || message.severity == .error
+                || message.category == .pumpAlert
                 || RemoteBolusLedger.isReconciliationDedupeKey(message.dedupeKey)
             if !budgetExempt {
                 out.deliveredToday += 1
