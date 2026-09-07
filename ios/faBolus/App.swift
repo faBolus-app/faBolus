@@ -38,8 +38,12 @@ struct FaBolusApp: App {
         // an entry it could promote to `.terminal` ever settled. Awaiting the SAME idempotent entry
         // point ourselves makes "after" true by construction instead of by scheduling luck; entries
         // already terminal before launch are unaffected (they seed exactly as before).
+        // Bind `model` to a local before the escaping `Task`: reading the `@State` wrapper inside the
+        // closure would otherwise capture this App struct's mutating `init` self, which Swift 6 rejects.
+        // `AppModel` is a reference type, so the local points at the same instance — same call, same order.
+        let launchModel = model
         Task { @MainActor in
-            await model.reconcileUnresolvedDeliveries()
+            await launchModel.reconcileUnresolvedDeliveries()
             bridge.seedTerminalEchoesFromLedger()
         }
         // Re-seed any authenticated dismiss receipt whose ack was never transport-confirmed across an
