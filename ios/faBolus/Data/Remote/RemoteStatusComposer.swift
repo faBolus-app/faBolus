@@ -248,20 +248,30 @@ enum RemoteStatusComposer {
         // the SAME namespaced key, resolved through the ONE unified resolver the phone reads (follow-phone
         // default + optional override; the watch cap has no Urgent rung). The key is namespaced
         // (`appOwn:<category>`) so an app-own category never overwrites a pump-mirror group of the same name.
-        // Deduped by category (one relayed item per active app-own category); always emitted (an empty array
-        // is the authoritative "no active app-own alerts", never a fabricated absence).
+        // One relayed item per active app-own category; always emitted (an empty array is the authoritative
+        // "no active app-own alerts", never a fabricated absence). The representative is DETERMINISTIC: the
+        // durable store is unordered, so a first-wins pick showed an arbitrary title when several active
+        // alerts share one category. Group by namespaced key and choose the MOST-RECENT entry per category
+        // (tie-break by title so the choice is stable regardless of iteration order); the final array is
+        // sorted by key so the whole relay is order-independent. The wire shape (`key` + `title`) is
+        // unchanged — this is representative selection only.
         var appOwnAlerts: [RemoteCommand.AppOwnAlert] = []
-        var relayedAppOwnKeys = Set<String>()
-        for active in inputs.activeAppOwnAlerts {
-            let key = Self.appOwnWatchIntentKey(for: active.category)
+        let groupedByKey = Dictionary(grouping: inputs.activeAppOwnAlerts) {
+            Self.appOwnWatchIntentKey(for: $0.category)
+        }
+        for (key, group) in groupedByKey {
+            // Every member of a group shares the category, so any of them resolves the per-category watch
+            // intent (one entry per key on the shared map, as before).
             let intent = NotificationRules.resolve(
-                settings.notificationRules.cascade(for: active.category),
+                settings.notificationRules.cascade(for: group[0].category),
                 timeSensitiveAvailable: NotificationCapability.timeSensitiveAvailable).watch
             watchIntents[key] = RemoteCommand.watchIntentWireToken(intent)
-            if relayedAppOwnKeys.insert(key).inserted {
-                appOwnAlerts.append(RemoteCommand.AppOwnAlert(key: key, title: active.title))
-            }
+            let representative = group.max {
+                $0.issuedDate != $1.issuedDate ? $0.issuedDate < $1.issuedDate : $0.title < $1.title
+            }!
+            appOwnAlerts.append(RemoteCommand.AppOwnAlert(key: key, title: representative.title))
         }
+        appOwnAlerts.sort { $0.key < $1.key }
         cmd.watchNotificationIntents = watchIntents
         cmd.appOwnAlerts = appOwnAlerts
         if let requestId = inputs.requestId { cmd.requestId = requestId }  // echo the incoming statusRead id
@@ -282,6 +292,16 @@ enum RemoteStatusComposer {
 struct ActiveAppOwnAlert: Equatable {
     let category: NotificationBroker.Category
     let title: String
+    /// The entry's issue time, carried so the relay picks a DETERMINISTIC most-recent representative when
+    /// several active alerts share one category (the durable store is unordered). Defaults to `.distantPast`
+    /// for callers that don't track it — a single-alert relay collapses to that one alert regardless.
+    let issuedDate: Date
+
+    init(category: NotificationBroker.Category, title: String, issuedDate: Date = .distantPast) {
+        self.category = category
+        self.title = title
+        self.issuedDate = issuedDate
+    }
 }
 
 /// Immutable snapshot of every value `RemoteStatusComposer.compose` reads. `AppModel.statusCommand`

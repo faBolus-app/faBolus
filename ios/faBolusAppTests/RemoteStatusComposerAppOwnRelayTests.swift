@@ -108,6 +108,24 @@ struct RemoteStatusComposerAppOwnRelayTests {
         #expect(cmd.version == 1, "the additive relay never bumps the wire version")
     }
 
+    /// Two active alerts sharing one category collapse to exactly one relayed item whose title is the
+    /// MOST-RECENT entry's — deterministically, regardless of input order. Before this the relay kept the
+    /// first entry by unordered-dictionary iteration, so the wrist showed an arbitrary title.
+    @Test func sameCategoryAlertsCollapseToTheMostRecentRepresentativeDeterministically() {
+        let older = ActiveAppOwnAlert(
+            category: .bolusIndeterminate, title: "older title", issuedDate: Date(timeIntervalSince1970: 1_000))
+        let newer = ActiveAppOwnAlert(
+            category: .bolusIndeterminate, title: "newer title", issuedDate: Date(timeIntervalSince1970: 2_000))
+        for input in [[older, newer], [newer, older]] {  // both input orders must agree
+            let cmd = compose(rules: NotificationRules.PersistedRules(), appOwn: input)
+            let items = (cmd.appOwnAlerts ?? []).filter { $0.key == "appOwn:bolusIndeterminate" }
+            #expect(items.count == 1, "two same-category alerts collapse to exactly one relayed item")
+            #expect(
+                items.first?.title == "newer title",
+                "the representative is the most-recent entry's title, regardless of input order")
+        }
+    }
+
     /// The namespaced app-own key never overwrites a pump-mirror group of the same name — `urgentLowGlucose`
     /// exists on BOTH axes, so both intents must survive independently on the wire.
     @Test func appOwnKeysDoNotCollideWithPumpMirrorGroupsOfTheSameName() {

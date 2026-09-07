@@ -386,7 +386,7 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
             guard let self else { return [] }
             return self.safetyAlertStore.unresolvedEntries()
                 .filter { $0.category.deliversAsNotification }
-                .map { ActiveAppOwnAlert(category: $0.category, title: $0.title) }
+                .map { ActiveAppOwnAlert(category: $0.category, title: $0.title, issuedDate: $0.issuedDate) }
         }
         model.addNotificationsSubscriber { [weak self] alerts in self?.syncPumpAlerts(alerts) }
         // Clean up what earlier builds left behind, BEFORE the replay below reads the store.
