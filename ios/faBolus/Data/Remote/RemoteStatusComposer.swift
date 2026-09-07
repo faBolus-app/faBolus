@@ -39,7 +39,11 @@ enum RemoteStatusComposer {
             // Phone-classified salience. A remote that lacks the field fails closed to "critical".
             RemoteCommand.RemoteAlert(
                 id: $0.id, kind: $0.kind.rawValue, title: $0.title,
-                severity: $0.kind.wireSeverityTier)
+                severity: $0.kind.wireSeverityTier,
+                // Carried ONLY for a non-dismissable malfunction, so a remote dismissing an alarm that
+                // collides with it on the same (kind, id) can name which one it means; a dismissable alert
+                // omits the key (bytes unchanged) and a remote reads absent as "not a malfunction".
+                isMalfunction: $0.isDismissable ? nil : true)
         }
         let recent = inputs.includeHistory ? Array(inputs.glucoseHistory.suffix(288)) : []
         let history = inputs.includeHistory ? recent.map { $0.mgdl } : nil

@@ -58,11 +58,18 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         /// alert-intensity gate. Optional + defaulted nil so every existing call site is source-compatible;
         /// a legacy host omits it and the watch treats an absent value as "critical" (highest salience).
         public var severity: String?
-        public init(id: Int, kind: Int, title: String, severity: String? = nil) {
+        /// Whether this entry is a MALFUNCTION (non-dismissable), so a remote can carry the source
+        /// discriminator back on its dismiss (`RemoteCommand.alertIsMalfunction`) and the host resolves the
+        /// exact one when an alarm and a malfunction collide on the same `(kind, id)`. Emitted ONLY for a
+        /// malfunction (nil ⇒ omitted for the dismissable common case, so existing alert bytes are
+        /// unchanged); a remote reads absent as "not a malfunction". Additive, source-agnostic.
+        public var isMalfunction: Bool?
+        public init(id: Int, kind: Int, title: String, severity: String? = nil, isMalfunction: Bool? = nil) {
             self.id = id
             self.kind = kind
             self.title = title
             self.severity = severity
+            self.isMalfunction = isMalfunction
         }
         /// Stable identity of a pump alert for new-alert detection on a remote — `(kind, id)`.
         public var identity: String { "\(kind)-\(id)" }
@@ -167,6 +174,17 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// The alert to clear (dismissAlert command): its id + kind from the alerts list.
     public var alertId: Int?
     public var alertKind: Int?
+    /// The SOURCE discriminator for a `dismissAlert` (and its correlated `dismissAck`): whether the
+    /// notification the sender means is a MALFUNCTION. Alarms and malfunctions share the same `(kind, id)`
+    /// wire space — a malfunction rides `kind == .alarm` and differs only in being non-dismissable — so
+    /// `(kind, id)` alone can resolve to the wrong one when both are active. This names which. Absent ⇒ a
+    /// legacy remote that predates the field; the host then falls back to the safest resolution (the
+    /// dismissable sibling, never a non-dismissable malfunction on an ambiguous payload). Optional +
+    /// defaulted nil so every non-dismiss command omits it on the wire (`encodeIfPresent`) — the encoded,
+    /// signed bytes of existing bolus/resume/statusRead/dismissAck commands are unchanged. Additive;
+    /// auto-Codable, so the existing memberwise initializer stays untouched (the sender sets it via
+    /// `cmd.alertIsMalfunction = …`), exactly like the other additive optionals below.
+    public var alertIsMalfunction: Bool?
     // Shared bolus settings so remotes honor the same defaults/increments (statusRead reply).
     public var bolusMode: String?  // "carbs" | "units"
     public var bolusIncrement: Double?

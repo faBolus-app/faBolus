@@ -1147,12 +1147,15 @@ final class GarminRemoteBridge: NSObject {
             // identical to what GarminDismissAckBridgeTests exercises in the default target.
             if let id = cmd.alertId, let k = cmd.alertKind {
                 let requestId = cmd.requestId
+                // The source discriminator naming whether the wearer meant the malfunction or the
+                // coincident alarm sharing this (kind, id); nil for a legacy watch (safe fallback in the host).
+                let isMalfunction = cmd.alertIsMalfunction
                 Task { [weak self] in
                     guard let self else { return }
                     await garminHandleDismissAlert(
                         requestId: requestId, alertId: id, alertKind: k,
                         lookupReceipt: { rid in Self.dismissReceiptStore.receipt(peer: "garmin", requestId: rid) },
-                        performDismiss: { await model.dismissAlert(id: id, kind: k, from: .garmin, peerId: "garmin") },
+                        performDismiss: { await model.dismissAlert(id: id, kind: k, isMalfunction: isMalfunction, from: .garmin, peerId: "garmin") },
                         persistReceipt: { rid, aid, akind in
                             Self.dismissReceiptStore.persist(
                                 peer: "garmin", requestId: rid, alertId: aid, alertKind: akind)

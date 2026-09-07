@@ -58,4 +58,37 @@ struct RemoteDismissIdentityTests {
             model.activeNotifications.contains(where: { $0.id == 5 && !$0.isDismissable }),
             "a legacy dismiss must NEVER clear the non-dismissable malfunction on an ambiguous payload")
     }
+
+    /// A dismiss that names the ALARM (`isMalfunction: false`) resolves to the dismissable alarm exactly,
+    /// leaving the colliding malfunction untouched.
+    @Test func discriminatorNamingTheAlarmResolvesToTheAlarm() async {
+        let (model, b, kindRaw) = seededModel()
+        _ = await model.dismissAlert(id: 5, kind: kindRaw, isMalfunction: false)
+        repoll(b)
+        #expect(!model.activeNotifications.contains(where: { $0.id == 5 && $0.isDismissable }))
+        #expect(model.activeNotifications.contains(where: { $0.id == 5 && !$0.isDismissable }))
+    }
+
+    /// A dismiss that names the MALFUNCTION (`isMalfunction: true`) resolves to the non-dismissable
+    /// malfunction exactly, leaving the colliding alarm untouched — the exact-identity path the wire
+    /// discriminator exists to enable.
+    @Test func discriminatorNamingTheMalfunctionResolvesToTheMalfunction() async {
+        let (model, b, kindRaw) = seededModel()
+        _ = await model.dismissAlert(id: 5, kind: kindRaw, isMalfunction: true)
+        repoll(b)
+        #expect(!model.activeNotifications.contains(where: { $0.id == 5 && !$0.isDismissable }))
+        #expect(model.activeNotifications.contains(where: { $0.id == 5 && $0.isDismissable }))
+    }
+
+    /// For the watch to SEND the discriminator it must first LEARN each alert's malfunction-ness from the
+    /// inbound status wire. The composed `statusRead` reply must carry `isMalfunction == true` on the
+    /// malfunction entry and OMIT it (nil) on the colliding dismissable alarm.
+    @Test func statusReplyConveysMalfunctionNessPerAlertSoTheWatchCanNameIt() {
+        let (model, _, _) = seededModel()
+        let alerts = model.statusCommand(includeHistory: false).alerts ?? []
+        let malfunction = alerts.first { $0.id == 5 && $0.isMalfunction == true }
+        let alarm = alerts.first { $0.id == 5 && $0.isMalfunction == nil }
+        #expect(malfunction != nil, "the malfunction entry must carry isMalfunction == true on the wire")
+        #expect(alarm != nil, "the dismissable alarm must OMIT isMalfunction (absent ⇒ not a malfunction)")
+    }
 }

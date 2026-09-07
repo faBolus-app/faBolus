@@ -455,7 +455,8 @@ public final class AppModel {
     /// again for the same requestId.
     @discardableResult
     public func dismissAlert(
-        id: Int, kind: Int, from surface: AccessPolicy.Surface = .phoneUI,
+        id: Int, kind: Int, isMalfunction: Bool? = nil,
+        from surface: AccessPolicy.Surface = .phoneUI,
         peerId: String = "local"
     ) async -> DismissOutcome {
         // Dismiss is a `.childOnly` action, so the evaluator never read-only-blocks it (clearing an
@@ -467,9 +468,26 @@ public final class AppModel {
             lastError = "Clearing alerts is disabled in read-only mode."
             return .notAuthenticated
         }
-        guard let n = activeNotifications.first(where: { $0.id == id && $0.kind.rawValue == kind }) else {
-            return .notAuthenticated
+        // A malfunction and an alarm can share the same `(kind, id)` — a malfunction rides `kind == .alarm`
+        // and differs only in being non-dismissable — and the malfunction sits first in the merge. So
+        // `(kind, id)` alone can resolve, by first match, to a non-dismissable malfunction when the sender
+        // meant the coincident alarm. When the sender NAMES which it means (`isMalfunction`), match that
+        // exact dismissability. When it can't (a legacy remote), fall back to the safest resolution: on an
+        // ambiguous collision prefer the dismissable sibling, and NEVER clear a non-dismissable malfunction
+        // off an ambiguous legacy payload; an unambiguous single match keeps its existing behavior.
+        let matches = activeNotifications.filter { $0.id == id && $0.kind.rawValue == kind }
+        let resolved: PumpAlert?
+        if let isMalfunction {
+            resolved = matches.first { (!$0.isDismissable) == isMalfunction }
+        } else if matches.count > 1,
+            matches.contains(where: { $0.isDismissable }),
+            matches.contains(where: { !$0.isDismissable })
+        {
+            resolved = matches.first { $0.isDismissable }
+        } else {
+            resolved = matches.first
         }
+        guard let n = resolved else { return .notAuthenticated }
         return await dismissNotification(n, from: surface, peerId: peerId)
     }
 

@@ -84,6 +84,38 @@ final class RemoteCommandTests: XCTestCase {
         XCTAssertEqual(decoded.alertKind, 3)
     }
 
+    /// The additive `alertIsMalfunction` source discriminator round-trips on a dismiss, and — crucially —
+    /// is OMITTED from the encoded bytes of every command that does not set it. `RemoteCommand` is signed
+    /// by encoding `self`, so a nil optional that Swift's `encodeIfPresent` drops keeps the signed bytes of
+    /// existing bolus/resume/statusRead/dismiss/dismissAck commands byte-for-byte unchanged.
+    func testAlertIsMalfunctionRoundTripsAndIsOmittedWhenUnsetSoSignedBytesAreUnchanged() throws {
+        // Round-trips when a dismiss names it (JSON + dictionary), and the key is present on the wire.
+        var dismiss = RemoteCommand(kind: .dismissAlert, alertId: 2, alertKind: 3)
+        dismiss.alertIsMalfunction = true
+        let dismissEncoded = try dismiss.encoded()
+        XCTAssertTrue(
+            String(data: dismissEncoded, encoding: .utf8)!.contains("alertIsMalfunction"),
+            "a dismiss that sets the discriminator must carry it on the wire")
+        XCTAssertEqual(try RemoteCommand.decode(dismissEncoded).alertIsMalfunction, true)
+        XCTAssertEqual(try RemoteCommand.from(try dismiss.asDictionary()).alertIsMalfunction, true)
+
+        // Every command that does NOT set it omits the key entirely — the signed-byte invariant.
+        let unset: [RemoteCommand] = [
+            RemoteCommand(kind: .bolusRequest, units: 2.5),
+            RemoteCommand(kind: .resumePump),
+            RemoteCommand(kind: .statusRead),
+            RemoteCommand(kind: .dismissAlert, alertId: 2, alertKind: 3),   // a legacy dismiss (no discriminator)
+            RemoteCommand(kind: .dismissAck, alertId: 2, alertKind: 3),
+        ]
+        for cmd in unset {
+            let json = String(data: try cmd.encoded(), encoding: .utf8)!
+            XCTAssertFalse(
+                json.contains("alertIsMalfunction"),
+                "\(cmd.kind) must omit alertIsMalfunction when unset — its signed bytes must be unchanged")
+            XCTAssertNil(try RemoteCommand.decode(try cmd.encoded()).alertIsMalfunction)
+        }
+    }
+
     /// `glucoseDisplayUnit` round-trips, and its absence on a legacy payload decodes to nil (consumers
     /// default to mgdl) without bumping schemaVersion.
     func testGlucoseDisplayUnitRoundTrips() throws {

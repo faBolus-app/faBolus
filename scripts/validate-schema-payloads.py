@@ -66,6 +66,11 @@ VALID = [
     {"version": 1, "kind": "bolusStatus", "requestId": "r5", "status": "cancelled", "deliveredUnits": 0.5},
     {"version": 1, "kind": "cancelBolus", "requestId": "r6"},
     {"version": 1, "kind": "dismissAlert", "requestId": "r7", "alertId": 3, "alertKind": 1},
+    # The dismissAlert (and its correlated dismissAck) may carry the additive source discriminator naming
+    # whether the meant notification is a malfunction — so an alarm colliding with a malfunction on the same
+    # (kind, id) resolves to the right one. Additive under an unchanged version.const; a legacy remote omits it.
+    {"version": 1, "kind": "dismissAlert", "requestId": "r7b", "alertId": 3, "alertKind": 1, "alertIsMalfunction": False},
+    {"version": 1, "kind": "dismissAck", "requestId": "r9b", "alertId": 3, "alertKind": 1, "alertIsMalfunction": True},
     {"version": 1, "kind": "suspendPump", "requestId": "r8"},
     # CX-G-08 (14-09): the phone's correlated, pump-certified dismiss ack — reuses alertId/alertKind
     # (no new schema property). NOTE the documented cross-field asymmetry: a dismissAck missing
@@ -87,6 +92,7 @@ INVALID = [
     {"version": 1, "kind": "statusRead", "requestId": "b4c", "glucoseDisplayUnit": "mg/dL"},          # bad enum — wire token is "mgdl", not the display string
     {"version": 1, "kind": "bolusRequest", "requestId": "b5c", "bolusPasscode": 1234},         # C2: passcode must be a string, not a number
     {"version": 1, "kind": "bolusRequest", "requestId": "b5d", "carbsGrams": 30, "includeStaleBG": "yes"}, # Addendum B: include-stale intent must be a boolean, not a string
+    {"version": 1, "kind": "dismissAlert", "requestId": "b5e", "alertId": 3, "alertKind": 1, "alertIsMalfunction": "yes"}, # the source discriminator must be a boolean, not a string
     {"version": 1, "kind": "statusRead", "requestId": "b4d", "appOwnAlerts": [{"title": "no key"}]}, # app-own relay item missing required 'key'
     {"version": 1, "kind": "statusRead", "requestId": "b5", "surpriseKey": 1},                # additionalProperties
     {"version": 1, "kind": "statusRead"},                                                     # missing required requestId

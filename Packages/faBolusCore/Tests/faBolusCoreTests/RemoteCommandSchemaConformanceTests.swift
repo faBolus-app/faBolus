@@ -212,6 +212,49 @@ struct RemoteCommandSchemaConformanceTests {
         )
     }
 
+    // MARK: - additive dismiss source-discriminator wire property
+
+    /// The additive `alertIsMalfunction` discriminator must exist in the schema (so a host can name which
+    /// of two colliding notifications a remote dismiss meant) while the version stays pinned and the root
+    /// guard stays closed — adding a property is safe, bumping the const would break every older watch.
+    @Test func schemaDeclaresTheAdditiveDismissDiscriminatorUnderAnUnchangedVersion() throws {
+        let schema = try Self.loadSchema()
+        guard let properties = schema["properties"] as? [String: Any] else {
+            Issue.record("schema/command.schema.json has no top-level properties object")
+            return
+        }
+        #expect(
+            properties["alertIsMalfunction"] != nil,
+            "schema/command.schema.json must declare the additive alertIsMalfunction property"
+        )
+        guard let version = properties["version"] as? [String: Any] else {
+            Issue.record("schema has no properties.version")
+            return
+        }
+        #expect(
+            version["const"] as? Int == 1,
+            "version.const must stay 1 — bumping it breaks every older watch; this landing is additive"
+        )
+        #expect(
+            schema["additionalProperties"] as? Bool == false,
+            "root additionalProperties must stay false; the new field is a declared property, not an escape hatch"
+        )
+    }
+
+    /// The Swift mirror carries the discriminator as an Optional (so a legacy remote simply omits it) and
+    /// it round-trips through the same JSON encode/decode the wire uses.
+    @Test func alertIsMalfunctionIsOptionalAndRoundTrips() throws {
+        var cmd = RemoteCommand(kind: .dismissAlert, alertId: 3, alertKind: 1)
+        #expect(cmd.alertIsMalfunction == nil, "the field must be Optional and default to absent")
+
+        cmd.alertIsMalfunction = true
+        let decoded = try JSONDecoder().decode(RemoteCommand.self, from: try cmd.encoded())
+        #expect(
+            decoded.alertIsMalfunction == true,
+            "alertIsMalfunction must round-trip encode/decode on the wire"
+        )
+    }
+
     /// The Swift mirror carries the field as an Optional (so a legacy host simply omits it) and each
     /// item round-trips through the same JSON encode/decode the wire uses.
     @Test func appOwnAlertsIsOptionalAndRoundTrips() throws {
