@@ -359,4 +359,54 @@ import UserNotifications
         #expect(defaults.data(forKey: SafetyAlertStore.key) == nil, "the replay log is accumulated data — erase it")
         #expect(SafetyAlertStore(store: defaults).unresolvedEntries().isEmpty)
     }
+
+    // MARK: - A reconcile-keyed unresolved-dose disclosure replays LOUD, and survives the governed toggle
+
+    /// The replay cascade for a reconcile-keyed unresolved-dose entry must be RESOLVED (non-nil) — the same
+    /// resolved intent the live post used — so it replays loud through the app-own ladder instead of the
+    /// plain governed `.active` fallback. A safety-set entry keeps its resolved cascade; a plain governed,
+    /// non-reconcile entry gets none (the defensive corrupt-store guard).
+    @Test func aReconcileKeyedUnresolvedDoseReplaysThroughAResolvedCascadeNotThePlainFallback() {
+        let reconcileKey = RemoteBolusLedger.reconciliationDedupeKey(peerId: "garmin", requestId: "unk1")
+        let indeterminate = entry(.bolusIndeterminate, key: reconcileKey, severity: .warning, lifecycleState: .issued)
+        let cascade = NotificationCoordinator.replayCascade(for: indeterminate)
+        #expect(cascade != nil, "a reconcile-keyed unresolved-dose disclosure must replay through a resolved cascade")
+        if let cascade {
+            let resolved = NotificationRules.resolve(cascade, timeSensitiveAvailable: true)
+            #expect(resolved.phone != .off, "the resolved replay intent must be loud, not suppressed")
+        }
+        // A safety-set entry still resolves a cascade (unchanged).
+        let disconnect = entry(.pumpDisconnect, key: "safety.pumpDisconnect", severity: .error)
+        #expect(NotificationCoordinator.replayCascade(for: disconnect) != nil, "a safety-set entry keeps its cascade")
+        // Non-vacuity: a plain governed, non-reconcile entry gets no cascade (defensive guard).
+        let plain = entry(.remoteBolusRejected, key: "remoteBolusRejected-x", severity: .warning)
+        #expect(NotificationCoordinator.replayCascade(for: plain) == nil, "a non-safety, non-reconcile entry gets none")
+    }
+
+    /// The governed "Bolus outcome unknown" toggle governs only the four gentle send-time posts — it must
+    /// NOT suppress or retire a durable reconcile-keyed unresolved-dose disclosure while the outcome is
+    /// genuinely unknown. With that category's enable flag OFF, the persisted entry must STILL replay and
+    /// survive in the store (before the fix it hit `.categoryDisabled` and was wrongly retired).
+    @Test func aReconcileKeyedUnresolvedDoseSurvivesTheGovernedToggleOff() {
+        let defaults = isolatedStore(#function)
+        defaults.set(true, forKey: AppGroupKeys.safetyAlertsReconciliationPurged)
+        defaults.set(true, forKey: NotificationRuntime.telemetryEnabledKey)
+        let rt = NotificationRuntime(
+            store: defaults,
+            settings: [.bolusIndeterminate: NotificationBroker.CategorySettings(enabled: false)])
+        let store = SafetyAlertStore(store: defaults)
+        let key = RemoteBolusLedger.reconciliationDedupeKey(peerId: "garmin", requestId: "unk2")
+        store.record(entry(.bolusIndeterminate, key: key, severity: .warning, lifecycleState: .issued))
+        let model = AppModel(source: MockBackend(), ledgerStoreURL: tempLedgerURL())
+
+        let coordinator = NotificationCoordinator(model: model, runtime: rt, safetyAlertStore: store)
+
+        #expect(
+            rt.telemetry["bolusIndeterminate"]?.requested == 1,
+            "a genuinely-unknown dose outcome must replay even with the governed toggle off")
+        #expect(
+            store.entries[key] != nil,
+            "and must NOT be retired as .categoryDisabled while the outcome is unknown")
+        _ = coordinator
+    }
 }

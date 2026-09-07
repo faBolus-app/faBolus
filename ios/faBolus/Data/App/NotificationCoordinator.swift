@@ -561,6 +561,20 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         return UNTimeIntervalNotificationTrigger(timeInterval: deadline.timeIntervalSince(now), repeats: false)
     }
 
+    /// The app-own cascade to resolve a persisted entry through on replay — the SAME resolved intent the
+    /// live post used, so a durable unresolved-dose disclosure replays LOUD through the app-own ladder
+    /// rather than degrading to a plain governed banner (or, with the "Bolus outcome unknown" toggle off,
+    /// being wrongly suppressed and retired). Built for a safety-set entry OR one whose dedupe key is a
+    /// reconciliation key — the SAME predicate the live post keys on — otherwise `nil`. The `nil` case is
+    /// a defensive corrupt-store guard: only these entries are ever persisted, but a corrupt store must
+    /// not build a cascade for anything else. Pure + static so the loud-vs-quiet replay decision is
+    /// directly unit-testable without a real notification center.
+    static func replayCascade(for entry: SafetyAlertStore.Entry) -> NotificationRules.Cascade? {
+        guard entry.category.isSafetySet || RemoteBolusLedger.isReconciliationDedupeKey(entry.dedupeKey)
+        else { return nil }
+        return AppSettings.shared.notificationRules.cascade(for: entry.category)
+    }
+
     /// Persist-then-replay: reconstruct + re-submit every safety-alert entry from `safetyAlertStore` that
     /// still has a job to do, so an alert issued before a cold-restoration relaunch is guaranteed to reach
     /// the user rather than silently vanish. Does NOT re-persist the entry (each is already durable) —
@@ -600,13 +614,7 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
                 category: entry.category, severity: entry.severity,
                 title: entry.title, body: entry.body, dedupeKey: entry.dedupeKey)
             let trigger = Self.replayTrigger(deadline: entry.deadline, now: now)
-            // Every persisted safety-set entry resolves its cascade here too — a replay must honor the
-            // SAME resolved intent the live post used, so a category the user lowered to Off (aimed or an
-            // inherited source rule) never replays anyway. The ternary stays defensive: only safety-set
-            // entries are ever persisted, but a corrupt store must not build a cascade for anything else.
-            let cascade =
-                entry.category.isSafetySet
-                ? AppSettings.shared.notificationRules.cascade(for: entry.category) : nil
+            let cascade = Self.replayCascade(for: entry)
             let decision = NotificationPoster.post(
                 msg, runtime: runtime,
                 userInfo: entry.userInfo.mapValues { $0 as Any },
