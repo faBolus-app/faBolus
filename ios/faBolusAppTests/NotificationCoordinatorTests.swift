@@ -347,6 +347,63 @@ import UserNotifications
         return nil
     }
 
+    // MARK: - Source/group Off withdrawal + honest governed copy
+
+    /// The withdraw set for an app-own source/aimed Off is exactly the app-own safety categories that
+    /// RESOLVE to Off: source Off with no per-category override resolves them all; a category pinned louder
+    /// still notifies and is excluded; and with no override at all nothing resolves Off (the default is Alert).
+    @Test func appOwnSourceOffResolvesTheOffCategoriesButNotALouderOverriddenOne() {
+        typealias R = NotificationRules
+        let cats = C.allCases.filter { !$0.isPumpSourced && $0.isSafetySet && $0.deliversAsNotification }
+        #expect(!cats.isEmpty, "precondition: there are app-own safety categories that notify")
+
+        let sourceOff = R.PersistedRules(appOwnSourceOverride: R.Rule(intent: .off))
+        let allOff = NotificationSettingsView.appOwnSafetyCategoriesResolvingOff(
+            sourceOff, among: cats, timeSensitiveAvailable: true)
+        #expect(Set(allOff) == Set(cats), "app-own source Off resolves every app-own safety category to Off")
+
+        let louder = cats.first!
+        let mixed = R.PersistedRules(
+            appOwnSourceOverride: R.Rule(intent: .off),
+            appOwnCategoryOverrides: [louder.rawValue: R.Rule(intent: .alert)])
+        let offWithMixed = NotificationSettingsView.appOwnSafetyCategoriesResolvingOff(
+            mixed, among: cats, timeSensitiveAvailable: true)
+        #expect(!offWithMixed.contains(louder), "a category pinned louder still notifies — it is not withdrawn")
+        #expect(Set(offWithMixed) == Set(cats).subtracting([louder]))
+
+        let noOverride = R.PersistedRules()
+        #expect(
+            NotificationSettingsView.appOwnSafetyCategoriesResolvingOff(
+                noOverride, among: cats, timeSensitiveAvailable: true).isEmpty,
+            "with no override every app-own safety category defaults to Alert — nothing to withdraw")
+    }
+
+    /// The governed section footer no longer claims to silence the durable unresolved-dose disclosure, and
+    /// the source-Off controls (pump-mirror and app-own) withdraw outstanding banners like an aimed Off.
+    @Test func governedCopyIsHonestAndSourceOffWithdrawsOutstandingBanners() throws {
+        guard let url = Self.repoFileURL("ios/faBolus/Views/NotificationSettingsView.swift"),
+            let source = try? String(contentsOf: url, encoding: .utf8)
+        else {
+            Issue.record("could not resolve/read NotificationSettingsView.swift from #filePath=\(#filePath)")
+            return
+        }
+        #expect(!source.isEmpty, "path resolution broke — read zero bytes from NotificationSettingsView.swift")
+        // The governed footer copy must be honest about the durable unresolved-dose disclosure.
+        #expect(
+            source.contains("this toggle does not silence it"),
+            "the governed footer must state the durable \"Bolus outcome unknown\" disclosure is not silenced here")
+        #expect(
+            !source.contains("or an unresolved dose. Turn any off here"),
+            "the misleading governed footer copy must be gone")
+        // The source-Off controls must withdraw outstanding banners, mirroring the aimed per-category Off.
+        #expect(
+            source.contains("model.notificationWithdrawCategorySink?(.pumpAlert)"),
+            "pump-mirror source Off must withdraw the .pumpAlert banners")
+        #expect(
+            source.contains("appOwnSafetyCategoriesResolvingOff"),
+            "app-own source Off must withdraw the resolved-Off app-own safety categories")
+    }
+
     /// The retired "Use Critical Alerts" toggle (and its stored setting) must leave NO production reader:
     /// no reference in `NotificationSettingsView.swift`, and no `criticalAlert` reference at all in
     /// `NotificationCoordinator.swift` (neither the stale comment nor the requested authorization option).

@@ -198,6 +198,14 @@ struct NotificationSettingsView: View {
         var rule = settings.notificationRules.groupOverrides[group.rawValue] ?? NotificationRules.Rule()
         rule.intent = newValue
         settings.notificationRules.groupOverrides[group.rawValue] = rule
+        // Deliberately NO immediate per-group banner withdrawal here: a mirrored pump alert's dedupe key is
+        // per-alert (`pumpalert-<kind>-<id>`, private to the coordinator) and withdrawing only THIS group's
+        // banners would require reconstructing that private key format and re-classifying every active alert
+        // into its group from the view — out of scope for a notification-lifecycle copy/withdraw fix.
+        // Setting a group Off suppresses FUTURE re-notifies (the resolver drops them); an already-shown
+        // banner clears when the pump alert itself clears, or immediately when the whole pump source is set
+        // Off (which sweeps every mirrored banner). The group footer states this honestly rather than
+        // promising an immediacy this one-move group control does not deliver.
     }
 
     /// One optional per-group watch override (§1d) — `nil` ⇒ "follow phone" (the default); an explicit
@@ -264,6 +272,14 @@ struct NotificationSettingsView: View {
 
     private func applySourceOverride(_ newValue: NotificationRules.Intent?) {
         settings.notificationRules.sourceOverride = newValue.map { NotificationRules.Rule(intent: $0) }
+        // When the whole pump source is silenced, withdraw all outstanding mirrored pump banners now — they
+        // all post under the single `.pumpAlert` category (with per-alert dedupe keys) — so Off is
+        // immediately true, matching the aimed per-category Off. This intentionally sweeps the whole source:
+        // the user silenced the source, and a group with its own louder override simply re-notifies on its
+        // next raise.
+        if newValue == .off {
+            model.notificationWithdrawCategorySink?(.pumpAlert)
+        }
     }
 
     private func applyPendingSafetyLower(_ pending: PendingSafetyLower) {
@@ -340,6 +356,33 @@ struct NotificationSettingsView: View {
 
     private func applyAppOwnSourceOverride(_ newValue: NotificationRules.Intent?) {
         settings.notificationRules.appOwnSourceOverride = newValue.map { NotificationRules.Rule(intent: $0) }
+        // Mirror the aimed per-category Off (`applyAppOwnCategoryIntent`): when this one-move control
+        // silences the app-own source, withdraw any outstanding banner for each app-own safety category
+        // that now RESOLVES to Off — a category with its own non-Off override still notifies (its override
+        // wins the cascade), so it is left alone. Makes "faBolus will be quieter" immediately true, not
+        // only for the next event.
+        guard newValue == .off else { return }
+        for category in Self.appOwnSafetyCategoriesResolvingOff(
+            settings.notificationRules, among: appOwnSafetyCategories,
+            timeSensitiveAvailable: NotificationCapability.timeSensitiveAvailable)
+        {
+            model.notificationWithdrawCategorySink?(category)
+        }
+    }
+
+    /// The app-own safety categories that RESOLVE to Off under `rules` — the set whose outstanding banners
+    /// a source/aimed Off should withdraw. A category with its own non-Off override still notifies (its
+    /// override wins the cascade), so it is excluded. Pure + static so the withdraw set is unit-testable
+    /// without constructing the view.
+    static func appOwnSafetyCategoriesResolvingOff(
+        _ rules: NotificationRules.PersistedRules,
+        among categories: [NotificationBroker.Category],
+        timeSensitiveAvailable: Bool
+    ) -> [NotificationBroker.Category] {
+        categories.filter {
+            NotificationRules.resolve(rules.cascade(for: $0), timeSensitiveAvailable: timeSensitiveAvailable)
+                .phone == .off
+        }
     }
 
     /// Per-category wording for the one-time safety-lowering warning. Each safety category is specific —
@@ -452,7 +495,7 @@ struct NotificationSettingsView: View {
             Text("Pump alerts (mirrored from your pump's own alarms)")
         } footer: {
             Text(
-                "Alerts and alarms relayed from your pump, grouped the way your pump groups them. Set each group's rung for how faBolus notifies you here on your phone and watch — the top rung, when available and allowed by iOS, breaks through Focus/Do Not Disturb. Your pump keeps alarming on its own screen no matter what you choose here. Set a group to \"Off\" to stop faBolus re-notifying you for alerts the pump already sounds itself."
+                "Alerts and alarms relayed from your pump, grouped the way your pump groups them. Set each group's rung for how faBolus notifies you here on your phone and watch — the top rung, when available and allowed by iOS, breaks through Focus/Do Not Disturb. Your pump keeps alarming on its own screen no matter what you choose here. Set a group to \"Off\" to stop faBolus re-notifying you for alerts the pump already sounds itself; a banner already showing clears when that pump alert clears, or set \"All pump alerts\" to Off to clear them now."
             )
         }
     }
@@ -471,7 +514,7 @@ struct NotificationSettingsView: View {
             Text("Other faBolus notifications")
         } footer: {
             Text(
-                "Other notifications faBolus raises itself, such as a rejected remote bolus or an unresolved dose. Turn any off here; these are not safety alarms and do not break through Do Not Disturb."
+                "Other notifications faBolus raises itself, such as a rejected remote bolus or the gentle heads-up shown while a bolus is being sent. These are not safety alarms and do not break through Do Not Disturb; turn any off here. The authoritative \"Bolus outcome unknown\" safety disclosure — shown when a dose's outcome is genuinely unresolved — is always surfaced and is tuned on the faBolus alerts ladder above; this toggle does not silence it."
             )
         }
     }
