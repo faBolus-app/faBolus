@@ -203,4 +203,52 @@ struct DeliveryLedgerCoordinatorTests {
                 "an unreadable ledger must keep the disclosure — never withdraw it")
         }
     }
+
+    // MARK: - `.unavailable` reconciliation telemetry is recorded once per episode, not per pass
+
+    /// A sent-but-no-id stuck entry stays unresolved across passes (the no-id arm discloses + continues,
+    /// never settling it). Reconcile runs at launch, on reconnect, and on each bounded retry, so recording
+    /// `.unavailable` on EVERY pass inflated the counter for one stuck dose. It must record at most once per
+    /// episode — while still posting the disclosure every pass.
+    @Test func repeatedReconcilePassesRecordUnavailableAtMostOncePerEpisode() async {
+        let json =
+            "{\"entries\":{\"watch\\u001fnoid-1\":"
+            + "{\"doseKey\":\"u:1.0000|c:-|bg:-\",\"state\":\"delivering\",\"sentToPump\":true}},"
+            + "\"order\":[\"watch\\u001fnoid-1\"],\"cap\":256}"
+        let seed = try! JSONDecoder().decode(RemoteBolusLedger.self, from: Data(json.utf8))
+        let coord = DeliveryLedgerCoordinator(ledgerStore: SeedLedgerStore(seed: seed))
+        var outcomes: [ConnectionTelemetry.ReconcileOutcome] = []
+        var disclosures = 0
+        coord.recordReconciliation = { outcomes.append($0) }
+        coord.postSafety = { cat, _, _, _, _ in if cat == .bolusIndeterminate { disclosures += 1 } }
+
+        for _ in 0..<3 { await coord.reconcileUnresolvedDeliveries() }
+
+        #expect(
+            outcomes.filter { $0 == .unavailable }.count == 1,
+            "one stuck entry must record .unavailable at most once per episode, not once per reconcile pass")
+        #expect(disclosures >= 3, "the unknown-outcome disclosure still posts on every pass")
+    }
+
+    // MARK: - Manual clear withdraws the per-delivery reconcile keys (defensive guard, stays unwired)
+
+    /// `clearDeliveryBlockAfterVerification()` must withdraw the per-delivery reconcile keys of the entries
+    /// it settles, so the durable `.bolusIndeterminate` records are purged rather than orphaned (a dose the
+    /// user confirmed themselves must not replay). Before this the manual-clear path withdrew nothing.
+    @Test func manualClearWithdrawsThePerDeliveryReconcileKeys() {
+        let json =
+            "{\"entries\":{\"watch\\u001fnoid-1\":"
+            + "{\"doseKey\":\"u:1.0000|c:-|bg:-\",\"state\":\"delivering\",\"sentToPump\":true}},"
+            + "\"order\":[\"watch\\u001fnoid-1\"],\"cap\":256}"
+        let seed = try! JSONDecoder().decode(RemoteBolusLedger.self, from: Data(json.utf8))
+        let coord = DeliveryLedgerCoordinator(ledgerStore: SeedLedgerStore(seed: seed))
+        var withdrawn: [String] = []
+        coord.withdrawSafety = { withdrawn.append(contentsOf: $0) }
+
+        coord.clearDeliveryBlockAfterVerification()
+
+        #expect(
+            withdrawn.contains(RemoteBolusLedger.reconciliationDedupeKey(peerId: "watch", requestId: "noid-1")),
+            "manual clear must withdraw the per-delivery reconcile key so the durable disclosure is purged")
+    }
 }

@@ -251,7 +251,10 @@ final class DeliveryLedgerCoordinator {
     /// delivery. Settle every unresolved entry as verified and clear a fail-closed (corrupt-ledger) lock,
     /// writing a fresh clean ledger, so delivery can resume. Never called automatically.
     func clearDeliveryBlockAfterVerification() {
+        var reconcileKeys: [String] = []
         for entry in remoteBolusLedger.unreconciled() {
+            reconcileKeys.append(
+                RemoteBolusLedger.reconciliationDedupeKey(peerId: entry.peerId, requestId: entry.requestId))
             remoteBolusLedger.settle(
                 peerId: entry.peerId, requestId: entry.requestId,
                 status: RemoteCommand.Status.manuallyCleared.rawValue,
@@ -266,6 +269,13 @@ final class DeliveryLedgerCoordinator {
             ledgerFailedClosed = false
             terminalSaveFailed = false
             clearUnknownOutcome()
+            // Withdraw the per-delivery reconcile records for the entries just settled, so the durable
+            // `.bolusIndeterminate` disclosures are purged rather than orphaned (a dose the user confirmed
+            // themselves must not be re-alarmed on the next launch). Withdraw — never post a superseding
+            // settle. This method stays intentionally UNCALLED in production; this makes it safe if it is
+            // ever wired.
+            withdrawSafety(reconcileKeys)
+            reconciliationUnavailableRecorded.subtract(reconcileKeys)
         } catch {
             terminalSaveFailed = true
         }
@@ -433,6 +443,23 @@ final class DeliveryLedgerCoordinator {
     /// - Parameter viaPeriodicRetry: true only when THIS call is a self-scheduled bounded-retry tick
     ///   (see the periodic-retry block below); every other caller (launch / connect edge / manual
     ///   verification flows) leaves the default `false`, which re-arms the retry budget below.
+    /// In-memory (non-persisted) guard so a single stuck unresolved entry records `.unavailable`
+    /// reconciliation telemetry at most ONCE per episode, not once per reconcile pass — reconcile runs at
+    /// launch, on reconnect, and on each bounded retry, so a per-pass record inflated the counter over time
+    /// for one dose. Keyed by the entry's reconcile dedupe key; pruned each pass to the still-unresolved
+    /// set, so an entry that settles (and any genuinely new later episode) is counted again. No
+    /// persisted-model or wire change.
+    private var reconciliationUnavailableRecorded: Set<String> = []
+
+    /// Record `.unavailable` reconciliation telemetry for this entry at most once per unresolved episode.
+    /// The disclosure notification is still posted on every pass by the caller; only the counter is gated.
+    private func recordUnavailableOncePerEpisode(peerId: String, requestId: String) {
+        let key = RemoteBolusLedger.reconciliationDedupeKey(peerId: peerId, requestId: requestId)
+        if reconciliationUnavailableRecorded.insert(key).inserted {
+            recordReconciliation(.unavailable)
+        }
+    }
+
     func reconcileUnresolvedDeliveries(viaPeriodicRetry: Bool = false) async {
         if !viaPeriodicRetry {
             // A genuine (non-periodic) call supersedes any tick already scheduled and resets the
@@ -450,6 +477,10 @@ final class DeliveryLedgerCoordinator {
         // so more than one predates it entirely and needs re-establishing, not reconciling by id.
         var changed = remoteBolusLedger.collapseLegacyMultiEntryUnresolved()
         let unresolved = remoteBolusLedger.unreconciled()
+        // Prune the once-per-episode `.unavailable` guard to entries still unresolved: an entry that has
+        // settled (or a genuinely new later episode reusing the key) counts again.
+        reconciliationUnavailableRecorded.formIntersection(
+            unresolved.map { RemoteBolusLedger.reconciliationDedupeKey(peerId: $0.peerId, requestId: $0.requestId) })
         // Withdraw the fixed-key unreadable-ledger disclosure by an idempotent CONDITION check (not a
         // true→false transition hook, which never fires: `ledgerFailedClosed` only clears in the
         // callerless clearDeliveryBlockAfterVerification()). Whenever the ledger reads cleanly, remove any
@@ -512,7 +543,7 @@ final class DeliveryLedgerCoordinator {
                     "A previous bolus was sent but its outcome is unknown. Verify on the pump/t:connect "
                         + "before dosing again.",
                     RemoteBolusLedger.reconciliationDedupeKey(peerId: entry.peerId, requestId: entry.requestId))
-                recordReconciliation(.unavailable)
+                recordUnavailableOncePerEpisode(peerId: entry.peerId, requestId: entry.requestId)
                 continue
             }
             // Scope reconciliation to the pump that wrote the entry: a nil key is GRANDFATHERED
@@ -523,7 +554,7 @@ final class DeliveryLedgerCoordinator {
             // history search while the entry remains honestly disclosed.
             let pumpKeyComparison = RemoteBolusLedger.comparePumpKey(entry.pumpKey, to: currentPumpIdentity())
             if pumpKeyComparison == .mismatch {
-                recordReconciliation(.unavailable)
+                recordUnavailableOncePerEpisode(peerId: entry.peerId, requestId: entry.requestId)
                 continue
             }
             switch await reconcile(bolusId) {
@@ -566,7 +597,7 @@ final class DeliveryLedgerCoordinator {
                     "A previous bolus couldn’t be confirmed with the pump. Verify on the pump/t:connect "
                         + "before dosing again.",
                     RemoteBolusLedger.reconciliationDedupeKey(peerId: entry.peerId, requestId: entry.requestId))
-                recordReconciliation(.unavailable)  // stayed unresolved
+                recordUnavailableOncePerEpisode(peerId: entry.peerId, requestId: entry.requestId)  // stayed unresolved
             }
         }
         // Release the block only once the settled ledger is durably saved.
