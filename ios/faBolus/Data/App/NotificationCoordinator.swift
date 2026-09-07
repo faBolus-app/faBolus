@@ -357,13 +357,12 @@ final class NotificationCoordinator: NSObject, UNUserNotificationCenterDelegate 
         super.init()
         center.delegate = self
         registerCategories()
-        // Also request critical-alert permission. Harmless (a no-op) when the app lacks the
-        // critical-alerts entitlement — iOS itself downgrades a `.critical` notification to a normal one
-        // when the app isn't entitled, so gating `NotificationPoster.post`'s content on the user's
-        // `criticalAlertsEnabled` alone is correct and degrades gracefully at the OS level.
-        // `.badge` so `UNUserNotificationCenter.setBadgeCount` is actually honored — without it
-        // iOS silently ignores every `setBadgeCount` call, regardless of any future opt-in.
-        center.requestAuthorization(options: [.alert, .sound, .criticalAlert, .badge]) { _, _ in }
+        // Request the alert/sound/badge authorization the app actually uses. There is no `.critical`
+        // interruption level anywhere in the poster — the ladder's top rung is Urgent, which maps to
+        // `.timeSensitive` (breakthrough without the Critical Alerts entitlement) — so the Critical-Alerts
+        // option is NOT requested. `.badge` is required or iOS silently ignores every
+        // `UNUserNotificationCenter.setBadgeCount` call.
+        center.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
         // The broker is now the sink for the two ad-hoc posters, and the sole pump-alert subscriber.
         model.notificationSink = { [weak self] msg, userInfo, categoryId in
             self?.post(msg, userInfo: userInfo, categoryId: categoryId)

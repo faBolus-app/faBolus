@@ -212,6 +212,16 @@ public final class AppSettings {
         "eatingMealPlaces", "alertIntel", "eatingTriggerConfig", "eatingNudgesEnabled", "eatingLearnFromFeedback"
     ]
 
+    /// The orphaned `UserDefaults` keys left behind by retired notification/mode settings — no property on
+    /// this type or any other reads them any more. `criticalAlertsEnabled` joined this list the moment its
+    /// stored setting was removed (the `.critical` interruption path is gone entirely). Purged once at
+    /// launch in `init`, guarded by `notificationResiduePurgeV1`. `internal` for the same reason as
+    /// `retiredEatingResidueKeys` — a migration test asserts the purge without hardcoding the list twice.
+    internal static let retiredNotificationResidueKeys: [String] = [
+        "garminAlertIntensityMode", "garminAlertAudibleMinSeverity", "garminAlertCriticalOverridesDnd",
+        "modeReminders", "suppressMirroredPumpAlarms", "criticalAlertsEnabled",
+    ]
+
     /// Minutes after which a CGM reading is **stale**: shown de-emphasized and no longer used to
     /// auto-fill a bolus correction. A stale reading is never used regardless of whether it's still
     /// shown (greyed) or hidden. Also propagated to the remotes.
@@ -331,19 +341,6 @@ public final class AppSettings {
         set { _autoSleepMode.wrappedValue = newValue }
     }
 
-    /// Use iOS **Critical Alerts** (which alert even under Do Not Disturb / the ringer switch)
-    /// for the never-suppressible safety notifications — WHEN the app holds the critical-alerts entitlement;
-    /// it degrades gracefully to a normal notification when the entitlement isn't granted.
-    /// **Default explicit OFF for t:slim**, DECOUPLED from `PumpModelStore.isMobi()` (the
-    /// old default was "ON for a Mobi" — Simulated Mobi and all Mobi backends are gone, so
-    /// that coupling is now to a permanently-stale flag). The user can still turn it on explicitly — the
-    /// capability path (`NotificationCoordinator` read, `NotificationSettingsView` toggle)
-    /// is KEPT. Local device pref: not backed up / iCloud-synced.
-    private var _criticalAlertsEnabled = Stored<Bool>(wrappedValue: false, "criticalAlertsEnabled")
-    public var criticalAlertsEnabled: Bool {
-        get { _criticalAlertsEnabled.wrappedValue }
-        set { _criticalAlertsEnabled.wrappedValue = newValue }
-    }
     /// Opt-in (default OFF) for local notification telemetry — per-category delivered/dismissed/
     /// acted-upon counts the broker uses to tune defaults. Stored in the **App Group** (not `d`) so the
     /// broker, incl. the out-of-process mode-reminder intent, reads the same choice. Local-only, never
@@ -714,7 +711,6 @@ public final class AppSettings {
         _showGlucoseUnitLabels.store = defaults
         _historyRetentionDays.store = defaults
         _historySyncEnabled.store = defaults
-        _criticalAlertsEnabled.store = defaults
         _autoExerciseMode.store = defaults
         _autoSleepMode.store = defaults
         _garminDefaultScreen.store = defaults
@@ -758,7 +754,6 @@ public final class AppSettings {
         historyRetentionDays = 1
         // Default ON — a fresh install (and any device with no stored value) auto-syncs.
         historySyncEnabled = (d.object(forKey: "historySyncEnabled") as? Bool) ?? true
-        criticalAlertsEnabled = (d.object(forKey: "criticalAlertsEnabled") as? Bool) ?? false
         // One-time purge of the five UserDefaults keys the retired eating/Nudge surface left behind —
         // no code can read, display, or delete them once the surface is gone, so an upgrading tester's
         // learned coarse meal-place coordinates would otherwise survive as unreadable, undeletable
@@ -767,6 +762,13 @@ public final class AppSettings {
         if d.object(forKey: "eatingResiduePurgeV1") == nil {
             for key in Self.retiredEatingResidueKeys { d.removeObject(forKey: key) }
             d.set(true, forKey: "eatingResiduePurgeV1")
+        }
+        // Same one-shot purge for the notification/mode keys whose properties are gone — including the
+        // Critical-Alerts key, orphaned the moment its stored setting was removed (no `.critical` path
+        // remains, so nothing reads or clears it). Same idempotent-once marker discipline as above.
+        if d.object(forKey: "notificationResiduePurgeV1") == nil {
+            for key in Self.retiredNotificationResidueKeys { d.removeObject(forKey: key) }
+            d.set(true, forKey: "notificationResiduePurgeV1")
         }
         autoExerciseMode = (d.object(forKey: "autoExerciseMode") as? Bool) ?? false
         autoSleepMode = (d.object(forKey: "autoSleepMode") as? Bool) ?? false

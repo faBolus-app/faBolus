@@ -355,22 +355,6 @@ struct AppSettingsStoredMigrationTests {
         #expect(settings2.historyRetentionDays == 1)  // …but the NEXT init still force-sets 1
     }
 
-    // MARK: `criticalAlertsEnabled` — default + round trip
-
-    @Test func criticalAlertsEnabledStoredRoundTrip() {
-        // Fresh install (no keys): default OFF.
-        let d1 = freshSuite("criticalAlertsEnabled.fresh")
-        let s1 = AppSettings(defaults: d1)
-        expectStoredBacking(s1, label: "__criticalAlertsEnabled", valueType: Bool.self)
-        #expect(s1.criticalAlertsEnabled == false)
-
-        // Round trip: a user enable persists and survives the next init.
-        s1.criticalAlertsEnabled = true
-        #expect(d1.object(forKey: "criticalAlertsEnabled") as? Bool == true)
-        let s2 = AppSettings(defaults: d1)
-        #expect(s2.criticalAlertsEnabled == true)
-    }
-
     // MARK: - SettingsCatalog counts unchanged by Stored conversion
 
     @Test func settingsCatalogCountsUnchangedByStoredConversion() {

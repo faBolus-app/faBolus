@@ -63,7 +63,9 @@ import UserNotifications
     @Test func dailyCountersPersistAcrossARuntimeRestart() {
         let store = isolatedStore(#function)
         let rt1 = NotificationRuntime(store: store)
-        let d = NotificationPoster.post(msg(.pumpAlert, key: "a"), runtime: rt1, now: at(9, 0)) { _ in }
+        // `remoteBolusRejected` is the ordinary governed, non-safety, budget-counted consumer — `.pumpAlert`
+        // no longer serves that role here since pump-mirror deliveries are budget-exempt.
+        let d = NotificationPoster.post(msg(.remoteBolusRejected, key: "a"), runtime: rt1, now: at(9, 0)) { _ in }
         #expect(d.deliver && rt1.state.deliveredToday == 1)
         // A fresh runtime on the same store (a relaunch, or the mode-reminder intent process) sees it.
         let rt2 = NotificationRuntime(store: store)
@@ -330,32 +332,49 @@ import UserNotifications
 
     /// Resolves `NotificationSettingsView.swift` by walking up from `#filePath`.
     private static func notificationSettingsViewFileURL() -> URL? {
+        repoFileURL("ios/faBolus/Views/NotificationSettingsView.swift")
+    }
+
+    /// Resolves a repo-relative source path by walking up from `#filePath`.
+    private static func repoFileURL(_ repoRelativePath: String) -> URL? {
         let fm = FileManager.default
         var probe = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         for _ in 0..<8 {
-            let candidate = probe.appendingPathComponent("ios/faBolus/Views/NotificationSettingsView.swift")
+            let candidate = probe.appendingPathComponent(repoRelativePath)
             if fm.fileExists(atPath: candidate.path) { return candidate }
             probe = probe.deletingLastPathComponent()
         }
         return nil
     }
 
-    /// Decision 4: the retired "Use Critical Alerts" toggle (and `criticalAlertsEnabled` generally)
-    /// must leave no trace in `NotificationSettingsView.swift`'s source text — replaces
-    /// `interruptionStrengthSectionGatesNoOtherRow`, whose subject (the "Interruption Strength"
-    /// section) no longer exists on screen.
-    @Test func criticalAlertsEnabledHasNoSourceReferenceInNotificationSettingsView() throws {
-        guard let url = Self.notificationSettingsViewFileURL(),
-            let source = try? String(contentsOf: url, encoding: .utf8)
+    /// The retired "Use Critical Alerts" toggle (and its stored setting) must leave NO production reader:
+    /// no reference in `NotificationSettingsView.swift`, and no `criticalAlert` reference at all in
+    /// `NotificationCoordinator.swift` (neither the stale comment nor the requested authorization option).
+    /// Broadened from a view-only scan so it proves the removal, not just the absence of a UI toggle. The
+    /// AppSettings source is deliberately NOT scanned for the bare key: the raw string survives on purpose
+    /// in the one-shot residue-purge list, which is asserted by the purge test instead.
+    @Test func theRetiredCriticalAlertsSettingLeavesNoProductionReader() throws {
+        guard let viewURL = Self.repoFileURL("ios/faBolus/Views/NotificationSettingsView.swift"),
+            let viewSource = try? String(contentsOf: viewURL, encoding: .utf8)
         else {
             Issue.record("could not resolve/read NotificationSettingsView.swift from #filePath=\(#filePath)")
             return
         }
-        #expect(!source.isEmpty, "path resolution broke — read zero bytes from NotificationSettingsView.swift")
+        #expect(!viewSource.isEmpty, "path resolution broke — read zero bytes from NotificationSettingsView.swift")
         #expect(
-            !source.contains("criticalAlertsEnabled"),
-            "NotificationSettingsView.swift still references criticalAlertsEnabled — the retired \"Use Critical Alerts\" toggle must leave no trace (Decision 4)"
-        )
+            !viewSource.contains("criticalAlertsEnabled"),
+            "NotificationSettingsView.swift still references criticalAlertsEnabled — the retired toggle must leave no trace")
+
+        guard let coordURL = Self.repoFileURL("ios/faBolus/Data/App/NotificationCoordinator.swift"),
+            let coordSource = try? String(contentsOf: coordURL, encoding: .utf8)
+        else {
+            Issue.record("could not resolve/read NotificationCoordinator.swift from #filePath=\(#filePath)")
+            return
+        }
+        #expect(!coordSource.isEmpty, "path resolution broke — read zero bytes from NotificationCoordinator.swift")
+        #expect(
+            !coordSource.contains("criticalAlert"),
+            "NotificationCoordinator.swift still references criticalAlert — neither the comment nor the requested authorization option may remain")
     }
 
     /// `.cgmDataLoss` never notifies (`deliversAsNotification == false`), so the Notifications screen

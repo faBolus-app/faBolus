@@ -2,36 +2,57 @@ import Testing
 import Foundation
 @testable import faBolus
 
-/// `criticalAlertsEnabled` defaults OFF for every pump family.
+/// The retired notification/mode settings left orphaned `UserDefaults` keys behind — including the
+/// removed Critical-Alerts stored setting. A one-time launch purge removes them exactly once, mirroring
+/// the eating-residue precedent below.
 @MainActor
 @Suite(.serialized)
-struct AppSettingsMigrationTests {
+struct NotificationResiduePurgeTests {
+
+    private static let purgeGuardKey = "notificationResiduePurgeV1"
 
     private func freshSuite() -> UserDefaults {
-        let name = "AppSettingsMigrationTests.\(UUID().uuidString)"
+        let name = "NotificationResiduePurgeTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: name)!
         defaults.removePersistentDomain(forName: name)
         return defaults
     }
 
-    /// With no persisted value, `criticalAlertsEnabled` defaults to `false` regardless of
-    /// `PumpModelStore.isMobi()` — proving the default is decoupled from the Mobi check.
-    @Test func defaultIsOffForTslimDecoupledFromMobi() {
-        // Save + restore the real `.standard`-backed detected-pump flag: PumpModelStore hardcodes
-        // UserDefaults.standard and has no injectable seam.
-        let savedIsMobi = PumpModelStore.isMobi()
-        defer {
-            if let saved = savedIsMobi { PumpModelStore.set(isMobi: saved) } else { PumpModelStore.clear() }
-        }
+    /// A tester upgrading from a build that still had these settings has every orphaned key removed on the
+    /// next launch — including the Critical-Alerts key — and the guard key is set so the purge does not
+    /// re-fire.
+    @Test func allOrphanedNotificationKeysArePurgedOnceOnUpgrade() {
+        let defaults = freshSuite()
+        for key in AppSettings.retiredNotificationResidueKeys { defaults.set(true, forKey: key) }
+        #expect(
+            AppSettings.retiredNotificationResidueKeys.contains("criticalAlertsEnabled"),
+            "the removed Critical-Alerts key must be part of the purge list")
+        #expect(defaults.object(forKey: Self.purgeGuardKey) == nil)
 
-        for isMobi in [true, false] {
-            PumpModelStore.set(isMobi: isMobi)
-            let defaults = freshSuite()
-            let settings = AppSettings(defaults: defaults)
+        _ = AppSettings(defaults: defaults)
+
+        for key in AppSettings.retiredNotificationResidueKeys {
             #expect(
-                settings.criticalAlertsEnabled == false,
-                "criticalAlertsEnabled must default to false for isMobi == \(isMobi) — decoupled from PumpModelStore")
+                defaults.object(forKey: key) == nil,
+                "orphaned key '\(key)' must be removed by the one-time purge")
         }
+        #expect(
+            defaults.bool(forKey: Self.purgeGuardKey) == true,
+            "the purge guard key must be set after the one-time purge fires")
+    }
+
+    /// Idempotent: once the guard key is set, a later launch must not re-run the purge even if a key
+    /// re-appears (a restored backup) — the purge is a one-time upgrade action, not a standing invariant.
+    @Test func purgeDoesNotReRunOnceGuardKeyIsSet() {
+        let defaults = freshSuite()
+        defaults.set(true, forKey: Self.purgeGuardKey)
+        defaults.set(true, forKey: "criticalAlertsEnabled")
+
+        _ = AppSettings(defaults: defaults)
+
+        #expect(
+            defaults.object(forKey: "criticalAlertsEnabled") as? Bool == true,
+            "the purge must not re-fire once its guard key is set")
     }
 }
 
