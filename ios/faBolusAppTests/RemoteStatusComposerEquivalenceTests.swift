@@ -25,10 +25,17 @@ struct RemoteStatusComposerEquivalenceTests {
         s.childModeEnabled = false
         s.phoneReadOnly = false
         s.remotesReadOnly = false
+        // The pump-switch marker lives in process-global UserDefaults, so a sibling suite can leave a
+        // non-matching identity behind. Without clearing it, this suite's first `connect()` is misread as
+        // a pump SWITCH and `resetSnapshotForPumpSwitch()` nils glucoseDate + therapy params before the
+        // assertions read the snapshot. Clear it so `connect()` is a clean first-connect with no spurious
+        // reset, and leave it clean for the next suite — the same guard the refresh-ordering suite uses.
+        PumpSwitchStore.clear()
         defer {
             s.childModeEnabled = child
             s.phoneReadOnly = ro
             s.remotesReadOnly = rro
+            PumpSwitchStore.clear()
         }
         try await body()
     }
