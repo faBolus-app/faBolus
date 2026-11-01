@@ -189,6 +189,12 @@ extension AppModel {
             entered: environment.glucoseSources.settings.g6TransmitterID, fromPump: pump.cgmHardwareInfo?.value)
     }
 
+    /// The running Bluetooth CGM's session recording, for the owner's checks; `nil` for any other source.
+    public func bluetoothCGMRecording() async -> String? {
+        guard let recorder = backupSource as? any RecordsBluetoothSession else { return nil }
+        return await recorder.sessionRecording()
+    }
+
     /// For the CGM test in settings.
     public func probeBackupSource() async -> CgmTestCoordinator.Probe? {
         guard let backupSource else { return nil }

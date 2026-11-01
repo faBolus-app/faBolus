@@ -49,6 +49,12 @@ public struct DexcomSessionLog: Sendable, Equatable {
         entries.append(Entry(offset: offset, event: event))
     }
 
+    /// Keeps the newest `count` entries, so a recording that runs for days stays bounded.
+    public mutating func dropOldest(keeping count: Int) {
+        guard entries.count > count else { return }
+        entries.removeFirst(entries.count - count)
+    }
+
     public var text: String {
         let declarations = peripherals.sorted { $0.key < $1.key }.map { alias, peripheral in
             "peripheral \(alias) \(peripheral.id.uuidString) \(peripheral.name ?? "-")"

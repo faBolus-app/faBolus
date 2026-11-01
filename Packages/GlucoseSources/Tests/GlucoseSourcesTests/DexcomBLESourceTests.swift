@@ -69,6 +69,19 @@ struct DexcomBLESourceTests {
         #expect(remembered?.activationDate == t0.addingTimeInterval(213.6 - 5_092_030))
     }
 
+    @Test("the source records its session as a log that replays to the same events")
+    func recordsItsSession() async throws {
+        let clock = TestClock(t0)
+        let source = g6Source(clock: clock, transport: RecordingTransport())
+        await source.start()
+        let fixture = try dexcomFixture("G6/Tests/Fixtures/g6-session.log")
+        await replay(fixture, through: source, clock: clock)
+        let recorded = try DexcomSessionLog(parsing: await source.sessionRecording())
+        #expect(recorded.entries.map(\.event) == fixture.entries.map(\.event))
+        let start = fixture.entries.first?.offset ?? 0
+        #expect(recorded.entries.map(\.offset) == fixture.entries.map { $0.offset - start })
+    }
+
     @Test("G6 backfill fills the history behind the latest reading")
     func g6Backfill() async throws {
         let clock = TestClock(t0)

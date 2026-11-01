@@ -4,6 +4,14 @@ import DexcomG7
 import Foundation
 import faBolusCore
 
+/// A source that keeps a recording of its Bluetooth session, for the owner's checks on a real
+/// transmitter and as replay fixtures.
+public protocol RecordsBluetoothSession: Sendable {
+    /// The session so far as `DexcomSessionLog` text: every event since the source first started, the
+    /// newest `DexcomBLESource.recordingLimit` of them.
+    func sessionRecording() async -> String
+}
+
 /// What `DexcomBLESource` drives. `DexcomCentral` in the app; a recording fake in tests.
 public protocol DexcomTransport: Sendable {
     func start()
@@ -17,7 +25,7 @@ extension DexcomCentral: DexcomTransport {}
 /// order on one stream and are handled one at a time on this actor, so the observer's state is only
 /// ever touched here. Local Bluetooth runs continuously, whatever the pump's feed is doing, so a
 /// failover is instant.
-public actor DexcomBLESource<Observer: DexcomObserver>: GlucoseSource {
+public actor DexcomBLESource<Observer: DexcomObserver>: GlucoseSource, RecordsBluetoothSession {
     public typealias TransportFactory =
         @Sendable (_ emit: @escaping @Sendable (DexcomEvent) -> Void) -> any DexcomTransport
 
@@ -41,6 +49,10 @@ public actor DexcomBLESource<Observer: DexcomObserver>: GlucoseSource {
     private var buffer = GlucoseSourceBuffer()
     private var subscribers = GlucoseSourceUpdates()
     private var remembered: DexcomMemory
+    private var recording = DexcomSessionLog()
+    private var recordingStart: Date?
+    /// About two days of a G6's or G7's events.
+    public static var recordingLimit: Int { 10_000 }
 
     /// - Parameters:
     ///   - makeTransport: builds the central once, on the first `start`; it lives as long as the source.
@@ -109,9 +121,15 @@ public actor DexcomBLESource<Observer: DexcomObserver>: GlucoseSource {
     /// Bluetooth runs regardless of the pump's feed.
     public func setPrimaryHealthy(_ healthy: Bool) {}
 
+    public func sessionRecording() -> String { recording.text }
+
     func handle(_ event: DexcomEvent) {
         guard started else { return }
         let now = clock()
+        let start = recordingStart ?? now
+        recordingStart = start
+        recording.append(event, at: now.timeIntervalSince(start))
+        recording.dropOldest(keeping: Self.recordingLimit)
         let observation = observer.handle(event, now: now)
         transport?.perform(observation.commands)
         if !observation.readings.isEmpty {

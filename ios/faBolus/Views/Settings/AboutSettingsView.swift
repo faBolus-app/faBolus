@@ -1,3 +1,4 @@
+import GlucoseSources
 import PhoneApp
 import SwiftUI
 
@@ -25,6 +26,22 @@ struct AboutSettingsView: View {
                     "A text file for debugging: the pump and watch connection history, the pump's identity, alerts and bolus outcomes. It has no pairing code, password or glucose readings. Share it only with people you trust."
                 )
             }
+            if let id = model.backupSourceID, [GlucoseSourceRegistry.g6ID, GlucoseSourceRegistry.g7ID].contains(id) {
+                Section {
+                    Button {
+                        Task {
+                            let text = await model.bluetoothCGMRecording() ?? ""
+                            export = DiagnosticsExport(text: text, revision: AppRevision.commit, name: "dexcom-session")
+                        }
+                    } label: {
+                        Label("Export Dexcom Bluetooth log", systemImage: "square.and.arrow.up")
+                    }
+                } footer: {
+                    Text(
+                        "Everything the Dexcom transmitter sent since faBolus started, for checking the direct G6 or G7 link. It includes glucose readings and the transmitter's identity."
+                    )
+                }
+            }
             #if DEBUG
             Section {
                 NavigationLink {
@@ -48,10 +65,10 @@ struct DiagnosticsExport: Identifiable {
     let id = UUID()
     let fileURL: URL
 
-    init(text: String, revision: String) {
+    init(text: String, revision: String, name: String = "diagnostics") {
         let stamp = Date().formatted(.iso8601.year().month().day().time(includingFractionalSeconds: false))
             .replacingOccurrences(of: ":", with: "")
-        fileURL = FileManager.default.temporaryDirectory.appendingPathComponent("faBolus-diagnostics-\(stamp).txt")
+        fileURL = FileManager.default.temporaryDirectory.appendingPathComponent("faBolus-\(name)-\(stamp).txt")
         try? ("Build \(revision)\n" + text).write(to: fileURL, atomically: true, encoding: .utf8)
     }
 }
