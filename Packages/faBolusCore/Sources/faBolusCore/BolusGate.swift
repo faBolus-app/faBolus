@@ -59,35 +59,55 @@ public enum BolusGate {
     ///   - reachable: can this surface reach the host? (host surfaces pass `true`; remotes pass their link state)
     ///   - linked: is the pump link healthy? (host: `PumpState.link.isConnected`; remote: the relayed
     ///     pump-connected flag)
-    ///   - bolusInFlight: is a dose already running? (host: `RemoteBolusLedger.block == .bolusInProgress`;
-    ///     remote: relayed)
+    ///   - bolusInFlight: is a dose already running? (host: `BolusBlock.bolusInProgress`; remote: relayed)
     ///   - cartridgeReady: is the cartridge NOT mid change/load/prime-tubing? (host:
     ///     `PumpState.cartridgeReadiness != .notReady`; remote: relayed). Dosing is physically impossible
     ///     while `false`, so this is checked before access/bounds.
+    ///   - maximum: the pump's max bolus, or `nil` when it hasn't been read. Unknown, the pump enforces
+    ///     its own max and the app adds none.
     ///   - access: the `AccessPolicy` decision for `.deliverBolus` on this surface (host: the real evaluation;
     ///     a remote pre-wire passes `.allow`, or `.deny(.remotesReadOnly)` when it locally knows it's read-only)
     public static func evaluate(
         reachable: Bool, linked: Bool, bolusInFlight: Bool,
         cartridgeReady: Bool = true,
-        amount: Double, minimum: Double, maximum: Double,
+        amount: Double, minimum: Double = BolusVolume.minimumUnits, maximum: Double?,
         access: AccessPolicy.AccessDecision
     ) -> (canBolus: Bool, reason: BolusBlockReason?) {
-        if !reachable { return (false, .remoteUnreachable) }
-        if !linked { return (false, .pumpNotLinked) }
-        if bolusInFlight { return (false, .bolusInFlight) }
-        if !cartridgeReady { return (false, .noCartridge) }
+        let reason =
+            availability(
+                reachable: reachable, linked: linked, bolusInFlight: bolusInFlight,
+                cartridgeReady: cartridgeReady, access: access)
+            ?? amountCheck(amount, minimum: minimum, maximum: maximum)
+        return (reason == nil, reason)
+    }
+
+    /// The checks that don't depend on the amount, so a dose flow can refuse before it asks the user
+    /// anything. `nil` when a bolus may be attempted.
+    public static func availability(
+        reachable: Bool, linked: Bool, bolusInFlight: Bool, cartridgeReady: Bool,
+        access: AccessPolicy.AccessDecision
+    ) -> BolusBlockReason? {
+        if !reachable { return .remoteUnreachable }
+        if !linked { return .pumpNotLinked }
+        if bolusInFlight { return .bolusInFlight }
+        if !cartridgeReady { return .noCartridge }
         // `access.reason` is nil ⇔ allowed by `AccessDecision`'s own contract, so `!access.allowed`
         // always carries a reason in practice; this fallback exists only because the struct's public
         // init can't enforce that pairing at compile time. `.capabilityUnavailable` is the least
         // situation-specific surviving reason, so a caller that somehow reaches this branch is never
         // told a false, more-specific story about WHY.
-        if !access.allowed { return (false, .accessDenied(access.reason ?? .capabilityUnavailable)) }
+        if !access.allowed { return .accessDenied(access.reason ?? .capabilityUnavailable) }
+        return nil
+    }
+
+    /// The pump's own bounds on the amount: its minimum, and its max when known. `nil` when the amount
+    /// is within them.
+    public static func amountCheck(_ amount: Double, minimum: Double, maximum: Double?) -> BolusBlockReason? {
         // A non-finite amount (NaN/±inf) satisfies neither `< minimum` nor `> maximum`, so without this
-        // guard it would fall through to `(true, nil)` and arm the affordance. `validateDeliver`
-        // fail-closes it before the pump write, but the gate itself must reject it too — fail-closed.
-        if !amount.isFinite { return (false, .belowMinimum(minimum)) }
-        if amount < minimum { return (false, .belowMinimum(minimum)) }
-        if amount > maximum { return (false, .aboveMax(maximum)) }
-        return (true, nil)
+        // guard it would pass. Fail closed.
+        if !amount.isFinite { return .belowMinimum(minimum) }
+        if amount < minimum { return .belowMinimum(minimum) }
+        if let maximum, maximum.isFinite, maximum > 0, amount > maximum { return .aboveMax(maximum) }
+        return nil
     }
 }

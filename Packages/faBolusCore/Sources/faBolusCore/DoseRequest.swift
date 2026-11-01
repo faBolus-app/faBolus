@@ -73,10 +73,17 @@ public struct DoseRequest: Sendable, Hashable, Codable {
     public var ledgerKey: RemoteBolusLedger.Key { .init(peerId: origin.peerId, requestId: id) }
 
     /// A fingerprint of everything that defines the dose, so the same request ID with different
-    /// parameters is refused rather than replayed.
+    /// parameters is refused rather than replayed, and the same dose resent under a new ID is recognized.
+    ///
+    /// A remote's calculator request is defined by what the remote sent, its carbs and glucose: the phone
+    /// computes the units, and its recompute moves once the first bolus has raised IOB. Keyed on the units,
+    /// a resend after that bolus would look like a new dose and be delivered again.
     public var doseKey: String {
         switch shape {
         case .now(let units):
+            if case .remote = origin, carbsGrams != nil {
+                return RemoteBolusLedger.doseKey(units: nil, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
+            }
             return RemoteBolusLedger.doseKey(units: units, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
         case .extended(let nowUnits, let laterUnits, let duration):
             return RemoteBolusLedger.doseKey(units: nowUnits + laterUnits, carbsGrams: carbsGrams, bgMgdl: bgMgdl)

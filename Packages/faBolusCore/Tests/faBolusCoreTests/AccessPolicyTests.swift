@@ -47,9 +47,8 @@ import Testing
         #expect(P.evaluate(.deliverBolus, surface: .garmin, context: openCtx()).allowed)
     }
 
-    /// The per-surface remote-bolus enable gate AND the Garmin passcode gate must cover
-    /// `.deliverExtendedBolus`, not only `.deliverBolus` — otherwise an extended bolus from a paired remote
-    /// would bypass both.
+    /// The per-surface remote-bolus enable gate must cover `.deliverExtendedBolus`, not only
+    /// `.deliverBolus` — otherwise an extended bolus from a paired remote would bypass it.
     @Test func extendedBolusIsGatedLikeNormalBolusOnRemotes() {
         let off = P.AccessContext(
             phoneReadOnly: false, remotesReadOnly: false,
@@ -57,14 +56,7 @@ import Testing
             garminBolusEnabled: false)
         // Enable OFF ⇒ extended deliver denied on Garmin, exactly like a normal bolus.
         #expect(P.evaluate(.deliverExtendedBolus, surface: .garmin, context: off).reason == .remoteBolusDisabled)
-        // Garmin passcode required-but-unsatisfied ⇒ extended deliver denied by the passcode gate too.
-        var needsCode = openCtx()
-        needsCode.bolusPasscodeRequired = true
-        needsCode.bolusPasscodeSatisfied = false
-        #expect(
-            P.evaluate(.deliverExtendedBolus, surface: .garmin, context: needsCode).reason
-                == .remoteBolusPasscodeRequired)
-        // Enabled + no passcode ⇒ allowed (parity with normal bolus).
+        // Enabled ⇒ allowed (parity with normal bolus).
         #expect(P.evaluate(.deliverExtendedBolus, surface: .garmin, context: openCtx()).allowed)
     }
 
@@ -76,34 +68,6 @@ import Testing
             capabilities: .tslimX2)  // remote-bolus flag OMITTED
         #expect(P.evaluate(.deliverBolus, surface: .garmin, context: c).reason == .remoteBolusDisabled)
         #expect(P.evaluate(.deliverBolus, surface: .phoneUI, context: c).allowed)  // phone unaffected
-    }
-
-    /// When a passcode is required, a Garmin deliver is allowed only with a host-verified code.
-    /// The phone is unaffected, a non-deliver action is never gated, and "bolusing off" still outranks "needs a passcode".
-    @Test func garminBolusPasscodeGateRequiresASatisfiedCode() {
-        // Required + verified ⇒ the Garmin deliver is allowed.
-        var ok = openCtx()
-        ok.bolusPasscodeRequired = true
-        ok.bolusPasscodeSatisfied = true
-        #expect(P.evaluate(.deliverBolus, surface: .garmin, context: ok).allowed)
-        // Required + NOT satisfied (absent OR wrong OR backing off) ⇒ denied by the passcode gate.
-        var bad = openCtx()
-        bad.bolusPasscodeRequired = true
-        bad.bolusPasscodeSatisfied = false
-        #expect(P.evaluate(.deliverBolus, surface: .garmin, context: bad).reason == .remoteBolusPasscodeRequired)
-        // Not required ⇒ no passcode gate at all (today's behavior), even with satisfied=false.
-        var noReq = openCtx()
-        noReq.bolusPasscodeRequired = false
-        noReq.bolusPasscodeSatisfied = false
-        #expect(P.evaluate(.deliverBolus, surface: .garmin, context: noReq).allowed)
-        // The phone is unaffected by the Garmin passcode.
-        #expect(P.evaluate(.deliverBolus, surface: .phoneUI, context: bad).allowed)
-        // A non-deliver Garmin action (cancel) is never passcode-gated.
-        #expect(P.evaluate(.cancelBolus, surface: .garmin, context: bad).reason != .remoteBolusPasscodeRequired)
-        // Precedence: "Garmin bolusing off" still takes priority over "needs a passcode".
-        var offAndReq = bad
-        offAndReq.garminBolusEnabled = false
-        #expect(P.evaluate(.deliverBolus, surface: .garmin, context: offAndReq).reason == .remoteBolusDisabled)
     }
 
     @Test func fullyLockedDeniesEveryDeliveryOnEverySurface() {

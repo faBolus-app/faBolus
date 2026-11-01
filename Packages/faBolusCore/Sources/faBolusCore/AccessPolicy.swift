@@ -2,8 +2,8 @@ import Foundation
 
 /// Single access-policy evaluator: whether a `GatedPumpWrite` is permitted from a `Surface`.
 /// Folds phone/remote read-only, the remote bolus settings and pump capabilities into one ordered check.
-/// Every funnel (`runControl`, `runLedgeredDelivery`, remote hosts) must go through this so a
-/// surface cannot be gated on one layer and open on another. Pure over `AccessContext` —
+/// It is the only gate: every dose reaches it through `DoseComposer`, so a remote bridge has no check of
+/// its own and a surface can't be gated on one layer and open on another. Pure over `AccessContext` —
 /// faBolusCore must not read app globals.
 ///
 /// `remotesReadOnly` governs all remotes. Pump capability is enforced at this funnel, not only in
@@ -12,16 +12,11 @@ public enum AccessPolicy {
 
     /// Where an action originates. Determines which read-only flag applies.
     public enum Surface: String, CaseIterable, Sendable {
-        case phoneUI, quickBolusWidget, siriShortcuts  // local (this phone)
+        case phoneUI  // this phone
         case garmin  // paired remote governed by remotesReadOnly
 
         /// Local surfaces are subject to `phoneReadOnly`.
-        public var isLocal: Bool {
-            switch self {
-            case .phoneUI, .quickBolusWidget, .siriShortcuts: return true
-            default: return false
-            }
-        }
+        public var isLocal: Bool { self == .phoneUI }
         /// Any non-local surface is a remote and is subject to `remotesReadOnly`.
         public var isRemote: Bool { !isLocal }
     }
@@ -38,14 +33,6 @@ public enum AccessPolicy {
         // affected; the host passes the real default-OFF settings). Only consulted for `.deliverBolus`
         // from `.garmin`.
         public var garminBolusEnabled: Bool
-        // The OPTIONAL Garmin bolus passcode. When a passcode is set on the phone
-        // (`BolusPasscodeStore.isRequired`), a Garmin `.deliverBolus` must carry the correct entered code.
-        // The host does the single stateful `verify()` (which arms the exp-backoff) and hands the evaluator
-        // a pure `required`/`satisfied` pair — faBolusCore never touches the Keychain. `satisfied` defaults
-        // FALSE (fail-closed: required-but-unthreaded denies); `required` defaults false so no other
-        // surface/action is affected. Only consulted for `.deliverBolus` from `.garmin`.
-        public var bolusPasscodeRequired: Bool
-        public var bolusPasscodeSatisfied: Bool
 
         public init(
             phoneReadOnly: Bool, remotesReadOnly: Bool,
@@ -54,17 +41,12 @@ public enum AccessPolicy {
             // bolus enable must NOT silently arm Garmin bolusing. The one production call site
             // (AppModel) always passes the real persisted value; this default only guards a future
             // second call site.
-            garminBolusEnabled: Bool = false,
-            // Fail-closed defaults: `required=false` (no passcode ⇒ no extra gate, today's
-            // behavior) but `satisfied=false`, so a required-but-unsatisfied pair always denies.
-            bolusPasscodeRequired: Bool = false, bolusPasscodeSatisfied: Bool = false
+            garminBolusEnabled: Bool = false
         ) {
             self.phoneReadOnly = phoneReadOnly
             self.remotesReadOnly = remotesReadOnly
             self.capabilities = capabilities
             self.garminBolusEnabled = garminBolusEnabled
-            self.bolusPasscodeRequired = bolusPasscodeRequired
-            self.bolusPasscodeSatisfied = bolusPasscodeSatisfied
         }
     }
 
@@ -74,7 +56,6 @@ public enum AccessPolicy {
         case remotesReadOnly
         case capabilityUnavailable
         case remoteBolusDisabled  // bolusing from this remote is turned off
-        case remoteBolusPasscodeRequired  // Garmin bolus needs the correct passcode
 
         public var userMessage: String {
             switch self {
@@ -83,8 +64,6 @@ public enum AccessPolicy {
             case .capabilityUnavailable: return "This pump doesn't support that action."
             case .remoteBolusDisabled:
                 return "Bolusing from this device is turned off — enable it in faBolus on the phone."
-            case .remoteBolusPasscodeRequired:
-                return "Enter the bolus passcode set in faBolus on your phone to bolus from this device."
             }
         }
     }
@@ -126,18 +105,6 @@ public enum AccessPolicy {
         // evaluator exists to prevent.
         if action == .deliverBolus || action == .deliverExtendedBolus {
             if surface == .garmin && !context.garminBolusEnabled { return .deny(.remoteBolusDisabled) }
-        }
-
-        // The OPTIONAL Garmin bolus passcode. When a passcode is set on the phone, a Garmin
-        // `.deliverBolus` must carry the correct entered code (the host verifies it against the salted hash
-        // and passes the result as `bolusPasscodeSatisfied`; the evaluator stays pure). Fail-closed:
-        // required-but-unsatisfied (absent OR wrong OR backing off) denies. Every other surface/action is
-        // unaffected (`required` defaults false). Ordered after the enable gate so "bolusing off" still
-        // takes precedence over "needs a passcode".
-        if (action == .deliverBolus || action == .deliverExtendedBolus) && surface == .garmin
-            && context.bolusPasscodeRequired && !context.bolusPasscodeSatisfied
-        {
-            return .deny(.remoteBolusPasscodeRequired)
         }
 
         // Pump capability, enforced at the funnel and not only in the UI: only a model that can take a

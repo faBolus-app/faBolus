@@ -27,8 +27,8 @@ import Foundation
 ///
 /// **Host-owner only.** The HOST (iPhone) is the authoritative gate. A remote (Apple Watch / Mac / Garmin /
 /// remote-iPhone) uses `shouldWarn` + the `CalcInputFreshness` age labels to grey/age its rows and PRE-WARN,
-/// but NEVER offers the include-last-known overrides and NEVER sends an override — it fails closed via the
-/// host's `resolveRemoteDose` (which recomputes with NO override).
+/// but NEVER offers the include-last-known overrides and NEVER sends an override — it fails closed via
+/// `DoseComposer.composeRemote`, which refuses a carb request whose inputs weren't read fresh.
 public enum StaleIobPrompt {
 
     // NOTE: the deliver-time DECISION of whether to warn — and which two-way prompt — is NOT here; it is the

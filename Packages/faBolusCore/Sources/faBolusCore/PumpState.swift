@@ -65,12 +65,19 @@ public struct BolusCalculatorSettings: Sendable, Hashable, Codable {
     public var targetMgdl: Int
     /// The pump's configured max bolus, units.
     public var maxBolusUnits: Double
+    /// The IOB the calculator reply itself reports, units, when it reported one. The dose subtracts the
+    /// separate IOB reading; this one only checks it, because right after a bolus one of the two can lag.
+    public var insulinOnBoardUnits: Double?
 
-    public init(carbRatio: Double, correctionFactor: Int, targetMgdl: Int, maxBolusUnits: Double) {
+    public init(
+        carbRatio: Double, correctionFactor: Int, targetMgdl: Int, maxBolusUnits: Double,
+        insulinOnBoardUnits: Double? = nil
+    ) {
         self.carbRatio = carbRatio
         self.correctionFactor = correctionFactor
         self.targetMgdl = targetMgdl
         self.maxBolusUnits = maxBolusUnits
+        self.insulinOnBoardUnits = insulinOnBoardUnits
     }
 
     /// A carb ratio, correction factor or target of zero (or less) is impossible, so such a set isn't a
