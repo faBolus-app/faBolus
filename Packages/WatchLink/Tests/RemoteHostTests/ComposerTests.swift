@@ -234,10 +234,12 @@ import Testing
 
     /// The IOB and settings windows the watch's calculator and slots use are the phone's.
     @Test func theWatchsInputWindowsAreThePhones() {
-        let f = FreshnessThresholds(insulinOnBoardStaleAfter: 4 * 60, therapyStaleAfter: 20 * 60)
+        let f = FreshnessThresholds(
+            insulinOnBoardStaleAfter: 4 * 60, therapyStaleAfter: 20 * 60, pumpStatusStaleAfter: 30 * 60)
         let c = ConfigComposer.compose(WatchPreferences(), access: Self.access, freshness: f)
         #expect(c.iobStaleMinutes == 4)
         #expect(c.therapyStaleMinutes == 20)
+        #expect(c.pumpStatusStaleMinutes == 30)
     }
 
     /// The constants the watch keeps its own copy of are the phone's: a change here fails until the contract

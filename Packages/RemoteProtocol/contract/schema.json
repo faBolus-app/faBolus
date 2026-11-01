@@ -718,6 +718,7 @@
           "additionalProperties": false,
           "required": [
             "iobMinutes",
+            "pumpStatusMinutes",
             "therapyMinutes"
           ],
           "properties": {
@@ -727,6 +728,11 @@
               "maximum": 60
             },
             "therapyMinutes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 240
+            },
+            "pumpStatusMinutes": {
               "type": "integer",
               "minimum": 1,
               "maximum": 240

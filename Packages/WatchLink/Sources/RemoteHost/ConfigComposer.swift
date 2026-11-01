@@ -59,6 +59,7 @@ public enum ConfigComposer {
             glucoseStaleMinutes: staleMinutes(freshness),
             iobStaleMinutes: minutes(freshness.insulinOnBoardStaleAfter, max: 60),
             therapyStaleMinutes: minutes(freshness.therapyStaleAfter, max: 240),
+            pumpStatusStaleMinutes: minutes(freshness.pumpStatusStaleAfter, max: 240),
             glucoseHideDelayMinutes: hideDelayMinutes(freshness),
             plotFloorMgdl: plot.floor, plotCeilingMgdl: plot.ceiling)
     }

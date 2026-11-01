@@ -35,6 +35,7 @@
     ],
     "freshness": {
       "iobMinutes": 5,
+      "pumpStatusMinutes": 15,
       "therapyMinutes": 15
     },
     "glucose": {
@@ -43,7 +44,7 @@
       "staleMinutes": 6,
       "unit": "mgdl"
     },
-    "revision": "a3f2c7f7c59a9a3d",
+    "revision": "46065bf17a157c0b",
     "screens": {
       "default": "glance",
       "order": [

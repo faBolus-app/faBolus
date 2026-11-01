@@ -112,4 +112,19 @@ final class CalcInputFreshnessTests: XCTestCase {
         XCTAssertTrue(s.isInsulinOnBoardStale(thresholds: .standard, now: now))
         XCTAssertFalse(s.isBolusCalculatorStale(thresholds: .standard, now: now))
     }
+
+    // MARK: - Saved thresholds
+
+    /// Thresholds saved before the pump-status window existed read with its 15-minute default.
+    func testSavedThresholdsWithoutThePumpStatusWindowReadWithItsDefault() throws {
+        var saved = FreshnessThresholds(glucoseStaleAfter: 8 * 60, pumpStatusStaleAfter: 30 * 60)
+        let data = try JSONEncoder().encode(saved)
+        XCTAssertEqual(try JSONDecoder().decode(FreshnessThresholds.self, from: data), saved)
+        var object = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        object["pumpStatusStaleAfter"] = nil
+        let old = try JSONDecoder().decode(
+            FreshnessThresholds.self, from: try JSONSerialization.data(withJSONObject: object))
+        saved.pumpStatusStaleAfter = 15 * 60
+        XCTAssertEqual(old, saved)
+    }
 }
