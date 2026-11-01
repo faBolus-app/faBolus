@@ -61,6 +61,18 @@ additive, optional fields so older remotes keep working.
 lockstep). App version is single-sourced in `Config.xcconfig`. The live TandemKit pin is the
 `revision:` in `project.yml` (`FABOLUS_TANDEM_LOCAL=1` for a sibling checkout).
 
+## Building against a local TandemKit
+
+`Packages/PumpSession` pins TandemKit by revision. To build against a TandemKit checkout with commits that
+aren't on GitHub yet, point SwiftPM at it with a mirror; the pin in `Package.swift` stays as it is:
+
+```sh
+swift package --package-path Packages/PumpSession config set-mirror \
+  --original https://github.com/faBolus-app/TandemKit.git --mirror ../TandemKit
+```
+
+The mirror lives in `Packages/PumpSession/.swiftpm/`, which git ignores. `config unset-mirror` removes it.
+
 ## Before you open a PR
 
 - `xcodegen generate` after adding/removing files.

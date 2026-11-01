@@ -74,36 +74,28 @@ branch and must still be resolved before any reintegration onto `main`; entries 
   in the CIQ simulator with a Face It face to eyeball the number + arrow + coloring. Not required for
   correctness — the API usage now matches the SDK type source.
 
-## 4. Carb-bolus pump metadata (FOOD1 / foodVolume / bolusIOB / isAutopopBg) — audit C-07
+## 4. Bolus pump metadata: the type bits, the food/correction split and the entries
 
-- **Now correct + oracle-locked:** a carb bolus sends `bolusTypeBitmask = FOOD1 (1)` (not FOOD2) with
-  `foodVolume == totalVolume`, matching the reverse-engineered reference captures
-  (TandemKit `InitiateBolusExtendedTests.carbBolusFood1CargoMatchesOracle` / `…WithIobCargoMatchesOracle`). Carbs
-  are bounded to [0, 1000] g and BG to [0, 600] mg/dL before conversion. Delivered dose is driven by
-  `totalVolume` and is unchanged by these metadata fields.
-- **`bolusIOB` — now wired (FB-04, done):** `perform()` sends the **frozen calculator IOB** — the active
-  insulin the dose was computed against, captured at freeze time and threaded through the delivery API as
-  `iobUnits` — converted to milliunits (`bolusIobMu`, `TandemBackend.swift:511-513`) and passed to both
-  `InitiateBolusRequest` constructors as `bolusIOB: bolusIobMu` (`:556`/`:559`). It is the FROZEN value,
-  not the live snapshot (a live IOB may have moved since approval, which wouldn't preserve the approved
-  inputs); when no frozen IOB is supplied it sends `0` rather than substituting a live read. The oracle
-  byte-lock (TandemKit `InitiateBolusExtendedTests.carbBolusWithIobCargoMatchesOracle`, vector ID10653:
-  `bolusIOB 130` == 0.13 U) proves the encoding. Metadata only — never changes the delivered dose.
-  (Still bench-gate the end-to-end pump graph / Control-IQ effect — the *value sent* is verified, its
-  on-pump interpretation is not.)
-- **BG entry now matches captured ground truth (no longer a guess):** the six captured real-app
-  `RemoteBgEntryRequest` vectors all send `entryType = MANUAL (0)` + `source = REMOTE (1)`. faBolus now
-  sends exactly that (was `source = PUMP (0)` via the old `isAutopopBg:false` convenience — which
-  contradicted every capture). Byte-locked in TandemKit `RemoteEntryAndIdpOracleTests`. The "isAutopopBg" concept
-  was a misread: the real app doesn't set an autopop flag, it always uses MANUAL/REMOTE.
-- **Still unverified (bench-gate before trusting the pump graph / Control-IQ carb awareness):**
-  - **Extended + carbs**: `foodVolume` is left 0 for the extended path (**no oracle vector exists** for a
-    combo bolus with carbs, so the component-volume split can't be verified without a bench or a capture
-    from the reference app); the FOOD1|EXTENDED bit selection is applied but the split is unproven.
-  - The `RemoteCarbEntry/BgEntry` inserts are best-effort `try?` (a rejected entry never aborts the
-    bolus) with no ack/rollback.
-- **Verify (saline):** deliver a carb bolus; confirm the carb amount shows on the pump / t:connect and
-  Control-IQ treats it as a carb bolus; confirm the inserts don't disrupt delivery.
+faBolus builds a bolus's InitiateBolus and entries the way Tandem's own app does in pumpx2's captures
+(`InitiateBolusRequestTest`, `RemoteCarbEntryRequestTest`, `RemoteBgEntryRequestTest`), byte for byte
+(`BolusCommandsTests`). The delivered amount depends only on the total; everything here is the pump's
+record of the bolus.
+
+- **Captured, and matched:** a dose typed in units has type bits 8 and no food or correction volume
+  (ID10650); carbs alone have bits 1 with the whole dose as food (ID10652, ID10653); carbs with a correction
+  have bits 3 with the dose split into the carbs' part and the correction (ID10677, ID10678). The BG entry
+  goes first, then the carb entry, then InitiateBolus, the pump clock read again after permission; both
+  entries carry TimeSinceReset's seconds since boot and the bolus ID, and the BG entry is manual and remote
+  (entry type 0, source 1).
+- **Unverified:**
+  - faBolus never sent the split (bits 3) before; it has run only in Tandem's app.
+  - A calculator dose for a correction with no carbs goes as bits 8, like a dose typed in units. There is no
+    capture of Tandem's app sending one, so its own choice for that case is unknown.
+  - A dose the user changed from the calculator's goes as all food (bits 1), the form faBolus always sent;
+    what Tandem's app sends for an edited dose isn't captured.
+  - The carbs' part is the calculator's rounded to 0.01 U, and the correction is the rest of the dose.
+- **Verify:** deliver a carb bolus with a correction and confirm the pump and t:connect show the split as
+  they do for a bolus from Tandem's app.
 
 ## 5. Passive Dexcom G6: iOS shares the Dexcom app's link, and the pump doesn't block it
 
@@ -285,6 +277,40 @@ Don't use `GetG6TransmitterHardwareInfo` instead: on P1 it draws op-77 and a lin
   observed live at op-145, per pump family (t:slim X2 / Mobi) and firmware/software version; also
   confirm it correctly reads NOT-1 when off the charger. See the Resolution Ledger row below and the
   ROADMAP Phase 11 objective.
+
+## 13. A bolus is absent from history only when no record shows the pump started it
+
+An unknown outcome becomes "failed, never delivered" when a history search finds no record naming the bolus
+among the initiate records (types 292, 293, 343, 298), requested (64-66), activated, delivery or completed
+records, after reaching back past the moment the pump granted the permission (less 10 minutes), with every
+record on the way received, no pump clock change in between, and the pump not reporting it active. The
+permission records (338, 297) are ignored: the pump writes one when it grants permission, which is exactly the
+bolus that never started.
+
+- **Evidence:** the capture of bolus 3 in pumpx2's `btsnoop_hci.csv` has the initiate, requested,
+  activated, delivery and completed records for a remote bolus, and a 297 record naming it before them.
+- **Unverified:** that every firmware writes at least one of those records for every bolus it starts (P1's
+  older firmware is the one to check), and the 10-minute margin.
+- **Verify:** on P1, start a bolus and drop the link, and confirm a requested or activated record appears.
+
+## 14. One pump clock for status, history and signing
+
+The pump's TimeSinceReset `currentTime`, the CGM reading's timestamp, LastBolusStatusV2's timestamp and the
+history records' times are read as one clock, the pump's own seconds since 2008. A time is placed on the
+phone by the offset measured at the last TimeSinceReset, never by reading it as the phone's local time.
+
+- **Evidence:** in the bolus-3 capture TimeSinceReset reads 445539182 and the history records written 13 s
+  later read 445539195.
+- **Known limit:** a history record from before the pump's clock was changed is placed by today's offset, so
+  it is off by the change. A search for an absent bolus that crosses a clock change stays unknown (#13).
+
+## 15. The pump session's timings
+
+How often status is read while a bolus delivers (1 s), how long a delivering bolus may go without a status
+answer before its outcome is unknown (60 s), how long it is followed at most (30 min), when a history page
+counts as complete (2.5 s with no frame), and how often an unknown outcome is searched for (every 2 minutes,
+5 times a connection; every 15 s while the pump still reports it active) are guesses, in
+`PumpSession.Configuration`.
 
 ## Resolution Ledger (09.14, D-03 — todo #17 Task A)
 

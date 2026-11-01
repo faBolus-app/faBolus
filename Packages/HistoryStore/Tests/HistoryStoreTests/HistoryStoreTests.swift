@@ -76,6 +76,20 @@ final class HistoryStoreTests: XCTestCase {
         XCTAssertEqual(store.boluses(in: t0.addingTimeInterval(-60)...t0.addingTimeInterval(60)).first?.units, 4.5)
     }
 
+    /// Writing the same pump history twice (a retried sync) keeps one bolus and one carb entry.
+    func testPumpHistoryWrittenTwiceIsKeptOnce() throws {
+        let store = try makeStore()
+        let range = t0.addingTimeInterval(-600)...t0.addingTimeInterval(600)
+        for _ in 0..<2 {
+            try store.ingestPumpHistory(
+                glucose: [GlucoseReading(date: t0, mgdl: 140)], boluses: [BolusMarker(date: t0, units: 2)],
+                carbs: [(date: t0, grams: 30)], sourceID: "pump", glucosePriority: 50)
+        }
+        XCTAssertEqual(store.boluses(in: range).count, 1)
+        XCTAssertEqual(store.carbs(in: range).count, 1)
+        XCTAssertEqual(store.glucose(in: range).count, 1)
+    }
+
     func testCarbsPersist() throws {
         let store = try makeStore()
         store.ingestCarbs([(date: t0, grams: 45)], sourceID: "fabolus")

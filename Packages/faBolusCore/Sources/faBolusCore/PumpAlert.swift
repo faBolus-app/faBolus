@@ -48,7 +48,8 @@ public struct PumpAlert: Identifiable, Sendable, Hashable, Codable {
     public let title: String
     public let detail: String
     public let isDismissable: Bool
-    /// The pump's malfunction code, when this is a malfunction. A malfunction stops delivery and
+    /// The pump's identifier for the malfunction, when this is a malfunction. Tandem's pump reports a
+    /// malfunction only as a bit in its malfunction status, so this is that bit. A malfunction stops delivery and
     /// decodes as an alarm that can't be dismissed, so `kind` alone can't tell it from an ordinary alarm.
     public let malfunctionCode: Int?
     /// How hard the app pushes this alert. Set by the alert policy, not by the pump.

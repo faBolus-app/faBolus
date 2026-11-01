@@ -20,7 +20,8 @@ public struct GlucoseSourceRegistry: Sendable {
     public let account: ShareAccount
 
     public init(
-        settings: GlucoseSourceSettings = GlucoseSourceSettings(), secrets: any SecretStore = KeychainSecretStore()
+        settings: GlucoseSourceSettings = GlucoseSourceSettings(),
+        secrets: any SecretStore = KeychainSecretStore.cgmCredentials
     ) {
         self.settings = settings
         self.account = ShareAccount(settings: settings, secrets: secrets)

@@ -25,7 +25,7 @@ let package = Package(
                 .product(name: "DexcomG7", package: "DexcomBLE")
             ]),
         .testTarget(
-            name: "GlucoseSourcesTests", dependencies: ["GlucoseSources"],
+            name: "GlucoseSourcesTests", dependencies: ["GlucoseSources", "faBolusCore"],
             resources: [.copy("Fixtures")])
     ]
 )

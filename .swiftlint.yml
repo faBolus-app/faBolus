@@ -55,3 +55,4 @@ excluded:
   - Packages/ShareClient/.build
   - Packages/DexcomBLE/.build
   - Packages/GlucoseSources/.build
+  - Packages/PumpSession/.build

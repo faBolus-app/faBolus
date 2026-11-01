@@ -17,6 +17,7 @@ Format per row: component · version/revision · SPDX license · source · how f
 | faBolusDesign | in-repo | MIT | `Packages/faBolusDesign` | Shared §13 band-color tokens (depends on faBolusCore) |
 | HistoryStore | in-repo | MIT | `Packages/HistoryStore` | SwiftData glucose/insulin/carb history |
 | GlucoseSources | in-repo | MIT | `Packages/GlucoseSources` | The backup CGM sources (Dexcom Share, direct-Bluetooth G6 and G7), their settings and credentials, and the CGM test |
+| PumpSession | in-repo | MIT | `Packages/PumpSession` | The pump session (link, reads, delivery, history, alerts) and `PumpScript`, the scripted pump the tests and the debug mock run on. Its test fixtures (`Tests/PumpSessionTests/Support/Captures.swift`) are message bytes from jwoglom/pumpx2 @ `456018a5` (MIT, © 2022 James Woglom): its tests' captures of Tandem's app and its `scripts/discord-switchkill/2023/btsnoop_hci.csv` capture. |
 
 ## Vendored source (copied in, LoopKit lineage — all MIT)
 

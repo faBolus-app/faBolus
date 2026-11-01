@@ -88,6 +88,41 @@ public final class GlucoseHistoryStore {
         try? context.save()
     }
 
+    /// Pump history in one save that throws when it fails, so the caller can keep the records and try
+    /// again. Boluses and carbs already held from `sourceID` at the same time are skipped, so writing the
+    /// same records twice (a retried sync) doesn't count a bolus twice; glucose needs no such check, because
+    /// a query keeps one reading per 5-minute slot.
+    public func ingestPumpHistory(
+        glucose: [GlucoseReading], boluses: [BolusMarker], carbs: [(date: Date, grams: Double)], sourceID: String,
+        glucosePriority: Int, recordedAt: Date = Date()
+    ) throws {
+        let dates = boluses.map(\.date) + carbs.map(\.date)
+        let lo = dates.min() ?? .distantFuture
+        let hi = dates.max() ?? .distantPast
+        let heldBoluses = try Set(
+            context.fetch(
+                FetchDescriptor<StoredBolus>(
+                    predicate: #Predicate { $0.sourceID == sourceID && $0.date >= lo && $0.date <= hi })
+            ).map(\.date))
+        let heldCarbs = try Set(
+            context.fetch(
+                FetchDescriptor<StoredCarb>(
+                    predicate: #Predicate { $0.sourceID == sourceID && $0.date >= lo && $0.date <= hi })
+            ).map(\.date))
+        for r in glucose {
+            context.insert(
+                StoredGlucose(
+                    date: r.date, mgdl: r.mgdl, sourceID: sourceID, priority: glucosePriority, recordedAt: recordedAt))
+        }
+        for b in boluses where !heldBoluses.contains(b.date) {
+            context.insert(StoredBolus(date: b.date, units: b.units, sourceID: sourceID, recordedAt: recordedAt))
+        }
+        for c in carbs where !heldCarbs.contains(c.date) {
+            context.insert(StoredCarb(date: c.date, grams: c.grams, sourceID: sourceID, recordedAt: recordedAt))
+        }
+        try context.save()
+    }
+
     // MARK: Query (conflict-resolved)
 
     /// Glucose in range, de-duplicated to one reading per 5-min slot (priority, then recency).

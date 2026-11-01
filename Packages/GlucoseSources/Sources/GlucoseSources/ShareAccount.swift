@@ -1,4 +1,5 @@
 import Foundation
+import faBolusCore
 import ShareClient
 
 /// Which Dexcom Share server an account is on.
