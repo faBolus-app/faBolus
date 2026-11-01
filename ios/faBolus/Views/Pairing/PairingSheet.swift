@@ -16,7 +16,13 @@ struct PairingSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    if model.pumpsFound.isEmpty {
+                    if model.linkFailure == .pumpNotFound {
+                        // The scan stops after a while; the paired pump, if any, has reconnected meanwhile.
+                        Button("Search again") {
+                            error = nil
+                            Task { await model.scanForPumps() }
+                        }
+                    } else if model.pumpsFound.isEmpty {
                         HStack(spacing: 10) {
                             ProgressView()
                             Text("Looking for pumps in pairing mode…").foregroundStyle(.secondary)

@@ -20,11 +20,14 @@ struct BolusEntryView: View {
             if let flow = flow ?? initialFlow { form(flow) } else { ProgressView() }
         }
         .navigationTitle("Bolus")
-        .onAppear { if flow == nil { flow = initialFlow ?? BolusFlow(model: model) } }
-        // A paired pump that takes no carbs has no mode picker, so the screen is in units for it.
-        .onChange(of: takesCarbs, initial: true) { _, carbs in
-            (flow ?? initialFlow)?.mode = carbs ? model.settings.defaultBolusMode : .units
+        .onAppear {
+            guard flow == nil else { return }
+            let made = initialFlow ?? BolusFlow(model: model)
+            // A paired pump that takes no carbs has no mode picker, so the screen is in units for it.
+            if !takesCarbs { made.mode = .units }
+            flow = made
         }
+        .onChange(of: takesCarbs) { _, carbs in flow?.mode = carbs ? model.settings.defaultBolusMode : .units }
     }
 
     @ViewBuilder private func form(_ flow: BolusFlow) -> some View {

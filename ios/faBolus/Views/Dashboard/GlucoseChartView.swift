@@ -5,8 +5,7 @@ import faBolusCore
 import faBolusDesign
 
 /// The glucose chart: readings coloured by range, IOB and boluses on a second scale. Press and drag (or
-/// swipe up and down with VoiceOver) to read the glucose, IOB and any bolus at a time (the old
-/// graph-detail branch's readout, without the basal row).
+/// swipe up and down with VoiceOver) to read the glucose, IOB and any bolus at a time.
 struct GlucoseChartView: View {
     let readings: [GlucoseReading]
     var iob: [IOBSample] = []

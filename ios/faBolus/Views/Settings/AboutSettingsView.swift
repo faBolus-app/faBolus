@@ -69,7 +69,8 @@ struct DiagnosticsExport: Identifiable {
         let stamp = Date().formatted(.iso8601.year().month().day().time(includingFractionalSeconds: false))
             .replacingOccurrences(of: ":", with: "")
         fileURL = FileManager.default.temporaryDirectory.appendingPathComponent("faBolus-\(name)-\(stamp).txt")
-        try? ("Build \(revision)\n" + text).write(to: fileURL, atomically: true, encoding: .utf8)
+        // A comment line, so a Dexcom session export still parses as a `DexcomSessionLog`.
+        try? ("# Build \(revision)\n" + text).write(to: fileURL, atomically: true, encoding: .utf8)
     }
 }
 
