@@ -133,9 +133,10 @@ struct DeliveryLedgerCoordinatorTests {
             await model.reconcileUnresolvedDeliveries()
 
             let disclosures = posted.filter { $0.category == .bolusIndeterminate }
-            #expect(
-                disclosures.contains { $0.dedupeKey == RemoteBolusLedger.unreadableLedgerReconciliationDedupeKey },
-                "the unreadable-ledger path must disclose under the fixed family key")
+            let disclosedUnderFixedKey = disclosures.contains {
+                $0.dedupeKey == RemoteBolusLedger.unreadableLedgerReconciliationDedupeKey
+            }
+            #expect(disclosedUnderFixedKey, "the unreadable-ledger path must disclose under the fixed family key")
             #expect(model.deliveryGloballyBlocked, "an unreadable ledger stays fail-closed blocked")
         }
     }
