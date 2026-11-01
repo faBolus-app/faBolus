@@ -29,7 +29,8 @@ version 1, so neither version can take the other's message for one of its own.
 
 - A message whose `version` is 1 (or that has no `version` and a version 1 kind) is from the old app. The
   phone answers each one once, in version 1's form, so the old watch shows "Update watch app" and stops
-  offering a bolus. The watch shows "Update faBolus on the phone" and sends nothing back.
+  offering a bolus. Its `cancelBolus` is also acted on, because a cancel is never gated; nothing else from
+  version 1 is. The watch shows "Update faBolus on the phone" and sends nothing back.
 - A message with a higher version gets one `incompatible` reply. The watch shows "Update the watch app".
 - A version 2 message that doesn't read is dropped and counted. A bolus request that doesn't read is
   answered as not delivered.

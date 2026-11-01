@@ -159,6 +159,19 @@ import faBolusCore
         #expect(await rig.services.cancels == 1)
     }
 
+    /// A cancel that arrives while one is with the session isn't dropped: the session is asked again once
+    /// the first returns, since that one may have found nothing to stop before a delivery started.
+    @Test func aCancelDuringACancelRunsAgain() async {
+        let rig = HostRig()
+        await rig.services.set(cancelDelay: .milliseconds(200))
+        await rig.start()
+        await rig.receive(fixture: "cancel")
+        await rig.receive(fixture: "cancel")
+        try? await Task.sleep(for: .milliseconds(600))
+        await rig.settle()
+        #expect(await rig.services.cancels == 2)
+    }
+
     @Test func v2RequestsMapExactly() {
         let carbs = BolusRequestPayload(
             requestId: "c", sentAt: GoldenFixtures.now, amount: .calculator(carbsGrams: 45, estimateMilliunits: 6050),

@@ -251,6 +251,10 @@ private struct Step {
             state.telemetry.receivedLegacy += 1
             shownReachable(&state)
             state.peerIsLegacy = true
+            // A cancel is never gated, so the old app's is acted on too; nothing else of version 1 is.
+            if message.kind == LegacyV1.cancelKind {
+                effects.append(.host(.cancel(CancelPayload(requestId: message.requestId ?? "v1", bolusRequestId: nil))))
+            }
             guard let reply = LegacyV1.reply(to: message) else { return }
             let n = state.nextLegacy
             state.nextLegacy += 1

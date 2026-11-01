@@ -1,7 +1,8 @@
 import Foundation
 
 /// Version 1, as far as this side needs it: recognizing a message from the old app and answering it once
-/// in a form the old app shows. Nothing in a version 1 message is acted on.
+/// in a form the old app shows. Nothing in a version 1 message is acted on but a cancel, which is never
+/// gated.
 public enum LegacyV1 {
     public static let version = 1
 
@@ -10,6 +11,9 @@ public enum LegacyV1 {
         "statusRead", "bolusRequest", "bolusConfirm", "bolusStatus", "cancelBolus", "dismissAlert", "dismissAck",
         "suspendPump", "resumePump"
     ]
+
+    /// The old app's cancel.
+    public static let cancelKind = "cancelBolus"
 
     public struct Message: Sendable, Hashable {
         public var kind: String

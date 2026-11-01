@@ -61,8 +61,11 @@ actor FakeServices: RemoteHostServices {
         delivered.append(dose)
         return delivery ?? .notStarted(.notConnected)
     }
+    var cancelDelay: Duration = .zero
+    func set(cancelDelay: Duration) { self.cancelDelay = cancelDelay }
     func cancelBolus() async -> CancelResult {
         cancels += 1
+        if cancelDelay != .zero { try? await Task.sleep(for: cancelDelay) }
         return .cancelled
     }
     func dismiss(_ alert: PumpAlert) async -> DismissOutcome {

@@ -76,6 +76,9 @@ public actor RemoteHost {
     private var dismissing: Set<String> = []
     private var dismissResults: [(requestId: String, payload: DismissResultPayload)] = []
     private var cancelling = false
+    /// A cancel arrived while one was with the session: it runs again once that one returns, because the
+    /// first may have found nothing to stop before a delivery started.
+    private var cancelAgain = false
     private var started = false
 
     static let maxDismissResults = 16
@@ -173,7 +176,10 @@ public actor RemoteHost {
             // Never gated. A bolus still being composed is stopped here; one with the session is the
             // session's to stop.
             cancelledBeforeStart.formUnion(composing)
-            guard !cancelling else { return }
+            guard !cancelling else {
+                cancelAgain = true
+                return
+            }
             cancelling = true
             Task { await self.cancel() }
         case .dismiss(let p):
@@ -308,7 +314,10 @@ public actor RemoteHost {
 
     private func cancel() async {
         defer { cancelling = false }
-        _ = await services.cancelBolus()
+        repeat {
+            cancelAgain = false
+            _ = await services.cancelBolus()
+        } while cancelAgain
         await refreshStatus()
     }
 

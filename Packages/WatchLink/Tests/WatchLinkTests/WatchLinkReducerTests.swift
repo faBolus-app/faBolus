@@ -280,6 +280,18 @@ import Testing
         #expect(h.transmitted.allSatisfy { $0 == reply })
     }
 
+    /// A cancel is never gated: the old watch app's is acted on, as well as answered. Nothing else from it is.
+    @Test func aVersionOneCancelIsActedOn() {
+        var h = Harness.ready()
+        let cancel = WireValue.object([
+            "version": .int(1), "kind": .string("cancelBolus"), "requestId": .string("old-1")
+        ])
+        h.send(.received(cancel))
+        #expect(h.hostRequests == [.cancel(CancelPayload(requestId: "old-1", bolusRequestId: nil))])
+        h.deliverAll()
+        #expect(h.transmittedKinds == ["statusRead"])
+    }
+
     @Test func versionOneRepliesAreBounded() {
         var h = Harness.ready()
         h.send(.deviceStatus(.notConnected))
