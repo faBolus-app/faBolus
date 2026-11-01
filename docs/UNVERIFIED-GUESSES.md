@@ -246,7 +246,9 @@ branch and must still be resolved before any reintegration onto `main`; entries 
 
 Also unverified: the pump's `CGMHardwareInfoResponse.hardwareInfoString` (op 97) is the G6 transmitter
 ID. The old app used it that way; `G6TransmitterID.normalized` accepts it only if it is six letters and
-digits, and an ID typed in settings wins.
+digits, and an ID typed in settings wins. On P1 the bench saw `CGMHardwareInfoRequest` (op 96) answered
+with no sensor paired; with a sensor it is untested (TandemKit `Bench/bench-coverage/COVERAGE-MATRIX.md`).
+Don't use `GetG6TransmitterHardwareInfo` instead: on P1 it draws op-77 and a link drop (F16).
 
 ## 12. `CurrentBatteryV2Response.chargingStatus == 1` (op-145 byte 2) — Phase 09.27 (D-03)
 
