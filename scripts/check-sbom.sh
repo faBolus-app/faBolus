@@ -48,4 +48,4 @@ if [[ "$fail" -ne 0 ]]; then
   echo "SBOM check FAILED — reconcile the component with $SBOM (audit L-01)." >&2
   exit 1
 fi
-echo "SBOM check passed: all Packages/* + app-tree ported source accounted for in $SBOM."
+echo "SBOM check passed: all Packages/* and ported first-party source accounted for in $SBOM."

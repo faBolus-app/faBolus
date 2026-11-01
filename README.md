@@ -95,6 +95,10 @@ for step-by-step "add a pump backend" / "host the remotes" guides.
 
 ## Build (quick reference)
 
+> [!NOTE]
+> On the `rebuild` branch the app is being rebuilt and doesn't build yet. Build from `main`; the steps
+> below describe `main`.
+
 Full walkthrough: [docs/build](docs/build/index.md). In short:
 
 ```sh

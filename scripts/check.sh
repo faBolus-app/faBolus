@@ -22,11 +22,12 @@ gate_build() {
     swift build --package-path "Packages/$p" --build-tests -Xswiftc -warnings-as-errors
   done
 }
+# Same flags as gate_build, so running both doesn't compile everything twice.
 gate_test() {
   for p in "${PACKAGES[@]}"; do
     [ -d "Packages/$p/Tests" ] || continue
     echo "-- $p"
-    swift test --package-path "Packages/$p"
+    swift test --package-path "Packages/$p" -Xswiftc -warnings-as-errors
   done
 }
 gate_format() { swift_files | xargs -0 xcrun swift-format lint --strict; }

@@ -37,7 +37,7 @@ Fill in what applies; delete what doesn't. See CONTRIBUTING.md and BRANCHES.md.
      "builds locally" is necessary but not sufficient — say what you expect CI to confirm. -->
 
 - [ ] `swift test --package-path Packages/faBolusCore` (and HistoryStore / G7SensorKit / DexcomG6Kit if touched)
-- [ ] `./scripts/build-sim.sh` / `./scripts/test-ios.sh` as applicable
+- [ ] `./scripts/check.sh` passes
 - [ ] Shared-code changes build cleanly (watch/Mac remotes are removed from `main` — delete-on-main;
       see `dev/watch-remote`/`dev/watch-host`/`dev/mac` if you're restoring one of them)
 - [ ] Hardware-tested vs. compile-only noted

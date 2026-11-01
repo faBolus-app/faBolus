@@ -57,9 +57,8 @@ jobs:
           # The two `precision: low` credential queries no suite selects are added explicitly.
           queries: security-and-quality,./.github/codeql/swift-extra.qls
 
-      # Manual build mode, not autobuild: `generate-project.sh` (never bare `xcodegen`) derives the
-      # real spec from the project.yml template, so the database matches a buildable configuration.
-      # Until the app target returns (S9), the code to analyze is the packages.
+      # Manual build mode: the database describes exactly what scripts/check.sh builds. Until the app
+      # target returns, that is the packages.
       - name: Build the packages
         run: ./scripts/check.sh build
 
