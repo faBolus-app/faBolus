@@ -48,6 +48,33 @@ public enum UrgentLowAlarm {
         guard provenance.isFailover, let mgdl else { return false }
         return mgdl <= thresholdMgdl
     }
+
+    /// Whether the alarm is active for the pump's state and the backup source's state, at `now`.
+    ///
+    /// Active when the shown value is a fresh failover reading at or below the threshold, or when the pump's
+    /// own feed isn't fresh and the backup source's newest reading is a fresh "LOW" (below the sensor's
+    /// range). A LOW is never a `GlucoseSample`, so it never becomes the failover value and merge reports
+    /// `.pump` provenance even though the low is real; without the second rule a below-range low with no
+    /// pump reading would go unannounced. A LOW counts only while it is the backup's newest reading: an
+    /// in-range reading after it ends it. Every age is from the measurement time, never from when the
+    /// value arrived.
+    public static func isActive(
+        pumpState: PumpState, source: GlucoseSourceState?, thresholds: FreshnessThresholds, now: Date
+    ) -> Bool {
+        let (merged, _, provenance) = GlucoseArbiter.merge(
+            pumpState: pumpState, pumpHistory: [], source: source, thresholds: thresholds, now: now)
+        if provenance.isFailover, let shown = merged.glucoseIfFresh(thresholds: thresholds, now: now),
+            isActive(mgdl: shown.mgdl, provenance: provenance)
+        {
+            return true
+        }
+        guard pumpState.glucoseIfFresh(thresholds: thresholds, now: now) == nil,
+            let belowRangeAt = source?.belowRangeAt,
+            !GlucoseFreshness.isStale(belowRangeAt, thresholds: thresholds, now: now)
+        else { return false }
+        if let latest = source?.latest, latest.date > belowRangeAt { return false }
+        return true
+    }
 }
 
 public enum GlucoseArbiter {

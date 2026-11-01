@@ -18,6 +18,7 @@ Format per row: component · version/revision · SPDX license · source · how f
 | HistoryStore | in-repo | MIT | `Packages/HistoryStore` | SwiftData glucose/insulin/carb history |
 | GlucoseSources | in-repo | MIT | `Packages/GlucoseSources` | The backup CGM sources (Dexcom Share, direct-Bluetooth G6 and G7), their settings and credentials, and the CGM test |
 | PumpSession | in-repo | MIT | `Packages/PumpSession` | The pump session (link, reads, delivery, history, alerts) and `PumpScript`, the scripted pump the tests and the debug mock run on. Its test fixtures (`Tests/PumpSessionTests/Support/Captures.swift`) are message bytes from jwoglom/pumpx2 @ `456018a5` (MIT, © 2022 James Woglom): its tests' captures of Tandem's app and its `scripts/discord-switchkill/2023/btsnoop_hci.csv` capture. |
+| Alerts | in-repo | MIT | `Packages/Alerts` | The phone's alert pipeline: the alert engine, the coordinator that posts and withdraws notifications, the in-app banners and the alerts the watch mirrors |
 
 ## Vendored source (copied in, LoopKit lineage — all MIT)
 
@@ -56,6 +57,8 @@ Files in `Packages/` that carry an `Adapted from` attribution, checked by the sa
 | `Packages/faBolusCore/Sources/faBolusCore/DoseEntry.swift` | LoopKit/LoopKit `a5beee96`, `InsulinKit/DoseEntry.swift` (© 2016 Nathan Racklyeft) | MIT | Field names and the programmed-versus-delivered split; rewritten without HealthKit |
 | `Packages/faBolusCore/Sources/faBolusCore/PumpState.swift` | LoopKit/LoopKit `a5beee96`, `DeviceManager/PumpManagerStatus.swift` (© 2018 LoopKit Authors) | MIT | The `basalDeliveryState` / `bolusState` names and their cases |
 | `Packages/faBolusCore/Sources/faBolusCore/BolusVolume.swift` | LoopKit/LoopKit `a5beee96`, `DeviceManager/PumpManager.swift` (© 2018 LoopKit Authors) and `Extensions/FloatingPoint.swift` (© 2020 LoopKit Authors) | MIT | The round-down rule of `roundToSupportedBolusVolume` and the decimal tolerance of `matchingOrTruncatedValue`, rewritten for a fixed step |
+| `Packages/faBolusCore/Sources/faBolusCore/NotificationBroker.swift` | LoopKit/LoopKit `a5beee96`, `Alert.swift` (© 2020 LoopKit Authors) | MIT | `AlertInterruptionLevel`: the alert model carrying iOS's interruption levels (`Alert.InterruptionLevel`), with the passive level added |
+| `Packages/Alerts/Sources/Alerts/NotificationScheduling.swift` | LoopKit/Loop `5465bcd`, `Managers/Alerts/UserNotificationAlertScheduler.swift` (© 2020 LoopKit Authors) | MIT | The narrow notification-center protocol for tests, the request built from an alert (content at its interruption level, a time-interval trigger only for a delay), and withdrawal of pending and delivered together |
 
 ## Ported / API-derived app-tree source (not a Package — lives in the app target)
 

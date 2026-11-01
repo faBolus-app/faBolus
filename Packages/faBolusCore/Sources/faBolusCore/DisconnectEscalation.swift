@@ -1,36 +1,26 @@
 import Foundation
 
-/// Pump-disconnect escalation ladder (pure schedule).
+/// The "Pump disconnected" schedule (pure).
 ///
-/// The broker already posts one immediate "Pump disconnected" notification on the live→down edge.
-/// That is fine for a user looking at the phone, but a user who has walked away (app backgrounded/
-/// suspended) gets one banner and then silence — even though the pump is still unreachable from
-/// faBolus and they must fall back to the pump's own controls. This adds a small, finite ladder of
-/// delayed re-notifications with intensified copy, each carrying the explicit instruction to use
-/// the pump's own buttons.
+/// When the pump stops being reachable, the app schedules the first notice at the delay the user chose
+/// (`AlertPolicy.PumpDisconnectDelay`) and two follow-ups at 15 and 30 minutes after the drop, with
+/// stronger copy that tells the user to use the pump's own buttons. Each is an OS-scheduled notification,
+/// so it fires while the app is suspended, and all of them are withdrawn when the pump reconnects. A
+/// follow-up at or before the first notice is left out, so the first notice is never preceded or
+/// duplicated by one. The ladder is finite on purpose: a notification that nagged forever would train
+/// the user to ignore it.
 ///
-/// Single source of truth for the schedule: which steps exist, at what elapsed time past the
-/// disconnect, and with what copy/severity. Pure value (no clock, no OS, no
-/// `UNUserNotificationCenter`) so the ladder is unit-testable and cannot drift between app wiring
-/// and tests. `NotificationCoordinator` turns each `Step` into an OS-scheduled
-/// `UNNotificationRequest` so it fires even while the app is suspended, in the never-suppressible
-/// `.pumpDisconnect` family, and cancels the pending ones the moment the pump reconnects.
-///
-/// Notification-only. Nothing here blocks, delays, or affects a dose or any pump command. The steps
-/// are `.pumpDisconnect` — never-suppressible, not user-disableable.
+/// Notification-only: nothing here blocks, delays or affects a dose or a pump command.
 public enum DisconnectEscalation {
 
-    /// One delayed re-notification: fire `afterSeconds` past the disconnect, with this copy. `id` is a
-    /// stable, per-step identifier used BOTH as the scheduled `UNNotificationRequest` identifier and as
-    /// the broker `dedupeKey` — distinct ids mean the broker never coalesces one escalation step onto
-    /// another (or onto the immediate T0 banner), so each step is a separate delivery/cancellation unit.
+    /// One scheduled notice: fire `afterSeconds` past the drop, with this copy. `id` is the notification
+    /// identifier, distinct per step so no step replaces another.
     public struct Step: Equatable, Sendable {
         public let id: String
         public let afterSeconds: TimeInterval
         public let title: String
-        /// Copy for this step. Every step's body contains the explicit "use the pump's own buttons"
-        /// instruction (pinned by tests) — the whole point of the ladder is to redirect a walked-away
-        /// user to the pump's own controls.
+        /// Every step tells the user to use the pump's own buttons, the one thing they can do while the
+        /// app can't reach the pump.
         public let body: String
         public init(id: String, afterSeconds: TimeInterval, title: String, body: String) {
             self.id = id
@@ -40,17 +30,22 @@ public enum DisconnectEscalation {
         }
     }
 
-    /// The instruction every escalation body carries: what the user should actually DO while faBolus
-    /// can't reach the pump. Factored out so all steps (and the tests) share one string.
+    /// The instruction every notice carries.
     public static let pumpButtonsInstruction =
         "Use the pump's own buttons to bolus or check status until it reconnects."
 
-    /// The escalation ladder, ordered by ascending `afterSeconds`. **§13-adjacent timing defaults —
-    /// owner-vetoable starting points, NOT clinical constants.** Two steps beyond the immediate T0
-    /// banner: a "prolonged" nudge at 15 minutes and an "urgent" one at 30 minutes. The ladder is
-    /// deliberately CAPPED (finite, two entries) — a safety re-notification that nagged forever would
-    /// train the user to ignore it, which is itself a hazard. `AppModel`'s existing immediate post is
-    /// T0 and is NOT in this list.
+    /// The first notice's identifier.
+    public static let firstNoticeId = "safety.pumpDisconnect"
+
+    /// The first notice, at the user's delay.
+    public static func firstNotice(afterSeconds: TimeInterval) -> Step {
+        Step(
+            id: firstNoticeId, afterSeconds: afterSeconds, title: "Pump disconnected",
+            body: "faBolus lost the connection to your pump. \(pumpButtonsInstruction)")
+    }
+
+    /// The follow-ups, by ascending `afterSeconds`. Timings are the old app's (owner-vetoable starting
+    /// points, not clinical constants).
     public static let steps: [Step] = [
         Step(
             id: "safety.pumpDisconnect.escalation.15m",
@@ -64,25 +59,13 @@ public enum DisconnectEscalation {
             body: "faBolus has been unable to reach your pump for 30 minutes. \(pumpButtonsInstruction)")
     ]
 
-    /// Every scheduled-escalation identifier, for cancellation on reconnect (paired with the immediate
-    /// T0 key in `AppModel`'s withdraw path).
-    public static var stepIds: [String] { steps.map(\.id) }
-}
+    /// Every identifier the schedule can use, for withdrawal on reconnect.
+    public static var allIds: [String] { [firstNoticeId] + steps.map(\.id) }
 
-/// Pre-armed CGM-staleness background watchdog.
-///
-/// Companion to `DisconnectEscalation`, reusing the same `UNTimeIntervalNotificationTrigger` OS
-/// mechanism for a different purpose: instead of a fixed post-disconnect schedule,
-/// `NotificationCoordinator` re-arms a single delayed notification carrying this copy every time a
-/// fresh glucose datum lands, so it fires `FreshnessThresholds.glucoseStaleAfter` seconds past the last
-/// known-fresh reading unless a fresher one re-arms it first. That catches a background suspension
-/// with no wake event before the staleness window elapses — the OS notification was scheduled
-/// *before* the process stopped running. Cancelled once the real staleness edge fires
-/// (`SafetyEdge.freshness` → `.cgmDataLoss`), so a user looking at the phone never sees a redundant
-/// watchdog after the real alert.
-public enum StalenessWatchdog {
-    public static let dedupeKey = "safety.cgmStalenessWatchdog"
-    public static let title = "CGM data may be stale"
-    public static let body =
-        "faBolus hasn't confirmed a fresh CGM reading recently. Check your sensor/transmitter, or open the app."
+    /// The notices for a drop with the user's delay: the first notice, then each follow-up that comes
+    /// after it. Empty for `never`.
+    public static func schedule(delay: AlertPolicy.PumpDisconnectDelay) -> [Step] {
+        guard let first = delay.seconds else { return [] }
+        return [firstNotice(afterSeconds: first)] + steps.filter { $0.afterSeconds > first }
+    }
 }

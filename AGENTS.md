@@ -10,9 +10,9 @@ slice owns which piece.
 ## Layout on `rebuild`
 
 - `Packages/` holds everything that compiles: `faBolusCore`, `faBolusDesign`, `HistoryStore`, the
-  vendored `ShareClient`, the CGM sources (`DexcomBLE`, `GlucoseSources`), and `PumpSession`, the one owner
+  vendored `ShareClient`, the CGM sources (`DexcomBLE`, `GlucoseSources`), `PumpSession`, the one owner
   of the pump (it depends on `../TandemKit` by pinned revision; `CONTRIBUTING.md` says how to build against
-  a local checkout). New packages land here as slices add them.
+  a local checkout), and `Alerts`, the phone's alert pipeline. New packages land here as slices add them.
 - `legacy/` is the old phone app (`legacy/ios`, `legacy/Shared`, its `project.yml` and build scripts).
   It is not compiled, linted or tested. Copy from it; don't edit it. It is deleted at the end of the
   rebuild. There is no app target until the phone-app slice brings it back.

@@ -1,291 +1,171 @@
+// `AlertInterruptionLevel` is adapted from LoopKit's Alert.InterruptionLevel (LoopKit/LoopKit `a5beee96`,
+// LoopKit/Alert.swift), Copyright © 2020 LoopKit Authors, MIT License.
+
 import Foundation
 
-/// **The notification-governance policy core (§6).** One pure decision point that resolves whether a
-/// candidate notification should be DELIVERED right now, folding in the per-category enable/snooze
-/// settings and a global (+ meal sub-) daily budget — with the three safety categories hard-wired so no
-/// setting, rule, or budget can ever suppress them.
-///
-/// This is the analog of P8's `AccessPolicy`: a **pure function over explicit state** (faBolusCore reads no
-/// app globals and calls no clock — `now` is passed in). It is INERT until the app-side broker routes its
-/// posters through it; this file changes no behavior on its own.
+/// How hard a notification interrupts. The cases and their meanings are iOS's own
+/// `UNNotificationInterruptionLevel`; the type is the app's so nothing above the notification layer imports
+/// UserNotifications. The interruption level is in the alert model, as LoopKit's `Alert.InterruptionLevel` is.
+public enum AlertInterruptionLevel: Int, Sendable, Hashable, Codable, CaseIterable, Comparable {
+    /// Added to Notification Center without lighting the screen or playing a sound.
+    case passive = 0
+    /// Shown at once, lights the screen, may play a sound. Focus and Do Not Disturb can hold it.
+    case active = 1
+    /// Shown at once, and may be shown during Focus and Do Not Disturb.
+    case timeSensitive = 2
+    /// Always shown and sounds through the mute switch. Needs Apple's Critical Alerts entitlement.
+    case critical = 3
+
+    public static func < (a: AlertInterruptionLevel, b: AlertInterruptionLevel) -> Bool { a.rawValue < b.rawValue }
+
+    /// The loudest level this release posts. The Critical Alerts entitlement isn't requested, so
+    /// nothing goes above time-sensitive; the critical level exists for a pump without its own screen.
+    public static let releaseCeiling: AlertInterruptionLevel = .timeSensitive
+}
+
+/// The alert policy core: which categories exist, how loud each one is (fixed per category), and
+/// whether a candidate notification is posted. Pure: no clock, no I/O, no settings read from anywhere
+/// but the `AlertPolicy` passed in.
 public enum NotificationBroker {
 
-    // MARK: - Categories
-
-    /// The notification categories the broker governs. `isSafetySet` marks the app-own safety
-    /// categories that resolve delivery + loudness through the unified ladder, defaulting to `Alert`.
+    /// The categories the user sees in settings, each on or off. Urgency is fixed per category.
     public enum Category: String, CaseIterable, Sendable, Codable {
-        // The app-own SAFETY categories (the "safety set").
-        case pumpDisconnect  // the pump link dropped while it was connected/bolusing
-        case bolusReconciliation  // the AUTHORITATIVE result of a bolus, incl. a resolved indeterminate
-        /// The app stopped receiving CGM data (distinct from a pump-raised CGM alert, which arrives on
-        /// `pumpAlert` and is unaffected by any of this). A safety-set category, but since 2026-08-30 it
-        /// never NOTIFIES — a CGM gap is UI state only. See `deliversAsNotification` for the decision and
-        /// its accepted residual; it renders no settings row and no lowering dialog.
-        ///
-        /// Registration disposition (the awkward safety-set member for the app-side registration
-        /// invariant "every safety category resolves to a registered, action-empty identifier"): this
-        /// category IS given that registered identifier, exactly like every other safety category — it
-        /// simply never actually posts a request under it, since `deliversAsNotification == false` means
-        /// no message in this category ever reaches the poster. Registered-but-unused, not exempted:
-        /// there is no separate carve-out anywhere in the registration/attribution path for this one case.
-        case cgmDataLoss
-        /// The pump link keeps FLAPPING — a bounded run of live→reconnecting re-pair/re-drop cycles
-        /// the reconnect ladder folds to `.connecting`, so `SafetyEdge.connection` (and the
-        /// `pumpDisconnect` alert) stay silent through it. A SEPARATE safety-set category on purpose, so
-        /// it can fire even when the user has lowered `pumpDisconnect`. It gains a settings row and is
-        /// user-tunable down to Off through the same ladder as the rest of the safety set.
+        /// A bolus whose outcome the app lost track of, and later how it settled. Never off: the user is
+        /// always told right away when an outcome is unknown, and again when pump history settles it.
+        case bolusReconciliation
+        /// The pump hasn't been reachable for the delay the user chose.
+        case pumpDisconnect
+        /// The link keeps dropping before it holds.
         case pumpConnectionUnstable
-        /// The app-owned "urgent low glucose during CGM failover" alarm. Its OWN safety-set category —
-        /// decoupled from `.cgmDataLoss` — so a user who lowers the plain "CGM data lost" banner does NOT
-        /// also silence this urgent-low backstop. It defaults to Alert and is user-tunable down to Off
-        /// through the ladder, and can be silenced only through a deliberate ladder Off (aimed or an
-        /// inherited source rule), never by a transient snooze / rate-limit / budget.
+        /// The backup CGM reads urgently low while the pump's own CGM feed is unavailable.
         case urgentLowGlucose
-        // Governed (suppressible) categories.
-        case pumpAlert  // a pump-raised alert/alarm/reminder surfaced as a notification
-        // a remote-initiated bolus was REFUSED before delivery (policy / divergence / stale approval — never reached the pump)
-        case remoteBolusRejected
-        // a bolus that was ATTEMPTED-but-failed or BLOCKED and did NOT dose — distinct from an INDETERMINATE outcome, whose authoritative resolution the safety-set `bolusReconciliation` owns
+        /// No fresh glucose from any source. Shown in the app only; never a notification this release.
+        case cgmDataLoss
+        /// A pump alert, alarm, malfunction or reminder, mirrored from the pump.
+        case pumpAlert
+        /// A CGM alert or error, mirrored from the pump.
+        case pumpCgmAlert
+        /// A bolus the pump refused, or that the app knows didn't deliver.
         case bolusDeliveryFailed
-        /// An outcome we do not YET know — a point-in-time heads-up, immediate + GOVERNED
-        /// (user-silenceable, honors budget, does NOT break through DND). The AUTHORITATIVE
-        /// resolution is `bolusReconciliation` (safety-set, durable, ladder-resolved) — this
-        /// category is never persisted and never replayed on relaunch.
-        case bolusIndeterminate
+        /// A remote's bolus request that the phone refused before it reached the pump.
+        case remoteBolusRejected
 
-        /// The **safety set**: the app-own categories that default to `Alert` (louder than a pump-mirror
-        /// category's default, because faBolus is these categories' only annunciator) and are
-        /// user-tunable all the way down to `Off` through the unified Off/Quiet/Alert/Urgent ladder —
-        /// including by an inherited source/global rule that cascades to them like any other level. This
-        /// is NOT an "un-suppressible" tier: lowering one below its `Alert` default is gated in the UI by
-        /// a one-time warning (the pump remains the primary annunciator), never immune by construction.
-        /// What IS structural is the TRANSIENT-suppression invariant kept in `decide()`/`snooze(_:)`: a
-        /// snooze / rate-limit / daily-budget can never silence a safety category — only a deliberate
-        /// LADDER Off/Quiet can. Every member resolves delivery + loudness through the ONE resolver
-        /// (`NotificationRules`) at its call site (`NotificationCoordinator` supplies the cascade).
-        public var isSafetySet: Bool {
+        /// The fixed interruption level. The app's own safety alerts are time-sensitive: the pump knows
+        /// nothing about the phone's link, the backup CGM or the app's dose ledger, so the app is their
+        /// only annunciator. What the pump already annunciates itself is posted at the standard level.
+        public var level: AlertInterruptionLevel {
             switch self {
-            case .pumpDisconnect, .bolusReconciliation, .cgmDataLoss, .pumpConnectionUnstable,
-                .urgentLowGlucose:
-                return true
-            default: return false
+            case .bolusReconciliation, .pumpDisconnect, .pumpConnectionUnstable, .urgentLowGlucose, .cgmDataLoss:
+                return .timeSensitive
+            case .pumpAlert, .pumpCgmAlert, .bolusDeliveryFailed, .remoteBolusRejected:
+                return .active
             }
         }
 
-        /// Whether this condition surfaces as a NOTIFICATION at all, or as UI state only (the app's HUD,
-        /// the widgets, and the watch status push).
-        ///
-        /// `cgmDataLoss` is the one category that does not notify (**owner decision, 2026-08-30**). Both of
-        /// its posters — the immediate "CGM data lost" banner on the `SafetyEdge.freshness` raise edge, and
-        /// the pre-armed background staleness watchdog — fire at the SAME `FreshnessThresholds.glucoseStaleAfter`
-        /// threshold, so the category produced one notification request per advanced CGM datum (720 of them
-        /// in the 2026-08-29 diagnostics export ≈ 60 h of entirely normal operation) while telling the
-        /// wearer nothing the greyed, age-labelled CGM pill and widget value do not already say.
-        ///
-        /// **Accepted residual, stated explicitly:** because the watchdog fires at the same threshold as
-        /// the banner rather than later, this also removes the only notification that could reach a wearer
-        /// whose CGM gap outlives the app being alive — i.e. a MULTI-HOUR outage is now silent too, not
-        /// just a short gap. A long-outage escalation would be a NEW, separately-scheduled alert (see
-        /// `DisconnectEscalation` for the ladder shape); nothing here provides one. The app-owned urgent-low
-        /// backstop is deliberately NOT affected: it lives on its own `urgentLowGlucose` category.
-        ///
-        /// Read by `decide()` (so every poster, in-process or out, is covered) and by the app's coordinator
-        /// BEFORE it persists a durable replay record, so a silent category leaves nothing behind.
-        public var deliversAsNotification: Bool {
-            switch self {
-            case .cgmDataLoss: return false
-            default: return true
-            }
-        }
+        /// How hard the app pushes past the first notification. Nothing repeats this release; a pump
+        /// without its own screen needs alarms that repeat until acknowledged, and a category gets that by
+        /// changing this alone.
+        public var escalation: AlertEscalation { .none }
 
-        /// Whether a notification in this category may carry an action that SILENCES the category (the
-        /// "Snooze 2h" button).
-        ///
-        /// False for the two unresolved-dose categories (**owner decision, 2026-08-30**): "Bolus outcome
-        /// unknown" (`bolusIndeterminate`) and "Bolus not delivered" (`bolusDeliveryFailed`) previously
-        /// offered a snooze as their ONLY action, and since neither posts at `.critical` severity that
-        /// snooze was honoured — so the single tap available on an unresolved-dose alert silenced exactly
-        /// the category that must not be silenced. They now offer no action buttons at all; iOS still
-        /// provides the default tap (open the app) and swipe-to-dismiss, so nothing became harder to deal
-        /// with — only the one-tap silence is gone.
-        ///
-        /// False for every safety-set category too — a fired safety alert must never carry a tappable
-        /// snooze BUTTON (a different, narrower mechanism from the settings-level ladder Off, which IS
-        /// allowed). Deriving BOTH the registered actions and the snooze WRITE side from this one
-        /// predicate means the affordance and the governance can no longer disagree — including for a
-        /// notification that was DELIVERED by an older build and still sits in Notification Center with
-        /// its old snooze button (`setNotificationCategories` replaces the registered set at launch, but
-        /// an already-delivered notification keeps the actions it was delivered with). After the two
-        /// reminders were deleted, the sole app-own category that still permits a snooze is
-        /// `remoteBolusRejected` (plus the pump-mirror `pumpAlert`).
-        public var permitsSilencingAction: Bool {
-            if isSafetySet { return false }
-            switch self {
-            case .bolusIndeterminate, .bolusDeliveryFailed: return false
-            default: return true
-            }
-        }
+        /// The app's own safety categories, posted time-sensitive.
+        public var isSafetySet: Bool { level >= .timeSensitive }
 
-        /// Whether this category ANNOUNCES an already-terminal fact rather than tracking an ongoing
-        /// condition — the axis that decides when a durable replay record is finished.
-        ///
-        /// True only for `bolusReconciliation`. Every `bolusReconciliation` post is emitted immediately
-        /// after the ledger entry it describes has been terminally settled, so by the time the durable
-        /// record exists the dose is already resolved and the only open question is whether the wearer has
-        /// been SHOWN it. A condition category (`pumpDisconnect`, `pumpConnectionUnstable`,
-        /// `urgentLowGlucose`) is the opposite: presentation resolves nothing, and its record must keep
-        /// replaying until the condition itself clears and withdraws it — which is what keeps an unresolved
-        /// disconnect visible across a relaunch, since the cold-launch edge detectors deliberately do not
-        /// re-raise. See `shouldReplayPersistedAlert`.
-        public var announcesSettledResult: Bool { self == .bolusReconciliation }
+        /// Every category but the bolus result can be turned off.
+        public var canBeTurnedOff: Bool { self != .bolusReconciliation }
 
-        /// Whether the category is ON by default. Every remaining app-own category is ON by default;
-        /// safety categories cannot be turned off through this flag at all (they resolve through the
-        /// ladder), and the governed ones default ON.
-        public var defaultEnabled: Bool { true }
+        /// Whether the category ever becomes a notification. CGM loss is shown in the app only (owner
+        /// decisions 2026-08-30 and 2026-11-01): the old app notified once per advanced reading. It keeps
+        /// a category and a level so a pump without its own screen can make it an alert later.
+        public var deliversAsNotification: Bool { self != .cgmDataLoss }
 
-        /// A pure display/classification axis driving the settings UI's pump-vs-app source split.
-        /// `pumpAlert` is the only category relayed FROM the pump; every other category (incl. all
-        /// five safety-set categories) is GENERATED BY the app. This is display-only — `decide()` never
-        /// reads it, so it cannot influence governance.
-        public var isPumpSourced: Bool {
-            switch self {
-            case .pumpAlert: return true
-            default: return false
-            }
-        }
-
+        /// The settings label.
         public var label: String {
             switch self {
-            case .pumpDisconnect: return "Pump disconnected"
             case .bolusReconciliation: return "Bolus result"
-            case .cgmDataLoss: return "CGM data loss"
-            case .pumpConnectionUnstable: return "Pump connection unstable"
-            case .urgentLowGlucose: return "Urgent low glucose (backup CGM)"
-            case .pumpAlert: return "Pump alerts"
-            case .remoteBolusRejected: return "Remote bolus rejected"
-            case .bolusDeliveryFailed: return "Bolus delivery failed"
-            case .bolusIndeterminate: return "Bolus outcome unknown"
+            case .pumpDisconnect: return "Pump disconnected"
+            case .pumpConnectionUnstable: return "Connection unstable"
+            case .urgentLowGlucose: return "Urgent low (backup CGM)"
+            case .cgmDataLoss: return "CGM loss"
+            case .pumpAlert: return "Pump alerts & alarms"
+            case .pumpCgmAlert: return "CGM alerts & errors"
+            case .bolusDeliveryFailed: return "Bolus not delivered"
+            case .remoteBolusRejected: return "Remote bolus refused"
             }
         }
-    }
-
-    /// Severity, for ordering + rendering (today the app renders everything identically red — this gives the
-    /// broker model a real axis). It is independent of the ladder: loudness comes from the resolved
-    /// intent, not from severity.
-    public enum Severity: Int, Comparable, Sendable, Codable, CaseIterable {
-        case info = 0, warning = 1, error = 2, critical = 3
-        public static func < (a: Severity, b: Severity) -> Bool { a.rawValue < b.rawValue }
     }
 
     // MARK: - Message
 
-    /// A candidate notification. `dedupeKey` collapses repeats (a re-raised pump alert, a retried rejection)
-    /// onto one slot; `episodeKey` groups a run of related events so the broker can honor one-per-episode.
-    public struct Message: Sendable, Equatable {
+    /// A candidate notification. `identifier` is the notification's own identity: posting again under the
+    /// same identifier replaces it, and withdrawing it removes it.
+    public struct Message: Sendable, Hashable, Codable {
         public var category: Category
-        public var severity: Severity
+        public var severity: AlertSeverity
         public var title: String
         public var body: String
-        /// Stable identity for dedupe / targeted withdrawal. Repeats with the same key coalesce.
-        public var dedupeKey: String
-        /// Groups related events into one episode (one-notification-per-episode, §6). Defaults to `dedupeKey`.
-        public var episodeKey: String
-        public init(
-            category: Category, severity: Severity, title: String, body: String,
-            dedupeKey: String, episodeKey: String? = nil
-        ) {
+        public var identifier: String
+        public init(category: Category, severity: AlertSeverity, title: String, body: String, identifier: String) {
             self.category = category
             self.severity = severity
             self.title = title
             self.body = body
-            self.dedupeKey = dedupeKey
-            self.episodeKey = episodeKey ?? dedupeKey
+            self.identifier = identifier
         }
     }
 
-    // MARK: - Per-category settings
+    // MARK: - Decision
 
-    /// User-configurable governance for one GOVERNED category (the safety set resolves through the
-    /// ladder, not this struct). Just the per-category enable flag: the acknowledged-safety-disable field
-    /// was retired with the never-suppressible tier — a safety category is now lowered (including to Off)
-    /// through the unified rules ladder, gated by a one-time warning in the UI, not by an ack flag here.
-    ///
-    /// **Future-field warning:** any field added to this struct must use the `Optional`-typed-property
-    /// idiom, because Swift's synthesized `Decodable` only tolerates a missing key for `Optional`-typed
-    /// properties, not a non-optional one with a memberwise-init default — decoding an already-persisted
-    /// pre-this-field blob would otherwise fail the whole decode. Removing a field this struct once
-    /// carried is always safe either way: synthesized `Decodable` silently ignores an unrecognized key in
-    /// an old persisted blob (which is what makes retiring `userAcknowledgedSafetyDisable` here safe).
-    public struct CategorySettings: Sendable, Equatable, Codable {
-        public var enabled: Bool
-        public init(enabled: Bool) {
-            self.enabled = enabled
-        }
-        /// The default governance for a category (respecting its `defaultEnabled`).
-        public static func defaults(for category: Category) -> CategorySettings {
-            CategorySettings(enabled: category.defaultEnabled)
-        }
+    public enum SuppressionReason: String, Sendable, Hashable {
+        /// The user turned the category off.
+        case categoryOff
+        /// The category is shown in the app only and never notifies.
+        case uiStateOnly
     }
 
-    /// The global daily budget (§6): a total cap with a visible counter.
-    public struct Budget: Sendable, Equatable, Codable {
-        public var dailyTotal: Int
-        public init(dailyTotal: Int = 40) {
-            self.dailyTotal = dailyTotal
-        }
+    public struct Decision: Sendable, Hashable {
+        /// The level to post at, or `nil` when the message isn't posted.
+        public let level: AlertInterruptionLevel?
+        /// How hard to push past the first notification, when posted.
+        public let escalation: AlertEscalation?
+        public let reason: SuppressionReason?
+        public var deliver: Bool { level != nil }
     }
 
-    // MARK: - Broker state (advanced as messages deliver)
-
-    /// The mutable governance state the broker carries between decisions: when each category last delivered
-    /// (rate-limit), the day's delivered counts (budget), and the episodes already notified. Pure data —
-    /// the app persists it; `NotificationBroker` never mutates it in place, it returns the next state.
-    public struct State: Sendable, Equatable, Codable {
-        public var lastDeliveredAt: [String: Date]  // keyed by Category.rawValue
-        public var dayKey: String  // the calendar day the counters belong to
-        public var deliveredToday: Int
-        public var notifiedEpisodes: Set<String>
-        /// User "snooze this category until T", keyed by `Category.rawValue`. **Optional on purpose** so an
-        /// already-persisted v1 blob (written before this field existed) still decodes — a missing key →
-        /// `nil` → treated as no snooze, rather than failing the whole decode and dropping the day counters.
-        public var snoozedUntil: [String: Date]?
-        public init(
-            lastDeliveredAt: [String: Date] = [:], dayKey: String = "",
-            deliveredToday: Int = 0,
-            notifiedEpisodes: Set<String> = [], snoozedUntil: [String: Date]? = nil
-        ) {
-            self.lastDeliveredAt = lastDeliveredAt
-            self.dayKey = dayKey
-            self.deliveredToday = deliveredToday
-            self.notifiedEpisodes = notifiedEpisodes
-            self.snoozedUntil = snoozedUntil
-        }
+    /// Whether `message` is posted, and how. Only its category counts: see `decide(_:policy:)` for a
+    /// category.
+    public static func decide(_ message: Message, policy: AlertPolicy) -> Decision {
+        decide(message.category, policy: policy)
     }
 
-    // MARK: - Telemetry (§6 responsibility #7)
+    /// Whether a notification in `category` is posted, and how. A category that notifies and is on is
+    /// posted at its fixed level and escalation, capped at this release's ceilings. Nothing else
+    /// suppresses it: no count, snooze or rate limit. The bolus result is always on, whatever the policy
+    /// says.
+    public static func decide(_ category: Category, policy: AlertPolicy) -> Decision {
+        if !category.deliversAsNotification { return Decision(level: nil, escalation: nil, reason: .uiStateOnly) }
+        if !policy.isOn(category) { return Decision(level: nil, escalation: nil, reason: .categoryOff) }
+        return Decision(
+            level: Swift.min(category.level, AlertInterruptionLevel.releaseCeiling),
+            escalation: Swift.min(category.escalation, AlertEscalation.releaseCeiling), reason: nil)
+    }
+
+    // MARK: - Telemetry
 
     /// Per-category counts used to tune notification defaults: how many were successfully REQUESTED of
     /// the OS, how many the user dismissed (swiped away), and how many they acted on (opened / tapped an
-    /// action). **Kept separate from `State`** so it never perturbs the decision/equality semantics
-    /// `decide` round-trips; it is write-only accounting. Cumulative (lifetime), local-only, and gathered
-    /// only when the user opts in.
+    /// action). Write-only accounting, cumulative (lifetime), local-only, and gathered only when the user
+    /// opts in.
     ///
-    /// `requested` is named for what it counts — a broker-approved `UNNotificationRequest` submission,
-    /// BEFORE the OS confirms presentation and with any submission error discarded — never `delivered`,
-    /// `presented`, or `seen`, which would claim the wearer was shown something the counter cannot prove.
-    /// A genuinely presentation-confirmed count is not offered here: it would need `willPresent`, which
-    /// only fires while the app is running in the FOREGROUND (Apple's documented contract), so it would
+    /// `requested` is named for what it counts — an `UNNotificationRequest` submission, BEFORE the OS
+    /// confirms presentation and with any submission error discarded — never `delivered`, `presented`, or
+    /// `seen`, which would claim the wearer was shown something the counter cannot prove. A genuinely
+    /// presentation-confirmed count is not offered here: it would need `willPresent`, which only fires
+    /// while the app is running in the FOREGROUND (Apple's documented contract), so it would
     /// systematically miss exactly the background/terminated deliveries this app's own safety categories
-    /// rely on most — a counter built on it would UNDER-count, not merely approximate, the presentations
-    /// that matter. If a genuinely presentation-confirmed counter is ever added, it must be a SEPARATE
-    /// field so `requested` keeps its own, narrower, honest meaning.
+    /// rely on most.
     ///
-    /// `dismissed` is a LOWER BOUND, not an exact count, and the fix that made it move at all is not
-    /// retroactive: iOS reports a dismiss only for an explicit per-notification swipe-away — "Clear All"
-    /// and app-side withdrawal are never reported — and a replayed entry persisted by an earlier build
-    /// carries no attributable category until it churns.
+    /// `dismissed` is a LOWER BOUND, not an exact count: iOS reports a dismiss only for an explicit
+    /// per-notification swipe-away — "Clear All" and app-side withdrawal are never reported.
     public struct CategoryTelemetry: Sendable, Equatable, Codable {
         public var requested: Int
         public var dismissed: Int
@@ -296,17 +176,13 @@ public enum NotificationBroker {
             self.actedUpon = actedUpon
         }
 
-        // Tolerant decode from the start (the house pattern is `ConnectionTelemetry.swift`, one file
-        // away): a synthesized decoder THROWS on a missing non-optional key, and the loader's `try?`
-        // would then fall back to an empty dictionary — silently zeroing every OTHER category's counts
-        // too, not just the one missing the new field. Decoding each field with `decodeIfPresent`
-        // (defaulting to its current value) means a later required-field addition upgrades a persisted
-        // blob in place instead of erasing it. Encoding stays the default (all keys written).
+        // Tolerant decode (the house pattern is `ConnectionTelemetry.swift`): a synthesized decoder
+        // THROWS on a missing non-optional key, and a loader's `try?` would then fall back to an empty
+        // dictionary, silently zeroing every OTHER category's counts too. Decoding each field with
+        // `decodeIfPresent` means a later required-field addition upgrades a persisted blob in place.
         //
-        // The `requested` key is a rename, not a migration: a blob an earlier build wrote under the old
-        // `delivered` key decodes this field to 0 (the key is simply absent under its new name) while
-        // `dismissed`/`actedUpon` carry over unaffected — consistent with the counter having been reset,
-        // never a silent reinterpretation of an old count under a new name.
+        // The `requested` key is a rename, not a migration: a blob written under the old `delivered` key
+        // decodes this field to 0 while `dismissed`/`actedUpon` carry over.
         private enum CodingKeys: String, CodingKey {
             case requested, dismissed, actedUpon
         }
@@ -318,12 +194,10 @@ public enum NotificationBroker {
         }
     }
 
-    /// The complete persisted telemetry blob: every category's counters plus a REAL accrual window
-    /// start — mirrors `ConnectionTelemetry`'s own dict-of-counters-plus-`windowStart` shape (one file
-    /// away) so both diagnostics blobs answer "how far back do these counts reach" the same way, rather
-    /// than leaving notification telemetry undatable while connection telemetry is not. `windowStart` is
-    /// seeded exactly once — on the first mutate that finds it `nil` — and is never a per-event
-    /// timestamp; see `NotificationRuntime.bumpTelemetry` (the app-target caller).
+    /// The complete persisted telemetry blob: every category's counters plus the accrual window start,
+    /// the same dict-of-counters-plus-`windowStart` shape as `ConnectionTelemetry`, so both diagnostics
+    /// blobs answer "how far back do these counts reach" the same way. `windowStart` is seeded once, on
+    /// the first opted-in count, and is never a per-event timestamp.
     public struct TelemetrySnapshot: Sendable, Equatable, Codable {
         public var perCategory: [String: CategoryTelemetry]
         public var windowStart: Date?
@@ -339,210 +213,14 @@ public enum NotificationBroker {
             windowStart = try c.decodeIfPresent(Date.self, forKey: .windowStart)
         }
     }
+}
 
-    // MARK: - Decision
-
-    public enum SuppressionReason: String, Sendable, Equatable {
-        case categoryDisabled, snoozed, dailyBudgetReached,
-            episodeAlreadyNotified
-        /// The category surfaces as UI state only and never as a notification
-        /// (`Category.deliversAsNotification == false`). Distinct from `categoryDisabled`, which is a
-        /// USER choice that a user can reverse: this one is policy and there is no setting for it.
-        case uiStateOnly
-        /// The unified notification-rules resolver (`NotificationRules.resolve`) resolved this
-        /// notification's phone intent to `.off`. Distinct from `categoryDisabled`, which reflects
-        /// only the category's own `CategorySettings.enabled` flag — this reason can be produced by
-        /// ANY cascade level (global/source/category/per-notification) resolving to `.off`, so it is
-        /// named for the mechanism rather than reusing a settings-specific reason.
-        case ruleResolvedOff
-    }
-
-    public struct Decision: Sendable, Equatable {
-        public let deliver: Bool
-        public let reason: SuppressionReason?  // nil ⇔ deliver
-        /// The state to persist AFTER acting on this decision (counters/timestamps advanced iff delivered).
-        public let nextState: State
-    }
-
-    /// Decide whether `message` should be delivered now, and return the state to persist. A caller that
-    /// supplies a `rules` cascade (production always does for `.pumpAlert` and every safety-set category)
-    /// resolves entirely through the ONE resolver — a ladder Off (aimed OR inherited from a source/global
-    /// rule) suppresses, everything else delivers. Without a cascade: a UI-state-only category is refused
-    /// (`.uiStateOnly`); a safety-set category is delivered unconditionally (the TRANSIENT-suppression
-    /// invariant fallback — no snooze/rate-limit/budget can silence it); and a governed category runs the
-    /// ordering category-enabled → snooze → episode-not-already-notified → budget. `settings` is looked up
-    /// per category (falling back to that category's defaults).
-    public static func decide(
-        _ message: Message,
-        settings: [Category: CategorySettings],
-        state: State,
-        budget: Budget = Budget(),
-        now: Date,
-        calendar: Calendar = .current,
-        rules: NotificationRules.Cascade? = nil,
-        timeSensitiveAvailable: Bool = false
-    ) -> Decision {
-        var s = state
-        // Roll the daily counters over at a day boundary.
-        let today = Self.dayKey(now, calendar: calendar)
-        if s.dayKey != today {
-            s.dayKey = today
-            s.deliveredToday = 0
+extension NotificationBroker.Category {
+    /// Whether the category mirrors the pump's own annunciation or is generated by the app.
+    public var notificationSource: NotificationRules.Source {
+        switch self {
+        case .pumpAlert, .pumpCgmAlert: return .pumpMirror
+        default: return .appOwn
         }
-
-        func record() -> State {
-            var out = s
-            out.lastDeliveredAt[message.category.rawValue] = now
-            // A safety-set delivery, a governed `.error`-severity delivery, or a pump-mirror
-            // (`.pumpAlert`) delivery does NOT consume the daily budget. The `.error` clause is
-            // load-bearing for the one governed, NON-safety-set category that posts at `.error` — the
-            // dose-failure alert (`bolusDeliveryFailed`, via the app's `notifyDeliveryFailed`) — so a
-            // delivered dose-failure notification never burns the very budget that gates it. The
-            // pump-mirror clause matters because a `.pumpAlert` resolves through the cascade and is
-            // DELIVERED UNGATED, so counting each one would let a burst of pump alerts exhaust that same
-            // budget and silently suppress a genuine `bolusDeliveryFailed`. Because these deliveries never
-            // consume a slot, a later withdrawal of one has nothing to "refund" — deliberately NOT adding a
-            // blind decrement-per-dedupeKey refund here: `withdraw` only ever sees identifiers and cannot
-            // tell whether a given key consumed a budget slot or maps to multiple counted notifications, so
-            // a blind decrement would UNDERCOUNT ordinary notifications. `lastDeliveredAt` and
-            // `notifiedEpisodes` still advance below so dedupe/episode tracking stays coherent.
-            // A reconcile/unresolved-dose post (any `reconcile-*`-keyed message — the settled
-            // `.bolusReconciliation` arms AND the condition-shaped `.bolusIndeterminate` unresolved arms)
-            // is a durable dose-safety disclosure and must not burn the governed daily budget that gates an
-            // ordinary notification — the same exemption `isSafetySet` already grants the settled arms,
-            // extended per-post to the unresolved arms so promoting the CATEGORY is unnecessary.
-            let budgetExempt =
-                message.category.isSafetySet || message.severity == .error
-                || message.category == .pumpAlert
-                || RemoteBolusLedger.isReconciliationDedupeKey(message.dedupeKey)
-            if !budgetExempt {
-                out.deliveredToday += 1
-            }
-            out.notifiedEpisodes.insert(message.episodeKey)
-            return out
-        }
-        func deliver() -> Decision { Decision(deliver: true, reason: nil, nextState: record()) }
-        func suppress(_ r: SuppressionReason) -> Decision { Decision(deliver: false, reason: r, nextState: s) }
-
-        // A category that surfaces as UI state only never becomes a notification — refused HERE, ahead of
-        // BOTH the resolver and the safety fallback, because "delivers per its cascade" and "always
-        // delivered when uncascaded" are each statements about a category that notifies at all, and this
-        // one does not. Placed as a precondition at the single governed decision point so the refusal
-        // holds for EVERY poster (the app's coordinator, a replayed durable record, an out-of-process
-        // intent) AND every caller — including one that supplies a rule cascade. In production the
-        // safety-set `cgmDataLoss` always carries a cascade (`NotificationCoordinator` builds one for
-        // every safety category), and with the refusal below the resolver a non-Off cascade took the
-        // resolver's deliver path and re-posted the removed per-datum CGM-gap spam; enforcing it first
-        // closes that. `suppress` advances no counter and records no episode, so a silent category can
-        // never consume the budget that gates a genuine `bolusDeliveryFailed`.
-        // Owner decision 2026-08-30 — see `Category.deliversAsNotification` for the accepted residual.
-        if !message.category.deliversAsNotification { return suppress(.uiStateOnly) }
-
-        // The unified notification-rules resolver is the SINGLE governed decision point for ANY
-        // category once a caller supplies a rule cascade — no parallel inline check alongside it, and
-        // no per-category or per-source branch here either — `source` is an attribute and a
-        // cascade scope the CALLER resolves against, never a reason to fork this function. By here the
-        // category is one that notifies at all (the UI-state-only refusal is a precondition above).
-        // `rules == nil` (a caller that did not build a cascade) falls straight through to the
-        // settings-driven / safety-fallback path below. In production every safety-set category IS given
-        // a cascade (`NotificationCoordinator` builds it), so a safety category's ladder Off — aimed OR
-        // inherited from a source/global rule (Amendment B: the cascade reaches safety like everything
-        // else) — resolves here to `.off` and suppresses; nothing is immune-to-cascade by construction.
-        if let rules {
-            let resolved = NotificationRules.resolve(rules, timeSensitiveAvailable: timeSensitiveAvailable)
-            return resolved.phone == .off ? suppress(.ruleResolvedOff) : deliver()
-        }
-
-        let cfg = settings[message.category] ?? .defaults(for: message.category)
-
-        // TRANSIENT-suppression invariant (the safety fallback): a safety-set category reached WITHOUT a
-        // supplied cascade is delivered unconditionally, so no transient snooze / rate-limit / daily
-        // budget below can ever silence it. This is the fail-safe path only — a safety category's
-        // deliberate ladder Off (including one inherited from a source/global rule) is honored above via
-        // the resolver, which production always supplies. It is NOT an ack-gate: the retired
-        // never-suppressible tier's `enabled`/`userAcknowledgedSafetyDisable` escape is gone; lowering a
-        // safety category is a ladder action, not a settings-blob write consulted here.
-        if message.category.isSafetySet { return deliver() }
-
-        // A governed message's severity no longer has a special bypass here (Decision 4 — the
-        // `.critical`-severity budget/snooze/disable exemption is retired: the ladder's top rung is
-        // Urgent, `.timeSensitive` at most, and nothing in `decide()` maps to `.critical` any more).
-        // A pump-mirror category reaches this point only when the caller omitted a rules cascade —
-        // production always supplies one — so ordinary governance applies uniformly.
-        if !cfg.enabled { return suppress(.categoryDisabled) }
-
-        // User snooze: suppress this category until its deadline. Placed BELOW the safety fallback
-        // above, so neither a snooze nor a disable can silence a safety alarm.
-        //
-        // Also gated on `permitsSilencingAction`, so an unresolved-dose category can never be silenced by
-        // a snooze that already exists in the persisted map — one written by a build that still offered the
-        // button, or tapped on a notification delivered before the button was removed. The write side
-        // (`snooze(_:category:until:)`) refuses to record new ones; this is the read-side half, and it is
-        // what makes the removal retroactive rather than only forward-looking.
-        if message.category.permitsSilencingAction,
-            let until = s.snoozedUntil?[message.category.rawValue], now < until
-        {
-            return suppress(.snoozed)
-        }
-
-        // One-notification-per-episode: a governed repeat of an already-notified episode is dropped.
-        if s.notifiedEpisodes.contains(message.episodeKey) { return suppress(.episodeAlreadyNotified) }
-
-        if s.deliveredToday >= budget.dailyTotal { return suppress(.dailyBudgetReached) }
-        return deliver()
-    }
-
-    /// Whether a DURABLE safety-alert replay record should be re-submitted on launch, or retired instead.
-    ///
-    /// The app persists a replay record for every safety-set post BEFORE handing the request to
-    /// the OS, so an alert issued moments before a cold-restoration relaunch cannot silently vanish. That
-    /// log had exactly one pruning route — the condition resolving — which meant `bolusReconciliation`,
-    /// whose per-delivery dedupe key (`RemoteBolusLedger.reconciliationDedupeKey`) no caller could
-    /// enumerate, was re-announced at EVERY launch forever for a dose that settled days earlier. This is
-    /// the missing rule, and the care is entirely in what counts as "resolved":
-    ///
-    /// - A category that does not notify at all is never replayed (nothing to show, and re-evaluating it
-    ///   every launch would leave the record accumulating).
-    /// - A category that ANNOUNCES an already-settled result is finished once it has been PRESENTED.
-    ///   Presentation is positive evidence: never a timer, never the record's age, never a redraw. A
-    ///   record that was persisted but not yet presented (a process death between the persist and the OS
-    ///   `add`) still replays, so the persist-then-replay guarantee is unchanged — the wearer is
-    ///   guaranteed at least one presentation and, after this, at most one re-alarm.
-    /// - Everything else tracks a CONDITION: presentation resolves nothing, so it keeps replaying until
-    ///   the condition clears and withdraws it.
-    ///
-    /// Withdrawing a safety alert about a dose that is genuinely unresolved would be worse than a
-    /// duplicate, and this rule cannot do that: the dose interlock is the durable ledger, not this
-    /// notification. An unresolved delivery keeps its ledger entry non-terminal, keeps the global delivery
-    /// block on, is retried at every launch and every reconnect, and posts a FRESH announcement when it
-    /// finally settles. Retiring a replay record cannot settle a ledger entry or release a block.
-    public static func shouldReplayPersistedAlert(category: Category, alreadyPresented: Bool) -> Bool {
-        if !category.deliversAsNotification { return false }
-        if category.announcesSettledResult { return !alreadyPresented }
-        return true
-    }
-
-    /// The calendar-day key used for the daily budget rollover. Stable and calendar-explicit (no `Date()`).
-    public static func dayKey(_ date: Date, calendar: Calendar = .current) -> String {
-        let c = calendar.dateComponents([.year, .month, .day], from: date)
-        return "\(c.year ?? 0)-\(c.month ?? 0)-\(c.day ?? 0)"
-    }
-
-    /// Record a "snooze this category until `until`" into `state`, returning the next state. **Refuses a
-    /// safety-set category** — the write side guards the TRANSIENT-suppression invariant in addition to
-    /// `decide` bypassing it on the read side, so no transient snooze (or corrupt/forged snooze map) can
-    /// ever suppress a safety alert. The user CAN deliberately lower a safety category, including to Off,
-    /// but only through the unified ladder (aimed or an inherited source/global rule), never through this
-    /// snooze mechanism. A transient snooze/rate-limit/budget still cannot suppress a safety member.
-    public static func snooze(_ state: State, category: Category, until: Date) -> State {
-        // `permitsSilencingAction` refuses every safety-set category (a strict superset of the old
-        // never-suppressible refusal) and additionally the two unresolved-dose categories. See
-        // `Category.permitsSilencingAction`.
-        guard category.permitsSilencingAction else { return state }
-        var out = state
-        var m = out.snoozedUntil ?? [:]
-        m[category.rawValue] = until
-        out.snoozedUntil = m
-        return out
     }
 }

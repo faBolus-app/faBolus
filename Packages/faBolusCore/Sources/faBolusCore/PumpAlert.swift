@@ -36,6 +36,9 @@ public enum AlertEscalation: Int, Sendable, Hashable, Codable, CaseIterable, Com
     case critical = 2
 
     public static func < (a: AlertEscalation, b: AlertEscalation) -> Bool { a.rawValue < b.rawValue }
+
+    /// The most this release does: one notification. No repeat, and no Critical Alerts entitlement.
+    public static let releaseCeiling: AlertEscalation = .none
 }
 
 /// A notification the pump is showing, mapped from the pump library's own type so nothing above the

@@ -325,6 +325,18 @@ as unverified and sizes from the larger.
   unusable.
 - **Verify:** on P1 with insulin on board, compare op-109's type and both values with op-115's `iob`.
 
+## 17. Which pump alert bits are CGM alerts
+
+Pump notifications are posted under two switches, "Pump alerts & alarms" and "CGM alerts & errors", like
+Tandem's app. Every CGM alert, and the alert bits pumpx2 names as CGM alerts or errors (19, 20, 22, 25, 27,
+28, 29, 39–42, 44–46, 48), go under CGM; every alarm, malfunction, other alert and reminder under the pump
+(`NotificationRules.category(for:)`).
+
+- **Unverified:** the firmware names of bits 19, 20 and 22 (`aaAlert_STUCK_BUTTON`,
+  `aaAlert_CGM_SUPPORT_PACKAGE_ERROR`, `aaAlert_STK_CSP_REQ`) disagree with pumpx2's (low transmitter,
+  transmitter alert, sensor expiring). A wrong bit only lands under the other switch; both are on by default.
+- **Verify:** when the pump raises one of these, compare what it shows with the category the app posts it under.
+
 ## Resolution Ledger (09.14, D-03 — todo #17 Task A)
 
 Most of the items below are **bench-gated and cannot be resolved in 09.14** — they REASSIGN to

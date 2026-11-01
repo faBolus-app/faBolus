@@ -10,7 +10,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-PACKAGES=(faBolusCore faBolusDesign HistoryStore ShareClient DexcomBLE GlucoseSources PumpSession)
+PACKAGES=(faBolusCore faBolusDesign HistoryStore ShareClient DexcomBLE GlucoseSources PumpSession Alerts)
 
 swift_files() {
   git ls-files -z '*.swift' ':!:legacy/*' ':!:Packages/ShareClient/*'

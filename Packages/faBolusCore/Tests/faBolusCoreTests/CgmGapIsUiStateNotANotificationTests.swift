@@ -2,141 +2,67 @@ import Testing
 import Foundation
 @testable import faBolusCore
 
-/// A CGM gap is UI state — never a notification (owner decision, 2026-08-30).
+/// A CGM gap is UI state, never a notification (owner decisions 2026-08-30 and 2026-11-01; it may become
+/// an alert for a pump without its own screen).
 ///
-/// `.cgmDataLoss` carried BOTH the immediate "CGM data lost" banner and the pre-armed staleness
-/// watchdog, and both fire at the same `GlucoseFreshness.staleAfter` threshold (6 min), so the category
-/// produced one notification request per advanced CGM datum. The gap already shows as UI state (the
-/// greyed CGM pill with its age in the app, the greyed value in the widgets), so the category is now
-/// refused at the one governed decision point rather than at any individual poster.
+/// The old app notified once per advanced CGM reading. The gap already shows as UI state (the greyed CGM
+/// value with its age), so the category is refused at the one decision point rather than at any poster.
 ///
-/// The boundary this suite defends: refusing `.cgmDataLoss` must NOT silence (a) the app-owned
-/// urgent-low backstop, which lives on its own `.urgentLowGlucose` category precisely so it survives
-/// this, or (b) a PUMP-raised CGM alert, which arrives on `.pumpAlert` and is a different thing entirely.
+/// The boundary this suite defends: refusing `.cgmDataLoss` must NOT silence (a) the app-owned urgent-low
+/// backstop, which lives on its own `.urgentLowGlucose` category precisely so it survives this, or (b) a
+/// PUMP-raised CGM alert, which arrives on `.pumpCgmAlert` and is a different thing entirely.
 @Suite struct CgmGapIsUiStateNotANotificationTests {
     typealias B = NotificationBroker
     typealias C = NotificationBroker.Category
 
-    private let cal: Calendar = {
-        var c = Calendar(identifier: .gregorian)
-        c.timeZone = TimeZone(identifier: "UTC")!
-        return c
-    }()
-    private func at(_ h: Int, _ m: Int) -> Date {
-        cal.date(from: DateComponents(year: 2026, month: 1, day: 1, hour: h, minute: m))!
-    }
-    private func msg(_ c: C, key: String = "k", severity: B.Severity = .warning) -> B.Message {
-        B.Message(category: c, severity: severity, title: "t", body: "b", dedupeKey: key)
+    private func msg(_ c: C, severity: AlertSeverity = .warning, id: String = "k") -> B.Message {
+        B.Message(category: c, severity: severity, title: "t", body: "b", identifier: id)
     }
 
-    /// `.cgmDataLoss` is the ONLY category that never surfaces as a notification — named exhaustively so
-    /// a future category cannot be quietly added to the silent set.
+    /// `.cgmDataLoss` is the ONLY category that never surfaces as a notification, named exhaustively so a
+    /// future category can't be quietly added to the silent set.
     @Test func cgmDataLossIsTheOnlyCategoryThatNeverSurfacesAsANotification() {
         #expect(!C.cgmDataLoss.deliversAsNotification)
         let silent = Set(C.allCases.filter { !$0.deliversAsNotification }.map(\.rawValue))
         #expect(silent == ["cgmDataLoss"])
     }
 
-    /// `decide()` refuses it regardless of severity and regardless of settings — the immediate banner and
-    /// the watchdog both routed through here, so one refusal covers every poster, in-process or not.
-    @Test func decideRefusesCgmDataLossAtEverySeverityAndUnderEverySetting() {
-        for severity in B.Severity.allCases {
-            let d = B.decide(
-                msg(.cgmDataLoss, severity: severity),
-                settings: [.cgmDataLoss: B.CategorySettings(enabled: true)],
-                state: B.State(), now: at(9, 0), calendar: cal)
-            #expect(
-                !d.deliver && d.reason == .uiStateOnly,
-                "a \(severity) .cgmDataLoss must be refused as UI-state-only, not delivered")
+    /// Refused at every severity and under every policy, including one with the category on.
+    @Test func decideRefusesCgmDataLossAtEverySeverityAndUnderEveryPolicy() {
+        var off = AlertPolicy()
+        off.setOn(false, for: .cgmDataLoss)
+        for severity in AlertSeverity.allCases {
+            for policy in [AlertPolicy(), off] {
+                let d = B.decide(msg(.cgmDataLoss, severity: severity), policy: policy)
+                #expect(!d.deliver && d.reason == .uiStateOnly, "a \(severity) .cgmDataLoss must be refused")
+            }
         }
     }
 
-    /// Refusing it must not advance the day/meal budget counters — a silent category cannot consume the
-    /// budget that gates a genuine `bolusDeliveryFailed`.
-    @Test func aRefusedCgmDataLossConsumesNoBudgetAndRecordsNoEpisode() {
-        let d = B.decide(
-            msg(.cgmDataLoss, key: "safety.cgmDataLoss"), settings: [:],
-            state: B.State(), now: at(9, 0), calendar: cal)
-        #expect(!d.deliver)
-        #expect(d.nextState.deliveredToday == 0)
-        #expect(d.nextState.notifiedEpisodes.isEmpty)
-        #expect(d.nextState.lastDeliveredAt["cgmDataLoss"] == nil)
-    }
-
-    /// The exposure this fix closes: `.cgmDataLoss` IS safety-set, so in production it always carries a
-    /// rule cascade. When the UI-state-only refusal sat BELOW the resolver, a supplied cascade whose
-    /// resolved intent was not Off took the resolver's deliver path — re-posting the very per-datum
-    /// CGM-gap spam the category was made silent to stop. The refusal must win at the one governed
-    /// decision point regardless of any supplied cascade, while a DELIVERING safety category with the
-    /// same cascade must still deliver.
-    @Test func decideRefusesCgmDataLossEvenWhenASuppliedCascadeWouldOtherwiseDeliver() {
-        typealias R = NotificationRules
-        let loudCascade = R.Cascade(category: .init(intent: .alert))
-        #expect(
-            R.resolve(loudCascade, timeSensitiveAvailable: true).phone != .off,
-            "the cascade must resolve to a delivering intent, else the test proves nothing")
-        let d = B.decide(
-            msg(.cgmDataLoss, key: "safety.cgmDataLoss"),
-            settings: [.cgmDataLoss: B.CategorySettings(enabled: true)],
-            state: B.State(), now: at(9, 0), calendar: cal,
-            rules: loudCascade, timeSensitiveAvailable: true)
-        #expect(
-            !d.deliver && d.reason == .uiStateOnly,
-            "a supplied cascade must not let a UI-state-only category resurrect its notification")
-        #expect(d.nextState.deliveredToday == 0)
-        #expect(d.nextState.notifiedEpisodes.isEmpty)
-        #expect(d.nextState.lastDeliveredAt["cgmDataLoss"] == nil)
-        // The guard refuses only NON-delivering categories: a delivering safety-set category carrying
-        // the same cascade still delivers.
-        let pump = B.decide(
-            msg(.pumpDisconnect), settings: [:], state: B.State(), now: at(9, 0), calendar: cal,
-            rules: loudCascade, timeSensitiveAvailable: true)
-        #expect(pump.deliver, "moving the refusal above the resolver must not refuse a delivering safety category")
-    }
-
-    /// The urgent-low backstop is on its OWN safety-set category and still alarms during a gap —
-    /// this is the whole reason it was decoupled from `.cgmDataLoss`.
+    /// The urgent-low backstop is on its own category and still alarms during a gap, even with CGM loss
+    /// turned off.
     @Test func theUrgentLowBackstopStillAlarmsDuringACgmGap() {
+        var policy = AlertPolicy()
+        policy.setOn(false, for: .cgmDataLoss)
         #expect(C.urgentLowGlucose.deliversAsNotification)
-        let hostile = Dictionary(
-            uniqueKeysWithValues: C.allCases.map {
-                ($0, B.CategorySettings(enabled: false))
-            })
-        let d = B.decide(
-            msg(.urgentLowGlucose, severity: .critical), settings: hostile,
-            state: B.State(), now: at(3, 0), calendar: cal)
-        #expect(d.deliver, "the urgent-low backstop must survive the CGM-gap policy change")
+        let d = B.decide(msg(.urgentLowGlucose, severity: .critical), policy: policy)
+        #expect(d.deliver && d.level == .timeSensitive)
     }
 
-    /// A PUMP-raised CGM alert is a `.pumpAlert` (which DOES surface as a notification) — a different
-    /// channel from the app's own UI-state-only CGM-gap banner. A loss-of-coverage identity (sensor
-    /// failed) classifies to a loud pump-mirror rung and the resolver-driven delivery gate posts it.
-    @Test func aPumpRaisedCgmAlertStillNotifiesAndIsLoudByDefault() {
-        typealias R = NotificationRules
-        #expect(C.pumpAlert.deliversAsNotification, "the pump-mirror channel is not the UI-only CGM-gap banner")
-        let group = R.pumpMirrorGroup(kind: .cgmAlert, id: 11, isMalfunction: false)  // sensor failed
-        #expect(R.defaultIntent(for: group) >= .alert, "a pump CGM loss-of-coverage alert is loud by default")
-        let pumpCgm = B.Message(
-            category: .pumpAlert, severity: .warning, title: "Sensor failed", body: "b", dedupeKey: "pumpalert-3-11")
-        let d = B.decide(
-            pumpCgm, settings: [.pumpAlert: B.CategorySettings(enabled: true)],
-            state: B.State(), now: at(9, 0), calendar: cal,
-            rules: R.Cascade(category: .init(intent: R.defaultIntent(for: group))), timeSensitiveAvailable: true)
-        #expect(d.deliver, "the pump's own CGM alert is not the app's CGM-gap banner — it must still notify")
+    /// A pump-raised CGM alert (sensor failed) is a `.pumpCgmAlert`, which does notify: a different
+    /// channel from the app's own CGM-gap state.
+    @Test func aPumpRaisedCgmAlertStillNotifies() {
+        let sensorFailed = PumpAlert(id: 11, kind: .cgmAlert, title: "Sensor failed")
+        let category = NotificationRules.category(for: sensorFailed)
+        #expect(category == .pumpCgmAlert)
+        #expect(B.decide(msg(category), policy: AlertPolicy()).deliver)
     }
 
-    /// The other four safety-set categories are untouched: still delivered under a hostile config.
-    @Test func everyOtherSafetySetCategoryStillAlwaysDelivers() {
-        let hostile = Dictionary(
-            uniqueKeysWithValues: C.allCases.map {
-                ($0, B.CategorySettings(enabled: false))
-            })
+    /// The other four safety categories notify by default.
+    @Test func everyOtherSafetySetCategoryStillDelivers() {
         var delivered: Set<String> = []
-        for c in C.allCases where c.isSafetySet && c.deliversAsNotification {
-            let d = B.decide(
-                msg(c, key: c.rawValue), settings: hostile,
-                state: B.State(), now: at(3, 0), calendar: cal)
-            if d.deliver { delivered.insert(c.rawValue) }
+        for c in C.allCases where c.isSafetySet && B.decide(msg(c), policy: AlertPolicy()).deliver {
+            delivered.insert(c.rawValue)
         }
         #expect(delivered == ["pumpDisconnect", "bolusReconciliation", "pumpConnectionUnstable", "urgentLowGlucose"])
     }
