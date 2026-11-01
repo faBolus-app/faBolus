@@ -59,3 +59,4 @@ excluded:
   - Packages/Alerts/.build
   - Packages/RemoteProtocol/.build
   - Packages/WatchLink/.build
+  - Packages/PhoneApp/.build
