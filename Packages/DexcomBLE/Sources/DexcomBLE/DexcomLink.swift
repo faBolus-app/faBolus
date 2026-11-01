@@ -123,8 +123,26 @@ public enum DexcomLinkStatus: Sendable, Equatable {
     case problem(DexcomProblem)
 }
 
+/// What an observer learned that is worth keeping across launches.
+public struct DexcomMemory: Sendable, Equatable {
+    /// The peripheral last read, so a relaunch can reconnect to it directly.
+    public var peripheralID: UUID?
+    /// The followed sensor's advertised name (G7 only).
+    public var sensorName: String?
+    /// When the G6 transmitter's clock started. A reading's time is relative to that clock, so keeping
+    /// it lets a reading be dated after a relaunch before the Dexcom app next asks for the clock.
+    public var activationDate: Date?
+
+    public init(peripheralID: UUID? = nil, sensorName: String? = nil, activationDate: Date? = nil) {
+        self.peripheralID = peripheralID
+        self.sensorName = sensorName
+        self.activationDate = activationDate
+    }
+}
+
 /// An observer of one kind of Dexcom sensor, read passively alongside the Dexcom app.
 public protocol DexcomObserver: Sendable {
+    var memory: DexcomMemory { get }
     mutating func start(now: Date) -> [DexcomCommand]
     mutating func stop() -> [DexcomCommand]
     mutating func handle(_ event: DexcomEvent, now: Date) -> DexcomObservation

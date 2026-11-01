@@ -40,6 +40,9 @@ public final class DexcomCentral: NSObject, @unchecked Sendable {
         }
     }
 
+    /// Whether this central got its restore identifier (a second claim on one is refused).
+    public var usesRestoreIdentifier: Bool { restoreIdentifier != nil }
+
     deinit {
         if let restoreIdentifier { RestoreIdentifierClaims.release(restoreIdentifier) }
     }

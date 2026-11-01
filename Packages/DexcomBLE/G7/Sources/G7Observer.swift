@@ -40,6 +40,8 @@ public struct G7Observer: DexcomObserver {
 
     public func status(now: Date) -> DexcomLinkStatus { link.status(now: now) }
 
+    public var memory: DexcomMemory { DexcomMemory(peripheralID: peripheralID, sensorName: sensorName) }
+
     public mutating func start(now: Date) -> [DexcomCommand] {
         link.start(now: now)
         candidates = [:]

@@ -23,3 +23,21 @@ public enum CgmTrend {
         }
     }
 }
+
+extension CgmTrend {
+    /// A Dexcom rate of change (mg/dL per minute) as the arrow the Dexcom app shows: the same seven
+    /// arrows Share reports, on the boundaries CGMBLEKit and G7SensorKit use (±1, ±2, ±3). `nil` (the
+    /// sensor reports no rate) is no arrow.
+    public static func dexcom(rate: Double?) -> GlucoseTrend? {
+        guard let rate, rate.isFinite else { return nil }
+        switch rate {
+        case ...(-3): return .downDown
+        case ...(-2): return .down
+        case ...(-1): return .falling
+        case ..<1: return .flat
+        case ..<2: return .rising
+        case ..<3: return .up
+        default: return .upUp
+        }
+    }
+}

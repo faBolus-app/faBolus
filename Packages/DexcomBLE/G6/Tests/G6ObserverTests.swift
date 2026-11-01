@@ -87,6 +87,27 @@ struct G6ObserverTests {
         #expect(observer.status(now: t0) == .problem(.notReady("waiting for the transmitter's clock")))
     }
 
+    @Test("after a relaunch, the remembered transmitter's clock dates a reading before any clock reply")
+    func rememberedActivationDate() {
+        let activation = t0.addingTimeInterval(-5_092_030)
+        var observer = G6Observer(peripheralID: tx.id, activationDate: activation)
+        connected(&observer)
+        _ = observer.handle(.value(tx, .authentication, hex("050101")), now: t0)
+        let readings = observer.handle(.value(tx, .control, glucose), now: t0).readings
+        #expect(readings.map(\.measuredAt) == [activation.addingTimeInterval(5_091_726)])
+        _ = observer.handle(.value(tx, .control, time), now: t0.addingTimeInterval(10))
+        #expect(observer.memory.activationDate == t0.addingTimeInterval(10 - 5_092_030))
+    }
+
+    @Test("a different transmitter signing in forgets the remembered clock")
+    func otherTransmitterForgetsClock() {
+        var observer = G6Observer(peripheralID: UUID(), activationDate: t0.addingTimeInterval(-1_000_000))
+        connected(&observer)
+        _ = observer.handle(.value(tx, .authentication, hex("050101")), now: t0)
+        #expect(observer.memory == DexcomMemory(peripheralID: tx.id, activationDate: nil))
+        #expect(observer.handle(.value(tx, .control, glucose), now: t0).readings.isEmpty)
+    }
+
     @Test("an unreliable calibration state gives no reading and says why")
     func warmupGivesNoReading() {
         var observer = G6Observer()

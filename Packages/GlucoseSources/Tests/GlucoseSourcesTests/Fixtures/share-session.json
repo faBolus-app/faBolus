@@ -1,0 +1,12 @@
+{
+  "comment": [
+    "A Dexcom Share exchange in the format Share's servers return (share2nightscout-bridge and ShareClient",
+    "document it): sign-in returns a JSON string, then the latest readings, newest first. Constructed, not",
+    "captured: no real Share payload is on file. Times are seconds before 1800000000 (2027-01-15 08:00 UTC)."
+  ],
+  "responses": {
+    "/ShareWebServices/Services/General/AuthenticatePublisherAccount": "\"7a0c4b55-0000-4000-8000-000000000001\"",
+    "/ShareWebServices/Services/General/LoginPublisherAccountById": "\"5e1d2c33-0000-4000-8000-000000000002\"",
+    "/ShareWebServices/Services/Publisher/ReadPublisherLatestGlucoseValues": "[{\"WT\": \"Date(1800000000000)\", \"ST\": \"Date(1800000000000)\", \"DT\": \"Date(1800000000000-0700)\", \"Value\": 112, \"Trend\": \"Flat\"}, {\"WT\": \"Date(1799999700000)\", \"ST\": \"Date(1799999700000)\", \"DT\": \"Date(1799999700000-0700)\", \"Value\": 108, \"Trend\": \"FortyFiveDown\"}, {\"WT\": \"Date(1799999400000)\", \"ST\": \"Date(1799999400000)\", \"DT\": \"Date(1799999400000-0700)\", \"Value\": 101, \"Trend\": \"SingleDown\"}, {\"WT\": \"Date(1799999100000)\", \"ST\": \"Date(1799999100000)\", \"DT\": \"Date(1799999100000-0700)\", \"Value\": 39, \"Trend\": \"DoubleDown\"}, {\"WT\": \"Date(1799998800000)\", \"ST\": \"Date(1799998800000)\", \"DT\": \"Date(1799998800000-0700)\", \"Value\": 47, \"Trend\": \"NotComputable\"}, {\"WT\": \"Date(1799998500000)\", \"ST\": \"Date(1799998500000)\", \"DT\": \"Date(1799998500000-0700)\", \"Value\": 58, \"Trend\": \"DoubleUp\"}]"
+  }
+}

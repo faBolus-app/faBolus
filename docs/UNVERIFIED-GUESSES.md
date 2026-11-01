@@ -201,28 +201,38 @@ branch and must still be resolved before any reintegration onto `main`; entries 
   Resolving this item's Phase-11 bench verification also resolves T1-2's cause-attribution predicate;
   they are the same open question, not two.
 
-## 9. G6: the Dexcom app's sign-in can finish before this app is listening
+## 9. G6 and G7: the Dexcom app's sign-in can finish before this app is listening
 
 - **The guess:** control notifications go on only after the Dexcom app's authenticated, bonded
-  challenge reply is seen on the authentication characteristic (CGMBLEKit's rule; turning control on
-  earlier, or authentication off while the Dexcom app uses it, is what CGMBLEKit found breaks
-  CoreBluetooth). If the Dexcom app signs in before this app's service discovery and notification
-  setup finish, that cycle's reply is missed and no reading arrives. After two such cycles the status
-  says the Dexcom app isn't connected.
-- **Where:** `G6Observer.received(_:on:from:now:)`; the same rule in `G7Observer`.
+  challenge reply is seen on the authentication characteristic. This is CGMBLEKit's and
+  G7SensorKit's rule; CGMBLEKit found that turning authentication off while the Dexcom app uses it
+  breaks CoreBluetooth. If the Dexcom app signs in before this app's service discovery and
+  notification setup finish, that cycle's reply is missed and no reading arrives. After two such
+  cycles the status says the Dexcom app isn't connected.
+- **How the others differ (protocol facts only; xDrip4iOS is GPL):** xDrip4iOS's G6 coexistence mode
+  waits for the reply the same way, but counts the transmitter as bonded when the third byte is
+  anything but 2 (CGMBLEKit requires 1) and doesn't check the authenticated byte. Its G7 mode turns on
+  authentication, control and backfill notifications all at once on discovery, and when iOS answers
+  "Encryption is insufficient" it disconnects and retries on the next cycle.
+- **Where:** `G6Observer.received(_:on:from:now:)`, `G7Observer.received(_:on:from:now:)`,
+  `AuthChallengeRxMessage`.
 - **Risk:** availability only, plus a misleading status if it happens every cycle.
-- **Verify:** the 24 h owner check. If readings skip cycles, or the status blames the Dexcom app while
-  it shows readings, record a session log and revisit (for example, turn control on after a timeout).
+- **Verify:** the 24 h owner checks. If readings skip cycles, or the status blames the Dexcom app while
+  it shows readings, record a session log and switch to xDrip4iOS's approach (G7) or its looser
+  bonded check (G6).
 
-## 10. G6: the Dexcom app asks for the transmitter's clock every cycle
+## 10. G6: the transmitter's clock
 
-- **The guess:** a G6 reading's time is relative to the transmitter's clock, so `G6Observer` dates it
-  from the latest `transmitterTimeRx` reply the Dexcom app asked for, as CGMBLEKit does. A reading
-  that arrives before any clock reply is not used, and the status says it is waiting for the clock.
-- **Where:** `G6Observer.controlResponse(_:from:now:)`.
-- **Risk:** fail-closed. If the Dexcom app doesn't ask for the clock on every connection, readings in
-  a session that started before this app was listening wait for the next clock reply.
-- **Verify:** the 24 h owner check: the first reading should arrive within one or two cycles.
+- **The guess:** a G6 reading's time is relative to the transmitter's clock. `G6Observer` dates it
+  from the clock start worked out from the latest `transmitterTimeRx` reply the Dexcom app asked for,
+  as CGMBLEKit does. It keeps that clock start across launches, as CGMBLEKit stores it and
+  xDrip4iOS dates its coexistence readings from it, and forgets it when another transmitter signs in.
+  A reading with no known clock start is not used, and the status says it is waiting for the clock.
+- **Where:** `G6Observer.controlResponse(_:from:now:)`, `DexcomMemory.activationDate`.
+- **Risk:** fail-closed for a new transmitter until the Dexcom app asks for the clock. A phone clock
+  changed by hand shifts readings until the next clock reply.
+- **Verify:** the 24 h owner check: the first reading after setup should arrive within one or two
+  cycles.
 
 ## 11. G7: a reading's time is its arrival minus the sensor's reported age
 

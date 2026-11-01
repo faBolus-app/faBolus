@@ -37,16 +37,22 @@ public struct G6Observer: DexcomObserver {
     /// transmitter was replaced. The request stays: it is what reconnects in the background.
     private var searchingAgain = false
 
-    // Passive observation state, after CGMBLEKit's `Transmitter`.
+    // Passive observation state, after CGMBLEKit's `Transmitter`. The activation date is kept across
+    // launches (`memory`): CGMBLEKit stores it too, and xDrip4iOS dates coexistence readings from it.
     private var activationDate: Date?
     private var backfillBuffer: GlucoseBackfillFrameBuffer?
 
-    public init(transmitterID: String? = nil, peripheralID: UUID? = nil) {
+    /// - Parameter activationDate: the remembered transmitter's clock start, from `memory`; used only
+    ///   for readings from `peripheralID`, and refreshed by every clock reply.
+    public init(transmitterID: String? = nil, peripheralID: UUID? = nil, activationDate: Date? = nil) {
         self.transmitterID = G6TransmitterID.normalized(transmitterID)
         self.peripheralID = peripheralID
+        self.activationDate = peripheralID == nil ? nil : activationDate
     }
 
     public func status(now: Date) -> DexcomLinkStatus { link.status(now: now) }
+
+    public var memory: DexcomMemory { DexcomMemory(peripheralID: peripheralID, activationDate: activationDate) }
 
     public mutating func start(now: Date) -> [DexcomCommand] {
         link.start(now: now)
@@ -77,6 +83,7 @@ public struct G6Observer: DexcomObserver {
         resetConnection()
         active = nil
         peripheralID = nil
+        activationDate = nil
         guard wasRunning, link.bluetooth == .poweredOn else { return [.cancel(current.id)] }
         requestedAt = now
         return [.cancel(current.id), .lookUp(known: nil, delay: 0)]
@@ -252,7 +259,11 @@ public struct G6Observer: DexcomObserver {
                 message.isBonded
             else { return DexcomObservation() }
             authenticated = true
-            peripheralID = peripheral.id
+            if peripheral.id != peripheralID {
+                // Another transmitter: its clock started at another time.
+                activationDate = nil
+                peripheralID = peripheral.id
+            }
             link.didSignIn(now: now)
             return DexcomObservation(commands: listen(peripheral, .control))
         case .control:
