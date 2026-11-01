@@ -4,12 +4,10 @@ import Foundation
 /// host-agnostic — no SwiftUI/UIKit — so it is trivially unit-testable and the status pill, the details
 /// card, the widgets and the Debug menu all get byte-identical treatment.
 ///
-/// Added for debug session `tslim-reservoir-battery-zero`. The old snapshot's reservoir units were a
-/// non-optional `Double` defaulting to `0`, so a read that was never answered (op-36 had been durably
-/// excluded on the owner's brand-new t:slim X2) rendered as a confident `0 U` on every surface — each of
-/// which had hand-rolled its own `String(format: "%.0f U", …)`. An empty cartridge is a clinically
-/// meaningful state, so absence must never be able to imitate it, and the test for "is this real?" must
-/// live in exactly one place.
+/// Added for debug session `tslim-reservoir-battery-zero`: a reservoir that reads `0` when the pump never
+/// answered the read renders as a confident `0 U`. An empty cartridge is a clinically meaningful state,
+/// so absence must never be able to imitate it, and the test for "is this real?" must live in exactly
+/// one place.
 public enum ReservoirPresentation {
     public static let unknownText = PumpValuePresentation.unknownText
 

@@ -44,7 +44,7 @@ struct SettingChangeLogExportTests {
         #expect(SettingChangeLog().exportText().split(separator: "\n").count == 1)
     }
 
-    @Test func backupValueDisplayString() {
+    @Test func storedSettingValueDisplayString() {
         #expect(StoredSettingValue.bool(true).displayString == "on")
         #expect(StoredSettingValue.bool(false).displayString == "off")
         #expect(StoredSettingValue.int(45).displayString == "45")
@@ -54,5 +54,27 @@ struct SettingChangeLogExportTests {
         #expect(StoredSettingValue.string("x").displayString == "x")
         #expect(StoredSettingValue.stringArray(["a", "b"]).displayString == "a, b")
         #expect(StoredSettingValue.intArray([1, 2]).displayString == "1, 2")
+    }
+
+    /// The change log is persisted, so every value shape must decode to what was encoded.
+    @Test func storedSettingValueRoundTripsEveryCase() throws {
+        let values: [StoredSettingValue] = [
+            .bool(true), .int(42), .double(0.05), .string("carbs"),
+            .stringArray(["iob", "reservoir"]), .intArray([3, 6, 12, 24]),
+            .data(Data([0x01, 0x02, 0xFF]))
+        ]
+        for v in values {
+            let data = try JSONEncoder().encode(v)
+            #expect(try JSONDecoder().decode(StoredSettingValue.self, from: data) == v)
+        }
+        #expect(throws: DecodingError.self) {
+            try JSONDecoder().decode(StoredSettingValue.self, from: Data(#"{"type":"date","value":1}"#.utf8))
+        }
+    }
+
+    @Test func provenanceLabelsAreStable() {
+        #expect(SettingProvenance.consensusDefault.label == "Consensus default")
+        #expect(SettingProvenance.clinicianSet.label == "Set with clinician")
+        #expect(SettingProvenance.selfSet.label == "Set by you")
     }
 }

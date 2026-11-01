@@ -79,9 +79,8 @@ final class LedgerSentPhaseTests: XCTestCase {
         XCTAssertEqual(after.outcome(key("watch", "r7")), .unknown(since: t0 + 5))
     }
 
-    /// Changed from the old ledger, which decoded its predecessor's records tolerantly: this format is
-    /// versioned and strict, so the old app's ledger (or any file this build doesn't know) is unreadable
-    /// and fails closed instead of loading as an empty, delivery-enabled ledger. The first-launch check
+    /// The format is versioned and strict: the old app's ledger (or any file this build doesn't know)
+    /// is unreadable and fails closed, never an empty, delivery-enabled ledger. The first-launch check
     /// reads the old app's file on its own.
     func testOldFormatIsUnreadable() {
         let json = """

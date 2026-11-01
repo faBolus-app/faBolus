@@ -77,6 +77,11 @@ public struct LedgerNotSaved: Error, Sendable, Equatable {
 
 /// The one owner of the bolus ledger: every transition is saved before it returns.
 ///
+/// One instance per ledger file, in the app process only. Its initializer treats anything in flight as
+/// left over from a previous process, so a second instance opened while a bolus is in flight (another
+/// process, or a second owner in this one) would rewrite that bolus. Anything else that needs to look at
+/// the ledger reads it through `RemoteBolusLedgerStore.loadOutcome()`.
+///
 /// An actor, so a phone request and a watch request arriving together are decided one after the
 /// other and only one proceeds. Its storage rules all fail closed:
 /// - with no store, every new bolus is blocked;
@@ -189,6 +194,16 @@ public actor DurableBolusLedger {
     /// may have hidden. Writes the ledger fresh, so an unreadable file is replaced. Never called
     /// automatically.
     public func confirmAllOnPump(now: Date = Date()) throws {
+        // An unreadable file may have been a passing failure (a launch before the first unlock). Read it
+        // again before writing, so a ledger that is readable now isn't replaced by an empty one.
+        if ledgerUnreadable, let store {
+            let reloaded = store.loadOutcome()
+            if !reloaded.failedClosed {
+                var recovered = reloaded.ledger
+                recovered.recoverAfterRestart(now: now)
+                ledger = recovered
+            }
+        }
         var next = ledger
         for entry in next.unresolved { next.confirmOnPump(entry.key, now: now) }
         ledger = next

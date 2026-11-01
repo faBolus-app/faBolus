@@ -77,8 +77,9 @@ public struct RemoteBolusLedger: Sendable, Codable {
         /// the app still doesn't know how much went in, but it no longer blocks; history can still
         /// settle it later.
         public fileprivate(set) var confirmedOnPumpAt: Date?
-        /// Something that could deliver insulin may have been sent: the pump granted permission.
-        public fileprivate(set) var reachedPump: Bool
+        /// Something that could deliver insulin may have been sent: the pump granted permission, which
+        /// is the only way a bolus ID is recorded.
+        public var reachedPump: Bool { bolusId != nil }
 
         public var key: Key { request.ledgerKey }
 
@@ -134,7 +135,7 @@ public struct RemoteBolusLedger: Sendable, Codable {
         if let block { return .blocked(block) }
         entries[key] = Entry(
             request: request, outcome: .requested, updatedAt: now, bolusId: nil, pumpKey: nil,
-            usedIncludedStaleBG: usedIncludedStaleBG, confirmedOnPumpAt: nil, reachedPump: false)
+            usedIncludedStaleBG: usedIncludedStaleBG, confirmedOnPumpAt: nil)
         order.append(key)
         evictIfNeeded()
         return .proceed
@@ -166,7 +167,6 @@ public struct RemoteBolusLedger: Sendable, Codable {
     public mutating func markAccepted(_ key: Key, bolusId: Int, pumpKey: String? = nil, now: Date = Date()) -> Bool {
         move(key, to: .accepted, now: now) { entry in
             entry.bolusId = bolusId
-            entry.reachedPump = true
             if let pumpKey, pumpKey != Self.unpairedPumpKeySentinel { entry.pumpKey = pumpKey }
         }
     }
@@ -184,7 +184,8 @@ public struct RemoteBolusLedger: Sendable, Codable {
     }
 
     /// The pump reported how much went in, from a completion reply or from its history. Below the
-    /// requested amount this is `stopped`, otherwise `delivered`. A non-finite or negative amount isn't a
+    /// requested amount this is `stopped`, otherwise `delivered`; an authoritative zero is
+    /// `stopped(delivered: 0, …)`, never `failed`, because an unknown outcome is never called failed. A non-finite or negative amount isn't a
     /// reading, so it's ignored and the outcome stays where it was.
     @discardableResult
     public mutating func markDelivered(_ key: Key, units: Double, now: Date = Date()) -> Bool {

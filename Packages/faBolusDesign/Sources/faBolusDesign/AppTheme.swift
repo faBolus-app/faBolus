@@ -56,13 +56,14 @@ public enum AppTheme {
         stale ? self.stale : glucoseColor(mgdl)
     }
 
-    public static func ringColor(_ state: PumpConnectionState) -> Color {
-        switch state {
-        case .connected: return inRange
-        case .bolusing: return insulin
-        case .scanning, .connecting: return high
+    /// The HUD ring: the link's state, or the insulin color while a bolus is being delivered on a
+    /// connected link. Link health and an in-flight bolus are separate inputs, so a delivering pump is
+    /// never mistaken for a link state.
+    public static func ringColor(link: PumpLinkState, bolusInProgress: Bool) -> Color {
+        switch link {
+        case .connected: return bolusInProgress ? insulin : inRange
+        case .scanning, .connecting, .authenticating: return high
         case .disconnected: return disconnected
-        case .error: return low
         }
     }
 }

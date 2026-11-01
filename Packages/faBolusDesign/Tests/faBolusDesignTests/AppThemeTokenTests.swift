@@ -20,4 +20,14 @@ struct AppThemeTokenTests {
             #expect(AppTheme.glucoseColor(mgdl, stale: true) == AppTheme.stale)
         }
     }
+
+    /// A bolus colors the ring only on a connected link; it never stands in for a link state.
+    @Test func ringColorKeepsTheLinkAndTheBolusApart() {
+        #expect(AppTheme.ringColor(link: .connected, bolusInProgress: false) == AppTheme.inRange)
+        #expect(AppTheme.ringColor(link: .connected, bolusInProgress: true) == AppTheme.insulin)
+        for link in [PumpLinkState.scanning, .connecting, .authenticating] {
+            #expect(AppTheme.ringColor(link: link, bolusInProgress: true) == AppTheme.high)
+        }
+        #expect(AppTheme.ringColor(link: .disconnected, bolusInProgress: true) == AppTheme.disconnected)
+    }
 }

@@ -106,17 +106,6 @@ public enum GlucoseRange: Sendable {
     }
 }
 
-/// Connection/activity status shown by the HUD ring (a status ring —
-/// we show link/bolus state, never closed-loop automation).
-public enum PumpConnectionState: String, Sendable {
-    case disconnected = "Disconnected"
-    case scanning = "Scanning…"
-    case connecting = "Connecting…"
-    case connected = "Connected"
-    case bolusing = "Delivering…"
-    case error = "Error"
-}
-
 /// The honest "% of your configured max basal rate" readout. This is faBolus's OWN construct
 /// (Tandem ships no such gauge): `basalRateUnitsPerHour ÷ maxBasalUnitsPerHour`, both already
 /// decoded from the pump (`CurrentBasalStatusResponse` / `BasalLimitSettingsResponse`). Labeled

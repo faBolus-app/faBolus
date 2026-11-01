@@ -31,10 +31,9 @@ public enum BatteryChargingPresentation {
     /// about the level may be asserted: the value text is the unknown placeholder, the low-battery
     /// warning tint is OFF, and the glyph is explicitly NOT `battery.0` (which asserts a dead battery).
     ///
-    /// Added for debug session `tslim-reservoir-battery-zero`. The old snapshot's battery percent was a
-    /// non-optional `Int` defaulting to `0`, and op-144 had been durably excluded on the owner's
-    /// brand-new t:slim X2 — so a fully-charged pump rendered as `0%` with the EMPTY-battery glyph and
-    /// the low-battery tint. Pass `PumpState.batteryIfFresh(now:)?.percent` (or the widget carrier's
+    /// Added for debug session `tslim-reservoir-battery-zero`: a battery percent that reads `0` when the
+    /// pump never answered op-144 makes a fully-charged pump render as `0%` with the EMPTY-battery glyph
+    /// and the low-battery tint. Pass `PumpState.batteryIfFresh(now:)?.percent` (or the widget carrier's
     /// `batteryPercentIfFresh(asOf:)`), and on any surface that reads as live data never the
     /// presence-only `PumpState.battery?.value`, which keeps returning a value forever once a single
     /// reply has landed.

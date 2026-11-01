@@ -399,7 +399,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
 
     /// The pump's live Control-IQ action zone as a FROZEN wire token
     /// (`ControlIQZone.rawValue`: increases/decreases/maintains/stops/delivers), derived from op-179
-    /// the old app's zone derivation. A remote decodes the token and renders Tandem's own zone word + icon
+    /// a zone mapping this build no longer makes. A remote decodes the token and renders Tandem's own zone word + icon
     /// locally — no prose crosses the wire, mirroring `controllerVariant` exactly. (c) Tandem — the zone
     /// words are Tandem's own labels. Display-only, never a dose input. Absent ⇒ a legacy host OR the
     /// zone is unread/unmapped; the remote renders the chip/row/field ABSENT, never a stale/fabricated 6th
@@ -408,7 +408,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var ciqZone: String?
 
     /// Whether the pump's OWN control-state currently attributes an
-    /// active basal suspend to Control-IQ (the old app's `ciqSuspendedForLow`), mirroring `ciqZone`
+    /// active basal suspend to Control-IQ (`ciqSuspendedForLow`, which this build no longer derives), mirroring `ciqZone`
     /// exactly: a frozen fail-closed fact, never a rendered string. Display-only, never a dose input.
     /// Emitted UNCONDITIONALLY (nil only before the first op-179 read; `false` is a fully-known
     /// "not CIQ-attributed" state) so a remote always sees the host's current knowledge, exactly like
@@ -424,7 +424,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var ciqSuspendStartEpochSec: Int?
 
     /// The immutable SOURCE epoch (Unix seconds) of the most-recent
-    /// Control-IQ auto-correction (the old app's `lastAutoCorrectionDate`), mirroring `glucoseEpochSec`'s
+    /// Control-IQ auto-correction (`lastAutoCorrectionDate`, which this build no longer derives), mirroring `glucoseEpochSec`'s
     /// epoch-not-age convention exactly: set once at origin, propagated unchanged, a receiver computes
     /// age as `now − epoch` at DISPLAY time. Display-only, never a dose input. Absent ⇒ a legacy
     /// host OR no auto-correction has been seen yet — the chip/row/marker renders ABSENT, never a
@@ -433,7 +433,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// auto-Codable, so the existing memberwise initializer stays untouched.
     public var lastAutoCorrectionEpochSec: Int?
     /// The immutable SOURCE epoch of the most-recent "Control-IQ tried
-    /// and couldn't deliver an automatic correction" event (the old app's `ciqLastCouldNotDeliverDate`).
+    /// and couldn't deliver an automatic correction" event (`ciqLastCouldNotDeliverDate`, which this build no longer derives).
     /// Remote MARKER only — the full timeline stays phone-only (remotes never had the pump history to
     /// build one from). Never surfaced on widgets. Absent ⇒ the marker
     /// renders ABSENT, never a synthesized "recently" without a real timestamp (fail-closed).
@@ -441,7 +441,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var ciqLastCouldNotDeliverEpochSec: Int?
 
     /// The immutable SOURCE epoch (Unix seconds) of the instant
-    /// Control-IQ's automatic correction becomes available again (the old app's `lockoutUntilDate`), set
+    /// Control-IQ's automatic correction becomes available again (`lockoutUntilDate`, which this build no longer derives), set
     /// once at origin from `lastAutoCorrectionDate` + the descriptor's own documented lockout window and
     /// propagated UNCHANGED — mirroring `glucoseEpochSec`'s epoch-not-age convention exactly: a receiver
     /// reverses the arithmetic (`lockoutStart = lockoutUntilEpochSec - windowMinutes*60`) and calls

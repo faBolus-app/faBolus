@@ -262,8 +262,8 @@ final class RemoteBolusLedgerTests: XCTestCase {
         XCTAssertEqual(l.begin(request("watch", "w1", 2.0)), .proceed)
     }
 
-    /// Changed from the old ledger, which let a genuinely unresolved entry with nothing in flight pass
-    /// with no block: it now blocks, across restarts, until history settles it or the user confirms.
+    /// An unknown outcome blocks even with nothing in flight, across restarts, until history settles it
+    /// or the user confirms.
     func testUnresolvedEntryWithNothingInFlightBlocks() throws {
         var l = RemoteBolusLedger()
         _ = l.begin(request("watch", "crashed-mid-delivery", 2.0))
@@ -358,9 +358,8 @@ final class RemoteBolusLedgerTests: XCTestCase {
         XCTAssertEqual(RemoteCommand.Status.unknown.rawValue, "unknown")
     }
 
-    /// A human checking the pump is not the pump confirming delivery. Changed from the old ledger, where a
-    /// manual clear settled a final "manually cleared" status: the outcome now stays `unknown` and only
-    /// stops blocking, so it is never echoed as a final outcome, and never as delivered.
+    /// A human checking the pump is not the pump confirming delivery: the outcome stays `unknown` and
+    /// only stops blocking, so it is never echoed as a final outcome, and never as delivered.
     func testConfirmOnPumpNeverRecordsADelivery() {
         var l = RemoteBolusLedger()
         _ = l.begin(request("garmin", "mc1", 2.0))
@@ -523,8 +522,7 @@ final class RemoteBolusLedgerTests: XCTestCase {
         XCTAssertEqual(RemoteBolusLedger.comparePumpKey("real|OLD-PUMP", to: "real|NEW-PUMP"), .mismatch)
     }
 
-    /// Changed from the old ledger, where an unknown outcome from a DIFFERENT pump than the one connected
-    /// stopped blocking: it keeps blocking. That pump's history can't be read here, so only the user
+    /// An unknown outcome from a DIFFERENT pump than the one connected keeps blocking. That pump's history can't be read here, so only the user
     /// confirming on the pump releases it.
     func testCrossPumpUnknownOutcomeStillBlocksUntilConfirmed() {
         var l = RemoteBolusLedger()

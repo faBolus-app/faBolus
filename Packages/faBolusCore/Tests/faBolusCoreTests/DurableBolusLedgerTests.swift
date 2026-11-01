@@ -166,6 +166,31 @@ final class DurableBolusLedgerTests {
         #expect(try await ledger.begin(Self.request("phone", "p1")) == .proceed)
     }
 
+    /// A file that couldn't be read at launch but can be now (a launch before the first unlock) is read
+    /// again before confirming, so its records aren't replaced by an empty ledger.
+    @Test func confirmingAllReadsAFileThatHasBecomeReadable() async throws {
+        let url = temporaryURL()
+        let first = DurableBolusLedger(store: RemoteBolusLedgerStore(url: url))
+        _ = try await first.begin(Self.request("garmin", "done"))
+        try await first.markAccepted(Self.key("garmin", "done"), bolusId: 1)
+        try await first.markDelivered(Self.key("garmin", "done"), units: 2)
+        _ = try await first.begin(Self.request("garmin", "lost"))
+        try await first.markAccepted(Self.key("garmin", "lost"), bolusId: 2, now: Self.t0)
+        let saved = try Data(contentsOf: url)
+        try Data("unreadable for now".utf8).write(to: url)
+        let relaunched = DurableBolusLedger(store: RemoteBolusLedgerStore(url: url))
+        #expect(await relaunched.block == .ledgerUnreadable)
+        try saved.write(to: url)  // readable again
+
+        try await relaunched.confirmAllOnPump()
+        #expect(await relaunched.block == nil)
+        // The finished request still replays instead of delivering again.
+        #expect(try await relaunched.begin(Self.request("garmin", "done")) == .replay(.delivered(units: 2)))
+        let lost = await relaunched.ledger.entry(Self.key("garmin", "lost"))
+        #expect(lost?.outcome == .unknown(since: Self.t0))
+        #expect(lost?.confirmedOnPumpAt != nil)
+    }
+
     @Test func anEmptyLedgerFileIsUnreadableNotEmpty() async throws {
         let url = temporaryURL()
         try Data().write(to: url)
