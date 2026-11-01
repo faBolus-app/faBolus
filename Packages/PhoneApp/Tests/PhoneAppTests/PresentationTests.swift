@@ -5,7 +5,7 @@ import faBolusCore
 
 @testable import PhoneApp
 
-/// The bolus banner for each outcome (rewrite of the old `BolusOutcomeBannerTests` for the S1 states).
+/// The bolus banner for each outcome (rewrite of the old `BolusOutcomeBannerTests` for today's outcomes).
 @Suite struct BolusBannerTests {
     @Test func eachOutcomeHasItsBanner() {
         #expect(BolusBanner.make(.delivered(units: 1.5), requestedUnits: 1.5).kind == .success)

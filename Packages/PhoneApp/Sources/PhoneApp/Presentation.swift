@@ -2,7 +2,7 @@ import Foundation
 import PumpSession
 import faBolusCore
 
-/// The bolus result banner for an outcome (the S1 states). An unknown outcome is never called failed.
+/// The bolus result banner for each `BolusOutcome`. An unknown outcome is never called failed.
 public struct BolusBanner: Sendable, Equatable {
     public enum Kind: Sendable, Equatable { case inProgress, success, warning }
     public let kind: Kind

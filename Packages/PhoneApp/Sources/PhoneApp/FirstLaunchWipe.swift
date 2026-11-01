@@ -4,7 +4,7 @@ import os
 
 let appLog = Logger(subsystem: "com.fabolus.app", category: "app")
 
-/// The new app's first launch over the old one (D3). The bundle ID is the old app's, so the old app's
+/// The new app's first launch over the old one. The bundle ID is the old app's, so the old app's
 /// settings, App Group files and Keychain items are still there; nothing of them is migrated. On the first
 /// launch, before anything is built, they are removed, and the launch says so, so the alert pipeline also
 /// withdraws whatever the old app left scheduled.

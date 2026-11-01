@@ -182,7 +182,7 @@ extension AppModel {
         await applyTransmitterID()
     }
 
-    /// The G6 source follows the ID typed in settings, else the one the pump reports (S4's op-96 read).
+    /// The G6 source follows the ID typed in settings, else the one the pump reports (its CGM hardware read).
     func applyTransmitterID() async {
         guard let g6 = backupSource as? DexcomBLESource<G6Observer> else { return }
         await g6.setTransmitterID(

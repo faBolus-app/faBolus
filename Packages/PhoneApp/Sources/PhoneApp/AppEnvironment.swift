@@ -17,7 +17,7 @@ public struct AppEnvironment {
     /// The history store's file; `nil` is SwiftData's default location.
     public var historyStoreURL: URL?
     public var historyInMemory = false
-    /// The first-launch wipe (D3), run before anything else is built; `nil` skips it.
+    /// The first-launch wipe, run before anything else is built; `nil` skips it.
     public var wipe: FirstLaunchWipe?
     /// The one pump link, created once at launch with the pump's restore identifier.
     public var makeConnection: () -> PumpConnection

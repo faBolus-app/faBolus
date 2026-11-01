@@ -24,7 +24,7 @@ public final class AppModel {
     static let chartSpan: TimeInterval = 24 * 3600
 
     public let settings: AppSettings
-    /// The first-launch wipe ran in this process (D3).
+    /// The first-launch wipe ran in this process.
     public let wipedOnLaunch: Bool
     public let isMock: Bool
 

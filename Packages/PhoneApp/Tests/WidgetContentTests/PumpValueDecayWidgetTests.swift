@@ -10,7 +10,7 @@ import faBolusCore
 /// is age, never value.
 ///
 /// Changed from the old app: reservoir and battery age on the pump-status window, not the glucose window
-/// (S8 gave them their own); the snapshot always carries every window, so the old "legacy payload without
+/// (the pump-status window is its own setting); the snapshot always carries every window, so the old "legacy payload without
 /// the IOB window" case has nothing to port.
 @Suite struct PumpValueDecayWidgetTests {
     static let now = Date(timeIntervalSince1970: 1_000_000)
