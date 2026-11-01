@@ -31,6 +31,27 @@ import Testing
         #expect(await rig.session.state.link == .connected)
     }
 
+    /// Looking for a new pump closes the link to the paired one; leaving without pairing, or the scan
+    /// finding nothing, goes back to it.
+    @Test func aPairingScanThatEndsWithoutPairingReconnectsThePairedPump() async {
+        let rig = Rig(configure: { $0.unsupportedReads = [] })
+        await rig.start()
+        await rig.settle()
+        #expect(await rig.session.state.link == .connected)
+        await rig.session.scanForPairing()
+        await rig.settle()
+        #expect(await rig.session.state.link != .connected)
+        await rig.session.endPairingScan()
+        await rig.settle()
+        #expect(await rig.session.state.link == .connected)
+
+        await rig.session.scanForPairing()
+        await rig.settle()
+        await rig.run(for: 40, step: 1)
+        #expect(await rig.session.state.link == .connected)
+        await rig.stop()
+    }
+
     /// This release doesn't pair with a Mobi: refused before anything is sent.
     @Test func aMobiIsRefusedAtPairing() async {
         let rig = Rig(paired: false)

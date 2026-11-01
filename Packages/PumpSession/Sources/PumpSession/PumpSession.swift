@@ -454,10 +454,13 @@ public actor PumpSession {
             emit(.linkFailed(.reconnectGaveUp))
         case .failed(let failure):
             emit(.linkFailed(Self.failure(failure)))
-            // A pairing that failed leaves the pump that was paired before as it was: go back to it.
+            // A pairing that failed leaves the pump that was paired before as it was: go back to it. So does
+            // a pairing scan that found nothing.
             if pendingPairing != nil {
                 pendingPairing = nil
                 state.model = record.pairing?.model ?? .unknown
+                await connectToStoredPairing()
+            } else if case .pumpNotFound = failure {
                 await connectToStoredPairing()
             }
         default:
@@ -558,8 +561,17 @@ public actor PumpSession {
     // MARK: - Pairing
 
     /// Scans for pumps to pair with; each one found comes as `.pumpFound`.
+    /// Looks for pumps in pairing mode. The scan closes the link to the paired pump; it comes back when
+    /// the scan ends without a pairing (`endPairingScan`, or the scan timing out).
     public func scanForPairing() async {
         await connection.scanForPairing()
+    }
+
+    /// The user left pairing without pairing: back to the pump paired before. Nothing changes while a
+    /// pairing is under way or the scan has already ended.
+    public func endPairingScan() async {
+        guard pendingPairing == nil, case .scanning(forPairing: true) = await connection.state.phase else { return }
+        await connectToStoredPairing()
     }
 
     public enum PairingRefusal: Error, Sendable, Equatable {
