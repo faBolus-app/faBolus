@@ -84,7 +84,7 @@ know generically. A cancel is never blocked.
 | `screens` | `order`, `default` (`glance`, `glucose`, `clock`, `bolusonly`, `alerts`, `history`, `details`) |
 | `details` | rows in order: `iob`, `reservoir`, `battery`, `cgm`, `lastBolus`, `carbRatio`, `isf`, `target`, `maxBolus`, `maxBasal`, `autoCorrection` (left out while none is known) |
 | `chartHours` | ranges the chart cycles through, from 3, 6, 12, 24 |
-| `complication` | `display` (`numericColor`, `stringTrend`), `slots` (up to three of `iob`, `reservoir`, `battery`, `basal`) |
+| `complication` | `display` (`numericColor`, `stringTrend`), `slots` (up to three of `iob`, `reservoir`, `battery`, `basal`), `labels` (each slot's label names what it shows, as "IOB 1.25"; false shows the value alone) |
 | `clockAnalog` | |
 | `glucose` | `unit` (`mgdl`, `mmol`), `staleMinutes`, `hideDelayMinutes` (absent: never hide), `plotFloor`, `plotCeiling` |
 

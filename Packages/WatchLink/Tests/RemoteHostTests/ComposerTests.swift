@@ -173,6 +173,7 @@ import Testing
         p.defaultScreen = "glance"
         p.watchChartRanges = [5, 6, 6]
         p.complicationSlots = ["basal", "iob", "reservoir", "battery"]
+        p.complicationLabels = false
         p.bolusMode = "extended"
         p.glucoseStaleMinutes = 0
         p.glucosePlotFloor = 50
@@ -183,6 +184,7 @@ import Testing
         #expect(c.defaultScreen == .details)
         #expect(c.chartHours == [6])
         #expect(c.complicationSlots == [.basal, .iob, .reservoir])
+        #expect(c.complicationLabels == false)
         #expect(c.defaultBolusMode == .carbs)
         #expect(c.glucoseStaleMinutes == 1)
         #expect(c.plotFloorMgdl == 40)

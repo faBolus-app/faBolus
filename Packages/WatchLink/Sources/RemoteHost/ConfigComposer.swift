@@ -19,6 +19,8 @@ public struct WatchPreferences: Sendable, Hashable {
     public var watchChartRanges = [3, 6, 12, 24]
     public var complicationDisplay = "numericColor"
     public var complicationSlots = ["iob", "reservoir", "battery"]
+    /// The slots' labels name what they show; off, the value alone.
+    public var complicationLabels = true
     public var clockAnalog = false
     /// `"mgdl"` or `"mmol"`.
     public var glucoseDisplayUnit = "mgdl"
@@ -55,6 +57,7 @@ public enum ConfigComposer {
             complicationSlots: Array(
                 unique(p.complicationSlots.compactMap(ComplicationSlotToken.init(rawValue:)))
                     .prefix(WatchConfig.maxComplicationSlots)),
+            complicationLabels: p.complicationLabels,
             clockAnalog: p.clockAnalog, glucoseUnit: GlucoseUnitToken(rawValue: p.glucoseDisplayUnit) ?? .mgdl,
             glucoseStaleMinutes: min(60, max(1, p.glucoseStaleMinutes)),
             glucoseHideDelayMinutes: p.glucoseHideDelayMinutes.map { min(1440, max(0, $0)) },
