@@ -42,6 +42,28 @@ slice owns which piece.
   references), Periphery and CodeQL.
 - Every change is reviewed with `/code-review` before it lands on `rebuild`.
 
+## Reviewing
+
+<!-- Only facts a reviewer can't get from the diff. How to review is the review tool's job; don't restate it here. -->
+
+Facts a reviewer needs that the diff doesn't show:
+
+- The Safety section above names what matters most here.
+- Out of scope: `legacy/`, the vendored `ShareClient` apart from the diff's own edits to it (each is
+  listed in its `docs/SBOM.md` row), and anything a `check.sh` gate already fails on.
+- `legacy/` is what today's app does, and most new code ports or replaces a file from it. A ported test
+  keeps its expectations unless its commit names the change. Tests check behavior, never source text: the
+  source-text tests in `legacy/` broke when code was reformatted, and they aren't ported.
+- Pump behavior is checked against pumpx2, vendored as TandemKit's `vendor/pumpx2-oracle`. controlX2 has
+  no license: it is read for structure, and nothing is copied from it.
+- Some types carry cases for features not built yet (Mobi, extended boluses, alarm escalation). They are
+  deliberate room, not dead code.
+- `check-schema-drift.sh` checks field names and hand-written sample payloads, not messages the code
+  produces, so a change to a `RemoteCommand` field's type or meaning can pass it and still break the watch.
+- Most past bugs were in the phone↔pump and phone↔watch links: state kept outside a state machine, retry
+  and reconnect loops, stuck states after a drop, suspension and relaunch, and messages lost, duplicated
+  or reordered.
+
 ## Conventions
 
 - Swift 6, strict concurrency. No core protocol is `@MainActor`. CoreBluetooth callbacks are

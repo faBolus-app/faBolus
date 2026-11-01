@@ -5,7 +5,7 @@
 #   scripts/check.sh build format    # just these
 #
 # Gates: build, test, format, swiftlint, shell, actions, markdown, contract.
-# legacy/ (the old app, copied from until S10) is outside every gate. The vendored ShareClient is
+# legacy/ (the old app, copied from during the rebuild) is outside every gate. The vendored ShareClient is
 # compiled under the same rules but is not reformatted or linted, so drift against upstream stays visible.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -35,7 +35,7 @@ gate_swiftlint() { swiftlint lint --strict --quiet; }
 gate_shell() { git ls-files -z '*.sh' ':!:legacy/*' | xargs -0 shellcheck; }
 gate_actions() { actionlint; }
 gate_markdown() { markdownlint-cli2; }
-# The v1 phone↔watch contract and the provenance chain, until S8 and S10 replace them.
+# The v1 phone↔watch contract and the provenance chain, until the rebuild replaces them.
 gate_contract() {
   ./scripts/check-schema-drift.sh
   ./scripts/check-sbom.sh
