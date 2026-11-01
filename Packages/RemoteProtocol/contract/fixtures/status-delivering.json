@@ -15,7 +15,7 @@
       "blockReason": "bolusInProgress",
       "canBolus": false
     },
-    "configRevision": "f9435dcb518733cf",
+    "configRevision": "e8a9b4ce5ccf4404",
     "glucose": {
       "at": 1793533500,
       "backup": true,

@@ -260,12 +260,12 @@ import faBolusCore
         let rig = HostRig()
         await rig.start()
         var settings = HostRig.settings()
-        settings.preferences.clockAnalog = true
+        settings.preferences.complicationLabels = true
         await rig.host.settingsChanged(settings)
         await rig.host.settingsChanged(settings)
         await rig.settle()
         #expect(rig.transport.configs.count == 2)
-        #expect(rig.transport.configs.last?.clockAnalog == true)
+        #expect(rig.transport.configs.last?.complicationLabels == true)
         #expect(rig.transport.statuses.last?.configRevision == rig.transport.configs.last?.revision)
     }
 

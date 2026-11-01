@@ -69,13 +69,6 @@ public enum DetailToken: String, Sendable, Hashable, CaseIterable {
     case autoCorrection
 }
 
-public enum ComplicationDisplayToken: String, Sendable, Hashable, CaseIterable {
-    /// The number with range colour and an ASCII trend in the unit slot.
-    case numericColor
-    /// A plain "124 ^" string.
-    case stringTrend
-}
-
 /// What the watch can put in its three assignable complications.
 public enum ComplicationSlotToken: String, Sendable, Hashable, CaseIterable {
     case iob, reservoir, battery, basal

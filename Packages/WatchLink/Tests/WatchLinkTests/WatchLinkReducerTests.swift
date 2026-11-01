@@ -144,7 +144,7 @@ import Testing
     @Test func aChangedConfigIsSentOnce() {
         var h = Harness.ready()
         var config = Fixture.config
-        config.clockAnalog = true
+        config.complicationLabels = true
         h.send(.setConfig(config))
         h.send(.setConfig(config))
         h.deliverAll()
@@ -156,7 +156,7 @@ import Testing
     @Test func aLostConfigIsRecoveredByThePoll() {
         var h = Harness.ready()
         var config = Fixture.config
-        config.clockAnalog = true
+        config.complicationLabels = true
         h.send(.setConfig(config))
         for _ in 0..<3 {
             guard let send = h.inFlight else { break }
@@ -383,7 +383,7 @@ import Testing
             .setConfig(
                 {
                     var c = Fixture.config
-                    c.clockAnalog = true
+                    c.complicationLabels = true
                     return c
                 }()))
         h.deliverAll()

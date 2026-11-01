@@ -18,8 +18,8 @@ public enum GoldenFixtures {
         bolusEnabled: true, readOnly: false, defaultBolusMode: .carbs, unitsStepMilliunits: 50, carbStepGrams: 5,
         screenOrder: [.glance, .alerts, .history, .details], defaultScreen: .glance,
         detailsOrder: [.iob, .reservoir, .battery, .cgm, .lastBolus, .carbRatio, .isf, .target, .maxBolus],
-        chartHours: [3, 6, 12, 24], complicationDisplay: .numericColor, complicationSlots: [.iob, .reservoir, .battery],
-        clockAnalog: false, glucoseUnit: .mgdl, glucoseStaleMinutes: 6, glucoseHideDelayMinutes: nil, plotFloorMgdl: 40,
+        chartHours: [3, 6, 12, 24], complicationSlots: [.iob, .reservoir, .battery],
+        glucoseUnit: .mgdl, glucoseStaleMinutes: 6, glucoseHideDelayMinutes: nil, plotFloorMgdl: 40,
         plotCeilingMgdl: 300)
 
     public static let status = StatusPayload(

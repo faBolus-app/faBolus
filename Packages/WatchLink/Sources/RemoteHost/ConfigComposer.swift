@@ -17,11 +17,9 @@ public struct WatchPreferences: Sendable, Hashable {
         "iob", "reservoir", "battery", "cgm", "lastBolus", "carbRatio", "isf", "target", "maxBolus"
     ]
     public var watchChartRanges = [3, 6, 12, 24]
-    public var complicationDisplay = "numericColor"
     public var complicationSlots = ["iob", "reservoir", "battery"]
-    /// The slots' labels name what they show; off, the value alone.
-    public var complicationLabels = true
-    public var clockAnalog = false
+    /// The slots' labels name what they show; off (the default), the value alone.
+    public var complicationLabels = false
     /// `"mgdl"` or `"mmol"`.
     public var glucoseDisplayUnit = "mgdl"
     public var glucoseStaleMinutes = 6
@@ -53,12 +51,11 @@ public enum ConfigComposer {
             defaultBolusMode: BolusModeToken(rawValue: p.bolusMode) ?? .carbs, unitsStepMilliunits: step,
             carbStepGrams: min(50, max(1, p.carbIncrementGrams)), screenOrder: order, defaultScreen: defaultScreen,
             detailsOrder: unique(p.detailsOrder.compactMap(DetailToken.init(rawValue:))), chartHours: hours,
-            complicationDisplay: ComplicationDisplayToken(rawValue: p.complicationDisplay) ?? .numericColor,
             complicationSlots: Array(
                 unique(p.complicationSlots.compactMap(ComplicationSlotToken.init(rawValue:)))
                     .prefix(WatchConfig.maxComplicationSlots)),
             complicationLabels: p.complicationLabels,
-            clockAnalog: p.clockAnalog, glucoseUnit: GlucoseUnitToken(rawValue: p.glucoseDisplayUnit) ?? .mgdl,
+            glucoseUnit: GlucoseUnitToken(rawValue: p.glucoseDisplayUnit) ?? .mgdl,
             glucoseStaleMinutes: min(60, max(1, p.glucoseStaleMinutes)),
             glucoseHideDelayMinutes: p.glucoseHideDelayMinutes.map { min(1440, max(0, $0)) },
             plotFloorMgdl: plot.floor, plotCeilingMgdl: plot.ceiling)

@@ -23,11 +23,9 @@ public struct WatchConfig: Sendable, Hashable {
     public var detailsOrder: [DetailToken]
     /// The history ranges the chart cycles through, hours.
     public var chartHours: [Int]
-    public var complicationDisplay: ComplicationDisplayToken
     public var complicationSlots: [ComplicationSlotToken]
-    /// The slots' labels name what they show ("IOB 1.25"); off, they show the value alone ("1.25 U").
+    /// The slots' labels name what they show ("IOB 1.25"); off (the default), the value alone ("1.25 U").
     public var complicationLabels: Bool
-    public var clockAnalog: Bool
     public var glucoseUnit: GlucoseUnitToken
     /// Glucose older than this is shown marked as stale.
     public var glucoseStaleMinutes: Int
@@ -43,8 +41,8 @@ public struct WatchConfig: Sendable, Hashable {
     public init(
         bolusEnabled: Bool, readOnly: Bool, defaultBolusMode: BolusModeToken, unitsStepMilliunits: Int,
         carbStepGrams: Int, screenOrder: [ScreenToken], defaultScreen: ScreenToken, detailsOrder: [DetailToken],
-        chartHours: [Int], complicationDisplay: ComplicationDisplayToken, complicationSlots: [ComplicationSlotToken],
-        complicationLabels: Bool = true, clockAnalog: Bool, glucoseUnit: GlucoseUnitToken, glucoseStaleMinutes: Int,
+        chartHours: [Int], complicationSlots: [ComplicationSlotToken],
+        complicationLabels: Bool = false, glucoseUnit: GlucoseUnitToken, glucoseStaleMinutes: Int,
         glucoseHideDelayMinutes: Int?,
         plotFloorMgdl: Int, plotCeilingMgdl: Int
     ) {
@@ -57,10 +55,8 @@ public struct WatchConfig: Sendable, Hashable {
         self.defaultScreen = defaultScreen
         self.detailsOrder = detailsOrder
         self.chartHours = chartHours
-        self.complicationDisplay = complicationDisplay
         self.complicationSlots = complicationSlots
         self.complicationLabels = complicationLabels
-        self.clockAnalog = clockAnalog
         self.glucoseUnit = glucoseUnit
         self.glucoseStaleMinutes = glucoseStaleMinutes
         self.glucoseHideDelayMinutes = glucoseHideDelayMinutes
@@ -91,11 +87,9 @@ public struct WatchConfig: Sendable, Hashable {
         w.set("details", strings: detailsOrder.map(\.rawValue))
         w.set("chartHours", ints: chartHours)
         var complication = FieldWriter()
-        complication.set("display", complicationDisplay.rawValue)
         complication.set("slots", strings: complicationSlots.map(\.rawValue))
         complication.set("labels", complicationLabels)
         w.set("complication", complication.value)
-        w.set("clockAnalog", clockAnalog)
         var glucose = FieldWriter()
         glucose.set("unit", glucoseUnit.rawValue)
         glucose.set("staleMinutes", glucoseStaleMinutes)
@@ -130,13 +124,11 @@ public struct WatchConfig: Sendable, Hashable {
             Set(chartHours).count == chartHours.count
         else { throw .outOfRange(field: "payload.chartHours") }
         let complication = try r.object("complication")
-        complicationDisplay = try complication.token("display", as: ComplicationDisplayToken.self)
         complicationSlots = try Self.tokens(complication, "slots", as: ComplicationSlotToken.self)
         complicationLabels = try complication.bool("labels")
         guard complicationSlots.count <= Self.maxComplicationSlots else {
             throw .tooLong(field: "payload.complication.slots")
         }
-        clockAnalog = try r.bool("clockAnalog")
         let glucose = try r.object("glucose")
         glucoseUnit = try glucose.token("unit", as: GlucoseUnitToken.self)
         glucoseStaleMinutes = try glucose.int("staleMinutes", in: 1...60)

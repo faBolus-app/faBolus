@@ -111,7 +111,7 @@ import Testing
         p["revision"] = .string("0000000000000000")
         #expect(refused(message("config", p)))
         p = payload(of: "config")
-        p["clockAnalog"] = .bool(true)
+        p["chartHours"] = .array([.int(3)])
         #expect(refused(message("config", p)))
     }
 
