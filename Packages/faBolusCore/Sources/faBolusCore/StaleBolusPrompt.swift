@@ -39,7 +39,8 @@ public enum StaleBolusPrompt {
     /// Whether the **include-the-stale-reading** OPTION may be OFFERED for the current reading (Addendum B
     /// includable-age cap). True only when a reading EXISTS *and* its age is inside the includable window
     /// `(staleAfter, maxIncludableStaleness]` — genuinely stale, yet no older than the includable cap. This is
-    /// the SAME single bound the host applies in `resolveRemoteDose` (`GlucoseFreshness.withinIncludableStaleness`).
+    /// the SAME single bound `DoseComposer` applies to both the phone and remotes
+    /// (`GlucoseFreshness.withinIncludableStaleness`).
     ///
     /// A reading OLDER than the cap — or fresh, missing, or future-skewed — returns false, so the caller must
     /// fall closed to carbs-only exactly as it does when there is nothing to include. This is a **strict subset**

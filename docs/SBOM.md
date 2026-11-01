@@ -51,6 +51,7 @@ Files in `Packages/` that carry an `Adapted from` attribution, checked by the sa
 |---|---|---|---|
 | `Packages/faBolusCore/Sources/faBolusCore/DoseEntry.swift` | LoopKit/LoopKit `a5beee96`, `InsulinKit/DoseEntry.swift` (© 2016 Nathan Racklyeft) | MIT | Field names and the programmed-versus-delivered split; rewritten without HealthKit |
 | `Packages/faBolusCore/Sources/faBolusCore/PumpState.swift` | LoopKit/LoopKit `a5beee96`, `DeviceManager/PumpManagerStatus.swift` (© 2018 LoopKit Authors) | MIT | The `basalDeliveryState` / `bolusState` names and their cases |
+| `Packages/faBolusCore/Sources/faBolusCore/BolusVolume.swift` | LoopKit/LoopKit `a5beee96`, `DeviceManager/PumpManager.swift` (© 2018 LoopKit Authors) and `Extensions/FloatingPoint.swift` (© 2020 LoopKit Authors) | MIT | The round-down rule of `roundToSupportedBolusVolume` and the decimal tolerance of `matchingOrTruncatedValue`, rewritten for a fixed step |
 
 ## Ported / API-derived app-tree source (not a Package — lives in the app target)
 

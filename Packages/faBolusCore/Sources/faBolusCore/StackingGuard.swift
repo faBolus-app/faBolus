@@ -13,7 +13,7 @@ import os
 /// **Structural "never a dose decision" guarantee:** `Friction` has NO `.block`
 /// case — it is `Comparable`/`CaseIterable` over exactly four levels, none of which the delivery path is
 /// wired to. No function below returns a units/dose field. A future refactor that tries to thread a
-/// `StackingGuard` result into `attemptDeliver` / `CalcInputGate.decide` / `TandemBackend.validateDeliver`
+/// `StackingGuard` result into `DoseComposer`'s dose or `CalcInputGate.decide`
 /// would have to invent a NEW type to do it — this file gives it nothing to grab.
 ///
 /// **SG1** (`calcOverride`): discloses when the entered dose exceeds the pump's own op-115 calculator

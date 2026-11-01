@@ -7,7 +7,7 @@ struct BolusGateTests {
     private func gate(
         reachable: Bool = true, linked: Bool = true, inFlight: Bool = false,
         cartridgeReady: Bool = true,
-        amount: Double = 2.0, minimum: Double = 0.05, maximum: Double = 25,
+        amount: Double = 2.0, minimum: Double = 0.05, maximum: Double? = 25,
         access: AccessPolicy.AccessDecision = .allow
     ) -> (canBolus: Bool, reason: BolusBlockReason?) {
         BolusGate.evaluate(
@@ -82,6 +82,22 @@ struct BolusGateTests {
             #expect(!r.canBolus, "amount \(bad) must not arm the bolus")
             #expect(r.reason == .belowMinimum(0.05))
         }
+    }
+
+    /// With the pump's max unread, the app adds no limit of its own: any amount at or above the minimum
+    /// is allowed, and the pump enforces its max (D11). A max that isn't a usable number counts as unread.
+    @Test func unknownMaxAddsNoLimit() {
+        #expect(gate(amount: 99, maximum: nil).canBolus)
+        #expect(gate(amount: 99, maximum: 0).canBolus)
+        #expect(gate(amount: 99, maximum: .nan).canBolus)
+        #expect(gate(amount: 0.04, maximum: nil).reason == .belowMinimum(0.05))
+    }
+
+    /// The pump's minimum and max are inclusive bounds.
+    @Test func boundsAreInclusive() {
+        #expect(gate(amount: 0.05).canBolus)
+        #expect(gate(amount: 25).canBolus)
+        #expect(gate(amount: 25.01).reason == .aboveMax(25))
     }
 
     @Test func onlyAnAuthenticatedLinkCountsAsLinked() {

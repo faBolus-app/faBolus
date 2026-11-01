@@ -1,14 +1,12 @@
 import Foundation
 
 /// DIF-ux — the PURE, exhaustively-testable decision for whether a bolus compose must show the warned
-/// stale/unconfirmed-calc-inputs override before delivering, and which two-way prompt to show. Extracted
-/// out of `BolusEntryView.attemptDeliver` deliberately: while this branch logic lived inline in the SwiftUI
-/// view it had NO test coverage and repeatedly harbored dose-path defects (gate firing in Units mode /
+/// stale/unconfirmed-calc-inputs override before delivering, and which two-way prompt to show.
+/// `DoseComposer.composePhone` asks it. It lives outside any view because, inline in a SwiftUI view, this
+/// branch logic had no test coverage and repeatedly harbored dose-path defects (gate firing in Units mode /
 /// then a carb-derived dose leaking into Units mode un-acknowledged; the neither-flag unconfirmed-but-
-/// in-window case; override-kind selection). A SwiftUI view has no test seam, so those decisions were only
-/// ever checked by after-the-fact adversarial review. Pulling the decision here makes the whole branch
-/// matrix a unit test, so a future edit that reintroduces any of those holes fails a test rather than
-/// shipping. The view keeps the UI-transient bits (a prompt is already showing, presenting the dialog).
+/// in-window case; override-kind selection). Here the whole branch matrix is a unit test, so a future edit
+/// that reintroduces any of those holes fails a test rather than shipping.
 public enum CalcInputGate {
 
     /// Which input(s) were unconfirmed → which warned two-way prompt to show, and (derived) which override
@@ -56,15 +54,5 @@ public enum CalcInputGate {
         if therapyStale && !iobStale { return .prompt(.therapy) }
         if iobStale && !therapyStale { return .prompt(.iob) }
         return .prompt(.both)  // both stale, OR neither flag set but still unverified
-    }
-
-    /// The delivered dose for an accepted override on the manual/absent-BG path (the CGM path has its own
-    /// fresh-read + divergence guard). Capped at the dose the warned button showed (`baseline`, what the
-    /// owner consented to) and never above a fresh deliver-time recompute — so a routine IOB poll landing
-    /// between the button and the tap can't silently inflate the correction. `min` is safe in both
-    /// directions: IOB decayed (recompute larger) → deliver the consented baseline; IOB rose / therapy
-    /// tightened (recompute smaller) → deliver the smaller fresh value.
-    public static func overrideDeliverUnits(baseline: Double, freshRecompute: Double) -> Double {
-        min(baseline, freshRecompute)
     }
 }

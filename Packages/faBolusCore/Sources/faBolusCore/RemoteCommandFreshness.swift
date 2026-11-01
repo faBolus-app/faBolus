@@ -44,9 +44,15 @@ public enum RemoteCommandFreshness {
         // Fail-closed: a delivery-authorizing command with no trustworthy creation time cannot be
         // age-verified, so it is refused (retryable) rather than trusted as fresh. Every first-party
         // sender stamps `sentAt`; a legacy/foreign sender that does not must resend with a stamp.
-        guard let sentAt = command.sentAt else { return true }
-        let age = now.timeIntervalSince1970 - Double(sentAt)
-        return age > maxAgeSec || age < -futureSkewToleranceSec
+        return isStale(sentAt: command.sentAt.map { Date(timeIntervalSince1970: TimeInterval($0)) }, now: now)
+    }
+
+    /// Whether an insulin request sent at `sentAt` must be refused as stale: no send time, older than
+    /// `maxAgeSec`, or dated further than `futureSkewToleranceSec` ahead.
+    public static func isStale(sentAt: Date?, now: Date = Date()) -> Bool {
+        guard let sentAt, sentAt.timeIntervalSince1970.isFinite else { return true }
+        let age = now.timeIntervalSince(sentAt)
+        return !age.isFinite || age > maxAgeSec || age < -futureSkewToleranceSec
     }
 
     /// User-facing reason for a refused-as-stale command (shown on the remote that sent it).
