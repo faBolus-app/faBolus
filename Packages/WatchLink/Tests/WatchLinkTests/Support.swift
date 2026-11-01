@@ -8,12 +8,15 @@ import Testing
 struct Harness {
     var state = WatchLinkState()
     var now: LinkSeconds = 1000
+    /// The wall clock the reducer stamps statuses with; `nil` leaves them as built.
+    var epoch: Int?
     var configuration = WatchLinkConfiguration()
     var effects: [WatchLinkEffect] = []
 
     @discardableResult
     mutating func send(_ input: WatchLinkInput) -> [WatchLinkEffect] {
-        let out = WatchLinkReducer.reduce(&state, input, now: now, jitter: 0, configuration: configuration)
+        let out = WatchLinkReducer.reduce(
+            &state, input, now: now, jitter: 0, epoch: epoch, configuration: configuration)
         effects += out
         // No reduction may leave a deadline that's already due: the driver would tick again at once.
         if let deadline = WatchLinkReducer.nextDeadline(state, configuration: configuration) {
@@ -112,6 +115,7 @@ final class ManualClock: WatchLinkClock {
     }
 
     private(set) var now: LinkSeconds = 1000
+    var epoch: Int?
     var suspended = false
     private var scheduled: [(due: LinkSeconds, timer: Timer, action: @MainActor () -> Void)] = []
 

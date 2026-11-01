@@ -61,6 +61,7 @@ public enum ConfigComposer {
             therapyStaleMinutes: minutes(freshness.therapyStaleAfter, max: 240),
             pumpStatusStaleMinutes: minutes(freshness.pumpStatusStaleAfter, max: 240),
             glucoseHideDelayMinutes: hideDelayMinutes(freshness),
+            glucoseIncludableMinutes: minutes(freshness.maxIncludableGlucoseAge, max: 240),
             plotFloorMgdl: plot.floor, plotCeilingMgdl: plot.ceiling)
     }
 

@@ -245,6 +245,9 @@ import Testing
         #expect(c.iobStaleMinutes == 4)
         #expect(c.therapyStaleMinutes == 20)
         #expect(c.pumpStatusStaleMinutes == 30)
+        #expect(
+            ConfigComposer.compose(WatchPreferences(), access: Self.access, freshness: .standard)
+                .glucoseIncludableMinutes == 15)
         let unusable = FreshnessThresholds(insulinOnBoardStaleAfter: -1, therapyStaleAfter: 45)
         let none = ConfigComposer.compose(WatchPreferences(), access: Self.access, freshness: unusable)
         #expect(none.iobStaleMinutes == 0)

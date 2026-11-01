@@ -46,6 +46,9 @@ public protocol WatchTransport: AnyObject {
 @MainActor
 public protocol WatchLinkClock: AnyObject {
     var now: LinkSeconds { get }
+    /// The wall clock, epoch seconds, that a status or history is stamped with as it goes out; `nil` leaves
+    /// the time it was built.
+    var epoch: Int? { get }
     func schedule(after seconds: LinkSeconds, _ action: @escaping @MainActor () -> Void) -> any WatchLinkTimer
 }
 
@@ -103,7 +106,7 @@ public final class WatchLink {
         while !inbox.isEmpty {
             let next = inbox.removeFirst()
             let effects = WatchLinkReducer.reduce(
-                &state, next, now: clock.now, jitter: jitter(), configuration: configuration)
+                &state, next, now: clock.now, jitter: jitter(), epoch: clock.epoch, configuration: configuration)
             for effect in effects { perform(effect) }
             rearm()
             onChange?(state)
@@ -147,6 +150,14 @@ public final class SystemWatchLinkClock: WatchLinkClock {
     public init() {}
 
     public var now: LinkSeconds { Double(DispatchTime.now().uptimeNanoseconds) / 1e9 }
+
+    /// Held to the times a message can carry, as a status's own `sentAt` is.
+    public var epoch: Int? {
+        let s = Date().timeIntervalSince1970
+        guard s.isFinite else { return nil }
+        return Int(
+            min(Double(WireLimits.epochs.upperBound), max(Double(WireLimits.epochs.lowerBound), s.rounded(.down))))
+    }
 
     public func schedule(after seconds: LinkSeconds, _ action: @escaping @MainActor () -> Void) -> any WatchLinkTimer {
         let timer = Timer()

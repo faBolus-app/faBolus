@@ -12,9 +12,9 @@ import RemoteProtocol
 public enum WatchLinkReducer {
     public static func reduce(
         _ state: inout WatchLinkState, _ input: WatchLinkInput, now: LinkSeconds, jitter: Double = 0,
-        configuration: WatchLinkConfiguration = .init()
+        epoch: Int? = nil, configuration: WatchLinkConfiguration = .init()
     ) -> [WatchLinkEffect] {
-        var step = Step(configuration: configuration, now: now, jitter: jitter)
+        var step = Step(configuration: configuration, now: now, jitter: jitter, epoch: epoch)
         let wasReady = state.isReady
         // A completion or progress report for the send in flight is evidence about that send, so it's applied
         // before any overdue watchdog: after a suspension both arrive together, and the send did complete.
@@ -99,14 +99,17 @@ private struct Step {
     let configuration: WatchLinkConfiguration
     let now: LinkSeconds
     let jitter: Double
+    /// The wall clock now, epoch seconds: a status or history goes out stamped with it.
+    let epoch: Int?
     var effects: [WatchLinkEffect] = []
     /// Why the phase changed, when something more specific than the input explains it.
     var reason: String?
 
-    init(configuration: WatchLinkConfiguration, now: LinkSeconds, jitter: Double) {
+    init(configuration: WatchLinkConfiguration, now: LinkSeconds, jitter: Double, epoch: Int?) {
         self.configuration = configuration
         self.now = now
         self.jitter = jitter
+        self.epoch = epoch
     }
 
     // MARK: Timers
@@ -352,8 +355,21 @@ private struct Step {
         case .outcome, .dismissResult, .incompatible: return pending.message?.wire
         case .legacyReply: return pending.legacy
         case .config: return state.config.map { RemoteMessage.config($0).wire }
-        case .status: return state.status.map { RemoteMessage.status($0).wire }
-        case .history: return state.history.map { RemoteMessage.history($0).wire }
+        // Stamped as it goes, not as it was built: the watch ages each value from the status's sentAt plus the
+        // time since it arrived, so a status built an hour ago and resent now unstamped would make every value
+        // in it look an hour younger than it is.
+        case .status:
+            return state.status.map {
+                var status = $0
+                if let epoch { status.sentAt = max(status.sentAt, epoch) }
+                return RemoteMessage.status(status).wire
+            }
+        case .history:
+            return state.history.map {
+                var history = $0
+                if let epoch { history.sentAt = max(history.sentAt, epoch) }
+                return RemoteMessage.history(history).wire
+            }
         }
     }
 

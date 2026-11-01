@@ -39,12 +39,13 @@
       "therapyMinutes": 15
     },
     "glucose": {
+      "includableMinutes": 15,
       "plotCeiling": 300,
       "plotFloor": 40,
       "staleMinutes": 6,
       "unit": "mgdl"
     },
-    "revision": "46065bf17a157c0b",
+    "revision": "81cee7f84ea2a9d1",
     "screens": {
       "default": "glance",
       "order": [

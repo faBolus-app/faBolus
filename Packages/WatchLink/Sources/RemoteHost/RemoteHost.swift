@@ -79,6 +79,14 @@ public actor RemoteHost {
     /// A cancel arrived while one was with the session: it runs again once that one returns, because the
     /// first may have found nothing to stop before a delivery started.
     private var cancelAgain = false
+    /// Bolus requests a cancel named before they reached the phone, as when the watch's first send was lost
+    /// and the user cancelled while it was still resending: a copy that arrives later is refused, not
+    /// delivered.
+    private var cancelledRequests: [String] = []
+    /// A cancel the session couldn't confirm is tried again this many more times, this far apart, while the
+    /// pump may still be delivering.
+    var cancelRetries = 3
+    var cancelRetryDelay: Duration = .seconds(2)
     private var started = false
 
     static let maxDismissResults = 16
@@ -125,6 +133,10 @@ public actor RemoteHost {
         await refreshStatus()
     }
 
+    /// A backup glucose source has a new reading. The pump's own changes come as pump events; this one
+    /// doesn't, so the app calls it.
+    public func glucoseChanged() async { await refreshStatus() }
+
     /// `AlertSnapshot.active`, on every snapshot.
     public func alertsChanged(_ active: [ActiveAlert]) async {
         guard active != alerts else { return }
@@ -169,13 +181,21 @@ public actor RemoteHost {
                 Task { await self.submit(.sendResult(.bolusOutcome(refusal.payload))) }
                 return
             }
+            if cancelledRequests.contains(p.requestId) {
+                Task { await self.refused(p.requestId, Self.cancelledMessage, announce: false) }
+                return
+            }
             boluses[p.requestId] = .received
             composing.insert(p.requestId)
             Task { await self.bolus(p) }
-        case .cancel:
+        case .cancel(let p):
             // Never gated. A bolus still being composed is stopped here; one with the session is the
-            // session's to stop.
+            // session's to stop; one that hasn't arrived yet is refused when it does.
             cancelledBeforeStart.formUnion(composing)
+            if let id = p.bolusRequestId, boluses[id] == nil, !cancelledRequests.contains(id) {
+                cancelledRequests.append(id)
+                if cancelledRequests.count > Self.maxRefusals { cancelledRequests.removeFirst() }
+            }
             guard !cancelling else {
                 cancelAgain = true
                 return
@@ -314,9 +334,16 @@ public actor RemoteHost {
 
     private func cancel() async {
         defer { cancelling = false }
+        var retries = cancelRetries
         repeat {
             cancelAgain = false
-            _ = await services.cancelBolus()
+            var result = await services.cancelBolus()
+            // No definite answer, or no pump to ask: a bolus may still be going in, so it's asked again.
+            while result == .unconfirmed || result == .notConnected, retries > 0 {
+                retries -= 1
+                try? await Task.sleep(for: cancelRetryDelay)
+                result = await services.cancelBolus()
+            }
         } while cancelAgain
         await refreshStatus()
     }
@@ -389,6 +416,9 @@ public actor RemoteHost {
         let link = link
         await MainActor.run { link.submit(input) }
     }
+
+    /// For tests: how long a cancel waits before it's tried again.
+    func setCancelRetryDelay(_ delay: Duration) { cancelRetryDelay = delay }
 
     static let cancelledMessage = "Cancelled before it started. Nothing was delivered."
 

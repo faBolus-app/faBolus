@@ -770,6 +770,7 @@
           "type": "object",
           "additionalProperties": false,
           "required": [
+            "includableMinutes",
             "plotCeiling",
             "plotFloor",
             "staleMinutes",
@@ -792,6 +793,11 @@
               "type": "integer",
               "minimum": 0,
               "maximum": 1440
+            },
+            "includableMinutes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 240
             },
             "plotFloor": {
               "type": "integer",

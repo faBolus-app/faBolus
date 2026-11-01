@@ -37,6 +37,9 @@ public struct WatchConfig: Sendable, Hashable {
     public var pumpStatusStaleMinutes: Int
     /// How long after going stale the value is hidden; `nil` never hides it.
     public var glucoseHideDelayMinutes: Int?
+    /// A stale reading younger than this may be included in a correction when the user chooses to; an older
+    /// one can't be (the phone's `maxIncludableGlucoseAge`).
+    public var glucoseIncludableMinutes: Int
     /// The chart's y-axis, mg/dL, already resolved for a small screen.
     public var plotFloorMgdl: Int
     public var plotCeilingMgdl: Int
@@ -50,7 +53,7 @@ public struct WatchConfig: Sendable, Hashable {
         chartHours: [Int], complicationSlots: [ComplicationSlotToken],
         complicationLabels: Bool, glucoseUnit: GlucoseUnitToken, glucoseStaleMinutes: Int,
         iobStaleMinutes: Int, therapyStaleMinutes: Int, pumpStatusStaleMinutes: Int,
-        glucoseHideDelayMinutes: Int?,
+        glucoseHideDelayMinutes: Int?, glucoseIncludableMinutes: Int,
         plotFloorMgdl: Int, plotCeilingMgdl: Int
     ) {
         self.bolusEnabled = bolusEnabled
@@ -70,6 +73,7 @@ public struct WatchConfig: Sendable, Hashable {
         self.therapyStaleMinutes = therapyStaleMinutes
         self.pumpStatusStaleMinutes = pumpStatusStaleMinutes
         self.glucoseHideDelayMinutes = glucoseHideDelayMinutes
+        self.glucoseIncludableMinutes = glucoseIncludableMinutes
         self.plotFloorMgdl = plotFloorMgdl
         self.plotCeilingMgdl = plotCeilingMgdl
     }
@@ -104,6 +108,7 @@ public struct WatchConfig: Sendable, Hashable {
         glucose.set("unit", glucoseUnit.rawValue)
         glucose.set("staleMinutes", glucoseStaleMinutes)
         glucose.set("hideDelayMinutes", glucoseHideDelayMinutes)
+        glucose.set("includableMinutes", glucoseIncludableMinutes)
         glucose.set("plotFloor", plotFloorMgdl)
         glucose.set("plotCeiling", plotCeilingMgdl)
         w.set("glucose", glucose.value)
@@ -148,6 +153,7 @@ public struct WatchConfig: Sendable, Hashable {
         glucoseUnit = try glucose.token("unit", as: GlucoseUnitToken.self)
         glucoseStaleMinutes = try glucose.int("staleMinutes", in: 0...60)
         glucoseHideDelayMinutes = try glucose.optionalInt("hideDelayMinutes", in: 0...1440)
+        glucoseIncludableMinutes = try glucose.int("includableMinutes", in: 0...240)
         plotFloorMgdl = try glucose.int("plotFloor", in: 0...400)
         plotCeilingMgdl = try glucose.int("plotCeiling", in: 100...600)
         guard plotFloorMgdl < plotCeilingMgdl else { throw .outOfRange(field: "payload.glucose.plotFloor") }

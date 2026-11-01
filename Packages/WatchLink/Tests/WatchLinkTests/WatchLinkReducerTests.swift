@@ -280,6 +280,24 @@ import Testing
         #expect(h.transmitted.allSatisfy { $0 == reply })
     }
 
+    /// A status goes out stamped with the time it's sent, not the time it was built: resent an hour later
+    /// unchanged, its values must still read an hour older on the watch, which ages them from `sentAt`.
+    @Test func aResentStatusIsStampedWhenItGoes() {
+        var h = Harness.ready()
+        let built = Fixture.status()
+        h.send(.setStatus(built))
+        h.deliverAll()
+        h.epoch = built.sentAt + 3600
+        h.send(.received(Fixture.poll(revision: nil)))
+        h.deliverAll()
+        guard case .message(.status(let resent))? = h.transmitted.last.map(RemoteMessage.receive) else {
+            Issue.record("no status resent")
+            return
+        }
+        #expect(resent.sentAt == built.sentAt + 3600)
+        #expect(resent.glucose == built.glucose)
+    }
+
     /// A cancel is never gated: the old watch app's is acted on, as well as answered. Nothing else from it is.
     @Test func aVersionOneCancelIsActedOn() {
         var h = Harness.ready()

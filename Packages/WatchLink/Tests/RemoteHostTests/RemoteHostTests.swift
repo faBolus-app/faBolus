@@ -172,6 +172,44 @@ import faBolusCore
         #expect(await rig.services.cancels == 2)
     }
 
+    /// A cancel the session couldn't confirm is tried again, a bounded number of times.
+    @Test func anUnconfirmedCancelIsTriedAgain() async {
+        let rig = HostRig()
+        await rig.services.set(cancelResults: [.notConnected, .unconfirmed, .cancelled])
+        await rig.start()
+        await rig.host.setCancelRetryDelay(.milliseconds(10))
+        await rig.receive(fixture: "cancel")
+        try? await Task.sleep(for: .milliseconds(200))
+        await rig.settle()
+        #expect(await rig.services.cancels == 3)
+        // It stops trying after its retries.
+        let stuck = HostRig()
+        await stuck.services.set(cancelResults: Array(repeating: .notConnected, count: 10))
+        await stuck.start()
+        await stuck.host.setCancelRetryDelay(.milliseconds(10))
+        await stuck.receive(fixture: "cancel")
+        try? await Task.sleep(for: .milliseconds(300))
+        await stuck.settle()
+        #expect(await stuck.services.cancels == 4)
+    }
+
+    /// A cancel that names a request the phone hasn't seen yet refuses it when it arrives, so a copy the
+    /// watch was still resending isn't delivered after the user cancelled it.
+    @Test func aRequestCancelledBeforeItArrivesIsRefused() async {
+        let rig = HostRig()
+        await rig.services.set(decision: .refused(.noDoseSpecified))
+        await rig.start()
+        let bolus = BolusRequestPayload(
+            requestId: "late-1", sentAt: GoldenFixtures.now, amount: .units(milliunits: 2000), glucoseMgdl: nil,
+            includeStaleGlucose: false)
+        await rig.receive(.cancel(CancelPayload(requestId: "c-1", bolusRequestId: "late-1")))
+        await rig.receive(.bolus(bolus))
+        #expect(await rig.services.composed.isEmpty)
+        let outcomes = rig.transport.outcomes.filter { $0.requestId == "late-1" }
+        #expect(outcomes.last?.outcome == .failed)
+        #expect(outcomes.last?.message == RemoteHost.cancelledMessage)
+    }
+
     @Test func v2RequestsMapExactly() {
         let carbs = BolusRequestPayload(
             requestId: "c", sentAt: GoldenFixtures.now, amount: .calculator(carbsGrams: 45, estimateMilliunits: 6050),

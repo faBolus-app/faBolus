@@ -63,10 +63,13 @@ actor FakeServices: RemoteHostServices {
     }
     var cancelDelay: Duration = .zero
     func set(cancelDelay: Duration) { self.cancelDelay = cancelDelay }
+    /// What successive cancels answer; `.cancelled` once it runs out.
+    var cancelResults: [CancelResult] = []
+    func set(cancelResults: [CancelResult]) { self.cancelResults = cancelResults }
     func cancelBolus() async -> CancelResult {
         cancels += 1
         if cancelDelay != .zero { try? await Task.sleep(for: cancelDelay) }
-        return .cancelled
+        return cancelResults.isEmpty ? .cancelled : cancelResults.removeFirst()
     }
     func dismiss(_ alert: PumpAlert) async -> DismissOutcome {
         dismissed.append(alert)
@@ -112,6 +115,7 @@ final class Transport: WatchTransport {
 
 final class TestClock: WatchLinkClock {
     var now: LinkSeconds = 0
+    var epoch: Int?
     func schedule(after seconds: LinkSeconds, _ action: @escaping @MainActor () -> Void) -> any WatchLinkTimer {
         Never()
     }
