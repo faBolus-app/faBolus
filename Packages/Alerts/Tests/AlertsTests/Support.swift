@@ -59,7 +59,12 @@ actor FakeScheduler: NotificationScheduling {
         calls.append(.add(request))
         held[request.identifier] = request
     }
+    /// How long a remove takes, to let other work interleave as with the real center.
+    var removeDelay: Duration?
+    func setRemoveDelay(_ value: Duration?) { removeDelay = value }
+
     func remove(identifiers: [String]) async {
+        if let removeDelay { try? await Task.sleep(for: removeDelay) }
         calls.append(.remove(identifiers))
         for id in identifiers { held[id] = nil }
     }
@@ -150,15 +155,17 @@ struct Harness {
     /// Launch: a new coordinator over `store` and `ledgerStore`, as a relaunched process builds it.
     static func launch(
         store: MemoryAlertStore = MemoryAlertStore(), ledgerStore: MemoryLedgerStore = MemoryLedgerStore(),
-        scheduler: FakeScheduler = FakeScheduler(), clock: TestClock = TestClock(),
-        before: (AlertCoordinator) async -> Void = { _ in }
+        scheduler: FakeScheduler = FakeScheduler(), clock: TestClock = TestClock(), pumpPaired: Bool = false,
+        reportNoBackup: Bool = true, before: (AlertCoordinator) async -> Void = { _ in }
     ) async -> Harness {
         let ledger = DurableBolusLedger(store: ledgerStore, now: clock.now)
         let coordinator = AlertCoordinator(
             store: store, scheduler: scheduler, ledger: ledger, tickInterval: nil, clock: { clock.now })
         let (stream, continuation) = AsyncStream<PumpEvent>.makeStream()
         await before(coordinator)
-        await coordinator.start(events: stream)
+        await coordinator.start(events: stream, pumpPaired: pumpPaired)
+        // As the app does at launch when no backup source is configured.
+        if reportNoBackup { await coordinator.backupGlucoseChanged(nil) }
         return Harness(
             store: store, ledgerStore: ledgerStore, ledger: ledger, scheduler: scheduler, clock: clock,
             coordinator: coordinator, events: continuation)
@@ -170,9 +177,10 @@ struct Harness {
     }
 
     /// The same process relaunched: the stores (and the OS's notifications) survive, nothing else.
-    func relaunch() async -> Harness {
+    func relaunch(reportNoBackup: Bool = true) async -> Harness {
         events.finish()
         await coordinator.stop()
-        return await Harness.launch(store: store, ledgerStore: ledgerStore, scheduler: scheduler, clock: clock)
+        return await Harness.launch(
+            store: store, ledgerStore: ledgerStore, scheduler: scheduler, clock: clock, reportNoBackup: reportNoBackup)
     }
 }

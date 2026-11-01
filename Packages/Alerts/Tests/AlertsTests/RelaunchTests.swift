@@ -131,7 +131,7 @@ import faBolusCore
         let clock = TestClock()
         let low = GlucoseSourceState(
             latest: GlucoseSample(mgdl: 45, date: clock.now, sourceID: "dexcom-share"), status: .connected)
-        let h = await Harness.launch(clock: clock) { await $0.backupGlucoseChanged(low) }
+        let h = await Harness.launch(clock: clock, reportNoBackup: false) { await $0.backupGlucoseChanged(low) }
         #expect(await h.scheduler.held[UrgentLowAlarm.dedupeKey] != nil)
         let calls = await h.scheduler.calls
         #expect(calls.first.map { if case .remove = $0 { return true } else { return false } } == true)

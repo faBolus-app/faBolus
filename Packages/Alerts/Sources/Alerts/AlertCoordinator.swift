@@ -34,6 +34,11 @@ public actor AlertCoordinator {
     /// Nothing is handed to the OS before `start`: inputs that come earlier are applied and owed, and
     /// `start` performs them after its own clean-up, so the clean-up can't remove one of them.
     private var started = false
+    private var starting = false
+    /// The backup source's state has been given in this process. Until then the glucose conditions aren't
+    /// judged: a relaunched process knows nothing of the backup yet, and judging without it would withdraw
+    /// an urgent low that is still real.
+    private var backupKnown = false
     private let tickInterval: TimeInterval?
     private var lastPublished: AlertSnapshot?
     private var draining = false
@@ -66,15 +71,22 @@ public actor AlertCoordinator {
 
     /// Start following `events` (the session's `events()` stream, asked for before the session starts).
     /// Reconciles with the ledger as it loaded and performs anything the last process left owed.
-    public func start(events: AsyncStream<PumpEvent>) async {
-        guard !started else { return }
-        started = true
+    ///
+    /// - Parameter pumpPaired: a pump is paired (`session.pairing != nil`). A paired pump this process hasn't
+    ///   reached yet counts as down from now, so a pump that never reconnects after a relaunch is announced.
+    public func start(events: AsyncStream<PumpEvent>, pumpPaired: Bool = false) async {
+        guard !started, !starting else { return }
+        starting = true
         if startedFresh {
             await scheduler.remove(identifiers: Self.fixedIdentifiers)
         }
         permission = await scheduler.permission()
-        await run(.launched(ledgerView()))
-        if !permission.isOff, !engine.state.refused.isEmpty { await run(.notificationsAllowed) }
+        // Only now may effects reach the OS: an input that arrived during the clean-up above is owed, and
+        // the launch run below performs it after the clean-up, never before.
+        started = true
+        starting = false
+        await run(.launched(ledgerView(), pumpPaired: pumpPaired))
+        await retryRefused()
         listener = Task { [weak self] in
             for await event in events {
                 guard let self else { return }
@@ -103,7 +115,7 @@ public actor AlertCoordinator {
     /// old app left pending or delivered, which survive an update and would otherwise fire, and start from
     /// a fresh state and the default settings. Call before `start`.
     public func resetForFreshInstall() async {
-        guard !started else { return }
+        guard !started, !starting else { return }
         await scheduler.removeAll()
         engine = AlertEngine()
         startedFresh = false
@@ -129,10 +141,17 @@ public actor AlertCoordinator {
         }
     }
 
-    /// The backup CGM source's state changed (or there is none).
+    /// The backup CGM source's state changed. Call it with `nil` at launch when there is no backup source.
     public func backupGlucoseChanged(_ state: GlucoseSourceState?) async {
         backup = state
+        backupKnown = true
         await judgeGlucose()
+    }
+
+    /// The user forgot the pump (after `session.forgetPairing()`): its disconnect, instability and alerts
+    /// are withdrawn.
+    public func pairingForgotten() async {
+        await run(.unpaired)
     }
 
     /// The user's freshness windows changed.
@@ -154,10 +173,18 @@ public actor AlertCoordinator {
     /// Re-judge everything that depends on time: readings ageing, a scheduled notice coming due. Call it
     /// every so often while the app runs, and when it comes to the foreground.
     public func tick() async {
-        let wasOff = permission.isOff
         permission = await scheduler.permission()
-        if wasOff, !permission.isOff { await run(.notificationsAllowed) }
+        await retryRefused()
         await judgeGlucose()
+    }
+
+    /// Post again what the OS refused, once it lets the app post (authorized, or provisional).
+    private func retryRefused() async {
+        guard !engine.state.refused.isEmpty else { return }
+        switch permission.authorization {
+        case .authorized, .provisional, .ephemeral: await run(.notificationsAllowed)
+        case .notDetermined, .denied: break
+        }
     }
 
     // MARK: - Policy
@@ -199,6 +226,7 @@ public actor AlertCoordinator {
     // MARK: - Running the engine
 
     private func judgeGlucose() async {
+        guard backupKnown else { return }
         let now = clock()
         let urgentLow = UrgentLowAlarm.isActive(pumpState: pumpState, source: backup, thresholds: thresholds, now: now)
         // Lost when the newest reading from any source is stale; no reading at all is "no data".

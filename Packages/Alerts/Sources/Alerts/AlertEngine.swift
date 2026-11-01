@@ -6,21 +6,30 @@ public struct LedgerView: Sendable, Hashable {
     public var entries: [RemoteBolusLedger.Entry]
     /// The ledger file can't be read, so it may be hiding an unknown outcome.
     public var unreadable: Bool
+    /// The entries are everything there is: false when the ledger can't be read or has no store, so an
+    /// empty ledger says nothing about the boluses being followed.
+    public var isComplete: Bool
 
-    public init(entries: [RemoteBolusLedger.Entry], unreadable: Bool) {
+    public init(entries: [RemoteBolusLedger.Entry], unreadable: Bool, isComplete: Bool? = nil) {
         self.entries = entries
         self.unreadable = unreadable
+        self.isComplete = isComplete ?? !unreadable
     }
 
     public init(_ ledger: RemoteBolusLedger, block: BolusBlock?) {
-        self.init(entries: ledger.allEntries, unreadable: block == .ledgerUnreadable)
+        self.init(
+            entries: ledger.allEntries, unreadable: block == .ledgerUnreadable,
+            isComplete: block != .ledgerUnreadable && block != .noDurableStore)
     }
 }
 
 /// Everything that can change which notifications should be showing.
 public enum AlertInput: Sendable {
-    /// The app process started. Comes first, with the ledger as it loaded.
-    case launched(LedgerView)
+    /// The app process started. Comes first, with the ledger as it loaded and whether a pump is paired:
+    /// a paired pump that this process hasn't reached yet is down until it connects.
+    case launched(LedgerView, pumpPaired: Bool)
+    /// The user forgot the pump: nothing about it is alerted any more.
+    case unpaired
     /// An event from the pump session.
     case pump(PumpEvent)
     /// The ledger changed outside a session event (the user confirmed an outcome on the pump).
@@ -48,7 +57,9 @@ public enum AlertInput: Sendable {
 ///
 /// Every effect waits in `State.outbox` until the driver acknowledges that it was performed. The driver
 /// saves the state before performing anything, so an effect cut off by a crash is performed again on the
-/// next launch (posts and withdrawals are idempotent by identifier), and nothing is lost.
+/// next launch, and nothing is lost. A post replaces the request with its identifier, so a repeat leaves one
+/// notification; a crash between the OS taking a post and the save that acknowledges it shows that one
+/// notification twice, the price of never losing one.
 public struct AlertEngine: Sendable {
     /// Where one bolus request stands, for alerts.
     public enum BolusPhase: String, Sendable, Hashable, Codable {
@@ -77,6 +88,13 @@ public struct AlertEngine: Sendable {
         public internal(set) var ledgerUnreadable = false
         /// When the pump stopped being reachable without being asked to disconnect; nil while connected.
         public internal(set) var linkDownSince: Date?
+        /// The least time after `linkDownSince` before the first disconnect notice, whatever the user's
+        /// delay: a drop the app expects to recover from in seconds (after a probe, or at launch before the
+        /// first connection) isn't announced at once even with "immediately".
+        public internal(set) var linkDownGrace: TimeInterval = 0
+        /// The session closed the link because something was wrong (a different pump answered), so the
+        /// requested disconnect that follows is not the user's choice and leaves the pump down.
+        public internal(set) var closedAfterFailure = false
         public internal(set) var connectionUnstable = false
         public internal(set) var urgentLow = false
         public internal(set) var cgmLost = false
@@ -87,6 +105,9 @@ public struct AlertEngine: Sendable {
         public internal(set) var outbox: [Pending] = []
         /// Posts the OS refused (notifications not allowed), by identifier, to post again once allowed.
         public internal(set) var refused: [String: AlertRequest] = [:]
+        /// The identifiers of the latest bolus settlements and announcements, newest last, so a stale event
+        /// or a remote's resent request can't announce one again.
+        public internal(set) var recentlyAnnounced: [String] = []
         var nextSequence: UInt64 = 1
 
         public init() {}
@@ -95,8 +116,8 @@ public struct AlertEngine: Sendable {
         // field added or changed by a later build must not make the whole file unreadable and lose what
         // the last process owed the OS.
         private enum CodingKeys: String, CodingKey {
-            case boluses, ledgerUnreadable, linkDownSince, connectionUnstable, urgentLow, cgmLost, pumpAlerts
-            case posted, outbox, refused, nextSequence
+            case boluses, ledgerUnreadable, linkDownSince, linkDownGrace, closedAfterFailure, connectionUnstable
+            case urgentLow, cgmLost, pumpAlerts, posted, outbox, refused, recentlyAnnounced, nextSequence
         }
 
         public init(from decoder: Decoder) throws {
@@ -107,6 +128,9 @@ public struct AlertEngine: Sendable {
             boluses = field(.boluses, [:])
             ledgerUnreadable = field(.ledgerUnreadable, false)
             linkDownSince = (try? c.decodeIfPresent(Date.self, forKey: .linkDownSince)) ?? nil
+            linkDownGrace = field(.linkDownGrace, 0)
+            closedAfterFailure = field(.closedAfterFailure, false)
+            recentlyAnnounced = field(.recentlyAnnounced, [])
             connectionUnstable = field(.connectionUnstable, false)
             urgentLow = field(.urgentLow, false)
             cgmLost = field(.cgmLost, false)
@@ -134,11 +158,20 @@ public struct AlertEngine: Sendable {
     public mutating func handle(_ input: AlertInput, now: Date) -> [Pending] {
         var announcements: [AlertRequest] = []
         switch input {
-        case .launched(let ledger):
+        case .launched(let ledger, let pumpPaired):
             // The link's instability is per process: a new process's link starts stable and would never
             // report it restored. If the link is still bad, the new one says so again.
             state.connectionUnstable = false
+            // A new process reports no drop for a pump it never reached (a pending connect never fails), so
+            // a paired pump is down from launch until it connects.
+            if pumpPaired, state.linkDownSince == nil { linkWentDown(now, grace: Self.expectedRecoveryGrace) }
             reconcile(ledger, afterRelaunch: true, into: &announcements)
+        case .unpaired:
+            state.linkDownSince = nil
+            state.linkDownGrace = 0
+            state.closedAfterFailure = false
+            state.connectionUnstable = false
+            state.pumpAlerts = []
         case .ledger(let ledger):
             reconcile(ledger, afterRelaunch: false, into: &announcements)
         case .pump(let event):
@@ -149,9 +182,13 @@ public struct AlertEngine: Sendable {
         case .policy(let next):
             policy = next
         case .remoteBolusRefused(let peerId, let requestId, let reason):
-            announcements += announce(
-                .remoteBolusRejected, .warning, id: "remoteBolusRejected-\(peerId)-\(requestId)",
-                title: "Remote bolus not delivered", body: reason)
+            // A remote resends the same request after a reconnect; it is announced once.
+            let id = "remoteBolusRejected-\(peerId)-\(requestId)"
+            if !state.recentlyAnnounced.contains(id) {
+                remember(id)
+                announcements += announce(
+                    .remoteBolusRejected, .warning, id: id, title: "Remote bolus not delivered", body: reason)
+            }
         case .tick:
             break
         case .notificationsAllowed:
@@ -183,18 +220,34 @@ public struct AlertEngine: Sendable {
     private mutating func apply(_ event: PumpEvent, now: Date, into announcements: inout [AlertRequest]) {
         switch event {
         case .linkChanged(let link):
-            if link == .connected { state.linkDownSince = nil }
-        case .disconnected(let reason):
-            if reason == .requested {
-                // The user or the app closed the link (forgetting the pump, a different pump under the
-                // pairing): nothing to alert about.
+            if link == .connected {
                 state.linkDownSince = nil
-                state.connectionUnstable = false
-            } else if state.linkDownSince == nil {
-                state.linkDownSince = now
+                state.linkDownGrace = 0
+                state.closedAfterFailure = false
             }
+        case .disconnected(let reason):
+            switch reason {
+            case .requested where state.closedAfterFailure:
+                // The session closed the link over a failure: the pump is still unreachable.
+                state.closedAfterFailure = false
+            case .requested:
+                // The user or the app closed the link: nothing to alert about.
+                state.linkDownSince = nil
+                state.linkDownGrace = 0
+                state.connectionUnstable = false
+            case .afterUnsupportedRequest:
+                // Expected after a probe; the pending connect brings it back in seconds.
+                linkWentDown(now, grace: Self.expectedRecoveryGrace)
+            case .bluetoothUnavailable, .linkLost, .authenticationFailed:
+                linkWentDown(now, grace: 0)
+            }
+        case .linkFailed(.identityMismatch):
+            // A different pump answered under the pairing and the session closes the link: the user's pump
+            // can't be reached.
+            linkWentDown(now, grace: 0)
+            state.closedAfterFailure = true
         case .linkFailed(.reconnectGaveUp):
-            if state.linkDownSince == nil { state.linkDownSince = now }
+            linkWentDown(now, grace: 0)
         case .connectionUnstable:
             state.connectionUnstable = true
         case .connectionRestored:
@@ -208,22 +261,48 @@ public struct AlertEngine: Sendable {
         }
     }
 
+    /// How long a drop the app expects to recover from is given before the first notice can fire.
+    static let expectedRecoveryGrace: TimeInterval = 60
+    /// How many settlements and announcements are remembered against repeats.
+    static let recentlyAnnouncedCap = 64
+
+    /// The pump stopped being reachable at `now`, unless it already had. A real drop after an expected one
+    /// removes the grace.
+    private mutating func linkWentDown(_ now: Date, grace: TimeInterval) {
+        if state.linkDownSince == nil {
+            state.linkDownSince = now
+            state.linkDownGrace = grace
+        } else if grace == 0 {
+            state.linkDownGrace = 0
+        }
+    }
+
+    private mutating func remember(_ id: String) {
+        state.recentlyAnnounced.removeAll { $0 == id }
+        state.recentlyAnnounced.append(id)
+        if state.recentlyAnnounced.count > Self.recentlyAnnouncedCap {
+            state.recentlyAnnounced.removeFirst(state.recentlyAnnounced.count - Self.recentlyAnnouncedCap)
+        }
+    }
+
     // MARK: - Boluses
 
     private mutating func bolusMoved(
         _ key: RemoteBolusLedger.Key, to outcome: BolusOutcome, into announcements: inout [AlertRequest]
     ) {
         let tracked = state.boluses[key]
+        // A bolus already settled from a ledger read that ran ahead of the events (the session records
+        // before it emits) gets late events for its earlier steps; following it again would announce twice.
+        if tracked == nil, state.recentlyAnnounced.contains(Self.bolusIdentifier(key)) { return }
         switch outcome {
         case .requested, .accepted, .delivering:
             if tracked == nil { state.boluses[key] = TrackedBolus(key: key, phase: .inFlight) }
         case .unknown:
             state.boluses[key] = TrackedBolus(key: key, phase: tracked?.phase == .confirmed ? .confirmed : .unknown)
         case .delivered, .stopped, .refused, .failed:
-            // An untracked key was already settled from a ledger read that ran ahead of this event (the
-            // session records before it emits); announcing it again would re-alert.
             guard let tracked else { return }
             state.boluses[key] = nil
+            remember(Self.bolusIdentifier(key))
             announcements += settled(key, from: tracked.phase, to: outcome, afterRelaunch: false)
         }
     }
@@ -250,11 +329,12 @@ public struct AlertEngine: Sendable {
                 // A final entry the engine wasn't following is history it has nothing to say about.
                 guard let tracked else { continue }
                 state.boluses[key] = nil
+                remember(Self.bolusIdentifier(key))
                 announcements += settled(key, from: tracked.phase, to: entry.outcome, afterRelaunch: afterRelaunch)
             }
         }
-        // An unreadable ledger loads empty, which says nothing about what it holds: keep following.
-        guard !ledger.unreadable else { return }
+        // An unreadable ledger, or one with no store, says nothing about what it doesn't hold: keep following.
+        guard ledger.isComplete else { return }
         for key in state.boluses.keys where !seen.contains(key) { state.boluses[key] = nil }
     }
 
@@ -364,13 +444,16 @@ public struct AlertEngine: Sendable {
             // Only the latest notice already due is posted; one the user has seen is left as it is. Both
             // matter only when the delay changes while the pump is down: without them a shorter delay would
             // post several notices at once, and a longer one would re-post one already delivered.
-            let latestDue = schedule.last { down.addingTimeInterval($0.afterSeconds) <= now }?.id
+            func fireDate(_ step: DisconnectEscalation.Step) -> Date {
+                down.addingTimeInterval(Swift.max(step.afterSeconds, state.linkDownGrace))
+            }
+            let latestDue = schedule.last { fireDate($0) <= now }?.id
             for step in schedule {
                 if let held = state.posted[step.id], held.hasFired(by: now) {
                     out[step.id] = held
                     continue
                 }
-                let fireDate = down.addingTimeInterval(step.afterSeconds)
+                let fireDate = fireDate(step)
                 if fireDate <= now && step.id != latestDue { continue }
                 add(.pumpDisconnect, .warning, id: step.id, title: step.title, body: step.body, fireDate: fireDate)
             }
@@ -420,7 +503,10 @@ public struct AlertEngine: Sendable {
     private mutating func commit(_ announcements: [AlertRequest], now: Date) -> [Pending] {
         let desired = desired(now: now)
         var effects: [AlertEffect] = []
-        let gone = state.posted.keys.filter { desired[$0] == nil }.sorted()
+        // An identifier an announcement posts again needs no withdrawal first: the post replaces it, and a
+        // withdrawal racing the post could remove the announcement.
+        let reposted = Set(announcements.map(\.identifier))
+        let gone = state.posted.keys.filter { desired[$0] == nil && !reposted.contains($0) }.sorted()
         if !gone.isEmpty { effects.append(.withdraw(gone)) }
         for id in desired.keys.sorted() where state.posted[id] != desired[id] {
             if let request = desired[id] { effects.append(.post(request)) }
