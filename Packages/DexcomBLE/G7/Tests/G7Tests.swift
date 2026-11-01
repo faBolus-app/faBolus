@@ -276,13 +276,27 @@ struct G7ObserverTests {
         #expect(observer.sensorName == "DXCMQ7")
     }
 
+    @Test("after Bluetooth is turned off and on, the followed sensor is asked to connect again")
+    func bluetoothPowerCycle() {
+        var observer = started(sensorName: "DXCM15")
+        connected(&observer, sensor)
+        _ = observer.handle(.value(sensor, .control, reading), now: t0)
+        _ = observer.handle(.bluetooth(.poweredOff), now: t0)
+        #expect(observer.handle(.bluetooth(.poweredOn), now: t0).commands == [.lookUp(known: sensor.id, delay: 0)])
+        #expect(
+            observer.handle(.found(known: sensor, systemConnected: []), now: t0).commands == [
+                .connect(sensor.id, delay: 0), .scan
+            ])
+    }
+
     @Test("Bluetooth off is reported; stopping cancels every connection")
     func bluetoothAndStop() {
         var observer = started()
         connected(&observer, sensor)
+        var stopping = observer
+        #expect(stopping.stop() == [.stopScan, .cancel(sensor.id)])
+        #expect(stopping.status(now: t0) == .stopped)
         _ = observer.handle(.bluetooth(.poweredOff), now: t0)
         #expect(observer.status(now: t0) == .problem(.bluetoothOff))
-        #expect(observer.stop() == [.stopScan, .cancel(sensor.id)])
-        #expect(observer.status(now: t0) == .stopped)
     }
 }

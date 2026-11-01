@@ -25,6 +25,9 @@ public final class DexcomCentral: NSObject, @unchecked Sendable {
     private var manager: CBCentralManager?
     private var peripherals: [UUID: CBPeripheral] = [:]
     private var restoredConnected: [CBPeripheral] = []
+    /// Peripherals asked to connect and not cancelled since. CoreBluetooth drops a connection request
+    /// for a peripheral nobody retains, so these stay in `peripherals`.
+    private var requested: Set<UUID> = []
     /// Bumped by `stop`, so delayed commands asked for before it don't run after it.
     private var generation = 0
 
@@ -85,15 +88,19 @@ public final class DexcomCentral: NSObject, @unchecked Sendable {
             manager.scanForPeripherals(withServices: [TransmitterServiceUUID.advertisement.cbUUID])
         case .stopScan:
             if let manager, manager.isScanning { manager.stopScan() }
+            // Forget the peripherals the scan turned up that nothing is connecting to.
+            peripherals = peripherals.filter { requested.contains($0.key) || $0.value.state != .disconnected }
         case .connect(let id, let delay):
             after(delay) { central in
                 guard let manager = central.manager, manager.state == .poweredOn,
                     let peripheral = central.peripheral(id)
                 else { return }
                 peripheral.delegate = central
+                central.requested.insert(id)
                 manager.connect(peripheral)
             }
         case .cancel(let id):
+            requested.remove(id)
             if let manager, let peripheral = peripherals[id] { manager.cancelPeripheralConnection(peripheral) }
         case .listen(let id, let characteristic):
             guard let peripheral = peripherals[id], let found = peripheral.characteristic(characteristic) else {
@@ -159,7 +166,14 @@ extension DexcomCentral: CBCentralManagerDelegate {
         let state = DexcomBluetoothState(central.state)
         log.info("bluetooth \(state.rawValue, privacy: .public)")
         emit(.bluetooth(state))
-        guard state == .poweredOn else { return }
+        guard state == .poweredOn else {
+            // A reset or power-off invalidates every CBPeripheral; fresh ones are retrieved on power-on.
+            if state != .unknown {
+                peripherals = [:]
+                requested = []
+            }
+            return
+        }
         // A peripheral CoreBluetooth restored already connected gets no `didConnect`; report it and
         // discover its services again, since this process holds no characteristics for it yet.
         for peripheral in restoredConnected where peripheral.state == .connected {

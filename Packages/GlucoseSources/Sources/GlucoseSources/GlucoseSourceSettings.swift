@@ -34,15 +34,23 @@ public struct KeychainSecretStore: SecretStore {
         return value
     }
 
+    /// Updates the item in place, so a failed write leaves the old secret rather than none.
     public func setSecret(_ value: String?, for account: String) throws {
         let item: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: Self.service,
             kSecAttrAccount as String: account
         ]
-        let deleted = SecItemDelete(item as CFDictionary)
-        guard deleted == errSecSuccess || deleted == errSecItemNotFound else { throw SecretStoreError(status: deleted) }
-        guard let value, let data = value.data(using: .utf8) else { return }
+        guard let value, let data = value.data(using: .utf8) else {
+            let deleted = SecItemDelete(item as CFDictionary)
+            guard deleted == errSecSuccess || deleted == errSecItemNotFound else {
+                throw SecretStoreError(status: deleted)
+            }
+            return
+        }
+        let updated = SecItemUpdate(item as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        if updated == errSecSuccess { return }
+        guard updated == errSecItemNotFound else { throw SecretStoreError(status: updated) }
         var add = item
         add[kSecValueData as String] = data
         add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly

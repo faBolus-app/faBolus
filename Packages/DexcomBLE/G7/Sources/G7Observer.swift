@@ -70,7 +70,9 @@ public struct G7Observer: DexcomObserver {
         case .bluetooth(let state):
             link.setBluetooth(state)
             guard state == .poweredOn else {
-                for id in candidates.keys { candidates[id]?.connected = false }
+                // Turning Bluetooth off or resetting it drops every connection and request; the
+                // look-up on power-on asks for them again.
+                if state != .unknown { candidates = [:] }
                 scanning = false
                 return DexcomObservation()
             }

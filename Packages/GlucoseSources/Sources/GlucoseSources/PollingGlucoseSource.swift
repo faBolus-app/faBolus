@@ -49,6 +49,8 @@ public actor PollingGlucoseSource: GlucoseSource {
     private var loop: Task<Void, Never>?
     private var started = false
     private var primaryHealthy = false
+    /// A poll is in flight. A second one would sign in again alongside it.
+    private var polling = false
     private(set) var consecutiveFailures = 0
 
     public init(
@@ -130,6 +132,9 @@ public actor PollingGlucoseSource: GlucoseSource {
     }
 
     func tick() async {
+        guard !polling else { return }
+        polling = true
+        defer { polling = false }
         let result: Result<GlucosePoll, Error>
         do {
             result = .success(try await poller.poll())

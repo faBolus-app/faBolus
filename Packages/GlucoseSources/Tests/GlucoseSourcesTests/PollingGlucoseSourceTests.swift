@@ -159,6 +159,22 @@ struct PollingGlucoseSourceTests {
         #expect(state.latest?.mgdl == 60)
     }
 
+    @Test("a poll asked for while one is in flight doesn't start a second sign-in")
+    func noConcurrentPolls() async {
+        let poller = GatedPoller()
+        let source = PollingGlucoseSource(
+            id: "test", priority: 0, poller: poller, clock: { t0 }, sleep: RecordingSleep().function)
+        await source.start()
+        #expect(await eventually { await poller.calls == 1 })
+        await source.pollNow()
+        await source.setPrimaryHealthy(true)
+        await source.setPrimaryHealthy(false)
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(await poller.calls == 1)
+        await poller.open()
+        await source.stop()
+    }
+
     @Test("a healthy pump feed slows polling to the idle interval")
     func idleWhilePumpHealthy() async {
         let sleep = RecordingSleep()
@@ -211,5 +227,22 @@ struct PollingGlucoseSourceTests {
         var b = second.makeAsyncIterator()
         #expect(await a.next()?.latest?.mgdl == 120)
         #expect(await b.next()?.latest?.mgdl == 120)
+    }
+}
+
+/// Holds every poll until `open()`, counting them.
+actor GatedPoller: GlucosePoller {
+    private(set) var calls = 0
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var isOpen = false
+    func poll() async throws -> GlucosePoll {
+        calls += 1
+        if !isOpen { await withCheckedContinuation { waiters.append($0) } }
+        return GlucosePoll(samples: [])
+    }
+    func open() {
+        isOpen = true
+        waiters.forEach { $0.resume() }
+        waiters = []
     }
 }
