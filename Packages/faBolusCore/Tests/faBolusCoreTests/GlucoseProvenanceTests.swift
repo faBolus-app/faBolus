@@ -78,23 +78,24 @@ final class GlucoseProvenanceTests: XCTestCase {
         let now = Date()
         s.glucose = Observed(
             PumpGlucose(mgdl: 120, trend: nil), measuredAt: now.addingTimeInterval(3600), receivedAt: now)
-        XCTAssertTrue(s.isGlucoseStale(now: now), "a value with an unknown age must never read as fresh")
-        XCTAssertNil(s.glucoseIfFresh(now: now))
+        XCTAssertTrue(
+            s.isGlucoseStale(thresholds: .standard, now: now), "a value with an unknown age must never read as fresh")
+        XCTAssertNil(s.glucoseIfFresh(thresholds: .standard, now: now))
     }
 
     func testStateWithNoValueIsNotReportedStale() {
         let s = PumpState()
-        XCTAssertFalse(s.isGlucoseStale(), "no reading at all is 'no data', not 'stale'")
-        XCTAssertNil(s.glucoseIfFresh())
+        XCTAssertFalse(s.isGlucoseStale(thresholds: .standard), "no reading at all is 'no data', not 'stale'")
+        XCTAssertNil(s.glucoseIfFresh(thresholds: .standard))
     }
 
     func testFreshAndOldTimestampsClassifyCorrectly() {
         var s = PumpState()
         let now = Date()
         s.glucose = Observed(PumpGlucose(mgdl: 120, trend: nil), measuredAt: now, receivedAt: now)
-        XCTAssertFalse(s.isGlucoseStale(now: now))
+        XCTAssertFalse(s.isGlucoseStale(thresholds: .standard, now: now))
         let old = now.addingTimeInterval(-7 * 60)
         s.glucose = Observed(PumpGlucose(mgdl: 120, trend: nil), measuredAt: old, receivedAt: old)
-        XCTAssertTrue(s.isGlucoseStale(now: now))
+        XCTAssertTrue(s.isGlucoseStale(thresholds: .standard, now: now))
     }
 }

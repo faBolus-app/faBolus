@@ -149,10 +149,13 @@ public actor DurableBolusLedger {
     ///   caller should not send InitiateBolus.
     @discardableResult
     public func markAccepted(
-        _ key: RemoteBolusLedger.Key, bolusId: Int, pumpKey: String? = nil, now: Date = Date()
+        _ key: RemoteBolusLedger.Key, bolusId: Int, pumpKey: String? = nil, pumpClock: UInt32? = nil,
+        now: Date = Date()
     ) throws -> Bool {
         var next = ledger
-        guard next.markAccepted(key, bolusId: bolusId, pumpKey: pumpKey, now: now) else { return false }
+        guard next.markAccepted(key, bolusId: bolusId, pumpKey: pumpKey, pumpClock: pumpClock, now: now) else {
+            return false
+        }
         try save(next, blocksOnFailure: false)
         ledger = next
         return true

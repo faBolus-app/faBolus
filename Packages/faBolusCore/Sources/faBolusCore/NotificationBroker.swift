@@ -78,7 +78,7 @@ public enum NotificationBroker {
         ///
         /// `cgmDataLoss` is the one category that does not notify (**owner decision, 2026-08-30**). Both of
         /// its posters — the immediate "CGM data lost" banner on the `SafetyEdge.freshness` raise edge, and
-        /// the pre-armed background staleness watchdog — fire at the SAME `GlucoseFreshness.staleAfter`
+        /// the pre-armed background staleness watchdog — fire at the SAME `FreshnessThresholds.glucoseStaleAfter`
         /// threshold, so the category produced one notification request per advanced CGM datum (720 of them
         /// in the 2026-08-29 diagnostics export ≈ 60 h of entirely normal operation) while telling the
         /// wearer nothing the greyed, age-labelled CGM pill and widget value do not already say.

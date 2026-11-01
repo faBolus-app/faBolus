@@ -123,7 +123,8 @@ struct PollingGlucoseSourceTests {
         #expect(state.belowRangeAt == t0)
         var pump = PumpState()
         pump.glucose = Observed(PumpGlucose(mgdl: 150, trend: nil), measuredAt: t0, receivedAt: t0)
-        let (merged, _, provenance) = GlucoseArbiter.merge(pumpState: pump, pumpHistory: [], source: state, now: t0)
+        let (merged, _, provenance) = GlucoseArbiter.merge(
+            pumpState: pump, pumpHistory: [], source: state, thresholds: .standard, now: t0)
         #expect(merged.glucose?.value.mgdl == 150)
         #expect(provenance == .pump)
     }

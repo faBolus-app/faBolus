@@ -1,54 +1,12 @@
 import Foundation
-import os
 
-/// Freshness policy shared by **every** glucose feed — the pump-relayed reading and any independent
-/// `GlucoseSource`. One definition of "stale" so the primary and its failover agree. Adjustable at
-/// runtime (e.g. from Settings); default 6 minutes. Old readings are worse than none, so anything
-/// past this threshold is never presented as the current value.
+/// Glucose freshness, shared by the pump's reading and every independent `GlucoseSource`, so the primary
+/// and its failover agree on "stale". The windows come from `FreshnessThresholds`, passed in by the caller.
+/// Old readings are worse than none, so anything past the window is never presented as the current value.
 public enum GlucoseFreshness {
-    // Thread-safe backing (audit A-09): these are set at launch (e.g. from Settings) and read from many
-    // isolation domains. An `OSAllocatedUnfairLock` gives a genuinely-safe shared store instead of a
-    // `nonisolated(unsafe) static var` (which only silences the checker).
-    private static let _staleAfter = OSAllocatedUnfairLock<TimeInterval>(initialState: 6 * 60)
-    private static let _hideAfter = OSAllocatedUnfairLock<TimeInterval?>(initialState: nil)
-    private static let _maxIncludableStaleness = OSAllocatedUnfairLock<TimeInterval>(initialState: 15 * 60)
-
-    /// Readings older than this are **stale**: shown de-emphasized ("grey") and — critically — no
-    /// longer used to auto-fill a bolus carb→unit correction. Default 6 minutes; open for adjustment.
-    public static var staleAfter: TimeInterval {
-        get { _staleAfter.withLock { $0 } }
-        set { _staleAfter.withLock { $0 = newValue } }
-    }
-
-    /// Age past which a reading is **hidden** ("--") instead of shown grey. `nil` = never hide (always
-    /// show the grey value once stale). Set equal to `staleAfter` to skip the grey stage entirely
-    /// (go straight from fresh to "--"). Effective value is clamped to ≥ `staleAfter`.
-    public static var hideAfter: TimeInterval? {
-        get { _hideAfter.withLock { $0 } }
-        set { _hideAfter.withLock { $0 = newValue } }
-    }
-
-    /// The MAXIMUM age at which a stale-but-real CGM reading may still be **explicitly included** in a
-    /// correction via the include-stale override. A reading in the window
-    /// `(staleAfter, maxIncludableStaleness]` is genuinely stale yet recent enough that a remote MAY, with
-    /// explicit per-attempt intent, ask the host to recompute a correction from it. Beyond this cap the
-    /// reading is too old to dose a correction from at all: the app fails closed to carbs-only, exactly as
-    /// an *unacknowledged* stale reading always has. Without this bound the include-stale branch could
-    /// recompute a full insulin-INCREASING correction off a reading of arbitrary age (30 min, 2 h, older)
-    /// — the hazard this cap closes. Default 15 minutes, anchored to LoopKit's `inputDataRecencyInterval`
-    /// (its 15-minute maximum glucose age for a dosing decision). Owner-adjustable at runtime like `staleAfter`/`hideAfter`.
-    public static var maxIncludableStaleness: TimeInterval {
-        get { _maxIncludableStaleness.withLock { $0 } }
-        set { _maxIncludableStaleness.withLock { $0 = newValue } }
-    }
-
-    /// Clock-skew tolerance for **future-dated** readings. A reading whose source timestamp is more
-    /// than this far ahead of `now` almost certainly came from a source with a fast clock; its true
-    /// age is unknowable, so it is treated as stale rather than trusted as the current value. Without
-    /// this, a future-dated reading has a negative elapsed time that both `isStale` and `presentation`
-    /// read as "fresh" — and since `age(of:)` clamps to 0, it would never age out (loop-comms audit
-    /// fix #1). Kept small (5 min) so ordinary phone↔sensor jitter is tolerated. LoopKit likewise
-    /// rejects future-dated glucose.
+    /// A reading dated more than this ahead of `now` came from a source with a fast clock. Its real age
+    /// can't be known, so it is stale rather than current; without this a negative age would never age
+    /// out. Small enough to tolerate ordinary phone↔sensor jitter. LoopKit also rejects future glucose.
     public static let futureSkewTolerance: TimeInterval = 5 * 60
 
     /// Age of a reading taken at `date` (never negative).
@@ -56,50 +14,41 @@ public enum GlucoseFreshness {
         max(0, now.timeIntervalSince(date))
     }
 
-    /// True when a reading taken at `date` is older than the threshold. A nil date → stale. A reading
-    /// dated more than `futureSkewTolerance` in the FUTURE is also stale: its timestamp is untrustworthy
-    /// (fast source clock) and must never present as fresh (see `futureSkewTolerance`).
-    public static func isStale(_ date: Date?, now: Date = Date()) -> Bool {
-        guard let date else { return true }
-        let elapsed = now.timeIntervalSince(date)
-        if elapsed < -futureSkewTolerance { return true }  // dated in the future beyond clock skew
-        return elapsed > staleAfter
+    /// True when a reading taken at `date` is older than the glucose window. A nil date is stale, and so
+    /// is one dated more than `futureSkewTolerance` in the future, and every reading is stale under a
+    /// window that isn't a finite, non-negative number.
+    public static func isStale(_ date: Date?, thresholds: FreshnessThresholds, now: Date = Date()) -> Bool {
+        CalcInputFreshness.isStale(date, staleAfter: thresholds.glucoseStaleAfter, now: now)
     }
 
-    /// True iff a reading taken at `date` exists AND its age falls in the window
-    /// `(staleAfter, maxIncludableStaleness]` — i.e. it is genuinely stale (past `staleAfter`) yet no older
-    /// than the includable cap. This is the ONLY window in which a stale reading may be explicitly included
-    /// in a correction (the include-stale override); beyond the cap the reading is too old to
-    /// dose from and the caller must fail closed to carbs-only. A nil date, or one dated more than
-    /// `futureSkewTolerance` in the FUTURE, is untrustworthy and returns false (the SAME future-skew
-    /// handling as `isStale`). A FRESH reading (within `staleAfter`) also returns false: it belongs to the
-    /// fresh branch, not this override.
-    public static func withinIncludableStaleness(_ date: Date?, now: Date = Date()) -> Bool {
-        guard let date else { return false }
+    /// True when a reading taken at `date` is stale yet no older than `maxIncludableGlucoseAge`: the only
+    /// window in which the user may include a stale reading in a correction. A fresh, missing or
+    /// future-dated reading is outside it.
+    public static func withinIncludableStaleness(
+        _ date: Date?, thresholds: FreshnessThresholds, now: Date = Date()
+    ) -> Bool {
+        guard let date, thresholds.maxIncludableGlucoseAge.isFinite else { return false }
         let elapsed = now.timeIntervalSince(date)
-        if elapsed < -futureSkewTolerance { return false }  // future-dated beyond clock skew → untrusted
-        return elapsed > staleAfter && elapsed <= maxIncludableStaleness
+        if elapsed < -futureSkewTolerance { return false }
+        return isStale(date, thresholds: thresholds, now: now) && elapsed <= thresholds.maxIncludableGlucoseAge
     }
 
     /// How a reading of a given age should be presented on screen.
-    public static func presentation(of date: Date?, now: Date = Date()) -> GlucosePresentation {
-        guard let date else { return .stale }  // unknown age → conservative (marked, shown)
+    public static func presentation(
+        of date: Date?, thresholds: FreshnessThresholds, now: Date = Date()
+    ) -> GlucosePresentation {
+        guard let date else { return .stale }
         let age = now.timeIntervalSince(date)
-        if age < -futureSkewTolerance { return .stale }  // future-dated beyond clock skew → stale, never fresh
-        if age <= staleAfter { return .fresh }
-        if let hide = hideAfter, age >= Swift.max(hide, staleAfter) { return .hidden }
+        if !isStale(date, thresholds: thresholds, now: now) { return .fresh }
+        if age < -futureSkewTolerance { return .stale }
+        if let hide = thresholds.glucoseHideAfter, age >= Swift.max(hide, thresholds.glucoseStaleAfter) {
+            return .hidden
+        }
         return .stale
     }
 
-    /// Compact relative age label for a reading taken at `date`, e.g. "now", "3 min ago",
-    /// "1h 12m ago". Shown next to every reading so its age is always visible.
-    ///
-    /// A reading dated more than `futureSkewTolerance` in the FUTURE returns an EXPLICIT
-    /// future/clock-mismatch label ("clock ahead") instead of falling through to the normal cases.
-    /// Without this, `age(of:)`'s `max(0, …)` clamp collapses a negative elapsed time to 0, so
-    /// `s < 30` reads true and the reading is mislabeled "now" — exactly the misleading state
-    /// `isStale`/`presentation` already guard against for this same case. A reading within ordinary
-    /// clock jitter (inside the tolerance) is unaffected and still labels normally.
+    /// Compact relative age label for a reading taken at `date`, e.g. "now", "3 min ago", "1h 12m ago".
+    /// A reading dated beyond `futureSkewTolerance` in the future says "clock ahead" rather than "now".
     public static func ageLabel(for date: Date, now: Date = Date()) -> String {
         let elapsed = now.timeIntervalSince(date)
         if elapsed < -futureSkewTolerance { return "clock ahead" }
@@ -113,9 +62,9 @@ public enum GlucoseFreshness {
 
 /// How a glucose reading should be shown, by age (see `GlucoseFreshness.presentation`).
 public enum GlucosePresentation: Sendable, Equatable {
-    case fresh  // within staleAfter — normal styling, live value
-    case stale  // past staleAfter — shown de-emphasized (grey) with its age
-    case hidden  // past hideAfter — not shown ("--")
+    case fresh  // within glucoseStaleAfter — normal styling, live value
+    case stale  // past glucoseStaleAfter — shown de-emphasized (grey) with its age
+    case hidden  // past glucoseHideAfter — not shown ("--")
 }
 
 /// One glucose reading from an independent CGM source (i.e. not relayed by the pump). mg/dL.
@@ -145,8 +94,9 @@ public struct GlucoseSample: Sendable, Equatable {
         self.sourceID = sourceID
     }
     public var reading: GlucoseReading { GlucoseReading(date: date, mgdl: mgdl) }
-    /// Stale per the shared `GlucoseFreshness` policy.
-    public var isStale: Bool { GlucoseFreshness.isStale(date) }
+    public func isStale(thresholds: FreshnessThresholds, now: Date = Date()) -> Bool {
+        GlucoseFreshness.isStale(date, thresholds: thresholds, now: now)
+    }
 }
 
 /// How a `GlucoseSource` physically connects — a typed classification later waves branch on instead

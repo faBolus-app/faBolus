@@ -316,15 +316,9 @@ import Testing
         }
     }
 
-    // MARK: - Cut-points are statics, not literals: mutating them shifts the boundary
+    // MARK: - Cut-points are values, not literals: changing them shifts the boundary
 
-    @Test func escalationBoundariesTrackTheMutableStaticsNotHardcodedLiterals() {
-        let originalConfirmExtra = StackingGuard.confirmExtraOverrideRatio
-        let originalReenter = StackingGuard.reenterOverrideRatio
-        defer {
-            StackingGuard.confirmExtraOverrideRatio = originalConfirmExtra
-            StackingGuard.reenterOverrideRatio = originalReenter
-        }
+    @Test func escalationBoundariesTrackTheCutPointsNotHardcodedLiterals() {
 
         // A ratio of 1.2 sits below the DEFAULT confirmExtra cut-point (1.5) -> disclose.
         var d = StackingGuard.escalation(
@@ -333,28 +327,26 @@ import Testing
             maxBolusUnits: 1_000.0)
         #expect(d.friction == .disclose)
 
-        // Lower the static below that same ratio (1.2) — the SAME entered/recommended pair must now cross
-        // into .confirmExtra, proving the boundary tracks the static rather than a baked-in literal.
-        StackingGuard.confirmExtraOverrideRatio = 1.1
+        // Lower the cut-point below that same ratio (1.2) — the SAME entered/recommended pair must now cross
+        // into .confirmExtra, proving the boundary tracks the cut-point rather than a baked-in literal.
         d = StackingGuard.escalation(
             enteredUnits: 2.4, recommendedUnits: 2.0, displaysNumericDose: true,
             pumpIOBUnits: 0, glucoseMgdl: target + 10, targetMgdl: target,
-            maxBolusUnits: 1_000.0)
+            maxBolusUnits: 1_000.0, cutPoints: .init(confirmExtra: 1.1))
         #expect(d.friction == .confirmExtra)
 
         // Same for the reenter cut-point: default 2.0 means ratio 1.8 stays at confirmExtra; lowering the
-        // static to 1.7 must push that SAME pair to .reenter.
+        // cut-point to 1.7 must push that SAME pair to .reenter.
         d = StackingGuard.escalation(
             enteredUnits: 3.6, recommendedUnits: 2.0, displaysNumericDose: true,
             pumpIOBUnits: 0, glucoseMgdl: target + 10, targetMgdl: target,
             maxBolusUnits: 1_000.0)
         #expect(d.friction == .confirmExtra)  // ratio 1.8, still below default reenter cut-point 2.0
 
-        StackingGuard.reenterOverrideRatio = 1.7
         d = StackingGuard.escalation(
             enteredUnits: 3.6, recommendedUnits: 2.0, displaysNumericDose: true,
             pumpIOBUnits: 0, glucoseMgdl: target + 10, targetMgdl: target,
-            maxBolusUnits: 1_000.0)
+            maxBolusUnits: 1_000.0, cutPoints: .init(reenter: 1.7))
         #expect(d.friction == .reenter)
     }
 

@@ -120,18 +120,24 @@ struct PumpValuePresentationTests {
         var aged = PumpState()
         aged.reservoirUnits = Self.read(142, at: now.addingTimeInterval(-24 * 3600))
 
-        #expect(ReservoirPresentation.make(units: aged.reservoirUnitsIfFresh(now: now)).valueText == "—")
-        #expect(!ReservoirPresentation.make(units: aged.reservoirUnitsIfFresh(now: now)).isKnown)
+        #expect(
+            ReservoirPresentation.make(units: aged.reservoirUnitsIfFresh(thresholds: .standard, now: now)).valueText
+                == "—")
+        #expect(!ReservoirPresentation.make(units: aged.reservoirUnitsIfFresh(thresholds: .standard, now: now)).isKnown)
         // Same string the never-read case produces.
-        #expect(ReservoirPresentation.make(units: PumpState().reservoirUnitsIfFresh(now: now)).valueText == "—")
+        #expect(
+            ReservoirPresentation.make(units: PumpState().reservoirUnitsIfFresh(thresholds: .standard, now: now))
+                .valueText == "—")
     }
 
     @Test func aFreshReservoirStillRendersItsNumber() {
         let now = Date(timeIntervalSince1970: 1_000_000)
         var fresh = PumpState()
         fresh.reservoirUnits = Self.read(142, at: now.addingTimeInterval(-10))
-        #expect(ReservoirPresentation.make(units: fresh.reservoirUnitsIfFresh(now: now)).valueText == "142 U")
-        #expect(ReservoirPresentation.make(units: fresh.reservoirUnitsIfFresh(now: now)).isKnown)
+        #expect(
+            ReservoirPresentation.make(units: fresh.reservoirUnitsIfFresh(thresholds: .standard, now: now)).valueText
+                == "142 U")
+        #expect(ReservoirPresentation.make(units: fresh.reservoirUnitsIfFresh(thresholds: .standard, now: now)).isKnown)
     }
 
     @Test func aFreshGenuinelyEmptyCartridgeStillRendersZeroUnits() {
@@ -139,7 +145,8 @@ struct PumpValuePresentationTests {
         var empty = PumpState()
         empty.reservoirUnits = Self.read(0, at: now.addingTimeInterval(-10))
         #expect(
-            ReservoirPresentation.make(units: empty.reservoirUnitsIfFresh(now: now)).valueText == "0 U",
+            ReservoirPresentation.make(units: empty.reservoirUnitsIfFresh(thresholds: .standard, now: now)).valueText
+                == "0 U",
             "an empty cartridge is the reading a user most needs to see — decay gates AGE, never value")
     }
 
@@ -147,7 +154,8 @@ struct PumpValuePresentationTests {
         let now = Date(timeIntervalSince1970: 1_000_000)
         var aged = PumpState()
         aged.battery = Self.read(PumpBattery(percent: 84, isCharging: false), at: now.addingTimeInterval(-24 * 3600))
-        let p = BatteryChargingPresentation.make(percent: aged.batteryIfFresh(now: now)?.percent, charging: false)
+        let p = BatteryChargingPresentation.make(
+            percent: aged.batteryIfFresh(thresholds: .standard, now: now)?.percent, charging: false)
         #expect(p.valueText == "—")
         #expect(!p.usesLowTint, "unknown is neither live nor a warning — never a false low-battery tint")
     }
@@ -156,7 +164,8 @@ struct PumpValuePresentationTests {
         let now = Date(timeIntervalSince1970: 1_000_000)
         var dead = PumpState()
         dead.battery = Self.read(PumpBattery(percent: 0, isCharging: false), at: now.addingTimeInterval(-10))
-        let p = BatteryChargingPresentation.make(percent: dead.batteryIfFresh(now: now)?.percent, charging: false)
+        let p = BatteryChargingPresentation.make(
+            percent: dead.batteryIfFresh(thresholds: .standard, now: now)?.percent, charging: false)
         #expect(p.valueText != "—", "a real 0 % is the alarm, not the absence of one")
         #expect(p.usesLowTint)
         #expect(p.symbolName == "battery.0")
@@ -166,14 +175,18 @@ struct PumpValuePresentationTests {
         let now = Date(timeIntervalSince1970: 1_000_000)
         var aged = PumpState()
         aged.insulinOnBoard = Self.read(1.4, at: now.addingTimeInterval(-24 * 3600))
-        #expect(PumpValuePresentation.text(aged.insulinOnBoardIfFresh(now: now), format: "%.2f U") == "—")
+        #expect(
+            PumpValuePresentation.text(aged.insulinOnBoardIfFresh(thresholds: .standard, now: now), format: "%.2f U")
+                == "—")
     }
 
     @Test func aFreshActiveInsulinRendersItsNumber() {
         let now = Date(timeIntervalSince1970: 1_000_000)
         var fresh = PumpState()
         fresh.insulinOnBoard = Self.read(1.4, at: now.addingTimeInterval(-10))
-        #expect(PumpValuePresentation.text(fresh.insulinOnBoardIfFresh(now: now), format: "%.2f U") == "1.40 U")
+        #expect(
+            PumpValuePresentation.text(fresh.insulinOnBoardIfFresh(thresholds: .standard, now: now), format: "%.2f U")
+                == "1.40 U")
     }
 
     @Test func aFreshGenuineZeroActiveInsulinStillRendersZeroUnits() {
@@ -181,7 +194,8 @@ struct PumpValuePresentationTests {
         var zero = PumpState()
         zero.insulinOnBoard = Self.read(0, at: now.addingTimeInterval(-10))
         #expect(
-            PumpValuePresentation.text(zero.insulinOnBoardIfFresh(now: now), format: "%.2f U") == "0.00 U",
+            PumpValuePresentation.text(zero.insulinOnBoardIfFresh(thresholds: .standard, now: now), format: "%.2f U")
+                == "0.00 U",
             "no active insulin is the common state between boluses — a reading, not an absence")
     }
 }

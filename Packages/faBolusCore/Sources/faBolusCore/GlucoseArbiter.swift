@@ -58,10 +58,12 @@ public enum GlucoseArbiter {
         pumpState: PumpState,
         pumpHistory: [GlucoseReading],
         source: GlucoseSourceState?,
+        thresholds: FreshnessThresholds,
         now: Date = Date()
     ) -> (PumpState, [GlucoseReading], GlucoseProvenance) {
-        let pumpFresh = pumpState.glucoseIfFresh(now: now) != nil
-        guard !pumpFresh, let source, let sample = source.latest, !GlucoseFreshness.isStale(sample.date, now: now)
+        let pumpFresh = pumpState.glucoseIfFresh(thresholds: thresholds, now: now) != nil
+        guard !pumpFresh, let source, let sample = source.latest,
+            !GlucoseFreshness.isStale(sample.date, thresholds: thresholds, now: now)
         else {
             // Pump is fresh, or there is no usable failover — publish pump data unchanged.
             return (pumpState, pumpHistory, .pump)

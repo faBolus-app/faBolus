@@ -110,6 +110,7 @@ extension DoseComposer {
         let units: Double
         var carbsGrams: Double?
         var iob: Double?
+        var carbPart: Double?
         var correction: Int?
         var usedStale = false
         switch amount {
@@ -132,6 +133,7 @@ extension DoseComposer {
             units = dose
             carbsGrams = carbs
             iob = inputs.calculatorInsulinOnBoardUnits
+            carbPart = inputs.carbPart(of: dose, carbsGrams: carbs, glucoseMgdl: correction)
         }
 
         if let refusal = bounds(units, context: context) { return .refused(refusal) }
@@ -150,7 +152,8 @@ extension DoseComposer {
         return .deliver(
             ComposedDose(
                 request: dose, calculatorIOBUnits: iob, correctionGlucoseMgdl: correction,
-                usedIncludedStaleGlucose: usedStale, notices: pumpNotices(units: units, context: context)))
+                calculatorCarbUnits: carbPart, usedIncludedStaleGlucose: usedStale,
+                notices: pumpNotices(units: units, context: context)))
     }
 
     /// The glucose a remote carb dose corrects from. A fresh reading always wins. A stale one is used
@@ -159,7 +162,9 @@ extension DoseComposer {
     private static func remoteCorrectionGlucose(_ request: RemoteDoseRequest, context: DoseContext) -> (
         mgdl: Int?, usedStale: Bool
     ) {
-        if let fresh = context.pump.glucoseIfFresh(now: context.now) { return (fresh.mgdl, false) }
+        if let fresh = context.pump.glucoseIfFresh(thresholds: context.freshness, now: context.now) {
+            return (fresh.mgdl, false)
+        }
         guard request.includeStaleGlucose, let reading = includableStaleReading(context),
             request.glucoseMgdl == reading.value.mgdl
         else { return (nil, false) }

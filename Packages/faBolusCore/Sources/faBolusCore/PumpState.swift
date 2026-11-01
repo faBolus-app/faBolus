@@ -157,6 +157,9 @@ public struct PumpState: Sendable, Hashable, Codable {
     /// A CGM sensor session is running on the pump. A warming-up session has no glucose yet.
     public var cgmSessionActive: Observed<Bool>?
     public var alerts: Observed<[PumpAlert]>?
+    /// The CGM hardware string the pump reports (op-96). With a Dexcom G6 it is expected to be the
+    /// transmitter ID, which is unverified; it is passed on as the pump's string, never as a confirmed ID.
+    public var cgmHardwareInfo: Observed<String>?
 
     public init() {}
 
@@ -165,57 +168,61 @@ public struct PumpState: Sendable, Hashable, Codable {
     public enum Reading: String, Sendable, Hashable, Codable, CaseIterable {
         case apiVersion, glucose, insulinOnBoard, reservoirUnits, battery, basalDeliveryState, bolusState
         case lastBolus, bolusCalculator, maxBasalUnitsPerHour, controlIQ, cartridge, cgmSessionActive, alerts
+        case cgmHardwareInfo
     }
 
     public var capabilities: PumpCapabilities { model.capabilities }
 
     // MARK: - Freshness
+    //
+    // Every check takes the windows as a value (`FreshnessThresholds`), so the dose path and the display
+    // decide from the same windows the caller holds, never from a process-wide setting.
 
-    /// There is a glucose reading and it is older than `GlucoseFreshness.staleAfter`, or its time can't
-    /// be trusted: shown marked as stale, never as current. No reading at all is "no data", not
-    /// stale; use `glucoseIfFresh` wherever a current value is needed.
-    public func isGlucoseStale(now: Date = Date()) -> Bool {
-        glucose?.isStale(after: GlucoseFreshness.staleAfter, now: now) ?? false
+    /// There is a glucose reading and it is older than the glucose window, or its time can't be trusted:
+    /// shown marked as stale, never as current. No reading at all is "no data", not stale; use
+    /// `glucoseIfFresh` wherever a current value is needed.
+    public func isGlucoseStale(thresholds: FreshnessThresholds, now: Date = Date()) -> Bool {
+        glucose?.isStale(after: thresholds.glucoseStaleAfter, now: now) ?? false
     }
 
     /// The glucose reading while it is current, else `nil`. The only form that may fill a correction.
-    public func glucoseIfFresh(now: Date = Date()) -> PumpGlucose? {
-        glucose?.valueIfFresh(within: GlucoseFreshness.staleAfter, now: now)
+    public func glucoseIfFresh(thresholds: FreshnessThresholds, now: Date = Date()) -> PumpGlucose? {
+        glucose?.valueIfFresh(within: thresholds.glucoseStaleAfter, now: now)
     }
 
-    /// IOB older than `CalcInputFreshness.staleAfterIob` isn't used without a prompt.
-    public func isInsulinOnBoardStale(now: Date = Date()) -> Bool {
-        insulinOnBoard?.isStale(after: CalcInputFreshness.staleAfterIob, now: now) ?? true
+    /// IOB older than the IOB window isn't used without a prompt.
+    public func isInsulinOnBoardStale(thresholds: FreshnessThresholds, now: Date = Date()) -> Bool {
+        insulinOnBoard?.isStale(after: thresholds.insulinOnBoardStaleAfter, now: now) ?? true
     }
 
-    /// Calculator settings older than `CalcInputFreshness.staleAfterTherapy` aren't used without a
-    /// prompt.
-    /// Settings that aren't usable count as stale.
-    public func isBolusCalculatorStale(now: Date = Date()) -> Bool {
+    /// Calculator settings older than the therapy window aren't used without a prompt. Settings that
+    /// aren't usable count as stale.
+    public func isBolusCalculatorStale(thresholds: FreshnessThresholds, now: Date = Date()) -> Bool {
         guard let bolusCalculator, bolusCalculator.value.isUsable else { return true }
-        return bolusCalculator.isStale(after: CalcInputFreshness.staleAfterTherapy, now: now)
+        return bolusCalculator.isStale(after: thresholds.therapyStaleAfter, now: now)
     }
 
-    /// Reservoir units while the reading is no older than the glucose staleness window, else `nil`, so
-    /// a value that has gone quiet shows as unknown rather than as current.
-    public func reservoirUnitsIfFresh(now: Date = Date()) -> Double? {
-        reservoirUnits?.valueIfFresh(within: GlucoseFreshness.staleAfter, now: now)
+    /// Reservoir units while the reading is no older than the glucose window, else `nil`, so a value that
+    /// has gone quiet shows as unknown rather than as current.
+    public func reservoirUnitsIfFresh(thresholds: FreshnessThresholds, now: Date = Date()) -> Double? {
+        reservoirUnits?.valueIfFresh(within: thresholds.glucoseStaleAfter, now: now)
     }
 
-    /// Battery while the reading is no older than the glucose staleness window, else `nil`.
-    public func batteryIfFresh(now: Date = Date()) -> PumpBattery? {
-        battery?.valueIfFresh(within: GlucoseFreshness.staleAfter, now: now)
+    /// Battery while the reading is no older than the glucose window, else `nil`.
+    public func batteryIfFresh(thresholds: FreshnessThresholds, now: Date = Date()) -> PumpBattery? {
+        battery?.valueIfFresh(within: thresholds.glucoseStaleAfter, now: now)
     }
 
-    /// IOB on the same window the dose path gates on, so the display and the calculator can't
-    /// disagree about whether it is current.
-    public func insulinOnBoardIfFresh(now: Date = Date()) -> Double? {
-        insulinOnBoard?.valueIfFresh(within: CalcInputFreshness.staleAfterIob, now: now)
+    /// IOB on the same window the dose path gates on, so the display and the calculator can't disagree
+    /// about whether it is current.
+    public func insulinOnBoardIfFresh(thresholds: FreshnessThresholds, now: Date = Date()) -> Double? {
+        insulinOnBoard?.valueIfFresh(within: thresholds.insulinOnBoardStaleAfter, now: now)
     }
 
     /// Calculator settings on the same window the dose path gates on.
-    public func bolusCalculatorIfFresh(now: Date = Date()) -> BolusCalculatorSettings? {
-        isBolusCalculatorStale(now: now) ? nil : bolusCalculator?.value
+    public func bolusCalculatorIfFresh(thresholds: FreshnessThresholds, now: Date = Date()) -> BolusCalculatorSettings?
+    {
+        isBolusCalculatorStale(thresholds: thresholds, now: now) ? nil : bolusCalculator?.value
     }
 
     // MARK: - Cartridge

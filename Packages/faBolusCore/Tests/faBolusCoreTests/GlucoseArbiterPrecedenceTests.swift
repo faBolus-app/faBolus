@@ -32,7 +32,7 @@ struct GlucoseArbiterPrecedenceTests {
 
     func shown(_ pumpState: PumpState, _ source: GlucoseSourceState?) -> (Int?, ObservationSource?, GlucoseProvenance) {
         let (state, _, provenance) = GlucoseArbiter.merge(
-            pumpState: pumpState, pumpHistory: [], source: source, now: now)
+            pumpState: pumpState, pumpHistory: [], source: source, thresholds: .standard, now: now)
         return (state.glucose?.value.mgdl, state.glucose?.source, provenance)
     }
 
@@ -63,7 +63,8 @@ struct GlucoseArbiterPrecedenceTests {
     @Test("a stale backup is not shown when the pump has nothing")
     func staleBackupWithNoPumpReading() {
         let (state, _, provenance) = GlucoseArbiter.merge(
-            pumpState: pump(nil, age: 0), pumpHistory: [], source: backup(180, age: stale), now: now)
+            pumpState: pump(nil, age: 0), pumpHistory: [], source: backup(180, age: stale), thresholds: .standard,
+            now: now)
         #expect(state.glucose == nil)
         #expect(provenance == .pump)
     }
@@ -96,10 +97,10 @@ struct GlucoseArbiterPrecedenceTests {
     func failoverKeepsMeasurementTime() {
         let source = backup(180, age: fresh)
         let (state, _, _) = GlucoseArbiter.merge(
-            pumpState: pump(nil, age: 0), pumpHistory: [], source: source, now: now)
+            pumpState: pump(nil, age: 0), pumpHistory: [], source: source, thresholds: .standard, now: now)
         #expect(state.glucose?.measuredAt == source.latest?.date)
         #expect(state.glucose?.receivedAt == now)
-        #expect(state.isGlucoseStale(now: now.addingTimeInterval(stale)))
+        #expect(state.isGlucoseStale(thresholds: .standard, now: now.addingTimeInterval(stale)))
     }
 
     @Test("history: the pump wins a shared 5-minute bucket even when the backup is listed later")

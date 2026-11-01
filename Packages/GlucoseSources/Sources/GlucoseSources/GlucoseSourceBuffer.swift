@@ -74,9 +74,13 @@ struct GlucoseSourceUpdates: Sendable {
 
 /// The status a source reports: a problem always shows; otherwise connected while its newest reading
 /// (a LOW counts) is fresh and stale once it isn't. Freshness comes from the measurement time.
+///
+/// This is the source's own health, judged on the standard glucose window rather than the user's display
+/// window: a Dexcom sensor sends a reading every 5 minutes, so one missing past 6 minutes means the source
+/// missed a reading, whatever the user chose for showing glucose as stale.
 func reportedStatus(_ buffer: GlucoseSourceBuffer, link: GlucoseSourceStatus, now: Date) -> GlucoseSourceStatus {
     if case .unavailable = link { return link }
     let newest = [buffer.latest?.date, buffer.belowRangeAt].compactMap { $0 }.max()
-    if let newest, !GlucoseFreshness.isStale(newest, now: now) { return .connected }
+    if let newest, !GlucoseFreshness.isStale(newest, thresholds: .standard, now: now) { return .connected }
     return link == .connected ? .stale : link
 }

@@ -70,6 +70,10 @@ public struct RemoteBolusLedger: Sendable, Codable {
         /// The identity of the pump that assigned `bolusId`, so a later pump's history is never used to
         /// settle it. `nil` when unknown.
         public fileprivate(set) var pumpKey: String?
+        /// The pump's own clock (its seconds since 2008, as its history is stamped) when it granted
+        /// permission. A history search must reach back past it before it may conclude the bolus never
+        /// happened. `nil` when it wasn't known.
+        public fileprivate(set) var pumpClockAtAcceptance: UInt32?
         /// The dose's correction used a stale glucose reading the user chose to include. An audit
         /// record only; it plays no part in any decision.
         public fileprivate(set) var usedIncludedStaleBG: Bool
@@ -135,7 +139,7 @@ public struct RemoteBolusLedger: Sendable, Codable {
         if let block { return .blocked(block) }
         entries[key] = Entry(
             request: request, outcome: .requested, updatedAt: now, bolusId: nil, pumpKey: nil,
-            usedIncludedStaleBG: usedIncludedStaleBG, confirmedOnPumpAt: nil)
+            pumpClockAtAcceptance: nil, usedIncludedStaleBG: usedIncludedStaleBG, confirmedOnPumpAt: nil)
         order.append(key)
         evictIfNeeded()
         return .proceed
@@ -163,10 +167,14 @@ public struct RemoteBolusLedger: Sendable, Codable {
     ///
     /// - Parameter pumpKey: the connected pump's identity. The unpaired sentinel isn't recorded,
     ///   because two different unpaired pumps would compare equal.
+    /// - Parameter pumpClock: the pump's clock when it granted permission (`Entry.pumpClockAtAcceptance`).
     @discardableResult
-    public mutating func markAccepted(_ key: Key, bolusId: Int, pumpKey: String? = nil, now: Date = Date()) -> Bool {
+    public mutating func markAccepted(
+        _ key: Key, bolusId: Int, pumpKey: String? = nil, pumpClock: UInt32? = nil, now: Date = Date()
+    ) -> Bool {
         move(key, to: .accepted, now: now) { entry in
             entry.bolusId = bolusId
+            entry.pumpClockAtAcceptance = pumpClock
             if let pumpKey, pumpKey != Self.unpairedPumpKeySentinel { entry.pumpKey = pumpKey }
         }
     }

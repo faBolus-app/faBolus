@@ -40,11 +40,15 @@ public struct DoseContext: Sendable {
     /// The user's optional remote bolus size limit, units. Off when `nil`; a value that isn't a positive
     /// number refuses every remote dose. Never applied to the phone.
     public var remoteSizeLimitUnits: Double?
+    /// The windows glucose and the calculator inputs are judged on: the same ones the pump session uses
+    /// to decide what it shows, so the screen and the dose can't disagree.
+    public var freshness: FreshnessThresholds
     public var now: Date
 
     public init(
         pump: PumpState, access: AccessPolicy.AccessContext, bolusBlock: BolusBlock?,
-        inputsRequestedAt: Date, lastDeliveryAt: Date?, remoteSizeLimitUnits: Double?, now: Date
+        inputsRequestedAt: Date, lastDeliveryAt: Date?, remoteSizeLimitUnits: Double?,
+        freshness: FreshnessThresholds, now: Date
     ) {
         self.pump = pump
         self.access = access
@@ -52,6 +56,7 @@ public struct DoseContext: Sendable {
         self.inputsRequestedAt = inputsRequestedAt
         self.lastDeliveryAt = lastDeliveryAt
         self.remoteSizeLimitUnits = remoteSizeLimitUnits
+        self.freshness = freshness
         self.now = now
     }
 
@@ -111,13 +116,13 @@ public struct CalculatorInputs: Sendable, Equatable {
         }
         settingsVerified =
             settings.map {
-                Self.readForAttempt($0, window: CalcInputFreshness.staleAfterTherapy, context: context)
+                Self.readForAttempt($0, window: context.freshness.therapyStaleAfter, context: context)
             } ?? false
         let crossChecked = settings?.value.insulinOnBoardUnits?.isFinite == true
         insulinOnBoardVerified =
             crossChecked && !insulinOnBoardReadingsDisagree
             && (insulinOnBoard.map {
-                Self.readForAttempt($0, window: CalcInputFreshness.staleAfterIob, context: context)
+                Self.readForAttempt($0, window: context.freshness.insulinOnBoardStaleAfter, context: context)
             } ?? false)
     }
 
@@ -135,6 +140,17 @@ public struct CalculatorInputs: Sendable, Equatable {
             targetBgMgdl: settings.targetMgdl, iobUnits: iob)
         return BolusMath.estimate(
             carbsGrams: carbsGrams > 0 ? carbsGrams : nil, bgMgdl: glucoseMgdl, profile: profile)
+    }
+
+    /// The carb part of the calculation for these inputs, capped at `units`, when that calculation rounded
+    /// down to the pump's step is exactly `units`. Otherwise the dose isn't the calculator's, and there's
+    /// no part.
+    func carbPart(of units: Double, carbsGrams: Double, glucoseMgdl: Int?) -> Double? {
+        guard carbsGrams > 0, let result = calculate(carbsGrams: carbsGrams, glucoseMgdl: glucoseMgdl),
+            !result.sanityFailed,
+            abs(BolusVolume.roundedDown(result.totalUnits) - units) <= DoseComposer.mismatchSlack
+        else { return nil }
+        return min(result.fromCarbs, units)
     }
 
     /// The calculated dose rounded down to the pump's step, or `nil` when it can't be sized.
@@ -188,6 +204,11 @@ public struct ComposedDose: Sendable, Equatable {
     /// The glucose the phone's calculation corrected from, recorded with the bolus. `nil` when the dose
     /// has no correction.
     public let correctionGlucoseMgdl: Int?
+    /// The part of the dose that covers the carbs, when the dose is exactly the calculator's own; never
+    /// more than the dose, because below target a negative correction takes the dose under the carbs'
+    /// share. The pump is told how much was for food and how much was a correction, as Tandem's app tells
+    /// it. `nil` for a dose entered in units or changed from the calculator's, which is sent as all food.
+    public let calculatorCarbUnits: Double?
     /// The correction used a stale reading the user chose to include.
     public let usedIncludedStaleGlucose: Bool
     public let notices: [DoseNotice]
@@ -317,7 +338,7 @@ extension DoseComposer {
             let disclosure = StackingGuard.maxBolusProximity(enteredUnits: units, maxBolusUnits: max)
             if disclosure.friction != .none { notices.append(.atPumpMax(disclosure)) }
         }
-        if let reservoir = context.pump.reservoirUnitsIfFresh(now: context.now) {
+        if let reservoir = context.pump.reservoirUnitsIfFresh(thresholds: context.freshness, now: context.now) {
             let disclosure = StackingGuard.insufficientReservoir(enteredUnits: units, reservoirUnits: reservoir)
             if disclosure.friction != .none { notices.append(.moreThanReservoir(disclosure)) }
         }
@@ -325,13 +346,14 @@ extension DoseComposer {
     }
 
     /// The current reading when it is stale but may still be included in a correction: no older than
-    /// `GlucoseFreshness.maxIncludableStaleness`, inside 40–400 mg/dL, with a time that can be trusted.
+    /// `FreshnessThresholds.maxIncludableGlucoseAge`, inside 40–400 mg/dL, with a time that can be trusted.
     /// `nil` otherwise, including when the reading is fresh.
     static func includableStaleReading(_ context: DoseContext) -> Observed<PumpGlucose>? {
         guard let reading = context.pump.glucose, reading.hasValidTime,
             GlucosePlausibility.isPlausible(mgdl: reading.value.mgdl),
             StaleBolusPrompt.mayOfferInclude(
-                glucoseMgdl: reading.value.mgdl, glucoseDate: reading.measuredAt, now: context.now)
+                glucoseMgdl: reading.value.mgdl, glucoseDate: reading.measuredAt, thresholds: context.freshness,
+                now: context.now)
         else { return nil }
         return reading
     }

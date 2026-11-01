@@ -74,7 +74,7 @@ public enum DisconnectEscalation {
 /// Companion to `DisconnectEscalation`, reusing the same `UNTimeIntervalNotificationTrigger` OS
 /// mechanism for a different purpose: instead of a fixed post-disconnect schedule,
 /// `NotificationCoordinator` re-arms a single delayed notification carrying this copy every time a
-/// fresh glucose datum lands, so it fires `GlucoseFreshness.staleAfter` seconds past the last
+/// fresh glucose datum lands, so it fires `FreshnessThresholds.glucoseStaleAfter` seconds past the last
 /// known-fresh reading unless a fresher one re-arms it first. That catches a background suspension
 /// with no wake event before the staleness window elapses — the OS notification was scheduled
 /// *before* the process stopped running. Cancelled once the real staleness edge fires

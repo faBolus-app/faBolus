@@ -1,11 +1,8 @@
 import Foundation
 
-/// Observable sync state for the "Pump history sync" UI section.
-///
-/// Lives in faBolusCore because `PumpHistoryProviding` exposes it; a Core protocol cannot reference
-/// an app-layer type. Pure value — no dose coupling. `TandemBackend` / `PumpHistorySyncCoordinator`
-/// produce it; `AppModel` reads it via `source as? PumpHistoryProviding`.
-public enum HistorySyncState: Equatable {
+/// Where pump history sync stands, for the "Pump history sync" section. `PumpSession` emits it as
+/// `PumpEvent.historySync`.
+public enum HistorySyncState: Sendable, Hashable {
     /// No sync currently active. `lastSynced` is `nil` before the first-ever sync, or the timestamp
     /// of the last completed check (including a check that found nothing missing — a confirmed
     /// up-to-date connect is still a completed sync).

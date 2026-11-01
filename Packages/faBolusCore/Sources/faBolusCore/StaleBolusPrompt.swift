@@ -31,25 +31,29 @@ public enum StaleBolusPrompt {
     /// AND it is stale at compose time: no reading at all is not a "stale" case (it is simply carbs-only,
     /// with nothing to include), and a fresh reading composes normally. Judged from the reading's own
     /// source timestamp via `GlucoseFreshness` (so a future-skewed reading also counts as stale).
-    public static func shouldWarn(glucoseMgdl: Int?, glucoseDate: Date?, now: Date = Date()) -> Bool {
+    public static func shouldWarn(
+        glucoseMgdl: Int?, glucoseDate: Date?, thresholds: FreshnessThresholds, now: Date = Date()
+    ) -> Bool {
         guard glucoseMgdl != nil else { return false }
-        return GlucoseFreshness.isStale(glucoseDate, now: now)
+        return GlucoseFreshness.isStale(glucoseDate, thresholds: thresholds, now: now)
     }
 
     /// Whether the **include-the-stale-reading** OPTION may be OFFERED for the current reading (Addendum B
     /// includable-age cap). True only when a reading EXISTS *and* its age is inside the includable window
-    /// `(staleAfter, maxIncludableStaleness]` — genuinely stale, yet no older than the includable cap. This is
+    /// `(glucoseStaleAfter, maxIncludableGlucoseAge]` — genuinely stale, yet no older than the includable cap. This is
     /// the SAME single bound `DoseComposer` applies to both the phone and remotes
     /// (`GlucoseFreshness.withinIncludableStaleness`).
     ///
     /// A reading OLDER than the cap — or fresh, missing, or future-skewed — returns false, so the caller must
     /// fall closed to carbs-only exactly as it does when there is nothing to include. This is a **strict subset**
-    /// of `shouldWarn`: it only ADDS the upper bound `shouldWarn` lacks (an unbounded `> staleAfter`), never
+    /// of `shouldWarn`: it only ADDS the upper bound `shouldWarn` lacks (an unbounded `> glucoseStaleAfter`), never
     /// enabling an include the warn predicate wouldn't already flag. So an include offered off this predicate can
     /// never dose an insulin-INCREASING correction off a reading of arbitrary age.
-    public static func mayOfferInclude(glucoseMgdl: Int?, glucoseDate: Date?, now: Date = Date()) -> Bool {
+    public static func mayOfferInclude(
+        glucoseMgdl: Int?, glucoseDate: Date?, thresholds: FreshnessThresholds, now: Date = Date()
+    ) -> Bool {
         guard glucoseMgdl != nil else { return false }
-        return GlucoseFreshness.withinIncludableStaleness(glucoseDate, now: now)
+        return GlucoseFreshness.withinIncludableStaleness(glucoseDate, thresholds: thresholds, now: now)
     }
 
     /// The BG (mg/dL) to feed `BolusMath.estimate(bgMgdl:)` for a chosen path:

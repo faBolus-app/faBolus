@@ -41,11 +41,13 @@ enum DoseFixtures {
 
     static func context(
         pump: PumpState = pump(), access: AccessPolicy.AccessContext = openAccess, bolusBlock: BolusBlock? = nil,
-        lastDeliveryAt: Date? = nil, remoteSizeLimitUnits: Double? = nil, now: Date = now
+        lastDeliveryAt: Date? = nil, remoteSizeLimitUnits: Double? = nil,
+        freshness: FreshnessThresholds = .standard, now: Date = now
     ) -> DoseContext {
         DoseContext(
             pump: pump, access: access, bolusBlock: bolusBlock, inputsRequestedAt: requestedAt,
-            lastDeliveryAt: lastDeliveryAt, remoteSizeLimitUnits: remoteSizeLimitUnits, now: now)
+            lastDeliveryAt: lastDeliveryAt, remoteSizeLimitUnits: remoteSizeLimitUnits, freshness: freshness,
+            now: now)
     }
 
     static func remote(

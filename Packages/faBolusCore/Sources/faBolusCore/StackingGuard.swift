@@ -1,5 +1,4 @@
 import Foundation
-import os
 
 /// **Insulin Stacking Guard — pure friction/disclosure surface.**
 ///
@@ -22,7 +21,7 @@ import os
 /// Max-Bolus (op-115 `maxBolusAmount`) — anchored purely on that pump read, never a hardcoded cap.
 /// **SG3a** (`escalation`): composes the SG1/SG2 signals into a single escalating `Friction`
 /// (`.disclose` → `.confirmExtra` → `.reenter`) as the override magnitude crosses owner-confirmable,
-/// lock-backed cut-points (`confirmExtraOverrideRatio` / `reenterOverrideRatio`) — still friction/disclosure
+/// cut-points (`OverrideCutPoints`) — still friction/disclosure
 /// only, never a `.block` case, never a units field.
 public enum StackingGuard {
 
@@ -158,31 +157,25 @@ public enum StackingGuard {
 
     // MARK: - SG3a: escalating friction (SG1 override magnitude + SG2 max-proximity)
 
-    // Thread-safe backing (mirrors `CalcInputFreshness`'s `OSAllocatedUnfairLock` idiom): set at launch
-    // (or by a future Settings screen) and read from many isolation domains, so a bare
-    // `nonisolated(unsafe) static var` would only silence the checker, not make the mutation actually safe.
-    //
-    // **Owner-confirmable starting points with no evidence base.** These are the
-    // override-ratio (entered ÷ recommended) cut-points at which SG3a escalates the friction tier. They are
-    // NOT clinical thresholds; they exist purely to decide how much friction/confirmation to surface before
-    // an unusually large override reaches the (unaffected) Deliver button.
-    private static let _confirmExtraOverrideRatio = OSAllocatedUnfairLock<Double>(initialState: 1.5)
-    private static let _reenterOverrideRatio = OSAllocatedUnfairLock<Double>(initialState: 2.0)
+    /// The override-ratio cut-points (entered ÷ recommended) at which `escalation` steps the friction up.
+    /// Owner-confirmable starting points with no evidence base: they aren't clinical thresholds, only how
+    /// much confirmation to ask for before an unusually large override reaches the (unaffected) Deliver
+    /// button. A value passed to `escalation`, so tests and a later setting change it per call rather than
+    /// for the whole process.
+    public struct OverrideCutPoints: Sendable, Hashable {
+        /// At or above this ratio `.disclose` becomes `.confirmExtra`: 1.5 is "50% more than the pump's
+        /// calculator suggested".
+        public var confirmExtra: Double
+        /// At or above this ratio the friction is `.reenter`: 2.0 is "double the suggestion". Keep it at or
+        /// above `confirmExtra` for the tiers to stay ordered.
+        public var reenter: Double
 
-    /// The override ratio (`enteredUnits / recommendedUnits`) at or above which `escalation` steps up from
-    /// `.disclose` to `.confirmExtra` — e.g. the default `1.5` means "50% more than the pump's calculator
-    /// suggested". **Owner-confirmable default; not a clinical constant.**
-    public static var confirmExtraOverrideRatio: Double {
-        get { _confirmExtraOverrideRatio.withLock { $0 } }
-        set { _confirmExtraOverrideRatio.withLock { $0 = newValue } }
-    }
+        public init(confirmExtra: Double = 1.5, reenter: Double = 2.0) {
+            self.confirmExtra = confirmExtra
+            self.reenter = reenter
+        }
 
-    /// The override ratio at or above which `escalation` steps up to the most extreme tier, `.reenter` —
-    /// e.g. the default `2.0` means "double the pump's calculator suggestion". Must stay `>=
-    /// confirmExtraOverrideRatio` for the tiers to remain ordered; **owner-confirmable default.**
-    public static var reenterOverrideRatio: Double {
-        get { _reenterOverrideRatio.withLock { $0 } }
-        set { _reenterOverrideRatio.withLock { $0 = newValue } }
+        public static let standard = OverrideCutPoints()
     }
 
     /// **SG3a** — composes the SG1 override signal (`calcOverride`) and the SG2 max-proximity signal
@@ -194,12 +187,12 @@ public enum StackingGuard {
     /// - `.none` — SG1 would not fire (see `calcOverride`'s guards: not displayable, no glucose above the
     ///   pump's own target, or `enteredUnits <= recommendedUnits` — the exact-match false-positive included,
     ///   at ANY dose size).
-    /// - `.disclose` — SG1 fires and the ratio is below `confirmExtraOverrideRatio`, and the dose is below
+    /// - `.disclose` — SG1 fires and the ratio is below `cutPoints.confirmExtra`, and the dose is below
     ///   the pump's own reported max (SG2 does not fire either).
-    /// - `.confirmExtra` — the ratio has crossed `confirmExtraOverrideRatio` (a materially stronger
+    /// - `.confirmExtra` — the ratio has crossed `cutPoints.confirmExtra` (a materially stronger
     ///   override), OR the dose is at/above the pump's own reported max (SG2 fires) even if the ratio alone
     ///   hasn't crossed that cut-point yet.
-    /// - `.reenter` — the ratio has crossed `reenterOverrideRatio` (the most extreme override), OR
+    /// - `.reenter` — the ratio has crossed `cutPoints.reenter` (the most extreme override), OR
     ///   `recommendedUnits == 0` (a nonzero dose against a calculator that suggested nothing at all — the
     ///   most extreme case there is, disclosed WITHOUT ever computing an entered/recommended ratio, so this
     ///   branch can never divide by zero and never renders a NaN/inf into a message).
@@ -214,7 +207,8 @@ public enum StackingGuard {
         pumpIOBUnits: Double,
         glucoseMgdl: Int?,
         targetMgdl: Int,
-        maxBolusUnits: Double
+        maxBolusUnits: Double,
+        cutPoints: OverrideCutPoints = .standard
     ) -> Disclosure {
         let sg1 = calcOverride(
             enteredUnits: enteredUnits, recommendedUnits: recommendedUnits,
@@ -237,13 +231,13 @@ public enum StackingGuard {
         }
 
         let ratio = enteredUnits / recommendedUnits
-        if ratio >= reenterOverrideRatio {
+        if ratio >= cutPoints.reenter {
             return Disclosure(
                 friction: .reenter,
                 message: "This dose is far above what the pump's calculator suggested — please re-enter to confirm.",
                 detail: sg1.detail)
         }
-        if ratio >= confirmExtraOverrideRatio || atOrAboveMax {
+        if ratio >= cutPoints.confirmExtra || atOrAboveMax {
             return Disclosure(
                 friction: .confirmExtra,
                 message:

@@ -1,43 +1,11 @@
 import Foundation
-import os
 
-/// Freshness policy for the **bolus-calculator inputs** the pump reports — active insulin (IOB) and the
-/// therapy parameters (carb ratio / ISF / target). It is the exact analogue of `GlucoseFreshness` for the
-/// glucose feed: one definition of "stale" per input so the dose path and the UI agree, adjustable at
-/// runtime, and — critically — a value past its threshold is never trusted to size an authoritative dose.
-///
-/// Why two thresholds. The pump caches these on very different cadences: op-109 IOB advances continuously
-/// (a fresh read every ~60 s), while op-115 therapy params (CR/ISF/target/max) only change when a
-/// clinician/user edits the pump or a scheduled profile time-segment boundary crosses. IOB going a few
-/// minutes stale is a real dosing hazard (active insulin is being subtracted from the correction), so it
-/// gets the tighter window; therapy params tolerate a wider one.
-///
-/// **Thresholds are owner-confirmable defaults.** 300 s (IOB) and 900 s (therapy) are the design starting
-/// points, recorded for the §13 clinical-review gate. They can be tuned at launch (e.g. from Settings) the
-/// same way `GlucoseFreshness.staleAfter` is; a clinician/CDCES review is required before any real-insulin
-/// or `experimental` distribution (see `dosing-input-freshness-plan-2026-08-07.md`).
+/// Freshness for the bolus calculator's inputs: IOB (op-109) and the therapy settings (op-115), the
+/// counterpart of `GlucoseFreshness`. The windows come from `FreshnessThresholds`: IOB moves all the time
+/// and is subtracted from the dose, so its window is tighter than the settings', which change only when
+/// the pump is edited or a profile segment starts. A value past its window never sizes a dose without a
+/// prompt.
 public enum CalcInputFreshness {
-    // Thread-safe backing (audit A-09), mirroring `GlucoseFreshness`: set at launch and read from many
-    // isolation domains, so an `OSAllocatedUnfairLock` gives a genuinely-safe shared store rather than a
-    // `nonisolated(unsafe) static var` (which only silences the checker).
-    private static let _staleAfterIob = OSAllocatedUnfairLock<TimeInterval>(initialState: 300)  // 5 min
-    private static let _staleAfterTherapy = OSAllocatedUnfairLock<TimeInterval>(initialState: 900)  // 15 min
-
-    /// Active-insulin (IOB) readings older than this are **stale**: shown de-emphasized and never used to
-    /// size an authoritative dose without an explicit warned override. Owner-confirmable default: 300 s.
-    public static var staleAfterIob: TimeInterval {
-        get { _staleAfterIob.withLock { $0 } }
-        set { _staleAfterIob.withLock { $0 = newValue } }
-    }
-
-    /// Therapy parameters (carb ratio / ISF / target) older than this are **stale**. Owner-confirmable
-    /// default: 900 s. Wider than IOB because these change only on a pump edit or a scheduled
-    /// profile-segment boundary, not continuously.
-    public static var staleAfterTherapy: TimeInterval {
-        get { _staleAfterTherapy.withLock { $0 } }
-        set { _staleAfterTherapy.withLock { $0 = newValue } }
-    }
-
     /// Clock-skew tolerance for **future-dated** reads, mirroring `GlucoseFreshness.futureSkewTolerance`. A
     /// read whose stamp is more than this far ahead of `now` came from a fast clock; its true age is
     /// unknowable, so it is treated as stale rather than trusted. Without this, a future-dated read has a
@@ -51,21 +19,23 @@ public enum CalcInputFreshness {
 
     /// Core staleness test against an explicit threshold. A nil date → stale (we have not confirmed a fresh
     /// value). A date more than `futureSkewTolerance` in the FUTURE is also stale (untrustworthy clock).
+    /// A window that isn't a finite, non-negative number makes every reading stale: an infinite or NaN
+    /// window would otherwise never expire anything.
     public static func isStale(_ date: Date?, staleAfter: TimeInterval, now: Date = Date()) -> Bool {
-        guard let date else { return true }
+        guard let date, staleAfter.isFinite, staleAfter >= 0 else { return true }
         let elapsed = now.timeIntervalSince(date)
         if elapsed < -futureSkewTolerance { return true }  // dated in the future beyond clock skew
         return elapsed > staleAfter
     }
 
-    /// True when the IOB read taken at `date` is stale per `staleAfterIob` (nil → stale).
-    public static func isIobStale(_ date: Date?, now: Date = Date()) -> Bool {
-        isStale(date, staleAfter: staleAfterIob, now: now)
+    /// True when the IOB read taken at `date` is stale (nil → stale).
+    public static func isIobStale(_ date: Date?, thresholds: FreshnessThresholds, now: Date = Date()) -> Bool {
+        isStale(date, staleAfter: thresholds.insulinOnBoardStaleAfter, now: now)
     }
 
-    /// True when the therapy-params read taken at `date` is stale per `staleAfterTherapy` (nil → stale).
-    public static func isTherapyStale(_ date: Date?, now: Date = Date()) -> Bool {
-        isStale(date, staleAfter: staleAfterTherapy, now: now)
+    /// True when the therapy-settings read taken at `date` is stale (nil → stale).
+    public static func isTherapyStale(_ date: Date?, thresholds: FreshnessThresholds, now: Date = Date()) -> Bool {
+        isStale(date, staleAfter: thresholds.therapyStaleAfter, now: now)
     }
 
     /// How a read of a given age should be presented on screen (3-state), against an explicit threshold.
@@ -75,20 +45,24 @@ public enum CalcInputFreshness {
     public static func presentation(of date: Date?, staleAfter: TimeInterval, now: Date = Date())
         -> CalcInputPresentation
     {
-        guard let date else { return .stale }
+        guard let date, staleAfter.isFinite, staleAfter >= 0 else { return .stale }
         let age = now.timeIntervalSince(date)
         if age < -futureSkewTolerance { return .stale }  // future-dated beyond clock skew → stale, never fresh
         return age <= staleAfter ? .fresh : .stale
     }
 
     /// Presentation for an IOB read.
-    public static func iobPresentation(of date: Date?, now: Date = Date()) -> CalcInputPresentation {
-        date == nil ? .hidden : presentation(of: date, staleAfter: staleAfterIob, now: now)
+    public static func iobPresentation(
+        of date: Date?, thresholds: FreshnessThresholds, now: Date = Date()
+    ) -> CalcInputPresentation {
+        date == nil ? .hidden : presentation(of: date, staleAfter: thresholds.insulinOnBoardStaleAfter, now: now)
     }
 
     /// Presentation for a therapy-params read.
-    public static func therapyPresentation(of date: Date?, now: Date = Date()) -> CalcInputPresentation {
-        date == nil ? .hidden : presentation(of: date, staleAfter: staleAfterTherapy, now: now)
+    public static func therapyPresentation(
+        of date: Date?, thresholds: FreshnessThresholds, now: Date = Date()
+    ) -> CalcInputPresentation {
+        date == nil ? .hidden : presentation(of: date, staleAfter: thresholds.therapyStaleAfter, now: now)
     }
 
     /// Compact relative age label, identical in form to `GlucoseFreshness.ageLabel` ("now", "3 min ago",

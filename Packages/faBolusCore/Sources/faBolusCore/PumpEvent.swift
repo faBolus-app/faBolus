@@ -15,6 +15,21 @@ public enum PumpDisconnectReason: Sendable, Hashable, Codable {
     case afterUnsupportedRequest(opcode: Int)
 }
 
+/// Why the link stopped trying to reach the pump on its own. Each needs the user, except
+/// `reconnectGaveUp`, which tries again the next time the app comes to the foreground.
+public enum PumpLinkFailure: Sendable, Hashable, Codable {
+    /// The pump rejected the pairing code.
+    case pairingRejected
+    /// The pump's Bluetooth name names a model this release doesn't connect to (a Mobi).
+    case unsupportedModel(PumpModel)
+    /// The pump's Bluetooth name contradicts the model stored with the pairing.
+    case identityMismatch
+    /// A pairing scan found no pump in time.
+    case pumpNotFound
+    /// Reconnecting kept failing before the link held, and the link stopped trying.
+    case reconnectGaveUp
+}
+
 /// The typed event stream `PumpSession` emits. Consumers react to events rather than diffing state:
 /// each event says what happened, and `readingsChanged` names the readings that changed and carries the
 /// new state for anyone who shows it.
@@ -37,4 +52,8 @@ public enum PumpEvent: Sendable, Hashable {
     case alertDismissed(PumpAlert, DismissOutcome)
     /// A bolus request's outcome moved. The ledger records it before this is emitted.
     case bolusOutcome(RemoteBolusLedger.Key, BolusOutcome)
+    /// The link stopped trying on its own.
+    case linkFailed(PumpLinkFailure)
+    /// Pump history sync moved.
+    case historySync(HistorySyncState)
 }

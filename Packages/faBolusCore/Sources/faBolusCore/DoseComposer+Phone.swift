@@ -202,7 +202,7 @@ extension DoseComposer {
             return checkRecompute(mgdl: screenGlucose, recorded: screenGlucose, mustAsk: false)
 
         case .currentReading(let shownMgdl):
-            if let reading = context.pump.glucoseIfFresh(now: context.now) {
+            if let reading = context.pump.glucoseIfFresh(thresholds: context.freshness, now: context.now) {
                 // The pump's own calculator gives no dose for a LOW or HIGH reading.
                 guard GlucosePlausibility.isPlausible(mgdl: reading.mgdl) else {
                     return .refused(.implausibleGlucose(mgdl: reading.mgdl))
@@ -243,7 +243,8 @@ extension DoseComposer {
             let stacking = StackingGuard.escalation(
                 enteredUnits: units, recommendedUnits: calculator.suggested, displaysNumericDose: true,
                 pumpIOBUnits: calculator.inputs.calculatorInsulinOnBoardUnits ?? 0,
-                glucoseMgdl: correction ?? context.pump.glucoseIfFresh(now: context.now)?.mgdl,
+                glucoseMgdl: correction
+                    ?? context.pump.glucoseIfFresh(thresholds: context.freshness, now: context.now)?.mgdl,
                 targetMgdl: settings.targetMgdl, maxBolusUnits: context.pumpMaxBolusUnits ?? 0)
             if stacking.friction != .none { notices.append(.stacking(stacking)) }
             if calculator.carbs > 0, calculator.suggested > 0, differs(units, calculator.suggested) {
@@ -256,7 +257,11 @@ extension DoseComposer {
         return .deliver(
             ComposedDose(
                 request: request, calculatorIOBUnits: calculator?.inputs.calculatorInsulinOnBoardUnits,
-                correctionGlucoseMgdl: correction, usedIncludedStaleGlucose: calculator?.usedStale ?? false,
+                correctionGlucoseMgdl: correction,
+                calculatorCarbUnits: calculator.flatMap {
+                    $0.inputs.carbPart(of: units, carbsGrams: $0.carbs, glucoseMgdl: correction)
+                },
+                usedIncludedStaleGlucose: calculator?.usedStale ?? false,
                 notices: notices))
     }
 }
