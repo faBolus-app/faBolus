@@ -5,6 +5,11 @@ import faBolusCore
 
 /// A group of reads that come due together.
 enum ReadGroup: CaseIterable, Hashable {
+    /// What a dose, a cancel and the display can't do without, read first on every connection and with
+    /// the status reads after: the pump clock, the bolus in progress, the calculator settings, IOB and
+    /// glucose. Read ahead of anything that might draw a probe's op-77, which stops untested reads for the
+    /// rest of the connection.
+    case essential
     /// The pump's notifications.
     case alerts
     /// What changes minute to minute: IOB, glucose and its trend, reservoir, battery, the bolus in
@@ -20,20 +25,21 @@ enum ReadGroup: CaseIterable, Hashable {
 
     var reads: [any TandemMessages.Message] {
         switch self {
+        case .essential:
+            return [
+                TimeSinceResetRequest(), CurrentBolusStatusRequest(), BolusCalcDataSnapshotRequest(),
+                ControlIQIOBRequest(), CurrentEGVGuiDataRequest()
+            ]
         case .alerts:
             return [
                 AlertStatusRequest(), AlarmStatusRequest(), CGMAlertStatusRequest(), ReminderStatusRequest(),
                 MalfunctionStatusRequest()
             ]
         case .status:
-            return [
-                ControlIQIOBRequest(), CurrentEGVGuiDataRequest(), HomeScreenMirrorRequest(), InsulinStatusRequest(),
-                CurrentBatteryV2Request(), CurrentBolusStatusRequest(), LoadStatusRequest()
-            ]
+            return [HomeScreenMirrorRequest(), InsulinStatusRequest(), CurrentBatteryV2Request(), LoadStatusRequest()]
         case .settings:
             return [
-                TimeSinceResetRequest(), BolusCalcDataSnapshotRequest(), CurrentBasalStatusRequest(),
-                BasalLimitSettingsRequest(), ControlIQInfoV2Request(), CGMStatusRequest()
+                CurrentBasalStatusRequest(), BasalLimitSettingsRequest(), ControlIQInfoV2Request(), CGMStatusRequest()
             ]
         case .cgmHardware:
             // op-96: answered on P1 with no sensor. GetG6TransmitterHardwareInfo is never sent: it drew
@@ -46,6 +52,7 @@ enum ReadGroup: CaseIterable, Hashable {
 
     var priority: PumpSession.Priority {
         switch self {
+        case .essential: return .essential
         case .alerts: return .alerts
         case .status: return .status
         case .settings, .cgmHardware: return .settings
@@ -120,7 +127,7 @@ extension PumpSession {
         historyTick(now: now)
         guard state.link.isConnected, identity != nil else { return }
         deliveryTick(now: now)
-        for group in [ReadGroup.alerts, .status, .settings, .cgmHardware] where isDue(group, now: now) {
+        for group in [ReadGroup.essential, .alerts, .status, .settings, .cgmHardware] where isDue(group, now: now) {
             schedule(group, now: now)
         }
         if glucoseIsDue(now: now), !isQueued(CurrentEGVGuiDataRequest.self) {
@@ -149,13 +156,15 @@ extension PumpSession {
         onceThisConnection.insert(group)
         switch group {
         case .alerts: due[group] = now.addingTimeInterval(config.alertInterval)
-        case .status: due[group] = now.addingTimeInterval(config.statusInterval)
+        case .essential, .status: due[group] = now.addingTimeInterval(config.statusInterval)
         case .settings: due[group] = now.addingTimeInterval(config.settingsInterval)
         case .cgmHardware, .history: break
         }
         // A read already waiting isn't queued twice.
-        let reads = group.reads.filter { read in !queue.contains { MessageKey($0.message) == MessageKey(read) } }
-        enqueue(reads, priority: group.priority)
+        for read in group.reads where !queue.contains(where: { MessageKey($0.message) == MessageKey(read) }) {
+            // A read this pump's class is suspected of rejecting goes last, after everything else.
+            enqueue([read], priority: isSuspected(read) ? .probe : group.priority)
+        }
     }
 
     /// The pump's CGM sends a reading every 5 minutes. From 20 s before the next one is expected until it

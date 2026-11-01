@@ -162,7 +162,7 @@ import Testing
             $0.unsupportedReads = []
             $0.alertBitmap = 1 << 7
         })
-        await rig.start()
+        await rig.startHeld()
         let alerts = await rig.session.state.alerts?.value ?? []
         #expect(alerts.count == 1)
         #expect(alerts.first?.id == 7)

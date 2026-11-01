@@ -63,7 +63,7 @@ public actor PumpSession {
     }
 
     enum Priority: Int, Comparable {
-        case cancel = 0, delivery, doseInputs, user, reconcile, alerts, status, settings, history
+        case cancel = 0, delivery, doseInputs, user, essential, reconcile, alerts, status, settings, history, probe
 
         static func < (a: Priority, b: Priority) -> Bool { a.rawValue < b.rawValue }
     }
@@ -102,6 +102,7 @@ public actor PumpSession {
     /// The connection's identity checks passed: a t:slim X2 with the trusted serial.
     var identityTrusted = false
     var pendingPairing: PendingPairing?
+    var retriedRejectedPairing = false
     /// The phone-clock time the last bolus was sent to the pump.
     public internal(set) var lastDeliveryAt: Date?
 
@@ -207,6 +208,14 @@ public actor PumpSession {
     /// never be told.
     public func setAppActive(_ active: Bool) async {
         await connection.setAppActive(active)
+        // The stored pairing's code rejected once is tried once more on the next foreground: one
+        // misread rejection mustn't leave the app with no pump until a relaunch.
+        if active, !retriedRejectedPairing, pendingPairing == nil,
+            case .failed(.authenticationRejected) = await connection.state.phase
+        {
+            retriedRejectedPairing = true
+            await connectToStoredPairing()
+        }
         tick()
     }
 
@@ -309,21 +318,40 @@ public actor PumpSession {
     }
 
     /// While a delivery holds the link only its own steps and a cancel go; otherwise the highest priority,
-    /// first come first served within one. An untested command waits for the connection to hold, as the
-    /// link would make it wait, but here, so what's behind it (a cancel included) isn't held up too; a tick
-    /// sends it once due. A delivery's own steps are left to the link: holding one back here would let a
-    /// cancel overtake the InitiateBolus it is meant to stop.
+    /// first come first served within one.
+    ///
+    /// Until the connection has held, only what's needed now goes out: a cancel, a delivery, a dose's
+    /// inputs, the user's own actions and the essential reads. The rest waits for the hold, so a new
+    /// connection never starts with a burst (P1 drops 2 s after pairing, cause unknown), and an untested
+    /// command waits for it here rather than in the link, where it would hold up everything behind it, a
+    /// cancel included. While a bolus is being followed no untested read goes out either: a probe's op-77
+    /// can drop the link. A delivery's own steps are left to the link: holding one back here would let a
+    /// cancel overtake the InitiateBolus it is meant to stop. A tick sends what has come due.
     func nextJobIndex() -> Int? {
-        let held = connectedAt.map { clock().timeIntervalSince($0) >= holdWindow } ?? true
+        let elapsed = connectedAt.map { clock().timeIntervalSince($0) } ?? .infinity
+        // A clock stepped backwards counts as held: waiting for it to catch up would stall the queue.
+        let held = elapsed >= holdWindow || elapsed < 0
         let eligible = queue.indices.filter { i in
-            if !held, queue[i].owner == nil, isUntested(queue[i].message) { return false }
+            let job = queue[i]
+            if job.owner == nil {
+                if !held, job.priority > .essential { return false }
+                // A cancel and a bolus's own status reads are never held back.
+                if !held || tracked != nil, job.priority > .delivery, isUntested(job.message) { return false }
+            }
             guard let owner = exclusiveOwner else { return true }
             return queue[i].owner == owner || queue[i].priority == .cancel
         }
         return eligible.min { (queue[$0].priority, queue[$0].id) < (queue[$1].priority, queue[$1].id) }
     }
 
-    private func isUntested(_ message: any TandemMessages.Message) -> Bool {
+    func isSuspected(_ message: any TandemMessages.Message) -> Bool {
+        guard let identity else { return false }
+        let entry = record.support.entry(
+            for: MessageKey(message), unit: identity.unit, model: identity.model, apiVersion: identity.apiVersion)
+        return entry.status == .untested && entry.suspected
+    }
+
+    func isUntested(_ message: any TandemMessages.Message) -> Bool {
         guard let identity else { return false }
         return record.support.entry(
             for: MessageKey(message), unit: identity.unit, model: identity.model, apiVersion: identity.apiVersion
@@ -395,6 +423,7 @@ public actor PumpSession {
         pendingPairing = nil
         do { try secrets.store(credentials) } catch {
             sessionLog.error("pairing secret not stored: \(String(describing: error), privacy: .public)")
+            await abandonPairing()
             return
         }
         record = PumpSessionRecord(
@@ -452,6 +481,8 @@ public actor PumpSession {
             if case .legacy = pending.credentials {
                 do { try secrets.store(pending.credentials) } catch {
                     sessionLog.error("pairing code not stored: \(String(describing: error), privacy: .public)")
+                    await abandonPairing()
+                    return
                 }
             }
             saveRecord()
@@ -460,6 +491,7 @@ public actor PumpSession {
             record.pairing = pairing
             saveRecord()
         }
+        retriedRejectedPairing = false
         identityTrusted = Self.isTrusted(identity, pairing: record.pairing)
         if let serial = identity.unit?.serialNumber, let trusted = record.pairing?.trustedSerial, serial != trusted {
             // A different pump answers for this pairing: its readings aren't the user's pump, so the link
@@ -562,6 +594,18 @@ public actor PumpSession {
         historySync = .idle(lastSynced: nil)
         emit(.linkChanged(.disconnected))
         emit(.readingsChanged(Set(PumpState.Reading.allCases), state))
+    }
+
+    /// A new pairing whose secret couldn't be stored can't be reconnected later, so it isn't kept: the
+    /// link goes back to the pump paired before, and the user is told the pairing didn't take.
+    private func abandonPairing() async {
+        record = store.load() ?? PumpSessionRecord()
+        state.model = record.pairing?.model ?? .unknown
+        identity = nil
+        identityTrusted = false
+        emit(.linkFailed(.pairingRejected))
+        await connection.stop()
+        await connectToStoredPairing()
     }
 
     private func connectToStoredPairing() async {

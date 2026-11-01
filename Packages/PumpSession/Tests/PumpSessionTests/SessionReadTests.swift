@@ -11,7 +11,7 @@ import Testing
 @Suite struct SessionReadTests {
     @Test func reconnectsToTheStoredPairingAndReadsThePump() async {
         let rig = Rig()
-        await rig.start()
+        await rig.startHeld()
         let state = await rig.session.state
         #expect(state.link == .connected)
         #expect(state.model == .tslimX2)
@@ -72,7 +72,7 @@ import Testing
 
     @Test func alertsAreReadEveryFifteenSecondsAndStatusEveryMinute() async {
         let rig = Rig(configure: { $0.unsupportedReads = [] })
-        await rig.start()
+        await rig.startHeld()
         let alertsBefore = rig.pump.arrivals(of: AlertStatusRequest.self).count
         let iobBefore = rig.pump.arrivals(of: ControlIQIOBRequest.self).count
         await rig.run(for: 60, step: 5)
@@ -112,7 +112,7 @@ import Testing
     /// the session keeps running with the link down.
     @Test func valuesDecayOnTheSessionsWindowsWhenThePumpGoesQuiet() async {
         let rig = Rig()
-        await rig.start()
+        await rig.startHeld()
         rig.transport.pumpWalksAway()
         await rig.settle()
         await rig.run(for: 7 * 60, step: 30)

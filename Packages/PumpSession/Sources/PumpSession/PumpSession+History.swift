@@ -97,9 +97,11 @@ extension PumpSession {
 
     func historyTick(now: Date) {
         guard let collector = page else { return }
-        if now.timeIntervalSince(collector.lastFrameAt) >= config.historyPageQuiet
-            || now.timeIntervalSince(collector.startedAt) >= config.historyPageLimit
-        {
+        let quiet = now.timeIntervalSince(collector.lastFrameAt)
+        let open = now.timeIntervalSince(collector.startedAt)
+        // A clock stepped backwards ends the page too, rather than holding the history lock until it
+        // catches up.
+        if quiet >= config.historyPageQuiet || open >= config.historyPageLimit || quiet < 0 || open < 0 {
             finishPage(collector.records.keys.sorted().compactMap { collector.records[$0] })
         }
     }

@@ -26,7 +26,9 @@ extension PumpSession {
         case .reply(let reply):
             return (reply.message as? DismissNotificationResponse)?.status == 0 ? .cleared : .refused
         case .pumpError(let error):
-            return error.isBadOpcode ? .unsupported : .refused
+            // BAD_OPCODE says the pump has no such command; the undefined code (0) says nothing definite.
+            if error.isBadOpcode { return .unsupported }
+            return error.errorCodeId == 0 ? .unconfirmed : .refused
         case .notSent(let reason):
             switch reason {
             case .unsupported, .signedWriteNotAllowed, .identityUnknown, .characteristicUnavailable: return .unsupported

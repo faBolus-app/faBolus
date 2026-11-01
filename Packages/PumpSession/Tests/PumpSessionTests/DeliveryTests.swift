@@ -352,7 +352,10 @@ private func addOldHistory(_ pump: ScriptedPump, count: Int = 20) {
             $0.alertBitmap = 1 << 7
             $0.startBolus(id: 10650, milliunits: 5000)
         })
-        await rig.start()
+        await rig.startHeld()
+        // A fresh connection, inside its hold window: the dismiss (untested on P1) waits for the hold.
+        rig.transport.drop()
+        await rig.settle()
         let alert = try #require(await rig.session.state.alerts?.value.first)
         let session = rig.session
         let dismiss = Task { await session.dismiss(alert) }

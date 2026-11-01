@@ -89,35 +89,38 @@ public final class GlucoseHistoryStore {
     }
 
     /// Pump history in one save that throws when it fails, so the caller can keep the records and try
-    /// again. Boluses and carbs already held from `sourceID` at the same time are skipped, so writing the
-    /// same records twice (a retried sync) doesn't count a bolus twice; glucose needs no such check, because
-    /// a query keeps one reading per 5-minute slot.
+    /// again. A bolus or carb entry already held from `sourceID` with the same amount within 2 seconds is
+    /// skipped, so writing the same records twice (a retried sync, whose times move by the pump clock
+    /// anchor's sub-second drift) doesn't count it twice; glucose needs no such check, because a query
+    /// keeps one reading per 5-minute slot.
     public func ingestPumpHistory(
         glucose: [GlucoseReading], boluses: [BolusMarker], carbs: [(date: Date, grams: Double)], sourceID: String,
         glucosePriority: Int, recordedAt: Date = Date()
     ) throws {
+        let slack: TimeInterval = 2
         let dates = boluses.map(\.date) + carbs.map(\.date)
-        let lo = dates.min() ?? .distantFuture
-        let hi = dates.max() ?? .distantPast
-        let heldBoluses = try Set(
-            context.fetch(
-                FetchDescriptor<StoredBolus>(
-                    predicate: #Predicate { $0.sourceID == sourceID && $0.date >= lo && $0.date <= hi })
-            ).map(\.date))
-        let heldCarbs = try Set(
-            context.fetch(
-                FetchDescriptor<StoredCarb>(
-                    predicate: #Predicate { $0.sourceID == sourceID && $0.date >= lo && $0.date <= hi })
-            ).map(\.date))
+        let lo = (dates.min() ?? .distantFuture).addingTimeInterval(-slack)
+        let hi = (dates.max() ?? .distantPast).addingTimeInterval(slack)
+        let heldBoluses = try context.fetch(
+            FetchDescriptor<StoredBolus>(
+                predicate: #Predicate { $0.sourceID == sourceID && $0.date >= lo && $0.date <= hi })
+        ).map { (date: $0.date, amount: $0.units) }
+        let heldCarbs = try context.fetch(
+            FetchDescriptor<StoredCarb>(
+                predicate: #Predicate { $0.sourceID == sourceID && $0.date >= lo && $0.date <= hi })
+        ).map { (date: $0.date, amount: $0.grams) }
+        func isHeld(_ held: [(date: Date, amount: Double)], _ date: Date, _ amount: Double) -> Bool {
+            held.contains { abs($0.date.timeIntervalSince(date)) <= slack && abs($0.amount - amount) < 0.0005 }
+        }
         for r in glucose {
             context.insert(
                 StoredGlucose(
                     date: r.date, mgdl: r.mgdl, sourceID: sourceID, priority: glucosePriority, recordedAt: recordedAt))
         }
-        for b in boluses where !heldBoluses.contains(b.date) {
+        for b in boluses where !isHeld(heldBoluses, b.date, b.units) {
             context.insert(StoredBolus(date: b.date, units: b.units, sourceID: sourceID, recordedAt: recordedAt))
         }
-        for c in carbs where !heldCarbs.contains(c.date) {
+        for c in carbs where !isHeld(heldCarbs, c.date, c.grams) {
             context.insert(StoredCarb(date: c.date, grams: c.grams, sourceID: sourceID, recordedAt: recordedAt))
         }
         try context.save()

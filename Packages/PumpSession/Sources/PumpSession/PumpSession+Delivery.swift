@@ -48,6 +48,8 @@ public enum CancelResult: Sendable, Equatable {
 struct DeliveryInProgress {
     let key: RemoteBolusLedger.Key
     let owner: UUID
+    /// When the user (or remote) confirmed it, by the phone's clock.
+    let startedAt: Date
     var bolusId: Int?
     /// InitiateBolus has been handed to the queue: from here a cancel has to go to the pump.
     var initiateQueued = false
@@ -81,7 +83,20 @@ extension PumpSession {
         // refused with nothing sent.
         do { _ = try BolusCommands.make(dose, bolusId: 1, uptime: 0) } catch { return .notStarted(.invalidDose) }
 
+        // One delivery at a time, claimed before the first suspension: another request (the phone and a
+        // remote together) can't start alongside, or clear this one's state when it ends, and a cancel
+        // made while the request is being recorded is seen.
+        guard delivery == nil else { return .notStarted(.blocked(.bolusInProgress)) }
         let key = dose.request.ledgerKey
+        let owner = UUID()
+        delivery = DeliveryInProgress(key: key, owner: owner, startedAt: clock())
+        defer {
+            if delivery?.owner == owner {
+                delivery = nil
+                if exclusiveOwner == owner { exclusiveOwner = nil }
+                resumeQueue()
+            }
+        }
         let decision: RemoteBolusLedger.Decision
         do {
             decision = try await ledger.begin(
@@ -97,15 +112,8 @@ extension PumpSession {
         case .blocked(let block): return .notStarted(.blocked(block))
         }
         emit(.bolusOutcome(key, .requested))
-
-        let owner = UUID()
-        delivery = DeliveryInProgress(key: key, owner: owner)
         exclusiveOwner = owner
-        let outcome = await runDelivery(dose, key: key, owner: owner)
-        delivery = nil
-        exclusiveOwner = nil
-        resumeQueue()
-        return .started(key, outcome)
+        return .started(key, await runDelivery(dose, key: key, owner: owner))
     }
 
     private func runDelivery(_ dose: ComposedDose, key: RemoteBolusLedger.Key, owner: UUID) async -> BolusOutcome {
@@ -186,6 +194,12 @@ extension PumpSession {
         }
         if delivery?.cancelRequested == true { return await abandon(Self.cancelledBeforeStartReason) }
 
+        // A bolus confirmed long ago (the app was suspended in between) isn't started now: the user may
+        // have dosed some other way since. The limit is the remote-request freshness window.
+        if let started = delivery?.startedAt, abs(clock().timeIntervalSince(started)) > RemoteCommandFreshness.maxAgeSec
+        {
+            return await abandon("Too long passed since the bolus was confirmed, so it wasn't started.")
+        }
         // Checking the cancel flag and queuing InitiateBolus happen without a suspension between them, so a
         // cancel either stops it here or is queued after it.
         delivery?.initiateQueued = true
@@ -256,7 +270,9 @@ extension PumpSession {
     /// available (one pump answers it with op-77) or names a different bolus. With neither, the outcome
     /// is unknown and history settles it later.
     private func settleFinished(_ bolus: TrackedBolus) async {
-        if case .reply(let reply) = await exchange(LastBolusStatusV2Request(), priority: .delivery),
+        // An untested read here would be a probe, and its op-77 can drop the link: history settles it.
+        if !isUntested(LastBolusStatusV2Request()),
+            case .reply(let reply) = await exchange(LastBolusStatusV2Request(), priority: .delivery),
             let last = reply.message as? LastBolusStatusV2Response, last.bolusId == bolus.bolusId
         {
             await settle(bolus.key, .delivered(last.deliveredUnits))
@@ -292,10 +308,17 @@ extension PumpSession {
         let priority: Priority = owner == nil ? .cancel : .delivery
         var bolusId = tracked?.bolusId ?? delivery?.bolusId
         if bolusId == nil {
-            if case .reply(let reply) = await exchange(CurrentBolusStatusRequest(), priority: .cancel),
-                let status = reply.message as? CurrentBolusStatusResponse, status.isActive
-            {
+            // Ask the pump which bolus it is delivering. "No bolus" is said only on its answer; if it can't
+            // be asked, the newest bolus that may still be delivering is cancelled by its recorded ID.
+            let result = await exchange(CurrentBolusStatusRequest(), priority: .cancel)
+            if case .reply(let reply) = result, let status = reply.message as? CurrentBolusStatusResponse {
+                guard status.isActive else { return .noBolus }
                 bolusId = status.bolusId
+            } else {
+                bolusId = await ledger.ledger.allEntries.last {
+                    $0.bolusId != nil && ($0.outcome == .accepted || $0.outcome == .delivering || $0.outcome.isUnknown)
+                }?.bolusId
+                guard bolusId != nil else { return state.link.isConnected ? .unconfirmed : .notConnected }
             }
         }
         guard let bolusId else { return .noBolus }
@@ -348,6 +371,11 @@ extension PumpSession {
         }
         let outcome = await ledger.ledger.outcome(key) ?? .requested
         emit(.bolusOutcome(key, outcome))
+        // An outcome that just became unknown is searched for soon, not at the next routine sync.
+        if outcome.isUnknown {
+            let soon = clock().addingTimeInterval(config.reconcileWhileDelivering)
+            nextReconcileAt = min(nextReconcileAt ?? soon, soon)
+        }
         return outcome
     }
 }

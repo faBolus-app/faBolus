@@ -131,7 +131,7 @@ import Testing
             $0.unsupportedReads = []
             $0.reservoirUnits = 0
         })
-        await rig.start()
+        await rig.startHeld()
         let windows = await rig.session.freshness
         #expect(await rig.session.state.reservoirUnitsIfFresh(thresholds: windows, now: rig.clock.date) == 0)
         rig.transport.pumpWalksAway()
@@ -143,7 +143,7 @@ import Testing
 
     @Test func theSessionsWindowsAreTheOnesChosen() async {
         let rig = Rig(configure: { $0.unsupportedReads = [] })
-        await rig.start()
+        await rig.startHeld()
         await rig.session.setFreshness(FreshnessThresholds(glucoseStaleAfter: 20 * 60))
         rig.transport.pumpWalksAway()
         await rig.run(for: 10 * 60, step: 60)

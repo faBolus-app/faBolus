@@ -80,10 +80,12 @@ final class HistoryStoreTests: XCTestCase {
     func testPumpHistoryWrittenTwiceIsKeptOnce() throws {
         let store = try makeStore()
         let range = t0.addingTimeInterval(-600)...t0.addingTimeInterval(600)
-        for _ in 0..<2 {
+        // The second write's times are a fraction of a second off, as a re-anchored pump clock places them.
+        for shift in [0, 0.4] {
+            let at = t0.addingTimeInterval(shift)
             try store.ingestPumpHistory(
-                glucose: [GlucoseReading(date: t0, mgdl: 140)], boluses: [BolusMarker(date: t0, units: 2)],
-                carbs: [(date: t0, grams: 30)], sourceID: "pump", glucosePriority: 50)
+                glucose: [GlucoseReading(date: at, mgdl: 140)], boluses: [BolusMarker(date: at, units: 2)],
+                carbs: [(date: at, grams: 30)], sourceID: "pump", glucosePriority: 50)
         }
         XCTAssertEqual(store.boluses(in: range).count, 1)
         XCTAssertEqual(store.carbs(in: range).count, 1)
