@@ -37,6 +37,7 @@ public final class AppModel {
     @ObservationIgnored var backupSource: (any GlucoseSource)?
     @ObservationIgnored var backupTask: Task<Void, Never>?
     @ObservationIgnored var tasks: [Task<Void, Never>] = []
+    @ObservationIgnored let watchTransport: (any WatchTransport)?
     @ObservationIgnored var watchLink: WatchLink?
     @ObservationIgnored var host: RemoteHost?
     @ObservationIgnored var lastAppliedFreshness: FreshnessThresholds?
@@ -108,6 +109,7 @@ public final class AppModel {
         wipedOnLaunch = environment.wipe?.runIfNeeded() ?? false
         isMock = environment.isMock
         settings = AppSettings(defaults: environment.settingsDefaults)
+        watchTransport = environment.makeWatchTransport()
         freshness = settings.freshness
         let clock = environment.clock
         let directory = environment.dataDirectory
@@ -258,6 +260,7 @@ public final class AppModel {
             connectionUnstable = false
         case .identified:
             pairing = await session.pairing
+            if pairing != nil { settings.hasCompletedOnboarding = true }
             // A new pairing starts with an empty logbook.
             logbook = await session.historyEvents
             // The pump's model decides what the watch may do.

@@ -83,10 +83,17 @@ public final class BolusFlow {
         unitsEdited = true
     }
 
-    /// Why the Confirm button can't be used now, the same checks the composer makes first.
-    public var unavailableReason: String? {
+    /// What stops a bolus whatever is entered (the same checks the composer makes first), or a glucose
+    /// that needs fixing; shown on the screen as it is.
+    public var blockingReason: String? {
         if let refusal = model.phoneBolusAvailability { return refusal.userMessage }
         if glucoseTextInvalid { return Self.invalidGlucoseText }
+        return nil
+    }
+
+    /// Why the Confirm button can't be used now.
+    public var unavailableReason: String? {
+        if let blockingReason { return blockingReason }
         guard let u = units, u > 0 else { return "Enter a dose." }
         return nil
     }
@@ -138,12 +145,25 @@ public final class BolusFlow {
 
     /// The user's answer to the prompt showing; composed again with it.
     public func answer(_ answer: Answer) async {
-        guard case .prompt(let prompt) = phase, var entry = attempt else { return }
+        guard take(answer) else { return }
+        await compose()
+    }
+
+    /// The answer from a dialog's button: taken at once, so the dialog closing after the tap isn't read as
+    /// a cancel, then composed.
+    public func choose(_ answer: Answer) {
+        guard take(answer) else { return }
+        Task { await compose() }
+    }
+
+    /// Records the answer for the prompt showing and leaves the prompt; false when it doesn't fit.
+    private func take(_ answer: Answer) -> Bool {
+        guard case .prompt(let prompt) = phase, var entry = attempt else { return false }
         switch (prompt, answer) {
         case (.calculatorInputs(let kind, let units, _), .useLastKnownInputs):
             entry.answers.calculatorOverride = .init(kind: kind, units: units)
         case (.staleGlucose(let reading, let include?, _), .includeStaleReading):
-            guard let reading else { return }
+            guard let reading else { return false }
             entry.answers.staleGlucose = .include(
                 mgdl: reading.value.mgdl, measuredAt: reading.measuredAt, units: include)
         case (.staleGlucose(_, _, let carbsOnly), .carbsOnly):
@@ -153,10 +173,11 @@ public final class BolusFlow {
         case (.doseChanged(let mgdl, let new, let entered), .keepEnteredDose):
             entry.answers.doseChanged = .keepEntered(mgdl: mgdl, enteredUnits: entered, newUnits: new)
         default:
-            return
+            return false
         }
         attempt = entry
-        await compose()
+        phase = .composing
+        return true
     }
 
     public enum Answer: Sendable, Equatable {

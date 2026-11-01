@@ -77,7 +77,12 @@ import Testing
             Issue.record("expected the stale-glucose prompt, got \(flow.phase)")
             return
         }
-        await phone.driving(model) { await flow.answer(.carbsOnly) }
+        // As the dialog does it: the choice, then the dialog closes, which cancels a prompt still showing.
+        flow.choose(.carbsOnly)
+        if case .prompt = flow.phase { flow.cancel() }
+        await phone.driving(model) {
+            while flow.phase == .composing { await Task.yield() }
+        }
         guard case .review(let dose) = flow.phase else {
             Issue.record("expected the review, got \(flow.phase)")
             return

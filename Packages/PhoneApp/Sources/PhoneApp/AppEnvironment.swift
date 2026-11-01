@@ -24,8 +24,9 @@ public struct AppEnvironment {
     public var pairingSecrets: PairingSecrets
     public var notifications: any NotificationScheduling
     public var glucoseSources: GlucoseSourceRegistry
-    /// The watch's transport, when this build has one.
-    public var watchTransport: (any WatchTransport)?
+    /// Makes the watch's transport, `nil` when this build has none. Called once, after the first-launch wipe,
+    /// because the transport reads the user's settings.
+    public var makeWatchTransport: () -> (any WatchTransport)?
     public var watchClock: (any WatchLinkClock)?
     public var widgetStore: WidgetStore
     /// Asks WidgetKit to re-read the snapshot.
@@ -54,7 +55,7 @@ public struct AppEnvironment {
         self.pairingSecrets = pairingSecrets
         self.notifications = notifications
         self.glucoseSources = glucoseSources
-        self.watchTransport = watchTransport
+        self.makeWatchTransport = { watchTransport }
         self.watchClock = watchClock
         self.widgetStore = widgetStore
         self.reloadWidgets = reloadWidgets
@@ -63,7 +64,7 @@ public struct AppEnvironment {
 
     /// The app on a phone: the real pump link, notifications, CGM sources and stores.
     public static func device(
-        watchTransport: (any WatchTransport)?, reloadWidgets: @escaping () -> Void,
+        makeWatchTransport: @escaping () -> (any WatchTransport)?, reloadWidgets: @escaping () -> Void,
         liveActivity: (any LiveActivityHosting)?
     ) -> AppEnvironment {
         let group = WidgetStore.appGroupID
@@ -73,8 +74,15 @@ public struct AppEnvironment {
             wipe: FirstLaunchWipe(appGroupID: group, appGroupDirectory: directory),
             makeConnection: { PumpConnection(restoreIdentifier: AppModel.pumpRestoreIdentifier) },
             pairingSecrets: PairingSecrets(), notifications: UserNotificationScheduler(),
-            glucoseSources: GlucoseSourceRegistry(), watchTransport: watchTransport, widgetStore: WidgetStore(),
-            reloadWidgets: reloadWidgets, liveActivity: liveActivity)
+            glucoseSources: GlucoseSourceRegistry(), watchTransport: nil, widgetStore: WidgetStore(),
+            reloadWidgets: reloadWidgets, liveActivity: liveActivity
+        ).with { $0.makeWatchTransport = makeWatchTransport }
+    }
+
+    private func with(_ change: (inout AppEnvironment) -> Void) -> AppEnvironment {
+        var copy = self
+        change(&copy)
+        return copy
     }
 }
 

@@ -116,13 +116,19 @@ public struct LiveActivityContent: Codable, Sendable, Hashable {
         return LiveActivityContent(snapshot: trimmed, layout: layout)
     }
 
-    /// When this update stops being current: when its glucose goes stale (already past for a stale
-    /// reading, so it shows stale at once), or with no glucose, when the first other value does. The
-    /// system marks the Live Activity stale then, and the views grey it.
+    /// When this update stops being current: the first moment any value it shows passes its window, or the
+    /// app has stopped publishing long enough that the pump link can't be believed (already past for a
+    /// stale reading, so it shows stale at once). The system re-renders and marks the Live Activity stale
+    /// then, the only render it gets while the app isn't running, so a value like IOB, whose window is
+    /// shorter than glucose's, is never shown current past it.
     public func staleDate(now: Date) -> Date? {
-        guard let glucose = snapshot.glucose else { return snapshot.decayCrossings(asOf: now).first }
-        guard glucose.age(now: now) != nil else { return now }
-        return glucose.measuredAt.addingTimeInterval(snapshot.freshness.glucoseStaleAfter)
+        if let glucose = snapshot.glucose {
+            guard glucose.age(now: now) != nil else { return now }
+            let glucoseStale = glucose.measuredAt.addingTimeInterval(snapshot.freshness.glucoseStaleAfter)
+            if glucoseStale <= now { return glucoseStale }
+        }
+        let publisherStale = snapshot.publishedAt.addingTimeInterval(WidgetSnapshot.publisherStaleAfter)
+        return (snapshot.decayCrossings(asOf: now) + [publisherStale]).min()
     }
 
     static func window(_ points: [WidgetSnapshot.Point], hours: Int, now: Date, cap: Int) -> [WidgetSnapshot.Point] {

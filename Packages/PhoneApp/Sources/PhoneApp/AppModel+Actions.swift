@@ -81,6 +81,9 @@ extension AppModel {
         await session.scanForPairing()
     }
 
+    /// Pairing left without pairing: the paired pump reconnects.
+    public func endPairingScan() async { await session.endPairingScan() }
+
     public func pair(_ pump: FoundPump, code: String) async throws(PumpSession.PairingRefusal) {
         linkFailure = nil
         try await session.pair(peripheralID: pump.peripheralID, advertisedName: pump.name, code: code)
@@ -197,7 +200,7 @@ extension AppModel {
 
 extension AppModel {
     func startWatch(appActive: Bool) {
-        guard let transport = environment.watchTransport else { return }
+        guard let transport = watchTransport else { return }
         let link = WatchLink(transport: transport, clock: environment.watchClock ?? SystemWatchLinkClock())
         link.onChange = { [weak self] state in self?.watch = state }
         let services = SessionRemoteServices(

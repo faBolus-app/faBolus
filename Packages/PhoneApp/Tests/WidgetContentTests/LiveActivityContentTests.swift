@@ -7,13 +7,16 @@ import faBolusCore
 @Suite struct LiveActivityContentTests {
     static let now = Date(timeIntervalSince1970: 1_000_000)
 
-    static func snapshot(mgdl: Int = 120, age: TimeInterval = 60, points: Int = 30) -> WidgetSnapshot {
+    static func snapshot(
+        mgdl: Int = 120, age: TimeInterval = 60, iobAge: TimeInterval? = 30, points: Int = 30
+    ) -> WidgetSnapshot {
         let reading = Observed(
             PumpGlucose(mgdl: mgdl, trend: .flat), measuredAt: now.addingTimeInterval(-age),
             receivedAt: now.addingTimeInterval(-age))
         let at = { (s: TimeInterval) in Observed(1.0, measuredAt: now.addingTimeInterval(-s), receivedAt: now) }
         return WidgetSnapshot(
-            glucose: reading, insulinOnBoard: at(30), reservoirUnits: Observed(120, measuredAt: now, receivedAt: now),
+            glucose: reading, insulinOnBoard: iobAge.map(at),
+            reservoirUnits: Observed(120, measuredAt: now, receivedAt: now),
             battery: Observed(PumpBattery(percent: 70, isCharging: true), measuredAt: now, receivedAt: now),
             basal: Observed(.active(unitsPerHour: 0.8), measuredAt: now, receivedAt: now),
             controlIQ: Observed(ControlIQStatus(isEnabled: true, activity: .sleep), measuredAt: now, receivedAt: now),
@@ -25,7 +28,8 @@ import faBolusCore
     @Test func aGlucoseChangeMakesANewUpdate() {
         let layout = LiveActivityLayout()
         let first = LiveActivityContent.make(from: Self.snapshot(mgdl: 120), layout: layout, now: Self.now)
-        let second = LiveActivityContent.make(from: Self.snapshot(mgdl: 150, age: 10), layout: layout, now: Self.now)
+        let second = LiveActivityContent.make(
+            from: Self.snapshot(mgdl: 150, age: 10, iobAge: nil), layout: layout, now: Self.now)
         #expect(first != second)
         #expect(second.snapshot.glucose?.value.mgdl == 150)
         #expect(second.staleDate(now: Self.now) == Self.now.addingTimeInterval(-10 + 360))
@@ -36,7 +40,7 @@ import faBolusCore
     /// stale date is that moment, so the system re-renders it as stale even though the app sent nothing.
     @Test func withNoFurtherUpdateTheContentGoesStale() {
         let content = LiveActivityContent.make(
-            from: Self.snapshot(age: 60), layout: LiveActivityLayout(), now: Self.now)
+            from: Self.snapshot(age: 60, iobAge: nil), layout: LiveActivityLayout(), now: Self.now)
         let staleAt = Self.now.addingTimeInterval(-60 + 360)
         #expect(content.staleDate(now: Self.now) == staleAt)
         let later = staleAt.addingTimeInterval(1)
@@ -45,7 +49,19 @@ import faBolusCore
             return
         }
         #expect(g.mgdl == 120)
-        #expect(content.snapshot.insulinOnBoardIfFresh(asOf: Self.now.addingTimeInterval(600)) == nil)
+    }
+
+    /// A value whose window is shorter than glucose's (IOB) or the app going quiet makes the stale date
+    /// earlier: the system's re-render then is the only one while the app isn't running, so nothing is
+    /// shown current past its window.
+    @Test func theStaleDateIsTheFirstValueToAgeOut() {
+        let content = LiveActivityContent.make(
+            from: Self.snapshot(age: 10, iobAge: 30), layout: LiveActivityLayout(), now: Self.now)
+        #expect(content.staleDate(now: Self.now) == Self.now.addingTimeInterval(-30 + 300))
+        #expect(content.snapshot.insulinOnBoardIfFresh(asOf: Self.now.addingTimeInterval(271)) == nil)
+        let quiet = LiveActivityContent.make(
+            from: WidgetSnapshot(connected: true, publishedAt: Self.now), layout: LiveActivityLayout(), now: Self.now)
+        #expect(quiet.staleDate(now: Self.now) == Self.now.addingTimeInterval(WidgetSnapshot.publisherStaleAfter))
     }
 
     /// Content built from an already-stale reading is stale from the start.
