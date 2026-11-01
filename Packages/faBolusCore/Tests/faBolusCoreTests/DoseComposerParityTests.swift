@@ -33,7 +33,8 @@ import Testing
         var checked = 0
         for row in rows {
             let settings = BolusCalculatorSettings(
-                carbRatio: row.cr, correctionFactor: row.isf, targetMgdl: row.tgt, maxBolusUnits: 1000)
+                carbRatio: row.cr, correctionFactor: row.isf, targetMgdl: row.tgt, maxBolusUnits: 1000,
+                insulinOnBoardUnits: row.iob)
             // Settings the pump couldn't report aren't a dose input at all.
             guard settings.isUsable else { continue }
             checked += 1
@@ -47,7 +48,10 @@ import Testing
             let label =
                 "carbs=\(String(describing: row.carbs)) bg=\(String(describing: row.bg)) cr=\(row.cr) "
                 + "isf=\(row.isf) tgt=\(row.tgt) iob=\(row.iob) oracle=\(row.u)"
-            if row.bg != nil && !(40...400).contains(row.tgt) {
+            if let bg = row.bg, !(40...400).contains(bg) {
+                // The pump's calculator gives no dose for a reading outside 40–400, and neither does this.
+                #expect(decision.refusal == .implausibleGlucose(mgdl: bg), "\(label)")
+            } else if row.bg != nil && !(40...400).contains(row.tgt) {
                 #expect(decision.refusal == .pumpSettingsUnusable, "\(label)")
             } else if expected == 0 {
                 #expect(decision.refusal == .nothingToDeliver, "\(label)")
@@ -106,8 +110,7 @@ import Testing
     @Test func disagreeingIOBSizesFromTheLarger() {
         var pump = F.pump()
         pump.bolusCalculator = F.observed(
-            BolusCalculatorSettings(
-                carbRatio: 10, correctionFactor: 40, targetMgdl: 110, maxBolusUnits: 25, insulinOnBoardUnits: 1.5),
+            F.settings(target: 110, reportedIOB: 1.5),
             age: 2)
         let rec = DoseComposer.recommend(carbsGrams: 60, glucoseMgdl: 180, context: F.context(pump: pump))
         #expect(rec.inputs.insulinOnBoardReadingsDisagree)

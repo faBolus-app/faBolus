@@ -37,7 +37,8 @@ public struct DoseContext: Sendable {
     /// When the most recent bolus from any surface was sent to the pump, by this phone's clock. A remote
     /// request composed before it was built on the state before that bolus.
     public var lastDeliveryAt: Date?
-    /// The user's optional remote bolus size limit, units. Off when `nil`. Never applied to the phone.
+    /// The user's optional remote bolus size limit, units. Off when `nil`; a value that isn't a positive
+    /// number refuses every remote dose. Never applied to the phone.
     public var remoteSizeLimitUnits: Double?
     public var now: Date
 
@@ -72,7 +73,7 @@ public struct CalculatorInputs: Sendable, Equatable {
     /// The settings were received for this attempt and are inside their window.
     public var settingsVerified: Bool
     /// The IOB was received for this attempt, is inside its window, and agrees with the calculator
-    /// reply's own IOB.
+    /// reply's own IOB. Without that IOB to compare against, it isn't verified.
     public var insulinOnBoardVerified: Bool
     /// The IOB reading and the calculator reply's own IOB differ by more than one pump step. Right after
     /// a bolus the IOB reading can still be low, so neither is trusted: IOB isn't verified, and a dose is
@@ -112,8 +113,9 @@ public struct CalculatorInputs: Sendable, Equatable {
             settings.map {
                 Self.readForAttempt($0, window: CalcInputFreshness.staleAfterTherapy, context: context)
             } ?? false
+        let crossChecked = settings?.value.insulinOnBoardUnits?.isFinite == true
         insulinOnBoardVerified =
-            !insulinOnBoardReadingsDisagree
+            crossChecked && !insulinOnBoardReadingsDisagree
             && (insulinOnBoard.map {
                 Self.readForAttempt($0, window: CalcInputFreshness.staleAfterIob, context: context)
             } ?? false)
@@ -205,8 +207,6 @@ public enum DoseNotice: Sendable, Equatable {
     case moreThanReservoir(StackingGuard.Disclosure)
     /// A carb dose more than 0.10 U from the calculator's suggestion. The carbs are still recorded.
     case differsFromCalculator(deliveredUnits: Double, suggestedUnits: Double)
-    /// The CGM reading is outside 40–400 mg/dL, so the calculator left it out: the dose has no correction.
-    case glucoseOutOfRange(mgdl: Int)
 }
 
 /// Why a dose was refused. Nothing was recorded or sent.
@@ -241,8 +241,8 @@ public enum DoseRefusal: Sendable, Equatable {
     case pumpSettingsUnusable
     /// The phone's recompute differs from the remote's estimate by more than 0.10 U.
     case doseChanged(estimateUnits: Double, doseUnits: Double)
-    /// A typed glucose outside 40–400 mg/dL. The calculator would drop it, and a typed low would then
-    /// recommend more insulin, so it is refused instead.
+    /// A glucose outside 40–400 mg/dL, typed or from the CGM (its LOW and HIGH). The pump's own calculator
+    /// gives no dose for one, so a calculated dose is refused rather than sized without it.
     case implausibleGlucose(mgdl: Int)
     /// The dose comes to zero.
     case nothingToDeliver
@@ -286,7 +286,10 @@ extension DoseComposer {
     /// The checks that come before any dose is sized: access from `surface`, the pump link, the ledger
     /// and the cartridge.
     static func availability(surface: AccessPolicy.Surface, context: DoseContext) -> DoseRefusal? {
-        let access = AccessPolicy.evaluate(.deliverBolus, surface: surface, context: context.access)
+        var access = AccessPolicy.evaluate(.deliverBolus, surface: surface, context: context.access)
+        // The model the pump itself was identified as must take a dose too, whatever capabilities the
+        // caller put in the access context.
+        if access.allowed && !context.pump.capabilities.canDeliverBolus { access = .deny(.capabilityUnavailable) }
         if let reason = BolusGate.availability(
             reachable: true, linked: context.pump.link.isConnected,
             bolusInFlight: context.bolusBlock == .bolusInProgress,
@@ -321,18 +324,12 @@ extension DoseComposer {
         return notices
     }
 
-    /// The glucose a calculator dose corrected from, as recorded: a reading outside 40–400 mg/dL isn't a
-    /// correction the calculator made, so it is recorded as none, with a notice.
-    static func recordedCorrection(_ mgdl: Int?) -> (mgdl: Int?, notices: [DoseNotice]) {
-        guard let mgdl else { return (nil, []) }
-        return GlucosePlausibility.isPlausible(mgdl: mgdl) ? (mgdl, []) : (nil, [.glucoseOutOfRange(mgdl: mgdl)])
-    }
-
     /// The current reading when it is stale but may still be included in a correction: no older than
-    /// `GlucoseFreshness.maxIncludableStaleness`, with a time that can be trusted. `nil` otherwise,
-    /// including when the reading is fresh.
+    /// `GlucoseFreshness.maxIncludableStaleness`, inside 40–400 mg/dL, with a time that can be trusted.
+    /// `nil` otherwise, including when the reading is fresh.
     static func includableStaleReading(_ context: DoseContext) -> Observed<PumpGlucose>? {
         guard let reading = context.pump.glucose, reading.hasValidTime,
+            GlucosePlausibility.isPlausible(mgdl: reading.value.mgdl),
             StaleBolusPrompt.mayOfferInclude(
                 glucoseMgdl: reading.value.mgdl, glucoseDate: reading.measuredAt, now: context.now)
         else { return nil }

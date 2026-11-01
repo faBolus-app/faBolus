@@ -15,16 +15,8 @@ import Foundation
 /// a delivery-authorizing command whose age cannot be verified must not be trusted as fresh. Every
 /// first-party sender stamps `sentAt`; a legacy/foreign sender that does not must resend with a stamp.
 ///
-/// **Ordering invariant (load-bearing).** Hosts apply this gate at dispatch, *before* the idempotency
-/// ledger's replay check. That is safe **only** because no transport ever late-redelivers a pump-mutating
-/// command: a mutating command is sent live or reported undeliverable, never queued/retransmitted across a
-/// reconnect (`transferUserInfo` never carries a bolus, and the surviving `RemoteTransport` seam reports a
-/// mutating command undeliverable rather than queuing or replaying it across a reconnect), and no client auto-resends a
-/// pending bolus with its *original* `requestId`/`sentAt` (`startPending` always mints a fresh stamp). So a
-/// genuinely stale command and a ledger-replayable one are mutually exclusive. If a future transport is
-/// ever allowed to re-queue a mutating command, move the ledger's `.replay` check AHEAD of this gate so a
-/// request whose outcome is already known replays its result instead of being refused as stale (which
-/// would otherwise push the user toward a manual re-dose).
+/// **Ordering.** `DoseComposer.composeRemote` answers a request the ledger already holds before this
+/// check, so a resend whose outcome is known gets that outcome back rather than a stale-request refusal.
 public enum RemoteCommandFreshness {
     /// Maximum age of a delivery-authorizing command before the host refuses it. Generous relative to
     /// normal transport latency (sub-second to a few seconds) yet well under the "minutes late" hazard the

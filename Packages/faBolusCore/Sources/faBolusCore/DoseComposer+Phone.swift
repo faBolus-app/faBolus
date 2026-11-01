@@ -33,9 +33,9 @@ public struct PhoneDoseEntry: Sendable, Equatable {
     }
 }
 
-/// The user's answers to the prompts of one attempt. Each names the dose it showed and the reading it was
-/// about, so an answer to a situation that has since changed is asked again instead of applied, and an
-/// answered dose is never more than the dose the user saw.
+/// The user's answers to the prompts of one attempt. Each names the dose it showed and what it was about,
+/// so an answer to a situation that has since changed is asked again rather than applied. A dose delivered
+/// from an answer is always exactly the dose the user saw.
 public struct PhoneDoseAnswers: Sendable, Equatable {
     /// Use the last-known calculator inputs for the entered dose: `kind` covers which were unverified, and
     /// `units` is the dose the prompt showed.
@@ -51,30 +51,30 @@ public struct PhoneDoseAnswers: Sendable, Equatable {
     }
 
     public enum StaleGlucose: Sendable, Equatable {
-        /// Correct from this stale reading.
+        /// Correct from this stale reading, at the prompt's `includeUnits`.
         case include(mgdl: Int, measuredAt: Date, units: Double)
-        /// No correction.
+        /// No correction, at the prompt's `carbsOnlyUnits`.
         case carbsOnly(units: Double)
     }
 
-    public enum GlucoseChanged: Sendable, Equatable {
-        /// Use the new reading's dose.
-        case useNew(mgdl: Int, units: Double)
+    public enum DoseChanged: Sendable, Equatable {
+        /// Deliver the calculator's new dose.
+        case useNew(mgdl: Int?, units: Double)
         /// Deliver what was entered anyway.
-        case keepEntered(mgdl: Int)
+        case keepEntered(mgdl: Int?, enteredUnits: Double, newUnits: Double)
     }
 
     public var calculatorOverride: CalculatorOverride?
     public var staleGlucose: StaleGlucose?
-    public var glucoseChanged: GlucoseChanged?
+    public var doseChanged: DoseChanged?
 
     public init(
         calculatorOverride: CalculatorOverride? = nil, staleGlucose: StaleGlucose? = nil,
-        glucoseChanged: GlucoseChanged? = nil
+        doseChanged: DoseChanged? = nil
     ) {
         self.calculatorOverride = calculatorOverride
         self.staleGlucose = staleGlucose
-        self.glucoseChanged = glucoseChanged
+        self.doseChanged = doseChanged
     }
 }
 
@@ -87,8 +87,9 @@ public enum PhoneDosePrompt: Sendable, Equatable {
     /// There's no fresh CGM reading. Offer to include `reading` when `includeUnits` isn't `nil` (it's stale
     /// but no older than the includable limit), carbs only, or cancel.
     case staleGlucose(reading: Observed<PumpGlucose>?, includeUnits: Double?, carbsOnlyUnits: Double)
-    /// The reading moved since the screen computed the dose, and the dose moved with it.
-    case glucoseChanged(mgdl: Int, newUnits: Double, enteredUnits: Double)
+    /// The calculator's dose for `mgdl` now differs from the one the screen showed: the reading moved, or
+    /// the pump's inputs did. Offer the new dose, the entered one, or cancel.
+    case doseChanged(mgdl: Int?, newUnits: Double, enteredUnits: Double)
 }
 
 public enum PhoneDoseDecision: Sendable, Equatable {
@@ -159,8 +160,8 @@ extension DoseComposer {
         }
 
         // Inputs not read fresh for this attempt need the user's say-so for the dose they entered. The
-        // answer names that dose, so changing it asks again. It authorizes the inputs only: the glucose
-        // checks below still run.
+        // answer names that dose, so changing it asks again. It authorizes the inputs only: the checks
+        // below still run.
         if !inputs.isVerified {
             switch CalcInputGate.decide(
                 isCarbsMode: true, inputsVerified: false, iobStale: !inputs.insulinOnBoardVerified,
@@ -177,30 +178,42 @@ extension DoseComposer {
             }
         }
 
+        /// The entered dose, unless the calculator's dose for `mgdl` has moved from what the screen showed:
+        /// then the user chooses. `mustAsk` asks even when it hasn't moved past the limit.
+        func checkRecompute(mgdl: Int?, recorded: Int?, mustAsk: Bool) -> PhoneDoseDecision {
+            guard let new = units(mgdl) else { return .refused(.pumpSettingsUnusable) }
+            switch entry.answers.doseChanged {
+            case .useNew(let answered, let shown) where answered == mgdl && shown == new:
+                return finish(new, suggested: new, correction: mgdl)
+            case .keepEntered(let answered, let shownEntered, let shownNew)
+            where answered == mgdl && shownEntered == entered && shownNew == new:
+                return finish(entered, suggested: recommended, correction: recorded)
+            default:
+                break
+            }
+            if mustAsk || differs(new, recommended) {
+                return .confirm(.doseChanged(mgdl: mgdl, newUnits: new, enteredUnits: entered))
+            }
+            return finish(entered, suggested: recommended, correction: recorded)
+        }
+
         switch glucose {
         case .none, .typed:
-            guard units(screenGlucose) != nil else { return .refused(.pumpSettingsUnusable) }
-            return finish(entered, suggested: recommended, correction: screenGlucose)
+            return checkRecompute(mgdl: screenGlucose, recorded: screenGlucose, mustAsk: false)
 
         case .currentReading(let shownMgdl):
             if let reading = context.pump.glucoseIfFresh(now: context.now) {
-                guard let new = units(reading.mgdl) else { return .refused(.pumpSettingsUnusable) }
-                switch entry.answers.glucoseChanged {
-                case .useNew(let mgdl, let shown) where mgdl == reading.mgdl:
-                    return finish(min(shown, new), suggested: new, correction: reading.mgdl)
-                case .keepEntered(let mgdl) where mgdl == reading.mgdl:
-                    return finish(entered, suggested: recommended, correction: shownMgdl)
-                default:
-                    break
+                // The pump's own calculator gives no dose for a LOW or HIGH reading.
+                guard GlucosePlausibility.isPlausible(mgdl: reading.mgdl) else {
+                    return .refused(.implausibleGlucose(mgdl: reading.mgdl))
                 }
-                // Ask when the dose moved by more than the limit, when the reading itself changed and moved
-                // the dose at all, or when the user last answered a stale-glucose prompt that no longer holds.
-                let moved = differs(new, recommended)
-                let readingChanged = shownMgdl != reading.mgdl && abs(new - recommended) > mismatchSlack
-                if moved || readingChanged || entry.answers.staleGlucose != nil {
-                    return .confirm(.glucoseChanged(mgdl: reading.mgdl, newUnits: new, enteredUnits: entered))
-                }
-                return finish(entered, suggested: recommended, correction: shownMgdl)
+                // Also ask when the reading itself changed and moved the dose at all, or when the user last
+                // answered a stale-glucose prompt that no longer holds.
+                let moved = units(reading.mgdl).map { abs($0 - recommended) > mismatchSlack } ?? false
+                let mustAsk = (shownMgdl != reading.mgdl && moved) || entry.answers.staleGlucose != nil
+                // The entered dose is recorded with the reading it came from, if that one was usable.
+                let shown = shownMgdl.flatMap { GlucosePlausibility.isPlausible(mgdl: $0) ? $0 : nil }
+                return checkRecompute(mgdl: reading.mgdl, recorded: shown, mustAsk: mustAsk)
             }
 
             guard let carbsOnly = units(nil) else { return .refused(.pumpSettingsUnusable) }
@@ -208,12 +221,10 @@ extension DoseComposer {
             let includeUnits = includable.flatMap { units($0.value.mgdl) }
             switch entry.answers.staleGlucose {
             case .include(let mgdl, let measuredAt, let shown)
-            where mgdl == includable?.value.mgdl && measuredAt == includable?.measuredAt:
-                if let includeUnits {
-                    return finish(min(shown, includeUnits), suggested: includeUnits, correction: mgdl, usedStale: true)
-                }
-            case .carbsOnly(let shown):
-                return finish(min(shown, carbsOnly), suggested: carbsOnly, correction: nil)
+            where mgdl == includable?.value.mgdl && measuredAt == includable?.measuredAt && shown == includeUnits:
+                return finish(shown, suggested: shown, correction: mgdl, usedStale: true)
+            case .carbsOnly(let shown) where shown == carbsOnly:
+                return finish(shown, suggested: shown, correction: nil)
             default:
                 break
             }
@@ -227,13 +238,12 @@ extension DoseComposer {
     ) -> PhoneDoseDecision {
         if let refusal = bounds(units, context: context) { return .refused(refusal) }
         var notices = pumpNotices(units: units, context: context)
-        let recorded = recordedCorrection(calculator?.correction)
-        notices += recorded.notices
+        let correction = calculator?.correction
         if let calculator, let settings = calculator.inputs.settings?.value {
             let stacking = StackingGuard.escalation(
                 enteredUnits: units, recommendedUnits: calculator.suggested, displaysNumericDose: true,
                 pumpIOBUnits: calculator.inputs.calculatorInsulinOnBoardUnits ?? 0,
-                glucoseMgdl: recorded.mgdl ?? context.pump.glucoseIfFresh(now: context.now)?.mgdl,
+                glucoseMgdl: correction ?? context.pump.glucoseIfFresh(now: context.now)?.mgdl,
                 targetMgdl: settings.targetMgdl, maxBolusUnits: context.pumpMaxBolusUnits ?? 0)
             if stacking.friction != .none { notices.append(.stacking(stacking)) }
             if calculator.carbs > 0, calculator.suggested > 0, differs(units, calculator.suggested) {
@@ -242,11 +252,11 @@ extension DoseComposer {
         }
         let request = DoseRequest(
             id: entry.id, origin: .phone, shape: .now(units: units), carbsGrams: calculator?.carbs,
-            bgMgdl: recorded.mgdl)
+            bgMgdl: correction)
         return .deliver(
             ComposedDose(
                 request: request, calculatorIOBUnits: calculator?.inputs.calculatorInsulinOnBoardUnits,
-                correctionGlucoseMgdl: recorded.mgdl, usedIncludedStaleGlucose: calculator?.usedStale ?? false,
+                correctionGlucoseMgdl: correction, usedIncludedStaleGlucose: calculator?.usedStale ?? false,
                 notices: notices))
     }
 }

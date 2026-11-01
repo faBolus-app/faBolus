@@ -148,15 +148,14 @@ import Testing
         let answers = Answers(calculatorOverride: .init(kind: .iob, units: 7.25))
         #expect(
             compose(F.cgmDose(), answers: answers, context: F.context(pump: pump)).prompt
-                == .glucoseChanged(mgdl: 220, newUnits: 8.25, enteredUnits: 7.25))
+                == .doseChanged(mgdl: 220, newUnits: 8.25, enteredUnits: 7.25))
     }
 
     /// The two IOB readings disagreeing makes IOB unverified, which is asked about like a late read.
     @Test func disagreeingIOBReadingsPrompt() {
         var pump = F.pump()
         pump.bolusCalculator = F.observed(
-            BolusCalculatorSettings(
-                carbRatio: 10, correctionFactor: 40, targetMgdl: 110, maxBolusUnits: 25, insulinOnBoardUnits: 1.5),
+            F.settings(target: 110, reportedIOB: 1.5),
             age: 2)
         #expect(compose(F.cgmDose(), context: F.context(pump: pump)).prompt?.kind == .iob)
     }
@@ -185,8 +184,7 @@ import Testing
     @Test func disagreeingIOBIsCarriedAsUsed() throws {
         var pump = F.pump()
         pump.bolusCalculator = F.observed(
-            BolusCalculatorSettings(
-                carbRatio: 10, correctionFactor: 40, targetMgdl: 110, maxBolusUnits: 25, insulinOnBoardUnits: 1.5),
+            F.settings(target: 110, reportedIOB: 1.5),
             age: 2)
         let amount = PhoneDoseEntry.Amount.calculator(
             carbsGrams: 60, glucose: .typed(mgdl: 180), recommendedUnits: 6.25, enteredUnits: 6.25)
@@ -222,21 +220,37 @@ import Testing
         // 60 g at 220 mg/dL: 6.00 + 2.75 − 0.50 = 8.25 U.
         #expect(
             compose(F.cgmDose(), context: context).prompt
-                == .glucoseChanged(mgdl: 220, newUnits: 8.25, enteredUnits: 7.25))
+                == .doseChanged(mgdl: 220, newUnits: 8.25, enteredUnits: 7.25))
 
-        let useNew = Answers(glucoseChanged: .useNew(mgdl: 220, units: 8.25))
+        let useNew = Answers(doseChanged: .useNew(mgdl: 220, units: 8.25))
         let dose = try #require(compose(F.cgmDose(), answers: useNew, context: context).dose)
         #expect(dose.units == 8.25)
         #expect(dose.correctionGlucoseMgdl == 220)
 
-        let keep = Answers(glucoseChanged: .keepEntered(mgdl: 220))
+        let keep = Answers(doseChanged: .keepEntered(mgdl: 220, enteredUnits: 7.25, newUnits: 8.25))
         let kept = try #require(compose(F.cgmDose(), answers: keep, context: context).dose)
         #expect(kept.units == 7.25)
         #expect(kept.correctionGlucoseMgdl == 180)  // the reading the entered dose came from
 
-        // An answer about a different reading is asked again.
-        let other = Answers(glucoseChanged: .useNew(mgdl: 200, units: 7.75))
+        // An answer about a different reading, or for a different entered dose, is asked again.
+        let other = Answers(doseChanged: .useNew(mgdl: 200, units: 7.75))
         #expect(compose(F.cgmDose(), answers: other, context: context).prompt != nil)
+        #expect(compose(F.cgmDose(entered: 12), answers: keep, context: context).prompt != nil)
+    }
+
+    /// A typed glucose has no fresh reading to check, but the pump's inputs can still move between the
+    /// screen and the tap: past 0.10 U the user chooses.
+    @Test func typedGlucoseWithMovedInputsPrompts() throws {
+        var pump = F.pump()
+        pump.insulinOnBoard = F.observed(3.0, age: 1)
+        pump.bolusCalculator = F.observed(F.settings(reportedIOB: 3.0), age: 1)
+        let context = F.context(pump: pump)
+        let typed = PhoneDoseEntry.Amount.calculator(
+            carbsGrams: 60, glucose: .typed(mgdl: 180), recommendedUnits: 7.25, enteredUnits: 7.25)
+        // 6.00 + 1.75 − 3.00 leaves no correction: 6.00 U.
+        #expect(compose(typed, context: context).prompt == .doseChanged(mgdl: 180, newUnits: 6, enteredUnits: 7.25))
+        let useNew = Answers(doseChanged: .useNew(mgdl: 180, units: 6))
+        #expect(compose(typed, answers: useNew, context: context).dose?.units == 6)
     }
 
     /// Any change in the reading that moves the dose at all is asked about.
@@ -249,8 +263,10 @@ import Testing
     @Test func sameReadingWithMovedInputsPromptsOnlyPastTheLimit() {
         var pump = F.pump()
         pump.insulinOnBoard = F.observed(0.3, age: 1)  // 7.45 U, 0.20 U from what was shown
+        pump.bolusCalculator = F.observed(F.settings(reportedIOB: 0.3), age: 1)
         #expect(compose(F.cgmDose(), context: F.context(pump: pump)).prompt != nil)
         pump.insulinOnBoard = F.observed(0.45, age: 1)  // 7.30 U, within the limit
+        pump.bolusCalculator = F.observed(F.settings(reportedIOB: 0.45), age: 1)
         #expect(compose(F.cgmDose(), context: F.context(pump: pump)).dose?.units == 7.25)
     }
 
@@ -274,6 +290,28 @@ import Testing
         let carbs = try #require(compose(F.cgmDose(), answers: carbsOnly, context: context).dose)
         #expect(carbs.units == 6)
         #expect(carbs.correctionGlucoseMgdl == nil)
+    }
+
+    /// A stale-glucose answer is for the dose it showed: on a changed entry it is asked again.
+    @Test func staleAnswerForADifferentDoseAsksAgain() {
+        let context = F.context(pump: F.pump(glucose: 180, glucoseAge: 10 * 60))
+        let carbsOnly = Answers(staleGlucose: .carbsOnly(units: 6))
+        // 100 g comes to 10.00 U carbs only, not the 6.00 U the answer was given for.
+        #expect(compose(F.cgmDose(carbs: 100, entered: 11), answers: carbsOnly, context: context).prompt != nil)
+    }
+
+    /// A CGM LOW or HIGH gives no calculated dose, as on the pump.
+    @Test func outOfRangeReadingRefuses() {
+        for mgdl in [39, 401] {
+            #expect(
+                compose(F.cgmDose(), context: F.context(pump: F.pump(glucose: mgdl))).refusal
+                    == .implausibleGlucose(mgdl: mgdl))
+        }
+        // A stale LOW is never offered for inclusion.
+        #expect(
+            compose(F.cgmDose(), context: F.context(pump: F.pump(glucose: 39, glucoseAge: 10 * 60))).prompt?
+                .includeUnits
+                == .some(nil))
     }
 
     /// A reading older than 15 minutes is never offered, and an earlier "include" for it is asked again.
@@ -300,14 +338,15 @@ import Testing
         let answers = Answers(staleGlucose: .carbsOnly(units: 6))
         #expect(
             compose(F.cgmDose(), answers: answers).prompt
-                == .glucoseChanged(mgdl: 180, newUnits: 7.25, enteredUnits: 7.25))
+                == .doseChanged(mgdl: 180, newUnits: 7.25, enteredUnits: 7.25))
     }
 
     // MARK: - Notices never change the dose
 
     /// 10 g at 180 mg/dL comes to 1.00 + 1.75 − 0.50 = 2.25 U.
-    private func override(entered: Double, glucose: Int = 180) -> PhoneDoseEntry.Amount {
-        .calculator(carbsGrams: 10, glucose: .typed(mgdl: glucose), recommendedUnits: 2.25, enteredUnits: entered)
+    private func override(entered: Double, glucose: Int = 180, recommended: Double = 2.25) -> PhoneDoseEntry.Amount {
+        .calculator(
+            carbsGrams: 10, glucose: .typed(mgdl: glucose), recommendedUnits: recommended, enteredUnits: entered)
     }
 
     private func stacking(_ dose: ComposedDose) -> StackingGuard.Disclosure? {
@@ -316,7 +355,7 @@ import Testing
     }
 
     @Test func notGlucoseAboveTargetNoStackingNotice() throws {
-        let dose = try #require(compose(override(entered: 5, glucose: 100)).dose)
+        let dose = try #require(compose(override(entered: 5, glucose: 100, recommended: 0.25)).dose)
         #expect(stacking(dose) == nil)
     }
 
@@ -399,6 +438,10 @@ import Testing
 extension PhoneDosePrompt {
     var kind: CalcInputGate.Kind? {
         if case .calculatorInputs(let kind, _, _) = self { return kind }
+        return nil
+    }
+    var includeUnits: Double?? {
+        if case .staleGlucose(_, let includeUnits, _) = self { return includeUnits }
         return nil
     }
     var calculatorUnits: Double? {

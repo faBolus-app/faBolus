@@ -122,6 +122,9 @@ extension DoseComposer {
             let inputs = CalculatorInputs(context: context)
             guard inputs.isVerified else { return .refused(.pumpSettingsNotVerified) }
             (correction, usedStale) = remoteCorrectionGlucose(request, context: context)
+            if let mgdl = correction, !GlucosePlausibility.isPlausible(mgdl: mgdl) {
+                return .refused(.implausibleGlucose(mgdl: mgdl))
+            }
             guard let dose = inputs.units(carbsGrams: carbs, glucoseMgdl: correction) else {
                 return .refused(.pumpSettingsUnusable)
             }
@@ -132,8 +135,9 @@ extension DoseComposer {
         }
 
         if let refusal = bounds(units, context: context) { return .refused(refusal) }
-        if let limit = context.remoteSizeLimitUnits, limit.isFinite, limit > 0, units > limit {
-            return .refused(.aboveRemoteLimit(limit))
+        // A limit that is set but isn't a usable number refuses everything rather than switching off.
+        if let limit = context.remoteSizeLimitUnits, !(units <= limit) {
+            return .refused(.aboveRemoteLimit(limit.isFinite ? limit : 0))
         }
 
         let dose = DoseRequest(
@@ -143,13 +147,10 @@ extension DoseComposer {
         if ledger.hasRecentlyDeliveredDuplicate(peerId: request.peerId, doseKey: dose.doseKey, now: context.now) {
             return .refused(.recentlyDelivered)
         }
-        let recorded = recordedCorrection(correction)
         return .deliver(
             ComposedDose(
-                request: dose, calculatorIOBUnits: iob, correctionGlucoseMgdl: recorded.mgdl,
-                usedIncludedStaleGlucose: usedStale,
-                notices: pumpNotices(units: units, context: context) + recorded.notices
-            ))
+                request: dose, calculatorIOBUnits: iob, correctionGlucoseMgdl: correction,
+                usedIncludedStaleGlucose: usedStale, notices: pumpNotices(units: units, context: context)))
     }
 
     /// The glucose a remote carb dose corrects from. A fresh reading always wins. A stale one is used

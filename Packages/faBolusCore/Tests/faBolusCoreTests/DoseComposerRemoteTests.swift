@@ -92,6 +92,13 @@ import Testing
             #expect(
                 compose(F.remote(.units(1)), context: F.context(pump: pump, access: access)).refusal
                     == .unavailable(.accessDenied(.capabilityUnavailable)))
+            // The pump's own model governs even when the access context says otherwise.
+            #expect(
+                compose(F.remote(.units(1)), context: F.context(pump: pump)).refusal
+                    == .unavailable(.accessDenied(.capabilityUnavailable)))
+            #expect(
+                DoseComposer.composePhone(F.phone(.units(1)), context: F.context(pump: pump)).refusal
+                    == .unavailable(.accessDenied(.capabilityUnavailable)))
         }
     }
 
@@ -145,15 +152,23 @@ import Testing
         #expect(dose.notices.contains { if case .moreThanReservoir = $0 { true } else { false } })
     }
 
-    /// A fresh reading outside 40–400 is left out by the calculator, so it isn't recorded as the
-    /// correction, and the dose says so.
-    @Test func outOfRangeReadingIsNotRecordedAsTheCorrection() throws {
-        let dose = try #require(
-            compose(F.remote(F.carbs(60, estimate: 6), glucose: 39), context: F.context(pump: F.pump(glucose: 39))).dose
-        )
-        #expect(dose.units == 6)
-        #expect(dose.correctionGlucoseMgdl == nil)
-        #expect(dose.notices.contains(.glucoseOutOfRange(mgdl: 39)))
+    /// A CGM LOW or HIGH gives no calculated dose, as on the pump: refused, never carbs only. A units
+    /// request isn't calculated, so it goes ahead.
+    @Test func outOfRangeReadingRefusesACalculatedDose() {
+        for mgdl in [39, 401] {
+            let context = F.context(pump: F.pump(glucose: mgdl))
+            #expect(
+                compose(F.remote(F.carbs(60, estimate: 6), glucose: mgdl), context: context).refusal
+                    == .implausibleGlucose(mgdl: mgdl))
+            #expect(compose(F.remote(.units(2)), context: context).dose?.units == 2)
+        }
+    }
+
+    /// A remote size limit that is set but isn't a usable number refuses rather than switching off.
+    @Test func unusableRemoteLimitRefuses() {
+        for limit in [0, -1, Double.nan] {
+            #expect(compose(F.remote(.units(1)), context: F.context(remoteSizeLimitUnits: limit)).refusal != nil)
+        }
     }
 
     @Test func pumpNotConnectedRefuses() {
@@ -230,6 +245,19 @@ import Testing
             ).dose != nil)
     }
 
+    /// After a carb bolus the IOB rises and the recompute for the same carbs drops. A resend under a new ID
+    /// is still the same request, recognized by what the remote sent, and refused.
+    @Test func sameCarbDoseResentAfterItRaisedIOBIsRefused() throws {
+        let ledger = delivered(try #require(compose(F.remote(F.carbs(60, estimate: 7.25))).dose))
+        var pump = F.pump()
+        pump.insulinOnBoard = F.observed(7.75, age: 1)
+        pump.bolusCalculator = F.observed(F.settings(reportedIOB: 7.75), age: 1)
+        // 60 g at 180 with 7.75 U on board: the correction is gone, 6.00 U.
+        let resend = F.remote(F.carbs(60, estimate: 6), id: "watch-2")
+        #expect(compose(resend, ledger: ledger, context: F.context(pump: pump)).refusal == .recentlyDelivered)
+        #expect(compose(resend, context: F.context(pump: pump)).dose?.units == 6)
+    }
+
     /// A remote request can't claim the phone's surface or peer.
     @Test func requestNamingThePhoneIsRefused() {
         var request = F.remote(.units(1))
@@ -286,6 +314,15 @@ import Testing
                 == .pumpSettingsNotVerified)
     }
 
+    /// Without the calculator reply's own IOB the cross-check can't run, so IOB isn't verified.
+    @Test func iobWithoutTheCrossCheckIsRefused() {
+        var pump = F.pump()
+        pump.bolusCalculator = F.observed(F.settings(reportedIOB: nil), age: 2)
+        #expect(
+            compose(F.remote(F.carbs(60, estimate: 7.25)), context: F.context(pump: pump)).refusal
+                == .pumpSettingsNotVerified)
+    }
+
     @Test func settingsNeverReadAreRefused() {
         var pump = F.pump()
         pump.bolusCalculator = nil
@@ -304,7 +341,7 @@ import Testing
     @Test func settingsTheCalculatorRejectsAreRefused() {
         var pump = F.pump()
         pump.bolusCalculator = F.observed(
-            BolusCalculatorSettings(carbRatio: 10, correctionFactor: 40, targetMgdl: 30, maxBolusUnits: 25), age: 2)
+            F.settings(target: 30), age: 2)
         #expect(
             compose(F.remote(F.carbs(60, estimate: 0)), context: F.context(pump: pump)).refusal
                 == .pumpSettingsUnusable)
@@ -440,16 +477,14 @@ import Testing
     @Test func disagreeingIOBReadingsAreRefused() {
         var pump = F.pump()
         pump.bolusCalculator = F.observed(
-            BolusCalculatorSettings(
-                carbRatio: 10, correctionFactor: 40, targetMgdl: 110, maxBolusUnits: 25, insulinOnBoardUnits: 1.5),
+            F.settings(target: 110, reportedIOB: 1.5),
             age: 2)
         #expect(
             compose(F.remote(F.carbs(60, estimate: 7.25)), context: F.context(pump: pump)).refusal
                 == .pumpSettingsNotVerified)
         // Within a step they agree.
         pump.bolusCalculator = F.observed(
-            BolusCalculatorSettings(
-                carbRatio: 10, correctionFactor: 40, targetMgdl: 110, maxBolusUnits: 25, insulinOnBoardUnits: 0.55),
+            F.settings(target: 110, reportedIOB: 0.55),
             age: 2)
         #expect(compose(F.remote(F.carbs(60, estimate: 7.25)), context: F.context(pump: pump)).dose?.units == 7.25)
     }

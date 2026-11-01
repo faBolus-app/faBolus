@@ -15,8 +15,14 @@ enum DoseFixtures {
         return Observed(value, measuredAt: at, receivedAt: at)
     }
 
-    static let settings = BolusCalculatorSettings(
-        carbRatio: 10, correctionFactor: 40, targetMgdl: 110, maxBolusUnits: 25)
+    static let settings = settings()
+
+    /// The calculator settings, with the IOB the same reply reports (0.5 U, agreeing with the IOB reading).
+    static func settings(target: Int = 110, reportedIOB: Double? = 0.5) -> BolusCalculatorSettings {
+        BolusCalculatorSettings(
+            carbRatio: 10, correctionFactor: 40, targetMgdl: target, maxBolusUnits: 25, insulinOnBoardUnits: reportedIOB
+        )
+    }
 
     static func pump(glucose: Int? = 180, glucoseAge: TimeInterval = 60) -> PumpState {
         var pump = PumpState()
