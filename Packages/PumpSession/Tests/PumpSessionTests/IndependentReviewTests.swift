@@ -46,10 +46,12 @@ private let key = RemoteBolusLedger.Key(peerId: "phone", requestId: "phone-1")
         var saved = RemoteBolusLedger()
         _ = saved.begin(DoseRequest(id: "phone-1", origin: .phone, shape: .now(units: 5)))
         saved.markAccepted(key, bolusId: 10650, pumpKey: "tandem|1693")
-        let rig = Rig(ledger: saved, configure: {
-            $0.unsupportedReads = []
-            $0.startBolus(id: 10650, milliunits: 5000)
-        })
+        let rig = Rig(
+            ledger: saved,
+            configure: {
+                $0.unsupportedReads = []
+                $0.startBolus(id: 10650, milliunits: 5000)
+            })
         await rig.startHeld()
         rig.pump.answers[MessageKey(CurrentBolusStatusRequest.self)] = .silent
         let session = rig.session
@@ -120,5 +122,78 @@ private let key = RemoteBolusLedger.Key(peerId: "phone", requestId: "phone-1")
         await rig.session.setAppActive(true)
         await rig.settle()
         #expect(await rig.session.state.link == .connected)
+    }
+}
+
+@MainActor
+@Suite struct NoProbeWhileTrackingTests {
+    /// On API 4.0 the calculator, IOB and glucose reads have no recorded evidence, so each goes as a probe.
+    /// While a bolus is followed none of them goes out, though they come due when the connection holds:
+    /// only the bolus's own status reads do. They follow once the bolus is done.
+    @Test func untestedReadsWaitUntilTheBolusIsDone() async {
+        let rig = Rig(configure: {
+            $0.apiVersion = (4, 0)
+            $0.unsupportedReads = []
+        })
+        await rig.start()
+        let session = rig.session
+        let delivery = Task { await session.deliver(composed(5.0)) }
+        #expect(await delivery.value == .started(key, .delivering))
+        #expect(await session.tracked != nil)
+        #expect(await session.isUntested(ControlIQIOBRequest()))
+        let before = rig.pump.arrivals.count
+
+        // Past the hold window, with the bolus (0.1 U/s) still delivering.
+        await rig.run(for: 40, step: 1)
+        #expect(await session.tracked != nil)
+        let whileTracked = rig.pump.arrivals[before...].map {
+            MessageKey(characteristic: $0.characteristic, opCode: $0.opCode)
+        }
+        #expect(whileTracked.contains(MessageKey(CurrentBolusStatusRequest.self)))
+        for probe in [
+            MessageKey(ControlIQIOBRequest.self), MessageKey(BolusCalcDataSnapshotRequest.self),
+            MessageKey(CurrentEgvGuiDataV2Request.self)
+        ] {
+            #expect(!whileTracked.contains(probe))
+        }
+
+        await rig.run(for: 15, step: 1)
+        #expect(await session.tracked == nil)
+        #expect(!rig.pump.arrivals(of: ControlIQIOBRequest.self).isEmpty)
+    }
+}
+
+@MainActor
+@Suite struct InitiateDeadlineTests {
+    /// The BG entry goes unanswered while `elapsed` passes, as when the app is suspended mid-delivery;
+    /// the carb entry is answered at once. Returns the delivery's outcome.
+    private func deliver(after elapsed: Double, rig: Rig) async -> DeliveryResult {
+        await rig.startHeld()
+        rig.pump.nextAnswers[MessageKey(RemoteBgEntryRequest.self)] = [.silent]
+        let session = rig.session
+        let delivery = Task { await session.deliver(composed(1.0, carbs: 20, bg: 180, carbUnits: 1.0)) }
+        #expect(await rig.until { rig.pump.arrivals(of: RemoteBgEntryRequest.self).count == 1 })
+        // One step: the entry times out inside it, and nothing else moves the clock before the check.
+        rig.clock.advance(by: elapsed)
+        return await delivery.value
+    }
+
+    @Test func justUnderTwoMinutesAfterConfirmTheBolusStarts() async {
+        let rig = Rig(configure: { $0.unsupportedReads = [] })
+        #expect(await deliver(after: 119, rig: rig) == .started(key, .delivering))
+        #expect(rig.pump.arrivals(of: RemoteCarbEntryRequest.self).count == 1)
+        #expect(rig.pump.arrivals(of: InitiateBolusRequest.self).count == 1)
+    }
+
+    @Test func justOverTwoMinutesAfterConfirmNothingIsStarted() async {
+        let rig = Rig(configure: { $0.unsupportedReads = [] })
+        let result = await deliver(after: 121, rig: rig)
+        #expect(
+            result
+                == .started(
+                    key, .failed(reason: "Too long passed since the bolus was confirmed, so it wasn't started.")))
+        #expect(rig.pump.arrivals(of: InitiateBolusRequest.self).isEmpty)
+        #expect(rig.pump.arrivals(of: BolusPermissionReleaseRequest.self).count == 1)
+        #expect(await rig.ledger.block == nil)
     }
 }
