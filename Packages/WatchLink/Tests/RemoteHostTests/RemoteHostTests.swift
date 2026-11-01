@@ -172,6 +172,95 @@ import faBolusCore
         #expect(await rig.services.cancels == 2)
     }
 
+    /// A request refused before the ledger is recorded there, so after a relaunch, with a ledger read back
+    /// from its file, its resend gets the same refusal and nothing is composed. However many other requests
+    /// were refused in between.
+    @Test(arguments: [0, 20])
+    func aRefusalSurvivesARelaunch(othersBetween: Int) async throws {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("host-ledger-\(UUID()).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        func bolus(_ id: String) -> BolusRequestPayload {
+            BolusRequestPayload(
+                requestId: id, sentAt: GoldenFixtures.now, amount: .units(milliunits: 2000), glucoseMgdl: nil,
+                includeStaleGlucose: false)
+        }
+        let first = HostRig(services: FakeServices(ledgerStore: RemoteBolusLedgerStore(url: url)))
+        await first.services.set(decision: .refused(.unavailable(.pumpNotLinked)))
+        await first.start()
+        await first.receive(.bolus(bolus("x")))
+        for i in 0..<othersBetween { await first.receive(.bolus(bolus("other-\(i)"))) }
+        let told = try #require(first.transport.outcomes.last { $0.requestId == "x" })
+        #expect(told.outcome == .failed)
+
+        let relaunched = HostRig(services: FakeServices(ledgerStore: RemoteBolusLedgerStore(url: url)))
+        await relaunched.start()
+        await relaunched.receive(.bolus(bolus("x")))
+        #expect(await relaunched.services.composed.isEmpty)
+        let again = try #require(relaunched.transport.outcomes.last { $0.requestId == "x" })
+        #expect(again.outcome == .failed)
+        #expect(again.message == told.message)
+        // Not announced a second time.
+        #expect(await relaunched.services.refusals.isEmpty)
+    }
+
+    /// One request's refusal doesn't stop the next one being composed. (That the ledger doesn't block on a
+    /// refusal is DurableBolusLedgerTests'.)
+    @Test func aRefusalDoesntStopTheNextRequest() async {
+        let rig = HostRig()
+        await rig.services.set(decision: .refused(.unavailable(.pumpNotLinked)))
+        await rig.start()
+        await rig.receive(
+            .bolus(
+                BolusRequestPayload(
+                    requestId: "a", sentAt: GoldenFixtures.now, amount: .units(milliunits: 2000), glucoseMgdl: nil,
+                    includeStaleGlucose: false)))
+        await rig.receive(
+            .bolus(
+                BolusRequestPayload(
+                    requestId: "b", sentAt: GoldenFixtures.now, amount: .units(milliunits: 2000), glucoseMgdl: nil,
+                    includeStaleGlucose: false)))
+        #expect(await rig.services.composed.map(\.id) == ["a", "b"])
+    }
+
+    /// A cancel naming a request the phone hasn't seen is recorded in the ledger, so a copy that arrives
+    /// after a relaunch is refused and nothing is composed. One the ledger has an entry for is answered from
+    /// the entry, never as cancelled: its delivery may have gone in.
+    @Test func aCancelNamingALateRequestSurvivesARelaunchButNotADelivery() async throws {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("host-ledger-\(UUID()).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let late = BolusRequestPayload(
+            requestId: "late-1", sentAt: GoldenFixtures.now, amount: .units(milliunits: 2000), glucoseMgdl: nil,
+            includeStaleGlucose: false)
+        let first = HostRig(services: FakeServices(ledgerStore: RemoteBolusLedgerStore(url: url)))
+        await first.start()
+        await first.receive(.cancel(CancelPayload(requestId: "c-1", bolusRequestId: "late-1")))
+        try? await Task.sleep(for: .milliseconds(50))
+        let relaunched = HostRig(services: FakeServices(ledgerStore: RemoteBolusLedgerStore(url: url)))
+        await relaunched.start()
+        await relaunched.receive(.bolus(late))
+        #expect(await relaunched.services.composed.isEmpty)
+        #expect(relaunched.transport.outcomes.last { $0.requestId == "late-1" }?.message == RemoteHost.cancelledMessage)
+
+        // A request already delivered, then named by a cancel: its resend gets its own outcome.
+        let rig = HostRig()
+        var ledger = RemoteBolusLedger()
+        let request = DoseRequest(
+            id: "done-1", origin: .remote(peerId: "garmin", sentAt: HostRig.now), shape: .now(units: 2))
+        _ = ledger.begin(request, now: HostRig.now)
+        _ = ledger.markAccepted(request.ledgerKey, bolusId: 7, now: HostRig.now)
+        _ = ledger.markDelivered(request.ledgerKey, units: 2, now: HostRig.now)
+        await rig.services.set(entry: try #require(ledger.entry(request.ledgerKey)))
+        await rig.services.set(decision: .alreadyRecorded(.delivered(units: 2)))
+        await rig.start()
+        await rig.receive(.cancel(CancelPayload(requestId: "c-2", bolusRequestId: "done-1")))
+        await rig.receive(
+            .bolus(
+                BolusRequestPayload(
+                    requestId: "done-1", sentAt: GoldenFixtures.now, amount: .units(milliunits: 2000), glucoseMgdl: nil,
+                    includeStaleGlucose: false)))
+        #expect(rig.transport.outcomes.last { $0.requestId == "done-1" }?.outcome == .delivered)
+    }
+
     /// A cancel the session couldn't confirm is tried again, a bounded number of times.
     @Test func anUnconfirmedCancelIsTriedAgain() async {
         let rig = HostRig()

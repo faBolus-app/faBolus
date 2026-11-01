@@ -69,6 +69,16 @@ public struct SessionRemoteServices: RemoteHostServices {
         await session.historyEvents.first { $0.category == .autoCorrection }?.date
     }
 
+    public func ledgerRefusal(_ key: RemoteBolusLedger.Key) async -> RemoteBolusLedger.RemoteRefusal? {
+        await ledger.ledger.remoteRefusal(key)
+    }
+
+    /// A failed save keeps it in memory and blocks new boluses until a save succeeds (the ledger's rule), so
+    /// there's nothing more to do here.
+    public func recordRefusal(_ key: RemoteBolusLedger.Key, reason: String) async {
+        _ = try? await ledger.recordRemoteRefusal(key, reason: reason, now: clock())
+    }
+
     public func remoteBolusRefused(requestId: String, reason: String) async {
         await alerts.remoteBolusRefused(peerId: peerId, requestId: requestId, reason: reason)
     }

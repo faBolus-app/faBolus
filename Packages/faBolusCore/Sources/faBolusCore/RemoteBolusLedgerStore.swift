@@ -200,6 +200,18 @@ public actor DurableBolusLedger {
         try apply { $0.markAbsentFromHistory(key, historyPumpKey: historyPumpKey, now: now) }
     }
 
+    /// Record a remote request refused before any entry, so its resend gets the same refusal after a
+    /// restart. A refusal never blocks a new bolus, so neither does a failed save of one: it's kept in
+    /// memory and goes to disk with the next save.
+    ///
+    /// - Throws: `LedgerNotSaved` when it couldn't be saved now.
+    @discardableResult
+    public func recordRemoteRefusal(_ key: RemoteBolusLedger.Key, reason: String, now: Date = Date()) throws -> Bool {
+        guard ledger.recordRemoteRefusal(key, reason: reason, now: now) else { return false }
+        try save(ledger, blocksOnFailure: false)
+        return true
+    }
+
     /// The user checked the pump and confirms one unknown outcome.
     @discardableResult
     public func confirmOnPump(_ key: RemoteBolusLedger.Key, now: Date = Date()) throws -> Bool {

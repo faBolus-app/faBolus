@@ -100,6 +100,8 @@ extension DoseComposer {
             guard request.isSameRequest(as: recorded.request) else { return .refused(.requestIdReused) }
             return .alreadyRecorded(recorded.outcome)
         }
+        // Refused before it became an entry: the same refusal again, never a second attempt at the dose.
+        if let refusal = ledger.remoteRefusal(request.ledgerKey) { return .refused(.refusedBefore(refusal.reason)) }
         guard let amount = request.amount else { return .refused(.noDoseSpecified) }
         guard let sentAt = request.sentAt, !RemoteCommandFreshness.isStale(sentAt: sentAt, now: context.now) else {
             return .refused(.requestTooOld)

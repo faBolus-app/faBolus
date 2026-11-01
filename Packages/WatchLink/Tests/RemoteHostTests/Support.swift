@@ -10,6 +10,12 @@ import WatchLink
 
 /// The host's services, scripted. Records every call.
 actor FakeServices: RemoteHostServices {
+    /// Refusals go to a real ledger, so a relaunch can read them back from its store.
+    let refusalLedger: DurableBolusLedger
+    init(ledgerStore: sending (any RemoteBolusLedgerPersisting)? = nil) {
+        refusalLedger = DurableBolusLedger(store: ledgerStore, now: HostRig.now)
+    }
+
     var state = PumpState()
     var block: BolusBlock?
     var entries: [RemoteBolusLedger.Key: RemoteBolusLedger.Entry] = [:]
@@ -80,6 +86,12 @@ actor FakeServices: RemoteHostServices {
     func set(autoCorrection: Date?) { self.autoCorrection = autoCorrection }
     func lastAutoCorrection() async -> Date? { autoCorrection }
     func remoteBolusRefused(requestId: String, reason: String) async { refusals.append(requestId) }
+    func ledgerRefusal(_ key: RemoteBolusLedger.Key) async -> RemoteBolusLedger.RemoteRefusal? {
+        await refusalLedger.ledger.remoteRefusal(key)
+    }
+    func recordRefusal(_ key: RemoteBolusLedger.Key, reason: String) async {
+        _ = try? await refusalLedger.recordRemoteRefusal(key, reason: reason, now: HostRig.now)
+    }
 }
 
 @MainActor
@@ -125,13 +137,14 @@ final class TestClock: WatchLinkClock {
 /// A host over a real link and a watch that receives everything.
 @MainActor
 struct HostRig {
-    let services = FakeServices()
+    let services: FakeServices
     let transport = Transport()
     let link: WatchLink
     let host: RemoteHost
     nonisolated static let now = Date(timeIntervalSince1970: TimeInterval(GoldenFixtures.now))
 
-    init(settings: RemoteSettings = HostRig.settings()) {
+    init(settings: RemoteSettings = HostRig.settings(), services: FakeServices = FakeServices()) {
+        self.services = services
         link = WatchLink(transport: transport, clock: TestClock(), jitter: { 0 })
         host = RemoteHost(link: link, services: services, settings: settings, clock: { HostRig.now })
     }

@@ -269,6 +269,8 @@ public enum DoseRefusal: Sendable, Equatable {
     case nothingToDeliver
     /// Above the user's remote bolus size limit.
     case aboveRemoteLimit(Double)
+    /// This remote request was refused before (the ledger's `RemoteRefusal`); the same answer again.
+    case refusedBefore(String)
 
     public var userMessage: String {
         switch self {
@@ -299,6 +301,7 @@ public enum DoseRefusal: Sendable, Equatable {
         case .nothingToDeliver: return "No insulin needed."
         case .aboveRemoteLimit(let limit):
             return String(format: "This dose is above your remote limit of %.2f U — lower it and try again.", limit)
+        case .refusedBefore(let reason): return reason
         }
     }
 }

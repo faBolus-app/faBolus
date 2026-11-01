@@ -25,6 +25,10 @@ public protocol RemoteHostServices: Sendable {
     func lastAutoCorrection() async -> Date?
     /// A remote's request refused before the ledger: for the "Remote bolus refused" notification.
     func remoteBolusRefused(requestId: String, reason: String) async
+    /// A refusal the ledger holds for a request that never became an entry.
+    func ledgerRefusal(_ key: RemoteBolusLedger.Key) async -> RemoteBolusLedger.RemoteRefusal?
+    /// Record a refusal in the ledger, so the request's resend gets it after a restart too.
+    func recordRefusal(_ key: RemoteBolusLedger.Key, reason: String) async
 }
 
 /// The phone's settings the remote depends on.
@@ -70,9 +74,6 @@ public actor RemoteHost {
     /// Orders status refreshes: one that started earlier and finished later is dropped.
     private var statusTicket = 0
     private var lastStatus: StatusPayload?
-    /// Refusals given before the ledger, which has no entry for them, so a watch that missed one and asks
-    /// again gets it.
-    private var refusals: [(requestId: String, payload: BolusOutcomePayload)] = []
     private var dismissing: Set<String> = []
     private var dismissResults: [(requestId: String, payload: DismissResultPayload)] = []
     private var cancelling = false
@@ -81,7 +82,8 @@ public actor RemoteHost {
     private var cancelAgain = false
     /// Bolus requests a cancel named before they reached the phone, as when the watch's first send was lost
     /// and the user cancelled while it was still resending: a copy that arrives later is refused, not
-    /// delivered.
+    /// delivered. The ledger records each as a refusal; this is its synchronous copy, for a copy that
+    /// arrives before that record is written.
     private var cancelledRequests: [String] = []
     /// A cancel the session couldn't confirm is tried again this many more times, this far apart, while the
     /// pump may still be delivering.
@@ -90,7 +92,7 @@ public actor RemoteHost {
     private var started = false
 
     static let maxDismissResults = 16
-    static let maxRefusals = 16
+    static let maxCancelledRequests = 16
     static let historySpan: TimeInterval = 24 * 3600
 
     public init(
@@ -176,15 +178,6 @@ public actor RemoteHost {
                 Task { await self.answerDuplicate(p.requestId, current) }
                 return
             }
-            if let refusal = refusals.first(where: { $0.requestId == p.requestId }) {
-                // Refused before the ledger: the same answer again, not a second attempt.
-                Task { await self.submit(.sendResult(.bolusOutcome(refusal.payload))) }
-                return
-            }
-            if cancelledRequests.contains(p.requestId) {
-                Task { await self.refused(p.requestId, Self.cancelledMessage, announce: false) }
-                return
-            }
             boluses[p.requestId] = .received
             composing.insert(p.requestId)
             Task { await self.bolus(p) }
@@ -194,7 +187,10 @@ public actor RemoteHost {
             cancelledBeforeStart.formUnion(composing)
             if let id = p.bolusRequestId, boluses[id] == nil, !cancelledRequests.contains(id) {
                 cancelledRequests.append(id)
-                if cancelledRequests.count > Self.maxRefusals { cancelledRequests.removeFirst() }
+                if cancelledRequests.count > Self.maxCancelledRequests { cancelledRequests.removeFirst() }
+                // Durable, so a copy that arrives after a relaunch is refused too. The ledger keeps an
+                // entry's answer over this, should the request turn out to have arrived.
+                Task { await self.services.recordRefusal(self.key(id), reason: Self.cancelledMessage) }
             }
             guard !cancelling else {
                 cancelAgain = true
@@ -229,6 +225,20 @@ public actor RemoteHost {
             composing.remove(p.requestId)
             cancelledBeforeStart.remove(p.requestId)
         }
+        // A request the ledger has an entry for is answered from it, below. One it holds as refused before,
+        // perhaps by the phone's last run, gets the same answer again, never a second attempt; the composer
+        // would refuse it too, but this skips the pump reads and the "received". One a cancel named before it
+        // arrived is refused, but only without an entry: a delivery that started stays its own answer.
+        if await services.ledgerEntry(key(p.requestId)) == nil {
+            if let refusal = await services.ledgerRefusal(key(p.requestId)) {
+                await sendRefusal(p.requestId, refusal.reason)
+                return
+            }
+            if cancelledRequests.contains(p.requestId) {
+                await refused(p.requestId, Self.cancelledMessage, announce: false)
+                return
+            }
+        }
         // The watch learns at once that the phone has it, so it stops resending.
         await sendOutcome(
             BolusOutcomePayload(
@@ -238,6 +248,8 @@ public actor RemoteHost {
         let decision = await services.compose(
             request, access: settings.access, remoteSizeLimitUnits: settings.remoteSizeLimitUnits)
         switch decision {
+        case .refused(.refusedBefore(let reason)):
+            await sendRefusal(p.requestId, reason)
         case .refused(let refusal):
             await refused(p.requestId, refusal.userMessage)
         case .alreadyRecorded(let outcome):
@@ -288,8 +300,8 @@ public actor RemoteHost {
                 BolusOutcomePayload(
                     requestId: id, outcome: current, requestedMilliunits: nil, deliveredMilliunits: nil, message: nil,
                     sentAt: now))
-        } else if let refusal = refusals.first(where: { $0.requestId == id }) {
-            await submit(.sendResult(.bolusOutcome(refusal.payload)))
+        } else if let refusal = await services.ledgerRefusal(key(id)) {
+            await sendRefusal(id, refusal.reason)
         }
     }
 
@@ -301,8 +313,8 @@ public actor RemoteHost {
         // A readable copy of this request is being worked on (or was refused): that one answers. A damaged
         // duplicate must not call it failed.
         if boluses[id] != nil { return }
-        if let refusal = refusals.first(where: { $0.requestId == id }) {
-            await submit(.sendResult(.bolusOutcome(refusal.payload)))
+        if let refusal = await services.ledgerRefusal(key(id)) {
+            await sendRefusal(id, refusal.reason)
             return
         }
         await refused(id, "The phone couldn't read this request. Nothing was delivered — update the watch app.")
@@ -310,12 +322,15 @@ public actor RemoteHost {
 
     /// - Parameter announce: post the "Remote bolus refused" notification; not for one the user cancelled.
     private func refused(_ id: String, _ reason: String, announce: Bool = true) async {
-        let payload = BolusOutcomePayload.notDelivered(requestId: id, reason: reason, sentAt: now)
-        refusals.removeAll { $0.requestId == id }
-        refusals.append((id, payload))
-        if refusals.count > Self.maxRefusals { refusals.removeFirst() }
-        await sendOutcome(payload)
+        // In the ledger before the answer goes, so a resend after a relaunch finds it.
+        await services.recordRefusal(key(id), reason: reason)
+        await sendRefusal(id, reason)
         if announce { await services.remoteBolusRefused(requestId: id, reason: reason) }
+    }
+
+    /// "Not delivered", with the reason the request was refused for. Not announced: that's `refused`'s, once.
+    private func sendRefusal(_ id: String, _ reason: String) async {
+        await sendOutcome(.notDelivered(requestId: id, reason: reason, sentAt: now))
     }
 
     private func sendRecorded(_ id: String, _ outcome: BolusOutcome) async {
@@ -411,6 +426,8 @@ public actor RemoteHost {
     }
 
     private var now: Date { clock() }
+
+    private func key(_ requestId: String) -> RemoteBolusLedger.Key { .init(peerId: peerId, requestId: requestId) }
 
     private func submit(_ input: WatchLinkInput) async {
         let link = link

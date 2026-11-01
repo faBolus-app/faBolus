@@ -219,6 +219,16 @@ import Testing
                 == .alreadyRecorded(.delivered(units: 7.25)))
     }
 
+    /// A request the ledger holds as refused, before it became an entry, gets that refusal again, never a
+    /// dose, even where it would now deliver.
+    @Test func aRequestRefusedBeforeGetsTheSameRefusal() throws {
+        let request = F.remote(.units(1))
+        #expect(compose(request).dose != nil)
+        var ledger = RemoteBolusLedger()
+        ledger.recordRemoteRefusal(request.ledgerKey, reason: "Pump not connected.", now: F.now)
+        #expect(compose(request, ledger: ledger).refusal == .refusedBefore("Pump not connected."))
+    }
+
     /// The same request ID for a different dose is refused, never replayed or delivered.
     @Test func requestIdReusedForADifferentDoseIsRefused() throws {
         let first = try #require(compose(F.remote(.units(1))).dose)

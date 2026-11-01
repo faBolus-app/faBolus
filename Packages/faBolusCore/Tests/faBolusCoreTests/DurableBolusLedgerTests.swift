@@ -53,6 +53,81 @@ final class DurableBolusLedgerTests {
         RemoteBolusLedgerStore(url: url).loadOutcome().ledger
     }
 
+    // MARK: - Remote refusals
+
+    /// A remote request refused before it became an entry is kept across a restart, so its resend gets the
+    /// same refusal, and it never blocks a new bolus.
+    @Test func aRemoteRefusalSurvivesARestartAndNeverBlocks() async throws {
+        let url = temporaryURL()
+        let first = DurableBolusLedger(store: RemoteBolusLedgerStore(url: url), now: Self.t0)
+        #expect(
+            try await first.recordRemoteRefusal(Self.key("garmin", "r1"), reason: "Pump not connected.", now: Self.t0))
+        #expect(await first.block == nil)
+        let restarted = DurableBolusLedger(store: RemoteBolusLedgerStore(url: url), now: Self.t0.addingTimeInterval(30))
+        let refusal = try #require(await restarted.ledger.remoteRefusal(Self.key("garmin", "r1")))
+        #expect(refusal.reason == "Pump not connected.")
+        #expect(await restarted.block == nil)
+        // The next request starts as usual.
+        #expect(
+            try await restarted.begin(Self.request("garmin", "r2"), now: Self.t0.addingTimeInterval(31)) == .proceed)
+    }
+
+    /// A refusal that couldn't be saved doesn't block either: it's kept, and goes with the next save.
+    @Test func aRefusalThatCouldntBeSavedDoesntBlock() async throws {
+        let url = temporaryURL()
+        let ledger = DurableBolusLedger(store: FaultyStore(url: url, failingSaves: [1]), now: Self.t0)
+        await #expect(throws: LedgerNotSaved.self) {
+            try await ledger.recordRemoteRefusal(Self.key("garmin", "r1"), reason: "x", now: Self.t0)
+        }
+        #expect(await ledger.block == nil)
+        #expect(await ledger.ledger.remoteRefusal(Self.key("garmin", "r1")) != nil)
+        #expect(try await ledger.begin(Self.request("garmin", "r2"), now: Self.t0) == .proceed)
+        #expect(Self.saved(at: url).remoteRefusal(Self.key("garmin", "r1")) != nil)
+    }
+
+    /// The first refusal stands, and a request with an entry is answered from it, not a refusal.
+    @Test func aRefusalDoesntReplaceAnAnswer() {
+        var ledger = RemoteBolusLedger()
+        let first = ledger.recordRemoteRefusal(Self.key("garmin", "r1"), reason: "first", now: Self.t0)
+        let second = ledger.recordRemoteRefusal(Self.key("garmin", "r1"), reason: "second", now: Self.t0)
+        #expect(first && !second)
+        #expect(ledger.remoteRefusal(Self.key("garmin", "r1"))?.reason == "first")
+        _ = ledger.begin(Self.request("garmin", "r2"), now: Self.t0)
+        let late = ledger.recordRemoteRefusal(Self.key("garmin", "r2"), reason: "late", now: Self.t0)
+        #expect(!late)
+        #expect(ledger.remoteRefusal(Self.key("garmin", "r2")) == nil)
+    }
+
+    /// Past the cap only refusals older than the keep window go: one a remote may still resend never does.
+    @Test func theRefusalCapNeverDropsOneThatMayBeResent() {
+        var ledger = RemoteBolusLedger()
+        let cap = RemoteBolusLedger.remoteRefusalCap
+        for i in 0..<(cap + 20) {
+            ledger.recordRemoteRefusal(
+                Self.key("garmin", "r\(i)"), reason: "x", now: Self.t0.addingTimeInterval(Double(i)))
+        }
+        #expect(ledger.remoteRefusal(Self.key("garmin", "r0")) != nil)
+        let later = Self.t0.addingTimeInterval(RemoteBolusLedger.remoteRefusalKeepSec + 100)
+        ledger.recordRemoteRefusal(Self.key("garmin", "new"), reason: "x", now: later)
+        #expect(ledger.remoteRefusal(Self.key("garmin", "r0")) == nil)
+        #expect(ledger.remoteRefusal(Self.key("garmin", "new")) != nil)
+    }
+
+    /// A ledger saved before refusals were kept reads with none.
+    @Test func anOlderLedgerFileReadsWithNoRefusals() throws {
+        var ledger = RemoteBolusLedger()
+        _ = ledger.begin(Self.request("garmin", "r1"), now: Self.t0)
+        ledger.recordRemoteRefusal(Self.key("garmin", "r2"), reason: "x", now: Self.t0)
+        var object = try #require(
+            try JSONSerialization.jsonObject(with: JSONEncoder().encode(ledger)) as? [String: Any])
+        #expect(object["remoteRefusals"] != nil)
+        object["remoteRefusals"] = nil
+        let old = try JSONDecoder().decode(
+            RemoteBolusLedger.self, from: JSONSerialization.data(withJSONObject: object))
+        #expect(old.remoteRefusal(Self.key("garmin", "r2")) == nil)
+        #expect(old.entry(Self.key("garmin", "r1")) != nil)
+    }
+
     // MARK: - Restart
 
     @Test func anInFlightBolusIsUnknownAndBlocksAfterARestart() async throws {

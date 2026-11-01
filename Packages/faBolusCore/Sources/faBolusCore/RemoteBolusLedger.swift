@@ -40,7 +40,8 @@ public enum BolusBlock: Sendable, Hashable {
 /// It does three jobs:
 /// - **Each request delivers at most once.** Remotes resend a message after a reconnect or a
 ///   retry, so a request is keyed by who sent it and its request ID, above any transport. A repeat
-///   gets the first request's outcome back, never a second dose.
+///   gets the first request's outcome back, never a second dose. A remote request refused before it
+///   became an entry is kept as a `RemoteRefusal`, so its repeat gets the same refusal.
 /// - **One bolus at a time.** While one request is in flight every other request is refused, whichever
 ///   surface it came from.
 /// - **An unknown outcome blocks new boluses** until pump history settles it or the user confirms
@@ -112,6 +113,26 @@ public struct RemoteBolusLedger: Sendable, Codable {
     private var order: [Key] = []
     private let cap: Int
 
+    /// A remote request refused before it became an entry: too old, blocked, a bad amount, or cancelled
+    /// before it arrived. Kept so its resend, after a restart too, gets the same refusal rather than a
+    /// second attempt at a dose. Never blocks a new bolus.
+    public struct RemoteRefusal: Sendable, Hashable, Codable {
+        public let key: Key
+        /// What the remote was told.
+        public let reason: String
+        public let refusedAt: Date
+    }
+
+    private var remoteRefusals: [Key: RemoteRefusal] = [:]
+    /// Oldest first.
+    private var refusalOrder: [Key] = []
+
+    /// How many refusals are kept beyond those still young enough to be resent.
+    public static let remoteRefusalCap = 64
+    /// A refusal younger than this is never dropped: well past the longest a remote resends a request
+    /// (its freshness limit), so a resend always finds it.
+    public static let remoteRefusalKeepSec: TimeInterval = 10 * 60
+
     /// When each peer's dose content last went in or may have, so a remote that missed its outcome and
     /// recomposes the same dose under a new request ID can be stopped (`hasRecentlyDeliveredDuplicate`).
     /// It only needs to cover a seconds-scale window while the app runs, so it isn't persisted; the
@@ -156,6 +177,29 @@ public struct RemoteBolusLedger: Sendable, Codable {
         }.min()
         return since.map { .unknownOutcome(since: $0) }
     }
+
+    // MARK: - Remote refusals
+
+    /// Record that the remote request `key` was refused, before any entry, with what the remote was told.
+    /// Returns whether it was recorded: a request with an entry is answered from it, and a second refusal
+    /// keeps the first.
+    @discardableResult
+    public mutating func recordRemoteRefusal(_ key: Key, reason: String, now: Date = Date()) -> Bool {
+        guard entries[key] == nil, remoteRefusals[key] == nil else { return false }
+        remoteRefusals[key] = RemoteRefusal(key: key, reason: reason, refusedAt: now)
+        refusalOrder.append(key)
+        // Over the cap the oldest go, but never one a remote may still resend.
+        while refusalOrder.count > Self.remoteRefusalCap, let oldest = refusalOrder.first,
+            let refusal = remoteRefusals[oldest], now.timeIntervalSince(refusal.refusedAt) > Self.remoteRefusalKeepSec
+        {
+            refusalOrder.removeFirst()
+            remoteRefusals[oldest] = nil
+        }
+        return true
+    }
+
+    /// The refusal recorded for `key`, if it was refused before any entry.
+    public func remoteRefusal(_ key: Key) -> RemoteRefusal? { remoteRefusals[key] }
 
     // MARK: - Transitions
     //
@@ -410,7 +454,7 @@ public struct RemoteBolusLedger: Sendable, Codable {
     /// doesn't know can't be misread as an empty ledger.
     public static let formatVersion = 1
 
-    private enum CodingKeys: String, CodingKey { case version, cap, entries }
+    private enum CodingKeys: String, CodingKey { case version, cap, entries, remoteRefusals }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -429,6 +473,12 @@ public struct RemoteBolusLedger: Sendable, Codable {
             entries[key] = entry
             order.append(key)
         }
+        // A file from before refusals were kept has none.
+        for refusal in try c.decodeIfPresent([RemoteRefusal].self, forKey: .remoteRefusals) ?? [] {
+            guard remoteRefusals[refusal.key] == nil else { continue }
+            remoteRefusals[refusal.key] = refusal
+            refusalOrder.append(refusal.key)
+        }
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -436,5 +486,6 @@ public struct RemoteBolusLedger: Sendable, Codable {
         try c.encode(Self.formatVersion, forKey: .version)
         try c.encode(cap, forKey: .cap)
         try c.encode(allEntries, forKey: .entries)
+        try c.encode(refusalOrder.compactMap { remoteRefusals[$0] }, forKey: .remoteRefusals)
     }
 }
