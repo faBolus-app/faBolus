@@ -57,3 +57,5 @@ excluded:
   - Packages/GlucoseSources/.build
   - Packages/PumpSession/.build
   - Packages/Alerts/.build
+  - Packages/RemoteProtocol/.build
+  - Packages/WatchLink/.build

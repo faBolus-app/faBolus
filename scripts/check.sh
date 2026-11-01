@@ -10,7 +10,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-PACKAGES=(faBolusCore faBolusDesign HistoryStore ShareClient DexcomBLE GlucoseSources PumpSession Alerts)
+PACKAGES=(faBolusCore faBolusDesign HistoryStore ShareClient DexcomBLE GlucoseSources PumpSession Alerts RemoteProtocol WatchLink)
 
 swift_files() {
   git ls-files -z '*.swift' ':!:legacy/*' ':!:Packages/ShareClient/*'
@@ -35,8 +35,11 @@ gate_swiftlint() { swiftlint lint --strict --quiet; }
 gate_shell() { git ls-files -z '*.sh' ':!:legacy/*' | xargs -0 shellcheck; }
 gate_actions() { actionlint; }
 gate_markdown() { markdownlint-cli2; }
-# The v1 phone↔watch contract and the provenance chain, until the rebuild replaces them.
+# The phone↔remote contract: version 2's schema against its golden fixtures (the fixtures themselves are
+# checked against the Swift types by RemoteProtocol's tests); version 1's drift check until the old app is
+# deleted; and the provenance chain.
 gate_contract() {
+  python3 scripts/check-contract.py
   ./scripts/check-schema-drift.sh
   ./scripts/check-sbom.sh
 }

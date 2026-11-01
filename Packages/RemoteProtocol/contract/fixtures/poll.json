@@ -1,0 +1,11 @@
+{
+  "kind": "poll",
+  "payload": {
+    "appVersion": "0.1.0",
+    "awaiting": "1793534390-7-118220",
+    "configRevision": "47a1350f8a7b0085",
+    "freshGlucose": false,
+    "history": true
+  },
+  "version": 2
+}

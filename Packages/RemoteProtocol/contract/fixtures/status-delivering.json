@@ -1,0 +1,32 @@
+{
+  "kind": "status",
+  "payload": {
+    "alerts": [],
+    "basal": {
+      "at": 1793534390,
+      "suspended": true
+    },
+    "bolus": {
+      "active": {
+        "deliveredMU": 1250,
+        "requestedMU": 4000,
+        "startedAt": 1793534370
+      },
+      "blockReason": "bolusInProgress",
+      "canBolus": false
+    },
+    "configRevision": "47a1350f8a7b0085",
+    "glucose": {
+      "at": 1793533500,
+      "backup": true,
+      "mgdl": 38
+    },
+    "iob": {
+      "at": 1793534390,
+      "mU": 4050
+    },
+    "pumpLink": "connected",
+    "sentAt": 1793534400
+  },
+  "version": 2
+}

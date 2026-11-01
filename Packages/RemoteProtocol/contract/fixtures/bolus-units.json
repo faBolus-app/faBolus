@@ -1,0 +1,11 @@
+{
+  "kind": "bolus",
+  "payload": {
+    "includeStaleGlucose": false,
+    "mU": 4000,
+    "mode": "units",
+    "requestId": "1793534390-7-118220",
+    "sentAt": 1793534390
+  },
+  "version": 2
+}

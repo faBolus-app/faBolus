@@ -1,0 +1,9 @@
+{
+  "kind": "dismissResult",
+  "payload": {
+    "alertId": "pump.alert.2",
+    "requestId": "1793534395-r3-119001",
+    "result": "cleared"
+  },
+  "version": 2
+}

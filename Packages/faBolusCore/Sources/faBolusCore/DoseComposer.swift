@@ -307,18 +307,26 @@ extension DoseComposer {
     /// The checks that come before any dose is sized: access from `surface`, the pump link, the ledger
     /// and the cartridge.
     static func availability(surface: AccessPolicy.Surface, context: DoseContext) -> DoseRefusal? {
-        var access = AccessPolicy.evaluate(.deliverBolus, surface: surface, context: context.access)
+        availability(surface: surface, pump: context.pump, access: context.access, bolusBlock: context.bolusBlock)
+    }
+
+    /// Whether `surface` may start a bolus now, before any amount: the same checks a dose meets first, so a
+    /// remote's button and the composer agree. `nil` when one may be attempted.
+    public static func availability(
+        surface: AccessPolicy.Surface, pump: PumpState, access context: AccessPolicy.AccessContext,
+        bolusBlock: BolusBlock?
+    ) -> DoseRefusal? {
+        var access = AccessPolicy.evaluate(.deliverBolus, surface: surface, context: context)
         // The model the pump itself was identified as must take a dose too, whatever capabilities the
         // caller put in the access context.
-        if access.allowed && !context.pump.capabilities.canDeliverBolus { access = .deny(.capabilityUnavailable) }
+        if access.allowed && !pump.capabilities.canDeliverBolus { access = .deny(.capabilityUnavailable) }
         if let reason = BolusGate.availability(
-            reachable: true, linked: context.pump.link.isConnected,
-            bolusInFlight: context.bolusBlock == .bolusInProgress,
-            cartridgeReady: context.pump.cartridgeReadiness != .notReady, access: access)
+            reachable: true, linked: pump.link.isConnected, bolusInFlight: bolusBlock == .bolusInProgress,
+            cartridgeReady: pump.cartridgeReadiness != .notReady, access: access)
         {
             return .unavailable(reason)
         }
-        if let block = context.bolusBlock { return .blocked(block) }
+        if let block = bolusBlock { return .blocked(block) }
         return nil
     }
 

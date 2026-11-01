@@ -1,0 +1,1049 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fabolus.org/contract/remote-v2.json",
+  "title": "faBolus phone↔remote protocol, version 2",
+  "description": "See README.md beside this file. Kept in step with RemoteProtocol's decoders; every golden fixture is checked against it (scripts/check-contract.py).",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "kind",
+        "payload"
+      ],
+      "properties": {
+        "version": {
+          "const": 2
+        },
+        "kind": {
+          "const": "status"
+        },
+        "payload": {
+          "$ref": "#/$defs/status"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "kind",
+        "payload"
+      ],
+      "properties": {
+        "version": {
+          "const": 2
+        },
+        "kind": {
+          "const": "config"
+        },
+        "payload": {
+          "$ref": "#/$defs/config"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "kind",
+        "payload"
+      ],
+      "properties": {
+        "version": {
+          "const": 2
+        },
+        "kind": {
+          "const": "history"
+        },
+        "payload": {
+          "$ref": "#/$defs/history"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "kind",
+        "payload"
+      ],
+      "properties": {
+        "version": {
+          "const": 2
+        },
+        "kind": {
+          "const": "bolusOutcome"
+        },
+        "payload": {
+          "$ref": "#/$defs/bolusOutcome"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "kind",
+        "payload"
+      ],
+      "properties": {
+        "version": {
+          "const": 2
+        },
+        "kind": {
+          "const": "dismissResult"
+        },
+        "payload": {
+          "$ref": "#/$defs/dismissResult"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "kind",
+        "payload"
+      ],
+      "properties": {
+        "version": {
+          "const": 2
+        },
+        "kind": {
+          "const": "incompatible"
+        },
+        "payload": {
+          "$ref": "#/$defs/incompatible"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "kind",
+        "payload"
+      ],
+      "properties": {
+        "version": {
+          "const": 2
+        },
+        "kind": {
+          "const": "poll"
+        },
+        "payload": {
+          "$ref": "#/$defs/poll"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "kind",
+        "payload"
+      ],
+      "properties": {
+        "version": {
+          "const": 2
+        },
+        "kind": {
+          "const": "bolus"
+        },
+        "payload": {
+          "$ref": "#/$defs/bolus"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "kind",
+        "payload"
+      ],
+      "properties": {
+        "version": {
+          "const": 2
+        },
+        "kind": {
+          "const": "cancel"
+        },
+        "payload": {
+          "$ref": "#/$defs/cancel"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "kind",
+        "payload"
+      ],
+      "properties": {
+        "version": {
+          "const": 2
+        },
+        "kind": {
+          "const": "dismiss"
+        },
+        "payload": {
+          "$ref": "#/$defs/dismiss"
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "alerts",
+        "bolus",
+        "configRevision",
+        "pumpLink",
+        "sentAt"
+      ],
+      "properties": {
+        "sentAt": {
+          "type": "integer",
+          "minimum": 1577836800,
+          "maximum": 2147483647
+        },
+        "configRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "pumpLink": {
+          "type": "string",
+          "enum": [
+            "disconnected",
+            "scanning",
+            "connecting",
+            "authenticating",
+            "connected"
+          ]
+        },
+        "glucose": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "at",
+            "backup",
+            "mgdl"
+          ],
+          "properties": {
+            "mgdl": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000
+            },
+            "trend": {
+              "type": "string",
+              "enum": [
+                "flat",
+                "up",
+                "upup",
+                "up45",
+                "down",
+                "downdown",
+                "down45"
+              ]
+            },
+            "backup": {
+              "type": "boolean"
+            },
+            "at": {
+              "type": "integer",
+              "minimum": 1577836800,
+              "maximum": 2147483647
+            }
+          }
+        },
+        "iob": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "at",
+            "mU"
+          ],
+          "properties": {
+            "mU": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            },
+            "at": {
+              "type": "integer",
+              "minimum": 1577836800,
+              "maximum": 2147483647
+            }
+          }
+        },
+        "reservoir": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "at",
+            "mU"
+          ],
+          "properties": {
+            "mU": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            },
+            "at": {
+              "type": "integer",
+              "minimum": 1577836800,
+              "maximum": 2147483647
+            }
+          }
+        },
+        "lastBolus": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "at",
+            "mU"
+          ],
+          "properties": {
+            "mU": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            },
+            "at": {
+              "type": "integer",
+              "minimum": 1577836800,
+              "maximum": 2147483647
+            }
+          }
+        },
+        "battery": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "at",
+            "percent"
+          ],
+          "properties": {
+            "percent": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "charging": {
+              "type": "boolean"
+            },
+            "at": {
+              "type": "integer",
+              "minimum": 1577836800,
+              "maximum": 2147483647
+            }
+          }
+        },
+        "basal": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "at",
+            "suspended"
+          ],
+          "properties": {
+            "suspended": {
+              "type": "boolean"
+            },
+            "mUPerHour": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            },
+            "at": {
+              "type": "integer",
+              "minimum": 1577836800,
+              "maximum": 2147483647
+            }
+          }
+        },
+        "calculator": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "at",
+            "carbRatioMg",
+            "isf",
+            "maxBolusMU",
+            "target"
+          ],
+          "properties": {
+            "carbRatioMg": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            },
+            "isf": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000
+            },
+            "target": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000
+            },
+            "maxBolusMU": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            },
+            "at": {
+              "type": "integer",
+              "minimum": 1577836800,
+              "maximum": 2147483647
+            }
+          }
+        },
+        "controlIQ": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "activity",
+            "at",
+            "enabled"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "activity": {
+              "type": "string",
+              "enum": [
+                "normal",
+                "sleep",
+                "exercise"
+              ]
+            },
+            "at": {
+              "type": "integer",
+              "minimum": 1577836800,
+              "maximum": 2147483647
+            }
+          }
+        },
+        "maxBasal": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "at",
+            "mUPerHour"
+          ],
+          "properties": {
+            "mUPerHour": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            },
+            "at": {
+              "type": "integer",
+              "minimum": 1577836800,
+              "maximum": 2147483647
+            }
+          }
+        },
+        "bolus": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "canBolus"
+          ],
+          "properties": {
+            "canBolus": {
+              "type": "boolean"
+            },
+            "blockReason": {
+              "type": "string",
+              "enum": [
+                "pumpNotConnected",
+                "bolusInProgress",
+                "cartridgeNotReady",
+                "readOnly",
+                "watchBolusOff",
+                "pumpCannotBolus",
+                "outcomeUnknown",
+                "deliveryLocked"
+              ]
+            },
+            "active": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "requestedMU",
+                "startedAt"
+              ],
+              "properties": {
+                "requestedMU": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1000000
+                },
+                "deliveredMU": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1000000
+                },
+                "startedAt": {
+                  "type": "integer",
+                  "minimum": 1577836800,
+                  "maximum": 2147483647
+                }
+              }
+            },
+            "remoteLimitMU": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            }
+          }
+        },
+        "alerts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "body",
+              "dismissable",
+              "id",
+              "intent",
+              "severity",
+              "title"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "body": {
+                "type": "string",
+                "maxLength": 256
+              },
+              "severity": {
+                "type": "string",
+                "enum": [
+                  "info",
+                  "warning",
+                  "critical"
+                ]
+              },
+              "intent": {
+                "type": "string",
+                "enum": [
+                  "quiet",
+                  "alert"
+                ]
+              },
+              "dismissable": {
+                "type": "boolean"
+              }
+            }
+          },
+          "maxItems": 32
+        }
+      }
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bolus",
+        "chartHours",
+        "clockAnalog",
+        "complication",
+        "details",
+        "glucose",
+        "revision",
+        "screens"
+      ],
+      "properties": {
+        "revision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{16}$"
+        },
+        "bolus": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "carbStepG",
+            "defaultMode",
+            "enabled",
+            "readOnly",
+            "unitsStepMU"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "readOnly": {
+              "type": "boolean"
+            },
+            "defaultMode": {
+              "type": "string",
+              "enum": [
+                "carbs",
+                "units"
+              ]
+            },
+            "unitsStepMU": {
+              "type": "integer",
+              "minimum": 10,
+              "maximum": 10000
+            },
+            "carbStepG": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            }
+          }
+        },
+        "screens": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "default",
+            "order"
+          ],
+          "properties": {
+            "order": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "glance",
+                  "glucose",
+                  "clock",
+                  "bolusonly",
+                  "alerts",
+                  "history",
+                  "details"
+                ]
+              },
+              "maxItems": 32,
+              "uniqueItems": true
+            },
+            "default": {
+              "type": "string",
+              "enum": [
+                "glance",
+                "glucose",
+                "clock",
+                "bolusonly",
+                "alerts",
+                "history",
+                "details"
+              ]
+            }
+          }
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "iob",
+              "reservoir",
+              "battery",
+              "cgm",
+              "lastBolus",
+              "carbRatio",
+              "isf",
+              "target",
+              "maxBolus",
+              "maxBasal"
+            ]
+          },
+          "maxItems": 32,
+          "uniqueItems": true
+        },
+        "chartHours": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "enum": [
+              3,
+              6,
+              12,
+              24
+            ]
+          },
+          "maxItems": 4,
+          "uniqueItems": true,
+          "minItems": 1
+        },
+        "complication": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "display",
+            "slots"
+          ],
+          "properties": {
+            "display": {
+              "type": "string",
+              "enum": [
+                "numericColor",
+                "stringTrend"
+              ]
+            },
+            "slots": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "iob",
+                  "reservoir",
+                  "battery",
+                  "basal"
+                ]
+              },
+              "maxItems": 3,
+              "uniqueItems": true
+            }
+          }
+        },
+        "clockAnalog": {
+          "type": "boolean"
+        },
+        "glucose": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "plotCeiling",
+            "plotFloor",
+            "staleMinutes",
+            "unit"
+          ],
+          "properties": {
+            "unit": {
+              "type": "string",
+              "enum": [
+                "mgdl",
+                "mmol"
+              ]
+            },
+            "staleMinutes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 60
+            },
+            "hideDelayMinutes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1440
+            },
+            "plotFloor": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 400
+            },
+            "plotCeiling": {
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 600
+            }
+          }
+        }
+      }
+    },
+    "history": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "at",
+        "mgdl",
+        "sentAt"
+      ],
+      "properties": {
+        "sentAt": {
+          "type": "integer",
+          "minimum": 1577836800,
+          "maximum": 2147483647
+        },
+        "at": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1577836800,
+            "maximum": 2147483647
+          },
+          "maxItems": 144
+        },
+        "mgdl": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000
+          },
+          "maxItems": 144
+        }
+      }
+    },
+    "bolusOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outcome",
+        "requestId",
+        "sentAt"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "received",
+            "accepted",
+            "delivering",
+            "delivered",
+            "stopped",
+            "refused",
+            "failed",
+            "unknown"
+          ]
+        },
+        "requestedMU": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "deliveredMU": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "sentAt": {
+          "type": "integer",
+          "minimum": 1577836800,
+          "maximum": 2147483647
+        }
+      }
+    },
+    "dismissResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "alertId",
+        "requestId",
+        "result"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "alertId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "result": {
+          "type": "string",
+          "enum": [
+            "cleared",
+            "refused",
+            "unconfirmed",
+            "unsupported",
+            "notFound"
+          ]
+        }
+      }
+    },
+    "incompatible": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "peerVersion"
+      ],
+      "properties": {
+        "peerVersion": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        }
+      }
+    },
+    "poll": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "appVersion",
+        "freshGlucose",
+        "history"
+      ],
+      "properties": {
+        "configRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "awaiting": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "history": {
+          "type": "boolean"
+        },
+        "freshGlucose": {
+          "type": "boolean"
+        },
+        "appVersion": {
+          "type": "string",
+          "maxLength": 64
+        }
+      }
+    },
+    "bolus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "includeStaleGlucose",
+        "mode",
+        "requestId",
+        "sentAt"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "sentAt": {
+          "type": "integer",
+          "minimum": 1577836800,
+          "maximum": 2147483647
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "units",
+            "carbs"
+          ]
+        },
+        "mU": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "carbsG": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 999
+        },
+        "estimateMU": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "glucoseMgdl": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "includeStaleGlucose": {
+          "type": "boolean"
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "mode": {
+              "const": "units"
+            }
+          },
+          "required": [
+            "mU"
+          ]
+        },
+        {
+          "properties": {
+            "mode": {
+              "const": "carbs"
+            }
+          },
+          "required": [
+            "carbsG",
+            "estimateMU"
+          ]
+        }
+      ]
+    },
+    "cancel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requestId"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "bolusRequestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
+    },
+    "dismiss": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "alertId",
+        "requestId"
+      ],
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "alertId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
+    }
+  }
+}

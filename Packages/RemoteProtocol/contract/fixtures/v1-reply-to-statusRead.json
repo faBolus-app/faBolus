@@ -1,0 +1,10 @@
+{
+  "bolusBlockReason": "accessDenied",
+  "canBolus": false,
+  "garminBolusEnabled": false,
+  "kind": "statusRead",
+  "message": "Update watch app",
+  "remotesReadOnly": true,
+  "requestId": "1793534390-r4-118000",
+  "version": 1
+}

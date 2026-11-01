@@ -1,0 +1,10 @@
+{
+  "kind": "bolusOutcome",
+  "payload": {
+    "outcome": "delivering",
+    "requestId": "1793534390-7-118220",
+    "requestedMU": 4000,
+    "sentAt": 1793534400
+  },
+  "version": 2
+}

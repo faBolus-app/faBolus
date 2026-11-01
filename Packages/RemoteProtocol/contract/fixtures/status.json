@@ -1,0 +1,75 @@
+{
+  "kind": "status",
+  "payload": {
+    "alerts": [
+      {
+        "body": "50 units or less remain.",
+        "dismissable": true,
+        "id": "pump.alert.2",
+        "intent": "alert",
+        "severity": "warning",
+        "title": "Low insulin"
+      },
+      {
+        "body": "faBolus hasn't reached the pump for 15 minutes.",
+        "dismissable": false,
+        "id": "app.pumpDisconnected",
+        "intent": "alert",
+        "severity": "warning",
+        "title": "Pump disconnected"
+      }
+    ],
+    "basal": {
+      "at": 1793534360,
+      "mUPerHour": 850,
+      "suspended": false
+    },
+    "battery": {
+      "at": 1793534360,
+      "charging": false,
+      "percent": 72
+    },
+    "bolus": {
+      "canBolus": true,
+      "remoteLimitMU": 10000
+    },
+    "calculator": {
+      "at": 1793534380,
+      "carbRatioMg": 7500,
+      "isf": 40,
+      "maxBolusMU": 25000,
+      "target": 110
+    },
+    "configRevision": "47a1350f8a7b0085",
+    "controlIQ": {
+      "activity": "normal",
+      "at": 1793534360,
+      "enabled": true
+    },
+    "glucose": {
+      "at": 1793534320,
+      "backup": false,
+      "mgdl": 142,
+      "trend": "up45"
+    },
+    "iob": {
+      "at": 1793534380,
+      "mU": 1250
+    },
+    "lastBolus": {
+      "at": 1793529000,
+      "mU": 3200
+    },
+    "maxBasal": {
+      "at": 1793533800,
+      "mUPerHour": 3000
+    },
+    "pumpLink": "connected",
+    "reservoir": {
+      "at": 1793534360,
+      "mU": 143500
+    },
+    "sentAt": 1793534400
+  },
+  "version": 2
+}

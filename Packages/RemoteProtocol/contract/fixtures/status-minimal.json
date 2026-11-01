@@ -1,0 +1,14 @@
+{
+  "kind": "status",
+  "payload": {
+    "alerts": [],
+    "bolus": {
+      "blockReason": "pumpNotConnected",
+      "canBolus": false
+    },
+    "configRevision": "47a1350f8a7b0085",
+    "pumpLink": "connecting",
+    "sentAt": 1793534400
+  },
+  "version": 2
+}

@@ -1,0 +1,10 @@
+{
+  "kind": "bolusOutcome",
+  "payload": {
+    "message": "Remote control is turned off — remotes are read-only.",
+    "outcome": "failed",
+    "requestId": "1793534390-8-120004",
+    "sentAt": 1793534400
+  },
+  "version": 2
+}

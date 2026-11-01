@@ -1,0 +1,12 @@
+{
+  "bgMgdl": 142.0,
+  "canBolus": true,
+  "garminBolusEnabled": true,
+  "glucoseEpochSec": 1793534320,
+  "kind": "statusRead",
+  "message": "Connected",
+  "requestId": "1793534390-r4-118000",
+  "trend": "up45",
+  "units": 1.25,
+  "version": 1
+}

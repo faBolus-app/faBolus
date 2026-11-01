@@ -1,0 +1,9 @@
+{
+  "kind": "poll",
+  "payload": {
+    "appVersion": "0.1.0",
+    "freshGlucose": true,
+    "history": false
+  },
+  "version": 2
+}

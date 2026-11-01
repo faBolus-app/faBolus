@@ -1,0 +1,8 @@
+{
+  "kind": "cancel",
+  "payload": {
+    "bolusRequestId": "1793534390-7-118220",
+    "requestId": "1793534399-11-121000"
+  },
+  "version": 2
+}
