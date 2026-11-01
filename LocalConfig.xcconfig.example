@@ -3,7 +3,7 @@
 // and fill in your own values. LocalConfig.xcconfig is gitignored, so nothing
 // personal is ever committed.
 //
-// After editing, regenerate the Xcode project:   xcodegen generate
+// After editing, regenerate the Xcode project:   ./scripts/generate-project.sh
 // ─────────────────────────────────────────────────────────────────────────────
 
 // 1) A bundle ID that is UNIQUE TO YOU.
