@@ -65,6 +65,22 @@ import Testing
         #expect(refused(message("status", p)))
     }
 
+    /// A window of 0 minutes, the phone's "nothing counts as current", reads as itself; below 0 is refused.
+    @Test func aZeroMinuteWindowIsAWindow() {
+        var config = GoldenFixtures.config
+        config.glucoseStaleMinutes = 0
+        config.iobStaleMinutes = 0
+        config.therapyStaleMinutes = 0
+        config.pumpStatusStaleMinutes = 0
+        guard case .message(.config(let read)) = RemoteMessage.receive(RemoteMessage.config(config).wire) else {
+            Issue.record("a config with zero windows didn't read")
+            return
+        }
+        #expect(read == config)
+        config.iobStaleMinutes = -1
+        #expect(refused(RemoteMessage.config(config).wire))
+    }
+
     @Test func aMissingOrEmptyRequestIdIsRefused() {
         var p = payload(of: "bolus-units")
         p["requestId"] = nil

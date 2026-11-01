@@ -27,9 +27,10 @@ public struct WatchConfig: Sendable, Hashable {
     /// The slots' labels name what they show ("IOB 1.25"); off (the default), the value alone ("1.25 U").
     public var complicationLabels: Bool
     public var glucoseUnit: GlucoseUnitToken
-    /// Glucose older than this is shown marked as stale.
+    /// Glucose older than this is shown marked as stale; 0 marks every reading.
     public var glucoseStaleMinutes: Int
     /// IOB, and the calculator's settings, count as current while younger than these: the phone's own windows.
+    /// 0 counts nothing as current, as the phone does with a window it can't use.
     public var iobStaleMinutes: Int
     public var therapyStaleMinutes: Int
     /// The pump's status values (reservoir, battery, basal) are shown marked once older than this.
@@ -47,8 +48,8 @@ public struct WatchConfig: Sendable, Hashable {
         bolusEnabled: Bool, readOnly: Bool, defaultBolusMode: BolusModeToken, unitsStepMilliunits: Int,
         carbStepGrams: Int, screenOrder: [ScreenToken], defaultScreen: ScreenToken, detailsOrder: [DetailToken],
         chartHours: [Int], complicationSlots: [ComplicationSlotToken],
-        complicationLabels: Bool = false, glucoseUnit: GlucoseUnitToken, glucoseStaleMinutes: Int,
-        iobStaleMinutes: Int = 5, therapyStaleMinutes: Int = 15, pumpStatusStaleMinutes: Int = 15,
+        complicationLabels: Bool, glucoseUnit: GlucoseUnitToken, glucoseStaleMinutes: Int,
+        iobStaleMinutes: Int, therapyStaleMinutes: Int, pumpStatusStaleMinutes: Int,
         glucoseHideDelayMinutes: Int?,
         plotFloorMgdl: Int, plotCeilingMgdl: Int
     ) {
@@ -145,15 +146,15 @@ public struct WatchConfig: Sendable, Hashable {
         }
         let glucose = try r.object("glucose")
         glucoseUnit = try glucose.token("unit", as: GlucoseUnitToken.self)
-        glucoseStaleMinutes = try glucose.int("staleMinutes", in: 1...60)
+        glucoseStaleMinutes = try glucose.int("staleMinutes", in: 0...60)
         glucoseHideDelayMinutes = try glucose.optionalInt("hideDelayMinutes", in: 0...1440)
         plotFloorMgdl = try glucose.int("plotFloor", in: 0...400)
         plotCeilingMgdl = try glucose.int("plotCeiling", in: 100...600)
         guard plotFloorMgdl < plotCeilingMgdl else { throw .outOfRange(field: "payload.glucose.plotFloor") }
         let freshness = try r.object("freshness")
-        iobStaleMinutes = try freshness.int("iobMinutes", in: 1...60)
-        therapyStaleMinutes = try freshness.int("therapyMinutes", in: 1...240)
-        pumpStatusStaleMinutes = try freshness.int("pumpStatusMinutes", in: 1...240)
+        iobStaleMinutes = try freshness.int("iobMinutes", in: 0...60)
+        therapyStaleMinutes = try freshness.int("therapyMinutes", in: 0...240)
+        pumpStatusStaleMinutes = try freshness.int("pumpStatusMinutes", in: 0...240)
         // A revision that doesn't match the content is a corrupt message, not a config to adopt.
         let sent = try r.id("revision")
         guard sent == revision else { throw .outOfRange(field: "payload.revision") }

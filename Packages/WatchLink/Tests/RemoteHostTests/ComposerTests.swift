@@ -201,7 +201,8 @@ import Testing
         #expect(c.chartHours == WatchConfig.allowedChartHours)
     }
 
-    /// The watch's staleness is the phone's own freshness windows, in whole minutes and clamped.
+    /// The watch's staleness is the phone's own freshness windows, in whole minutes rounded down and clamped:
+    /// never current on the watch for longer than on the phone.
     @Test func theWatchsStalenessFollowsThePhonesFreshness() {
         let p = WatchPreferences()
         var f = FreshnessThresholds(glucoseStaleAfter: 10 * 60, glucoseHideAfter: 30 * 60)
@@ -212,7 +213,11 @@ import Testing
         #expect(ConfigComposer.compose(p, access: Self.access, freshness: f).glucoseHideDelayMinutes == nil)
         f.glucoseStaleAfter = .nan
         c = ConfigComposer.compose(p, access: Self.access, freshness: f)
-        #expect(c.glucoseStaleMinutes == 1)
+        #expect(c.glucoseStaleMinutes == 0)
+        f.glucoseStaleAfter = 90
+        #expect(ConfigComposer.compose(p, access: Self.access, freshness: f).glucoseStaleMinutes == 1)
+        f.glucoseStaleAfter = 30
+        #expect(ConfigComposer.compose(p, access: Self.access, freshness: f).glucoseStaleMinutes == 0)
         f.glucoseStaleAfter = 600 * 60
         #expect(ConfigComposer.compose(p, access: Self.access, freshness: f).glucoseStaleMinutes == 60)
     }
@@ -240,6 +245,10 @@ import Testing
         #expect(c.iobStaleMinutes == 4)
         #expect(c.therapyStaleMinutes == 20)
         #expect(c.pumpStatusStaleMinutes == 30)
+        let unusable = FreshnessThresholds(insulinOnBoardStaleAfter: -1, therapyStaleAfter: 45)
+        let none = ConfigComposer.compose(WatchPreferences(), access: Self.access, freshness: unusable)
+        #expect(none.iobStaleMinutes == 0)
+        #expect(none.therapyStaleMinutes == 0)
     }
 
     /// The constants the watch keeps its own copy of are the phone's: a change here fails until the contract

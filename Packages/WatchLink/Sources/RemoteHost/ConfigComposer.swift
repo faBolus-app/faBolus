@@ -56,7 +56,7 @@ public enum ConfigComposer {
                     .prefix(WatchConfig.maxComplicationSlots)),
             complicationLabels: p.complicationLabels,
             glucoseUnit: GlucoseUnitToken(rawValue: p.glucoseDisplayUnit) ?? .mgdl,
-            glucoseStaleMinutes: staleMinutes(freshness),
+            glucoseStaleMinutes: minutes(freshness.glucoseStaleAfter, max: 60),
             iobStaleMinutes: minutes(freshness.insulinOnBoardStaleAfter, max: 60),
             therapyStaleMinutes: minutes(freshness.therapyStaleAfter, max: 240),
             pumpStatusStaleMinutes: minutes(freshness.pumpStatusStaleAfter, max: 240),
@@ -69,23 +69,19 @@ public enum ConfigComposer {
         return values.filter { seen.insert($0).inserted }
     }
 
-    /// Whole minutes, at least one, at most an hour. A window the phone can't use (not finite, or negative)
-    /// makes every reading stale there, so the watch gets the shortest window.
-    static func staleMinutes(_ f: FreshnessThresholds) -> Int {
-        guard f.glucoseStaleAfter.isFinite, f.glucoseStaleAfter >= 0 else { return 1 }
-        return min(60, max(1, Int(f.glucoseStaleAfter / 60)))
-    }
-
-    /// Whole minutes, at least one; a window the phone can't use is the shortest.
+    /// Whole minutes, rounded down, so the watch never counts a value current for longer than the phone does.
+    /// A window the phone can't use (not finite, or negative) makes every reading stale there; 0 does the same
+    /// on the watch.
     static func minutes(_ window: TimeInterval, max upper: Int) -> Int {
-        guard window.isFinite, window >= 0 else { return 1 }
-        return min(upper, max(1, Int(window / 60)))
+        guard window.isFinite, window >= 0 else { return 0 }
+        return min(upper, Int(window / 60))
     }
 
     /// How long after going stale a reading is hidden; the phone's window is the age it's hidden at.
     static func hideDelayMinutes(_ f: FreshnessThresholds) -> Int? {
         guard let hide = f.glucoseHideAfter, hide.isFinite else { return nil }
-        return min(1440, max(0, Int((hide - Double(staleMinutes(f) * 60)) / 60)))
+        let stale = minutes(f.glucoseStaleAfter, max: 60)
+        return min(1440, max(0, Int((hide - Double(stale * 60)) / 60)))
     }
 }
 

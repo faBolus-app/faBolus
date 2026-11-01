@@ -724,17 +724,17 @@
           "properties": {
             "iobMinutes": {
               "type": "integer",
-              "minimum": 1,
+              "minimum": 0,
               "maximum": 60
             },
             "therapyMinutes": {
               "type": "integer",
-              "minimum": 1,
+              "minimum": 0,
               "maximum": 240
             },
             "pumpStatusMinutes": {
               "type": "integer",
-              "minimum": 1,
+              "minimum": 0,
               "maximum": 240
             }
           }
@@ -785,7 +785,7 @@
             },
             "staleMinutes": {
               "type": "integer",
-              "minimum": 1,
+              "minimum": 0,
               "maximum": 60
             },
             "hideDelayMinutes": {

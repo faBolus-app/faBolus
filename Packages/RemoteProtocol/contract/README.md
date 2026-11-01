@@ -87,9 +87,9 @@ know generically. A cancel is never blocked.
 | `screens` | `order`, `default` (`glance`, `glucose`, `clock`, `bolusonly`, `alerts`, `history`, `details`) |
 | `details` | rows in order: `iob`, `reservoir`, `battery`, `cgm`, `lastBolus`, `carbRatio`, `isf`, `target`, `maxBolus`, `maxBasal`, `autoCorrection` (left out while none is known) |
 | `chartHours` | ranges the chart cycles through, from 3, 6, 12, 24 |
-| `freshness` | `iobMinutes`, `therapyMinutes`, `pumpStatusMinutes`: IOB, the calculator's settings, and the pump's status values (reservoir, battery, basal) count as current while younger than these, the phone's own windows |
+| `freshness` | `iobMinutes`, `therapyMinutes`, `pumpStatusMinutes`: IOB, the calculator's settings, and the pump's status values (reservoir, battery, basal) count as current while younger than these, the phone's own windows in whole minutes rounded down; 0 counts nothing as current |
 | `complication` | `slots` (up to three of `iob`, `reservoir`, `battery`, `basal`), `labels` (each slot's label names what it shows, as "IOB 1.25"; false shows the value alone) |
-| `glucose` | `unit` (`mgdl`, `mmol`), `staleMinutes`, `hideDelayMinutes` (absent: never hide), `plotFloor`, `plotCeiling` |
+| `glucose` | `unit` (`mgdl`, `mmol`), `staleMinutes` (0 marks every reading stale), `hideDelayMinutes` (absent: never hide), `plotFloor`, `plotCeiling` |
 
 The phone refuses a dose whatever the remote shows, so `bolus.enabled` and `bolus.readOnly` only hide the
 button; the status's `bolus.canBolus` says the same at once.
