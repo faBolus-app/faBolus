@@ -256,6 +256,18 @@ import faBolusCore
         #expect(rig.transport.statuses.last?.configRevision == rig.transport.configs.first?.revision)
     }
 
+    /// A change to the phone's freshness windows changes the watch's, through the config.
+    @Test func aFreshnessChangeResendsTheConfig() async {
+        let rig = HostRig()
+        await rig.start()
+        var settings = HostRig.settings()
+        settings.freshness = FreshnessThresholds(glucoseStaleAfter: 12 * 60)
+        await rig.host.settingsChanged(settings)
+        await rig.settle()
+        #expect(rig.transport.configs.count == 2)
+        #expect(rig.transport.configs.last?.glucoseStaleMinutes == 12)
+    }
+
     @Test func aSettingsChangeSendsTheNewConfigOnce() async {
         let rig = HostRig()
         await rig.start()

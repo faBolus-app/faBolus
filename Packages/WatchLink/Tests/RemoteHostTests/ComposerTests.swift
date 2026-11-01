@@ -175,18 +175,16 @@ import Testing
         p.complicationSlots = ["basal", "iob", "reservoir", "battery"]
         p.complicationLabels = false
         p.bolusMode = "extended"
-        p.glucoseStaleMinutes = 0
         p.glucosePlotFloor = 50
         p.glucosePlotFloorSmall = 40
         p.glucosePlotCeilingSmall = 350
-        let c = ConfigComposer.compose(p)
+        let c = ConfigComposer.compose(p, freshness: .standard)
         #expect(c.screenOrder == [.details, .clock])
         #expect(c.defaultScreen == .details)
         #expect(c.chartHours == [6])
         #expect(c.complicationSlots == [.basal, .iob, .reservoir])
         #expect(c.complicationLabels == false)
         #expect(c.defaultBolusMode == .carbs)
-        #expect(c.glucoseStaleMinutes == 1)
         #expect(c.plotFloorMgdl == 40)
         #expect(c.plotCeilingMgdl == 350)
         #expect(RemoteMessage.receive(RemoteMessage.config(c).wire) == .message(.config(c)))
@@ -196,22 +194,38 @@ import Testing
         var p = WatchPreferences()
         p.screenOrder = []
         p.watchChartRanges = []
-        let c = ConfigComposer.compose(p)
+        let c = ConfigComposer.compose(p, freshness: .standard)
         #expect(c.screenOrder == [.glance, .alerts, .history, .details])
         #expect(c.chartHours == WatchConfig.allowedChartHours)
+    }
+
+    /// The watch's staleness is the phone's own freshness windows, in whole minutes and clamped.
+    @Test func theWatchsStalenessFollowsThePhonesFreshness() {
+        let p = WatchPreferences()
+        var f = FreshnessThresholds(glucoseStaleAfter: 10 * 60, glucoseHideAfter: 30 * 60)
+        var c = ConfigComposer.compose(p, freshness: f)
+        #expect(c.glucoseStaleMinutes == 10)
+        #expect(c.glucoseHideDelayMinutes == 20)
+        f.glucoseHideAfter = nil
+        #expect(ConfigComposer.compose(p, freshness: f).glucoseHideDelayMinutes == nil)
+        f.glucoseStaleAfter = .nan
+        c = ConfigComposer.compose(p, freshness: f)
+        #expect(c.glucoseStaleMinutes == 1)
+        f.glucoseStaleAfter = 600 * 60
+        #expect(ConfigComposer.compose(p, freshness: f).glucoseStaleMinutes == 60)
     }
 
     /// The default preferences are the golden config.
     @Test func theDefaultsAreTheGoldenConfig() {
         var p = WatchPreferences()
         p.garminBolusEnabled = true
-        #expect(ConfigComposer.compose(p) == GoldenFixtures.config)
+        #expect(ConfigComposer.compose(p, freshness: .standard) == GoldenFixtures.config)
     }
 
     @Test func theUnitsStepIsExact() {
         var p = WatchPreferences()
         p.bolusIncrementUnits = 0.1
-        #expect(ConfigComposer.compose(p).unitsStepMilliunits == 100)
+        #expect(ConfigComposer.compose(p, freshness: .standard).unitsStepMilliunits == 100)
     }
 }
 

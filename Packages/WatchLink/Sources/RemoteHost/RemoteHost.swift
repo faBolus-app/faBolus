@@ -32,11 +32,17 @@ public struct RemoteSettings: Sendable {
     public var access: AccessPolicy.AccessContext
     public var remoteSizeLimitUnits: Double?
     public var preferences: WatchPreferences
+    /// The freshness windows the phone uses (`PumpSession.freshness`); the watch's staleness follows them.
+    public var freshness: FreshnessThresholds
 
-    public init(access: AccessPolicy.AccessContext, remoteSizeLimitUnits: Double?, preferences: WatchPreferences) {
+    public init(
+        access: AccessPolicy.AccessContext, remoteSizeLimitUnits: Double?, preferences: WatchPreferences,
+        freshness: FreshnessThresholds = .standard
+    ) {
         self.access = access
         self.remoteSizeLimitUnits = remoteSizeLimitUnits
         self.preferences = preferences
+        self.freshness = freshness
     }
 }
 
@@ -85,7 +91,7 @@ public actor RemoteHost {
         self.settings = settings
         self.peerId = peerId
         self.clock = clock
-        config = ConfigComposer.compose(settings.preferences)
+        config = ConfigComposer.compose(settings.preferences, freshness: settings.freshness)
     }
 
     /// Start answering the watch. Call once, after the link is started.
@@ -108,7 +114,7 @@ public actor RemoteHost {
 
     public func settingsChanged(_ settings: RemoteSettings) async {
         self.settings = settings
-        let next = ConfigComposer.compose(settings.preferences)
+        let next = ConfigComposer.compose(settings.preferences, freshness: settings.freshness)
         if next != config {
             config = next
             await submit(.setConfig(next))

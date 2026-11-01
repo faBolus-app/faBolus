@@ -22,9 +22,6 @@ public struct WatchPreferences: Sendable, Hashable {
     public var complicationLabels = false
     /// `"mgdl"` or `"mmol"`.
     public var glucoseDisplayUnit = "mgdl"
-    public var glucoseStaleMinutes = 6
-    /// `nil`: never hide a stale value.
-    public var glucoseHideDelayMinutes: Int?
     public var glucosePlotFloor: Int?
     public var glucosePlotCeiling: Int?
     /// The small-screen override, which a watch uses ahead of the shared bounds.
@@ -35,7 +32,9 @@ public struct WatchPreferences: Sendable, Hashable {
 }
 
 public enum ConfigComposer {
-    public static func compose(_ p: WatchPreferences) -> WatchConfig {
+    /// The watch's staleness comes from the windows the phone itself uses (`PumpSession.freshness`), so the
+    /// two can't drift apart: one setting, both surfaces.
+    public static func compose(_ p: WatchPreferences, freshness: FreshnessThresholds) -> WatchConfig {
         let defaults = WatchPreferences()
         var order = unique(p.screenOrder.compactMap(ScreenToken.init(rawValue:)))
         if order.isEmpty { order = defaults.screenOrder.compactMap(ScreenToken.init(rawValue:)) }
@@ -56,14 +55,27 @@ public enum ConfigComposer {
                     .prefix(WatchConfig.maxComplicationSlots)),
             complicationLabels: p.complicationLabels,
             glucoseUnit: GlucoseUnitToken(rawValue: p.glucoseDisplayUnit) ?? .mgdl,
-            glucoseStaleMinutes: min(60, max(1, p.glucoseStaleMinutes)),
-            glucoseHideDelayMinutes: p.glucoseHideDelayMinutes.map { min(1440, max(0, $0)) },
+            glucoseStaleMinutes: staleMinutes(freshness),
+            glucoseHideDelayMinutes: hideDelayMinutes(freshness),
             plotFloorMgdl: plot.floor, plotCeilingMgdl: plot.ceiling)
     }
 
     private static func unique<T: Hashable>(_ values: [T]) -> [T] {
         var seen = Set<T>()
         return values.filter { seen.insert($0).inserted }
+    }
+
+    /// Whole minutes, at least one, at most an hour. A window the phone can't use (not finite, or negative)
+    /// makes every reading stale there, so the watch gets the shortest window.
+    static func staleMinutes(_ f: FreshnessThresholds) -> Int {
+        guard f.glucoseStaleAfter.isFinite, f.glucoseStaleAfter >= 0 else { return 1 }
+        return min(60, max(1, Int(f.glucoseStaleAfter / 60)))
+    }
+
+    /// How long after going stale a reading is hidden; the phone's window is the age it's hidden at.
+    static func hideDelayMinutes(_ f: FreshnessThresholds) -> Int? {
+        guard let hide = f.glucoseHideAfter, hide.isFinite else { return nil }
+        return min(1440, max(0, Int((hide - Double(staleMinutes(f) * 60)) / 60)))
     }
 }
 
