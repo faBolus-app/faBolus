@@ -7,7 +7,7 @@ import faBolusCore
 /// The app-owned urgent-low alarm, ported from the alarm half of the old app's
 /// `BackgroundWorkModelAndUrgentLowAlarmTests`: it raises once per episode on the backup source while the
 /// pump's own feed is stale, also on a fresh below-range "LOW", and clears on recovery. The old suite's
-/// background-work half was the old app's iOS background tasks (the app slice), and its static
+/// background-work half was the old app's iOS background tasks, and its static
 /// "never references the dose path" check was a source-text guard, which isn't ported.
 @Suite struct UrgentLowAlarmTests {
     let m: TimeInterval = 60

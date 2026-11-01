@@ -33,6 +33,8 @@ public enum AlertInput: Sendable {
     case remoteBolusRefused(peerId: String, requestId: String, reason: String)
     /// Time passed; nothing else changed.
     case tick
+    /// Notifications are allowed again after being off: post again what the OS refused meanwhile.
+    case notificationsAllowed
 }
 
 /// The alert state machine. Pure: it holds the conditions that matter for alerts, works out from them
@@ -83,9 +85,38 @@ public struct AlertEngine: Sendable {
         public internal(set) var posted: [String: AlertRequest] = [:]
         /// Effects not yet acknowledged as performed, in order.
         public internal(set) var outbox: [Pending] = []
+        /// Posts the OS refused (notifications not allowed), by identifier, to post again once allowed.
+        public internal(set) var refused: [String: AlertRequest] = [:]
         var nextSequence: UInt64 = 1
 
         public init() {}
+
+        // Each field decodes on its own and falls back to empty, the house pattern for persisted blobs: a
+        // field added or changed by a later build must not make the whole file unreadable and lose what
+        // the last process owed the OS.
+        private enum CodingKeys: String, CodingKey {
+            case boluses, ledgerUnreadable, linkDownSince, connectionUnstable, urgentLow, cgmLost, pumpAlerts
+            case posted, outbox, refused, nextSequence
+        }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            func field<T: Decodable>(_ key: CodingKeys, _ fallback: T) -> T {
+                ((try? c.decodeIfPresent(T.self, forKey: key)) ?? nil) ?? fallback
+            }
+            boluses = field(.boluses, [:])
+            ledgerUnreadable = field(.ledgerUnreadable, false)
+            linkDownSince = (try? c.decodeIfPresent(Date.self, forKey: .linkDownSince)) ?? nil
+            connectionUnstable = field(.connectionUnstable, false)
+            urgentLow = field(.urgentLow, false)
+            cgmLost = field(.cgmLost, false)
+            pumpAlerts = field(.pumpAlerts, [])
+            posted = field(.posted, [:])
+            outbox = field(.outbox, [])
+            refused = field(.refused, [:])
+            // Never reuse a sequence number still in the outbox.
+            nextSequence = max(field(.nextSequence, 1), (outbox.map(\.sequence).max() ?? 0) + 1)
+        }
     }
 
     public private(set) var state: State
@@ -123,12 +154,29 @@ public struct AlertEngine: Sendable {
                 title: "Remote bolus not delivered", body: reason)
         case .tick:
             break
+        case .notificationsAllowed:
+            // A refused condition comes off `posted`, so the diff posts it again if it still holds; a refused
+            // announcement is posted again as it was.
+            for (id, request) in state.refused.sorted(by: { $0.key < $1.key }) {
+                if state.posted[id] == request {
+                    state.posted[id] = nil
+                } else if state.posted[id] == nil {
+                    announcements.append(request)
+                }
+            }
+            state.refused = [:]
         }
         return commit(announcements, now: now)
     }
 
-    /// The driver performed the effect with this sequence number.
-    public mutating func acknowledge(_ sequence: UInt64) {
+    /// The driver performed the effect with this sequence number. `refusedByOS` when the OS refused a
+    /// post (notifications not allowed): it is kept to post again once they are.
+    public mutating func acknowledge(_ sequence: UInt64, refusedByOS: Bool = false) {
+        if refusedByOS, let pending = state.outbox.first(where: { $0.sequence == sequence }),
+            case .post(let request) = pending.effect
+        {
+            state.refused[request.identifier] = request
+        }
         state.outbox.removeAll { $0.sequence == sequence }
     }
 
@@ -394,6 +442,7 @@ public struct AlertEngine: Sendable {
                 if case .post(let request) = $0.effect { return superseded.contains(request.identifier) }
                 return false
             }
+            for id in superseded { state.refused[id] = nil }
             let next = Pending(sequence: state.nextSequence, effect: effect)
             state.nextSequence += 1
             state.outbox.append(next)

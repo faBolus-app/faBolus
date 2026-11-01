@@ -74,16 +74,19 @@ public actor AlertCoordinator {
         }
         permission = await scheduler.permission()
         await run(.launched(ledgerView()))
+        if !permission.isOff, !engine.state.refused.isEmpty { await run(.notificationsAllowed) }
         listener = Task { [weak self] in
             for await event in events {
-                await self?.receive(event)
+                guard let self else { return }
+                await self.receive(event)
             }
         }
         if let tickInterval {
             ticker = Task { [weak self] in
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .seconds(tickInterval))
-                    await self?.tick()
+                    guard let self else { return }
+                    await self.tick()
                 }
             }
         }
@@ -151,7 +154,9 @@ public actor AlertCoordinator {
     /// Re-judge everything that depends on time: readings ageing, a scheduled notice coming due. Call it
     /// every so often while the app runs, and when it comes to the foreground.
     public func tick() async {
+        let wasOff = permission.isOff
         permission = await scheduler.permission()
+        if wasOff, !permission.isOff { await run(.notificationsAllowed) }
         await judgeGlucose()
     }
 
@@ -195,10 +200,10 @@ public actor AlertCoordinator {
 
     private func judgeGlucose() async {
         let now = clock()
-        let (merged, _, _) = GlucoseArbiter.merge(
-            pumpState: pumpState, pumpHistory: [], source: backup, thresholds: thresholds, now: now)
         let urgentLow = UrgentLowAlarm.isActive(pumpState: pumpState, source: backup, thresholds: thresholds, now: now)
-        let cgmLost = merged.glucose != nil && merged.glucoseIfFresh(thresholds: thresholds, now: now) == nil
+        // Lost when the newest reading from any source is stale; no reading at all is "no data".
+        let newest = [pumpState.glucose?.measuredAt, backup?.latest?.date].compactMap { $0 }.max()
+        let cgmLost = newest.map { GlucoseFreshness.isStale($0, thresholds: thresholds, now: now) } ?? false
         await run(.glucose(urgentLow: urgentLow, cgmLost: cgmLost))
     }
 
@@ -231,11 +236,13 @@ public actor AlertCoordinator {
         draining = true
         defer { draining = false }
         while let next = engine.state.outbox.first {
+            var refusedByOS = false
             switch next.effect {
             case .post(let request):
                 do { try await scheduler.add(request, now: clock()) } catch {
-                    // Not retried: the OS refusing a request (notifications denied) won't change by asking
-                    // again, and the banner tells the user.
+                    // Not retried now: the OS refusing a request (notifications not allowed) won't change by
+                    // asking again. The banner tells the user, and it is posted again once they're allowed.
+                    refusedByOS = true
                     alertsLog.error(
                         "\(request.identifier, privacy: .public) not posted: \(String(describing: error), privacy: .public)"
                     )
@@ -243,7 +250,7 @@ public actor AlertCoordinator {
             case .withdraw(let identifiers):
                 await scheduler.remove(identifiers: identifiers)
             }
-            engine.acknowledge(next.sequence)
+            engine.acknowledge(next.sequence, refusedByOS: refusedByOS)
             save()
         }
     }

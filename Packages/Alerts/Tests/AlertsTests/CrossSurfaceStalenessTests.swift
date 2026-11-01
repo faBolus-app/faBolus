@@ -57,6 +57,16 @@ import faBolusCore
         #expect(GlucoseFreshness.presentation(of: slightlyAhead, thresholds: .standard, now: now) == .fresh)
     }
 
+    /// With no pump CGM, the backup's last reading going stale is CGM loss too.
+    @Test func aStaleBackupWithNoPumpReadingIsCgmLoss() async {
+        let h = await Harness.launch()
+        let old = GlucoseSourceState(
+            latest: GlucoseSample(mgdl: 120, date: h.clock.now.addingTimeInterval(-20 * m), sourceID: "dexcom-g7"),
+            status: .stale)
+        await h.coordinator.backupGlucoseChanged(old)
+        #expect(await h.coordinator.snapshot.cgmLost)
+    }
+
     /// No reading at all is "no data", not lost.
     @Test func noReadingIsNotCgmLoss() async {
         let h = await Harness.launch()

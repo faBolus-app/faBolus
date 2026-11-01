@@ -48,7 +48,13 @@ actor FakeScheduler: NotificationScheduling {
     /// Called with each add before it is recorded, to look at the store at that moment.
     var onAdd: (@Sendable (AlertRequest) -> Void)?
 
+    /// Refuse every add, as iOS does when notifications aren't allowed.
+    private(set) var refuseAdds = false
+    func setRefuseAdds(_ value: Bool) { refuseAdds = value }
+    struct NotAllowed: Error {}
+
     func add(_ request: AlertRequest, now: Date) async throws {
+        if refuseAdds { throw NotAllowed() }
         onAdd?(request)
         calls.append(.add(request))
         held[request.identifier] = request

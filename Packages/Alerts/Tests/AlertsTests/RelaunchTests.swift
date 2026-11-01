@@ -137,6 +137,27 @@ import faBolusCore
         #expect(calls.first.map { if case .remove = $0 { return true } else { return false } } == true)
     }
 
+    /// A state file a later build wrote with a field this one doesn't know, or missing one it expects,
+    /// still loads: what the last process owed the OS isn't lost.
+    @Test func theStateFileLoadsDespiteUnknownOrMissingFields() throws {
+        var engine = AlertEngine()
+        engine.handle(.pump(.connectionUnstable), now: TestClock().now)
+        var json = try #require(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(engine.state)) as? [String: Any])
+        json["aFieldFromALaterBuild"] = ["x": 1]
+        json["cgmLost"] = "not a bool"
+        json.removeValue(forKey: "nextSequence")
+        let decoded = try JSONDecoder().decode(
+            AlertEngine.State.self, from: JSONSerialization.data(withJSONObject: json))
+        #expect(decoded.outbox == engine.state.outbox)
+        #expect(decoded.posted == engine.state.posted)
+        #expect(decoded.connectionUnstable)
+        #expect(!decoded.cgmLost)
+        var next = AlertEngine(state: decoded)
+        let added = next.handle(.pump(.connectionRestored), now: TestClock().now)
+        #expect(!decoded.outbox.map(\.sequence).contains(added.first?.sequence ?? 0), "sequence numbers aren't reused")
+    }
+
     /// The first launch of the new app removes every notification the old app left, pending or delivered.
     @Test func aFreshInstallRemovesEveryOldNotification() async {
         let scheduler = FakeScheduler()

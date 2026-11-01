@@ -79,7 +79,7 @@ public enum InAppBanner: Sendable, Hashable, CaseIterable {
 
     /// The banners to show, most important first.
     public static func current(
-        openBolusResult: Bool, ledgerUnreadable: Bool = false, permission: NotificationPermission
+        openBolusResult: Bool, ledgerUnreadable: Bool, permission: NotificationPermission
     ) -> [InAppBanner] {
         var out: [InAppBanner] = []
         if openBolusResult { out.append(.unknownBolusOutcome) }

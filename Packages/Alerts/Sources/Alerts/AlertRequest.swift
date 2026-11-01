@@ -34,6 +34,24 @@ public struct AlertRequest: Sendable, Hashable, Codable {
         self.pumpAlert = pumpAlert
     }
 
+    // Tolerant of a later build's additions: the fields that may be absent decode to their defaults.
+    private enum CodingKeys: String, CodingKey {
+        case identifier, category, severity, level, escalation, title, body, fireDate, pumpAlert
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        identifier = try c.decode(String.self, forKey: .identifier)
+        category = try c.decode(NotificationBroker.Category.self, forKey: .category)
+        severity = (try? c.decodeIfPresent(AlertSeverity.self, forKey: .severity)) ?? .warning
+        level = try c.decode(AlertInterruptionLevel.self, forKey: .level)
+        escalation = (try? c.decodeIfPresent(AlertEscalation.self, forKey: .escalation)) ?? .none
+        title = try c.decode(String.self, forKey: .title)
+        body = try c.decode(String.self, forKey: .body)
+        fireDate = try c.decodeIfPresent(Date.self, forKey: .fireDate)
+        pumpAlert = try c.decodeIfPresent(PumpAlert.self, forKey: .pumpAlert)
+    }
+
     /// Whether it has fired (or fires at once) by `now`.
     public func hasFired(by now: Date) -> Bool { fireDate.map { $0 <= now } ?? true }
 }

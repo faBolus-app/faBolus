@@ -50,10 +50,39 @@ import faBolusCore
         let off = P(authorization: .denied, alerts: .disabled, timeSensitive: .disabled)
         let on = P(authorization: .authorized, alerts: .enabled, timeSensitive: .enabled)
         #expect(
-            InAppBanner.current(openBolusResult: true, permission: off) == [.unknownBolusOutcome, .notificationsOff])
-        #expect(InAppBanner.current(openBolusResult: true, permission: on) == [.unknownBolusOutcome])
-        #expect(InAppBanner.current(openBolusResult: false, permission: on).isEmpty)
+            InAppBanner.current(openBolusResult: true, ledgerUnreadable: false, permission: off) == [
+                .unknownBolusOutcome, .notificationsOff
+            ])
+        #expect(
+            InAppBanner.current(openBolusResult: true, ledgerUnreadable: false, permission: on) == [
+                .unknownBolusOutcome
+            ])
+        #expect(InAppBanner.current(openBolusResult: false, ledgerUnreadable: false, permission: on).isEmpty)
         #expect(!InAppBanner.unknownBolusOutcome.opensSettings)
+    }
+
+    /// A notice the OS refused while notifications were off is posted once they're allowed again, if its
+    /// condition still holds; one whose condition ended meanwhile isn't.
+    @Test func whatTheOSRefusedIsPostedOnceNotificationsAreAllowed() async {
+        let scheduler = FakeScheduler()
+        await scheduler.setPermission(P(authorization: .denied, alerts: .disabled, timeSensitive: .disabled))
+        await scheduler.setRefuseAdds(true)
+        let h = await Harness.launch(scheduler: scheduler)
+        await h.send(.connectionUnstable)
+        await h.send(.alertsChanged([PumpAlert(id: 0, kind: .alert, title: "Low insulin")]))
+        await h.coordinator.remoteBolusRefused(peerId: "garmin", requestId: "r1", reason: "Read-only.")
+        await h.send(.alertsChanged([]))
+        #expect(await scheduler.held.isEmpty)
+        await scheduler.setRefuseAdds(false)
+        await scheduler.setPermission(P(authorization: .authorized, alerts: .enabled, timeSensitive: .enabled))
+        await h.coordinator.tick()
+        let held = await scheduler.held
+        #expect(held[AlertEngine.connectionUnstableId] != nil, "the open condition is posted")
+        #expect(held["remoteBolusRejected-garmin-r1"] != nil, "the announcement is posted")
+        #expect(held.count == 2, "the pump alert that cleared meanwhile isn't")
+        await scheduler.clearCalls()
+        await h.coordinator.tick()
+        #expect(await scheduler.adds.isEmpty, "once")
     }
 
     /// A routine reading that changes nothing isn't written to disk.
@@ -64,6 +93,16 @@ import faBolusCore
         for _ in 0..<5 { await h.coordinator.backupGlucoseChanged(nil) }
         await h.send(.connectionUnstable)
         #expect(h.store.history.count == saves)
+    }
+
+    /// Events reach the coordinator through the stream `start` subscribes to.
+    @Test func eventsArriveThroughTheSessionStream() async throws {
+        let h = await Harness.launch()
+        h.events.yield(.connectionUnstable)
+        for _ in 0..<200 where await h.scheduler.held[AlertEngine.connectionUnstableId] == nil {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(await h.scheduler.held[AlertEngine.connectionUnstableId] != nil)
     }
 
     @Test func snapshotsArePublishedAsTheyChange() async {
