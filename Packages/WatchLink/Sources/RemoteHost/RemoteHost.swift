@@ -91,7 +91,7 @@ public actor RemoteHost {
         self.settings = settings
         self.peerId = peerId
         self.clock = clock
-        config = ConfigComposer.compose(settings.preferences, freshness: settings.freshness)
+        config = ConfigComposer.compose(settings.preferences, access: settings.access, freshness: settings.freshness)
     }
 
     /// Start answering the watch. Call once, after the link is started.
@@ -114,7 +114,7 @@ public actor RemoteHost {
 
     public func settingsChanged(_ settings: RemoteSettings) async {
         self.settings = settings
-        let next = ConfigComposer.compose(settings.preferences, freshness: settings.freshness)
+        let next = ConfigComposer.compose(settings.preferences, access: settings.access, freshness: settings.freshness)
         if next != config {
             config = next
             await submit(.setConfig(next))

@@ -11,6 +11,9 @@ The files here are the contract:
   (`RemoteProtocol.GoldenFixtures`, checked by `GoldenFixtureTests`); a remote's tests decode the
   phone's and produce the remote's exactly.
 - `bolus_oracle_fixtures.jsonl`: the bolus calculator rows both calculators are tested against.
+- `shared_constants.json`: values a remote keeps its own copy of and never receives: the glucose colour bands
+  (faBolusCore `GlucoseThresholds`) and the plausible glucose range (`GlucosePlausibility`). The phone's tests
+  and the remote's both check their copy against it.
 
 A remote vendors these files from a pinned faBolus commit. faBolusGarmin keeps them in `contract/` with the
 commit in `contract/PIN`; `scripts/sync-contract.sh` updates them and its CI checks them against the pin.
@@ -84,6 +87,7 @@ know generically. A cancel is never blocked.
 | `screens` | `order`, `default` (`glance`, `glucose`, `clock`, `bolusonly`, `alerts`, `history`, `details`) |
 | `details` | rows in order: `iob`, `reservoir`, `battery`, `cgm`, `lastBolus`, `carbRatio`, `isf`, `target`, `maxBolus`, `maxBasal`, `autoCorrection` (left out while none is known) |
 | `chartHours` | ranges the chart cycles through, from 3, 6, 12, 24 |
+| `freshness` | `iobMinutes`, `therapyMinutes`: IOB and the calculator's settings count as current while younger than these, the phone's own windows |
 | `complication` | `slots` (up to three of `iob`, `reservoir`, `battery`, `basal`), `labels` (each slot's label names what it shows, as "IOB 1.25"; false shows the value alone) |
 | `glucose` | `unit` (`mgdl`, `mmol`), `staleMinutes`, `hideDelayMinutes` (absent: never hide), `plotFloor`, `plotCeiling` |
 

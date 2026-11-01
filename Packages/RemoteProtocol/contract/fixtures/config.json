@@ -33,13 +33,17 @@
       "target",
       "maxBolus"
     ],
+    "freshness": {
+      "iobMinutes": 5,
+      "therapyMinutes": 15
+    },
     "glucose": {
       "plotCeiling": 300,
       "plotFloor": 40,
       "staleMinutes": 6,
       "unit": "mgdl"
     },
-    "revision": "e8a9b4ce5ccf4404",
+    "revision": "a3f2c7f7c59a9a3d",
     "screens": {
       "default": "glance",
       "order": [

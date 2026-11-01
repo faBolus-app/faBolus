@@ -5,8 +5,6 @@ import faBolusCore
 /// The phone's settings that shape the watch, as the app stores them. Unknown or impossible values are
 /// corrected when the config is built, so the watch always gets one it can use.
 public struct WatchPreferences: Sendable, Hashable {
-    public var garminBolusEnabled = false
-    public var remotesReadOnly = false
     /// `"carbs"` or `"units"`.
     public var bolusMode = "carbs"
     public var bolusIncrementUnits = 0.05
@@ -32,9 +30,12 @@ public struct WatchPreferences: Sendable, Hashable {
 }
 
 public enum ConfigComposer {
-    /// The watch's staleness comes from the windows the phone itself uses (`PumpSession.freshness`), so the
-    /// two can't drift apart: one setting, both surfaces.
-    public static func compose(_ p: WatchPreferences, freshness: FreshnessThresholds) -> WatchConfig {
+    /// Whether the watch may bolus comes from the access context the phone enforces, and its staleness from
+    /// the windows the phone itself uses (`PumpSession.freshness`), so neither can drift apart: one setting,
+    /// both surfaces.
+    public static func compose(
+        _ p: WatchPreferences, access: AccessPolicy.AccessContext, freshness: FreshnessThresholds
+    ) -> WatchConfig {
         let defaults = WatchPreferences()
         var order = unique(p.screenOrder.compactMap(ScreenToken.init(rawValue:)))
         if order.isEmpty { order = defaults.screenOrder.compactMap(ScreenToken.init(rawValue:)) }
@@ -46,7 +47,7 @@ public enum ConfigComposer {
             storedCeiling: p.glucosePlotCeilingSmall ?? p.glucosePlotCeiling)
         let step = milliunits(p.bolusIncrementUnits).map { min(10_000, max(10, $0)) } ?? 50
         return WatchConfig(
-            bolusEnabled: p.garminBolusEnabled, readOnly: p.remotesReadOnly,
+            bolusEnabled: access.garminBolusEnabled, readOnly: access.remotesReadOnly,
             defaultBolusMode: BolusModeToken(rawValue: p.bolusMode) ?? .carbs, unitsStepMilliunits: step,
             carbStepGrams: min(50, max(1, p.carbIncrementGrams)), screenOrder: order, defaultScreen: defaultScreen,
             detailsOrder: unique(p.detailsOrder.compactMap(DetailToken.init(rawValue:))), chartHours: hours,
@@ -56,6 +57,8 @@ public enum ConfigComposer {
             complicationLabels: p.complicationLabels,
             glucoseUnit: GlucoseUnitToken(rawValue: p.glucoseDisplayUnit) ?? .mgdl,
             glucoseStaleMinutes: staleMinutes(freshness),
+            iobStaleMinutes: minutes(freshness.insulinOnBoardStaleAfter, max: 60),
+            therapyStaleMinutes: minutes(freshness.therapyStaleAfter, max: 240),
             glucoseHideDelayMinutes: hideDelayMinutes(freshness),
             plotFloorMgdl: plot.floor, plotCeilingMgdl: plot.ceiling)
     }
@@ -70,6 +73,12 @@ public enum ConfigComposer {
     static func staleMinutes(_ f: FreshnessThresholds) -> Int {
         guard f.glucoseStaleAfter.isFinite, f.glucoseStaleAfter >= 0 else { return 1 }
         return min(60, max(1, Int(f.glucoseStaleAfter / 60)))
+    }
+
+    /// Whole minutes, at least one; a window the phone can't use is the shortest.
+    static func minutes(_ window: TimeInterval, max upper: Int) -> Int {
+        guard window.isFinite, window >= 0 else { return 1 }
+        return min(upper, max(1, Int(window / 60)))
     }
 
     /// How long after going stale a reading is hidden; the phone's window is the age it's hidden at.

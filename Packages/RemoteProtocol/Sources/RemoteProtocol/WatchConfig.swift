@@ -29,6 +29,9 @@ public struct WatchConfig: Sendable, Hashable {
     public var glucoseUnit: GlucoseUnitToken
     /// Glucose older than this is shown marked as stale.
     public var glucoseStaleMinutes: Int
+    /// IOB, and the calculator's settings, count as current while younger than these: the phone's own windows.
+    public var iobStaleMinutes: Int
+    public var therapyStaleMinutes: Int
     /// How long after going stale the value is hidden; `nil` never hides it.
     public var glucoseHideDelayMinutes: Int?
     /// The chart's y-axis, mg/dL, already resolved for a small screen.
@@ -43,6 +46,7 @@ public struct WatchConfig: Sendable, Hashable {
         carbStepGrams: Int, screenOrder: [ScreenToken], defaultScreen: ScreenToken, detailsOrder: [DetailToken],
         chartHours: [Int], complicationSlots: [ComplicationSlotToken],
         complicationLabels: Bool = false, glucoseUnit: GlucoseUnitToken, glucoseStaleMinutes: Int,
+        iobStaleMinutes: Int = 5, therapyStaleMinutes: Int = 15,
         glucoseHideDelayMinutes: Int?,
         plotFloorMgdl: Int, plotCeilingMgdl: Int
     ) {
@@ -59,6 +63,8 @@ public struct WatchConfig: Sendable, Hashable {
         self.complicationLabels = complicationLabels
         self.glucoseUnit = glucoseUnit
         self.glucoseStaleMinutes = glucoseStaleMinutes
+        self.iobStaleMinutes = iobStaleMinutes
+        self.therapyStaleMinutes = therapyStaleMinutes
         self.glucoseHideDelayMinutes = glucoseHideDelayMinutes
         self.plotFloorMgdl = plotFloorMgdl
         self.plotCeilingMgdl = plotCeilingMgdl
@@ -97,6 +103,10 @@ public struct WatchConfig: Sendable, Hashable {
         glucose.set("plotFloor", plotFloorMgdl)
         glucose.set("plotCeiling", plotCeilingMgdl)
         w.set("glucose", glucose.value)
+        var freshness = FieldWriter()
+        freshness.set("iobMinutes", iobStaleMinutes)
+        freshness.set("therapyMinutes", therapyStaleMinutes)
+        w.set("freshness", freshness.value)
         return w.value
     }
 
@@ -136,6 +146,9 @@ public struct WatchConfig: Sendable, Hashable {
         plotFloorMgdl = try glucose.int("plotFloor", in: 0...400)
         plotCeilingMgdl = try glucose.int("plotCeiling", in: 100...600)
         guard plotFloorMgdl < plotCeilingMgdl else { throw .outOfRange(field: "payload.glucose.plotFloor") }
+        let freshness = try r.object("freshness")
+        iobStaleMinutes = try freshness.int("iobMinutes", in: 1...60)
+        therapyStaleMinutes = try freshness.int("therapyMinutes", in: 1...240)
         // A revision that doesn't match the content is a corrupt message, not a config to adopt.
         let sent = try r.id("revision")
         guard sent == revision else { throw .outOfRange(field: "payload.revision") }

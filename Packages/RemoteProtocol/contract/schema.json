@@ -592,6 +592,7 @@
         "chartHours",
         "complication",
         "details",
+        "freshness",
         "glucose",
         "revision",
         "screens"
@@ -711,6 +712,26 @@
           "maxItems": 4,
           "uniqueItems": true,
           "minItems": 1
+        },
+        "freshness": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "iobMinutes",
+            "therapyMinutes"
+          ],
+          "properties": {
+            "iobMinutes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 60
+            },
+            "therapyMinutes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 240
+            }
+          }
         },
         "complication": {
           "type": "object",

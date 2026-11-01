@@ -130,9 +130,7 @@ struct HostRig {
     }
 
     static func settings(readOnly: Bool = false, enabled: Bool = true) -> RemoteSettings {
-        var prefs = WatchPreferences()
-        prefs.garminBolusEnabled = enabled
-        prefs.remotesReadOnly = readOnly
+        let prefs = WatchPreferences()
         return RemoteSettings(
             access: .init(
                 phoneReadOnly: false, remotesReadOnly: readOnly, capabilities: .tslimX2, garminBolusEnabled: enabled),

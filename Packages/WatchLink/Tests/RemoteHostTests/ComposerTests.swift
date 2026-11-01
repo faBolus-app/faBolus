@@ -166,6 +166,8 @@ import Testing
 }
 
 @Suite struct ConfigComposerTests {
+    static let access = StatusComposerTests.access
+
     /// Settings the watch can't use are corrected, never sent as they are.
     @Test func impossibleSettingsAreCorrected() {
         var p = WatchPreferences()
@@ -178,7 +180,7 @@ import Testing
         p.glucosePlotFloor = 50
         p.glucosePlotFloorSmall = 40
         p.glucosePlotCeilingSmall = 350
-        let c = ConfigComposer.compose(p, freshness: .standard)
+        let c = ConfigComposer.compose(p, access: Self.access, freshness: .standard)
         #expect(c.screenOrder == [.details, .clock])
         #expect(c.defaultScreen == .details)
         #expect(c.chartHours == [6])
@@ -194,7 +196,7 @@ import Testing
         var p = WatchPreferences()
         p.screenOrder = []
         p.watchChartRanges = []
-        let c = ConfigComposer.compose(p, freshness: .standard)
+        let c = ConfigComposer.compose(p, access: Self.access, freshness: .standard)
         #expect(c.screenOrder == [.glance, .alerts, .history, .details])
         #expect(c.chartHours == WatchConfig.allowedChartHours)
     }
@@ -203,29 +205,67 @@ import Testing
     @Test func theWatchsStalenessFollowsThePhonesFreshness() {
         let p = WatchPreferences()
         var f = FreshnessThresholds(glucoseStaleAfter: 10 * 60, glucoseHideAfter: 30 * 60)
-        var c = ConfigComposer.compose(p, freshness: f)
+        var c = ConfigComposer.compose(p, access: Self.access, freshness: f)
         #expect(c.glucoseStaleMinutes == 10)
         #expect(c.glucoseHideDelayMinutes == 20)
         f.glucoseHideAfter = nil
-        #expect(ConfigComposer.compose(p, freshness: f).glucoseHideDelayMinutes == nil)
+        #expect(ConfigComposer.compose(p, access: Self.access, freshness: f).glucoseHideDelayMinutes == nil)
         f.glucoseStaleAfter = .nan
-        c = ConfigComposer.compose(p, freshness: f)
+        c = ConfigComposer.compose(p, access: Self.access, freshness: f)
         #expect(c.glucoseStaleMinutes == 1)
         f.glucoseStaleAfter = 600 * 60
-        #expect(ConfigComposer.compose(p, freshness: f).glucoseStaleMinutes == 60)
+        #expect(ConfigComposer.compose(p, access: Self.access, freshness: f).glucoseStaleMinutes == 60)
+    }
+
+    /// Whether the watch may bolus is the access the phone enforces, not a copy of it.
+    @Test func bolusingOnTheWatchIsTheAccessThePhoneEnforces() {
+        var access = Self.access
+        #expect(ConfigComposer.compose(WatchPreferences(), access: access, freshness: .standard).bolusEnabled)
+        access.garminBolusEnabled = false
+        access.remotesReadOnly = true
+        let c = ConfigComposer.compose(WatchPreferences(), access: access, freshness: .standard)
+        #expect(!c.bolusEnabled)
+        #expect(c.readOnly)
+        // The phone's own read-only mode isn't the watch's setting; the gate in the status carries it.
+        access = Self.access
+        access.phoneReadOnly = true
+        #expect(!ConfigComposer.compose(WatchPreferences(), access: access, freshness: .standard).readOnly)
+    }
+
+    /// The IOB and settings windows the watch's calculator and slots use are the phone's.
+    @Test func theWatchsInputWindowsAreThePhones() {
+        let f = FreshnessThresholds(insulinOnBoardStaleAfter: 4 * 60, therapyStaleAfter: 20 * 60)
+        let c = ConfigComposer.compose(WatchPreferences(), access: Self.access, freshness: f)
+        #expect(c.iobStaleMinutes == 4)
+        #expect(c.therapyStaleMinutes == 20)
+    }
+
+    /// The constants the watch keeps its own copy of are the phone's: a change here fails until the contract
+    /// file, and with it the watch's test, follows.
+    @Test func theSharedConstantsAreThePhones() throws {
+        let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("RemoteProtocol/contract/shared_constants.json")
+        let object = try #require(
+            try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: [String: Int]])
+        #expect(
+            object["glucoseBands"] == [
+                "low": GlucoseThresholds.low, "high": GlucoseThresholds.high, "veryHigh": GlucoseThresholds.veryHigh
+            ])
+        #expect(object["plausibleGlucose"] == ["min": GlucosePlausibility.minimum, "max": GlucosePlausibility.maximum])
     }
 
     /// The default preferences are the golden config.
     @Test func theDefaultsAreTheGoldenConfig() {
-        var p = WatchPreferences()
-        p.garminBolusEnabled = true
-        #expect(ConfigComposer.compose(p, freshness: .standard) == GoldenFixtures.config)
+        #expect(
+            ConfigComposer.compose(WatchPreferences(), access: Self.access, freshness: .standard)
+                == GoldenFixtures.config)
     }
 
     @Test func theUnitsStepIsExact() {
         var p = WatchPreferences()
         p.bolusIncrementUnits = 0.1
-        #expect(ConfigComposer.compose(p, freshness: .standard).unitsStepMilliunits == 100)
+        #expect(ConfigComposer.compose(p, access: Self.access, freshness: .standard).unitsStepMilliunits == 100)
     }
 }
 
