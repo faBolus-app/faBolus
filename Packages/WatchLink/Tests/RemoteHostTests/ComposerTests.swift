@@ -124,17 +124,25 @@ import Testing
     }
 
     /// The watch mirrors the phone's list, most severe first, capped at vibration; a malfunction is never
-    /// offered as dismissable.
+    /// offered as dismissable, and a pump alert is only when the session says it can be cleared remotely:
+    /// one the phone may still try isn't.
     @Test func alertsAreMirroredInOrder() {
-        let malfunction = PumpAlert(id: 4, kind: .alarm, title: "M", isDismissable: true, malfunctionCode: 4)
-        let items = StatusComposer.alertItems([
-            Self.alert("info", .info, .passive),
-            Self.alert("crit", .critical, .timeSensitive, pump: malfunction),
-            Self.alert("warn", .warning, .active, pump: PumpAlert(id: 2, kind: .alert, title: "L"))
-        ])
+        let malfunction = PumpAlert(
+            id: 4, kind: .alarm, title: "M", isDismissable: true, malfunctionCode: 4, remoteClear: .available)
+        func alerts(_ clear: RemoteClear) -> [ActiveAlert] {
+            [
+                Self.alert("info", .info, .passive),
+                Self.alert("crit", .critical, .timeSensitive, pump: malfunction),
+                Self.alert(
+                    "warn", .warning, .active, pump: PumpAlert(id: 2, kind: .alert, title: "L", remoteClear: clear))
+            ]
+        }
+        let items = StatusComposer.alertItems(alerts(.available))
         #expect(items.map(\.id) == ["crit", "warn", "info"])
         #expect(items.map(\.intent) == [.alert, .alert, .quiet])
         #expect(items.map(\.dismissable) == [false, true, false])
+        #expect(StatusComposer.alertItems(alerts(.tryable)).map(\.dismissable) == [false, false, false])
+        #expect(StatusComposer.alertItems(alerts(.unavailable)).map(\.dismissable) == [false, false, false])
     }
 
     @Test func longTextIsCutToTheLimit() {

@@ -337,6 +337,33 @@ Tandem's app. Every CGM alert, and the alert bits pumpx2 names as CGM alerts or 
   transmitter alert, sensor expiring). A wrong bit only lands under the other switch; both are on by default.
 - **Verify:** when the pump raises one of these, compare what it shows with the category the app posts it under.
 
+## 18. Whether a t:slim acts on a remote clear (DismissNotification, op-184)
+
+The old app never sent op-184 to a t:slim: its capability note said "t:slim X2 firmware silently rejects a
+remote dismissal". The rebuild's plan records op-184 as used in the field on P2, but no record shows a clear
+that took effect. Each pump alert carries `remoteClear` (`available`, `tryable`, `unavailable`), decided in
+one place, `RemoteClearing.decide`: the alert's own dismissable flag, then the class table
+`RemoteClearing.knownClasses` (empty for the t:slim), then this unit's trial result. The phone and the watch
+read it and nothing else; the watch clears only `available`.
+
+While the class is unknown, the phone may try one clear (`tryable`). The pump's "cleared" (status 0) is only a
+claim: the alert read that follows decides it for that unit and firmware, and a "cleared" that left the alert
+showing is reported as `DismissOutcome.notCleared` ("clear it on the pump").
+
+- **Unverified:** whether P1 (API 2.5) and P2 (API 4.0) act on op-184, or answer status 0 and leave the alert.
+  If the pump updates its alert list a moment after answering, one clear could read as "doesn't clear".
+- **Verify:** the pump session's bench check on P1 and P2: clear a real alert from the phone and confirm it
+  goes from the pump's screen and from the next alert read.
+- **Then finish it:** add a row per class to `RemoteClearing.knownClasses` (`PumpClass(model: .tslim,
+  apiVersion: …)`: `.clears` or `.doesNotClear`), and delete the trial: `RemoteClear.tryable`,
+  `PumpSessionRecord.remoteClearTrials`, `PumpAlertLists.unitClears`, `PumpSession.remoteClearTrialResult`,
+  `PumpSession.trialCheck` (and `statusRead(for:)`), `DismissOutcome.notCleared`, the `dismissLeavesAlert`
+  knob in `ScriptedPump`, the phone's "Try clearing from phone" action, and their tests
+  (`theTrialDecidesFromTheReadAfterTheClear`, `theTrialIsKeptPerUnitAndFirmware`,
+  `anAlertClearedOnThePumpDoesntCount`, `anOlderRecordReadsAsUnknown`). The status format and the watch
+  don't change; `aClassKnownToClearIsAvailableWithNothingRecorded` and
+  `aClassKnownNotToClearIsUnavailableAndNothingIsSent` keep passing.
+
 ## Resolution Ledger (09.14, D-03 — todo #17 Task A)
 
 Most of the items below are **bench-gated and cannot be resolved in 09.14** — they REASSIGN to

@@ -41,6 +41,17 @@ public enum AlertEscalation: Int, Sendable, Hashable, Codable, CaseIterable, Com
     public static let releaseCeiling: AlertEscalation = .none
 }
 
+/// Whether an alert can be cleared from the phone or a remote (DismissNotification). The pump session decides
+/// it once per alert, and the phone and the remotes only read it.
+public enum RemoteClear: String, Sendable, Hashable, Codable {
+    /// It can be cleared remotely.
+    case available
+    /// Not yet known for this pump: the phone may try clearing it once to find out. A remote never does.
+    case tryable
+    /// Clear it on the pump.
+    case unavailable
+}
+
 /// A notification the pump is showing, mapped from the pump library's own type so nothing above the
 /// pump layer depends on that library.
 public struct PumpAlert: Identifiable, Sendable, Hashable, Codable {
@@ -57,10 +68,13 @@ public struct PumpAlert: Identifiable, Sendable, Hashable, Codable {
     public let malfunctionCode: Int?
     /// How hard the app pushes this alert. Set by the alert policy, not by the pump.
     public var escalation: AlertEscalation
+    /// Whether it can be cleared from the phone or a remote. Set by the pump session, from this alert and
+    /// what's known about the pump; nothing else decides it.
+    public var remoteClear: RemoteClear
 
     public init(
         id: Int, kind: PumpAlertKind, title: String, detail: String = "", isDismissable: Bool = true,
-        malfunctionCode: Int? = nil, escalation: AlertEscalation = .none
+        malfunctionCode: Int? = nil, escalation: AlertEscalation = .none, remoteClear: RemoteClear = .unavailable
     ) {
         self.id = id
         self.kind = kind
@@ -69,6 +83,24 @@ public struct PumpAlert: Identifiable, Sendable, Hashable, Codable {
         self.isDismissable = isDismissable
         self.malfunctionCode = malfunctionCode
         self.escalation = escalation
+        self.remoteClear = remoteClear
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, kind, title, detail, isDismissable, malfunctionCode, escalation, remoteClear
+    }
+
+    /// An alert saved before `remoteClear` existed reads as not clearable remotely until the session sets it.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(Int.self, forKey: .id)
+        kind = try c.decode(PumpAlertKind.self, forKey: .kind)
+        title = try c.decode(String.self, forKey: .title)
+        detail = try c.decode(String.self, forKey: .detail)
+        isDismissable = try c.decode(Bool.self, forKey: .isDismissable)
+        malfunctionCode = try c.decodeIfPresent(Int.self, forKey: .malfunctionCode)
+        escalation = try c.decode(AlertEscalation.self, forKey: .escalation)
+        remoteClear = try c.decodeIfPresent(RemoteClear.self, forKey: .remoteClear) ?? .unavailable
     }
 
     public var isMalfunction: Bool { malfunctionCode != nil }
@@ -97,4 +129,7 @@ public enum DismissOutcome: Sendable, Hashable, Codable {
     /// This pump doesn't support remote dismissal, so nothing was sent. The app says so instead of
     /// failing silently.
     case unsupported
+    /// The pump answered that it cleared the alert, but the alert was still there on the next read: this
+    /// pump doesn't act on a remote clear. The user is told to clear it on the pump.
+    case notCleared
 }

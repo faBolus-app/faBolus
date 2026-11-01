@@ -69,7 +69,7 @@ two clocks needn't agree. A value that hasn't been read, or whose time can't be 
 | `maxBasal` | `mUPerHour`, `at` |
 | `lastAutoCorrection` | `at`: when Control-IQ last gave an automatic correction bolus, from the pump's history; absent when none is known |
 | `bolus` | `canBolus`; `blockReason` when it's false; `active` (the bolus the pump is delivering, from any surface: `requestedMU`, `deliveredMU`, `startedAt`); `remoteLimitMU` when set |
-| `alerts` | what the phone holds and has announced, most severe first: `id`, `title`, `body`, `severity` (`info`, `warning`, `critical`), `intent` (`quiet`, `alert`: shown, with or without vibration), `dismissable` |
+| `alerts` | what the phone holds and has announced, most severe first: `id`, `title`, `body`, `severity` (`info`, `warning`, `critical`), `intent` (`quiet`, `alert`: shown, with or without vibration), `dismissable` (the remote may offer to clear it on the pump: true only once this pump is known to act on a remote clear, so a remote never makes the first try) |
 
 `blockReason` is one of `pumpNotConnected`, `bolusInProgress`, `cartridgeNotReady`, `readOnly`,
 `watchBolusOff`, `pumpCannotBolus`, `outcomeUnknown`, `deliveryLocked`. A remote shows a reason it doesn't

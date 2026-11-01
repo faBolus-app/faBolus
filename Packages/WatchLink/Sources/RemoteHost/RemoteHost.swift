@@ -310,12 +310,14 @@ public actor RemoteHost {
         defer { dismissing.remove(p.requestId) }
         let result: DismissResultToken
         if let alert = alerts.first(where: { StatusComposer.wireId($0.identifier) == p.alertId }) {
-            if let pump = alert.pumpAlert, pump.isDismissable, !pump.isMalfunction {
+            // A remote clears only what the session says can be cleared remotely; the first try on a pump
+            // not yet known is the phone's, never a remote's.
+            if let pump = alert.pumpAlert, pump.remoteClear == .available, !pump.isMalfunction {
                 switch await services.dismiss(pump) {
                 case .cleared: result = .cleared
                 case .refused: result = .refused
                 case .unconfirmed: result = .unconfirmed
-                case .unsupported: result = .unsupported
+                case .unsupported, .notCleared: result = .unsupported
                 }
             } else {
                 result = .unsupported

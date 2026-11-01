@@ -33,9 +33,16 @@ public struct PumpClockAnchor: Sendable, Equatable {
 struct PumpAlertLists: Sendable, Equatable {
     var byKind: [PumpAlertKind: [PumpAlert]] = [:]
     var malfunctions: [PumpAlert] = []
+    /// What's known about clearing on this pump, from which each alert's `remoteClear` is decided.
+    var classClears: RemoteClearEvidence?
+    var unitClears: RemoteClearEvidence?
 
     var merged: [PumpAlert] {
-        PumpAlertKind.allCases.flatMap { byKind[$0] ?? [] } + malfunctions
+        (PumpAlertKind.allCases.flatMap { byKind[$0] ?? [] } + malfunctions).map {
+            var alert = $0
+            alert.remoteClear = RemoteClearing.decide(alert, classAnswer: classClears, unitAnswer: unitClears)
+            return alert
+        }
     }
 
     static func alert(_ n: PumpNotification) -> PumpAlert {

@@ -20,6 +20,9 @@ public final class ScriptedPump {
 
     public var name = "tslim X2 ***693"
     public var serialNumber: UInt32 = 1693
+    /// The ARM and MSP software versions PumpVersion reports: with the serial, the unit a support record
+    /// is kept for.
+    public var softwareVersion: UInt32 = 7
     public var apiVersion = (major: 2, minor: 5)
     public var inRange = true
     public var poweredOn = true
@@ -59,6 +62,8 @@ public final class ScriptedPump {
     public var malfunctionBitmap: UInt64 = 0
     /// A cartridge is in: without one the pump refuses bolus permission.
     public var cartridgeLoaded = true
+    /// Answers a DismissNotification with status 0 but leaves the alert showing, as some firmware may.
+    public var dismissLeavesAlert = false
 
     // MARK: Faults
 
@@ -379,8 +384,8 @@ public final class ScriptedTransport: LinkTransport {
             return ApiVersionResponse(cargo: le16(pump.apiVersion.major) + le16(pump.apiVersion.minor))
         case (.currentStatus, PumpVersionRequest.props.opCode):
             var v = [UInt8](repeating: 0, count: 48)
-            v.replaceSubrange(0..<4, with: le32(7))
-            v.replaceSubrange(4..<8, with: le32(7))
+            v.replaceSubrange(0..<4, with: le32(pump.softwareVersion))
+            v.replaceSubrange(4..<8, with: le32(pump.softwareVersion))
             v.replaceSubrange(16..<20, with: le32(pump.serialNumber))
             return PumpVersionResponse(cargo: v)
         case (.currentStatus, TimeSinceResetRequest.props.opCode):
@@ -510,6 +515,7 @@ public final class ScriptedTransport: LinkTransport {
             return CancelBolusResponse(cargo: [0] + le16(id) + [0, 0])
         case (.control, DismissNotificationRequest.props.opCode):
             let id = Int(readU32(cargo, 0))
+            if pump.dismissLeavesAlert { return DismissNotificationResponse(cargo: [0]) }
             switch cargo[4] {
             case 0: pump.reminderBitmap &= ~(1 << UInt64(id))
             case 1: pump.alertBitmap &= ~(1 << UInt64(id))

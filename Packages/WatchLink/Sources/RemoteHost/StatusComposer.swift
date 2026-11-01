@@ -21,8 +21,8 @@ public struct StatusInputs: Sendable {
 
     public init(
         pump: PumpState, glucoseProvenance: GlucoseProvenance, access: AccessPolicy.AccessContext,
-        bolusBlock: BolusBlock?, alerts: [ActiveAlert], lastAutoCorrection: Date?, configRevision: String,
-        remoteSizeLimitUnits: Double?, now: Date
+        bolusBlock: BolusBlock?, alerts: [ActiveAlert], lastAutoCorrection: Date?,
+        configRevision: String, remoteSizeLimitUnits: Double?, now: Date
     ) {
         self.pump = pump
         self.glucoseProvenance = glucoseProvenance
@@ -129,7 +129,8 @@ public enum StatusComposer {
             case .quiet: intent = .quiet
             case .alert, .urgent: intent = .alert
             }
-            let dismissable = alert.pumpAlert.map { $0.isDismissable && !$0.isMalfunction } ?? false
+            // The watch clears only what's `.available`: a pump not yet known is the phone's to try.
+            let dismissable = alert.pumpAlert.map { $0.remoteClear == .available && !$0.isMalfunction } ?? false
             return AlertItem(
                 id: wireId(alert.identifier),
                 title: truncated(alert.title, WireLimits.maxTitleLength),

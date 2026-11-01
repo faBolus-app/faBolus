@@ -58,6 +58,8 @@ public actor PumpSession {
         /// The ticker's rhythm while nothing is in flight, and while a bolus or history page is.
         public var idleTick: TimeInterval = 5
         public var busyTick: TimeInterval = 0.5
+        /// Whether each class of pump acts on a remote clear (`RemoteClearing.knownClasses`; tests set rows).
+        public var remoteClearClasses = RemoteClearing.knownClasses
 
         public init() {}
     }
@@ -461,6 +463,7 @@ public actor PumpSession {
         // Everything per connection is set before the first suspension, so a tick that runs meanwhile sees
         // this connection, not the last one.
         self.identity = identity
+        refreshRemoteClear()
         connectedAt = now
         onceThisConnection = []
         reconcileAttempts = 0

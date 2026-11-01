@@ -40,6 +40,16 @@ public struct StoredPairing: Sendable, Equatable, Codable {
     public var pumpKey: String? { trustedSerial.map { "tandem|\($0)" } }
 }
 
+/// Whether a pump acts on a remote clear (DismissNotification, op-184). Answering the request isn't enough:
+/// some firmware may answer "cleared" and leave the alert showing, so it takes the alert read that follows a
+/// clear to say.
+public enum RemoteClearEvidence: String, Sendable, Equatable, Codable {
+    /// The pump confirmed the clear and the alert was gone on the next read of its kind.
+    case clears
+    /// The pump confirmed the clear, but the alert was still there on that read.
+    case doesNotClear
+}
+
 /// Everything the session persists apart from the pairing secret and the bolus ledger.
 public struct PumpSessionRecord: Sendable, Equatable, Codable {
     public var pairing: StoredPairing?
@@ -49,15 +59,34 @@ public struct PumpSessionRecord: Sendable, Equatable, Codable {
     /// The history sequence numbers already held for the paired pump.
     public var coverage: HistoryCoverage
     public var lastHistorySync: Date?
+    /// The remote-clear trial: whether each unit acted on the phone's clear, the latest observation winning;
+    /// a unit not here is unknown. Per unit and firmware, like the support matrix, so a firmware update starts
+    /// over. Used only while `RemoteClearing.knownClasses` has no answer for the unit's class.
+    public var remoteClearTrials: [PumpUnit: RemoteClearEvidence]
 
     public init(
         pairing: StoredPairing? = nil, support: SupportMatrix = SupportMatrix(),
-        coverage: HistoryCoverage = HistoryCoverage(), lastHistorySync: Date? = nil
+        coverage: HistoryCoverage = HistoryCoverage(), lastHistorySync: Date? = nil,
+        remoteClearTrials: [PumpUnit: RemoteClearEvidence] = [:]
     ) {
         self.pairing = pairing
         self.support = support
         self.coverage = coverage
         self.lastHistorySync = lastHistorySync
+        self.remoteClearTrials = remoteClearTrials
+    }
+
+    private enum CodingKeys: String, CodingKey { case pairing, support, coverage, lastHistorySync, remoteClearTrials }
+
+    /// A record saved before `remoteClearTrials` existed reads as unknown for every unit.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        pairing = try c.decodeIfPresent(StoredPairing.self, forKey: .pairing)
+        support = try c.decode(SupportMatrix.self, forKey: .support)
+        coverage = try c.decode(HistoryCoverage.self, forKey: .coverage)
+        lastHistorySync = try c.decodeIfPresent(Date.self, forKey: .lastHistorySync)
+        remoteClearTrials =
+            try c.decodeIfPresent([PumpUnit: RemoteClearEvidence].self, forKey: .remoteClearTrials) ?? [:]
     }
 }
 

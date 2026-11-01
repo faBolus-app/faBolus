@@ -173,7 +173,7 @@ import faBolusCore
 
 @MainActor
 @Suite struct RemoteHostDismissTests {
-    static let pumpAlert = PumpAlert(id: 2, kind: .alert, title: "Low insulin")
+    static let pumpAlert = PumpAlert(id: 2, kind: .alert, title: "Low insulin", remoteClear: .available)
     static func active(_ id: String, pump: PumpAlert?) -> ActiveAlert {
         ActiveAlert(
             AlertRequest(
@@ -209,6 +209,30 @@ import faBolusCore
         await rig.receive(.dismiss(.init(requestId: "d2", alertId: "m")))
         #expect(rig.transport.dismissResults.map(\.result) == [.unsupported, .unsupported])
         #expect(await rig.services.dismissed.isEmpty)
+    }
+
+    /// An alert the phone may still try clearing isn't offered to the watch, and a dismiss that arrives
+    /// anyway sends nothing: the watch is told to clear it on the pump. A pump that answers "cleared" but
+    /// leaves the alert is the same answer.
+    @Test func theWatchClearsOnlyWhatCanBeClearedRemotely() async {
+        let rig = HostRig()
+        await rig.start()
+        let tryable = PumpAlert(id: 2, kind: .alert, title: "Low insulin", remoteClear: .tryable)
+        await rig.host.alertsChanged([Self.active("pump.alert.2", pump: tryable)])
+        await rig.settle()
+        #expect(rig.transport.statuses.last?.alerts.map(\.dismissable) == [false])
+        await rig.receive(fixture: "dismiss")
+        #expect(rig.transport.dismissResults.map(\.result) == [.unsupported])
+        #expect(await rig.services.dismissed.isEmpty)
+
+        let seen = HostRig()
+        await seen.services.set(dismissOutcome: .notCleared)
+        await seen.start()
+        await seen.host.alertsChanged([Self.active("pump.alert.2", pump: Self.pumpAlert)])
+        await seen.settle()
+        #expect(seen.transport.statuses.last?.alerts.map(\.dismissable) == [true])
+        await seen.receive(fixture: "dismiss")
+        #expect(seen.transport.dismissResults.map(\.result) == [.unsupported])
     }
 
     /// An unconfirmed dismiss may be tried again.

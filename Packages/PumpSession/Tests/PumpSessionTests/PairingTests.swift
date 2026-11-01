@@ -211,6 +211,152 @@ import Testing
         #expect(await rig.events.contains(.alertDismissed(alert, .cleared)))
     }
 
+    private static let tslimAPI25 = PumpClass(model: .tslim, apiVersion: ApiVersion(major: 2, minor: 5))
+
+    private static func classKnown(_ answer: RemoteClearEvidence) -> PumpSession.Configuration {
+        var c = PumpSession.Configuration()
+        c.remoteClearClasses = [tslimAPI25: answer]
+        return c
+    }
+
+    /// A class known to clear: the alert can be cleared remotely, a clear just clears, and no trial is
+    /// recorded. These hold once the trial is gone.
+    @Test func aClassKnownToClearIsAvailableWithNothingRecorded() async throws {
+        let rig = Rig(
+            configure: {
+                $0.unsupportedReads = []
+                $0.alertBitmap = 1 << 7
+            }, configuration: Self.classKnown(.clears))
+        await rig.startHeld()
+        let alert = try #require(await rig.session.state.alerts?.value.first)
+        #expect(alert.remoteClear == .available)
+        let session = rig.session
+        let dismiss = Task { await session.dismiss(alert) }
+        await rig.run(for: 2)
+        #expect(await dismiss.value == .cleared)
+        #expect(rig.store.load()?.remoteClearTrials.isEmpty == true)
+    }
+
+    /// A class known not to clear: clear it on the pump, and nothing is sent.
+    @Test func aClassKnownNotToClearIsUnavailableAndNothingIsSent() async throws {
+        let rig = Rig(
+            configure: {
+                $0.unsupportedReads = []
+                $0.alertBitmap = 1 << 7
+            }, configuration: Self.classKnown(.doesNotClear))
+        await rig.startHeld()
+        let alert = try #require(await rig.session.state.alerts?.value.first)
+        #expect(alert.remoteClear == .unavailable)
+        #expect(await rig.session.dismiss(alert) == .unsupported)
+        #expect(rig.pump.arrivals(of: DismissNotificationRequest.self).isEmpty)
+    }
+
+    /// The trial: with nothing known for the class, the phone may try. The read after its clear decides it
+    /// for the unit: an alert still showing after "cleared" is reported as not cleared and the pump's alerts
+    /// can't be cleared remotely after it; one that went makes them clearable.
+    @Test func theTrialDecidesFromTheReadAfterTheClear() async throws {
+        let rig = Rig(configure: {
+            $0.unsupportedReads = []
+            $0.alertBitmap = 1 << 7
+            $0.dismissLeavesAlert = true
+        })
+        await rig.startHeld()
+        let session = rig.session
+        let alert = try #require(await session.state.alerts?.value.first)
+        #expect(alert.remoteClear == .tryable)
+        #expect(await session.remoteClearTrialResult == nil)
+        let dismiss = Task { await session.dismiss(alert) }
+        await rig.run(for: 2)
+        #expect(await dismiss.value == .notCleared)
+        #expect(await session.remoteClearTrialResult == .doesNotClear)
+        #expect(await session.state.alerts?.value.map(\.remoteClear) == [.unavailable])
+        #expect(await rig.events.contains(.alertDismissed(alert, .notCleared)))
+
+        let clears = Rig(configure: {
+            $0.unsupportedReads = []
+            $0.alertBitmap = 1 << 7 | 1 << 8
+        })
+        await clears.startHeld()
+        let first = try #require(await clears.session.state.alerts?.value.first)
+        let other = clears.session
+        let cleared = Task { await other.dismiss(first) }
+        await clears.run(for: 2)
+        #expect(await cleared.value == .cleared)
+        #expect(await other.remoteClearTrialResult == .clears)
+        #expect(await other.state.alerts?.value.map(\.remoteClear) == [.available])
+    }
+
+    /// The trial's result is kept for the unit and firmware: a relaunch keeps it, a firmware update starts
+    /// over, and forgetting the pairing clears it.
+    @Test func theTrialIsKeptPerUnitAndFirmware() async throws {
+        let first = Rig(configure: {
+            $0.unsupportedReads = []
+            $0.alertBitmap = 1 << 7
+        })
+        await first.startHeld()
+        let alert = try #require(await first.session.state.alerts?.value.first)
+        let session = first.session
+        let dismiss = Task { await session.dismiss(alert) }
+        await first.run(for: 2)
+        #expect(await dismiss.value == .cleared)
+        let saved = try #require(first.store.load())
+
+        let relaunched = Rig(
+            record: saved,
+            configure: {
+                $0.unsupportedReads = []
+                $0.alertBitmap = 1 << 9
+            })
+        await relaunched.startHeld()
+        #expect(await relaunched.session.remoteClearTrialResult == .clears)
+        #expect(await relaunched.session.state.alerts?.value.map(\.remoteClear) == [.available])
+
+        let updated = Rig(
+            record: saved,
+            configure: {
+                $0.unsupportedReads = []
+                $0.softwareVersion = 8
+                $0.alertBitmap = 1 << 9
+            })
+        await updated.startHeld()
+        #expect(await updated.session.remoteClearTrialResult == nil)
+        #expect(await updated.session.state.alerts?.value.map(\.remoteClear) == [.tryable])
+
+        await relaunched.session.forgetPairing()
+        #expect(relaunched.store.load()?.remoteClearTrials.isEmpty != false)
+        #expect(await relaunched.session.remoteClearTrialResult == nil)
+    }
+
+    /// An alert cleared on the pump itself, seen by a routine read, says nothing about a remote clear.
+    @Test func anAlertClearedOnThePumpDoesntCount() async throws {
+        let rig = Rig(configure: {
+            $0.unsupportedReads = []
+            $0.alertBitmap = 1 << 7
+        })
+        await rig.startHeld()
+        #expect(await rig.session.state.alerts?.value.count == 1)
+        rig.pump.alertBitmap = 0
+        await rig.run(for: 70, step: 5)
+        #expect(await rig.session.state.alerts?.value.isEmpty == true)
+        #expect(await rig.session.remoteClearTrialResult == nil)
+        #expect(rig.store.load()?.remoteClearTrials.isEmpty == true)
+    }
+
+    /// A record saved before this field existed reads as unknown for every unit.
+    @Test func anOlderRecordReadsAsUnknown() throws {
+        let unit = PumpUnit(serialNumber: 1693, armSoftwareVersion: 7, mspSoftwareVersion: 7)
+        let record = PumpSessionRecord(
+            pairing: Rig.pairing, lastHistorySync: Date(timeIntervalSince1970: 1_800_000_000),
+            remoteClearTrials: [unit: .doesNotClear])
+        let data = try JSONEncoder().encode(record)
+        #expect(try JSONDecoder().decode(PumpSessionRecord.self, from: data) == record)
+        var object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        object["remoteClearTrials"] = nil
+        let old = try JSONDecoder().decode(PumpSessionRecord.self, from: JSONSerialization.data(withJSONObject: object))
+        #expect(old.remoteClearTrials.isEmpty)
+        #expect(old.pairing == record.pairing)
+    }
+
     @Test func aPumpThatRejectsTheOpcodeSaysUnsupported() async throws {
         let rig = Rig(configure: {
             $0.unsupportedReads = []
