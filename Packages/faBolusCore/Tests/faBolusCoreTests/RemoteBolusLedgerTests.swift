@@ -121,7 +121,7 @@ final class RemoteBolusLedgerTests: XCTestCase {
 
         // Settled from history: the block lifts and the outcome is the pump's amount.
         var settled = l
-        settled.markDelivered(key("watch", "r1"), units: 2.0)
+        settled.markDeliveredFromHistory(key("watch", "r1"), units: 2.0, historyPumpKey: "real|P")
         XCTAssertNil(settled.block)
         XCTAssertEqual(settled.begin(request("phone", "p1", 1.0)), .proceed)
 
@@ -147,7 +147,7 @@ final class RemoteBolusLedgerTests: XCTestCase {
         XCTAssertEqual(l.block, .unknownOutcome(since: later))
         XCTAssertEqual(l.unresolved.map(\.key.requestId), ["new"])
         XCTAssertEqual(l.unknownOutcomes.map(\.key.requestId), ["old", "new"])
-        l.markDelivered(key("phone", "new"), units: 2.0)
+        l.markDeliveredFromHistory(key("phone", "new"), units: 2.0, historyPumpKey: "real|P")
         XCTAssertNil(l.block)
     }
 
@@ -532,7 +532,34 @@ final class RemoteBolusLedgerTests: XCTestCase {
         let entry = l.unresolved.first
         XCTAssertEqual(RemoteBolusLedger.comparePumpKey(entry?.pumpKey, to: "real|NEW-PUMP"), .mismatch)
         XCTAssertEqual(l.begin(request("phone", "p1", 1.0)), .blocked(.unknownOutcome(since: t0)))
+        // The connected pump's history can neither fail it nor give it an amount.
+        XCTAssertFalse(l.markAbsentFromHistory(key("watch", "cross-pump-dose"), historyPumpKey: "real|NEW-PUMP"))
+        XCTAssertFalse(
+            l.markDeliveredFromHistory(key("watch", "cross-pump-dose"), units: 2, historyPumpKey: "real|NEW-PUMP"))
+        XCTAssertEqual(l.outcome(key("watch", "cross-pump-dose")), .unknown(since: t0))
         l.confirmOnPump(key("watch", "cross-pump-dose"))
         XCTAssertEqual(l.begin(request("phone", "p1", 1.0)), .proceed)
+    }
+
+    /// Absence from history proves nothing for an entry whose pump identity wasn't recorded, while an
+    /// amount found by its bolus ID still settles it.
+    func testAnEntryWithNoRecordedPumpCantBeFailedFromHistory() {
+        var l = RemoteBolusLedger()
+        _ = l.begin(request("watch", "r1", 2.0))
+        l.markAccepted(key("watch", "r1"), bolusId: 42)  // no identity recorded
+        l.markUnknown(key("watch", "r1"), now: t0)
+        XCTAssertFalse(l.markAbsentFromHistory(key("watch", "r1"), historyPumpKey: "real|P"))
+        XCTAssertTrue(l.markDeliveredFromHistory(key("watch", "r1"), units: 2, historyPumpKey: "real|P"))
+        XCTAssertEqual(l.outcome(key("watch", "r1")), .delivered(units: 2))
+    }
+
+    /// A completion reply settles a bolus in flight; once the outcome is unknown, only history can.
+    func testACompletionReplyDoesNotSettleAnUnknownOutcome() {
+        var l = RemoteBolusLedger()
+        _ = l.begin(request("watch", "r1", 2.0))
+        l.markAccepted(key("watch", "r1"), bolusId: 42, pumpKey: "real|P")
+        l.markUnknown(key("watch", "r1"), now: t0)
+        XCTAssertFalse(l.markDelivered(key("watch", "r1"), units: 2))
+        XCTAssertEqual(l.outcome(key("watch", "r1")), .unknown(since: t0))
     }
 }

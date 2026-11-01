@@ -80,11 +80,29 @@ final class DurableBolusLedgerTests {
         try await first.markAccepted(Self.key("phone", "p1"), bolusId: 7)
         let second = DurableBolusLedger(store: RemoteBolusLedgerStore(url: url))
         #expect(await second.block != nil)
-        #expect(try await second.markDelivered(Self.key("phone", "p1"), units: 1.2))
+        #expect(try await second.markDelivered(Self.key("phone", "p1"), units: 1.2) == false, "only history settles it")
+        #expect(
+            try await second.markDeliveredFromHistory(Self.key("phone", "p1"), units: 1.2, historyPumpKey: "real|P"))
         #expect(await second.block == nil)
         let third = DurableBolusLedger(store: RemoteBolusLedgerStore(url: url))
         #expect(await third.block == nil)
         #expect(await third.ledger.outcome(Self.key("phone", "p1")) == .stopped(delivered: 1.2, requested: 2))
+    }
+
+    @Test func historyShowingNoSuchBolusFailsItAndLiftsTheBlock() async throws {
+        let url = temporaryURL()
+        let first = DurableBolusLedger(store: RemoteBolusLedgerStore(url: url))
+        _ = try await first.begin(Self.request("garmin", "r1"))
+        try await first.markAccepted(Self.key("garmin", "r1"), bolusId: 8, pumpKey: "real|P")
+        let second = DurableBolusLedger(store: RemoteBolusLedgerStore(url: url))
+        #expect(await second.block != nil)
+        #expect(try await second.markFailed(Self.key("garmin", "r1"), reason: "timed out") == false)
+        #expect(try await second.markAbsentFromHistory(Self.key("garmin", "r1"), historyPumpKey: "real|P"))
+        #expect(await second.block == nil)
+        let third = DurableBolusLedger(store: RemoteBolusLedgerStore(url: url))
+        #expect(
+            await third.ledger.outcome(Self.key("garmin", "r1"))
+                == .failed(reason: RemoteBolusLedger.absentFromHistoryReason))
     }
 
     @Test func aConfirmationOnThePumpSurvivesARestart() async throws {

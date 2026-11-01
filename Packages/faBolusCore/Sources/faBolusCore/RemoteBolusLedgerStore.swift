@@ -28,8 +28,7 @@ public final class RemoteBolusLedgerStore: RemoteBolusLedgerPersisting {
 
     /// The ledger file inside an App Group container when one is available, else Application Support.
     /// `nil` only when neither directory exists. The name differs from the old app's
-    /// `remote-bolus-ledger.json`, whose format this build doesn't read: the first-launch check reads
-    /// that file on its own.
+    /// `remote-bolus-ledger.json`, which this app never reads.
     public static func defaultURL(appGroupID: String?) -> URL? {
         let fm = FileManager.default
         let dir: URL?
@@ -182,6 +181,20 @@ public actor DurableBolusLedger {
     @discardableResult
     public func markFailed(_ key: RemoteBolusLedger.Key, reason: String, now: Date = Date()) throws -> Bool {
         try apply { $0.markFailed(key, reason: reason, now: now) }
+    }
+
+    @discardableResult
+    public func markDeliveredFromHistory(
+        _ key: RemoteBolusLedger.Key, units: Double, historyPumpKey: String, now: Date = Date()
+    ) throws -> Bool {
+        try apply { $0.markDeliveredFromHistory(key, units: units, historyPumpKey: historyPumpKey, now: now) }
+    }
+
+    @discardableResult
+    public func markAbsentFromHistory(
+        _ key: RemoteBolusLedger.Key, historyPumpKey: String, now: Date = Date()
+    ) throws -> Bool {
+        try apply { $0.markAbsentFromHistory(key, historyPumpKey: historyPumpKey, now: now) }
     }
 
     /// The user checked the pump and confirms one unknown outcome.

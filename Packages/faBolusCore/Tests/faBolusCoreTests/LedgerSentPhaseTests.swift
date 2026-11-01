@@ -80,8 +80,7 @@ final class LedgerSentPhaseTests: XCTestCase {
     }
 
     /// The format is versioned and strict: the old app's ledger (or any file this build doesn't know)
-    /// is unreadable and fails closed, never an empty, delivery-enabled ledger. The first-launch check
-    /// reads the old app's file on its own.
+    /// is unreadable and fails closed, never an empty, delivery-enabled ledger.
     func testOldFormatIsUnreadable() {
         let json = """
             {"cap":64,"order":["watch\\u001flegacy1"],

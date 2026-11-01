@@ -32,7 +32,7 @@ struct BolusOutcomeTests {
         "accepted>delivering", "accepted>delivered", "accepted>stopped", "accepted>refused", "accepted>failed",
         "accepted>unknown",
         "delivering>delivered", "delivering>stopped", "delivering>unknown",
-        "unknown>delivered", "unknown>stopped"
+        "unknown>delivered", "unknown>stopped", "unknown>failed"
     ]
 
     @Test func everyPairFollowsTheTable() {
@@ -50,13 +50,41 @@ struct BolusOutcomeTests {
         }
     }
 
-    /// An unknown outcome is never turned into a failure or a refusal; only a delivered amount the
-    /// pump reports can settle it.
-    @Test func unknownIsNeverCalledFailed() {
-        #expect(!BolusOutcome.unknown(since: Self.t0).canMove(to: .failed(reason: "x")))
+    /// An unknown outcome is never called failed on a guess. It becomes failed only when pump history
+    /// shows no such bolus, and never refused; a delivering bolus is never failed or refused.
+    @Test func unknownIsFailedOnlyFromHistory() {
         #expect(!BolusOutcome.unknown(since: Self.t0).canMove(to: .refused(reason: "x")))
         #expect(!BolusOutcome.delivering.canMove(to: .failed(reason: "x")))
         #expect(!BolusOutcome.delivering.canMove(to: .refused(reason: "x")))
+
+        var l = Self.ledger(at: .unknown(since: Self.t0))
+        let guessed = l.markFailed(Self.key, reason: "timed out")
+        #expect(!guessed, "markFailed never applies to an unknown outcome")
+        #expect(l.outcome(Self.key) == .unknown(since: Self.t0))
+        let otherPump = l.markAbsentFromHistory(Self.key, historyPumpKey: "real|OTHER")
+        #expect(!otherPump, "another pump's history never contains this bolus")
+        let fromHistory = l.markAbsentFromHistory(Self.key, historyPumpKey: Self.pump)
+        #expect(fromHistory)
+        #expect(l.outcome(Self.key) == .failed(reason: RemoteBolusLedger.absentFromHistoryReason))
+        #expect(l.block == nil)
+
+        // Only an unknown outcome can be settled that way.
+        for from in Self.all where !from.isUnknown {
+            var other = Self.ledger(at: from)
+            let applied = other.markAbsentFromHistory(Self.key, historyPumpKey: Self.pump)
+            #expect(!applied, "\(Self.name(from))")
+            #expect(other.outcome(Self.key) == from)
+        }
+    }
+
+    /// Confirming on the pump only lifts the block; history can still settle the outcome afterwards.
+    @Test func historyStillSettlesAnOutcomeConfirmedOnThePump() {
+        var l = Self.ledger(at: .unknown(since: Self.t0))
+        let confirmed = l.confirmOnPump(Self.key)
+        #expect(confirmed)
+        let settled = l.markAbsentFromHistory(Self.key, historyPumpKey: Self.pump)
+        #expect(settled)
+        #expect(l.outcome(Self.key) == .failed(reason: RemoteBolusLedger.absentFromHistoryReason))
     }
 
     @Test func classification() {
@@ -106,10 +134,16 @@ struct BolusOutcomeTests {
             l.markDelivered(key, units: 1)
         case .refused(let reason): l.markRefused(key, reason: reason)
         case .failed(let reason): l.markFailed(key, reason: reason)
-        case .unknown(let since): l.markUnknown(key, now: since)
+        case .unknown(let since):
+            l.markAccepted(key, bolusId: 1, pumpKey: pump)
+            l.markUnknown(key, now: since)
         }
         return l
     }
+
+    /// The pump that assigned the bolus ID, and whose history settles it.
+    private static let pump = "real|P"
+
 
     /// Apply the ledger transition that would produce `to`.
     private static func apply(_ to: BolusOutcome, to l: inout RemoteBolusLedger) -> Bool {
@@ -117,10 +151,17 @@ struct BolusOutcomeTests {
         case .requested: return false  // nothing moves back to requested
         case .accepted: return l.markAccepted(key, bolusId: 1)
         case .delivering: return l.markDelivering(key)
-        case .delivered: return l.markDelivered(key, units: 2)
-        case .stopped: return l.markDelivered(key, units: 1)
+        case .delivered, .stopped:
+            let units: Double = Self.name(to) == "delivered" ? 2 : 1
+            // From unknown, only pump history can settle it.
+            return l.outcome(key)?.isUnknown == true
+                ? l.markDeliveredFromHistory(key, units: units, historyPumpKey: pump)
+                : l.markDelivered(key, units: units)
         case .refused(let reason): return l.markRefused(key, reason: reason)
-        case .failed(let reason): return l.markFailed(key, reason: reason)
+        case .failed(let reason):
+            // From unknown, only pump history can make it failed.
+            return l.outcome(key)?.isUnknown == true
+                ? l.markAbsentFromHistory(key, historyPumpKey: pump) : l.markFailed(key, reason: reason)
         case .unknown(let since): return l.markUnknown(key, now: since)
         }
     }
@@ -134,7 +175,7 @@ struct BolusOutcomeTests {
                 let applied = Self.apply(to, to: &l)
                 let pair = "\(Self.name(from))>\(Self.name(to))"
                 #expect(applied == Self.allowed.contains(pair), "\(pair)")
-                #expect(l.outcome(Self.key) == (applied ? to : from), "\(pair)")
+                #expect(l.outcome(Self.key).map(Self.name) == Self.name(applied ? to : from), "\(pair)")
             }
         }
     }

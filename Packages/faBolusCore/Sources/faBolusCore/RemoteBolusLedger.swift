@@ -183,13 +183,28 @@ public struct RemoteBolusLedger: Sendable, Codable {
         move(key, to: .unknown(since: now), now: now)
     }
 
-    /// The pump reported how much went in, from a completion reply or from its history. Below the
-    /// requested amount this is `stopped`, otherwise `delivered`; an authoritative zero is
-    /// `stopped(delivered: 0, …)`, never `failed`, because an unknown outcome is never called failed. A non-finite or negative amount isn't a
-    /// reading, so it's ignored and the outcome stays where it was.
+    /// The pump reported how much went in, in its completion reply. Below the requested amount this is
+    /// `stopped`, otherwise `delivered`, including `stopped(delivered: 0, …)` for a bolus stopped before
+    /// anything went in. A non-finite or negative amount isn't a reading, so it's ignored and the outcome
+    /// stays where it was. An unknown outcome is settled only from history
+    /// (`markDeliveredFromHistory`, `markAbsentFromHistory`).
     @discardableResult
     public mutating func markDelivered(_ key: Key, units: Double, now: Date = Date()) -> Bool {
-        guard units.isFinite, units >= 0, let entry = entries[key] else { return false }
+        guard units.isFinite, units >= 0, let entry = entries[key], !entry.outcome.isUnknown else { return false }
+        let outcome = BolusOutcome.settled(deliveredUnits: units, requestedUnits: entry.request.totalUnits)
+        return move(key, to: outcome, now: now)
+    }
+
+    /// The history of the pump identified by `historyPumpKey` records this unknown bolus with the
+    /// amount delivered. Refused when the entry was assigned by a different pump, whose bolus IDs this
+    /// history doesn't speak for.
+    @discardableResult
+    public mutating func markDeliveredFromHistory(
+        _ key: Key, units: Double, historyPumpKey: String, now: Date = Date()
+    ) -> Bool {
+        guard units.isFinite, units >= 0, let entry = entries[key], entry.outcome.isUnknown,
+            Self.comparePumpKey(entry.pumpKey, to: historyPumpKey) != .mismatch
+        else { return false }
         let outcome = BolusOutcome.settled(deliveredUnits: units, requestedUnits: entry.request.totalUnits)
         return move(key, to: outcome, now: now)
     }
@@ -201,11 +216,28 @@ public struct RemoteBolusLedger: Sendable, Codable {
     }
 
     /// Nothing was delivered, for a reason the caller knows for certain. From `accepted` this is only
-    /// right when InitiateBolus was never sent.
+    /// right when InitiateBolus was never sent. It never applies to an unknown outcome: only pump
+    /// history can settle that (`markAbsentFromHistory`).
     @discardableResult
     public mutating func markFailed(_ key: Key, reason: String, now: Date = Date()) -> Bool {
-        move(key, to: .failed(reason: reason), now: now)
+        guard entries[key]?.outcome.isUnknown == false else { return false }
+        return move(key, to: .failed(reason: reason), now: now)
     }
+
+    /// The history of the pump identified by `historyPumpKey` shows there was no such bolus, so an
+    /// unknown outcome delivered nothing. Only the pump that assigned the bolus ID can show that: a
+    /// different pump's history never contains it, and an entry with no recorded identity can't be
+    /// matched, so both are refused and only history with the amount or the user confirming on the
+    /// pump can release them.
+    @discardableResult
+    public mutating func markAbsentFromHistory(_ key: Key, historyPumpKey: String, now: Date = Date()) -> Bool {
+        guard let entry = entries[key], entry.outcome.isUnknown,
+            Self.comparePumpKey(entry.pumpKey, to: historyPumpKey) == .matches
+        else { return false }
+        return move(key, to: .failed(reason: Self.absentFromHistoryReason), now: now)
+    }
+
+    public static let absentFromHistoryReason = "Pump history shows this bolus was never delivered."
 
     /// The user checked the pump and confirms an unknown outcome there. New boluses are no longer
     /// blocked by it. It stays `unknown`, and history can still settle it.
