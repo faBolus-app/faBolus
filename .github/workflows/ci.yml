@@ -2,333 +2,62 @@ name: CI
 
 on:
   push:
-    branches: [main, experimental, 'dev/**']
+    branches: [main, rebuild]
   pull_request:
-  # Manual re-validation. Required, not a convenience: this repo's CI fires only on ITS OWN pushes and
-  # PRs, but TandemKit is a local package dependency — so when a sibling repo merges, nothing here
-  # re-runs and `main` can be broken by a commit that is not in this repo. v3 §1.2's cross-repo
-  # reconciliation step depends on being able to re-run a repo after a sibling moves.
   workflow_dispatch:
 
+# Every job is a gate except "report". The gates live in scripts/check.sh, so a local run and CI
+# always agree.
 jobs:
-  # Branch-aware cross-repo resolution (v3 §1.2). TandemKit is a local package dependency, so the three
-  # build jobs below must check it out at the branch that MATCHES the faBolus branch under test —
-  # `experimental` faBolus builds against `experimental` TandemKit — falling back to `main` when no
-  # same-named counterpart exists. `actions/checkout` has no fallback of its own, and the dangerous
-  # failure is a silent one: a build that looks green only because the checkout quietly took `main`
-  # when a match was intended. So the decision is made ONCE here, logged with the resolved ref AND its
-  # SHA, and consumed by the build jobs via an output — one auditable line instead of three copies that
-  # could drift.
-  #
-  # TandemKit version-pin interaction (Phase 03, D-04): faBolus now defaults to consuming TandemKit via
-  # a `url:`+`revision:` pin in project.yml (D-01), not this branch-matched checkout. Under that
-  # default, SwiftPM fetches TandemKit straight from GitHub at the pinned revision and IGNORES the
-  # `repos/TandemKit` checkout below entirely — so `resolve-refs` + the "Checkout TandemKit" steps would
-  # go inert for dependency resolution, and a green run would silently stop validating an experimental
-  # faBolus against an experimental TandemKit (RESEARCH Pitfall 3 — the §1.2 branch-aware promise
-  # breaking silently is exactly the T-03-02 threat in 03-03-PLAN.md's threat model).
-  #
-  # Chosen posture — OPTION A (preserve the branch-aware promise, documented tradeoff):
-  #   Option A: keep the three build jobs on `FABOLUS_TANDEM_LOCAL=1` so they still consume this
-  #     branch-matched checkout (status quo cross-repo validation preserved), and add a SEPARATE job
-  #     (`tandemkit-pin-resolves` below) that generates WITHOUT the override — i.e. the real default a
-  #     clone/release build gets — and resolves the pinned graph, to prove the pin itself is healthy.
-  #     Tradeoff: CI's three build jobs no longer exercise the exact default dependency path a plain
-  #     `git clone && ./scripts/generate-project.sh` gets; that gap is covered by the pin-resolves job.
-  #   Option B (NOT chosen): let the pin win by default in CI too (drop FABOLUS_TANDEM_LOCAL=1 from the
-  #     build jobs) — CI would then match a fresh clone exactly, but the branch-aware cross-repo
-  #     validation this whole `resolve-refs` job exists for would go dark on every faBolus-only push,
-  #     silently narrowing coverage exactly as T-03-02 describes.
-  # Option A was picked because the branch-aware promise is an explicit, named contract in BRANCHES.md
-  # §1.3 ("Cross-repo CI is branch-aware") that predates this pin — narrowing it silently would be worse
-  # than the (documented, monitored) gap Option A leaves. See 03-03-PLAN.md / 03-03-SUMMARY.md.
-  resolve-refs:
-    name: Resolve cross-repo refs
-    runs-on: ubuntu-latest
-    outputs:
-      tandemkit_ref: ${{ steps.resolve.outputs.tandemkit_ref }}
-    steps:
-      - name: Resolve TandemKit ref (match faBolus branch, else main)
-        id: resolve
-        run: |
-          set -euo pipefail
-          WANT="${{ github.head_ref || github.ref_name }}"
-          REPO="https://github.com/faBolus-app/TandemKit.git"
-          if [ -n "$WANT" ] && git ls-remote --exit-code --heads "$REPO" "$WANT" >/dev/null 2>&1; then
-            REF="$WANT"; HOW="matched the faBolus branch '$WANT'"
-          else
-            REF="main"; HOW="fell back to main (no TandemKit branch named '${WANT:-<none>}')"
-          fi
-          SHA="$(git ls-remote "$REPO" "refs/heads/$REF" | cut -f1)"
-          echo "tandemkit_ref=$REF" >> "$GITHUB_OUTPUT"
-          echo "TandemKit → $REF @ $SHA  ($HOW)"
-          echo "::notice title=TandemKit checkout::$REF @ ${SHA:0:12} — $HOW"
-
-  core:
-    name: Package tests + contract drift
-    runs-on: macos-15
+  swift:
+    name: Build and test (Xcode 27.2)
+    runs-on: xcode-27
     steps:
       - uses: actions/checkout@v4
+      - name: Select Xcode 27.2
+        run: sudo xcode-select -s /Applications/Xcode_27.2.app && xcodebuild -version
+      - name: Build (warnings are errors)
+        run: ./scripts/check.sh build
+      - name: Test
+        run: ./scripts/check.sh test
 
-      # The Swift RemoteCommand mirror must not drift from schema/command.schema.json.
-      - name: Contract drift check
-        run: ./scripts/check-schema-drift.sh
-
-      # Provenance chain (audit L-01): every vendored/local package must carry a LICENSE + an SBOM row.
-      - name: SBOM / license provenance check
-        run: ./scripts/check-sbom.sh
-
-      # The stable contracts + models have no pump/UI dependencies, so they test fast on macOS.
-      - name: faBolusCore unit tests
-        run: swift test --package-path Packages/faBolusCore
-
-      # HistoryStore (the persistence layer the settings-change log and bolus history sit on) and
-      # faBolusDesign (the shared §13 band-color tokens) are both pure-logic packages with no pump or
-      # UI dependency, so there was no reason for either to be unrun — they were simply missed.
-      # ShareClient has no test target; nothing to add there.
-      - name: HistoryStore unit tests
-        run: swift test --package-path Packages/HistoryStore
-
-      - name: faBolusDesign unit tests
-        run: swift test --package-path Packages/faBolusDesign
-
-  ios-build:
-    name: iOS app build (TandemBackend / AppModel / widgets)
-    runs-on: macos-15
-    needs: resolve-refs
+  swift-lint:
+    name: swift-format and SwiftLint
+    runs-on: xcode-27
     steps:
-      # Two-level checkout so the project's relative package paths resolve (see watch-build).
-      - name: Checkout faBolus
-        uses: actions/checkout@v4
-        with:
-          path: repos/faBolus
+      - uses: actions/checkout@v4
+      - name: Select Xcode 27.2
+        run: sudo xcode-select -s /Applications/Xcode_27.2.app && xcrun swift-format --version
+      - name: Install SwiftLint
+        run: brew list swiftlint >/dev/null 2>&1 || brew install swiftlint
+      - run: ./scripts/check.sh format swiftlint
 
-      - name: Checkout TandemKit (local package dependency, branch-aware — see resolve-refs)
-        uses: actions/checkout@v4
-        with:
-          repository: faBolus-app/TandemKit
-          ref: ${{ needs.resolve-refs.outputs.tandemkit_ref }}
-          submodules: recursive
-          path: repos/TandemKit
-
-      - name: Install XcodeGen
-        run: brew install xcodegen
-
-      # Generate with the credential-gated pieces stripped (no private Nudge SDK, no Garmin SDK), then
-      # build the full iOS app for the Simulator. This is the audit-T-01 gap: the iOS app — TandemBackend
-      # (signed bolus flow, transaction serialization), AppModel.remoteDeliver, the widget receiver, and
-      # the pairing hosts — was never compiled in CI before, only faBolusCore + the watch.
-      # NOTE — GarminRemoteBridge.swift is NOT compiled here, and that is a recorded decision, not an
-      # oversight. It sits behind `#if GARMIN` and imports Garmin's ConnectIQ binary xcframework, which
-      # is license-gated and uncommitted, so `FABOLUS_GARMIN=0` (required in CI) strips it. This is the
-      # same license wall as the shipping Garmin jungles in faBolusGarmin. A hand-written ConnectIQ stub
-      # would compile in CI but would drift from the real SDK and give false confidence — worse than an
-      # honest gap. The bridge's build gate is therefore LOCAL: `./scripts/build-sim.sh` auto-detects the
-      # SDK and compiles it (verified 2026-08-04 with FABOLUS_GARMIN=1 — BUILD SUCCEEDED). Extracting the
-      # pure message→RemoteCommand mapping into an SDK-free, CI-testable unit is the right long-term fix;
-      # it is deferred because it touches the Garmin safety path that master-plan P11/P12 rewrite.
-      - name: Generate the Xcode project (no private SDK, no Garmin)
-        working-directory: repos/faBolus
-        run: FABOLUS_TANDEM_LOCAL=1 FABOLUS_GARMIN=0 ./scripts/generate-project.sh
-
-      # Align CI to the toolchain the team develops/ships on (Xcode 26.x / Swift 6.2). The runner's
-      # default was Xcode 16.4 (Swift 6.1), whose region-isolation ("sending") checker has known
-      # false-positives that 6.2 relaxed — a source of local-green/CI-red divergence. Self-adjusting:
-      # picks the newest installed Xcode and prints the inventory so a missing 26.x is visible.
-      - name: Select newest available Xcode (align to dev toolchain — Swift 6.2)
-        run: |
-          echo "Installed Xcodes:"; ls -d /Applications/Xcode*.app 2>/dev/null || true
-          NEWEST="$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)"
-          if [ -n "$NEWEST" ]; then sudo xcode-select -s "$NEWEST/Contents/Developer"; fi
-          echo "Selected Xcode:"; xcodebuild -version
-
-      - name: Build iOS app (Simulator, signing off)
-        working-directory: repos/faBolus
-        run: |
-          set -o pipefail
-          xcodebuild -project faBolus.xcodeproj -scheme faBolus \
-            -destination 'generic/platform=iOS Simulator' \
-            -configuration Debug CODE_SIGNING_ALLOWED=NO build
-
-      # Audit C-08: behavioral e2e for the remote-delivery decision logic — divergence guard,
-      # freeze-before-approve (C-02), child/read-only action gates (A-05), idempotency wiring
-      # (A-02) — running the real AppModel against MockBackend on a booted Simulator. A concrete
-      # destination (not `generic/…`) is required to actually run the tests.
-      # Call the script rather than reimplementing it. The inlined copy this replaces picked its
-      # simulator with `grep -Eo 'iPhone [0-9]+'`, which cannot match "iPhone 17 Pro" — the device
-      # family current Xcodes actually install — so it silently fell back to a hardcoded "iPhone 16"
-      # that may not exist on the runner. scripts/test-ios.sh already solved this; two copies of a
-      # destination-selection rule is one copy too many.
-      # Snapshot suites are pixel-golden tests recorded against a specific Xcode/simulator, so they
-      # are environment-brittle across toolchains — the 16.x-recorded baselines fail on the 26.x
-      # runner even for views nobody changed (e.g. SettingsSnapshotTests). They never gated CI
-      # historically (the iOS build failed before tests ever ran). Per owner decision (2026-08-19)
-      # they are NON-GATING in CI: still run locally for visual-regression, skipped here. To make
-      # them CI-gating later, re-record baselines in the CI toolchain + add a perceptualPrecision
-      # tolerance (tracked follow-up).
-      - name: Run app behavioral tests (Simulator)
-        working-directory: repos/faBolus
-        run: |
-          FABOLUS_GARMIN=0 ./scripts/test-ios.sh \
-            -skip-testing:faBolusAppTests/BolusEntrySnapshotTests \
-            -skip-testing:faBolusAppTests/SettingsSnapshotTests \
-            -skip-testing:faBolusAppTests/DashboardSnapshotTests
-
-  # Phase 3 (03-03, REMOTE-03/REMOTE-04): the watch-build job (WatchCI scheme) is retired along with
-  # the whole Apple Watch app + complication + direct-pump target tree it built — delete-on-main,
-  # preserved on dev/watch-remote / dev/watch-host. There is no watch target left for CI to build.
-
-  # Phase 3 (03-01, REMOTE-01): the mac-build job (faBolusMac scheme, which embedded faBolusMacWidgets)
-  # is retired along with the whole macOS menu-bar remote target tree it built — delete-on-main,
-  # preserved on dev/mac. There is no faBolusMac target left on narrow `main` for CI to build; keeping
-  # the job made every push fail with `xcodebuild: error: ... does not contain a scheme named "faBolusMac"`.
-  # The full-surface branches (experimental / dev/mac) retain their own copy of this job on their ci.yml.
-
-  # Proves the DEFAULT dependency path — the exact one a fresh `git clone && ./scripts/generate-
-  # project.sh` gets, with no override — resolves cleanly. See the Option A / D-04 comment on
-  # `resolve-refs` above: the three build jobs above deliberately keep FABOLUS_TANDEM_LOCAL=1 so they
-  # still exercise branch-aware cross-repo CI, which means none of them alone proves the pinned
-  # `url:`+`revision:` graph (project.yml, Package.resolved) actually resolves. This job is that proof,
-  # isolated from the build jobs so a pin-resolution regression doesn't get masked by (or confused with)
-  # a branch-aware build failure, and vice versa.
-  tandemkit-pin-resolves:
-    name: TandemKit pinned revision resolves (no FABOLUS_TANDEM_LOCAL override)
-    runs-on: macos-15
+  lint:
+    name: ShellCheck, actionlint, markdownlint, contract, SBOM
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout faBolus
-        uses: actions/checkout@v4
-
-      - name: Install XcodeGen
-        run: brew install xcodegen
-
-      # No FABOLUS_TANDEM_LOCAL — this is the real default: TandemKit resolved from
-      # `https://github.com/faBolus-app/TandemKit.git` at the pinned revision in project.yml, not the
-      # branch-matched sibling checkout the other three build jobs use.
-      - name: Generate the Xcode project (default pinned TandemKit, no private SDK, no Garmin)
-        run: FABOLUS_GARMIN=0 ./scripts/generate-project.sh
-
-      # Asserts the build stamp generate-project.sh just wrote actually describes this checkout, and
-      # that it never became git-tracked — see the script header for why either failure mode matters.
-      - name: Check the build-stamp freshness/tracking guard
-        run: ./scripts/check-version-sync.sh
-
-      - name: Resolve the pinned TandemKit dependency graph
+      - uses: actions/checkout@v4
+      - name: Install actionlint and markdownlint-cli2
         run: |
-          set -o pipefail
-          xcodebuild -project faBolus.xcodeproj -scheme faBolus \
-            -resolvePackageDependencies
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7
+          sudo mv actionlint /usr/local/bin/
+          npm install --global markdownlint-cli2@0.24.0
+      - run: ./scripts/check.sh shell actions markdown contract
 
-  # Style / lint report (advisory). SwiftLint here is a REPORT, never a gate: continue-on-error keeps a
-  # style regression from blocking a dose-path fix. `.swiftlint.yml` records which rules are
-  # deliberately configured away and why (wire-field names, frozen-accessor setters, god-object
-  # metrics). `swift-format lint` proves the tree is still formatted.
-  style:
-    name: Style report (swift-format + SwiftLint, advisory)
-    runs-on: macos-15
+  report:
+    name: Semgrep and Periphery (report only)
+    runs-on: xcode-27
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-
-      # PIN the formatter rather than using the runner's Xcode. The image lags Xcode by several point
-      # releases (it shipped 26.3 / swift-format 6.2.3 while .swift-format targets 26.6 / 6.3.0), and
-      # 6.2.3 formats 3 of these files differently — which made this check report a false "unformatted
-      # tree". Homebrew's swift-format 603.0.0 is byte-identical to Xcode 26.6's 6.3.0, verified on
-      # exactly those 3 files, so it is a stable single source of truth for both CI and developers.
-      - name: Install the pinned swift-format
-        run: brew list swift-format >/dev/null 2>&1 || brew install swift-format
-
-      # `format.sh --lint` exits 2 (not 1) when swift-format cannot run or cannot read the config —
-      # a tool problem, not an unformatted tree. Treat that as a skip-with-notice, so the report can
-      # never tell anyone to reformat the tree to satisfy the wrong formatter.
-      - name: swift-format — is the tree formatted?
-        env:
-          SWIFT_FORMAT: /opt/homebrew/bin/swift-format
+      - name: Select Xcode 27.2
+        run: sudo xcode-select -s /Applications/Xcode_27.2.app
+      - name: Install Semgrep and Periphery
         run: |
-          set +e
-          ./scripts/format.sh --lint
-          rc=$?
-          set -e
-          if [ "$rc" -eq 2 ]; then
-            echo "::notice::swift-format could not read .swift-format — skipping the format report"
-            exit 0
-          fi
-          exit "$rc"
-
-      - name: SwiftLint
-        run: |
-          brew list swiftlint >/dev/null 2>&1 || brew install swiftlint
-          swiftlint lint --quiet --reporter github-actions-logging || true
-          # JSON, not CSV: the `reason` column can contain commas, so a `cut -d,` slice silently
-          # mis-reads the columns. That bug made this step report "at error severity: 0" on a tree
-          # that had 7, and histogram `reason` (one bucket per character count) instead of rule_id.
-          swiftlint lint --quiet --reporter json > /tmp/sl.json || true
-          python3 - <<'PY'
-          import collections, json
-          rows = json.load(open("/tmp/sl.json"))
-          by_rule = collections.Counter(r["rule_id"] for r in rows)
-          by_sev = collections.Counter(r["severity"] for r in rows)
-          print("SwiftLint findings by rule:")
-          for rule, n in by_rule.most_common():
-              print(f"{n:6d}  {rule}")
-          print(f"total: {len(rows)}; at error severity: {by_sev.get('Error', 0)}")
-          PY
-
-  # Semgrep — the local `.semgrep/deslop.yml` ruleset only, no marketplace packs. Flags AI-agent
-  # process residue (phase/ticket breadcrumbs, migration notes, drifted line references) and vacuous
-  # tests. Advisory: every hit needs human triage, because a genuine safety comment can match a
-  # residue pattern and a source-scanning guard test can be the last line of defense for a dose path.
-  semgrep:
-    name: Semgrep deslop rules (report advisory, residue ratcheted)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Semgrep (local rules)
-        run: |
-          pipx install semgrep || pip install --user semgrep
-          # No --error: semgrep exits 0 with findings by default, which is what "advisory" means here.
-          semgrep --config .semgrep/deslop.yml --metrics=off .
-      - name: Deslop residue ratchet
-        run: |
-          semgrep --config .semgrep/deslop.yml --metrics=off --json -q . > /tmp/sg.json
-          python3 - <<'PY'
-          # Reports every rule; FAILS only when a RESIDUE rule rises above its committed baseline.
-          #
-          # `source-text-scanning-test` and `working-tree-absence-scanner` are deliberately NOT gated.
-          # They do not flag slop -- they inventory this repo's source-scanning guard tests and
-          # working-tree absence guards, which are load-bearing safety machinery. Their count going UP
-          # means somebody added a guard, so gating them would punish the right behaviour.
-          import collections, json, sys
-
-          INVENTORY = {"source-text-scanning-test", "working-tree-absence-scanner"}
-          base = json.load(open(".semgrep/baseline.json"))["residue"]
-          results = json.load(open("/tmp/sg.json"))["results"]
-          cur = collections.Counter(r["check_id"].split(".")[-1] for r in results)
-
-          risen = []
-          print("rule                                now  baseline")
-          for rule in sorted(set(cur) | set(base) | INVENTORY):
-              n = cur.get(rule, 0)
-              if rule in INVENTORY:
-                  print(f"  {rule:34s} {n:4d}   (inventory, not gated)")
-                  continue
-              b = base.get(rule, 0)
-              note = ""
-              if n > b:
-                  note = "  <== ABOVE BASELINE"
-                  risen.append((rule, b, n))
-              elif n < b:
-                  note = "  (below baseline -- lower it to lock this in)"
-              print(f"  {rule:34s} {n:4d}  {b:4d}{note}")
-
-          if risen:
-              print()
-              for rule, b, n in risen:
-                  print(f"::error::deslop residue rose: {rule} {b} -> {n}. Remove the new "
-                        f"phase/ticket breadcrumb, migration note or drifted line reference. If the "
-                        f"hit is a genuine KEEP (a measurement, an ISO date, an oracle .java "
-                        f"citation, a display-width budget), raise the number in "
-                        f".semgrep/baseline.json in the same commit and say why.")
-              sys.exit(1)
-          print(f"\nresidue total: {sum(v for k, v in cur.items() if k not in INVENTORY)} "
-                f"(baseline {sum(base.values())}) -- no regression")
-          PY
+          pipx install semgrep
+          brew list periphery >/dev/null 2>&1 || brew install periphery
+      - name: Semgrep (residue rules)
+        run: semgrep --config .semgrep/deslop.yml --metrics=off --exclude legacy .
+      - name: Periphery (unused code, faBolusCore)
+        working-directory: Packages/faBolusCore
+        run: periphery scan --retain-public

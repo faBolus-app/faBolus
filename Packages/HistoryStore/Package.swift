@@ -1,4 +1,4 @@
-// swift-tools-version: 5.9
+// swift-tools-version: 6.0
 import PackageDescription
 
 // HistoryStore — faBolus's own persistent glucose/insulin/carb history (SwiftData). faBolus OWNS the
@@ -8,11 +8,11 @@ import PackageDescription
 // action + optional auto-delete cover data-minimization. See ../../MIGRATION.md.
 let package = Package(
     name: "HistoryStore",
-    platforms: [.iOS(.v17), .watchOS(.v10), .macOS(.v14)],   // SwiftData
+    platforms: [.iOS(.v17), .watchOS(.v10), .macOS(.v14)],  // SwiftData
     products: [.library(name: "HistoryStore", targets: ["HistoryStore"])],
     dependencies: [.package(path: "../faBolusCore")],
     targets: [
         .target(name: "HistoryStore", dependencies: ["faBolusCore"]),
-        .testTarget(name: "HistoryStoreTests", dependencies: ["HistoryStore"]),
+        .testTarget(name: "HistoryStoreTests", dependencies: ["HistoryStore"])
     ]
 )

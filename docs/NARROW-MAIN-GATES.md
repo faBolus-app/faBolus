@@ -55,6 +55,7 @@ Each spec below is the same shape: **settings-forced-value + UI-hide; evaluator/
 the named test suite stays green.** Phase 0 flips none of them.
 
 ### 1. extended-bolus-hide  (Phase 8; **RETIRED**)
+
 Retired: the `extendedBolusEnabled` pin, the extended-bolus section of `BolusEntryView`, and every
 now/later dose-splitting plumbing symbol it threaded through (`attemptDeliver`'s `extended`
 parameter, `freeze`'s split arm, `FrozenBolus.extendedNow`/`extendedDurationMin`,
@@ -68,12 +69,14 @@ must stay green: `BolusMathParityTests`, the `GatedPumpWrite` guards, `KeyboardS
 delivery core).
 
 ### 2. history-24h-lock  (Phase 8)
+
 Cap `HistoryStore` retention (settings-forced-value on `historyRetentionDays`) and remove the
 Data & History settings UI. The read path and any IOB/dose computation stay **byte-identical**; a gate
 assertion confirms no IOB/dose read reaches back beyond 24h. Named suites: `BolusMathParityTests`,
 `HistoryLogSyncDeliveryBoundaryTests`.
 
 ### 3. clock-sync-removal  (Phase 8; **RETIRED**)
+
 Retired: the pump clock-sync WRITE path is deleted whole — `supportsTimeSync`,
 `GatedPumpWrite.syncTimeToNow`, the three backend implementations (`TandemBackend`, `PumpBackend`
 default, `MockBackend`), and the `autoSyncPumpTime = false` init pin — in one commit, together with
@@ -92,11 +95,13 @@ residual whose own removal is a separate decision, not an automatic follow-on. P
 `AccessPolicyTests`.
 
 ### 4. units-mgdl-lock  (Phase 8)
+
 Force `glucoseDisplayUnit = .mgdl` and hide the unit picker. Dose math is already mg/dL-canonical and
 unit-internal, so the evaluator/core is **byte-identical**; this gate is purely a display-surface
 lock. Named suite: `BolusMathParityTests` (proves the dose path never read the display unit).
 
 ### 5. mode-lock-advanced  (Phase 8; **RETIRED**)
+
 Retired: the `AccessPolicy` Mode Gate, the `appMode = .advanced` pin, and the whole `AppMode` /
 `SettingTier` vocabulary that existed only to feed it are deleted. The mode axis was structurally
 inert on three independently verified legs before removal: (1) the only production
@@ -117,6 +122,7 @@ any other check is evaluated. Preserved on the `dev/mode-selector` branch. Named
 `BolusMathParityTests`, the relevant `*ScopeGuard` suites, `KeyboardShortcutDoseGuardTests`.
 
 ### 6. stacking-guard-hide  (Phase 8; **RETIRED**)
+
 Retired: the `stackingGuardFrictionEnabled` pin and the whole escalated-friction UI it gated
 (`sgReenter`/`sgConfirmExtra` state, their dialogs, `reenterMatches`, `standardConfirmRoute`, the
 `StandardConfirmRoute` enum) are deleted. **Correction to this gate's original description above:**
@@ -134,6 +140,7 @@ was not applying" — not "removing dead code that was still protecting somethin
 `dev/stacking-guard` branch.
 
 ### 7. alert-rules-engine-removal  (Phase 7, complete)
+
 The one row that becomes a real removal rather than a pure runtime gate. **§6d precondition:** before
 deleting the custom-rule path (`AlertRulesView.swift` + the rules engine), confirm that **no safety
 alert routes through the custom-rule path**: only non-safety convenience auto-rules may. §6d PASSED

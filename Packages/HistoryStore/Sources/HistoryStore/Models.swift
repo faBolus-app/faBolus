@@ -12,8 +12,11 @@ import SwiftData
     public var priority: Int
     public var recordedAt: Date
     public init(date: Date, mgdl: Int, sourceID: String, priority: Int, recordedAt: Date) {
-        self.date = date; self.mgdl = mgdl; self.sourceID = sourceID
-        self.priority = priority; self.recordedAt = recordedAt
+        self.date = date
+        self.mgdl = mgdl
+        self.sourceID = sourceID
+        self.priority = priority
+        self.recordedAt = recordedAt
     }
 }
 
@@ -23,7 +26,10 @@ import SwiftData
     public var sourceID: String
     public var recordedAt: Date
     public init(date: Date, units: Double, sourceID: String, recordedAt: Date) {
-        self.date = date; self.units = units; self.sourceID = sourceID; self.recordedAt = recordedAt
+        self.date = date
+        self.units = units
+        self.sourceID = sourceID
+        self.recordedAt = recordedAt
     }
 }
 
@@ -33,7 +39,9 @@ import SwiftData
     public var sourceID: String
     public var recordedAt: Date
     public init(date: Date, grams: Double, sourceID: String, recordedAt: Date) {
-        self.date = date; self.grams = grams; self.sourceID = sourceID; self.recordedAt = recordedAt
+        self.date = date
+        self.grams = grams
+        self.sourceID = sourceID
+        self.recordedAt = recordedAt
     }
 }
-

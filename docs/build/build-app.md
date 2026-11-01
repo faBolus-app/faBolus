@@ -249,6 +249,7 @@ Next:
 - [Pair it with your pump →](../setup/pairing.md)
 - Optional: [add a Garmin](garmin-build.md)
 - Learn [what everything does](../operate/status.md)
+
 </div>
 
 !!! note "The app will stop opening after a while: that's normal"

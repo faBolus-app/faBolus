@@ -10,11 +10,8 @@ FDA-cleared; for anything urgent about your therapy contact your healthcare prov
 
 **Which app?** (iPhone / Garmin)
 
-
 **What did you do, and what did you expect vs. what happened?**
 
-
 **Your setup** (pump: t:slim X2 · iOS/Garmin version · CGM):
-
 
 **Screenshot or on-screen error text (if any):**

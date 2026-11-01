@@ -55,7 +55,8 @@ struct RescueCarbGuardTests {
             for case let url as URL in walker where url.pathExtension == "swift" {
                 // This guard file necessarily contains the banned patterns — don't flag itself.
                 if url.lastPathComponent == "RescueCarbGuardTests.swift" { continue }
-                if url.path.contains("Tests") { continue }  // shipping surfaces only — a test mentioning the banned concept is not a surfaced suggestion
+                // shipping surfaces only — a test mentioning the banned concept is not a surfaced suggestion
+                if url.path.contains("Tests") { continue }
                 guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
                 scanned += 1
                 let range = NSRange(text.startIndex..., in: text)

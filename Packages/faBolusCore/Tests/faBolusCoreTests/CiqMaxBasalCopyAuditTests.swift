@@ -104,12 +104,14 @@ struct CiqMaxBasalCopyAuditTests {
 
     @Test func forbiddenWordListIsExactlyTheFourD03Words() {
         // Pins the exact forbidden-word vocabulary so a future edit can't silently narrow the audit.
-        let expected: Set<String> = ["bolus", "correction", "ceiling", "maxed"]  // <!-- planner-discipline-allow: bolus correction ceiling maxed -->
+        // <!-- planner-discipline-allow: bolus correction ceiling maxed -->
+        let expected: Set<String> = ["bolus", "correction", "ceiling", "maxed"]
         #expect(Set(MaxBasalFraction.forbiddenMisconstrualWords.map { $0.lowercased() }) == expected)
     }
 
     @Test func hasForbiddenWordDetectsEachWordCaseInsensitively() {
-        for word in ["Bolus", "CORRECTION", "Ceiling", "maxed"] {  // <!-- planner-discipline-allow: bolus correction ceiling maxed -->
+        // <!-- planner-discipline-allow: bolus correction ceiling maxed -->
+        for word in ["Bolus", "CORRECTION", "Ceiling", "maxed"] {
             #expect(MaxBasalFraction.hasForbiddenWord("this mentions \(word) somewhere"))
         }
         #expect(!MaxBasalFraction.hasForbiddenWord("53% of your configured max basal rate"))

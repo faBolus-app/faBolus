@@ -7,26 +7,26 @@ Don't worry if some terms are unfamiliar — the build guide explains each as yo
 
 <div class="grid cards" markdown>
 
--   :material-needle:{ .lg .middle } **A supported pump**
+- :material-needle:{ .lg .middle } **A supported pump**
 
     ---
 
     faBolus currently supports the Tandem **t:slim X2**, plus the usual cartridges and infusion
     sets.
 
--   :material-cellphone:{ .lg .middle } **An iPhone**
+- :material-cellphone:{ .lg .middle } **An iPhone**
 
     ---
 
     On **iOS 17 or later**, with a cable to connect it to your Mac.
 
--   :material-laptop:{ .lg .middle } **A Mac**
+- :material-laptop:{ .lg .middle } **A Mac**
 
     ---
 
     Running a recent macOS — needed to run Xcode and build the app.
 
--   :material-watch:{ .lg .middle } **Optional: a Garmin remote**
+- :material-watch:{ .lg .middle } **Optional: a Garmin remote**
 
     ---
 

@@ -15,14 +15,14 @@ Both work. The only real difference is how often you have to re-install the app.
 
 <div class="grid cards" markdown>
 
--   **Free** <span class="cx2-tag now">start here</span>
+- **Free** <span class="cx2-tag now">start here</span>
 
     ---
 
     Costs nothing. The app **stops opening after 7 days**, and you fix that by re-installing from
     the Mac (about a minute). Great for trying it out.
 
--   **Paid — $99/year** <span class="cx2-tag now">nicer</span>
+- **Paid — $99/year** <span class="cx2-tag now">nicer</span>
 
     ---
 

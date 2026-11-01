@@ -1,0 +1,5 @@
+# GitHub's hosted Xcode 27 image (generally available since 2026-10-15) is newer than this
+# actionlint's built-in label list.
+self-hosted-runner:
+  labels:
+    - xcode-27

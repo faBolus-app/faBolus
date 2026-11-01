@@ -55,7 +55,7 @@ private let maxReauthAttempts = 2
 // TODO use an HTTP library which supports JSON and futures instead of callbacks.
 // using cocoapods in a playground appears complicated
 // ¯\_(ツ)_/¯
-private func dexcomPOST(_ url: URL, JSONData: [String: AnyObject]? = nil, callback: @escaping (Error?, String?) -> Void) {
+private func dexcomPOST(_ url: URL, JSONData: [String: AnyObject]? = nil, callback: @escaping @Sendable (Error?, String?) -> Void) {
     var data: Data?
 
     if let JSONData = JSONData {
@@ -82,12 +82,19 @@ private func dexcomPOST(_ url: URL, JSONData: [String: AnyObject]? = nil, callba
     }).resume()
 }
 
-public class ShareClient {
+// faBolus change (Swift 6): `token` is written from URLSession callbacks on arbitrary threads, so it
+// sits behind a lock, which is what makes the @unchecked Sendable conformance true.
+public final class ShareClient: @unchecked Sendable {
     public let username: String
     public let password: String
 
     private let shareServer:String
-    private var token: String?
+    private let tokenLock = NSLock()
+    private var _token: String?
+    private var token: String? {
+        get { tokenLock.withLock { _token } }
+        set { tokenLock.withLock { _token = newValue } }
+    }
 
     public init(username: String, password: String, shareServer:String=KnownShareServers.US.rawValue) {
         self.username = username
@@ -100,11 +107,11 @@ public class ShareClient {
 
     }
 
-    public func fetchLast(_ n: Int, callback: @escaping (ShareError?, [ShareGlucose]?) -> Void) {
+    public func fetchLast(_ n: Int, callback: @escaping @Sendable (ShareError?, [ShareGlucose]?) -> Void) {
         fetchLastWithRetries(n, remaining: maxReauthAttempts, callback: callback)
     }
 
-    private func ensureToken(_ callback: @escaping (ShareError?) -> Void) {
+    private func ensureToken(_ callback: @escaping @Sendable (ShareError?) -> Void) {
         if token != nil {
             callback(nil)
         } else {
@@ -126,7 +133,7 @@ public class ShareClient {
         }
     }
 
-    private func fetchAccountID(_ callback: @escaping (Result<String, ShareError>) -> Void) {
+    private func fetchAccountID(_ callback: @escaping @Sendable (Result<String, ShareError>) -> Void) {
         guard let applicationId = KnownShareServers(rawValue: shareServer)?.dexcomApplicationId else {
             return callback(.failure(.fetchError))
         }
@@ -164,7 +171,7 @@ public class ShareClient {
         }
     }
 
-    private func fetchTokenByAccountId(_ accountId: String, callback: @escaping (ShareError?, String?) -> Void) {
+    private func fetchTokenByAccountId(_ accountId: String, callback: @escaping @Sendable (ShareError?, String?) -> Void) {
         guard let applicationId = KnownShareServers(rawValue: shareServer)?.dexcomApplicationId else {
             return callback(ShareError.fetchError, nil)
         }
@@ -202,7 +209,7 @@ public class ShareClient {
         }
     }
 
-    private func fetchLastWithRetries(_ n: Int, remaining: Int, callback: @escaping (ShareError?, [ShareGlucose]?) -> Void) {
+    private func fetchLastWithRetries(_ n: Int, remaining: Int, callback: @escaping @Sendable (ShareError?, [ShareGlucose]?) -> Void) {
         ensureToken() { (error) in
             guard error == nil else {
                 return callback(error, nil)

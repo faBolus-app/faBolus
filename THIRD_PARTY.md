@@ -9,7 +9,7 @@ itself is MIT (see `LICENSE`).
 | Component | License | Kind | Where |
 |---|---|---|---|
 | faBolusCore, HistoryStore | MIT (in-repo) | first-party package | `Packages/` |
-| ShareClient | MIT | vendored (LoopKit/dexcom-share-client-swift) | `Packages/ShareClient` |
+| ShareClient | MIT | vendored (LoopKit/dexcom-share-client-swift), modified for Swift 6 | `Packages/ShareClient` |
 | **LoopPowerPack (SiteAtlas, FoodFinder, LoopInsights)** — removed from `main` | **MIT** (© 2026 LoopKit Authors and Taylor Patterson) | vendored (LoopPowerPack/Loop MIT feature source @ `ad4c4d4`). LoopInsights: benign report DTO shapes ONLY — the endo-report aggregator/PDF were faBolus rewrites, the excluded AI/advisor/coordinator surfaces were never vendored | `dev/retrospective` (LoopInsights), `dev/backup` (SiteAtlas), `dev/food-finder` (FoodFinder) — see `NOTICE.md`, `docs/SBOM.md` |
 | **OpenFoodFacts** (product data) | **ODbL 1.0** (database) / product data © OpenFoodFacts contributors | keyless public REST API — no code vendored; FoodFinder carb-estimate default path (D-03) | `world.openfoodfacts.org` (`api/v3` + `cgi/search.pl`) |
 | TandemKit | MIT | local-path dependency (separate repo; vendors pumpX2-oracle MIT + Mbed TLS `Apache-2.0 OR GPL-2.0`) | `../TandemKit` |

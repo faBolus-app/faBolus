@@ -13,7 +13,7 @@ final class GlucoseProvenanceTests: XCTestCase {
 
     func testStatusCommandCarriesAnAbsoluteSourceEpoch() throws {
         let taken = Date().addingTimeInterval(-90)
-        var cmd = RemoteCommand(
+        let cmd = RemoteCommand(
             kind: .statusRead, bgMgdl: 142,
             glucoseEpochSec: Int(taken.timeIntervalSince1970))
         try cmd.validate()

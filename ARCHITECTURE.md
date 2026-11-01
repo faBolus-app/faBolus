@@ -3,7 +3,7 @@
 faBolus is built around **two stable seams** so it can support many pumps and many host apps
 without forking. Everything else is a plugin behind one of these.
 
-```
+```text
 ┌ UI / app  (SwiftUI views + AppModel, ios/faBolus/)      ── pump- & host-agnostic
 │     depends only on ↓
 ├ faBolusCore  (Packages/faBolusCore/) — the contracts + neutral models, an in-repo SwiftPM package
@@ -30,6 +30,7 @@ since Phase 3/REMOTE-03, and the residual phone-side wire/transport/gate machine
 Phase 17.5.)
 
 ## Seam 1 — `PumpBackend` (support a different pump)
+
 The app talks only to `PumpBackend`, never to a pump library. A backend supplies a live
 `PumpSnapshot` + histories, delivers/cancels boluses, computes recommendations, and reports
 `activeNotifications` as neutral `PumpAlert`s. It also declares `PumpCapabilities` so the one UI
@@ -63,6 +64,7 @@ dynamic plugins, so every backend is compiled in and selected at runtime; the de
 first in the list). See `CONTRIBUTING.md` → "Add a pump backend."
 
 ## Seam 2 — the Remote Protocol (support a different host, e.g. Loop)
+
 Phone↔remote messages are the small JSON contract in **`schema/command.schema.json`** (the source
 of truth), mirrored in Swift (`RemoteCommand`) and Monkey C (faBolusGarmin's `RemoteComm.mc`).
 A **remote** (Garmin) only speaks this contract; a **host** answers it. faBolus's
@@ -77,14 +79,17 @@ remote showed, and clamps to the max-bolus limit (defense in depth, not a second
 confirmation).
 
 ## Repos
+
 - **faBolus** (this repo) — the app, iPhone widgets, backends, `faBolusCore`, and the contract.
   (The Apple Watch remote is removed — see the note above.)
 - **TandemKit** — the Tandem protocol/auth/BLE engine (a package `TandemBackend` wraps).
 - **faBolusGarmin** — the Garmin remote (host-agnostic; consumes the contract schema).
 
 ## Where to extend it (open contributions)
+
 These are the well-scoped seams to build on — each is a PR, not a fork. See `CONTRIBUTING.md` for
 the step-by-step.
+
 - **Add a pump backend** — support a non-Tandem pump by conforming to `PumpBackend` and registering a
   `BackendDescriptor`. Start from `MockBackend`. The whole app adapts via `PumpCapabilities`; nothing
   else changes.

@@ -24,8 +24,9 @@ public final class GlucoseHistoryStore {
 
     public init(inMemory: Bool = false) throws {
         let config = ModelConfiguration(isStoredInMemoryOnly: inMemory)
-        container = try ModelContainer(for: StoredGlucose.self, StoredBolus.self, StoredCarb.self,
-                                       configurations: config)
+        container = try ModelContainer(
+            for: StoredGlucose.self, StoredBolus.self, StoredCarb.self,
+            configurations: config)
         if !inMemory { Self.pinFileProtection(storeURL: config.url) }
     }
 
@@ -38,9 +39,11 @@ public final class GlucoseHistoryStore {
     private static func pinFileProtection(storeURL: URL) {
         let fm = FileManager.default
         let attrs: [FileAttributeKey: Any] = [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]
-        for url in [storeURL,
-                    URL(fileURLWithPath: storeURL.path + "-wal"),
-                    URL(fileURLWithPath: storeURL.path + "-shm")]
+        for url in [
+            storeURL,
+            URL(fileURLWithPath: storeURL.path + "-wal"),
+            URL(fileURLWithPath: storeURL.path + "-shm")
+        ]
         where fm.fileExists(atPath: url.path) {
             try? fm.setAttributes(attrs, ofItemAtPath: url.path)
         }
@@ -50,17 +53,23 @@ public final class GlucoseHistoryStore {
 
     public func ingest(_ samples: [GlucoseSample], priority: Int, recordedAt: Date = Date()) {
         for s in samples {
-            context.insert(StoredGlucose(date: s.date, mgdl: s.mgdl, sourceID: s.sourceID,
-                                         priority: priority, recordedAt: recordedAt))
+            context.insert(
+                StoredGlucose(
+                    date: s.date, mgdl: s.mgdl, sourceID: s.sourceID,
+                    priority: priority, recordedAt: recordedAt))
         }
         try? context.save()
     }
 
-    public func ingestGlucose(_ readings: [GlucoseReading], sourceID: String, priority: Int,
-                              recordedAt: Date = Date()) {
+    public func ingestGlucose(
+        _ readings: [GlucoseReading], sourceID: String, priority: Int,
+        recordedAt: Date = Date()
+    ) {
         for r in readings {
-            context.insert(StoredGlucose(date: r.date, mgdl: r.mgdl, sourceID: sourceID,
-                                         priority: priority, recordedAt: recordedAt))
+            context.insert(
+                StoredGlucose(
+                    date: r.date, mgdl: r.mgdl, sourceID: sourceID,
+                    priority: priority, recordedAt: recordedAt))
         }
         try? context.save()
     }
@@ -99,7 +108,9 @@ public final class GlucoseHistoryStore {
                 if r.priority > cur.priority || (r.priority == cur.priority && r.recordedAt >= cur.recordedAt) {
                     best[slot] = r
                 }
-            } else { best[slot] = r }
+            } else {
+                best[slot] = r
+            }
         }
         return best.values.sorted { $0.date < $1.date }.map { GlucoseReading(date: $0.date, mgdl: $0.mgdl) }
     }
@@ -121,7 +132,9 @@ public final class GlucoseHistoryStore {
     /// *export* read path (closing the loop on the echo-guard: the importer already refuses to
     /// re-import faBolus's own exported writes via `HealthKitOriginTag`/`filterOutOwnWrites`; this
     /// is the missing other half — the exporter refusing to re-export what was just imported).
-    public func carbs(in range: ClosedRange<Date>, excludingSourceIDs: Set<String> = []) -> [(date: Date, grams: Double)] {
+    public func carbs(in range: ClosedRange<Date>, excludingSourceIDs: Set<String> = []) -> [(
+        date: Date, grams: Double
+    )] {
         let lo = range.lowerBound, hi = range.upperBound
         var desc = FetchDescriptor<StoredCarb>(predicate: #Predicate { $0.date >= lo && $0.date <= hi })
         desc.sortBy = [SortDescriptor(\.date)]

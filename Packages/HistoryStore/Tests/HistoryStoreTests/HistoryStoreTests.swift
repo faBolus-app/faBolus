@@ -10,9 +10,12 @@ final class HistoryStoreTests: XCTestCase {
 
     func testPersistAndQueryGlucose() throws {
         let store = try makeStore()
-        store.ingestGlucose([GlucoseReading(date: t0, mgdl: 120),
-                             GlucoseReading(date: t0.addingTimeInterval(300), mgdl: 130)],
-                            sourceID: "dexcomG7", priority: 100)
+        store.ingestGlucose(
+            [
+                GlucoseReading(date: t0, mgdl: 120),
+                GlucoseReading(date: t0.addingTimeInterval(300), mgdl: 130)
+            ],
+            sourceID: "dexcomG7", priority: 100)
         let out = store.glucose(in: t0.addingTimeInterval(-60)...t0.addingTimeInterval(600))
         XCTAssertEqual(out.map(\.mgdl), [120, 130])
     }
@@ -21,7 +24,8 @@ final class HistoryStoreTests: XCTestCase {
         let store = try makeStore()
         // Same 5-min slot from two sources: the higher-priority (local BLE) must win over the cloud follow.
         store.ingestGlucose([GlucoseReading(date: t0, mgdl: 100)], sourceID: "nightscout", priority: 30)
-        store.ingestGlucose([GlucoseReading(date: t0.addingTimeInterval(60), mgdl: 142)], sourceID: "dexcomG7", priority: 100)
+        store.ingestGlucose(
+            [GlucoseReading(date: t0.addingTimeInterval(60), mgdl: 142)], sourceID: "dexcomG7", priority: 100)
         let out = store.glucose(in: t0.addingTimeInterval(-300)...t0.addingTimeInterval(300))
         XCTAssertEqual(out.count, 1, "one reading per 5-min slot")
         XCTAssertEqual(out[0].mgdl, 142, "higher-priority source wins")
@@ -29,10 +33,12 @@ final class HistoryStoreTests: XCTestCase {
 
     func testRecencyBreaksTieSamePriority() throws {
         let store = try makeStore()
-        store.ingestGlucose([GlucoseReading(date: t0, mgdl: 100)], sourceID: "nightscout", priority: 30,
-                            recordedAt: t0)
-        store.ingestGlucose([GlucoseReading(date: t0.addingTimeInterval(60), mgdl: 110)], sourceID: "nightscout",
-                            priority: 30, recordedAt: t0.addingTimeInterval(3600))
+        store.ingestGlucose(
+            [GlucoseReading(date: t0, mgdl: 100)], sourceID: "nightscout", priority: 30,
+            recordedAt: t0)
+        store.ingestGlucose(
+            [GlucoseReading(date: t0.addingTimeInterval(60), mgdl: 110)], sourceID: "nightscout",
+            priority: 30, recordedAt: t0.addingTimeInterval(3600))
         let out = store.glucose(in: t0.addingTimeInterval(-300)...t0.addingTimeInterval(300))
         XCTAssertEqual(out[0].mgdl, 110, "later recordedAt wins the tie")
     }
@@ -51,8 +57,9 @@ final class HistoryStoreTests: XCTestCase {
 
     func testClearAndRetention() throws {
         let store = try makeStore()
-        store.ingestGlucose([GlucoseReading(date: t0.addingTimeInterval(-40 * 86400), mgdl: 100)],  // old
-                            sourceID: "dexcomG7", priority: 100)
+        store.ingestGlucose(
+            [GlucoseReading(date: t0.addingTimeInterval(-40 * 86400), mgdl: 100)],  // old
+            sourceID: "dexcomG7", priority: 100)
         store.ingestGlucose([GlucoseReading(date: t0, mgdl: 120)], sourceID: "dexcomG7", priority: 100)  // recent
         XCTAssertEqual(store.glucoseCount(), 2)
 
@@ -107,8 +114,9 @@ final class HistoryStoreTests: XCTestCase {
         let store = try makeStore()
         // Distinct 5-min slots so both rows would otherwise survive the merge independently.
         store.ingestGlucose([GlucoseReading(date: t0, mgdl: 130)], sourceID: "healthkit-import", priority: 10)
-        store.ingestGlucose([GlucoseReading(date: t0.addingTimeInterval(600), mgdl: 145)], sourceID: "dexcomG7",
-                            priority: 100)
+        store.ingestGlucose(
+            [GlucoseReading(date: t0.addingTimeInterval(600), mgdl: 145)], sourceID: "dexcomG7",
+            priority: 100)
         let range = t0.addingTimeInterval(-60)...t0.addingTimeInterval(900)
 
         XCTAssertEqual(store.glucose(in: range).count, 2)

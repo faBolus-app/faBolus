@@ -103,7 +103,8 @@ struct TelemetrySnapshotTests {
 
     /// Round-trip: encode then decode returns the same value, including a set `windowStart`.
     @Test func roundTripsThroughEncodeDecode() throws {
-        let original = S(perCategory: ["pumpDisconnect": T(requested: 3, dismissed: 1, actedUpon: 0)], windowStart: date(1000))
+        let original = S(
+            perCategory: ["pumpDisconnect": T(requested: 3, dismissed: 1, actedUpon: 0)], windowStart: date(1000))
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(S.self, from: data)
         #expect(decoded == original)

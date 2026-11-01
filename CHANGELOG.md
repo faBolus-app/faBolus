@@ -16,6 +16,7 @@ markers rather than releases, and are listed under Unreleased until a version is
 ## [Unreleased]
 
 ### Added
+
 - Root `CHANGELOG.md` (this file), in Keep a Changelog format (P16).
 - Standing safety-guard test (`RescueCarbGuardTests`, faBolusCore) enforcing P16 §8-H: the app must
   **never** surface a suggested rescue-carbohydrate amount for treating a low. It scans the app +
@@ -27,6 +28,7 @@ markers rather than releases, and are listed under Unreleased until a version is
   Cross-referenced from `AGENTS.md` and `CONTRIBUTING.md`.
 
 ### Changed
+
 - Retrospective **Insights** (time-in-range, recurring lows/highs, dawn rise) moved from the private
   faBolusNudge `TherapyInsightsKit` into the vendored `faBolusCore` package. They now build and run in the
   default (`FABOLUS_NUDGE=0`) app with no private SDK required. Advisory display only — no delivery,
@@ -37,10 +39,12 @@ markers rather than releases, and are listed under Unreleased until a version is
   Docs/config only — no delivery, dosing, or alerting behavior changes.
 
 ### Removed
+
 Prohibited advisory/experimental features removed per P16 §3.2 (`faBolus-internal` Reconciliation
 Report R1/R2/R5/R6). All were advisory display/alerting only and off (or not toggle-gated) —
 **none disabled, blocked, or clamped a dose**, and the delivery disposition (**NO-GO for real
 insulin**) is unchanged.
+
 - **Predictive-low (hypo) banner** (R5) — the in-app "low likely soon" advisory banner and its
   *Predictive-low alerts* toggle. It was a glucose forecast (prohibited); off by default. If you had
   it enabled it no longer appears.
@@ -53,12 +57,14 @@ insulin**) is unchanged.
   Retrospective **Insights** (time-in-range, recurring patterns) are unaffected and remain.
 
 ### Declared unmet
+
 - **Backend version-pinning is declared UNMET** (§1.3): faBolus still consumes TandemKit by
   `path: ../TandemKit` because the backend's crypto target uses `.unsafeFlags`, which SwiftPM forbids in
   a URL+version dependency, and the in-progress M1 driver depends on path-consumption. Declared here per
   the plan rather than silently satisfied by the local path. See `BRANCHES.md` §1.3.
 
 ### Accepted gaps (owner decision 2026-08-09)
+
 - **§2.1(7) validated-firmware WRITE gate — NOT built (accepted).** No general firmware-version
   write-allowlist was added across therapy writes. Pump capabilities are already derived from the pump's
   own op-79 feature bitmask (narrow-only), so an unsupported write is refused at the capability funnel and
@@ -68,6 +74,7 @@ insulin**) is unchanged.
   Authoritative record: `faBolus-internal/REMEDIATION.md` ("Accepted gaps").
 
 ### Baseline pointers advanced since 0.1.0 (development, not yet cut as a release)
+
 - `safe-baseline/2026-08-04` — P13a-1 capability channel (`supportsRemoteAlertDismiss`).
 - `safe-baseline/2026-08-06-p14` — P14 complete (S1–S12) + P15 partial.
 - `safe-baseline/2026-08-07-p15` — P15 complete: §2.3 remote-bolus auth + Addendum B stale-CGM bolus

@@ -11,6 +11,7 @@ or automation copy is behind a **clinical-review gate** and must not reach anyon
 until that review lands. The delivery disposition is **NO-GO for real insulin delivery** — keep it so.
 
 ## Ground rules
+
 - Keep the app pump- and host-agnostic: no `import` of a specific pump library outside its backend
   module.
 - Never weaken a safety interlock (confirmation + max-bolus clamp). Dosing changes get extra review.
@@ -18,6 +19,7 @@ until that review lands. The delivery disposition is **NO-GO for real insulin de
   backend) or the equivalent for your backend.
 
 ## Add a pump backend (support a new pump)
+
 1. **Copy `ios/faBolus/Data/MockBackend.swift`** as a template — it's a full `PumpBackend`.
 2. Implement `PumpBackend`: `snapshot`, `glucoseHistory`, `iobHistory`, `bolusMarkers`,
    `activeNotifications` (map your pump's alerts → neutral `PumpAlert`), `connect/disconnect`,
@@ -32,8 +34,10 @@ until that review lands. The delivery disposition is **NO-GO for real insulin de
 6. Add tests that validate your outgoing messages against your pump's reference/oracle.
 
 ## Host the remotes from another app (e.g. Loop)
+
 Garmin (and other remotes) speak the JSON contract in `schema/command.schema.json`. To let your app
 drive them:
+
 1. Implement the **host** side of the contract: receive `RemoteCommand`s (statusRead, bolusRequest
    with units *or* carbs, cancelBolus, dismissAlert) and emit the status payload. Use faBolus's
    `GarminRemoteBridge` (Connect IQ) as the reference implementation. (An Apple Watch host is not
@@ -46,16 +50,19 @@ drive them:
    payload is identical, so the watch app needs no changes.
 
 ## Contract changes
+
 `schema/command.schema.json` is the source of truth (versioned via `version`). If you change it,
 update **both** the Swift `RemoteCommand` and the Monkey C mirror, and bump the version. Prefer
 additive, optional fields so older remotes keep working.
 
 ## Versioning & the cross-repo contract
+
 `BRANCHES.md` is canonical (branch model, experimental gate, promotion, TandemKit pin, Garmin
 lockstep). App version is single-sourced in `Config.xcconfig`. The live TandemKit pin is the
 `revision:` in `project.yml` (`FABOLUS_TANDEM_LOCAL=1` for a sibling checkout).
 
 ## Before you open a PR
+
 - `xcodegen generate` after adding/removing files.
 - Build the `faBolus` scheme (and widgets if you touched `Shared` / `ios/faBolusWidgets`).
 - Run the core tests: `swift test --package-path Packages/faBolusCore` (models, remote round-trips,

@@ -47,7 +47,7 @@ at runtime, so adding another Garmin watch or Edge cycling computer is usually j
 In **GitHub Desktop** (the same app from [Step 3](build-app.md#download)): **File → Clone
 Repository → URL**, paste the address below, and save it next to your other projects:
 
-```
+```text
 https://github.com/faBolus-app/faBolusGarmin
 ```
 

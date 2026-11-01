@@ -68,10 +68,14 @@ struct WCAGContrastTests {
     /// conclusion so a future color tweak that changes the pass/fail picture is caught.
     @Test func lightModeFailsLargeTextForThreeBands() {
         let min3 = WCAGContrast.largeTextMinimum
-        #expect(WCAGContrast.contrastVsWhite(red: Self.inRange.r, green: Self.inRange.g, blue: Self.inRange.b) < min3)  // green FAIL
-        #expect(WCAGContrast.contrastVsWhite(red: Self.high.r, green: Self.high.g, blue: Self.high.b) < min3)  // yellow FAIL
-        #expect(WCAGContrast.contrastVsWhite(red: Self.urgent.r, green: Self.urgent.g, blue: Self.urgent.b) < min3)  // orange FAIL
-        #expect(WCAGContrast.contrastVsWhite(red: Self.low.r, green: Self.low.g, blue: Self.low.b) >= min3)  // red PASSES large only
+        // green FAIL
+        #expect(WCAGContrast.contrastVsWhite(red: Self.inRange.r, green: Self.inRange.g, blue: Self.inRange.b) < min3)
+        // yellow FAIL
+        #expect(WCAGContrast.contrastVsWhite(red: Self.high.r, green: Self.high.g, blue: Self.high.b) < min3)
+        // orange FAIL
+        #expect(WCAGContrast.contrastVsWhite(red: Self.urgent.r, green: Self.urgent.g, blue: Self.urgent.b) < min3)
+        // red PASSES large only
+        #expect(WCAGContrast.contrastVsWhite(red: Self.low.r, green: Self.low.g, blue: Self.low.b) >= min3)
     }
 
     @Test func darkModePassesAllBands() {

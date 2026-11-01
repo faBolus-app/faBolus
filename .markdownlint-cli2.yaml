@@ -1,0 +1,26 @@
+# markdownlint is a gate: CI fails on any violation. Run: markdownlint-cli2
+config:
+  default: true
+  # Prose is wrapped by hand and tables and links run long; line length is not a defect.
+  MD013: false
+  # The docs site (mkdocs Material) uses inline HTML for badges, details blocks and images.
+  MD033: false
+  # Table pipe alignment is cosmetic and churns on every edit.
+  MD060: false
+  # Repeated subheadings (e.g. "Done when") are fine under different parents.
+  # READMEs open with the safety callout, and the PR template is a fragment.
+  MD041: false
+  # mkdocs admonition bodies are indented, which markdownlint reads as indented code blocks.
+  MD046: false
+  MD024:
+    siblings_only: true
+globs:
+  - "**/*.md"
+ignores:
+  - "**/.build/**"
+  - "**/node_modules/**"
+  - "site/**"
+  - "legacy/**"
+  - "vendor/**"
+  # Agent tooling, and a symlink to the Connect IQ SDK outside the repo.
+  - ".claude/**"

@@ -76,6 +76,7 @@ Thresholds: **3:1** for large text (the ring number is large — ≥ 18 pt bold)
 | low (red) | **4.09** | ✅ PASS | ❌ FAIL | 5.13 | ✅ | ✅ |
 
 **Summary.**
+
 - **Light mode is the problem.** Three of four bands (green, yellow, orange) fall below even the lenient
   3:1 large-text floor for the colored number on white; yellow (1.64) is the worst. Red passes 3:1 large
   but not 4.5:1, so any *normal-size* red band text (e.g. the stale-IOB row, over-max label) also fails.

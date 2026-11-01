@@ -31,7 +31,7 @@ Share)](operate/glucose.md).
 
 ## The repositories
 
-```
+```text
 TandemKit  (Swift package — build once, reuse everywhere)
 ├── TandemMessages   framing, opcodes, request/response models, packetization, CRC/HMAC
 ├── TandemAuth       legacy pairing + EC-JPAKE (mbedTLS), per-command signing

@@ -21,9 +21,11 @@ final class CalcInputFreshnessTests: XCTestCase {
     func testTherapyStaleThresholdBoundary() {
         let now = Date()
         XCTAssertTrue(CalcInputFreshness.isTherapyStale(nil, now: now))  // unknown → stale
-        XCTAssertFalse(CalcInputFreshness.isTherapyStale(now.addingTimeInterval(-300), now: now))  // 5 min → still fresh (wider window)
+        // 5 min → still fresh (wider window)
+        XCTAssertFalse(CalcInputFreshness.isTherapyStale(now.addingTimeInterval(-300), now: now))
         XCTAssertFalse(CalcInputFreshness.isTherapyStale(now.addingTimeInterval(-899), now: now))  // just under 15 min
-        XCTAssertFalse(CalcInputFreshness.isTherapyStale(now.addingTimeInterval(-900), now: now))  // exactly at threshold
+        // exactly at threshold
+        XCTAssertFalse(CalcInputFreshness.isTherapyStale(now.addingTimeInterval(-900), now: now))
         XCTAssertTrue(CalcInputFreshness.isTherapyStale(now.addingTimeInterval(-901), now: now))  // just over 15 min
     }
 

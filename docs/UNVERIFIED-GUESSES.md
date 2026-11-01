@@ -23,6 +23,7 @@ branch and must still be resolved before any reintegration onto `main`; entries 
 (1, 3, 4, 8, 12) describe surfaces that are on `main` today.
 
 ## 1. CGM alert type (high vs low)
+
 - **Now matches the reference (still gated):** faBolus now sends `alertType: 0` = High, `alertType: 1` =
   Low, matching the jwoglom reference's named constants (`ALERT_TYPE_HIGH = 0`, `ALERT_TYPE_LOW = 1`).
   (It was previously the reverse.) The oracle's `CgmHighLowAlertRequestTest` still has **no captured BLE
@@ -36,6 +37,7 @@ branch and must still be resolved before any reintegration onto `main`; entries 
   `RemindersAlertsView` and drop the gate.
 
 ## 2. IDP profile create + segment parameters [off-main, `dev/mobi`]
+
 - **Now aligned to captured reference values (audit C-07), still bench-gated:** the field bitmasks were
   best guesses (`0`/`1`) that the reference captures contradict; faBolus now sends the captured values:
   - `CreateIDPRequest`: `timeSegmentBitmask: 31` (all segment fields), `bolusSettingsBitmask: 5`
@@ -54,6 +56,7 @@ branch and must still be resolved before any reintegration onto `main`; entries 
   basal, carb ratio, ISF, target, insulin duration) matches.
 
 ## 3. Garmin complication `:unit` key + numeric color path — RESOLVED against the SDK
+
 - **Resolved (no guess left):** the Connect IQ SDK's own type source
   (`.../connectiq-sdk-mac-9.2.0.../bin/api.mir`, `Complications.Data` typedef) defines the accepted keys
   as exactly `:value`, `:unit` (**singular**), `:shortLabel`, `:ranges`. `:units` (plural) appears ONLY
@@ -73,6 +76,7 @@ branch and must still be resolved before any reintegration onto `main`; entries 
   correctness — the API usage now matches the SDK type source.
 
 ## 4. Carb-bolus pump metadata (FOOD1 / foodVolume / bolusIOB / isAutopopBg) — audit C-07
+
 - **Now correct + oracle-locked:** a carb bolus sends `bolusTypeBitmask = FOOD1 (1)` (not FOOD2) with
   `foodVolume == totalVolume`, matching the reverse-engineered reference captures
   (TandemKit `InitiateBolusExtendedTests.carbBolusFood1CargoMatchesOracle` / `…WithIobCargoMatchesOracle`). Carbs
@@ -103,6 +107,7 @@ branch and must still be resolved before any reintegration onto `main`; entries 
   Control-IQ treats it as a carb bolus; confirm the inserts don't disrupt delivery.
 
 ## 5. Passive Dexcom G6 direct BLE source (pre-existing, still experimental pending on-device UAT) [off-main, `dev/cgm-extra`]
+
 - **Updated Phase 09.20 (D-03/D-05):** "a passive G6 read may never connect" was the ORIGINAL framing
   and has been **retracted** — a `LoopKit/CGMBLEKit`-mirror re-check (09.20-RESEARCH.md, "D-05
   reliability re-check" + "Already-paired-sensor first-run behavior") found no evidence for it: the
@@ -116,6 +121,7 @@ branch and must still be resolved before any reintegration onto `main`; entries 
   `09.20-CONTEXT.md`/`09.20-RESEARCH.md` for the full evidence trail.
 
 ## 6. Mobi native Sleep-schedule write (`SetSleepScheduleRequest.flag`) — Phase 09.10 [off-main, `dev/mobi`]
+
 - **Narrowed (not removed):** the write's `activeDays` day-of-week bitmask is now **CONFIRMED** —
   Monday=bit0(1), Tuesday=2, Wednesday=4, Thursday=8, Friday=16, Saturday=32, Sunday=bit6(64) — fixed by
   upstream `MultiDay.java` and corroborated by two human-labeled real captures (`0x1F`="M Tu W Th F",
@@ -139,6 +145,7 @@ branch and must still be resolved before any reintegration onto `main`; entries 
   value written — this is the confirmation step that resolves `flag`'s semantics.
 
 ## 7. `CurrentActiveIdpValuesResponse.currentTargetBg` byte-4 decode — Phase 09.8-04 (D-07) [off-main, `dev/mobi`]
+
 - **Capture-backed, NOT oracle-backed, NOT bench-confirmed.** The TandemKit port decodes the pump's
   active-IDP target BG as `Bytes.readShort(raw, 4)` (fixed in 09.8-04 from the buggy `Int(raw[5])`, which
   decoded the real capture as 0). Ground truth is the real hardware capture `7017000073002c012800` (present
@@ -167,6 +174,7 @@ branch and must still be resolved before any reintegration onto `main`; entries 
   families and across more than one t:slim software version; confirm no genuine byte-5 variant exists.
 
 ## 8. `ControlIQInfoV2Response.controlStateType` → `ciqZone` word mapping — Phase 09.15-01 (D-01/D-08)
+
 - **Not oracle-backed, not capture-backed, not bench-confirmed.** T1-1's "what Control-IQ is doing" state
   chip mirrors Tandem's own five zone words verbatim (Increases/Decreases/Maintains/Stops/Delivers, (c)
   Tandem) — the WORDS are Tandem's, but the raw op-179 byte that selects among them (`controlStateType`,
@@ -198,6 +206,7 @@ branch and must still be resolved before any reintegration onto `main`; entries 
   they are the same open question, not two.
 
 ## 9. G6 per-connection anchor-stability design (vs G7's per-message reset) — Phase 09.20-01/02 sign-off (D-08a) [off-main, `dev/cgm-extra`]
+
 - **Signed off 2026-08-18 (09.20-02 Task-1 checkpoint, owner-authorized default): `reject-and-stable`.**
   `DexcomG6BLESource.activationDate` is held STABLE per-connection — refreshed ONLY when a fresh
   `transmitterTimeRx` (0x25) is observed — rather than reset on every glucose message the way
@@ -215,6 +224,7 @@ branch and must still be resolved before any reintegration onto `main`; entries 
   needlessly reset.
 
 ## 10. G6 `transmitterTimeRx` (0x25) wire cadence + no-anchor bound (≈10 min / 2 wake cycles) — Phase 09.20-02 (Warning 1) [off-main, `dev/cgm-extra`]
+
 - **UNVERIFIED-GUESS, owner/bench-confirmable.** The RESEARCH did not establish how often a G6/G5/ONE
   transmitter actually broadcasts `transmitterTimeRx` on the control characteristic during a passive
   third-central listen. `DexcomG6BLESource.noAnchorBound` (default ≈10 min = 2 assumed wake cycles) is

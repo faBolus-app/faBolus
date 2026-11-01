@@ -104,8 +104,8 @@ final class RemoteCommandTests: XCTestCase {
             RemoteCommand(kind: .bolusRequest, units: 2.5),
             RemoteCommand(kind: .resumePump),
             RemoteCommand(kind: .statusRead),
-            RemoteCommand(kind: .dismissAlert, alertId: 2, alertKind: 3),   // a legacy dismiss (no discriminator)
-            RemoteCommand(kind: .dismissAck, alertId: 2, alertKind: 3),
+            RemoteCommand(kind: .dismissAlert, alertId: 2, alertKind: 3),  // a legacy dismiss (no discriminator)
+            RemoteCommand(kind: .dismissAck, alertId: 2, alertKind: 3)
         ]
         for cmd in unset {
             let json = String(data: try cmd.encoded(), encoding: .utf8)!

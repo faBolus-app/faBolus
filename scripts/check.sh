@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# The quality gates. CI runs each one as its own step; with no argument this runs them all.
+#
+#   scripts/check.sh                 # every gate
+#   scripts/check.sh build format    # just these
+#
+# Gates: build, test, format, swiftlint, shell, actions, markdown, contract.
+# legacy/ (the old app, copied from until S10) is outside every gate. The vendored ShareClient is
+# compiled under the same rules but is not reformatted or linted, so drift against upstream stays visible.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+PACKAGES=(faBolusCore faBolusDesign HistoryStore ShareClient)
+
+swift_files() {
+  git ls-files -z '*.swift' ':!:legacy/*' ':!:Packages/ShareClient/*'
+}
+
+gate_build() {
+  for p in "${PACKAGES[@]}"; do
+    echo "-- $p"
+    swift build --package-path "Packages/$p" --build-tests -Xswiftc -warnings-as-errors
+  done
+}
+gate_test() {
+  for p in "${PACKAGES[@]}"; do
+    [ -d "Packages/$p/Tests" ] || continue
+    echo "-- $p"
+    swift test --package-path "Packages/$p"
+  done
+}
+gate_format() { swift_files | xargs -0 xcrun swift-format lint --strict; }
+gate_swiftlint() { swiftlint lint --strict --quiet; }
+gate_shell() { git ls-files -z '*.sh' ':!:legacy/*' | xargs -0 shellcheck; }
+gate_actions() { actionlint; }
+gate_markdown() { markdownlint-cli2; }
+# The v1 phone↔watch contract and the provenance chain, until S8 and S10 replace them.
+gate_contract() {
+  ./scripts/check-schema-drift.sh
+  ./scripts/check-sbom.sh
+}
+
+gates=("$@")
+[ "${#gates[@]}" -gt 0 ] || gates=(build test format swiftlint shell actions markdown contract)
+for g in "${gates[@]}"; do
+  echo "== $g"
+  "gate_$g"
+done
+echo "all gates passed: ${gates[*]}"

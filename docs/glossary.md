@@ -4,6 +4,7 @@ Plain-language definitions of terms used across faBolus and its docs — for use
 LLM) reading the code.
 
 ## Diabetes / therapy
+
 - **Bolus** — a dose of insulin delivered at once (e.g. for a meal or a correction).
 - **Extended / combo bolus** — a bolus split into a part delivered now and the rest over a set duration.
 - **Basal** — the slow background insulin the pump delivers continuously (a *temp basal* is a temporary
@@ -23,6 +24,7 @@ LLM) reading the code.
   current or to auto-fill a correction.
 
 ## Devices / roles
+
 - **Host** — the device physically paired to the pump over Bluetooth (the iPhone). It owns the
   pump link and is the only thing that dispenses insulin.
 - **Remote** — something that shows status and *requests* actions the host carries out: the Garmin
@@ -33,6 +35,7 @@ LLM) reading the code.
   failover**).
 
 ## Security / protocol (developer)
+
 - **JPAKE** — the password-authenticated key exchange used to pair with the pump (a code proves both
   sides without sending it).
 - **WritePolicy** — the transport interlock (`.readOnly` / `.allowNonDelivery` / `.allowDelivery`) that

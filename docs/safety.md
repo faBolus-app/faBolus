@@ -12,14 +12,14 @@ Several checks are built in so a bolus can't happen by accident:
 
 <div class="grid cards" markdown>
 
--   :material-numeric:{ .lg .middle } **Max-units clamp**
+- :material-numeric:{ .lg .middle } **Max-units clamp**
 
     ---
 
     Every bolus is capped at your pump's configured maximum, and the pump enforces its own limit
     independently.
 
--   :material-gesture-tap-button:{ .lg .middle } **Explicit confirmation**
+- :material-gesture-tap-button:{ .lg .middle } **Explicit confirmation**
 
     ---
 
@@ -27,14 +27,14 @@ Several checks are built in so a bolus can't happen by accident:
     Venu 3S both use the same sequential 1-2-3 tap. (Button-only Garmin watches use a two-button
     hold instead, but that hardware isn't part of this build — it lives on `experimental`.)
 
--   :material-shield-lock:{ .lg .middle } **Signed commands**
+- :material-shield-lock:{ .lg .middle } **Signed commands**
 
     ---
 
     Every insulin-affecting command is cryptographically signed; the pump rejects anything that
     isn't. faBolus never modifies pump firmware — it only speaks the existing Bluetooth protocol.
 
--   :material-close-octagon:{ .lg .middle } **Cancel any time**
+- :material-close-octagon:{ .lg .middle } **Cancel any time**
 
     ---
 

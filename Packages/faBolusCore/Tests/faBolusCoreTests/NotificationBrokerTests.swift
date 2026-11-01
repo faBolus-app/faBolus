@@ -297,7 +297,8 @@ import Foundation
             criticalAlarm(), settings: settings, state: state, budget: budget, now: at(3, 30), calendar: cal)
         #expect(
             !crit.deliver && crit.reason == .categoryDisabled,
-            "a `.critical`-severity governed alarm with no resolver cascade is suppressed just like any other severity — the bypass no longer exists")
+            "a `.critical`-severity governed alarm with no resolver cascade is suppressed just like any other severity — the bypass no longer exists"
+        )
         let warn = B.Message(category: .pumpAlert, severity: .warning, title: "t", body: "b", dedupeKey: "occ")
         let warnDecision = B.decide(
             warn, settings: settings, state: state, budget: budget, now: at(3, 30), calendar: cal)
@@ -496,7 +497,9 @@ import Foundation
     @Test func isSafetySetMarksExactlyTheFiveSafetyCategories() {
         #expect(
             Set(C.allCases.filter { $0.isSafetySet }.map(\.rawValue))
-                == ["pumpDisconnect", "bolusReconciliation", "cgmDataLoss", "pumpConnectionUnstable", "urgentLowGlucose"])
+                == [
+                    "pumpDisconnect", "bolusReconciliation", "cgmDataLoss", "pumpConnectionUnstable", "urgentLowGlucose"
+                ])
     }
 
     /// `.pumpDisconnect` resolves delivery through the SAME resolver a pump-mirror category uses,
@@ -624,7 +627,8 @@ import Foundation
             rules: sourceOff.cascade(for: .bolusIndeterminate), timeSensitiveAvailable: true)
         #expect(
             !d.deliver && d.reason == .ruleResolvedOff,
-            "an app-own source Off must cascade to the unresolved-dose post (Amendment B) — the one thing that CAN lower it")
+            "an app-own source Off must cascade to the unresolved-dose post (Amendment B) — the one thing that CAN lower it"
+        )
     }
 
     /// A reconcile-keyed post does not consume the daily budget (the durable dose-safety disclosure must

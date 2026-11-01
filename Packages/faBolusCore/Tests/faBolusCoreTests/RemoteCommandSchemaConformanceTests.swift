@@ -263,7 +263,7 @@ struct RemoteCommandSchemaConformanceTests {
 
         cmd.appOwnAlerts = [
             RemoteCommand.AppOwnAlert(key: "appOwn:bolusIndeterminate", title: "Bolus outcome unknown"),
-            RemoteCommand.AppOwnAlert(key: "appOwn:pumpDisconnect", title: "Pump disconnected"),
+            RemoteCommand.AppOwnAlert(key: "appOwn:pumpDisconnect", title: "Pump disconnected")
         ]
         let data = try cmd.encoded()
         let decoded = try JSONDecoder().decode(RemoteCommand.self, from: data)

@@ -576,7 +576,8 @@ public enum MaxBasalFraction {
     /// these words in the label would misconstrue this faBolus-computed configured-basal-cap readout as
     /// a bolus, an automatic correction, a hard ceiling override, or "maxed out" delivery — none of
     /// which this feature is. Exposed as one shared list so the label builder and its test never drift.
-    public static let forbiddenMisconstrualWords: [String] = ["bolus", "correction", "ceiling", "maxed"]  // <!-- planner-discipline-allow: bolus correction ceiling maxed -->
+    // <!-- planner-discipline-allow: bolus correction ceiling maxed -->
+    public static let forbiddenMisconstrualWords: [String] = ["bolus", "correction", "ceiling", "maxed"]
 
     /// True when `text` contains any forbidden misconstrual word (case-insensitive substring).
     public static func hasForbiddenWord(_ text: String) -> Bool {

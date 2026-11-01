@@ -1,81 +1,66 @@
 # AGENTS.md — faBolus
 
-Working notes for agents and humans. Experimental, not-FDA-cleared remote-bolus + status app for
-Tandem t:slim X2 (this build declines to pair a Mobi). Companion map: [`llms.txt`](llms.txt).
-Branch model, experimental gate, and versioning: [`BRANCHES.md`](BRANCHES.md) — read it; do not
-restate it here.
+Working notes for agents and humans. Experimental, not-FDA-cleared remote-bolus and status app for the
+Tandem t:slim X2. Companion map: [`llms.txt`](llms.txt).
+
+This is the `rebuild` branch. The app is being rebuilt in slices; `main` keeps today's app until all
+three repos (faBolus, TandemKit, faBolusGarmin) merge together. The maintainers' rebuild plan says which
+slice owns which piece.
+
+## Layout on `rebuild`
+
+- `Packages/` holds everything that compiles: `faBolusCore`, `faBolusDesign`, `HistoryStore`, and the
+  vendored `ShareClient`. New packages land here as slices add them.
+- `legacy/` is the old phone app (`legacy/ios`, `legacy/Shared`, its `project.yml` and build scripts).
+  It is not compiled, linted or tested. Copy from it; don't edit it. It is deleted at the end of the
+  rebuild. There is no app target until the phone-app slice brings it back.
 
 ## Safety — do not violate
-- Insulin path: **UI confirm/hold → backend clamp** (`Interlocks.absoluteMaxUnits` = 25 U, min 0.05 U)
-  **→ TandemKit `WritePolicy`** (default `.readOnly`; risk-tiered, not a boolean) **→ signed message**
-  flagged `modifiesInsulinDelivery`, byte-verified against the TandemKit oracle. Never add a delivery
-  path that bypasses a layer.
-- Action gating is **`AccessPolicy`** in `faBolusCore`, reached from `AppModel.allow(_:from:peerId:)` /
-  `accessDecision`. Add gates there, not in views.
-- Stale glucose (> ~6 min, `GlucoseFreshness`) is shown marked, never as current, never auto-fills a
-  correction.
+
+- Every dose goes through one composer, the access policy, TandemKit's `WritePolicy` and a signed
+  message byte-verified against the TandemKit oracle. Never add a delivery path that skips a layer.
+- The pump's own limits govern; the app adds no limit of its own beyond the optional remote size limit.
+- An unknown bolus outcome blocks new boluses, across restarts, until pump history settles it or the
+  user confirms on the pump.
+- Stale glucose is shown marked, never as current, and never auto-fills a correction. Staleness comes
+  from the measurement time, not the time a value was received.
 - Don't invent pump behavior. Unverified fields go in `docs/UNVERIFIED-GUESSES.md`.
 
-## Commands
-- **Core unit tests:** `swift test --package-path Packages/faBolusCore`
-- **Simulator (iOS app + widgets):** `./scripts/build-sim.sh`
-- **Device build:** set `DEVELOPMENT_TEAM` in `LocalConfig.xcconfig`, then `./scripts/generate-project.sh` →
-  `xcodebuild -scheme faBolus -destination 'id=<UDID>' -allowProvisioningUpdates -derivedDataPath build/DDdevice build` →
-  `xcrun devicectl device install app --device <UDID> build/DDdevice/Build/Products/Debug-iphoneos/faBolus.app`
-- **Schema drift** (after touching `RemoteCommand`): `./scripts/check-schema-drift.sh`
-- Run `./scripts/generate-project.sh` — **not** bare `xcodegen generate` — after editing
-  `project.yml`. `project.yml` is a template: the script derives the real spec by picking the
-  pinned-vs-local `TandemKit` block and dropping retired compile flags. Bare `xcodegen` keeps both
-  `TandemKit` blocks, silently resolves to the unpinned sibling checkout, and fails to compile.
-  New files under globbed dirs (`ios/faBolus`, `Shared`) are picked up automatically.
+## Quality gates
 
-There is **no Watch app on `main`**. Do not build `faBolusWatch` or assume a `watch/` tree.
-
-## How to add X
-- **A user setting:** `AppSettings.swift` (UserDefaults `var` + `didSet`, defaulted/sanitized in
-  `init`) → a settings screen in `SettingsView.swift` → a `SettingsIndex` entry for search.
-- **A pump action:** add to `PumpBackend` (default-throwing extension) → implement in `TandemBackend`
-  **and** `MockBackend` → expose through `AppModel` → gate it via `AccessPolicy` if it changes insulin.
-- **A remote command:** extend `RemoteCommand` + `schema/command.schema.json` (drift check) → handle in
-  the remote-host receivers. Phone/Mac-only kinds (auth/sealed/approval) stay out of the shared
-  schema/Garmin mirror.
-- **A CGM source:** implement `GlucoseSource`, add a `GlucoseSourceDescriptor` to
-  `GlucoseSourceRegistry.enabled`.
-- **A permission:** `ChildFeature`; enforce via `AccessPolicy`.
+- `./scripts/check.sh` runs every gate; CI runs the same script, one gate per step, on Xcode 27.2.
+  Each gate fails the build: compiler warnings (Swift 6 language mode), the package tests,
+  `xcrun swift-format lint --strict`, SwiftLint, ShellCheck, actionlint, markdownlint, and the v1
+  contract and SBOM checks. Nothing is grandfathered. A suppression is written inline, names the rule
+  and gives a reason.
+- `./scripts/format.sh` formats in place. `.swift-format` turns off every rule except
+  `DoNotUseSemicolons`, so it reflows layout but never rewrites code. The vendored `ShareClient` is
+  never restyled.
+- `.swiftlint.yml` is a short list of correctness rules. Never rename a wire field, settings key or
+  `RemoteCommand` case to satisfy a linter.
+- Report only: Semgrep (`.semgrep/deslop.yml`, residue such as ticket IDs and drifted line
+  references), Periphery and CodeQL.
+- Every change is reviewed with `/code-review` before it lands on `rebuild`.
 
 ## Conventions
-- Swift 6 / strict concurrency: most UI + model types are `@MainActor`; CoreBluetooth/AVFoundation
-  callbacks that aren't must be `nonisolated` and hop back with `Task { @MainActor in … }`.
-- Match surrounding style. Comments explain **why** (safety, hardware, fail-closed). Do not add
-  phase/ticket IDs, “moved from X” notes, or file-header novels.
-- **Run the formatter before you commit:** `./scripts/format.sh` (`--lint` to check only). Use the
-  script, not bare `swift-format`: it filters out the vendored trees, which must never be restyled,
-  and it prints the formatter version it used. swift-format's output is version-dependent — 6.2.3
-  and 6.3.0 disagree on three files in this tree — so CI pins Homebrew's build
-  (`brew install swift-format`, 603.0.0, byte-identical to Xcode 26.6's 6.3.0). Override the binary
-  with `SWIFT_FORMAT=/path/to/swift-format` if your Xcode is older.
-  The committed `.swift-format` turns off every swift-format *rule* except `DoNotUseSemicolons` and
-  keeps the pretty-printer, so it reflows whitespace and strips stray statement semicolons but does
-  not otherwise rewrite code. CI reports (does not gate) on an unformatted tree.
-- `swiftlint lint --quiet` is advisory. Read `.swiftlint.yml` before "fixing" a hit: several rules
-  fire on things that are deliberate here — an empty `set {}` on a frozen accessor IS the freeze, an
-  explicit `case foo = "foo"` records a wire contract, and the metric rules describe wire-message
-  constructors. Never rename a wire field, settings key, or `RemoteCommand` case to satisfy a linter.
-- `semgrep --config .semgrep/deslop.yml --metrics=off .` flags AI-process residue (phase/ticket
-  breadcrumbs, migration notes, drifted `File.swift:123` references) and vacuous tests. The report
-  is advisory — triage by hand; a genuine safety comment can match a residue pattern — but the
-  residue count is ratcheted: CI's second semgrep step fails the build if any residue rule rises
-  above its committed baseline (`.semgrep/baseline.json`).
-- Sibling repos: `../TandemKit` (pump protocol — change message bytes there, with an oracle test) and
-  `../faBolusGarmin`. Keep the `RemoteCommand` schema in sync.
+
+- Swift 6, strict concurrency. No core protocol is `@MainActor`. CoreBluetooth callbacks are
+  `nonisolated` and hop to their owner explicitly.
+- Copy before writing: existing MIT code (`legacy/`, pumpx2, LoopKit) beats new code. Record copied
+  third-party files in `THIRD_PARTY.md` and `docs/SBOM.md`.
+- Comments explain why (safety, hardware, fail-closed). No phase or ticket IDs, "moved from X" notes,
+  or file-header novels.
+- Sibling repos: `../TandemKit` (pump protocol: change message bytes there, with an oracle test) and
+  `../faBolusGarmin`. Until protocol v2 lands, keep the v1 `RemoteCommand` schema in sync
+  (`scripts/check-schema-drift.sh`).
 
 ## Git
+
 Follow the user's branching. Don't push or commit unless asked.
 
 ## Gotchas
-- One CoreBluetooth restore-id per central per process (a second restorable central SIGABRTs). The
-  pump owns `com.fabolus.app.pump`; any other BLE central must use a different id.
-- `AppModel.addRemoteEcho` / `addStatusListener` are append-only — don't re-register.
-- Chained remotes are deferred; see `ROADMAP.md`.
-- TandemKit is consumed by `url:` + `revision:` in `project.yml` (`FABOLUS_TANDEM_LOCAL=1` for a
-  sibling checkout). Read the pin from `project.yml`, not from this file.
+
+- One CoreBluetooth restore ID per central per process (a second restorable central crashes). The
+  pump owns `com.fabolus.app.pump`; any other central uses its own ID.
+- The bundle ID stays the old app's (`APP_BUNDLE_ID`, `com.fabolus.app` unless a self-builder sets
+  their own in `LocalConfig.xcconfig`): the App Group and the Connect IQ companion link derive from it.

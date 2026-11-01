@@ -6,7 +6,7 @@ hide:
 <div class="cx2-hero" markdown>
 <span class="cx2-eyebrow">Built by Zev and Tia in tandem</span>
 
-# faBolus — your pump, on your wrist and your phone.
+# faBolus — your pump, on your wrist and your phone
 
 faBolus is a remote for insulin pumps: see your glucose and pump status at a glance, and deliver a
 bolus from your **iPhone**, a **Garmin Venu 3S**, or a Home/Lock Screen widget. It supports the
@@ -27,7 +27,7 @@ bolus from your **iPhone**, a **Garmin Venu 3S**, or a Home/Lock Screen widget. 
 
 <div class="grid cards" markdown>
 
--   :material-shield-check:{ .lg .middle } **Safety**
+- :material-shield-check:{ .lg .middle } **Safety**
 
     ---
 
@@ -35,7 +35,7 @@ bolus from your **iPhone**, a **Garmin Venu 3S**, or a Home/Lock Screen widget. 
 
     [:octicons-arrow-right-24: Safety notes](safety.md)
 
--   :material-clipboard-list:{ .lg .middle } **What you'll need**
+- :material-clipboard-list:{ .lg .middle } **What you'll need**
 
     ---
 
@@ -43,7 +43,7 @@ bolus from your **iPhone**, a **Garmin Venu 3S**, or a Home/Lock Screen widget. 
 
     [:octicons-arrow-right-24: Requirements](requirements.md)
 
--   :material-hammer-wrench:{ .lg .middle } **Build it yourself**
+- :material-hammer-wrench:{ .lg .middle } **Build it yourself**
 
     ---
 
@@ -52,7 +52,7 @@ bolus from your **iPhone**, a **Garmin Venu 3S**, or a Home/Lock Screen widget. 
 
     [:octicons-arrow-right-24: Build guide](build/index.md)
 
--   :material-tune:{ .lg .middle } **Customize**
+- :material-tune:{ .lg .middle } **Customize**
 
     ---
 
@@ -66,7 +66,7 @@ bolus from your **iPhone**, a **Garmin Venu 3S**, or a Home/Lock Screen widget. 
 
 <div class="grid cards" markdown>
 
--   :material-view-dashboard:{ .lg .middle } **A tabbed, modern app**
+- :material-view-dashboard:{ .lg .middle } **A tabbed, modern app**
 
     ---
 
@@ -76,7 +76,7 @@ bolus from your **iPhone**, a **Garmin Venu 3S**, or a Home/Lock Screen widget. 
     bolus, reservoir, battery, CGM, last bolus). Every reading shows its **age**, and anything
     older than **6 minutes** is shown greyed — never as the current value.
 
--   :material-water:{ .lg .middle } **Boluses, with guardrails**
+- :material-water:{ .lg .middle } **Boluses, with guardrails**
 
     ---
 
@@ -84,7 +84,7 @@ bolus from your **iPhone**, a **Garmin Venu 3S**, or a Home/Lock Screen widget. 
     bolus has a max-units clamp and an explicit confirmation, can be **cancelled mid-delivery**,
     and reports the actual amount delivered.
 
--   :material-watch:{ .lg .middle } **Garmin Venu 3S remote**
+- :material-watch:{ .lg .middle } **Garmin Venu 3S remote**
 
     ---
 
@@ -94,7 +94,7 @@ bolus from your **iPhone**, a **Garmin Venu 3S**, or a Home/Lock Screen widget. 
 
     [:octicons-arrow-right-24: Garmin remote](remotes/garmin.md)
 
--   :material-cellphone:{ .lg .middle } **Widgets**
+- :material-cellphone:{ .lg .middle } **Widgets**
 
     ---
 
@@ -103,7 +103,7 @@ bolus from your **iPhone**, a **Garmin Venu 3S**, or a Home/Lock Screen widget. 
 
     [:octicons-arrow-right-24: iPhone widgets](remotes/iphone-widgets.md)
 
--   :material-water-outline:{ .lg .middle } **Glucose via Dexcom Share**
+- :material-water-outline:{ .lg .middle } **Glucose via Dexcom Share**
 
     ---
 

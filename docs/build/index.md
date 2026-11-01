@@ -35,7 +35,7 @@ and you can add the watch later.
 
 <div class="grid cards" markdown>
 
--   :material-account-key:{ .lg .middle } **1 · Apple account**
+- :material-account-key:{ .lg .middle } **1 · Apple account**
 
     ---
 
@@ -43,7 +43,7 @@ and you can add the watch later.
 
     [:octicons-arrow-right-24: Start here](apple-developer.md)
 
--   :material-download:{ .lg .middle } **2 · Install Xcode**
+- :material-download:{ .lg .middle } **2 · Install Xcode**
 
     ---
 
@@ -51,7 +51,7 @@ and you can add the watch later.
 
     [:octicons-arrow-right-24: Install Xcode](xcode.md)
 
--   :material-cellphone-arrow-down:{ .lg .middle } **3 · Put the app on your iPhone**
+- :material-cellphone-arrow-down:{ .lg .middle } **3 · Put the app on your iPhone**
 
     ---
 
@@ -59,7 +59,7 @@ and you can add the watch later.
 
     [:octicons-arrow-right-24: Build the app](build-app.md)
 
--   :material-watch-variant:{ .lg .middle } **4 · Add a Garmin (Venu 3S)**
+- :material-watch-variant:{ .lg .middle } **4 · Add a Garmin (Venu 3S)**
 
     ---
 

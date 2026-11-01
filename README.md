@@ -22,7 +22,7 @@ see [ARCHITECTURE.md](ARCHITECTURE.md).
 pump stays the primary source, and a Share reading is shown marked, never as current. See
 [Glucose (Dexcom Share)](docs/operate/glucose.md).
 
-> _Built by Zev and Tia in tandem._
+_Built by Zev and Tia in tandem._
 
 > [!WARNING]
 > **Experimental, in development.** faBolus is an independent, open-source project in development
@@ -35,7 +35,7 @@ pump stays the primary source, and a Share reading is shown marked, never as cur
 **Full docs (a no-experience-required build guide, usage, and customization) live at the
 documentation site:**
 
-### 👉 https://fabolus.org/
+### 👉 <https://fabolus.org/>
 
 - [Safety](docs/safety.md), read before anything else.
 - [Build it yourself](docs/build/index.md): Apple account → Xcode → iPhone, step by step, plus
@@ -61,7 +61,7 @@ only when you need an official-app-only setting, then re-pair faBolus. More in t
 
 ## Layout
 
-```
+```text
 Packages/faBolusCore/        # in-repo SwiftPM package: the stable contracts + neutral models
                              #   (PumpBackend, PumpCapabilities, PumpAlert, RemoteCommand, GlucoseSource + GlucoseArbiter)
 Packages/ShareClient/        # Dexcom Share follower, vendored from LoopKit/dexcom-share-client-swift (MIT)

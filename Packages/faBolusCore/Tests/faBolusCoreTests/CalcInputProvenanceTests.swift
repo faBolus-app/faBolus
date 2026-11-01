@@ -46,7 +46,6 @@ final class CalcInputProvenanceTests: XCTestCase {
     /// A value inside the old 2100 bound but outside Int32 must be rejected — no 32-bit consumer (watchOS
     /// `Int`, Monkey C `Lang.Number`) could hold it, so it can't be a real stamp.
     func testCalcEpochBoundFitsInThirtyTwoBits() {
-        guard Int.bitWidth > 32 else { return }
         var cmd = RemoteCommand(kind: .statusRead, bgMgdl: 120)
         cmd.iobEpochSec = 4_102_444_800  // old 2100-01-01 ceiling
         XCTAssertThrowsError(try cmd.validate())

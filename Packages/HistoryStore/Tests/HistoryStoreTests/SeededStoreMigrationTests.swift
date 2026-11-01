@@ -25,13 +25,20 @@ import faBolusCore
     var date: Date
     var sourceID: String
     var recordedAt: Date
-    init(siteID: String, kind: String, bodySide: String,
-         normalizedX: Double, normalizedY: Double, note: String?,
-         date: Date, sourceID: String, recordedAt: Date) {
-        self.siteID = siteID; self.kind = kind; self.bodySide = bodySide
-        self.normalizedX = normalizedX; self.normalizedY = normalizedY
+    init(
+        siteID: String, kind: String, bodySide: String,
+        normalizedX: Double, normalizedY: Double, note: String?,
+        date: Date, sourceID: String, recordedAt: Date
+    ) {
+        self.siteID = siteID
+        self.kind = kind
+        self.bodySide = bodySide
+        self.normalizedX = normalizedX
+        self.normalizedY = normalizedY
         self.note = note
-        self.date = date; self.sourceID = sourceID; self.recordedAt = recordedAt
+        self.date = date
+        self.sourceID = sourceID
+        self.recordedAt = recordedAt
     }
 }
 
@@ -42,10 +49,16 @@ import faBolusCore
     var date: Date
     var sourceID: String
     var recordedAt: Date
-    init(entryID: String, milligrams: Double, source: String,
-         date: Date, sourceID: String, recordedAt: Date) {
-        self.entryID = entryID; self.milligrams = milligrams; self.source = source
-        self.date = date; self.sourceID = sourceID; self.recordedAt = recordedAt
+    init(
+        entryID: String, milligrams: Double, source: String,
+        date: Date, sourceID: String, recordedAt: Date
+    ) {
+        self.entryID = entryID
+        self.milligrams = milligrams
+        self.source = source
+        self.date = date
+        self.sourceID = sourceID
+        self.recordedAt = recordedAt
     }
 }
 
@@ -56,10 +69,16 @@ import faBolusCore
     var date: Date
     var sourceID: String
     var recordedAt: Date
-    init(entryID: String, standardDrinks: Double, source: String,
-         date: Date, sourceID: String, recordedAt: Date) {
-        self.entryID = entryID; self.standardDrinks = standardDrinks; self.source = source
-        self.date = date; self.sourceID = sourceID; self.recordedAt = recordedAt
+    init(
+        entryID: String, standardDrinks: Double, source: String,
+        date: Date, sourceID: String, recordedAt: Date
+    ) {
+        self.entryID = entryID
+        self.standardDrinks = standardDrinks
+        self.source = source
+        self.date = date
+        self.sourceID = sourceID
+        self.recordedAt = recordedAt
     }
 }
 
@@ -70,10 +89,16 @@ import faBolusCore
     var date: Date
     var sourceID: String
     var recordedAt: Date
-    init(entryID: String, bpm: Double, source: String,
-         date: Date, sourceID: String, recordedAt: Date) {
-        self.entryID = entryID; self.bpm = bpm; self.source = source
-        self.date = date; self.sourceID = sourceID; self.recordedAt = recordedAt
+    init(
+        entryID: String, bpm: Double, source: String,
+        date: Date, sourceID: String, recordedAt: Date
+    ) {
+        self.entryID = entryID
+        self.bpm = bpm
+        self.source = source
+        self.date = date
+        self.sourceID = sourceID
+        self.recordedAt = recordedAt
     }
 }
 
@@ -100,23 +125,32 @@ final class SeededStoreMigrationTests: XCTestCase {
         // Seed: a real on-disk container declaring every current @Model type, one row each.
         do {
             let config = ModelConfiguration(url: url)
-            let container = try ModelContainer(for: StoredGlucose.self, StoredBolus.self, StoredCarb.self,
-                                                StoredSite.self, StoredCaffeine.self, StoredAlcohol.self,
-                                                StoredHeartRate.self,
-                                                configurations: config)
+            let container = try ModelContainer(
+                for: StoredGlucose.self, StoredBolus.self, StoredCarb.self,
+                StoredSite.self, StoredCaffeine.self, StoredAlcohol.self,
+                StoredHeartRate.self,
+                configurations: config)
             let context = container.mainContext
             context.insert(StoredGlucose(date: t0, mgdl: 120, sourceID: "dexcomG7", priority: 100, recordedAt: t0))
             context.insert(StoredBolus(date: t0, units: 4.5, sourceID: "pump", recordedAt: t0))
             context.insert(StoredCarb(date: t0, grams: 45, sourceID: "fabolus", recordedAt: t0))
-            context.insert(StoredSite(siteID: "site-1", kind: "pump", bodySide: "front",
-                                       normalizedX: 0.5, normalizedY: 0.4, note: nil,
-                                       date: t0, sourceID: "fabolus", recordedAt: t0))
-            context.insert(StoredCaffeine(entryID: "c1", milligrams: 95, source: "Coffee",
-                                           date: t0, sourceID: "fabolus", recordedAt: t0))
-            context.insert(StoredAlcohol(entryID: "a1", standardDrinks: 1, source: "Wine",
-                                          date: t0, sourceID: "fabolus", recordedAt: t0))
-            context.insert(StoredHeartRate(entryID: "h1", bpm: 72, source: "healthkit",
-                                           date: t0, sourceID: "healthkit", recordedAt: t0))
+            context.insert(
+                StoredSite(
+                    siteID: "site-1", kind: "pump", bodySide: "front",
+                    normalizedX: 0.5, normalizedY: 0.4, note: nil,
+                    date: t0, sourceID: "fabolus", recordedAt: t0))
+            context.insert(
+                StoredCaffeine(
+                    entryID: "c1", milligrams: 95, source: "Coffee",
+                    date: t0, sourceID: "fabolus", recordedAt: t0))
+            context.insert(
+                StoredAlcohol(
+                    entryID: "a1", standardDrinks: 1, source: "Wine",
+                    date: t0, sourceID: "fabolus", recordedAt: t0))
+            context.insert(
+                StoredHeartRate(
+                    entryID: "h1", bpm: 72, source: "healthkit",
+                    date: t0, sourceID: "healthkit", recordedAt: t0))
             try context.save()
 
             // Non-vacuity: the seed itself must have written rows, so a silently-empty seed can't
@@ -132,8 +166,9 @@ final class SeededStoreMigrationTests: XCTestCase {
 
         // Reopen the SAME on-disk file with a container declaring ONLY the survivor entities.
         let reopenConfig = ModelConfiguration(url: url)
-        let reopenedContainer = try ModelContainer(for: StoredGlucose.self, StoredBolus.self, StoredCarb.self,
-                                                    configurations: reopenConfig)
+        let reopenedContainer = try ModelContainer(
+            for: StoredGlucose.self, StoredBolus.self, StoredCarb.self,
+            configurations: reopenConfig)
         let reopenedContext = reopenedContainer.mainContext
 
         let glucoseRows = try reopenedContext.fetch(FetchDescriptor<StoredGlucose>())
