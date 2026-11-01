@@ -18,6 +18,7 @@ actor FakeServices: RemoteHostServices {
     var dismissOutcome: DismissOutcome = .cleared
     var composeDelay: Duration = .zero
     var history: [faBolusCore.GlucoseReading] = []
+    var autoCorrection: Date?
     /// Delays for successive `pump()` calls, then the states they return, so overlapping refreshes can be
     /// made to finish out of order.
     var pumpScript: [(delay: Duration, state: PumpState)] = []
@@ -70,6 +71,8 @@ actor FakeServices: RemoteHostServices {
     }
     func refreshGlucose() async { glucoseRefreshes += 1 }
     func glucoseHistory(since: Date) async -> [faBolusCore.GlucoseReading] { history.filter { $0.date >= since } }
+    func set(autoCorrection: Date?) { self.autoCorrection = autoCorrection }
+    func lastAutoCorrection() async -> Date? { autoCorrection }
     func remoteBolusRefused(requestId: String, reason: String) async { refusals.append(requestId) }
 }
 

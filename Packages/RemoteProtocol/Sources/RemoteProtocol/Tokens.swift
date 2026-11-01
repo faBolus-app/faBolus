@@ -65,6 +65,8 @@ public enum ScreenToken: String, Sendable, Hashable, CaseIterable {
 
 public enum DetailToken: String, Sendable, Hashable, CaseIterable {
     case iob, reservoir, battery, cgm, lastBolus, carbRatio, isf, target, maxBolus, maxBasal
+    /// When Control-IQ last auto-corrected; the row is left out while none is known.
+    case autoCorrection
 }
 
 public enum ComplicationDisplayToken: String, Sendable, Hashable, CaseIterable {

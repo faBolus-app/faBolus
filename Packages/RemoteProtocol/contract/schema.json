@@ -464,6 +464,20 @@
             }
           }
         },
+        "lastAutoCorrection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "at"
+          ],
+          "properties": {
+            "at": {
+              "type": "integer",
+              "minimum": 1577836800,
+              "maximum": 2147483647
+            }
+          }
+        },
         "bolus": {
           "type": "object",
           "additionalProperties": false,
@@ -677,7 +691,8 @@
               "isf",
               "target",
               "maxBolus",
-              "maxBasal"
+              "maxBasal",
+              "autoCorrection"
             ]
           },
           "maxItems": 32,

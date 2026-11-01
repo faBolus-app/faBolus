@@ -154,10 +154,15 @@ enum HistoryProjection {
                 detail: String(format: "%.0f%%", m.percent))
         case is TempRateCompletedHistoryLog:
             return HistoryEvent(id: seq, date: date, category: .tempRate, title: "Temp rate ended")
-        case is AaAutoBolusRejectedHistoryLog, is CorrectionDeclinedHistoryLog:
+        case is AaAutoBolusRejectedHistoryLog:
+            // pumpx2's "AA Auto Bolus Rejected": the record carries no reason, so none is given.
             return HistoryEvent(
-                id: seq, date: date, category: .couldNotDeliver,
-                title: "Control-IQ tried and couldn't deliver an automatic correction")
+                id: seq, date: date, category: .couldNotDeliver, title: "Control-IQ auto-bolus rejected")
+        case let m as CorrectionDeclinedHistoryLog:
+            // The bolus calculator's correction, declined for a bolus: not Control-IQ.
+            return HistoryEvent(
+                id: seq, date: date, category: .bolus, title: "Correction declined",
+                detail: m.bg > 0 ? "BG \(m.bg) mg/dL" : "")
         case let m as PumpingSuspendedHistoryLog:
             return HistoryEvent(
                 id: seq, date: date, category: .pumping, title: "Insulin suspended",

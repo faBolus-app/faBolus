@@ -44,6 +44,27 @@ import Testing
         #expect(refused(message("bolus", p)))
     }
 
+    /// The last auto-correction is a time and nothing else: absent reads as none known, and a time out of
+    /// range or of the wrong type is refused rather than read as zero.
+    @Test func theLastAutoCorrectionIsATimeOnly() {
+        var p = payload(of: "status")
+        guard case .message(.status(let golden)) = RemoteMessage.receive(message("status", p)) else {
+            Issue.record("golden status didn't read")
+            return
+        }
+        #expect(golden.lastAutoCorrectionAt == GoldenFixtures.now - 2700)
+        p["lastAutoCorrection"] = nil
+        guard case .message(.status(let none)) = RemoteMessage.receive(message("status", p)) else {
+            Issue.record("status without it didn't read")
+            return
+        }
+        #expect(none.lastAutoCorrectionAt == nil)
+        p["lastAutoCorrection"] = .object(["at": .int(0)])
+        #expect(refused(message("status", p)))
+        p["lastAutoCorrection"] = .object(["at": .double(1_793_534_400)])
+        #expect(refused(message("status", p)))
+    }
+
     @Test func aMissingOrEmptyRequestIdIsRefused() {
         var p = payload(of: "bolus-units")
         p["requestId"] = nil

@@ -32,7 +32,7 @@ public enum GoldenFixtures {
             CalculatorSettings(
                 carbRatioMilligramsPerUnit: 7500, correctionFactor: 40, targetMgdl: 110, maxBolusMilliunits: 25_000),
             at: now - 20), controlIQ: Timed(ControlIQReading(enabled: true, activity: .normal), at: now - 40),
-        maxBasalMilliunitsPerHour: Timed(3000, at: now - 600), bolusBlock: nil,
+        maxBasalMilliunitsPerHour: Timed(3000, at: now - 600), lastAutoCorrectionAt: now - 2700, bolusBlock: nil,
         alerts: [
             AlertItem(
                 id: "pump.alert.2", title: "Low insulin", body: "50 units or less remain.", severity: .warning,

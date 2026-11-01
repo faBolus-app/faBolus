@@ -67,6 +67,7 @@ two clocks needn't agree. A value that hasn't been read, or whose time can't be 
 | `calculator` | `carbRatioMg`, `isf`, `target`, `maxBolusMU`, `at` |
 | `controlIQ` | `enabled`, `activity` (`normal`, `sleep`, `exercise`), `at` |
 | `maxBasal` | `mUPerHour`, `at` |
+| `lastAutoCorrection` | `at`: when Control-IQ last gave an automatic correction bolus, from the pump's history; absent when none is known |
 | `bolus` | `canBolus`; `blockReason` when it's false; `active` (the bolus the pump is delivering, from any surface: `requestedMU`, `deliveredMU`, `startedAt`); `remoteLimitMU` when set |
 | `alerts` | what the phone holds and has announced, most severe first: `id`, `title`, `body`, `severity` (`info`, `warning`, `critical`), `intent` (`quiet`, `alert`: shown, with or without vibration), `dismissable` |
 
@@ -81,7 +82,7 @@ know generically. A cancel is never blocked.
 | `revision` | 16 hex digits of the SHA-256 of the rest of the config's canonical JSON: equal revisions are equal configs, so there's no counter to compare |
 | `bolus` | `enabled` (bolusing from this remote), `readOnly` (remotes read-only), `defaultMode` (`carbs`, `units`), `unitsStepMU`, `carbStepG` |
 | `screens` | `order`, `default` (`glance`, `glucose`, `clock`, `bolusonly`, `alerts`, `history`, `details`) |
-| `details` | rows in order: `iob`, `reservoir`, `battery`, `cgm`, `lastBolus`, `carbRatio`, `isf`, `target`, `maxBolus`, `maxBasal` |
+| `details` | rows in order: `iob`, `reservoir`, `battery`, `cgm`, `lastBolus`, `carbRatio`, `isf`, `target`, `maxBolus`, `maxBasal`, `autoCorrection` (left out while none is known) |
 | `chartHours` | ranges the chart cycles through, from 3, 6, 12, 24 |
 | `complication` | `display` (`numericColor`, `stringTrend`), `slots` (up to three of `iob`, `reservoir`, `battery`, `basal`) |
 | `clockAnalog` | |

@@ -350,6 +350,23 @@ import faBolusCore
         #expect(rig.transport.statuses.count == before)
     }
 
+    /// A finished history sync that found an auto-correction sends it with the next status. A host with
+    /// none known, as after a relaunch before history shows one again, sends none: never a zero or an old
+    /// time.
+    @Test func aFinishedSyncSendsTheLastAutoCorrection() async {
+        let rig = HostRig()
+        await rig.start()
+        #expect(rig.transport.statuses.last.map { $0.lastAutoCorrectionAt == nil } == true)
+        let at = HostRig.now.addingTimeInterval(-1800)
+        await rig.services.set(autoCorrection: at)
+        await rig.host.pumpEvent(.historySync(.syncing))
+        await rig.settle()
+        #expect(rig.transport.statuses.last?.lastAutoCorrectionAt == nil)
+        await rig.host.pumpEvent(.historySync(.idle(lastSynced: HostRig.now)))
+        await rig.settle()
+        #expect(rig.transport.statuses.last?.lastAutoCorrectionAt == Int(at.timeIntervalSince1970))
+    }
+
     /// A long alert identifier gets a distinct wire ID that a dismiss still finds.
     @Test func longAlertIdentifiersStayDistinctAndDismissable() async {
         let prefix = String(repeating: "x", count: 70)

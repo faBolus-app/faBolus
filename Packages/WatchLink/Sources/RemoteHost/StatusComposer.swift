@@ -13,20 +13,23 @@ public struct StatusInputs: Sendable {
     public var bolusBlock: BolusBlock?
     /// The alerts the phone holds and has announced (`AlertSnapshot.active`).
     public var alerts: [ActiveAlert]
+    /// When Control-IQ last gave an automatic correction, from the pump's history; `nil` when none is known.
+    public var lastAutoCorrection: Date?
     public var configRevision: String
     public var remoteSizeLimitUnits: Double?
     public var now: Date
 
     public init(
         pump: PumpState, glucoseProvenance: GlucoseProvenance, access: AccessPolicy.AccessContext,
-        bolusBlock: BolusBlock?, alerts: [ActiveAlert], configRevision: String, remoteSizeLimitUnits: Double?,
-        now: Date
+        bolusBlock: BolusBlock?, alerts: [ActiveAlert], lastAutoCorrection: Date?, configRevision: String,
+        remoteSizeLimitUnits: Double?, now: Date
     ) {
         self.pump = pump
         self.glucoseProvenance = glucoseProvenance
         self.access = access
         self.bolusBlock = bolusBlock
         self.alerts = alerts
+        self.lastAutoCorrection = lastAutoCorrection
         self.configRevision = configRevision
         self.remoteSizeLimitUnits = remoteSizeLimitUnits
         self.now = now
@@ -101,13 +104,17 @@ public enum StatusComposer {
                 requestedMilliunits: requested, deliveredMilliunits: entry.deliveredUnits.flatMap(milliunits),
                 startedAt: started)
         }
+        let autoCorrection = inputs.lastAutoCorrection.flatMap {
+            $0 <= now.addingTimeInterval(CalcInputFreshness.futureSkewTolerance) ? epoch($0) : nil
+        }
         let refusal = DoseComposer.availability(
             surface: .garmin, pump: pump, access: inputs.access, bolusBlock: inputs.bolusBlock)
         return StatusPayload(
             sentAt: wireEpoch(now), configRevision: inputs.configRevision, pumpLink: linkToken(pump.link),
             glucose: glucose, insulinOnBoardMilliunits: iob, reservoirMilliunits: reservoir, battery: battery,
             basal: basal, lastBolusMilliunits: lastBolus, calculator: calculator, controlIQ: controlIQ,
-            maxBasalMilliunitsPerHour: maxBasal, bolusBlock: refusal.map(blockToken), activeBolus: active,
+            maxBasalMilliunitsPerHour: maxBasal, lastAutoCorrectionAt: autoCorrection,
+            bolusBlock: refusal.map(blockToken), activeBolus: active,
             alerts: alertItems(inputs.alerts),
             remoteLimitMilliunits: inputs.remoteSizeLimitUnits.flatMap(milliunits))
     }

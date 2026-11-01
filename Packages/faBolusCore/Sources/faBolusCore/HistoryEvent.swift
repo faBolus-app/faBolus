@@ -9,10 +9,9 @@ public struct HistoryEvent: Identifiable, Sendable, Equatable {
         /// Control-IQ auto-corrected (`bolusSource == 7` on a `BolusDeliveryHistoryLog`). Display-only,
         /// never a dose input.
         case autoCorrection
-        /// Control-IQ tried and could not deliver an automatic correction
-        /// (`AaAutoBolusRejectedHistoryLog` / `CorrectionDeclinedHistoryLog`). Never speculates why —
-        /// neither log exposes a reason. Rendered amber (informational, not an alarm), distinct from
-        /// `.alarm`.
+        /// A Control-IQ automatic bolus the pump rejected (`AaAutoBolusRejectedHistoryLog`). Never
+        /// speculates why: the record carries no reason. Rendered amber (informational, not an alarm),
+        /// distinct from `.alarm`.
         case couldNotDeliver
         case other
 

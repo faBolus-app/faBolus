@@ -17,12 +17,14 @@ import Testing
 
     func compose(
         _ pump: PumpState, block: BolusBlock? = nil, alerts: [ActiveAlert] = [],
-        access: AccessPolicy.AccessContext = access, provenance: GlucoseProvenance = .pump
+        access: AccessPolicy.AccessContext = access, provenance: GlucoseProvenance = .pump,
+        autoCorrection: Date? = nil
     ) -> StatusPayload {
         StatusComposer.compose(
             StatusInputs(
                 pump: pump, glucoseProvenance: provenance, access: access, bolusBlock: block, alerts: alerts,
-                configRevision: "0123456789abcdef", remoteSizeLimitUnits: 5, now: Self.now))
+                lastAutoCorrection: autoCorrection, configRevision: "0123456789abcdef", remoteSizeLimitUnits: 5,
+                now: Self.now))
     }
 
     var connected: PumpState {
@@ -30,6 +32,16 @@ import Testing
         p.link = .connected
         p.model = .tslimX2
         return p
+    }
+
+    /// The last auto-correction goes as its own time; none known, or a time in the future beyond clock
+    /// skew, goes as nothing.
+    @Test func theLastAutoCorrectionIsSentOnlyWhenKnownAndBelievable() {
+        let at = Self.now.addingTimeInterval(-2700)
+        #expect(compose(connected, autoCorrection: at).lastAutoCorrectionAt == Int(at.timeIntervalSince1970))
+        #expect(compose(connected).lastAutoCorrectionAt == nil)
+        #expect(compose(connected, autoCorrection: Self.now.addingTimeInterval(3600)).lastAutoCorrectionAt == nil)
+        #expect(compose(connected, autoCorrection: Date(timeIntervalSince1970: 0)).lastAutoCorrectionAt == nil)
     }
 
     /// Each value keeps the time it was measured; the watch ages it itself.

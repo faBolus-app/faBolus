@@ -117,6 +117,9 @@ public struct StatusPayload: Sendable, Hashable {
     public var calculator: Timed<CalculatorSettings>?
     public var controlIQ: Timed<ControlIQReading>?
     public var maxBasalMilliunitsPerHour: Timed<Int>?
+    /// When Control-IQ last gave an automatic correction bolus, from the pump's history: on the wire, an
+    /// object holding only `at`. Absent when none is known.
+    public var lastAutoCorrectionAt: Int?
     /// `nil` when a remote may start a bolus now.
     public var bolusBlock: BolusBlockToken?
     public var activeBolus: ActiveBolus?
@@ -130,7 +133,8 @@ public struct StatusPayload: Sendable, Hashable {
         battery: Timed<BatteryReading>? = nil, basal: Timed<BasalReading>? = nil,
         lastBolusMilliunits: Timed<Int>? = nil, calculator: Timed<CalculatorSettings>? = nil,
         controlIQ: Timed<ControlIQReading>? = nil, maxBasalMilliunitsPerHour: Timed<Int>? = nil,
-        bolusBlock: BolusBlockToken?, activeBolus: ActiveBolus? = nil, alerts: [AlertItem] = [],
+        lastAutoCorrectionAt: Int? = nil, bolusBlock: BolusBlockToken?, activeBolus: ActiveBolus? = nil,
+        alerts: [AlertItem] = [],
         remoteLimitMilliunits: Int? = nil
     ) {
         self.sentAt = sentAt
@@ -145,6 +149,7 @@ public struct StatusPayload: Sendable, Hashable {
         self.calculator = calculator
         self.controlIQ = controlIQ
         self.maxBasalMilliunitsPerHour = maxBasalMilliunitsPerHour
+        self.lastAutoCorrectionAt = lastAutoCorrectionAt
         self.bolusBlock = bolusBlock
         self.activeBolus = activeBolus
         self.alerts = alerts
@@ -210,6 +215,13 @@ extension StatusPayload {
                 }
             })
         w.set("maxBasal", maxBasalMilliunitsPerHour.map { timed($0) { v, w in w.set("mUPerHour", v) } })
+        w.set(
+            "lastAutoCorrection",
+            lastAutoCorrectionAt.map {
+                var o = FieldWriter()
+                o.set("at", $0)
+                return o.value
+            })
         var bolus = FieldWriter()
         bolus.set("canBolus", bolusBlock == nil)
         bolus.set("blockReason", bolusBlock?.rawValue)
@@ -274,6 +286,9 @@ extension StatusPayload {
         }
         maxBasalMilliunitsPerHour = try r.optionalObject("maxBasal").map { o throws(DecodeError) in
             Timed(try o.int("mUPerHour", in: milliunitRange), at: try o.int("at", in: epochRange))
+        }
+        lastAutoCorrectionAt = try r.optionalObject("lastAutoCorrection").map { o throws(DecodeError) in
+            try o.int("at", in: epochRange)
         }
         let bolus = try r.object("bolus")
         let canBolus = try bolus.bool("canBolus")

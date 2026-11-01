@@ -20,6 +20,9 @@ public protocol RemoteHostServices: Sendable {
     func dismiss(_ alert: PumpAlert) async -> DismissOutcome
     func refreshGlucose() async
     func glucoseHistory(since: Date) async -> [faBolusCore.GlucoseReading]
+    /// When Control-IQ last auto-corrected: the newest such event in the session's logbook projection,
+    /// `nil` when none is known.
+    func lastAutoCorrection() async -> Date?
     /// A remote's request refused before the ledger: for the "Remote bolus refused" notification.
     func remoteBolusRefused(requestId: String, reason: String) async
 }
@@ -124,6 +127,9 @@ public actor RemoteHost {
     /// also sent as the bolus's own message.
     public func pumpEvent(_ event: PumpEvent) async {
         switch event {
+        // A finished sync may have found a newer auto-correction; the sync's other steps change nothing
+        // the status shows.
+        case .historySync(.idle): break
         case .historySync, .pumpFound: return
         default: break
         }
@@ -344,12 +350,14 @@ public actor RemoteHost {
         let ticket = statusTicket
         let (pump, provenance) = await services.pump()
         let block = await services.bolusBlock()
+        let autoCorrection = await services.lastAutoCorrection()
         // A refresh that started later has already sent a newer snapshot.
         guard ticket == statusTicket else { return }
         let status = StatusComposer.compose(
             StatusInputs(
                 pump: pump, glucoseProvenance: provenance, access: settings.access, bolusBlock: block, alerts: alerts,
-                configRevision: config.revision, remoteSizeLimitUnits: settings.remoteSizeLimitUnits, now: now))
+                lastAutoCorrection: autoCorrection, configRevision: config.revision,
+                remoteSizeLimitUnits: settings.remoteSizeLimitUnits, now: now))
         // Nothing the watch would see changed: leave the one already queued or delivered.
         var unchanged = status
         unchanged.sentAt = lastStatus?.sentAt ?? status.sentAt

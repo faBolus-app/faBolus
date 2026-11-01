@@ -134,6 +134,33 @@ private func addGlucoseHistory(_ pump: ScriptedPump, count: Int) {
         #expect(batch.sequences == [1])
     }
 
+    /// The logbook names each Control-IQ and calculator record for what it is: an automatic correction
+    /// (a bolus whose source is Control-IQ), an automatic bolus the pump rejected, and a calculator
+    /// correction the user declined, which isn't Control-IQ.
+    @Test func controlIQAndCalculatorRecordsAreLabelledForWhatTheyAre() {
+        let anchor = PumpClockAnchor(pumpTime: 1_000_000, phoneTime: Date(timeIntervalSince1970: 1_800_000_000))
+        let iob = withUnsafeBytes(of: Float(1.5).bitPattern.littleEndian, Array.init)
+        let records = [
+            // BolusDelivery (280), bolus 12, source 7.
+            ScriptedPump.record(
+                typeId: 280, pumpTime: 1_000_000 - 30, sequence: 3,
+                body: le16(12) + [0, 0, 7, 0] + [UInt8](repeating: 0, count: 12)),
+            // AA Auto Bolus Rejected (288).
+            ScriptedPump.record(typeId: 288, pumpTime: 1_000_000 - 20, sequence: 4, body: []),
+            // Correction Declined (93): BG 180, bolus 13, IOB 1.5, target 110, ISF 40.
+            ScriptedPump.record(
+                typeId: 93, pumpTime: 1_000_000 - 10, sequence: 5,
+                body: le16(180) + le16(13) + iob + le16(110) + le16(40))
+        ]
+        let events = HistoryProjection.batch(records, anchor: anchor, now: anchor.phoneTime).events
+        #expect(
+            events.map(\.title) == [
+                "Correction declined", "Control-IQ auto-bolus rejected", "Control-IQ auto-corrected"
+            ])
+        #expect(events.map(\.category) == [.bolus, .couldNotDeliver, .autoCorrection])
+        #expect(events.first?.detail == "BG 180 mg/dL")
+    }
+
     @Test func coverageReportsTheMissingWindows() {
         let held = HistoryCoverage(ranges: [1...50, 80...130])
         #expect(held.missing(first: 1, last: 130) == [51...79])
