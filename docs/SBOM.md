@@ -38,6 +38,15 @@ incl. iCloud + SiteAtlas" → `dev/backup`; "Retrospective insights" → `dev/re
 food-scanner" → `dev/food-finder`; `BRANCHES.md` §1.2c). Only `UPSTREAM.md` remains as vendored-tree
 source on `main`.
 
+## Test-only dependencies (never linked into the app or the widgets)
+
+| Component | Version | License (SPDX) | Source | Usage |
+|---|---|---|---|---|
+| swift-snapshot-testing | 1.19.4 | MIT | github.com/pointfreeco/swift-snapshot-testing | The app's light and dark snapshot tests (`ios/faBolusAppTests`) |
+| swift-custom-dump | as resolved (1.x) | MIT | github.com/pointfreeco/swift-custom-dump | Dependency of swift-snapshot-testing |
+| xctest-dynamic-overlay | as resolved (1.x) | MIT | github.com/pointfreeco/xctest-dynamic-overlay | Dependency of swift-snapshot-testing |
+| swift-syntax | as resolved | Apache-2.0 | github.com/swiftlang/swift-syntax | Dependency of swift-snapshot-testing (its inline-snapshot macros) |
+
 ## Local path dependency (separate repo)
 
 | Component | Version | License (SPDX) | Source | Usage |

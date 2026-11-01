@@ -1,0 +1,209 @@
+name: faBolus
+options:
+  bundleIdPrefix: com.fabolus
+  createIntermediateGroups: true
+  developmentLanguage: en
+
+# Identifiers come from Config.xcconfig, which includes your gitignored LocalConfig.xcconfig (copy it from
+# LocalConfig.xcconfig.example). Every bundle ID and the App Group derive from $(APP_BUNDLE_ID). Generate
+# the project with scripts/generate-project.sh, which handles the optional parts below.
+configFiles:
+  Debug: Config.xcconfig
+  Release: Config.xcconfig
+
+packages:
+  PhoneApp:
+    path: Packages/PhoneApp
+  faBolusCore:
+    path: Packages/faBolusCore
+  faBolusDesign:
+    path: Packages/faBolusDesign
+  Alerts:
+    path: Packages/Alerts
+  GlucoseSources:
+    path: Packages/GlucoseSources
+  PumpSession:
+    path: Packages/PumpSession
+  RemoteProtocol:
+    path: Packages/RemoteProtocol
+  WatchLink:
+    path: Packages/WatchLink
+  # Snapshot tests only; never linked into a shipping target.
+  SnapshotTesting:
+    url: https://github.com/pointfreeco/swift-snapshot-testing
+    exactVersion: 1.19.4
+  # >>> GARMIN (scripts/generate-project.sh removes this block when the Connect IQ SDK is absent)
+  ConnectIQ:
+    # Garmin's iOS companion SDK, licensed separately and not in the repository.
+    path: ../../vendor/connectiq-companion-app-sdk-ios-1.8.0
+  # <<< GARMIN
+
+targets:
+  faBolus:
+    type: application
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: ios/faBolus
+      # >>> GARMIN
+      # The Connect IQ adapter compiles in the app, where the SDK is linked (a package can't see it).
+      - path: Packages/WatchLink/Sources/GarminTransport/GarminTransport.swift
+        group: ios/faBolus/Watch
+      # <<< GARMIN
+    dependencies:
+      - package: PhoneApp
+        product: PhoneApp
+      - package: PhoneApp
+        product: WidgetContent
+      - package: faBolusCore
+      - package: faBolusDesign
+      - package: Alerts
+      - package: GlucoseSources
+      - package: PumpSession
+        product: PumpSession
+      - package: RemoteProtocol
+      - package: WatchLink
+        product: WatchLink
+      - package: WatchLink
+        product: RemoteHost
+      # >>> GARMIN
+      - package: ConnectIQ
+        product: ConnectIQ
+      # <<< GARMIN
+      - target: faBolusWidgets
+    entitlements:
+      path: ios/faBolus/faBolus.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.$(APP_BUNDLE_ID)
+        # Needs the capability provisioned on the App ID, so it's off unless FABOLUS_DATA_PROTECTION=1. iOS
+        # uses this class by default anyway; never "Complete", which would lock the ledger while the phone
+        # is locked and break a background relaunch.
+        # >>> DATA_PROTECTION
+        com.apple.developer.default-data-protection: NSFileProtectionCompleteUntilFirstUserAuthentication
+        # <<< DATA_PROTECTION
+        # Lets the bolus result, pump disconnected and backup urgent low break through a Focus. Needs the
+        # capability provisioned on the App ID (a paid account), so it's off unless FABOLUS_TIME_SENSITIVE=1;
+        # without it those alerts arrive as active.
+        # >>> TIME_SENSITIVE
+        com.apple.developer.usernotifications.time-sensitive: true
+        # <<< TIME_SENSITIVE
+    info:
+      path: ios/faBolus/Info.plist
+      properties:
+        AppGroupIdentifier: group.$(APP_BUNDLE_ID)
+        # Garmin Connect's "select devices" screen shows this name.
+        CFBundleDisplayName: faBolus
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        GarminBetaAppID: $(GARMIN_BETA_APP_ID)
+        NSBluetoothAlwaysUsageDescription: >-
+          faBolus connects to your pump over Bluetooth to read status and deliver boluses, and can read a
+          Dexcom sensor alongside the Dexcom app.
+        # The pump link and a Bluetooth CGM keep working while the phone is locked.
+        UIBackgroundModes: [bluetooth-central]
+        UILaunchScreen: {}
+        NSSupportsLiveActivities: true
+        LSApplicationQueriesSchemes: [gcm-ciq]
+        CFBundleURLTypes:
+          - CFBundleURLName: $(APP_BUNDLE_ID).ciq
+            CFBundleURLSchemes: [fabolusciq]
+          - CFBundleURLName: $(APP_BUNDLE_ID).deeplink
+            CFBundleURLSchemes: [fabolus]
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID)
+        GENERATE_INFOPLIST_FILE: NO
+        SWIFT_VERSION: "6.0"
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+      configs:
+        Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG GARMIN
+        Release:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) GARMIN
+
+  # Lock Screen and Home Screen widgets and the Live Activity. Read-only: they show what the app published
+  # to the App Group and open the app; none reaches the pump.
+  faBolusWidgets:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - ios/faBolusWidgets
+    dependencies:
+      - package: PhoneApp
+        product: WidgetContent
+      - package: faBolusCore
+      - package: faBolusDesign
+    info:
+      path: ios/faBolusWidgets/Info.plist
+      properties:
+        AppGroupIdentifier: group.$(APP_BUNDLE_ID)
+        CFBundleDisplayName: faBolus
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: ios/faBolusWidgets/faBolusWidgets.entitlements
+      properties:
+        com.apple.security.application-groups: [group.$(APP_BUNDLE_ID)]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID).widgets
+        GENERATE_INFOPLIST_FILE: NO
+        SWIFT_VERSION: "6.0"
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1"
+
+  # Snapshot tests of every screen (light and dark) and the views' own logic, on the simulator.
+  faBolusAppTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - ios/faBolusAppTests
+    dependencies:
+      - target: faBolus
+      - package: PhoneApp
+        product: PhoneApp
+      - package: PhoneApp
+        product: WidgetContent
+      - package: faBolusCore
+      - package: GlucoseSources
+      - package: PumpSession
+        product: PumpScript
+      - package: SnapshotTesting
+        product: SnapshotTesting
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID).appTests
+        SWIFT_VERSION: "6.0"
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+        CODE_SIGNING_ALLOWED: NO
+        TARGETED_DEVICE_FAMILY: "1"
+
+schemes:
+  faBolus:
+    build:
+      targets:
+        faBolus: all
+        faBolusAppTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - faBolusAppTests
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

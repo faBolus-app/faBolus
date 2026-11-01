@@ -21,6 +21,22 @@ jobs:
       - name: Test
         run: ./scripts/check.sh test
 
+  app:
+    name: App build and snapshot tests (Xcode 27.2)
+    runs-on: xcode-27
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 27.2
+        run: sudo xcode-select -s /Applications/Xcode_27.2.app && xcodebuild -version
+      # The generated project follows XcodeGen's version, so a different one fails here rather than
+      # changing the build or the snapshots unseen. Bump it together with the snapshots.
+      - name: Install XcodeGen 2.46.0
+        run: |
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+          xcodegen --version | grep -qx 'Version: 2.46.0'
+      - name: App (no Connect IQ SDK here, so Garmin is off)
+        run: ./scripts/check.sh app
+
   swift-lint:
     name: swift-format and SwiftLint
     runs-on: xcode-27

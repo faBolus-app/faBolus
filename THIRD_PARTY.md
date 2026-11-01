@@ -9,6 +9,7 @@ itself is MIT (see `LICENSE`).
 | Component | License | Kind | Where |
 |---|---|---|---|
 | faBolusCore, HistoryStore, GlucoseSources, PumpSession, PhoneApp | MIT (in-repo) | first-party package | `Packages/` |
+| swift-snapshot-testing (+ swift-custom-dump, xctest-dynamic-overlay MIT; swift-syntax Apache-2.0) | MIT | test-only package dependency, never shipped | `ios/faBolusAppTests` (`project.yml`) |
 | pumpx2 captured message bytes | MIT (© 2022 James Woglom) | copied as test fixtures (jwoglom/pumpx2 `456018a5`) | `Packages/PumpSession/Tests/PumpSessionTests/Support/Captures.swift` |
 | ShareClient | MIT | vendored (LoopKit/dexcom-share-client-swift), modified for Swift 6 | `Packages/ShareClient` |
 | CGMBLEKit (G5/G6/ONE passive mode) | MIT (© 2015 Nathan Racklyeft) | copied (LoopKit/CGMBLEKit `c9e6c84`), trimmed to the passive read path | `Packages/DexcomBLE/G6`, `Packages/DexcomBLE/Sources/DexcomBLE` |

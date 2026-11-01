@@ -1,0 +1,21 @@
+// ── Your personal build settings ───────────────────────────────────────────
+// Copy this file to  LocalConfig.xcconfig  (same folder, drop the ".example")
+// and fill in your own values. LocalConfig.xcconfig is gitignored, so nothing
+// personal is ever committed.
+//
+// After editing, regenerate the Xcode project:   xcodegen generate
+// ─────────────────────────────────────────────────────────────────────────────
+
+// 1) A bundle ID that is UNIQUE TO YOU.
+//    Apple requires every App ID / App Group to be globally unique, so use a
+//    reverse-DNS string based on a domain or name YOU control. Everything else
+//    (watch app, widgets, App Group) is derived from this automatically.
+//    Examples:  com.janesmith.fabolus   org.yourdomain.fabolus
+APP_BUNDLE_ID = com.yourname.fabolus
+
+// 2) Your Apple Developer Team ID (10 characters).
+//    Find it in Xcode → Settings → Accounts (select your team; the ID is shown
+//    in parentheses), or at developer.apple.com → Account → Membership details.
+//    You can leave this blank and instead pick your Team in Xcode's
+//    Signing & Capabilities tab.
+DEVELOPMENT_TEAM = ABCDE12345

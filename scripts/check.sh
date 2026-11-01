@@ -4,7 +4,7 @@
 #   scripts/check.sh                 # every gate
 #   scripts/check.sh build format    # just these
 #
-# Gates: build, test, format, swiftlint, shell, actions, markdown, contract.
+# Gates: build, test, app, format, swiftlint, shell, actions, markdown, contract.
 # legacy/ (the old app, copied from during the rebuild) is outside every gate. The vendored ShareClient is
 # compiled under the same rules but is not reformatted or linted, so drift against upstream stays visible.
 set -euo pipefail
@@ -30,6 +30,9 @@ gate_test() {
     swift test --package-path "Packages/$p" -Xswiftc -warnings-as-errors
   done
 }
+# The app target: the project generated, the app and widgets built for the simulator with warnings as
+# errors, and the app's tests run, the light and dark snapshots of every screen among them.
+gate_app() { ./scripts/test-ios.sh -quiet; }
 gate_format() { swift_files | xargs -0 xcrun swift-format lint --strict; }
 gate_swiftlint() { swiftlint lint --strict --quiet; }
 gate_shell() { git ls-files -z '*.sh' ':!:legacy/*' | xargs -0 shellcheck; }
@@ -45,7 +48,7 @@ gate_contract() {
 }
 
 gates=("$@")
-[ "${#gates[@]}" -gt 0 ] || gates=(build test format swiftlint shell actions markdown contract)
+[ "${#gates[@]}" -gt 0 ] || gates=(build test app format swiftlint shell actions markdown contract)
 for g in "${gates[@]}"; do
   echo "== $g"
   "gate_$g"

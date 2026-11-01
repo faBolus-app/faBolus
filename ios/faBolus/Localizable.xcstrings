@@ -1,0 +1,349 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "—" : {
+
+    },
+    "**Mark stale**: after this long, a reading is greyed and no longer auto-fills a correction. **Hide**: how long after that to keep showing the greyed value before it becomes “–”." : {
+
+    },
+    "%@" : {
+
+    },
+    "%@ mg/dL" : {
+
+    },
+    "%@ min" : {
+
+    },
+    "A CGM alert like “high glucose” is condition-based: the pump keeps re-raising it while the reading is actually high, so it can’t be cleared on the pump until glucose comes back in range. Clearing here snoozes it on your phone." : {
+
+    },
+    "Active" : {
+
+    },
+    "Active insulin (IOB)" : {
+
+    },
+    "Advanced control" : {
+
+    },
+    "An independent CGM feed used when the pump's glucose goes stale (pump, phone, or sensor link dropped). Old readings are shown marked, never as current. Takes effect after you reopen the app." : {
+
+    },
+    "Apple Watch" : {
+
+    },
+    "Backend" : {
+
+    },
+    "Basal rate" : {
+
+    },
+    "Beta (faBolus Beta)" : {
+
+    },
+    "Bolus entry" : {
+
+    },
+    "Bolus screen" : {
+
+    },
+    "Cancel" : {
+      "comment" : "P16 F6 (N13) seed — dialog/alert cancel button.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancel"
+          }
+        }
+      }
+    },
+    "Carb ratio" : {
+
+    },
+    "Carbs" : {
+
+    },
+    "Choose a 4-digit passcode. You'll enter it on your Garmin watch to confirm a bolus. It's stored only as a salted hash on this phone — never sent to the watch." : {
+
+    },
+    "Confirm" : {
+
+    },
+    "Confirm to deliver." : {
+
+    },
+    "Connect" : {
+
+    },
+    "Connecting…" : {
+
+    },
+    "Connection telemetry" : {
+
+    },
+    "Correction factor (ISF)" : {
+
+    },
+    "Customize" : {
+
+    },
+    "Delete" : {
+
+    },
+    "Developer — Garmin remote" : {
+
+    },
+    "Dexcom Share" : {
+
+    },
+    "Diagnostics" : {
+
+    },
+    "Encryption" : {
+
+    },
+    "Export" : {
+
+    },
+    "faBolus hasn't read this pump's bolus settings (carb ratio / correction factor / target) yet, so it can't size a dose. Wait a moment for the pump to connect, then try again." : {
+
+    },
+    "faBolus will stop showing a phone notification for pump alarms (like occlusion or low insulin) that your pump already alarms for. Make sure you'll notice the pump's own alarm. faBolus's own safety alerts — pump disconnected, CGM data lost, and unresolved bolus — are not affected." : {
+
+    },
+    "Full reset" : {
+
+    },
+    "g" : {
+
+    },
+    "g carbs" : {
+
+    },
+    "Garmin bolus passcode" : {
+
+    },
+    "Garmin remote" : {
+
+    },
+    "Glucose staleness" : {
+
+    },
+    "Hidden" : {
+
+    },
+    "In-memory only — connect/disconnect edges since launch, forgotten on restart. Never uploaded." : {
+
+    },
+    "iPhone increments" : {
+
+    },
+    "Limits" : {
+
+    },
+    "mg/dL" : {
+
+    },
+    "mmol/L" : {
+      "comment" : "Phase 04-02 (D-10) — mmol/L sibling of the bare \"mg/dL\" unit label, selected by the display-unit setting."
+    },
+    "Mode" : {
+      "comment" : "P16 F6 (N13) seed — mode section header and navigation title.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mode"
+          }
+        }
+      }
+    },
+    "None (pump only)" : {
+
+    },
+    "Notification telemetry" : {
+
+    },
+    "Off" : {
+
+    },
+    "Official (faBolus)" : {
+
+    },
+    "Opens faBolus.org." : {
+
+    },
+    "Outside US" : {
+
+    },
+    "Per-category counts: delivered (d), dismissed (x), acted-upon (a). Local-only, never uploaded." : {
+
+    },
+    "Permanently deletes all on-device health data — glucose/insulin/carb history, the settings change log, the bolus delivery audit trail, and local diagnostics. **Your pump pairing and saved logins are kept, and your pump/CGM are not touched.** If a bolus is in progress or unconfirmed, deletion is refused until it's resolved." : {
+
+    },
+    "Pick a fallback source above, then test it here. Credentials save automatically." : {
+
+    },
+    "Profiles" : {
+
+    },
+    "Pump alerts and alarms will appear here." : {
+
+    },
+    "Pump clock" : {
+
+    },
+    "Pump history loads after connecting. Boluses, carbs, basal changes, alerts, and cartridge events appear here." : {
+
+    },
+    "Read-only diagnostics." : {
+
+    },
+    "Remotes" : {
+
+    },
+    "Reorder the Garmin app's swipe screens, and choose how the watch-face BG complication looks. Applied on the watch's next update. ⚠️ If the complication doesn't show correctly, switch the display mode — the color path uses a complication field that's unverified on-device (see docs/UNVERIFIED-GUESSES.md)." : {
+
+    },
+    "Restore" : {
+
+    },
+    "Rules" : {
+
+    },
+    "Safety" : {
+
+    },
+    "Shown (top → bottom)" : {
+
+    },
+    "Shown on watch (top → bottom)" : {
+
+    },
+    "Statistics" : {
+
+    },
+    "Steps for the iPhone bolus screen and the Home-Screen widget." : {
+
+    },
+    "Storage" : {
+
+    },
+    "Swiping up on the watch moves down this list. Swipe a row left to hide it — at least one screen must stay shown." : {
+
+    },
+    "Tap to show a screen on the watch." : {
+
+    },
+    "Target glucose" : {
+
+    },
+    "The screen shown when the Garmin app launches (from the shown screens)." : {
+
+    },
+    "This build was compiled **without the Garmin Connect IQ SDK**, so the Garmin remote can't be enabled. To use a Garmin watch, install the Connect IQ SDK and rebuild (see the README / scripts/generate-project.sh)." : {
+
+    },
+    "This lets you deliver real insulin from your Garmin watch. A Garmin has no wrist detection, so take extra care that a bolus is never started by an accidental button press — it stays off until you allow it here, and every bolus still needs your confirmation on the watch. You can turn this off any time." : {
+
+    },
+    "This pump model (t:slim X2) doesn’t allow dismissing notifications from a phone — Tandem’s own app disables it too. “Snooze” silences the alert here in faBolus; you’ll still need to clear it on the pump." : {
+
+    },
+    "U" : {
+
+    },
+    "Units" : {
+
+    },
+    "US" : {
+
+    },
+    "Which published Garmin app the phone pairs with. After changing, re-run “Set up Garmin remote” (Settings → Watch & Garmin) or reopen the app for it to take effect. Beta = the original app id; Official = the second store copy." : {
+
+    },
+    "Which pump this build talks to. Takes effect after you reopen the app." : {
+
+    },
+    "Your CGM changed while this dose was on screen. The new reading (%@ mg/dL) suggests %@ instead of %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Your CGM changed while this dose was on screen. The new reading (%1$@ mg/dL) suggests %2$@ instead of %3$@."
+          }
+        }
+      }
+    },
+    "Your CGM reading (%@ mg/dL) is stale and was left out of this dose. Include it in the correction, deliver carbs only (%@), or cancel." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Your CGM reading (%1$@ mg/dL) is stale and was left out of this dose. Include it in the correction, deliver carbs only (%2$@), or cancel."
+          }
+        }
+      }
+    },
+    "Your Dexcom account with Share enabled and uploading. Cloud-only and can lag — a backup feed for G6." : {
+
+    },
+    "Remote bolus request" : {
+
+    },
+    "Deliver %@" : {
+
+    },
+    "Reject" : {
+
+    },
+    "A remote requested %@." : {
+
+    },
+    "Carbs: %@." : {
+
+    },
+    "No fresh CGM — carbs only, no correction." : {
+
+    },
+    "BG: %@ (%@ min ago)." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "BG: %1$@ (%2$@ min ago)."
+          }
+        }
+      }
+    },
+    "BG: %@." : {
+
+    },
+    "IOB: %@." : {
+
+    },
+    "Bolus delivered" : {
+
+    },
+    "%@ delivered" : {
+
+    },
+    "%@ now, %@ total over %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ now, %2$@ total over %3$@"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}
