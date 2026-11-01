@@ -57,10 +57,14 @@ jobs:
           # The two `precision: low` credential queries no suite selects are added explicitly.
           queries: security-and-quality,./.github/codeql/swift-extra.qls
 
-      # Manual build mode: the database describes exactly what scripts/check.sh builds. Until the app
-      # target returns, that is the packages.
+      # Manual build mode, over the same packages scripts/check.sh builds (until the app target
+      # returns). --disable-sandbox: under CodeQL's tracer, SwiftPM's sandbox-exec fails to launch on
+      # the Xcode 27 image ("Bad CPU type in executable").
       - name: Build the packages
-        run: ./scripts/check.sh build
+        run: |
+          for p in faBolusCore faBolusDesign HistoryStore ShareClient; do
+            swift build --disable-sandbox --package-path "Packages/$p"
+          done
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
