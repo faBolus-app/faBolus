@@ -128,7 +128,7 @@ extension DoseComposer {
             if differs(dose, estimate) { return .refused(.doseChanged(estimateUnits: estimate, doseUnits: dose)) }
             units = dose
             carbsGrams = carbs
-            iob = inputs.insulinOnBoard?.value
+            iob = inputs.calculatorInsulinOnBoardUnits
         }
 
         if let refusal = bounds(units, context: context) { return .refused(refusal) }
@@ -143,10 +143,13 @@ extension DoseComposer {
         if ledger.hasRecentlyDeliveredDuplicate(peerId: request.peerId, doseKey: dose.doseKey, now: context.now) {
             return .refused(.recentlyDelivered)
         }
+        let recorded = recordedCorrection(correction)
         return .deliver(
             ComposedDose(
-                request: dose, calculatorIOBUnits: iob, correctionGlucoseMgdl: correction,
-                usedIncludedStaleGlucose: usedStale, notices: pumpNotices(units: units, context: context)))
+                request: dose, calculatorIOBUnits: iob, correctionGlucoseMgdl: recorded.mgdl,
+                usedIncludedStaleGlucose: usedStale,
+                notices: pumpNotices(units: units, context: context) + recorded.notices
+            ))
     }
 
     /// The glucose a remote carb dose corrects from. A fresh reading always wins. A stale one is used

@@ -126,7 +126,35 @@ import Testing
             .dose != nil)
     }
 
+    /// A delivery at the very moment the request was sent doesn't supersede it; one a moment later does.
+    @Test func supersessionIsStrictlyLater() {
+        let sentAt = F.now.addingTimeInterval(-10)
+        #expect(
+            compose(F.remote(.units(1), sentAt: sentAt), context: F.context(lastDeliveryAt: sentAt)).dose != nil)
+    }
+
     // MARK: - The pump and the ledger
+
+    /// The pump notices ride on a remote dose too, without changing it.
+    @Test func remoteDoseCarriesPumpNotices() throws {
+        var pump = F.pump()
+        pump.reservoirUnits = F.observed(10, age: 1)
+        let dose = try #require(compose(F.remote(.units(25)), context: F.context(pump: pump)).dose)
+        #expect(dose.units == 25)
+        #expect(dose.notices.contains { if case .atPumpMax = $0 { true } else { false } })
+        #expect(dose.notices.contains { if case .moreThanReservoir = $0 { true } else { false } })
+    }
+
+    /// A fresh reading outside 40–400 is left out by the calculator, so it isn't recorded as the
+    /// correction, and the dose says so.
+    @Test func outOfRangeReadingIsNotRecordedAsTheCorrection() throws {
+        let dose = try #require(
+            compose(F.remote(F.carbs(60, estimate: 6), glucose: 39), context: F.context(pump: F.pump(glucose: 39))).dose
+        )
+        #expect(dose.units == 6)
+        #expect(dose.correctionGlucoseMgdl == nil)
+        #expect(dose.notices.contains(.glucoseOutOfRange(mgdl: 39)))
+    }
 
     @Test func pumpNotConnectedRefuses() {
         var pump = F.pump()

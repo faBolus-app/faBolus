@@ -112,6 +112,8 @@ extension DoseComposer {
             guard carbs.isFinite, carbs >= 0, recommended.isFinite, entered.isFinite, entered >= 0 else {
                 return .refused(.invalidAmount)
             }
+            // Nothing confirmed means nothing to ask about: no prompt may turn it into a dose.
+            guard entered > 0 else { return .refused(.nothingToDeliver) }
             return composeCalculator(
                 entry, carbs: carbs, glucose: glucose, recommended: recommended, entered: entered, context: context)
         }
@@ -141,6 +143,13 @@ extension DoseComposer {
         guard inputs.isAvailable else { return .refused(.pumpSettingsNotRead) }
 
         func units(_ mgdl: Int?) -> Double? { inputs.units(carbsGrams: carbs, glucoseMgdl: mgdl) }
+        // The glucose the screen computed the entered dose from.
+        let screenGlucose: Int? =
+            switch glucose {
+            case .none: nil
+            case .typed(let mgdl): mgdl
+            case .currentReading(let shown): shown
+            }
         func finish(_ delivered: Double, suggested: Double, correction: Int?, usedStale: Bool = false)
             -> PhoneDoseDecision
         {
@@ -162,13 +171,7 @@ extension DoseComposer {
             case .prompt(let kind):
                 let accepted = entry.answers.calculatorOverride
                 if accepted?.covers(kind) != true || accepted?.units != entered {
-                    let screen: Int? =
-                        switch glucose {
-                        case .none: nil
-                        case .typed(let mgdl): mgdl
-                        case .currentReading(let shown): shown
-                        }
-                    guard units(screen) != nil else { return .refused(.pumpSettingsUnusable) }
+                    guard units(screenGlucose) != nil else { return .refused(.pumpSettingsUnusable) }
                     return .confirm(.calculatorInputs(kind: kind, units: entered, inputs: inputs))
                 }
             }
@@ -176,10 +179,8 @@ extension DoseComposer {
 
         switch glucose {
         case .none, .typed:
-            var mgdl: Int?
-            if case .typed(let typed) = glucose { mgdl = typed }
-            guard units(mgdl) != nil else { return .refused(.pumpSettingsUnusable) }
-            return finish(entered, suggested: recommended, correction: mgdl)
+            guard units(screenGlucose) != nil else { return .refused(.pumpSettingsUnusable) }
+            return finish(entered, suggested: recommended, correction: screenGlucose)
 
         case .currentReading(let shownMgdl):
             if let reading = context.pump.glucoseIfFresh(now: context.now) {
@@ -226,11 +227,13 @@ extension DoseComposer {
     ) -> PhoneDoseDecision {
         if let refusal = bounds(units, context: context) { return .refused(refusal) }
         var notices = pumpNotices(units: units, context: context)
+        let recorded = recordedCorrection(calculator?.correction)
+        notices += recorded.notices
         if let calculator, let settings = calculator.inputs.settings?.value {
             let stacking = StackingGuard.escalation(
                 enteredUnits: units, recommendedUnits: calculator.suggested, displaysNumericDose: true,
-                pumpIOBUnits: calculator.inputs.insulinOnBoard?.value ?? 0,
-                glucoseMgdl: calculator.correction ?? context.pump.glucoseIfFresh(now: context.now)?.mgdl,
+                pumpIOBUnits: calculator.inputs.calculatorInsulinOnBoardUnits ?? 0,
+                glucoseMgdl: recorded.mgdl ?? context.pump.glucoseIfFresh(now: context.now)?.mgdl,
                 targetMgdl: settings.targetMgdl, maxBolusUnits: context.pumpMaxBolusUnits ?? 0)
             if stacking.friction != .none { notices.append(.stacking(stacking)) }
             if calculator.carbs > 0, calculator.suggested > 0, differs(units, calculator.suggested) {
@@ -239,11 +242,11 @@ extension DoseComposer {
         }
         let request = DoseRequest(
             id: entry.id, origin: .phone, shape: .now(units: units), carbsGrams: calculator?.carbs,
-            bgMgdl: calculator?.correction)
+            bgMgdl: recorded.mgdl)
         return .deliver(
             ComposedDose(
-                request: request, calculatorIOBUnits: calculator?.inputs.insulinOnBoard?.value,
-                correctionGlucoseMgdl: calculator?.correction, usedIncludedStaleGlucose: calculator?.usedStale ?? false,
+                request: request, calculatorIOBUnits: calculator?.inputs.calculatorInsulinOnBoardUnits,
+                correctionGlucoseMgdl: recorded.mgdl, usedIncludedStaleGlucose: calculator?.usedStale ?? false,
                 notices: notices))
     }
 }

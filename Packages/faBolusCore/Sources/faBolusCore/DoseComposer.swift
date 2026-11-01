@@ -82,6 +82,16 @@ public struct CalculatorInputs: Sendable, Equatable {
     /// One pump step: two IOB readings closer than this agree.
     static let insulinOnBoardAgreementUnits = BolusVolume.stepUnits
 
+    /// The IOB the calculator subtracts, and the one a dose carries to the pump: the reading, or the
+    /// larger of the two when they disagree. `nil` when there is no IOB reading.
+    public var calculatorInsulinOnBoardUnits: Double? {
+        guard let reading = insulinOnBoard?.value else { return nil }
+        guard insulinOnBoardReadingsDisagree, let reported = settings?.value.insulinOnBoardUnits else {
+            return reading
+        }
+        return max(reading, reported)
+    }
+
     public var isVerified: Bool { settingsVerified && insulinOnBoardVerified }
     /// Both inputs have been read at some point, so a dose can be sized from real pump values.
     public var isAvailable: Bool { settings != nil && insulinOnBoard != nil }
@@ -117,8 +127,7 @@ public struct CalculatorInputs: Sendable, Equatable {
 
     /// The pump calculator's result for these inputs, or `nil` when either input has never been read.
     func calculate(carbsGrams: Double, glucoseMgdl: Int?) -> BolusMath.Result? {
-        guard let settings = settings?.value, var iob = insulinOnBoard?.value else { return nil }
-        if insulinOnBoardReadingsDisagree, let reported = settings.insulinOnBoardUnits { iob = max(iob, reported) }
+        guard let settings = settings?.value, let iob = calculatorInsulinOnBoardUnits else { return nil }
         let profile = BolusMath.Profile(
             carbRatioGramsPerUnit: settings.carbRatio, isfMgdlPerUnit: settings.correctionFactor,
             targetBgMgdl: settings.targetMgdl, iobUnits: iob)
@@ -196,6 +205,8 @@ public enum DoseNotice: Sendable, Equatable {
     case moreThanReservoir(StackingGuard.Disclosure)
     /// A carb dose more than 0.10 U from the calculator's suggestion. The carbs are still recorded.
     case differsFromCalculator(deliveredUnits: Double, suggestedUnits: Double)
+    /// The CGM reading is outside 40–400 mg/dL, so the calculator left it out: the dose has no correction.
+    case glucoseOutOfRange(mgdl: Int)
 }
 
 /// Why a dose was refused. Nothing was recorded or sent.
@@ -308,6 +319,13 @@ extension DoseComposer {
             if disclosure.friction != .none { notices.append(.moreThanReservoir(disclosure)) }
         }
         return notices
+    }
+
+    /// The glucose a calculator dose corrected from, as recorded: a reading outside 40–400 mg/dL isn't a
+    /// correction the calculator made, so it is recorded as none, with a notice.
+    static func recordedCorrection(_ mgdl: Int?) -> (mgdl: Int?, notices: [DoseNotice]) {
+        guard let mgdl else { return (nil, []) }
+        return GlucosePlausibility.isPlausible(mgdl: mgdl) ? (mgdl, []) : (nil, [.glucoseOutOfRange(mgdl: mgdl)])
     }
 
     /// The current reading when it is stale but may still be included in a correction: no older than

@@ -62,6 +62,15 @@ import Testing
         #expect(compose(.units(40), context: F.context(pump: pump)).dose?.units == 40)
     }
 
+    /// A calculator entry of zero is refused before any prompt can turn it into a dose.
+    @Test func zeroEnteredIsRefusedBeforeAnyPrompt() {
+        let context = F.context(pump: F.pump(glucose: 180, glucoseAge: 10 * 60))
+        #expect(compose(F.cgmDose(entered: 0), context: context).refusal == .nothingToDeliver)
+        #expect(
+            compose(F.cgmDose(entered: 0), answers: Answers(staleGlucose: .carbsOnly(units: 6)), context: context)
+                .refusal == .nothingToDeliver)
+    }
+
     @Test func belowThePumpsMinimumIsRefused() {
         #expect(compose(.units(0.04)).refusal == .unavailable(.belowMinimum(0.05)))
         #expect(compose(.units(0)).refusal == .nothingToDeliver)
@@ -170,6 +179,20 @@ import Testing
         pump = F.pump()
         pump.insulinOnBoard = nil
         #expect(compose(F.cgmDose(), context: F.context(pump: pump)).refusal == .pumpSettingsNotRead)
+    }
+
+    /// When the two IOB readings disagree the dose subtracts the larger, and carries that IOB to the pump.
+    @Test func disagreeingIOBIsCarriedAsUsed() throws {
+        var pump = F.pump()
+        pump.bolusCalculator = F.observed(
+            BolusCalculatorSettings(
+                carbRatio: 10, correctionFactor: 40, targetMgdl: 110, maxBolusUnits: 25, insulinOnBoardUnits: 1.5),
+            age: 2)
+        let amount = PhoneDoseEntry.Amount.calculator(
+            carbsGrams: 60, glucose: .typed(mgdl: 180), recommendedUnits: 6.25, enteredUnits: 6.25)
+        let answers = Answers(calculatorOverride: .init(kind: .iob, units: 6.25))
+        let dose = try #require(compose(amount, answers: answers, context: F.context(pump: pump)).dose)
+        #expect(dose.calculatorIOBUnits == 1.5)
     }
 
     // MARK: - Typed glucose
