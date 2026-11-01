@@ -8,8 +8,10 @@ itself is MIT (see `LICENSE`).
 
 | Component | License | Kind | Where |
 |---|---|---|---|
-| faBolusCore, HistoryStore | MIT (in-repo) | first-party package | `Packages/` |
+| faBolusCore, HistoryStore, GlucoseSources | MIT (in-repo) | first-party package | `Packages/` |
 | ShareClient | MIT | vendored (LoopKit/dexcom-share-client-swift), modified for Swift 6 | `Packages/ShareClient` |
+| CGMBLEKit (G5/G6/ONE passive mode) | MIT (© 2015 Nathan Racklyeft) | copied (LoopKit/CGMBLEKit `c9e6c84`), trimmed to the passive read path | `Packages/DexcomBLE/G6`, `Packages/DexcomBLE/Sources/DexcomBLE` |
+| G7SensorKit (G7/ONE+) | MIT (© 2022 LoopKit Authors) | copied (LoopKit/G7SensorKit `aeaec95`), LoopKit dependencies removed | `Packages/DexcomBLE/G7` |
 | LoopKit `DoseEntry`, `PumpManagerStatus` naming | MIT (© 2016 Nathan Racklyeft, © 2018 LoopKit Authors) | adapted (names and shape, rewritten; LoopKit `a5beee96`) | `Packages/faBolusCore` `DoseEntry.swift`, `PumpState.swift` |
 | **LoopPowerPack (SiteAtlas, FoodFinder, LoopInsights)** — removed from `main` | **MIT** (© 2026 LoopKit Authors and Taylor Patterson) | vendored (LoopPowerPack/Loop MIT feature source @ `ad4c4d4`). LoopInsights: benign report DTO shapes ONLY — the endo-report aggregator/PDF were faBolus rewrites, the excluded AI/advisor/coordinator surfaces were never vendored | `dev/retrospective` (LoopInsights), `dev/backup` (SiteAtlas), `dev/food-finder` (FoodFinder) — see `NOTICE.md`, `docs/SBOM.md` |
 | **OpenFoodFacts** (product data) | **ODbL 1.0** (database) / product data © OpenFoodFacts contributors | keyless public REST API — no code vendored; FoodFinder carb-estimate default path (D-03) | `world.openfoodfacts.org` (`api/v3` + `cgi/search.pl`) |

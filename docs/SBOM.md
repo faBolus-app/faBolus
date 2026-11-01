@@ -16,12 +16,15 @@ Format per row: component · version/revision · SPDX license · source · how f
 | faBolusCore | in-repo | MIT | `Packages/faBolusCore` | Pump/host-agnostic contracts, models, BolusMath, transports |
 | faBolusDesign | in-repo | MIT | `Packages/faBolusDesign` | Shared §13 band-color tokens (depends on faBolusCore) |
 | HistoryStore | in-repo | MIT | `Packages/HistoryStore` | SwiftData glucose/insulin/carb history |
+| GlucoseSources | in-repo | MIT | `Packages/GlucoseSources` | The backup CGM sources (Dexcom Share, direct-Bluetooth G6 and G7), their settings and credentials, and the CGM test |
 
 ## Vendored source (copied in, LoopKit lineage — all MIT)
 
 | Component | Upstream | License (SPDX) | Source | Usage |
 |---|---|---|---|---|
 | ShareClient | LoopKit/dexcom-share-client-swift | MIT | `Packages/ShareClient` (LICENSE incl.) | Dexcom Share follower core. Deliberate de-port: `LocalizedString.swift`/`OSLog.swift`/`TimeInterval.swift` (zero `public` declarations, unreachable by construction) were dropped from the vendored set — the remaining source, its package linkage, and its `DexcomShareSource` consumer are unchanged. Modified for Swift 6: the callbacks are `@Sendable` and the session token sits behind a lock (`ShareClient` is `final` and `@unchecked Sendable`). |
+| DexcomBLE (G6) | LoopKit/CGMBLEKit @ `c9e6c84` | MIT | `Packages/DexcomBLE/G6` (LICENSE incl.); the shared `Data.swift`, `BluetoothServices.swift` and `AuthChallengeRxMessage.swift` in `Packages/DexcomBLE/Sources/DexcomBLE` (CGMBLEKit's LICENSE at the package root) | Passive-mode G5/G6/ONE decoding. Copied with their headers: `Opcode`, `CalibrationState`, `TransmitterStatus`, `NSData+CRC`, `TransmitterMessage`, `TransmitterTimeRxMessage`, `GlucoseRxMessage`, `GlucoseBackfillMessage`, `Common/Data`, `BluetoothServices`, `AuthChallengeRxMessage`. Edits: the Tx side and LoopKit/HealthKit-only members removed (`TransmitterTxMessage`, `RespondableMessage`, `GlucoseBackfillTxMessage`, `Data.init(for:)`, `TransmitterStatus.localizedDescription`, unused byte helpers and UUID enums, `PeripheralManager.Configuration`); `Sendable` and `package` access added; `Data.to(_:)` assembles bytes instead of loading through a rebound pointer; one `AuthChallengeRxMessage` shared by G6 and G7. `G6Observer` and `DexcomCentral` are new code following `Transmitter`'s passive mode and `BluetoothManager`'s connect rules. |
+| DexcomBLE (G7) | LoopKit/G7SensorKit @ `aeaec95` | MIT | `Packages/DexcomBLE/G7` (LICENSE incl.) | G7/ONE+ decoding. Copied with their headers: `G7Opcode`, `G7GlucoseMessage`, `G7BackfillMessage`, `AlgorithmState`, `SensorMessage`. Edits: LoopKit `trendType` and `condition` removed; `Sendable` added; `glucoseTimestamp` is optional, `nil` where upstream's `UInt32` subtraction would trap. `G7Observer` is new code following `G7Sensor` and `G7BluetoothManager`. |
 
 **LoopPowerPack (SiteAtlas / LoopInsights / FoodFinder) — removed from `main`.** The vendored source
 files under the `ios/faBolus/Vendor/` LoopPowerPack tree's `{SiteAtlas,LoopInsights,FoodFinder}` subdirs that this table used

@@ -53,3 +53,5 @@ excluded:
   - Packages/faBolusDesign/.build
   - Packages/HistoryStore/.build
   - Packages/ShareClient/.build
+  - Packages/DexcomBLE/.build
+  - Packages/GlucoseSources/.build

@@ -1,0 +1,22 @@
+# A passive G6 session alongside the Dexcom app: no transmitter ID set, the transmitter found by
+# scanning, one 5-minute exchange, then the transmitter's next wake-up.
+# The time and glucose replies are CGMBLEKit's recorded fixtures from one transmitter
+# (TransmitterTimeRxMessageTests.testInSession, GlucoseRxMessageTests.testZeroSequence): transmitter
+# clock 5092030 s, reading measured at 5091726 s, 130 mg/dL, trend -1.0 mg/dL/min.
+# The authentication reply is the Dexcom app's three-byte "authenticated, bonded" result.
+peripheral tx 5D3C2A10-7E4B-4C61-9F2A-8B1C0D3E4F50 Dexcom4B
+peripheral other 0A1B2C3D-4E5F-4061-8273-94A5B6C7D8E9 Polar H10
+0 bluetooth poweredOn
+0.05 found known=- connected=-
+3 discovered other
+212 discovered tx
+212.4 connected tx
+212.9 ready tx
+213.1 value tx authentication 050101
+213.6 value tx control 2500beb24d00f22d4d000100000083c0
+214.0 value tx control 3100000000008eb14d00820006f6a038
+216.2 disconnected tx remote
+512.3 connected tx
+512.8 ready tx
+513.0 value tx authentication 050101
+516.1 disconnected tx remote

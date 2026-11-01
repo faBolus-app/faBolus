@@ -16,11 +16,10 @@ feature is untested and "will likely not work" before they run — not just the 
 
 **Scope note (v0.5.0 narrow-main milestone):** several entries below describe surfaces the narrow-main
 removal (`BRANCHES.md` §1.2c) has since scope-narrowed off `main` — IDP profile CRUD and all Mobi-only
-writes (entries 2, 6, 7) live only on `dev/mobi`; the passive Dexcom G6/G7 direct-BLE sources (entries 5,
-9, 10, 11) live only on `dev/cgm-extra` (their app-tree source files were deleted from `main`). Each is
-marked **[off-main]** below. The guess and its verify step remain accurate for that `dev/<surface>`
+writes (entries 2, 6, 7) live only on `dev/mobi`. Entries 5, 9, 10 and 11 describe the rebuild's
+direct-Bluetooth Dexcom readers in `Packages/DexcomBLE`. Off-main entries are marked **[off-main]** below. The guess and its verify step remain accurate for that `dev/<surface>`
 branch and must still be resolved before any reintegration onto `main`; entries without the marker
-(1, 3, 4, 8, 12) describe surfaces that are on `main` today.
+(1, 3, 4, 5, 8 to 12) describe surfaces that are on `main` or `rebuild` today.
 
 ## 1. CGM alert type (high vs low)
 
@@ -106,19 +105,16 @@ branch and must still be resolved before any reintegration onto `main`; entries 
 - **Verify (saline):** deliver a carb bolus; confirm the carb amount shows on the pump / t:connect and
   Control-IQ treats it as a carb bolus; confirm the inserts don't disrupt delivery.
 
-## 5. Passive Dexcom G6 direct BLE source (pre-existing, still experimental pending on-device UAT) [off-main, `dev/cgm-extra`]
+## 5. Passive Dexcom G6: iOS shares the Dexcom app's link, and the pump doesn't block it
 
-- **Updated Phase 09.20 (D-03/D-05):** "a passive G6 read may never connect" was the ORIGINAL framing
-  and has been **retracted** — a `LoopKit/CGMBLEKit`-mirror re-check (09.20-RESEARCH.md, "D-05
-  reliability re-check" + "Already-paired-sensor first-run behavior") found no evidence for it: the
-  official Dexcom app's own "Read from Dexcom app" (follow) mode is this exact mechanism, mandatory in
-  xDrip4iOS's Dexcom setup, and re-authentication happens every ~5-min cycle regardless of when a
-  sensor was originally paired — no authenticated session is needed for a SECOND passive listener.
-  Marked **experimental** still means only ONE thing now: it is **validation-pending** (D-14) — the
-  mechanism itself is confident, but the on-device UAT (`09.20-UAT.md`, D-13) hasn't run yet. The
-  user-facing `docs/operate/cgm-failover.md` page was retired from `main` in the v0.5.0 docs refactor
-  (this is an off-main feature — the failover UI lives only on `dev/cgm-extra`/`experimental`); see
-  `09.20-CONTEXT.md`/`09.20-RESEARCH.md` for the full evidence trail.
+- **The guess:** `G6Observer` reads alongside the Dexcom app by connecting to the transmitter iOS is
+  already linked to, the way CGMBLEKit's passive mode does. It needs no transmitter slot of its own,
+  and the pump's own G6 connection doesn't get in the way.
+- **Where:** `Packages/DexcomBLE/G6/Sources/G6Observer.swift`, `Packages/DexcomBLE/Sources/DexcomBLE/DexcomCentral.swift`.
+- **Risk:** availability only. If the link isn't shared, the source says why (`dexcomAppNotConnected`,
+  `sensorNotFound` or the connection error) and never shows a reading.
+- **Verify:** the S7 owner check, run on the S9 app: G6 reads for 24 h on a phone running the Dexcom
+  app, with the pump connected.
 
 ## 6. Mobi native Sleep-schedule write (`SetSleepScheduleRequest.flag`) — Phase 09.10 [off-main, `dev/mobi`]
 
@@ -205,67 +201,42 @@ branch and must still be resolved before any reintegration onto `main`; entries 
   Resolving this item's Phase-11 bench verification also resolves T1-2's cause-attribution predicate;
   they are the same open question, not two.
 
-## 9. G6 per-connection anchor-stability design (vs G7's per-message reset) — Phase 09.20-01/02 sign-off (D-08a) [off-main, `dev/cgm-extra`]
+## 9. G6: the Dexcom app's sign-in can finish before this app is listening
 
-- **Signed off 2026-08-18 (09.20-02 Task-1 checkpoint, owner-authorized default): `reject-and-stable`.**
-  `DexcomG6BLESource.activationDate` is held STABLE per-connection — refreshed ONLY when a fresh
-  `transmitterTimeRx` (0x25) is observed — rather than reset on every glucose message the way
-  `DexcomG7BLESource.handleGlucose` does. This was implemented PROVISIONALLY in Plan 01; Plan 02
-  Task 1 confirms it as the deliberate, permanent design (not a bug to "fix" back toward G7's
-  per-message reset).
-- **Where:** `ios/faBolus/Data/Sources/DexcomG6BLESource.swift` (`activationDate`, `ingest(controlFrame:)`).
-- **Risk:** dose-path-adjacent. A stale anchor (if the transmitter's sensor clock itself drifted
-  between `transmitterTimeRx` observations) would misdate subsequent glucose frames — bounded by the
-  (separately logged) 0x25-cadence/no-anchor-bound guess below (entry 10), and further bounded by the
-  implausible-age rejection gate in the same file (a grounded correctness check, not itself a numbered
-  UNVERIFIED-GUESS — it only rejects wildly-wrong anchor arithmetic, never real physiology).
-- **Verify:** D-13 on-device UAT — confirm glucose frames continue dating correctly across a live
-  session with only occasional `transmitterTimeRx` frames observed, and that the anchor is not
-  needlessly reset.
+- **The guess:** control notifications go on only after the Dexcom app's authenticated, bonded
+  challenge reply is seen on the authentication characteristic (CGMBLEKit's rule; turning control on
+  earlier, or authentication off while the Dexcom app uses it, is what CGMBLEKit found breaks
+  CoreBluetooth). If the Dexcom app signs in before this app's service discovery and notification
+  setup finish, that cycle's reply is missed and no reading arrives. After two such cycles the status
+  says the Dexcom app isn't connected.
+- **Where:** `G6Observer.received(_:on:from:now:)`; the same rule in `G7Observer`.
+- **Risk:** availability only, plus a misleading status if it happens every cycle.
+- **Verify:** the 24 h owner check. If readings skip cycles, or the status blames the Dexcom app while
+  it shows readings, record a session log and revisit (for example, turn control on after a timeout).
 
-## 10. G6 `transmitterTimeRx` (0x25) wire cadence + no-anchor bound (≈10 min / 2 wake cycles) — Phase 09.20-02 (Warning 1) [off-main, `dev/cgm-extra`]
+## 10. G6: the Dexcom app asks for the transmitter's clock every cycle
 
-- **UNVERIFIED-GUESS, owner/bench-confirmable.** The RESEARCH did not establish how often a G6/G5/ONE
-  transmitter actually broadcasts `transmitterTimeRx` on the control characteristic during a passive
-  third-central listen. `DexcomG6BLESource.noAnchorBound` (default ≈10 min = 2 assumed wake cycles) is
-  the time a connection may run with NO anchor ever observed before it gives up (`status = .stale`)
-  rather than trusting any never-anchored frame.
-- **Where:** `ios/faBolus/Data/Sources/DexcomG6BLESource.swift` (`connectedAt`, `noAnchorBound`, the
-  never-anchored branch of `handle()`).
-- **Risk:** availability-only, fail-closed — an under-estimated bound makes the source give up on a
-  connection that would have anchored soon after; an over-estimated bound just delays the `.stale`
-  signal. Never affects the calc (a never-anchored frame is never published either way).
-- **Verify (D-13 on-device UAT, Pitfall 5):** measure the actual latency from BLE connect to the first
-  `transmitterTimeRx` observed; if 0x25 proves rare in practice, tune `noAnchorBound` (and possibly the
-  first-reading-latency expectation) to match.
+- **The guess:** a G6 reading's time is relative to the transmitter's clock, so `G6Observer` dates it
+  from the latest `transmitterTimeRx` reply the Dexcom app asked for, as CGMBLEKit does. A reading
+  that arrives before any clock reply is not used, and the status says it is waiting for the clock.
+- **Where:** `G6Observer.controlResponse(_:from:now:)`.
+- **Risk:** fail-closed. If the Dexcom app doesn't ask for the clock on every connection, readings in
+  a session that started before this app was listening wait for the next clock reply.
+- **Verify:** the 24 h owner check: the first reading should arrive within one or two cycles.
 
-## 11. G7 stable per-connection anchor thresholds (bootstrap-once) — Phase 09.22-01 (D-02) [off-main, `dev/cgm-extra`]
+## 11. G7: a reading's time is its arrival minus the sensor's reported age
 
-The G7 sensor-time anchor was rewritten (D-02, closing the A2 self-defeat) to bootstrap ONCE per
-connection from a near-real-time glucose message and then hold stable — never re-derived per message.
-Three thresholds gate that bootstrap/accept path; all are owner/bench-adjustable `static var`s in
-`Shared/DexcomG7BLESource.swift`, deferred to on-device UAT (Wave 5) / Phase-11 bench.
+- **The guess:** as in G7SensorKit, a G7 glucose message carries the seconds since the sensor started
+  and the age of its reading, so the reading was measured at arrival time minus that age, and
+  backfill is dated from the latest message's sensor clock.
+- **Where:** `Packages/DexcomBLE/G7/Sources/G7Observer.swift` (`glucose(_:from:now:)`, `flushBackfill()`).
+- **Risk:** a notification delivered late (the app suspended past its background budget) would date
+  the reading late, so it would look fresher than it is by the delay.
+- **Verify:** the G7 24 h owner check: compare the app's reading times with the Dexcom app's.
 
-- **(a) `anchorBootstrapMaxAge = 60s`** — only a message whose self-reported `age` (seconds from
-  sensor reading to BLE transmission) is at or below this may (re-)establish the anchor. A larger
-  value risks bootstrapping off a batched/old first frame; a smaller value risks never bootstrapping
-  if the first observed frame is slightly delayed. **Risk:** availability-only, fail-closed — an
-  un-bootstrapped source publishes nothing (never a wrong reading).
-- **(b) `plausibleFrameAgeCeiling = 900s` (~3 G7 wake cycles)** — a frame whose own `age` exceeds this
-  is rejected outright as stale-at-transmission, independent of anchor arithmetic. **Risk:**
-  fail-closed — an over-tight ceiling drops otherwise-usable delayed frames; it never admits a bad one.
-- **(c) The "bootstrap once, never re-refresh" assumption (Assumption A1)** — that G7's sensor RTC
-  drift is negligible over a single connection, so one legitimately-bootstrapped anchor stays valid
-  for the connection's life. **Not verified against a G7 spec sheet.** If wrong, the symptom is
-  increasing false `.stale` classifications over very long uninterrupted connections — which fails
-  CLOSED via `GlucoseFreshness` (a genuinely drifted reading ages out), never a silent wrong-dose.
-
-- **Where:** `Shared/DexcomG7BLESource.swift` (`anchorBootstrapMaxAge`, `plausibleFrameAgeCeiling`,
-  `implausibleAgeBound`, `handleGlucose`); mirrors G6's entries 9/10 above.
-- **Verify (D-13 on-device UAT / Phase-11 bench):** confirm the first live G7 frame bootstraps the
-  anchor promptly, that a delayed/batched frame is rejected (not shown as fresh), and that glucose
-  keeps dating correctly across a long uninterrupted session with the anchor held stable — tune the
-  three thresholds to the observed wake cadence if needed.
+Also unverified: the pump's `CGMHardwareInfoResponse.hardwareInfoString` (op 97) is the G6 transmitter
+ID. The old app used it that way; `G6TransmitterID.normalized` accepts it only if it is six letters and
+digits, and an ID typed in settings wins.
 
 ## 12. `CurrentBatteryV2Response.chargingStatus == 1` (op-145 byte 2) — Phase 09.27 (D-03)
 

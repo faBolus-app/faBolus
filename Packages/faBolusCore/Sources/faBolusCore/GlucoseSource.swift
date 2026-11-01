@@ -166,7 +166,7 @@ public enum GlucoseSourceStatus: Sendable, Equatable {
     case searching  // starting / scanning / logging in
     case connected  // receiving fresh data
     case stale  // connected but the latest reading is old
-    case error(String)
+    case unavailable(GlucoseSourceProblem)  // not reading, and why
 }
 
 /// What a glucose source reports right now.
@@ -176,10 +176,18 @@ public struct GlucoseSourceState: Sendable, Equatable {
     /// Recent history (newest last), to backfill the chart when failing over.
     public var history: [GlucoseReading]
     public var status: GlucoseSourceStatus
-    public init(latest: GlucoseSample?, history: [GlucoseReading] = [], status: GlucoseSourceStatus) {
+    /// Measurement time of the newest reading below the sensor's measurable range (Dexcom "LOW", under
+    /// 40 mg/dL). `GlucoseSample` rejects such a value, so it can never be `latest` or fill a
+    /// correction; the urgent-low alarm reads this instead.
+    public var belowRangeAt: Date?
+    public init(
+        latest: GlucoseSample?, history: [GlucoseReading] = [], status: GlucoseSourceStatus,
+        belowRangeAt: Date? = nil
+    ) {
         self.latest = latest
         self.history = history
         self.status = status
+        self.belowRangeAt = belowRangeAt
     }
 }
 
@@ -191,7 +199,7 @@ public struct GlucoseSourceState: Sendable, Equatable {
 /// is the natural conformer) and is read through `state` and `updates()`.
 ///
 /// **To add a CGM source:** conform a new type to this protocol, then add a `GlucoseSourceDescriptor`
-/// for it to `GlucoseSourceRegistry.enabled` (in the app target). `GlucoseArbiter` handles failover.
+/// for it to `GlucoseSourceRegistry` (in the `GlucoseSources` package). `GlucoseArbiter` handles failover.
 public protocol GlucoseSource: AnyObject, Sendable {
     /// Stable id (matches its `GlucoseSourceDescriptor.id`), stamped onto every `GlucoseSample`.
     var id: String { get }

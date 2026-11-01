@@ -1,0 +1,67 @@
+# A passive G7 session alongside the Dexcom app, from G7SensorKit's recorded G7 log (comments in
+# G7SensorKitTests.swift, 2022-10-04 23:27:39 to 2022-10-05 00:07:39 and the expired reading at 08:17:43).
+# Each line's offset is the log's own time; each glucose message arrives on a fresh 5-minute
+# connection. A stranger's sensor nearby connects first and never signs in. The backfill frame is
+# G7SensorKit's testBackfillTimestampWithHighByte fixture (sensor time 855794 s, 186 mg/dL).
+# The authentication reply is the Dexcom app's three-byte "authenticated, bonded" result.
+peripheral g7 3C4D5E6F-7A8B-4C9D-8E0F-1A2B3C4D5E6F DXCM15
+peripheral stranger 7F6E5D4C-3B2A-4190-8F7E-6D5C4B3A2918 DXCMZZ
+-30 bluetooth poweredOn
+-29.9 found known=- connected=-
+-20 discovered stranger
+-19.6 connected stranger
+-19.2 ready stranger
+-15 disconnected stranger remote
+-1.5 discovered g7
+-1.2 connected g7
+-0.8 ready g7
+-0.5 value g7 authentication 050101
+0 value g7 control 4e00e8c60d00c50b000103006a0006016a000f
+0.4 value g7 backfill f20e0d00ba00060ffb
+0.6 value g7 control 59
+2 disconnected g7 remote
+299.8 connected g7
+300.2 ready g7
+300.5 value g7 authentication 050101
+301 value g7 control 4e0015c80d00c60b00010400650006fe61000f
+303 disconnected g7 remote
+598.8 connected g7
+599.2 ready g7
+599.5 value g7 authentication 050101
+600 value g7 control 4e0040c90d00c70b00010300620006fc5e000f
+602 disconnected g7 remote
+898.8 connected g7
+899.2 ready g7
+899.5 value g7 authentication 050101
+900 value g7 control 4e006dca0d00c80b00010400640006ff5e000f
+902 disconnected g7 remote
+1200.8 connected g7
+1201.2 ready g7
+1201.5 value g7 authentication 050101
+1202 value g7 control 4e009acb0d00c90b00010500610006fd5c000f
+1204 disconnected g7 remote
+1500.8 connected g7
+1501.2 ready g7
+1501.5 value g7 authentication 050101
+1502 value g7 control 4e00c6cc0d00ca0b00010500610006fe5b000f
+1504 disconnected g7 remote
+1811.8 connected g7
+1812.2 ready g7
+1812.5 value g7 authentication 050101
+1813 value g7 control 4e00fdcd0d00cb0b00011000620006005c000f
+1815 disconnected g7 remote
+2099.8 connected g7
+2100.2 ready g7
+2100.5 value g7 authentication 050101
+2101 value g7 control 4e001dcf0d00cc0b00010400600006fe5b000f
+2103 disconnected g7 remote
+2398.8 connected g7
+2399.2 ready g7
+2399.5 value g7 authentication 050101
+2400 value g7 control 4e0048d00d00cd0b000103005f0006fe5a000f
+2402 disconnected g7 remote
+31802.8 connected g7
+31803.2 ready g7
+31803.5 value g7 authentication 050101
+31804 value g7 control 4e0024430e00d40b0001ab6a650018036a000e
+31806 disconnected g7 remote

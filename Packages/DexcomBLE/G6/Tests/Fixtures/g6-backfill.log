@@ -1,0 +1,20 @@
+# A G6 reconnect after a gap: the Dexcom app asks for the readings it missed and this observer reads
+# the transmitter's backfill reply alongside it. Transmitter ID 8G1234 is known, so only "Dexcom34"
+# is connected, and the system already has it connected (the Dexcom app got there first).
+# The backfill frames and reply are CGMBLEKit's recorded fixture
+# (GlucoseBackfillMessageTests.testGlucoseBackfill3: 944701 s to 945601 s, four readings).
+# The time reply and this cycle's reading are constructed, CRC included: clock 945901 s, session
+# started at 900000 s; reading 95 mg/dL measured at 945901 s.
+peripheral tx 9B8A7C6D-5E4F-4A3B-8C2D-1E0F9A8B7C6D Dexcom34
+peripheral g7 1F2E3D4C-5B6A-4798-8A9B-0C1D2E3F4A5B DXCM7Q
+0 bluetooth poweredOn
+0.05 found known=- connected=g7,tx
+0.3 connected tx
+0.7 ready tx
+0.9 value tx authentication 050101
+1.2 value tx control 2500ed6e0e00a0bb0d00010000002794
+1.5 value tx control 4f004e0c0000ed6e0e005f000600d2a2
+2.0 value tx backfill 0180440c00003d6a0e005c0007fe696b0e005d00
+2.1 value tx backfill 028007ff956c0e005e000700c16d0e005d000700
+2.3 value tx control 510001023d6a0e00c16d0e00280000005b1a9154
+4.0 disconnected tx remote
