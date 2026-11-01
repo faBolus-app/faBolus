@@ -44,11 +44,19 @@ final class MemorySecrets: SecretStore, @unchecked Sendable {
 actor RecordingSink: PumpHistorySink {
     var batches: [PumpHistoryBatch] = []
     var fail = false
+    var clears = 0
     func record(_ batch: PumpHistoryBatch) async throws {
         if fail { throw CocoaError(.fileWriteUnknown) }
         batches.append(batch)
     }
     func setFail(_ value: Bool) { fail = value }
+    func loadEvents(limit: Int) async -> [HistoryEvent] {
+        Array(batches.flatMap(\.events).sorted { $0.date > $1.date }.prefix(limit))
+    }
+    func clearEvents() async {
+        clears += 1
+        for i in batches.indices { batches[i].events = [] }
+    }
 }
 
 actor EventLog {
@@ -67,7 +75,12 @@ final class Rig {
     let ledger: DurableBolusLedger
     let store: MemoryPumpSessionStore
     let secrets = MemorySecrets()
-    let sink = RecordingSink()
+    let historySink: any PumpHistorySink
+    /// The recording sink, when the rig wasn't given a sink of its own.
+    var sink: RecordingSink {
+        guard let sink = historySink as? RecordingSink else { preconditionFailure("this rig has its own sink") }
+        return sink
+    }
     let session: PumpSession
     let log = EventLog()
     private var listener: Task<Void, Never>?
@@ -81,9 +94,11 @@ final class Rig {
     ///   - ledger: the ledger saved before this launch.
     init(
         paired: Bool = true, ledger saved: RemoteBolusLedger? = nil, ledgerStore: MemoryLedgerStore? = nil,
-        record: PumpSessionRecord? = nil, configure: (ScriptedPump) -> Void = { _ in },
+        record: PumpSessionRecord? = nil, sink: (any PumpHistorySink)? = nil,
+        configure: (ScriptedPump) -> Void = { _ in },
         configuration: PumpSession.Configuration = PumpSession.Configuration()
     ) {
+        historySink = sink ?? RecordingSink()
         clock = ScriptClock()
         pump = ScriptedPump(clock: clock)
         configure(pump)
@@ -96,7 +111,7 @@ final class Rig {
         let pairingSecrets = PairingSecrets(store: secrets)
         if paired { try? pairingSecrets.store(.legacy(code: ScriptedPump.code)) }
         session = PumpSession(
-            connection: connection, ledger: ledger, store: store, secrets: pairingSecrets, historySink: sink,
+            connection: connection, ledger: ledger, store: store, secrets: pairingSecrets, historySink: historySink,
             configuration: configuration, clock: { clock.date })
     }
 

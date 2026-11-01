@@ -63,8 +63,8 @@ public struct SessionRemoteServices: RemoteHostServices {
 
     public func glucoseHistory(since: Date) async -> [faBolusCore.GlucoseReading] { await history(since) }
 
-    /// From the logbook projection the session keeps (newest first). It is in memory, so after a relaunch
-    /// there is none until history shows one again: "none known", never a wrong time.
+    /// From the logbook the session keeps (newest first), which is saved with the history store and
+    /// reloaded at launch. With none in it, the answer is "none known", never a wrong time.
     public func lastAutoCorrection() async -> Date? {
         await session.historyEvents.first { $0.category == .autoCorrection }?.date
     }

@@ -43,6 +43,48 @@ final class HistoryStoreTests: XCTestCase {
         XCTAssertEqual(out[0].mgdl, 110, "later recordedAt wins the tie")
     }
 
+    /// The logbook's events are kept once per sequence number, read newest first, and survive reopening
+    /// the store; clearing one source leaves the others.
+    func testHistoryEventsPersistOncePerSequenceAndClearBySource() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("history.store")
+        let older = HistoryEvent(id: 7, date: t0, category: .autoCorrection, title: "Control-IQ auto-corrected")
+        let newer = HistoryEvent(
+            id: 8, date: t0.addingTimeInterval(60), category: .bolus, title: "Bolus", detail: "1 U")
+        do {
+            let store = try GlucoseHistoryStore(url: url)
+            try store.ingestPumpHistory(
+                glucose: [], boluses: [], carbs: [], events: [older, newer], sourceID: "pump", glucosePriority: 50)
+            try store.ingestPumpHistory(
+                glucose: [], boluses: [], carbs: [], events: [newer], sourceID: "pump", glucosePriority: 50)
+            try store.ingestPumpHistory(
+                glucose: [], boluses: [], carbs: [], events: [older], sourceID: "other", glucosePriority: 50)
+        }
+        let reopened = try GlucoseHistoryStore(url: url)
+        XCTAssertEqual(try reopened.historyEvents(sourceID: "pump", limit: 10), [newer, older])
+        XCTAssertEqual(try reopened.historyEvents(sourceID: "pump", limit: 1), [newer])
+        try reopened.clearHistoryEvents(sourceID: "pump")
+        XCTAssertEqual(try reopened.historyEvents(sourceID: "pump", limit: 10), [])
+        XCTAssertEqual(try reopened.historyEvents(sourceID: "other", limit: 10), [older])
+    }
+
+    /// A source keeps only its newest `eventLimit` events; records sharing a time come back later record
+    /// first, the order the session keeps in memory.
+    func testHistoryEventsAreTrimmedToTheLimitAndTiesGoBySequence() throws {
+        let store = try makeStore()
+        let events = (1...5).map { i in
+            HistoryEvent(
+                id: UInt32(i), date: t0.addingTimeInterval(i <= 2 ? 0 : Double(i) * 60), category: .bolus, title: "\(i)"
+            )
+        }
+        try store.ingestPumpHistory(
+            glucose: [], boluses: [], carbs: [], events: events, eventLimit: 4, sourceID: "pump", glucosePriority: 50)
+        XCTAssertEqual(try store.historyEvents(sourceID: "pump", limit: 10).map(\.id), [5, 4, 3, 2])
+        XCTAssertEqual(events.sorted(by: HistoryEvent.newestFirst).map(\.id), [5, 4, 3, 2, 1])
+    }
+
     func testTimeInRange() throws {
         let store = try makeStore()
         // 8 in-range (120) + 2 low (50) over distinct 5-min slots → 80% TIR.

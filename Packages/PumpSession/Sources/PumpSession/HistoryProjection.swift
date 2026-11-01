@@ -26,6 +26,16 @@ public struct PumpHistoryBatch: Sendable {
 /// doesn't credit records it couldn't keep and fetches them again on the next sync.
 public protocol PumpHistorySink: Sendable {
     func record(_ batch: PumpHistoryBatch) async throws
+    /// The logbook's events recorded so far, newest first, so a relaunch shows them without fetching the
+    /// pump's history again (the session doesn't re-read what it already holds).
+    func loadEvents(limit: Int) async -> [HistoryEvent]
+    /// Forget the logbook's events, when the pump they came from is forgotten.
+    func clearEvents() async
+}
+
+extension PumpHistorySink {
+    public func loadEvents(limit: Int) async -> [HistoryEvent] { [] }
+    public func clearEvents() async {}
 }
 
 /// The completed bolus a history record shows, for settling a bolus.

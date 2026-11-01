@@ -134,6 +134,74 @@ private func addGlucoseHistory(_ pump: ScriptedPump, count: Int) {
         #expect(batch.sequences == [1])
     }
 
+    /// The logbook is saved with the history it came from, so a relaunch shows it at once, before any sync
+    /// (history the phone holds isn't fetched again). Forgetting the pump removes it, in memory and saved.
+    @Test func theLogbookComesBackAfterARelaunchAndGoesWhenThePumpIsForgotten() async {
+        let sink = RecordingSink()
+        let addRecords: (ScriptedPump) -> Void = { pump in
+            pump.unsupportedReads = []
+            // A Control-IQ auto-correction (280, source 7) and a rejected auto-bolus (288).
+            _ = pump.appendHistory(
+                typeId: 280, at: pump.wallClockAtStart - 600,
+                body: le16(12) + [0, 0, 7, 0] + [UInt8](repeating: 0, count: 12))
+            _ = pump.appendHistory(typeId: 288, at: pump.wallClockAtStart - 300, body: [])
+        }
+        let rig = Rig(sink: sink, configure: addRecords)
+        await rig.startHeld()
+        await sync(rig)
+        let events = await rig.session.historyEvents
+        #expect(events.map(\.category) == [.couldNotDeliver, .autoCorrection])
+        await rig.stop()
+
+        let relaunched = Rig(record: rig.store.load(), sink: sink, configure: addRecords)
+        await relaunched.start()
+        #expect(await relaunched.session.historyEvents == events)
+        #expect(relaunched.pump.arrivals(of: HistoryLogRequest.self).isEmpty)
+
+        await relaunched.session.forgetPairing()
+        #expect(await relaunched.session.historyEvents.isEmpty)
+        #expect(await sink.loadEvents(limit: 500).isEmpty)
+        await relaunched.stop()
+    }
+
+    /// A new pairing starts its logbook empty, in memory and saved: its history is fetched again from the
+    /// start, and the last pump's events would hide the new one's records that share sequence numbers.
+    @Test func aNewPairingStartsWithAnEmptyLogbook() async throws {
+        let rig = Rig(configure: {
+            $0.unsupportedReads = []
+            _ = $0.appendHistory(typeId: 288, at: $0.wallClockAtStart - 300, body: [])
+        })
+        await rig.startHeld()
+        await sync(rig)
+        #expect(await !rig.session.historyEvents.isEmpty)
+        await rig.session.scanForPairing()
+        await rig.settle()
+        let found = await rig.events.compactMap { e -> (UUID, String?)? in
+            if case .pumpFound(let id, let name, .tslimX2) = e { return (id, name) }
+            return nil
+        }
+        let pump = try #require(found.first)
+        try await rig.session.pair(peripheralID: pump.0, advertisedName: pump.1, code: ScriptedPump.code)
+        await rig.settle()
+        #expect(rig.store.load()?.coverage.ranges.isEmpty == true)
+        #expect(await rig.session.historyEvents.isEmpty)
+        #expect(await rig.sink.loadEvents(limit: 500).isEmpty)
+        await rig.stop()
+    }
+
+    /// With no pump paired, a launch shows no logbook and drops one left saved by a forget that couldn't
+    /// delete it.
+    @Test func aLaunchWithNoPumpDropsASavedLogbook() async {
+        let sink = RecordingSink()
+        try? await sink.record(
+            PumpHistoryBatch(events: [HistoryEvent(id: 1, date: Date(), category: .bolus, title: "Bolus")]))
+        let rig = Rig(paired: false, sink: sink)
+        await rig.start()
+        #expect(await rig.session.historyEvents.isEmpty)
+        #expect(await sink.loadEvents(limit: 500).isEmpty)
+        await rig.stop()
+    }
+
     /// The logbook names each Control-IQ and calculator record for what it is: an automatic correction
     /// (a bolus whose source is Control-IQ), an automatic bolus the pump rejected, and a calculator
     /// correction the user declined, which isn't Control-IQ.

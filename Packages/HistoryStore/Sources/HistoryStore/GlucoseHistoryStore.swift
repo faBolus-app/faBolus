@@ -22,12 +22,20 @@ public final class GlucoseHistoryStore {
     private let container: ModelContainer
     private var context: ModelContext { container.mainContext }
 
-    public init(inMemory: Bool = false) throws {
-        let config = ModelConfiguration(isStoredInMemoryOnly: inMemory)
+    public convenience init(inMemory: Bool = false) throws {
+        try self.init(ModelConfiguration(isStoredInMemoryOnly: inMemory), onDisk: !inMemory)
+    }
+
+    /// A store on disk at `url`.
+    public convenience init(url: URL) throws {
+        try self.init(ModelConfiguration(url: url), onDisk: true)
+    }
+
+    private init(_ config: ModelConfiguration, onDisk: Bool) throws {
         container = try ModelContainer(
-            for: StoredGlucose.self, StoredBolus.self, StoredCarb.self,
+            for: StoredGlucose.self, StoredBolus.self, StoredCarb.self, StoredHistoryEvent.self,
             configurations: config)
-        if !inMemory { Self.pinFileProtection(storeURL: config.url) }
+        if onDisk { Self.pinFileProtection(storeURL: config.url) }
     }
 
     /// F1 (§13) — pin the on-disk SwiftData store (and its `-wal` / `-shm` siblings) to
@@ -93,9 +101,16 @@ public final class GlucoseHistoryStore {
     /// skipped, so writing the same records twice (a retried sync, whose times move by the pump clock
     /// anchor's sub-second drift) doesn't count it twice; glucose needs no such check, because a query
     /// keeps one reading per 5-minute slot.
+    ///
+    /// The logbook's events go in the same save, one per pump sequence number, so the logbook and the
+    /// chart never disagree about what the phone holds.
+    ///
+    /// - Parameter eventLimit: how many of the source's events to keep, newest first; older ones are
+    ///   deleted in the same save. All are kept when `nil`.
     public func ingestPumpHistory(
-        glucose: [GlucoseReading], boluses: [BolusMarker], carbs: [(date: Date, grams: Double)], sourceID: String,
-        glucosePriority: Int, recordedAt: Date = Date()
+        glucose: [GlucoseReading], boluses: [BolusMarker], carbs: [(date: Date, grams: Double)],
+        events: [HistoryEvent] = [], eventLimit: Int? = nil, sourceID: String, glucosePriority: Int,
+        recordedAt: Date = Date()
     ) throws {
         let slack: TimeInterval = 2
         let dates = boluses.map(\.date) + carbs.map(\.date)
@@ -123,6 +138,50 @@ public final class GlucoseHistoryStore {
         for c in carbs where !isHeld(heldCarbs, c.date, c.grams) {
             context.insert(StoredCarb(date: c.date, grams: c.grams, sourceID: sourceID, recordedAt: recordedAt))
         }
+        if !events.isEmpty {
+            let sequences = events.map { Int($0.id) }
+            let heldEvents = Set(
+                try context.fetch(
+                    FetchDescriptor<StoredHistoryEvent>(
+                        predicate: #Predicate { $0.sourceID == sourceID && sequences.contains($0.sequence) })
+                ).map(\.sequence))
+            for e in events where !heldEvents.contains(Int(e.id)) {
+                context.insert(
+                    StoredHistoryEvent(
+                        sequence: Int(e.id), date: e.date, category: e.category.rawValue, title: e.title,
+                        detail: e.detail, sourceID: sourceID))
+            }
+            // Sorted in memory: a fetch offset doesn't skip the events inserted above, which aren't saved yet.
+            if let eventLimit {
+                for e in try context.fetch(Self.newestEvents(sourceID: sourceID)).dropFirst(eventLimit) {
+                    context.delete(e)
+                }
+            }
+        }
+        try context.save()
+    }
+
+    /// The logbook's events from `sourceID`, in `HistoryEvent.newestFirst` order.
+    public func historyEvents(sourceID: String, limit: Int) throws -> [HistoryEvent] {
+        var desc = Self.newestEvents(sourceID: sourceID)
+        desc.fetchLimit = limit
+        return try context.fetch(desc).map {
+            HistoryEvent(
+                id: UInt32(clamping: $0.sequence), date: $0.date,
+                category: HistoryEvent.Category(rawValue: $0.category) ?? .other, title: $0.title,
+                detail: $0.detail)
+        }
+    }
+
+    private static func newestEvents(sourceID: String) -> FetchDescriptor<StoredHistoryEvent> {
+        FetchDescriptor(
+            predicate: #Predicate { $0.sourceID == sourceID },
+            sortBy: [SortDescriptor(\.date, order: .reverse), SortDescriptor(\.sequence, order: .reverse)])
+    }
+
+    /// Removes the logbook's events from `sourceID`, as when the pump they came from is forgotten.
+    public func clearHistoryEvents(sourceID: String) throws {
+        try context.delete(model: StoredHistoryEvent.self, where: #Predicate { $0.sourceID == sourceID })
         try context.save()
     }
 
@@ -208,6 +267,7 @@ public final class GlucoseHistoryStore {
         try? context.delete(model: StoredGlucose.self)
         try? context.delete(model: StoredBolus.self)
         try? context.delete(model: StoredCarb.self)
+        try? context.delete(model: StoredHistoryEvent.self)
         try? context.save()
     }
 }

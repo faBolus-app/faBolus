@@ -198,6 +198,7 @@ public actor PumpSession {
                 }
             }
         }
+        await loadSavedEvents()
         await connectToStoredPairing()
     }
 
@@ -432,11 +433,13 @@ public actor PumpSession {
             await abandonPairing()
             return
         }
+        let support = await connection.state.support
+        await clearLogbook()
         record = PumpSessionRecord(
             pairing: StoredPairing(
                 peripheralID: pending.peripheralID, model: pending.model, scheme: .jpake,
                 advertisedName: pending.advertisedName, pairedAt: clock()),
-            support: await connection.state.support)
+            support: support)
         saveRecord()
     }
 
@@ -475,7 +478,7 @@ public actor PumpSession {
         for group in ReadGroup.allCases { due[group] = now }
         if let pending = pendingPairing {
             pendingPairing = nil
-            record = PumpSessionRecord(
+            let paired = PumpSessionRecord(
                 pairing: StoredPairing(
                     peripheralID: pending.peripheralID, model: pending.model,
                     scheme: {
@@ -492,6 +495,8 @@ public actor PumpSession {
                     return
                 }
             }
+            await clearLogbook()
+            record = paired
             saveRecord()
             // A new pairing's record starts with no remote-clear trial, so its alerts are decided again.
             refreshRemoteClear()
@@ -586,12 +591,15 @@ public actor PumpSession {
             support: SupportMatrix())
     }
 
-    /// Forgets the pump: closes the link and removes the pairing, its secret, the support evidence and
-    /// history coverage. The ledger is kept: an unknown outcome stays blocking until the user confirms on
-    /// the pump, because the forgotten pump's history can no longer settle it.
+    /// Forgets the pump: closes the link and removes the pairing, its secret, the support evidence,
+    /// history coverage and the logbook. The ledger is kept: an unknown outcome stays blocking until the
+    /// user confirms on the pump, because the forgotten pump's history can no longer settle it.
     public func forgetPairing() async {
         pendingPairing = nil
         await connection.stop()
+        // Under the history lock, so a page being saved now can't write the forgotten pump's coverage or
+        // events after they're gone.
+        await acquireHistory()
         do { try secrets.clear() } catch {
             sessionLog.error("pairing secret not removed: \(String(describing: error), privacy: .public)")
         }
@@ -600,7 +608,8 @@ public actor PumpSession {
         state = PumpState()
         alertLists = PumpAlertLists()
         anchor = nil
-        historyEvents = []
+        await dropLogbook()
+        releaseHistory()
         historySync = .idle(lastSynced: nil)
         emit(.linkChanged(.disconnected))
         emit(.readingsChanged(Set(PumpState.Reading.allCases), state))

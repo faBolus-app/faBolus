@@ -45,3 +45,23 @@ import SwiftData
         self.recordedAt = recordedAt
     }
 }
+
+/// One logbook entry from pump history, kept so the logbook comes back after a relaunch: history the
+/// phone already holds isn't fetched from the pump again.
+@Model public final class StoredHistoryEvent {
+    /// The pump's sequence number.
+    public var sequence: Int
+    public var date: Date
+    public var category: String
+    public var title: String
+    public var detail: String
+    public var sourceID: String
+    public init(sequence: Int, date: Date, category: String, title: String, detail: String, sourceID: String) {
+        self.sequence = sequence
+        self.date = date
+        self.category = category
+        self.title = title
+        self.detail = detail
+        self.sourceID = sourceID
+    }
+}

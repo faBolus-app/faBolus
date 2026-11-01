@@ -49,4 +49,10 @@ public struct HistoryEvent: Identifiable, Sendable, Equatable {
         self.title = title
         self.detail = detail
     }
+
+    /// The logbook's order: newest first, and the later record first when two share a time (pump records
+    /// often do), so the order is the same wherever the logbook is read from.
+    public static func newestFirst(_ a: HistoryEvent, _ b: HistoryEvent) -> Bool {
+        a.date != b.date ? a.date > b.date : a.id > b.id
+    }
 }

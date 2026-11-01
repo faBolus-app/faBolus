@@ -194,11 +194,44 @@ extension PumpSession {
         nextReconcileAt = now
     }
 
+    // MARK: - Logbook
+
+    /// How many logbook events the session keeps, newest first.
+    static let logbookLimit = 500
+
+    /// The logbook saved by earlier launches, under anything this launch has already added. With no pump
+    /// paired there is none: anything saved is left from a pump whose forget couldn't delete it.
+    func loadSavedEvents() async {
+        guard let historySink else { return }
+        guard record.pairing != nil else {
+            await historySink.clearEvents()
+            return
+        }
+        addEvents(await historySink.loadEvents(limit: Self.logbookLimit))
+    }
+
+    /// Empties the logbook, in memory and saved, as when the user erases the phone's history. A new
+    /// pairing does this too: its history is fetched again from the start, and another pump's events
+    /// would otherwise stay in its logbook and hide its own records that share their sequence numbers.
+    public func clearLogbook() async {
+        await acquireHistory()
+        await dropLogbook()
+        releaseHistory()
+    }
+
+    /// The caller holds the history lock, so a page being saved now can't add its events afterwards.
+    func dropLogbook() async {
+        historyEvents = []
+        await historySink?.clearEvents()
+    }
+
     private func addEvents(_ events: [HistoryEvent]) {
         guard !events.isEmpty else { return }
         let held = Set(historyEvents.map(\.id))
-        historyEvents = (historyEvents + events.filter { !held.contains($0.id) }).sorted { $0.date > $1.date }
-        if historyEvents.count > 500 { historyEvents.removeLast(historyEvents.count - 500) }
+        historyEvents = (historyEvents + events.filter { !held.contains($0.id) }).sorted(by: HistoryEvent.newestFirst)
+        if historyEvents.count > Self.logbookLimit {
+            historyEvents.removeLast(historyEvents.count - Self.logbookLimit)
+        }
     }
 
     // MARK: - Settling unknown outcomes
