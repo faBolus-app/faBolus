@@ -32,10 +32,13 @@ public enum AlertNotificationCategories {
     public static let categoryKey = "alertCategory"
     public static let pumpAlertKey = "pumpAlert"
 
-    /// The notification category identifier for `request`. Only a dismissable pump notification has an
-    /// action; nothing has a snooze, and the bolus result has no action at all, so nothing silences it.
+    /// The notification category identifier for `request`. Only a pump notification the phone may clear (its
+    /// `remoteClear`, the session's one decision) has an action; nothing has a snooze, and the bolus result
+    /// has no action at all, so nothing silences it.
     public static func identifier(for request: AlertRequest) -> String {
-        if let alert = request.pumpAlert, alert.isDismissable, !alert.isMalfunction { return dismissablePumpAlert }
+        if let alert = request.pumpAlert, alert.remoteClear != .unavailable, !alert.isMalfunction {
+            return dismissablePumpAlert
+        }
         return request.category.rawValue
     }
 

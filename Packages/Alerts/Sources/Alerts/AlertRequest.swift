@@ -52,6 +52,16 @@ public struct AlertRequest: Sendable, Hashable, Codable {
         pumpAlert = try c.decodeIfPresent(PumpAlert.self, forKey: .pumpAlert)
     }
 
+    /// Whether posting `self` where `other` is held would change what the OS shows. A change to the pump
+    /// notification's `remoteClear` alone doesn't: posting again would alert again for nothing new, so a
+    /// notification already showing keeps its actions, and a Clear it can no longer do is answered "clear it
+    /// on the pump".
+    func presentsLike(_ other: AlertRequest?) -> Bool {
+        guard var other else { return false }
+        if let alert = pumpAlert, other.pumpAlert != nil { other.pumpAlert?.remoteClear = alert.remoteClear }
+        return self == other
+    }
+
     /// Whether it has fired (or fires at once) by `now`.
     public func hasFired(by now: Date) -> Bool { fireDate.map { $0 <= now } ?? true }
 }

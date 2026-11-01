@@ -347,19 +347,25 @@ one place, `RemoteClearing.decide`: the alert's own dismissable flag, then the c
 read it and nothing else; the watch clears only `available`.
 
 While the class is unknown, the phone may try one clear (`tryable`). The pump's "cleared" (status 0) is only a
-claim: the alert read that follows decides it for that unit and firmware, and a "cleared" that left the alert
-showing is reported as `DismissOutcome.notCleared` ("clear it on the pump").
+claim: the alert read that follows decides it for that unit and firmware. Gone, the unit clears. Still
+showing is reported at once as `DismissOutcome.notCleared` ("clear it on the pump"), but recorded as "doesn't
+clear" only if a routine read at least `PumpSession.trialSettle` (5 s) later still shows it, in case the pump
+drops the alert a moment after answering; gone by then records nothing. Only an alert the session held when
+the clear was sent counts, so one already cleared on the pump never reads as a clear that worked.
 
-- **Unverified:** whether P1 (API 2.5) and P2 (API 4.0) act on op-184, or answer status 0 and leave the alert.
-  If the pump updates its alert list a moment after answering, one clear could read as "doesn't clear".
+- **Unverified:** whether P1 (API 2.5) and P2 (API 4.0) act on op-184, or answer status 0 and leave the alert,
+  and how soon after answering the pump's alert read reflects a clear.
 - **Verify:** the pump session's bench check on P1 and P2: clear a real alert from the phone and confirm it
   goes from the pump's screen and from the next alert read.
 - **Then finish it:** add a row per class to `RemoteClearing.knownClasses` (`PumpClass(model: .tslim,
   apiVersion: …)`: `.clears` or `.doesNotClear`), and delete the trial: `RemoteClear.tryable`,
   `PumpSessionRecord.remoteClearTrials`, `PumpAlertLists.unitClears`, `PumpSession.remoteClearTrialResult`,
-  `PumpSession.trialCheck` (and `statusRead(for:)`), `DismissOutcome.notCleared`, the `dismissLeavesAlert`
-  knob in `ScriptedPump`, the phone's "Try clearing from phone" action, and their tests
-  (`theTrialDecidesFromTheReadAfterTheClear`, `theTrialIsKeptPerUnitAndFirmware`,
+  `PumpSession.trialCheck` (with `statusRead(for:)`, `statusKind(of:)`, `isShowing`,
+  `recordRemoteClearTrial`), `PumpSession.pendingTrial` with `PendingRemoteClearTrial`, `trialSettle` and
+  `settleRemoteClearTrial`, `DismissOutcome.notCleared`, the `dismissLeavesAlert` knob in `ScriptedPump`, the
+  phone's "Try clearing from phone" action, and their tests (`theTrialDecidesFromTheReadsAfterTheClear`,
+  `anAlertThatGoesLateRecordsNothing`, `aClearOfAnAlertNoLongerHeldIsNotATrial`,
+  `aNewPairingDecidesAlertsFromItsOwnRecord`, `theTrialIsKeptPerUnitAndFirmware`,
   `anAlertClearedOnThePumpDoesntCount`, `anOlderRecordReadsAsUnknown`). The status format and the watch
   don't change; `aClassKnownToClearIsAvailableWithNothingRecorded` and
   `aClassKnownNotToClearIsUnavailableAndNothingIsSent` keep passing.

@@ -28,6 +28,20 @@ import faBolusCore
         #expect(await next.scheduler.removed == [AlertEngine.connectionUnstableId])
     }
 
+    /// A pump notification whose remote-clear answer changes, as after the phone's first clear on a pump not
+    /// yet known, isn't posted again: that would alert again for nothing new. What the watch is told follows
+    /// the new answer.
+    @Test func aRemoteClearChangeAloneIsNotPostedAgain() async throws {
+        let h = await Harness.launch()
+        await h.send(.alertsChanged([PumpAlert(id: 0, kind: .alert, title: "Low insulin", remoteClear: .tryable)]))
+        #expect(await h.scheduler.held.count == 1)
+        await h.scheduler.clearCalls()
+        await h.send(.alertsChanged([PumpAlert(id: 0, kind: .alert, title: "Low insulin", remoteClear: .available)]))
+        #expect(await h.scheduler.adds.isEmpty, "nothing re-posted (a re-post re-alerts)")
+        let active = await h.coordinator.snapshot.active
+        #expect(active.compactMap(\.pumpAlert?.remoteClear) == [.available])
+    }
+
     /// A bolus that settled while the app wasn't running is announced on the next launch, once.
     @Test func aBolusThatSettledWhileTheAppWasDownIsAnnouncedOnceOnLaunch() async throws {
         let h = await Harness.launch()

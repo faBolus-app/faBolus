@@ -27,7 +27,10 @@ extension PumpSession {
         switch await exchange(request, allowing: request.operationRisk, priority: .user) {
         case .reply(let reply):
             guard (reply.message as? DismissNotificationResponse)?.status == 0 else { return .refused }
-            return alertLists.classClears == nil ? await trialCheck(alert) : .cleared
+            // Only an alert the session holds showing can be a trial: one it no longer holds may have been
+            // cleared on the pump, and its absence after the clear would say nothing.
+            guard alertLists.classClears == nil, current != nil else { return .cleared }
+            return await trialCheck(alert)
         case .pumpError(let error):
             // BAD_OPCODE says the pump has no such command; the undefined code (0) says nothing definite.
             if error.isBadOpcode { return .unsupported }
@@ -60,10 +63,10 @@ extension PumpSession {
     // MARK: - The remote-clear trial
     //
     // While the pump's class has no answer in `RemoteClearing.knownClasses`, the phone may try one clear
-    // (an alert's `remoteClear` is `.tryable`) and the read that follows decides it for the unit. Once the
+    // (an alert's `remoteClear` is `.tryable`) and the reads that follow decide it for the unit. Once the
     // bench settles the class, its row replaces all of this: `remoteClearTrialResult`, `trialCheck`,
-    // `PumpSessionRecord.remoteClearTrials`, `DismissOutcome.notCleared` and `RemoteClear.tryable` go, with
-    // their tests.
+    // `pendingTrial` and `settleRemoteClearTrial`, `PumpSessionRecord.remoteClearTrials`,
+    // `DismissOutcome.notCleared` and `RemoteClear.tryable` go, with their tests.
 
     /// This unit's trial result, on this firmware; `nil` until a clear has been tried and checked.
     public var remoteClearTrialResult: RemoteClearEvidence? {
@@ -71,20 +74,56 @@ extension PumpSession {
         return record.remoteClearTrials[unit]
     }
 
-    /// The pump said it cleared `alert`. The read of its kind that follows says whether it did, and that is
-    /// recorded for this unit; only this read counts, so an alert cleared on the pump itself never does.
-    /// A read that doesn't come back leaves the pump's word and records nothing.
+    /// The pump said it cleared `alert`. The read of its kind that follows says whether it did: gone, this unit
+    /// acts on a remote clear. Still showing isn't recorded yet, because a pump may drop the alert a moment
+    /// after answering: a routine read of the kind at least `trialSettle` later decides it. The user is told
+    /// now that it isn't cleared. A read that doesn't come back leaves the pump's word and records nothing.
     private func trialCheck(_ alert: PumpAlert) async -> DismissOutcome {
         guard case .reply = await exchange(Self.statusRead(for: alert.kind), priority: .user) else { return .cleared }
-        let showing = (state.alerts?.value ?? []).contains {
-            $0.kind == alert.kind && $0.id == alert.id && !$0.isMalfunction
+        guard isShowing(alert.kind, alert.id) else {
+            recordRemoteClearTrial(.clears)
+            return .cleared
         }
         if let unit = identity?.unit {
-            record.remoteClearTrials[unit] = showing ? .doesNotClear : .clears
-            saveRecord()
-            refreshRemoteClear()
+            pendingTrial = PendingRemoteClearTrial(
+                unit: unit, kind: alert.kind, id: alert.id, decideAfter: clock().addingTimeInterval(Self.trialSettle))
         }
-        return showing ? .notCleared : .cleared
+        return .notCleared
+    }
+
+    /// How long after a clear an alert still showing counts as one the pump didn't clear.
+    static let trialSettle: TimeInterval = 5
+
+    /// Decides a pending trial from a read of its kind once the settle has passed. Still showing: this unit
+    /// doesn't act on a remote clear. Gone by then may be the pump acting late or the user clearing it on the
+    /// pump, so nothing is recorded and the phone may try again.
+    func settleRemoteClearTrial(after message: any TandemMessages.Message, now: Date) {
+        guard let pending = pendingTrial, now >= pending.decideAfter, Self.statusKind(of: message) == pending.kind
+        else { return }
+        pendingTrial = nil
+        guard identity?.unit == pending.unit, isShowing(pending.kind, pending.id) else { return }
+        recordRemoteClearTrial(.doesNotClear)
+    }
+
+    private func isShowing(_ kind: PumpAlertKind, _ id: Int) -> Bool {
+        (state.alerts?.value ?? []).contains { $0.kind == kind && $0.id == id && !$0.isMalfunction }
+    }
+
+    private func recordRemoteClearTrial(_ evidence: RemoteClearEvidence) {
+        guard let unit = identity?.unit else { return }
+        record.remoteClearTrials[unit] = evidence
+        saveRecord()
+        refreshRemoteClear()
+    }
+
+    private static func statusKind(of message: any TandemMessages.Message) -> PumpAlertKind? {
+        switch message {
+        case is AlertStatusResponse: return .alert
+        case is AlarmStatusResponse: return .alarm
+        case is ReminderStatusResponse: return .reminder
+        case is CGMAlertStatusResponse: return .cgmAlert
+        default: return nil
+        }
     }
 
     private static func statusRead(for kind: PumpAlertKind) -> any TandemMessages.Message {
@@ -95,4 +134,12 @@ extension PumpSession {
         case .cgmAlert: return CGMAlertStatusRequest()
         }
     }
+}
+
+/// A trial clear whose alert was still showing right after it.
+struct PendingRemoteClearTrial: Sendable, Equatable {
+    let unit: PumpUnit
+    let kind: PumpAlertKind
+    let id: Int
+    let decideAfter: Date
 }

@@ -195,7 +195,7 @@ public struct AlertEngine: Sendable {
             // A refused condition comes off `posted`, so the diff posts it again if it still holds; a refused
             // announcement is posted again as it was.
             for (id, request) in state.refused.sorted(by: { $0.key < $1.key }) {
-                if state.posted[id] == request {
+                if request.presentsLike(state.posted[id]) {
                     state.posted[id] = nil
                 } else if state.posted[id] == nil {
                     announcements.append(request)
@@ -508,8 +508,8 @@ public struct AlertEngine: Sendable {
         let reposted = Set(announcements.map(\.identifier))
         let gone = state.posted.keys.filter { desired[$0] == nil && !reposted.contains($0) }.sorted()
         if !gone.isEmpty { effects.append(.withdraw(gone)) }
-        for id in desired.keys.sorted() where state.posted[id] != desired[id] {
-            if let request = desired[id] { effects.append(.post(request)) }
+        for id in desired.keys.sorted() {
+            if let request = desired[id], !request.presentsLike(state.posted[id]) { effects.append(.post(request)) }
         }
         state.posted = desired
         effects += announcements.map(AlertEffect.post)

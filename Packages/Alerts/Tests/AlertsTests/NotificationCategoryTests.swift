@@ -19,13 +19,20 @@ import UserNotifications
             pumpAlert: pumpAlert)
     }
 
-    @Test func onlyADismissablePumpNotificationCarriesAnAction() {
-        let dismissable = PumpAlert(id: 0, kind: .alert, title: "Low insulin")
+    /// Clear is offered where the session says the phone may clear (`remoteClear` available, or not yet
+    /// known for the pump, the phone's to try); an alert to clear on the pump has no action.
+    @Test func onlyAPumpNotificationThePhoneMayClearCarriesAnAction() {
+        let clearable = PumpAlert(id: 0, kind: .alert, title: "Low insulin", remoteClear: .available)
+        let tryable = PumpAlert(id: 0, kind: .alert, title: "Low insulin", remoteClear: .tryable)
+        let onThePump = PumpAlert(id: 0, kind: .alert, title: "Low insulin", remoteClear: .unavailable)
         let alarm = PumpAlert(id: 2, kind: .alarm, title: "Occlusion", isDismissable: false)
         let malfunction = PumpAlert(id: 2, kind: .alarm, title: "M", isDismissable: false, malfunctionCode: 2)
-        #expect(
-            AlertNotificationCategories.identifier(for: request(.pumpAlert, pumpAlert: dismissable))
-                == AlertNotificationCategories.dismissablePumpAlert)
+        for alert in [clearable, tryable] {
+            #expect(
+                AlertNotificationCategories.identifier(for: request(.pumpAlert, pumpAlert: alert))
+                    == AlertNotificationCategories.dismissablePumpAlert)
+        }
+        #expect(AlertNotificationCategories.identifier(for: request(.pumpAlert, pumpAlert: onThePump)) == "pumpAlert")
         #expect(AlertNotificationCategories.identifier(for: request(.pumpAlert, pumpAlert: alarm)) == "pumpAlert")
         #expect(AlertNotificationCategories.identifier(for: request(.pumpAlert, pumpAlert: malfunction)) == "pumpAlert")
         for category in NotificationBroker.Category.allCases {

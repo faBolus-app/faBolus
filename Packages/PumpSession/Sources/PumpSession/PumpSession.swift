@@ -98,6 +98,9 @@ public actor PumpSession {
     public internal(set) var freshness: FreshnessThresholds
     var record: PumpSessionRecord
     var alertLists = PumpAlertLists()
+    /// A remote-clear trial whose alert was still showing on the read right after the clear, waiting for a
+    /// later read to say whether it stayed.
+    var pendingTrial: PendingRemoteClearTrial?
     var anchor: PumpClockAnchor?
     /// The identity the link reported for the current connection; nil while not ready.
     var identity: TandemLink.PumpIdentity?
@@ -382,6 +385,7 @@ public actor PumpSession {
         let changed = PumpReadings.apply(
             message, to: &state, alerts: &alertLists, context: .init(receivedAt: now, anchor: anchor))
         emitReadings(changed)
+        settleRemoteClearTrial(after: message, now: now)
     }
 
     // MARK: - Link events
@@ -489,6 +493,8 @@ public actor PumpSession {
                 }
             }
             saveRecord()
+            // A new pairing's record starts with no remote-clear trial, so its alerts are decided again.
+            refreshRemoteClear()
         } else if var pairing = record.pairing, pairing.trustedSerial == nil, let serial = identity.unit?.serialNumber {
             pairing.trustedSerial = serial
             record.pairing = pairing
@@ -526,6 +532,7 @@ public actor PumpSession {
         identity = nil
         identityTrusted = false
         connectedAt = nil
+        pendingTrial = nil
         failQueued()
         emit(.disconnected(Self.reason(reason)))
         deliveryLinkDropped()
