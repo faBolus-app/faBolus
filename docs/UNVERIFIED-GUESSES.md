@@ -312,6 +312,19 @@ counts as complete (2.5 s with no frame), and how often an unknown outcome is se
 5 times a connection; every 15 s while the pump still reports it active) are guesses, in
 `PumpSession.Configuration`.
 
+## 16. Which IOB the pump's calculator reply reports
+
+The IOB shown and dosed from is op-109's by the pump's own IOB model (pumpx2's `getPumpDisplayedIOB`:
+Mudaliar for type 0, Swan 6-hour for type 1, the larger for an unknown type); the old app always used Swan.
+The dose path cross-checks it against op-115's own IOB and, when they differ by more than 0.05 U, treats IOB
+as unverified and sizes from the larger.
+
+- **Unverified:** which model op-115 reports. On a Control-IQ pump (type 1, P2) both are Swan. On a pump
+  using Mudaliar (type 0; P1 runs with Control-IQ off) the two may differ, and then IOB never verifies: a
+  remote carb dose is refused and the phone always asks. That fails closed, but would make P1's dose path
+  unusable.
+- **Verify:** on P1 with insulin on board, compare op-109's type and both values with op-115's `iob`.
+
 ## Resolution Ledger (09.14, D-03 — todo #17 Task A)
 
 Most of the items below are **bench-gated and cannot be resolved in 09.14** — they REASSIGN to

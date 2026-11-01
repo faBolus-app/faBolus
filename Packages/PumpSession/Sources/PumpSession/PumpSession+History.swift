@@ -122,6 +122,7 @@ extension PumpSession {
     /// before it is credited as held, so records the store didn't keep are fetched again next time; a drop
     /// leaves the sync paused, and the next one picks up where the coverage ends.
     public func syncHistory() async {
+        due[.history] = clock().addingTimeInterval(config.historySyncInterval)
         await acquireHistory()
         await runHistorySync()
         releaseHistory()

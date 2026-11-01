@@ -313,7 +313,7 @@ public actor PumpSession {
     /// link would make it wait, but here, so what's behind it (a cancel included) isn't held up too; a tick
     /// sends it once due. A delivery's own steps are left to the link: holding one back here would let a
     /// cancel overtake the InitiateBolus it is meant to stop.
-    private func nextJobIndex() -> Int? {
+    func nextJobIndex() -> Int? {
         let held = connectedAt.map { clock().timeIntervalSince($0) >= holdWindow } ?? true
         let eligible = queue.indices.filter { i in
             if !held, queue[i].owner == nil, isUntested(queue[i].message) { return false }

@@ -120,10 +120,14 @@ final class Rig {
     }
 
     /// Lets the session and the link finish what they're doing: link events handled, the queue drained.
+    ///
+    /// Bounded by quiet rounds, then by a little real time (about 0.2 s), so a loaded machine that gives
+    /// the actors fewer turns waits longer instead of asserting too early. Work waiting on the clock (a
+    /// request held for the hold window, a silent pump) never goes quiet, and costs that bound.
     func settle() async {
         var quietRounds = 0
-        for _ in 0..<2000 {
-            await Task.yield()
+        for round in 0..<2200 {
+            if round < 2000 { await Task.yield() } else { try? await Task.sleep(nanoseconds: 1_000_000) }
             if await session.isQuiet {
                 quietRounds += 1
                 if quietRounds > 20 { return }
@@ -170,8 +174,9 @@ final class Rig {
 }
 
 extension PumpSession {
-    /// Nothing queued or in flight, and no history page open.
-    var isQuiet: Bool { queue.isEmpty && !sending && page == nil && !historyBusy }
+    /// Nothing can happen until time moves: nothing in flight, and nothing queued that may be sent (an
+    /// untested command waits for the hold; a history page waits for its frames or its quiet timeout).
+    var isQuiet: Bool { !sending && nextJobIndex() == nil }
 }
 
 /// A dose as the composer would produce it.

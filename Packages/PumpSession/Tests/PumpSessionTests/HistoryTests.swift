@@ -130,7 +130,8 @@ private func addGlucoseHistory(_ pump: ScriptedPump, count: Int) {
         let batch = HistoryProjection.batch(records, anchor: anchor, now: now)
         #expect(batch.glucose.map(\.mgdl) == [110])
         #expect(batch.glucose.first?.date == now.addingTimeInterval(-300))
-        #expect(batch.sequences == [1, 2])
+        // The dropped record isn't counted as held, so a later sync can fetch it again.
+        #expect(batch.sequences == [1])
     }
 
     @Test func coverageReportsTheMissingWindows() {

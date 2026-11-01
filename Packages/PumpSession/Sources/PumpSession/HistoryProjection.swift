@@ -11,7 +11,7 @@ public struct PumpHistoryBatch: Sendable {
     public var carbs: [CarbEntry] = []
     /// Newest first.
     public var events: [HistoryEvent] = []
-    /// The sequence numbers the batch covers.
+    /// The sequence numbers the batch holds: every record but those dropped for a time in the future.
     public var sequences: Set<UInt32> = []
 
     public struct CarbEntry: Sendable, Equatable {
@@ -54,8 +54,9 @@ enum HistoryProjection {
             if let d = date(r.pumpTimeSec) { batch.glucose.append(GlucoseReading(date: d, mgdl: r.glucoseMgdl)) }
         }
         for e in events(records) {
-            batch.sequences.insert(e.sequenceNum)
+            // A record dropped for its date isn't kept, so it isn't counted as held either.
             guard let d = date(e.pumpTimeSec) else { continue }
+            batch.sequences.insert(e.sequenceNum)
             switch e {
             case let m as BolusCompletedHistoryLog where m.insulinDelivered > 0:
                 batch.boluses.append(BolusMarker(date: d, units: Double(m.insulinDelivered)))

@@ -200,11 +200,10 @@ extension PumpSession {
                 return await settle(
                     key, .refused("The pump refused the bolus (status \(initiate.status), \(initiate.statusTypeId))."))
             }
-            let outcome = await settle(key, .delivering)
+            // Followed from before the move is recorded, so a drop while it is saved still finds it.
             let now = clock()
-            tracked = TrackedBolus(
-                key: key, bolusId: bolusId, startedAt: now, lastStatusAt: now)
-            return outcome
+            tracked = TrackedBolus(key: key, bolusId: bolusId, startedAt: now, lastStatusAt: now)
+            return await settle(key, .delivering)
         case .pumpError(let error):
             return await settle(key, .refused("The pump refused the bolus (error \(error.errorCodeId))."))
         case .notSent(let reason):
