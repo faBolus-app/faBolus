@@ -4,8 +4,7 @@ import Foundation
 /// delivery" acknowledgment. Pure and pump-neutral so the wording lives in one place and is testable; the
 /// ack persistence is a single timestamp in `AppSettings` (durable, per-install), and it NEVER gates a
 /// write — it is an acknowledgment shown once, not a lock (not a `DenialReason`, not the every-time
-/// `UnverifiedFeatureGate`). Sibling of `ClinicianTierAck` (S8), which covers clinical ownership; this
-/// covers the distinct fact that these values drive AUTOMATED delivery, not only manual boluses.
+/// `UnverifiedFeatureGate`). It covers the distinct fact that these values drive AUTOMATED delivery, not only manual boluses.
 ///
 /// §13 STATUS: RE-BLESSED 2026-08-23 (owner Zev Granowitz, F5 approver of record) after an
 /// owner-accepted independent AI-panel clinical-copy review (two models, converged). This supersedes

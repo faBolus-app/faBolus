@@ -27,22 +27,20 @@ public struct PumpValueDisplay: Equatable, Sendable {
 /// clinically meaningful readings and MUST still render as `0`. Only a value we do not have renders as
 /// the placeholder.
 ///
-/// Pass one of the model's optional funnels, never the raw non-optional field — the raw field collapses
-/// the absent case straight back into a fabricated `0`. Two kinds of funnel exist and they answer
-/// different questions:
-///   • `…IfRead` (`PumpSnapshot.iobUnitsIfRead`, `basalRateUnitsPerHourIfRead`) — "did the pump EVER
-///     report this". Keeps returning a value forever after one reply.
-///   • `…IfFresh(now:)` (`PumpSnapshot.reservoirUnitsIfFresh(now:)`, `batteryPercentIfFresh(now:)`) —
-///     "is that report still CURRENT". Strictly stronger; prefer it on any surface that reads as live
-///     data (debug `pump-value-decay-to-unknown`).
+/// Pass one of the state's optional values. Two kinds exist and they answer different questions:
+///   • the observation's value (`PumpState.insulinOnBoard?.value`) — "did the pump EVER report this".
+///     Keeps returning a value forever after one reply.
+///   • `…IfFresh(now:)` (`PumpState.reservoirUnitsIfFresh(now:)`, `batteryIfFresh(now:)`) — "is that
+///     report still CURRENT". Strictly stronger; prefer it on any surface that reads as live data (debug
+///     `pump-value-decay-to-unknown`).
 public enum PumpValuePresentation {
     /// What every surface shows when a pump-sourced value has never been reported. One literal, owned
     /// here; the reservoir- and battery-specific funnels read it from this general type.
     public static let unknownText = "—"
 
     /// - Parameters:
-    ///   - value: the pump's reported number, or `nil` when it has never reported one. Pass a
-    ///     `PumpSnapshot.…IfRead` funnel.
+    ///   - value: the pump's reported number, or `nil` when it has never reported one or it is no
+    ///     longer current.
     ///   - format: the `String(format:)` pattern for the KNOWN case, e.g. `"%.2f U"` for active insulin
     ///     or `"%.2f U/hr"` for a basal rate. Kept at the call site because the unit and the precision are
     ///     a property of the field, not of the absent/present decision this type owns.

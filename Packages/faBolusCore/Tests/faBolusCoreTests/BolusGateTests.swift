@@ -1,7 +1,7 @@
 import Testing
 @testable import faBolusCore
 
-/// P12 (defect group D) — the shared bolus gate + the `PumpSnapshot` link/in-flight seams that feed it.
+/// P12 (defect group D) — the shared bolus gate + the link seam that feeds it.
 struct BolusGateTests {
 
     private func gate(
@@ -44,28 +44,28 @@ struct BolusGateTests {
         #expect(
             gate(
                 reachable: false, linked: false, inFlight: true, cartridgeReady: false,
-                amount: 99, access: .deny(.childLocked(.bolus))
+                amount: 99, access: .deny(.phoneReadOnly)
             ).reason == .remoteUnreachable)
         // Reachable but link down + in-flight + no-cartridge + denied + over-max → link dominates.
         #expect(
             gate(
                 linked: false, inFlight: true, cartridgeReady: false, amount: 99,
-                access: .deny(.childLocked(.bolus))
+                access: .deny(.phoneReadOnly)
             ).reason == .pumpNotLinked)
         // Linked but in-flight + no-cartridge + denied + over-max → in-flight dominates.
         #expect(
             gate(
                 inFlight: true, cartridgeReady: false, amount: 99,
-                access: .deny(.childLocked(.bolus))
+                access: .deny(.phoneReadOnly)
             ).reason == .bolusInFlight)
         // In-flight resolved but no-cartridge + denied + over-max → no-cartridge dominates.
         #expect(
             gate(
                 cartridgeReady: false, amount: 99,
-                access: .deny(.childLocked(.bolus))
+                access: .deny(.phoneReadOnly)
             ).reason == .noCartridge)
         // Cartridge ready but denied + over-max → access denial beats a bounds problem.
-        #expect(gate(amount: 99, access: .deny(.childLocked(.bolus))).reason == .accessDenied(.childLocked(.bolus)))
+        #expect(gate(amount: 99, access: .deny(.phoneReadOnly)).reason == .accessDenied(.phoneReadOnly))
     }
 
     /// CGM staleness is deliberately NOT an input — a stale reading never disables the button (group A/D).
@@ -84,18 +84,10 @@ struct BolusGateTests {
         }
     }
 
-    @Test func pumpSnapshotSeamsSeparateLinkFromInFlight() {
-        var s = PumpSnapshot()
-        s.connection = .connected
-        #expect(s.isLinked)
-        #expect(!s.bolusInFlight)
-        s.connection = .bolusing
-        #expect(s.isLinked)
-        #expect(s.bolusInFlight)  // delivering is still "linked"
-        for down in [PumpConnectionState.disconnected, .scanning, .connecting, .error] {
-            s.connection = down
-            #expect(!s.isLinked)
-            #expect(!s.bolusInFlight)
+    @Test func onlyAnAuthenticatedLinkCountsAsLinked() {
+        #expect(PumpLinkState.connected.isConnected)
+        for down in [PumpLinkState.disconnected, .scanning, .connecting, .authenticating] {
+            #expect(!down.isConnected)
         }
     }
 }

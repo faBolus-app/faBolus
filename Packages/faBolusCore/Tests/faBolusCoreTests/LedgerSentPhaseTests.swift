@@ -1,101 +1,102 @@
 import XCTest
 @testable import faBolusCore
 
-/// A bolus id implies `sentToPump`. If they disagree, unreconciled() can auto-clear the global delivery
-/// block on a dose that may have landed.
+/// What a restart makes of a request left in flight. Anything that reached the pump may have delivered,
+/// so it becomes `unknown` and blocks; anything that never did failed and doesn't block.
 final class LedgerSentPhaseTests: XCTestCase {
 
-    func testMarkDeliveringWithABolusIdImpliesSentToPump() {
-        var l = RemoteBolusLedger()
-        _ = l.begin(peerId: "watch", requestId: "r1", doseKey: "u:2")
-        l.markDelivering(peerId: "watch", requestId: "r1", bolusId: 7777)
-        XCTAssertTrue(l.wasSentToPump(peerId: "watch", requestId: "r1"))
-        let u = l.unreconciled()
-        XCTAssertEqual(u.count, 1)
-        XCTAssertEqual(u[0].bolusId, 7777)
-        XCTAssertTrue(u[0].sentToPump, "an id-bearing record must block until reconciled")
+    private let t0 = Date(timeIntervalSince1970: 2_000_000)
+
+    private func request(_ peer: String, _ id: String, _ units: Double) -> DoseRequest {
+        DoseRequest(id: id, origin: .remote(peerId: peer, sentAt: t0), shape: .now(units: units))
     }
 
-    func testMarkDeliveringWithoutABolusIdIsNotSent() {
-        var l = RemoteBolusLedger()
-        _ = l.begin(peerId: "local", requestId: "r2", doseKey: "u:1")
-        l.markDelivering(peerId: "local", requestId: "r2")
-        XCTAssertFalse(l.wasSentToPump(peerId: "local", requestId: "r2"))
-        let u = l.unreconciled()
-        XCTAssertEqual(u.count, 1)
-        XCTAssertNil(u[0].bolusId)
-        XCTAssertFalse(u[0].sentToPump, "no id ⇒ never got past permission ⇒ safe to auto-clear")
+    private func key(_ peer: String, _ id: String) -> RemoteBolusLedger.Key { .init(peerId: peer, requestId: id) }
+
+    /// Persist, then load as a new process would.
+    private func relaunch(_ l: RemoteBolusLedger, at now: Date) throws -> (RemoteBolusLedger, changed: Bool) {
+        var loaded = try JSONDecoder().decode(RemoteBolusLedger.self, from: JSONEncoder().encode(l))
+        let changed = loaded.recoverAfterRestart(now: now)
+        return (loaded, changed)
     }
 
-    func testSetBolusIdImpliesSentToPump() {
+    func testAcceptedRequestBecomesUnknownAndBlocksAfterRestart() throws {
         var l = RemoteBolusLedger()
-        _ = l.begin(peerId: "mac", requestId: "r3", doseKey: "u:3")
-        l.markDelivering(peerId: "mac", requestId: "r3")
-        XCTAssertFalse(l.wasSentToPump(peerId: "mac", requestId: "r3"))
-        l.setBolusId(peerId: "mac", requestId: "r3", bolusId: 42)
-        XCTAssertTrue(l.wasSentToPump(peerId: "mac", requestId: "r3"))
+        _ = l.begin(request("watch", "r1", 2), now: t0)
+        l.markAccepted(key("watch", "r1"), bolusId: 7777, now: t0 + 1)
+        XCTAssertTrue(l.entry(key("watch", "r1"))?.reachedPump ?? false)
+        let (after, changed) = try relaunch(l, at: t0 + 60)
+        XCTAssertTrue(changed)
+        // Dated from its last transition, the moment the app could last vouch for it.
+        XCTAssertEqual(after.outcome(key("watch", "r1")), .unknown(since: t0 + 1))
+        XCTAssertEqual(after.unresolved.first?.bolusId, 7777)
+        XCTAssertEqual(after.block, .unknownOutcome(since: t0 + 1))
     }
 
-    /// `markSent` runs while the state is still `awaiting` — it records the pump-assigned id durably
-    /// immediately BEFORE the initiate write. A crash in that window must still be reconciled, so an
-    /// `awaiting` record that has been sent counts as mid-flight. `unreconciled()` originally returned
-    /// only `delivering`/`indeterminate`, so this window was invisible and its block was never raised.
-    func testAwaitingRecordThatWasSentIsStillReconciled() {
+    func testDeliveringRequestBecomesUnknownAfterRestart() throws {
         var l = RemoteBolusLedger()
-        _ = l.begin(peerId: "garmin", requestId: "r4", doseKey: "c:30")
-        l.markSent(peerId: "garmin", requestId: "r4", bolusId: 99)
-        XCTAssertTrue(l.wasSentToPump(peerId: "garmin", requestId: "r4"))
-        XCTAssertEqual(l.state(peerId: "garmin", requestId: "r4"), .awaiting)
-        let u = l.unreconciled()
-        XCTAssertEqual(u.count, 1, "a sent-but-not-yet-delivering record must be reconciled")
-        XCTAssertEqual(u[0].bolusId, 99)
-        XCTAssertTrue(u[0].sentToPump)
+        _ = l.begin(request("garmin", "r4", 3), now: t0)
+        l.markAccepted(key("garmin", "r4"), bolusId: 99, now: t0 + 1)
+        l.markDelivering(key("garmin", "r4"), now: t0 + 2)
+        let (after, _) = try relaunch(l, at: t0 + 60)
+        XCTAssertEqual(after.outcome(key("garmin", "r4")), .unknown(since: t0 + 2))
+        XCTAssertNotNil(after.block)
     }
 
-    /// The converse: a plain `awaiting` record — begun, never sent — is not mid-flight and must not
-    /// block, or every abandoned entry would strand the user behind a permanent lock.
-    func testAwaitingRecordThatWasNeverSentIsNotReconciled() {
+    /// The converse: a request that never got past permission sent nothing that delivers. It fails
+    /// rather than blocking, or every abandoned request would strand the user behind a permanent lock.
+    func testRequestThatNeverReachedThePumpFailsAfterRestartWithoutBlocking() throws {
         var l = RemoteBolusLedger()
-        _ = l.begin(peerId: "watch", requestId: "r6", doseKey: "u:1")
-        XCTAssertEqual(l.state(peerId: "watch", requestId: "r6"), .awaiting)
-        XCTAssertTrue(l.unreconciled().isEmpty)
+        _ = l.begin(request("watch", "r6", 1), now: t0)
+        XCTAssertFalse(l.entry(key("watch", "r6"))?.reachedPump ?? true)
+        let (after, changed) = try relaunch(l, at: t0 + 60)
+        XCTAssertTrue(changed)
+        guard case .failed = after.outcome(key("watch", "r6")) else {
+            return XCTFail("expected failed, got \(String(describing: after.outcome(key("watch", "r6"))))")
+        }
+        XCTAssertNil(after.block)
+        XCTAssertTrue(after.unresolved.isEmpty)
     }
 
-    /// The upgrade path. A ledger persisted by a build that predates `sentToPump` decodes it as `false`;
-    /// if it carries an id, `unreconciled()` must still report it as sent so the block survives the
-    /// upgrade. Hand-authored JSON, because that is exactly what an older build left on disk.
-    func testLegacyRecordWithAnIdButNoPhaseFieldStillBlocks() throws {
+    /// A final record is left alone by a restart.
+    func testFinalRecordIsUntouchedByRestart() throws {
+        var l = RemoteBolusLedger()
+        _ = l.begin(request("watch", "r5", 2), now: t0)
+        l.markAccepted(key("watch", "r5"), bolusId: 7)
+        l.markDelivered(key("watch", "r5"), units: 2)
+        let (after, changed) = try relaunch(l, at: t0 + 60)
+        XCTAssertFalse(changed)
+        XCTAssertEqual(after.outcome(key("watch", "r5")), .delivered(units: 2))
+    }
+
+    /// An already-unknown outcome keeps its original time across restarts.
+    func testUnknownOutcomeKeepsItsTimeAcrossRestarts() throws {
+        var l = RemoteBolusLedger()
+        _ = l.begin(request("watch", "r7", 2), now: t0)
+        l.markUnknown(key("watch", "r7"), now: t0 + 5)
+        let (after, changed) = try relaunch(l, at: t0 + 3600)
+        XCTAssertFalse(changed)
+        XCTAssertEqual(after.outcome(key("watch", "r7")), .unknown(since: t0 + 5))
+    }
+
+    /// Changed from the old ledger, which decoded its predecessor's records tolerantly: this format is
+    /// versioned and strict, so the old app's ledger (or any file this build doesn't know) is unreadable
+    /// and fails closed instead of loading as an empty, delivery-enabled ledger. The first-launch check
+    /// reads the old app's file on its own.
+    func testOldFormatIsUnreadable() {
         let json = """
             {"cap":64,"order":["watch\\u001flegacy1"],
              "entries":{"watch\\u001flegacy1":{"doseKey":"u:2","state":"delivering","bolusId":5150}}}
             """
-        let l = try JSONDecoder().decode(RemoteBolusLedger.self, from: Data(json.utf8))
-        let u = l.unreconciled()
-        XCTAssertEqual(u.count, 1)
-        XCTAssertEqual(u[0].bolusId, 5150)
-        XCTAssertTrue(u[0].sentToPump, "a legacy id-bearing record must not auto-clear on upgrade")
+        XCTAssertThrowsError(try JSONDecoder().decode(RemoteBolusLedger.self, from: Data(json.utf8)))
     }
 
-    /// And the converse: a legacy record with no id stays auto-clearable, so an upgrade doesn't strand a
-    /// user behind a permanent block for a bolus that was never sent.
-    func testLegacyRecordWithNoIdRemainsAutoClearable() throws {
-        let json = """
-            {"cap":64,"order":["local\\u001flegacy2"],
-             "entries":{"local\\u001flegacy2":{"doseKey":"u:1","state":"delivering"}}}
-            """
-        let l = try JSONDecoder().decode(RemoteBolusLedger.self, from: Data(json.utf8))
-        let u = l.unreconciled()
-        XCTAssertEqual(u.count, 1)
-        XCTAssertNil(u[0].bolusId)
-        XCTAssertFalse(u[0].sentToPump)
-    }
-
-    /// A terminal record is not unreconciled, regardless of phase.
-    func testTerminalRecordIsNotUnreconciled() {
+    func testUnknownFormatVersionIsUnreadable() throws {
         var l = RemoteBolusLedger()
-        _ = l.begin(peerId: "watch", requestId: "r5", doseKey: "u:2")
-        l.markSent(peerId: "watch", requestId: "r5", bolusId: 7)
-        l.settle(peerId: "watch", requestId: "r5", status: "delivered", deliveredUnits: 2)
-        XCTAssertTrue(l.unreconciled().isEmpty)
+        _ = l.begin(request("watch", "r1", 2))
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(l)) as? [String: Any])
+        object["version"] = RemoteBolusLedger.formatVersion + 1
+        let data = try JSONSerialization.data(withJSONObject: object)
+        XCTAssertThrowsError(try JSONDecoder().decode(RemoteBolusLedger.self, from: data))
     }
 }

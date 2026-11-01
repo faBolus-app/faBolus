@@ -1,6 +1,6 @@
 import Foundation
 
-/// A backend-neutral history-log entry for the Logbook (Workstream B2). Each `PumpBackend` maps its
+/// A backend-neutral history-log entry for the Logbook (Workstream B2). The pump session maps its
 /// own decoded events (TandemKit's typed `HistoryLogEvent`s) onto this, so the UI never depends on a
 /// specific pump library — mirroring how `PumpAlert` abstracts notifications.
 public struct HistoryEvent: Identifiable, Sendable, Equatable {

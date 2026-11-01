@@ -24,20 +24,20 @@ public struct BatteryPresentation: Equatable, Sendable {
 /// pill, widgets, Mac, remote) gets byte-identical treatment.
 public enum BatteryChargingPresentation {
     /// - Parameters:
-    ///   - percent: the battery percent (0...100), from `PumpSnapshot.batteryPercent`.
-    ///   - charging: the pump's POSITIVELY-reported charging state, from
-    ///     `PumpSnapshot.batteryCharging` (fail-closed: `false` for absent/unknown/never-read).
+    ///   - percent: the battery percent (0...100), from `PumpState.battery`.
+    ///   - charging: the pump's POSITIVELY-reported charging state, from `PumpBattery.isCharging`
+    ///     (fail-closed: pass `false` for absent/unknown/never-read).
     /// ABSENT-reading overload. `percent: nil` ⇒ the pump has never reported a battery level, so nothing
     /// about the level may be asserted: the value text is the unknown placeholder, the low-battery
     /// warning tint is OFF, and the glyph is explicitly NOT `battery.0` (which asserts a dead battery).
     ///
-    /// Added for debug session `tslim-reservoir-battery-zero`. `PumpSnapshot.batteryPercent` is a
+    /// Added for debug session `tslim-reservoir-battery-zero`. The old snapshot's battery percent was a
     /// non-optional `Int` defaulting to `0`, and op-144 had been durably excluded on the owner's
     /// brand-new t:slim X2 — so a fully-charged pump rendered as `0%` with the EMPTY-battery glyph and
-    /// the low-battery tint. Pass `PumpSnapshot.batteryPercentIfFresh(now:)` (or the widget carrier's
-    /// `batteryPercentIfFresh(asOf:)`), never the raw `batteryPercent` and — on any surface that reads as
-    /// live data — never the presence-only `batteryPercentIfRead`, which keeps returning a value forever
-    /// once a single reply has landed.
+    /// the low-battery tint. Pass `PumpState.batteryIfFresh(now:)?.percent` (or the widget carrier's
+    /// `batteryPercentIfFresh(asOf:)`), and on any surface that reads as live data never the
+    /// presence-only `PumpState.battery?.value`, which keeps returning a value forever once a single
+    /// reply has landed.
     public static func make(percent: Int?, charging: Bool) -> BatteryPresentation {
         guard let percent else {
             return BatteryPresentation(

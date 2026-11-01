@@ -1,7 +1,7 @@
 import XCTest
 @testable import faBolusCore
 
-/// DIF-core: the calc-input freshness policy (IOB + therapy params) and the `PumpSnapshot` staleness
+/// DIF-core: the calc-input freshness policy (IOB + therapy params) and the `PumpState` staleness
 /// seams that gate the dose path. Mirrors `GlucoseFreshnessTests` for the glucose feed.
 final class CalcInputFreshnessTests: XCTestCase {
 
@@ -75,26 +75,31 @@ final class CalcInputFreshnessTests: XCTestCase {
         XCTAssertEqual(CalcInputFreshness.ageLabel(for: now.addingTimeInterval(-3600), now: now), "1h ago")
     }
 
-    // MARK: - PumpSnapshot seams
+    // MARK: - PumpState seams
 
-    func testSnapshotIobAndTherapyStale() {
+    func testStateIobAndTherapyStale() {
         let now = Date()
-        var s = PumpSnapshot()
-        // Fresh dates → not stale.
-        s.iobDate = now.addingTimeInterval(-60)
-        s.therapyParamsDate = now.addingTimeInterval(-60)
-        XCTAssertFalse(s.isIobStale(now: now))
-        XCTAssertFalse(s.isTherapyStale(now: now))
-        // Nil dates → stale (unknown age, even though iobUnits/carbRatio are numerically present).
-        s.iobDate = nil
-        s.therapyParamsDate = nil
-        XCTAssertTrue(s.isIobStale(now: now))
-        XCTAssertTrue(s.isTherapyStale(now: now))
+        func observed<T>(_ value: T, ageSec: TimeInterval) -> Observed<T> {
+            let at = now.addingTimeInterval(-ageSec)
+            return Observed(value, measuredAt: at, receivedAt: at)
+        }
+        var s = PumpState()
+        let calculator = BolusCalculatorSettings(
+            carbRatio: 10, correctionFactor: 40, targetMgdl: 110, maxBolusUnits: 10)
+        // Fresh readings → not stale.
+        s.insulinOnBoard = observed(1.5, ageSec: 60)
+        s.bolusCalculator = observed(calculator, ageSec: 60)
+        XCTAssertFalse(s.isInsulinOnBoardStale(now: now))
+        XCTAssertFalse(s.isBolusCalculatorStale(now: now))
+        // Never read → stale, so the dose path prompts.
+        s.insulinOnBoard = nil
+        s.bolusCalculator = nil
+        XCTAssertTrue(s.isInsulinOnBoardStale(now: now))
+        XCTAssertTrue(s.isBolusCalculatorStale(now: now))
         // IOB just past its (tighter) window is stale while therapy of the same age is still fresh.
-        let sixMinAgo = now.addingTimeInterval(-6 * 60)
-        s.iobDate = sixMinAgo
-        s.therapyParamsDate = sixMinAgo
-        XCTAssertTrue(s.isIobStale(now: now))
-        XCTAssertFalse(s.isTherapyStale(now: now))
+        s.insulinOnBoard = observed(1.5, ageSec: 6 * 60)
+        s.bolusCalculator = observed(calculator, ageSec: 6 * 60)
+        XCTAssertTrue(s.isInsulinOnBoardStale(now: now))
+        XCTAssertFalse(s.isBolusCalculatorStale(now: now))
     }
 }

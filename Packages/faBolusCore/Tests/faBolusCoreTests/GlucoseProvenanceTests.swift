@@ -71,27 +71,30 @@ final class GlucoseProvenanceTests: XCTestCase {
     // MARK: Unknown age must mean stale
 
     /// The invariant every surface has to honour. iOS already did; the Garmin watch did the opposite,
-    /// which is what made A1 dosable.
-    func testSnapshotWithAValueButNoTimestampIsStale() {
-        var s = PumpSnapshot()
-        s.glucose = 120
-        s.glucoseDate = nil
-        XCTAssertTrue(s.isGlucoseStale, "a value with an unknown age must never read as fresh")
+    /// which is what made A1 dosable. A reading's time can't be missing any more, so the unknown age is
+    /// a time that can't be trusted.
+    func testStateWithAValueButAnUntrustworthyTimeIsStale() {
+        var s = PumpState()
+        let now = Date()
+        s.glucose = Observed(
+            PumpGlucose(mgdl: 120, trend: nil), measuredAt: now.addingTimeInterval(3600), receivedAt: now)
+        XCTAssertTrue(s.isGlucoseStale(now: now), "a value with an unknown age must never read as fresh")
+        XCTAssertNil(s.glucoseIfFresh(now: now))
     }
 
-    func testSnapshotWithNoValueIsNotReportedStale() {
-        var s = PumpSnapshot()
-        s.glucose = nil
-        s.glucoseDate = nil
-        XCTAssertFalse(s.isGlucoseStale, "no reading at all is 'no data', not 'stale'")
+    func testStateWithNoValueIsNotReportedStale() {
+        let s = PumpState()
+        XCTAssertFalse(s.isGlucoseStale(), "no reading at all is 'no data', not 'stale'")
+        XCTAssertNil(s.glucoseIfFresh())
     }
 
     func testFreshAndOldTimestampsClassifyCorrectly() {
-        var s = PumpSnapshot()
-        s.glucose = 120
-        s.glucoseDate = Date()
-        XCTAssertFalse(s.isGlucoseStale)
-        s.glucoseDate = Date().addingTimeInterval(-7 * 60)
-        XCTAssertTrue(s.isGlucoseStale)
+        var s = PumpState()
+        let now = Date()
+        s.glucose = Observed(PumpGlucose(mgdl: 120, trend: nil), measuredAt: now, receivedAt: now)
+        XCTAssertFalse(s.isGlucoseStale(now: now))
+        let old = now.addingTimeInterval(-7 * 60)
+        s.glucose = Observed(PumpGlucose(mgdl: 120, trend: nil), measuredAt: old, receivedAt: old)
+        XCTAssertTrue(s.isGlucoseStale(now: now))
     }
 }

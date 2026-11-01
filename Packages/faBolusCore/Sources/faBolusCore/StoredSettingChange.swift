@@ -16,7 +16,16 @@ public enum SettingProvenance: String, Codable, Sendable, CaseIterable {
     case clinicianSet  // set with clinical guidance (the §2.1 clinician tier)
     case selfSet  // the user set it themselves
 
-    /// §2.1(2) B1(a) — the SF Symbol paired with `ClinicianTierAck.label(for:)` so the provenance badge
+    /// Human label for a recorded provenance.
+    public var label: String {
+        switch self {
+        case .consensusDefault: return "Consensus default"
+        case .clinicianSet: return "Set with clinician"
+        case .selfSet: return "Set by you"
+        }
+    }
+
+    /// §2.1(2) B1(a) — the SF Symbol paired with `label` so the provenance badge
     /// carries a non-color cue too (a book for a published default, a stethoscope for clinician-set, a
     /// person for self-set). Pure data; the view renders it via `Image(systemName:)`.
     public var symbolName: String {
@@ -60,13 +69,13 @@ public struct SettingKey: Codable, Sendable, Hashable {
 /// never reads the wall clock, so tests are deterministic. `before == nil` marks the first record for a key.
 public struct StoredSettingChange: Codable, Sendable, Equatable {
     public var key: SettingKey
-    public var before: BackupValue?
-    public var after: BackupValue
+    public var before: StoredSettingValue?
+    public var after: StoredSettingValue
     public var provenance: SettingProvenance
     public var atSeconds: Int
 
     public init(
-        key: SettingKey, before: BackupValue?, after: BackupValue,
+        key: SettingKey, before: StoredSettingValue?, after: StoredSettingValue,
         provenance: SettingProvenance, atSeconds: Int
     ) {
         self.key = key
@@ -135,7 +144,7 @@ public struct SettingChangeLog: Codable, Sendable, Equatable {
     /// when the key was never changed from its baseline (a pure consensus-default snapshot has `before ==
     /// nil`, so there is nothing to revert to). Pure lookup; the caller re-applies it through the gated
     /// therapy-write funnel.
-    public func revertTarget(_ key: SettingKey) -> BackupValue? { current(key)?.before }
+    public func revertTarget(_ key: SettingKey) -> StoredSettingValue? { current(key)?.before }
     /// The full chronological history for a key (for the change-log view / export).
     public func history(_ key: SettingKey) -> [StoredSettingChange] { log.filter { $0.key == key } }
 
@@ -156,9 +165,83 @@ public struct SettingChangeLog: Codable, Sendable, Equatable {
             let when = iso.string(from: Date(timeIntervalSince1970: TimeInterval(c.atSeconds)))
             let before = c.before?.displayString ?? "—"
             lines.append(
-                "\(when) · \(c.key.field): \(before) → \(c.after.displayString) (\(ClinicianTierAck.label(for: c.provenance)))"
+                "\(when) · \(c.key.field): \(before) → \(c.after.displayString) (\(c.provenance.label))"
             )
         }
         return lines.joined(separator: "\n")
+    }
+}
+
+/// A single UserDefaults-representable value (the shapes `AppSettings` stores), as a change-log record's
+/// before and after. Tagged so `[String: Int]` vs `[String: String]` etc. round-trip unambiguously
+/// through JSON.
+public enum StoredSettingValue: Codable, Sendable, Equatable {
+    case bool(Bool)
+    case int(Int)
+    case double(Double)
+    case string(String)
+    case stringArray([String])
+    case intArray([Int])
+    case data(Data)  // JSON blobs (base64 in JSON)
+
+    private enum CodingKeys: String, CodingKey { case type, value }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .bool(let v):
+            try c.encode("bool", forKey: .type)
+            try c.encode(v, forKey: .value)
+        case .int(let v):
+            try c.encode("int", forKey: .type)
+            try c.encode(v, forKey: .value)
+        case .double(let v):
+            try c.encode("double", forKey: .type)
+            try c.encode(v, forKey: .value)
+        case .string(let v):
+            try c.encode("string", forKey: .type)
+            try c.encode(v, forKey: .value)
+        case .stringArray(let v):
+            try c.encode("stringArray", forKey: .type)
+            try c.encode(v, forKey: .value)
+        case .intArray(let v):
+            try c.encode("intArray", forKey: .type)
+            try c.encode(v, forKey: .value)
+        case .data(let v):
+            try c.encode("data", forKey: .type)
+            try c.encode(v, forKey: .value)
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        switch try c.decode(String.self, forKey: .type) {
+        case "bool": self = .bool(try c.decode(Bool.self, forKey: .value))
+        case "int": self = .int(try c.decode(Int.self, forKey: .value))
+        case "double": self = .double(try c.decode(Double.self, forKey: .value))
+        case "string": self = .string(try c.decode(String.self, forKey: .value))
+        case "stringArray": self = .stringArray(try c.decode([String].self, forKey: .value))
+        case "intArray": self = .intArray(try c.decode([Int].self, forKey: .value))
+        case "data": self = .data(try c.decode(Data.self, forKey: .value))
+        case let other:
+            throw DecodingError.dataCorruptedError(
+                forKey: .type, in: c,
+                debugDescription: "unknown StoredSettingValue type \(other)")
+        }
+    }
+
+    /// B1(b): a human-readable rendering for the setting change-log (before → after). Not a wire/JSON
+    /// form — display only. `.double` is a plain trimmed number with NO unit suffix (the change-log row's
+    /// field title already implies the unit, and this value is generic — a carb ratio isn't insulin units).
+    public var displayString: String {
+        switch self {
+        case .bool(let v): return v ? "on" : "off"
+        case .int(let v): return String(v)
+        case .double(let v): return String(format: "%g", v)  // 1.2 / 12 / 0.05 — no trailing zeros, no unit
+        case .string(let v): return v
+        case .stringArray(let v): return v.joined(separator: ", ")
+        case .intArray(let v): return v.map(String.init).joined(separator: ", ")
+        case .data: return "(data)"
+        }
     }
 }

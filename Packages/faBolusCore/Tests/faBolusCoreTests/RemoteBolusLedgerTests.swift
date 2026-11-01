@@ -4,107 +4,165 @@ import XCTest
 /// A-02: a duplicated/retried remote bolus request ID must never cause a second delivery.
 final class RemoteBolusLedgerTests: XCTestCase {
 
-    private func key(_ u: Double?, _ c: Double? = nil, _ bg: Int? = nil) -> String {
-        RemoteBolusLedger.doseKey(units: u, carbsGrams: c, bgMgdl: bg)
+    private let t0 = Date(timeIntervalSince1970: 1_000_000)
+
+    private func request(
+        _ peer: String, _ id: String, _ units: Double, carbs: Double? = nil, bg: Int? = nil
+    ) -> DoseRequest {
+        let origin: DoseRequest.Origin =
+            peer == DoseRequest.Origin.phonePeerId ? .phone : .remote(peerId: peer, sentAt: t0)
+        return DoseRequest(id: id, origin: origin, shape: .now(units: units), carbsGrams: carbs, bgMgdl: bg)
+    }
+
+    private func key(_ peer: String, _ id: String) -> RemoteBolusLedger.Key { .init(peerId: peer, requestId: id) }
+
+    /// A request taken all the way through a successful delivery.
+    private func deliver(_ l: inout RemoteBolusLedger, _ peer: String, _ id: String, _ units: Double, now: Date? = nil)
+    {
+        XCTAssertEqual(l.begin(request(peer, id, units)), .proceed)
+        l.markAccepted(key(peer, id), bolusId: 1)
+        l.markDelivering(key(peer, id))
+        l.markDelivered(key(peer, id), units: units, now: now ?? t0)
     }
 
     func testFirstRequestProceeds() {
         var l = RemoteBolusLedger()
-        XCTAssertEqual(l.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0)), .proceed)
+        XCTAssertEqual(l.begin(request("watch", "r1", 2.0)), .proceed)
     }
 
     func testDuplicateInFlightBlocked() {
         var l = RemoteBolusLedger()
-        _ = l.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0))  // delivering, not yet settled
-        XCTAssertEqual(l.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0)), .duplicateInFlight)
+        _ = l.begin(request("watch", "r1", 2.0))  // in flight, not yet settled
+        XCTAssertEqual(l.begin(request("watch", "r1", 2.0)), .duplicateInFlight)
     }
 
     func testTerminalDuplicateReplays() {
         var l = RemoteBolusLedger()
-        _ = l.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0))
-        l.settle(peerId: "watch", requestId: "r1", status: "delivered", message: nil, deliveredUnits: 2.0)
-        XCTAssertEqual(
-            l.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0)),
-            .replay(status: "delivered", message: nil, deliveredUnits: 2.0))
+        deliver(&l, "watch", "r1", 2.0)
+        XCTAssertEqual(l.begin(request("watch", "r1", 2.0)), .replay(.delivered(units: 2.0)))
     }
 
     func testReusedIdWithDifferentDoseIsConflict() {
         var l = RemoteBolusLedger()
-        _ = l.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0))
-        l.settle(peerId: "watch", requestId: "r1", status: "delivered")
-        XCTAssertEqual(l.begin(peerId: "watch", requestId: "r1", doseKey: key(5.0)), .conflict)
+        deliver(&l, "watch", "r1", 2.0)
+        XCTAssertEqual(l.begin(request("watch", "r1", 5.0)), .conflict)
     }
 
     func testFailedDeliveryIsTerminalAndReplays() {
         var l = RemoteBolusLedger()
-        _ = l.begin(peerId: "peer", requestId: "r9", doseKey: key(nil, 30, 120))
-        l.settle(peerId: "peer", requestId: "r9", status: "failed", message: "not connected")
+        _ = l.begin(request("peer", "r9", 3.0, carbs: 30, bg: 120))
+        l.markFailed(key("peer", "r9"), reason: "not connected")
         // A retry with the SAME id replays the failure rather than delivering.
         XCTAssertEqual(
-            l.begin(peerId: "peer", requestId: "r9", doseKey: key(nil, 30, 120)),
-            .replay(status: "failed", message: "not connected", deliveredUnits: nil))
+            l.begin(request("peer", "r9", 3.0, carbs: 30, bg: 120)), .replay(.failed(reason: "not connected")))
     }
 
+    /// Same request ID string, different peer: a different request, not a replay. (The first request is
+    /// settled before the second starts, because only one bolus may be in flight at a time.)
     func testDifferentPeersAreIndependent() {
         var l = RemoteBolusLedger()
-        _ = l.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0))
-        // Same requestId string but a different peer is a different request.
-        XCTAssertEqual(l.begin(peerId: "garmin", requestId: "r1", doseKey: key(2.0)), .proceed)
+        deliver(&l, "watch", "r1", 2.0)
+        XCTAssertEqual(l.begin(request("garmin", "r1", 2.0)), .proceed)
     }
 
     func testEvictionOnlyDropsTerminalEntries() {
         var l = RemoteBolusLedger(cap: 2)
-        _ = l.begin(peerId: "p", requestId: "a", doseKey: key(1))
-        l.settle(peerId: "p", requestId: "a", status: "delivered")
-        _ = l.begin(peerId: "p", requestId: "b", doseKey: key(1))
-        l.settle(peerId: "p", requestId: "b", status: "delivered")
-        _ = l.begin(peerId: "p", requestId: "c", doseKey: key(1))  // over cap → evicts oldest TERMINAL ("a")
-        // "a" (terminal, beyond retention) was forgotten → new again.
-        XCTAssertEqual(l.begin(peerId: "p", requestId: "a", doseKey: key(1)), .proceed)
+        _ = l.begin(request("p", "a", 1))
+        l.markRefused(key("p", "a"), reason: "no cartridge")
+        _ = l.begin(request("p", "b", 1))
+        l.markRefused(key("p", "b"), reason: "no cartridge")
+        _ = l.begin(request("p", "c", 1))  // over cap → evicts oldest TERMINAL ("a")
+        // "a" (terminal, beyond retention) was forgotten.
+        XCTAssertFalse(l.hasExistingEntry(key("p", "a")))
+        XCTAssertTrue(l.hasExistingEntry(key("p", "b")))
         // "c" is still tracked in-flight.
-        XCTAssertEqual(l.begin(peerId: "p", requestId: "c", doseKey: key(1)), .duplicateInFlight)
+        XCTAssertEqual(l.begin(request("p", "c", 1)), .duplicateInFlight)
     }
 
-    // MARK: - Durability + explicit lifecycle state
+    // MARK: - Durability + explicit lifecycle
 
-    func testInFlightEntriesAreNeverEvicted() {
+    /// Over the cap, an entry that may still change is never dropped: not the one in flight, and not an
+    /// unknown outcome, even one the user has confirmed on the pump (history may still settle it).
+    func testInFlightAndUnknownEntriesAreNeverEvicted() {
         var l = RemoteBolusLedger(cap: 1)
-        _ = l.begin(peerId: "p", requestId: "a", doseKey: key(1))  // delivering, over cap already
-        _ = l.begin(peerId: "p", requestId: "b", doseKey: key(1))  // also in-flight
-        // Neither is terminal, so nothing is dropped — an in-flight delivery must never be forgotten.
-        XCTAssertEqual(l.begin(peerId: "p", requestId: "a", doseKey: key(1)), .duplicateInFlight)
-        XCTAssertEqual(l.begin(peerId: "p", requestId: "b", doseKey: key(1)), .duplicateInFlight)
+        _ = l.begin(request("p", "a", 1))
+        l.markAccepted(key("p", "a"), bolusId: 1)
+        l.markUnknown(key("p", "a"))
+        l.confirmOnPump(key("p", "a"))
+        XCTAssertEqual(l.begin(request("p", "b", 1)), .proceed)  // over cap already
+        XCTAssertTrue(l.hasExistingEntry(key("p", "a")))
+        XCTAssertEqual(l.begin(request("p", "a", 1)), .duplicateInFlight)
+        XCTAssertEqual(l.begin(request("p", "b", 1)), .duplicateInFlight)
     }
 
-    func testIndeterminateBlocksRetryAndReports() {
+    func testUnknownBlocksRetryAndReports() {
         var l = RemoteBolusLedger()
-        _ = l.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0))
-        l.markDelivering(peerId: "watch", requestId: "r1", bolusId: 77)
-        l.markIndeterminate(peerId: "watch", requestId: "r1")  // FB-02: outcome unknown
-        XCTAssertEqual(l.state(peerId: "watch", requestId: "r1"), .indeterminate)
+        _ = l.begin(request("watch", "r1", 2.0))
+        l.markAccepted(key("watch", "r1"), bolusId: 77)
+        l.markUnknown(key("watch", "r1"), now: t0)  // FB-02: outcome unknown
+        XCTAssertEqual(l.outcome(key("watch", "r1")), .unknown(since: t0))
         // A retry must NOT re-deliver an unknown-outcome bolus.
-        XCTAssertEqual(l.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0)), .duplicateInFlight)
+        XCTAssertEqual(l.begin(request("watch", "r1", 2.0)), .duplicateInFlight)
         // It surfaces for reconciliation with its pump bolus id.
-        let pending = l.unreconciled()
-        XCTAssertEqual(pending.count, 1)
-        XCTAssertEqual(pending.first?.bolusId, 77)
+        XCTAssertEqual(l.unresolved.count, 1)
+        XCTAssertEqual(l.unresolved.first?.bolusId, 77)
+    }
+
+    /// An unknown outcome blocks every NEW bolus, from any surface, until history settles it or the
+    /// user confirms on the pump.
+    func testUnknownOutcomeBlocksEveryNewBolusUntilSettledOrConfirmed() {
+        var l = RemoteBolusLedger()
+        _ = l.begin(request("watch", "r1", 2.0))
+        l.markAccepted(key("watch", "r1"), bolusId: 77)
+        l.markUnknown(key("watch", "r1"), now: t0)
+        XCTAssertEqual(l.block, .unknownOutcome(since: t0))
+        XCTAssertEqual(l.begin(request("watch", "r2", 1.0)), .blocked(.unknownOutcome(since: t0)))
+        XCTAssertEqual(l.begin(request("phone", "p1", 1.0)), .blocked(.unknownOutcome(since: t0)))
+
+        // Settled from history: the block lifts and the outcome is the pump's amount.
+        var settled = l
+        settled.markDelivered(key("watch", "r1"), units: 2.0)
+        XCTAssertNil(settled.block)
+        XCTAssertEqual(settled.begin(request("phone", "p1", 1.0)), .proceed)
+
+        // Or confirmed on the pump: the block lifts, but the outcome is still honestly unknown.
+        var confirmed = l
+        confirmed.confirmOnPump(key("watch", "r1"))
+        XCTAssertNil(confirmed.block)
+        XCTAssertEqual(confirmed.outcome(key("watch", "r1")), .unknown(since: t0))
+        XCTAssertEqual(confirmed.begin(request("phone", "p1", 1.0)), .proceed)
+    }
+
+    /// Every unknown outcome has to be settled or confirmed, not just the newest.
+    func testTwoUnknownOutcomesBothHaveToBeResolved() {
+        var l = RemoteBolusLedger()
+        _ = l.begin(request("phone", "old", 1.0))
+        l.markAccepted(key("phone", "old"), bolusId: 100)
+        l.markUnknown(key("phone", "old"), now: t0)
+        l.confirmOnPump(key("phone", "old"))
+        _ = l.begin(request("phone", "new", 2.0))
+        l.markAccepted(key("phone", "new"), bolusId: 200)
+        let later = t0.addingTimeInterval(600)
+        l.markUnknown(key("phone", "new"), now: later)
+        XCTAssertEqual(l.block, .unknownOutcome(since: later))
+        XCTAssertEqual(l.unresolved.map(\.key.requestId), ["new"])
+        XCTAssertEqual(l.unknownOutcomes.map(\.key.requestId), ["old", "new"])
+        l.markDelivered(key("phone", "new"), units: 2.0)
+        XCTAssertNil(l.block)
     }
 
     func testRoundTripPersistencePreservesStateAndBlocksRetry() throws {
         var l = RemoteBolusLedger()
-        _ = l.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0))
-        l.markDelivering(peerId: "watch", requestId: "r1", bolusId: 42)
+        _ = l.begin(request("watch", "r1", 2.0))
+        l.markAccepted(key("watch", "r1"), bolusId: 42)
         let data = try JSONEncoder().encode(l)
         // Simulate a relaunch: decode a fresh ledger from the persisted bytes.
-        let restored = try JSONDecoder().decode(RemoteBolusLedger.self, from: data)
-        var l2 = restored
-        // The delivering entry survived → a duplicate after relaunch is still blocked (exactly-once).
-        XCTAssertEqual(l2.state(peerId: "watch", requestId: "r1"), .delivering)
-        XCTAssertEqual(l2.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0)), .duplicateInFlight)
+        var l2 = try JSONDecoder().decode(RemoteBolusLedger.self, from: data)
+        XCTAssertEqual(l2.outcome(key("watch", "r1")), .accepted)
+        XCTAssertEqual(l2.begin(request("watch", "r1", 2.0)), .duplicateInFlight)
         // Same id, different dose, after relaunch → conflict (not a second dose).
-        XCTAssertEqual(l2.begin(peerId: "watch", requestId: "r1", doseKey: key(9.0)), .conflict)
-        // Its bolus id is available to reconcile against the pump.
-        XCTAssertEqual(l2.unreconciled().first?.bolusId, 42)
+        XCTAssertEqual(l2.begin(request("watch", "r1", 9.0)), .conflict)
+        XCTAssertEqual(l2.entry(key("watch", "r1"))?.bolusId, 42)
     }
 
     func testFileStoreLoadSaveRoundTrip() throws {
@@ -114,16 +172,17 @@ final class RemoteBolusLedgerTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: dir) }
         let store = RemoteBolusLedgerStore(url: dir.appendingPathComponent("l.json"))
 
-        // Missing file → empty ledger.
-        var l = store.load()
-        XCTAssertEqual(l.begin(peerId: "peer", requestId: "x", doseKey: key(nil, 30, 120)), .proceed)
-        l.markDelivering(peerId: "peer", requestId: "x", bolusId: 5)
+        // Missing file → empty ledger, not failed closed.
+        let first = store.loadOutcome()
+        XCTAssertFalse(first.failedClosed)
+        var l = first.ledger
+        XCTAssertEqual(l.begin(request("peer", "x", 3.0, carbs: 30, bg: 120)), .proceed)
+        l.markAccepted(key("peer", "x"), bolusId: 5)
         try store.save(l)
 
-        // A fresh store at the same URL loads the delivering entry and blocks a retry.
-        let store2 = RemoteBolusLedgerStore(url: dir.appendingPathComponent("l.json"))
-        var reloaded = store2.load()
-        XCTAssertEqual(reloaded.begin(peerId: "peer", requestId: "x", doseKey: key(nil, 30, 120)), .duplicateInFlight)
+        // A fresh store at the same URL loads the in-flight entry and blocks a retry.
+        var reloaded = RemoteBolusLedgerStore(url: dir.appendingPathComponent("l.json")).loadOutcome().ledger
+        XCTAssertEqual(reloaded.begin(request("peer", "x", 3.0, carbs: 30, bg: 120)), .duplicateInFlight)
     }
 
     // MARK: - F1 (§13): at-rest protection is AfterFirstUnlock, NEVER .complete
@@ -151,22 +210,16 @@ final class RemoteBolusLedgerTests: XCTestCase {
         let url = dir.appendingPathComponent("l.json")
         let store = RemoteBolusLedgerStore(url: url)
         var l = RemoteBolusLedger()
-        _ = l.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0))
-        l.settle(peerId: "watch", requestId: "r1", status: "delivered", message: nil, deliveredUnits: 2.0)
+        deliver(&l, "watch", "r1", 2.0)
         try store.save(l)
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
         let outcome = RemoteBolusLedgerStore(url: url).loadOutcome()
         XCTAssertFalse(outcome.failedClosed)
         var reloaded = outcome.ledger
-        XCTAssertEqual(
-            reloaded.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0)),
-            .replay(status: "delivered", message: nil, deliveredUnits: 2.0))
+        XCTAssertEqual(reloaded.begin(request("watch", "r1", 2.0)), .replay(.delivered(units: 2.0)))
     }
 
-    // MARK: - RemoteBolusLedger.blockReason pure precedence — zero AppModel.
-    //
-    // String pins matching LedgerBlockPrecedenceGuardTests, proven here with only the 3 flags + the
-    // unresolved-entry list + the in-flight key.
+    // MARK: - Block reasons and their messages
 
     private static let noDurableStoreMessage =
         "Delivery is locked: no durable safety store is available on this device. Delivery stays "
@@ -180,141 +233,118 @@ final class RemoteBolusLedgerTests: XCTestCase {
     private static let liveInFlightMessage =
         "A bolus is already being delivered — wait for it to finish before sending another."
 
-    func testBlockReasonIsNilWhenNothingIsSetAndNothingIsUnresolved() {
-        XCTAssertNil(
-            RemoteBolusLedger.blockReason(
-                noDurableStore: false, ledgerFailedClosed: false,
-                terminalSaveFailed: false, unresolved: [],
-                inFlightDeliveryKey: nil))
+    func testBlockMessagesAreUnchanged() {
+        XCTAssertEqual(BolusBlock.noDurableStore.userMessage, Self.noDurableStoreMessage)
+        XCTAssertEqual(BolusBlock.ledgerUnreadable.userMessage, Self.ledgerFailedClosedMessage)
+        XCTAssertEqual(BolusBlock.outcomeNotSaved.userMessage, Self.terminalSaveFailedMessage)
+        XCTAssertEqual(BolusBlock.bolusInProgress.userMessage, Self.liveInFlightMessage)
     }
 
-    func testBlockReasonNoDurableStoreOutranksEveryOtherFlagAndUnresolvedEntries() {
-        let unresolved: [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool)] =
-            [("watch", "r1", 42, true)]
-        XCTAssertEqual(
-            RemoteBolusLedger.blockReason(
-                noDurableStore: true, ledgerFailedClosed: true,
-                terminalSaveFailed: true, unresolved: unresolved,
-                inFlightDeliveryKey: nil), Self.noDurableStoreMessage)
-    }
-
-    func testBlockReasonLedgerFailedClosedOutranksTerminalSaveFailedAndUnresolved() {
-        let unresolved: [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool)] =
-            [("watch", "r1", 42, true)]
-        XCTAssertEqual(
-            RemoteBolusLedger.blockReason(
-                noDurableStore: false, ledgerFailedClosed: true,
-                terminalSaveFailed: true, unresolved: unresolved,
-                inFlightDeliveryKey: nil), Self.ledgerFailedClosedMessage)
-    }
-
-    func testBlockReasonTerminalSaveFailedOutranksASimultaneouslyUnresolvedEntry() {
-        let unresolved: [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool)] =
-            [("watch", "stuck-with-id", 9001, true)]
-        XCTAssertEqual(
-            RemoteBolusLedger.blockReason(
-                noDurableStore: false, ledgerFailedClosed: false,
-                terminalSaveFailed: true, unresolved: unresolved,
-                inFlightDeliveryKey: nil), Self.terminalSaveFailedMessage)
-    }
-
-    func testBlockReasonLiveInFlightUsesTheWaitMessageNotTheCheckThePumpOne() {
-        let unresolved: [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool)] =
-            [("local", "r1", nil, true)]
-        XCTAssertEqual(
-            RemoteBolusLedger.blockReason(
-                noDurableStore: false, ledgerFailedClosed: false,
-                terminalSaveFailed: false, unresolved: unresolved,
-                inFlightDeliveryKey: (peerId: "local", requestId: "r1")),
-            Self.liveInFlightMessage)
-    }
-
-    func testBlockReasonGenuinelyUnresolvedEntryReturnsNilAfterDurableStaleArmRemoved() {
-        // A genuinely unresolved entry with NO delivery in flight (e.g. surfaced at relaunch after a
-        // crash) no longer produces a durable block — it is carried by the non-blocking inline
-        // disclosure instead, so a new legitimate delivery is not gated by it.
-        let unresolved: [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool)] =
-            [("watch", "crashed-mid-delivery", 5555, true)]
-        XCTAssertNil(
-            RemoteBolusLedger.blockReason(
-                noDurableStore: false, ledgerFailedClosed: false,
-                terminalSaveFailed: false, unresolved: unresolved,
-                inFlightDeliveryKey: nil))
-    }
-
-    func testBlockReasonInFlightWithCoexistingStaleEntryUsesTheLiveMessage() {
-        // A delivery is in flight (matches ONE entry) while a SECOND, different entry is also
-        // unresolved. The cross-client mutex must still fire whenever a delivery is in flight — even
-        // with a co-existing stale entry — so a concurrent request is blocked with the transient
-        // "already being delivered" message and never let through (no mutex hole).
-        let unresolved: [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool)] =
-            [("local", "r1", nil, true), ("watch", "crashed-mid-delivery", 5555, true)]
-        XCTAssertEqual(
-            RemoteBolusLedger.blockReason(
-                noDurableStore: false, ledgerFailedClosed: false,
-                terminalSaveFailed: false, unresolved: unresolved,
-                inFlightDeliveryKey: (peerId: "local", requestId: "r1")),
-            Self.liveInFlightMessage)
-    }
-
-    // MARK: - Terminal-outcome re-echo query (terminalOutcomes)
-    //
-    // The durable ledger can re-echo terminal outcomes to a remote that missed them across an app restart.
-    // The query returns only TERMINAL entries for the asked peer, oldest→newest, and never mutates state.
-
-    func testTerminalOutcomesReturnsSettledEntryForPeer() {
+    func testNoBlockWhenNothingIsInFlightOrUnknown() {
         var l = RemoteBolusLedger()
-        _ = l.begin(peerId: "garmin", requestId: "r1", doseKey: key(2.0))
-        l.settle(peerId: "garmin", requestId: "r1", status: "delivered", message: "ok", deliveredUnits: 2.0)
-        let outcomes = l.terminalOutcomes(peerId: "garmin")
+        XCTAssertNil(l.block)
+        deliver(&l, "watch", "r1", 2.0)
+        XCTAssertNil(l.block)
+    }
+
+    /// One bolus at a time, whichever surface asks: this is the cross-client mutex.
+    func testInFlightRequestBlocksEveryOtherRequestWithTheWaitMessage() {
+        var l = RemoteBolusLedger()
+        _ = l.begin(request("phone", "p1", 1.0))
+        XCTAssertEqual(l.block, .bolusInProgress)
+        XCTAssertEqual(l.begin(request("watch", "w1", 2.0)), .blocked(.bolusInProgress))
+        XCTAssertEqual(l.begin(request("phone", "p2", 1.0)), .blocked(.bolusInProgress))
+        l.markAccepted(key("phone", "p1"), bolusId: 1)
+        XCTAssertEqual(l.begin(request("watch", "w1", 2.0)), .blocked(.bolusInProgress))
+        l.markDelivering(key("phone", "p1"))
+        XCTAssertEqual(l.begin(request("watch", "w1", 2.0)), .blocked(.bolusInProgress))
+        l.markDelivered(key("phone", "p1"), units: 1.0)
+        XCTAssertEqual(l.begin(request("watch", "w1", 2.0)), .proceed)
+    }
+
+    /// Changed from the old ledger, which let a genuinely unresolved entry with nothing in flight pass
+    /// with no block: it now blocks, across restarts, until history settles it or the user confirms.
+    func testUnresolvedEntryWithNothingInFlightBlocks() throws {
+        var l = RemoteBolusLedger()
+        _ = l.begin(request("watch", "crashed-mid-delivery", 2.0))
+        l.markAccepted(key("watch", "crashed-mid-delivery"), bolusId: 5555, now: t0)
+        var relaunched = try JSONDecoder().decode(RemoteBolusLedger.self, from: JSONEncoder().encode(l))
+        relaunched.recoverAfterRestart(now: t0.addingTimeInterval(60))
+        XCTAssertEqual(relaunched.block, .unknownOutcome(since: t0))
+    }
+
+    /// When an in-flight request and an unconfirmed unknown outcome co-exist (only possible in a ledger
+    /// written that way), the transient wait message wins, as before.
+    func testInFlightOutranksAnUnknownOutcome() throws {
+        var unknown = RemoteBolusLedger()
+        _ = unknown.begin(request("watch", "u1", 2.0))
+        unknown.markUnknown(key("watch", "u1"), now: t0)
+        var inFlight = RemoteBolusLedger()
+        _ = inFlight.begin(request("phone", "p1", 1.0))
+        let merged = try merge(unknown, inFlight)
+        XCTAssertEqual(merged.block, .bolusInProgress)
+    }
+
+    private func merge(_ a: RemoteBolusLedger, _ b: RemoteBolusLedger) throws -> RemoteBolusLedger {
+        func object(_ l: RemoteBolusLedger) throws -> [String: Any] {
+            try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(l)) as? [String: Any])
+        }
+        var merged = try object(a)
+        let entries = (merged["entries"] as? [Any] ?? []) + (try object(b)["entries"] as? [Any] ?? [])
+        merged["entries"] = entries
+        return try JSONDecoder().decode(
+            RemoteBolusLedger.self, from: JSONSerialization.data(withJSONObject: merged))
+    }
+
+    // MARK: - Final-outcome re-echo query
+    //
+    // The durable ledger can re-echo final outcomes to a remote that missed them across an app restart.
+    // The query returns only FINAL entries for the asked peer, oldest→newest, and never mutates state.
+
+    func testFinalOutcomesReturnsSettledEntryForPeer() {
+        var l = RemoteBolusLedger()
+        deliver(&l, "garmin", "r1", 2.0)
+        let outcomes = l.finalOutcomes(peerId: "garmin")
         XCTAssertEqual(outcomes.count, 1)
         XCTAssertEqual(outcomes.first?.requestId, "r1")
-        XCTAssertEqual(outcomes.first?.status, "delivered")
-        XCTAssertEqual(outcomes.first?.message, "ok")
-        XCTAssertEqual(outcomes.first?.deliveredUnits, 2.0)
+        XCTAssertEqual(outcomes.first?.outcome, .delivered(units: 2.0))
     }
 
-    func testTerminalOutcomesExcludesNonTerminalEntries() {
+    func testFinalOutcomesExcludesNonFinalEntries() {
         var l = RemoteBolusLedger()
-        _ = l.begin(peerId: "garmin", requestId: "awaiting", doseKey: key(1.0))  // begun, never settled
-        _ = l.begin(peerId: "garmin", requestId: "delivering", doseKey: key(3.0))
-        l.markDelivering(peerId: "garmin", requestId: "delivering", bolusId: 7)  // delivering, never settled
-        XCTAssertTrue(l.terminalOutcomes(peerId: "garmin").isEmpty)
+        _ = l.begin(request("garmin", "unknown", 1.0))
+        l.markUnknown(key("garmin", "unknown"))
+        l.confirmOnPump(key("garmin", "unknown"))
+        _ = l.begin(request("garmin", "delivering", 3.0))
+        l.markAccepted(key("garmin", "delivering"), bolusId: 7)
+        l.markDelivering(key("garmin", "delivering"))
+        XCTAssertTrue(l.finalOutcomes(peerId: "garmin").isEmpty)
     }
 
-    func testTerminalOutcomesExcludesOtherPeers() {
+    func testFinalOutcomesExcludesOtherPeers() {
         var l = RemoteBolusLedger()
-        _ = l.begin(peerId: "watch", requestId: "w1", doseKey: key(2.0))
-        l.settle(peerId: "watch", requestId: "w1", status: "delivered", deliveredUnits: 2.0)
-        _ = l.begin(peerId: "garmin", requestId: "g1", doseKey: key(4.0))
-        l.settle(peerId: "garmin", requestId: "g1", status: "delivered", deliveredUnits: 4.0)
-        // Only garmin's terminal entry is returned; the watch entry is another peer's business.
-        let outcomes = l.terminalOutcomes(peerId: "garmin")
+        deliver(&l, "watch", "w1", 2.0)
+        deliver(&l, "garmin", "g1", 4.0)
+        // Only garmin's final entry is returned; the watch entry is another peer's business.
+        let outcomes = l.finalOutcomes(peerId: "garmin")
         XCTAssertEqual(outcomes.count, 1)
         XCTAssertEqual(outcomes.first?.requestId, "g1")
     }
 
-    func testTerminalOutcomesAreOldestToNewest() {
+    func testFinalOutcomesAreOldestToNewest() {
         var l = RemoteBolusLedger()
-        _ = l.begin(peerId: "garmin", requestId: "first", doseKey: key(1.0))
-        l.settle(peerId: "garmin", requestId: "first", status: "delivered", deliveredUnits: 1.0)
-        _ = l.begin(peerId: "garmin", requestId: "second", doseKey: key(2.0))
-        l.settle(peerId: "garmin", requestId: "second", status: "failed", message: "not connected")
-        _ = l.begin(peerId: "garmin", requestId: "third", doseKey: key(3.0))
-        l.settle(peerId: "garmin", requestId: "third", status: "delivered", deliveredUnits: 3.0)
-        XCTAssertEqual(l.terminalOutcomes(peerId: "garmin").map(\.requestId), ["first", "second", "third"])
+        deliver(&l, "garmin", "first", 1.0)
+        _ = l.begin(request("garmin", "second", 2.0))
+        l.markFailed(key("garmin", "second"), reason: "not connected")
+        deliver(&l, "garmin", "third", 3.0)
+        XCTAssertEqual(l.finalOutcomes(peerId: "garmin").map(\.requestId), ["first", "second", "third"])
     }
 
-    func testTerminalOutcomesEmptyLedgerReturnsEmpty() {
-        let l = RemoteBolusLedger()
-        XCTAssertTrue(l.terminalOutcomes(peerId: "garmin").isEmpty)
+    func testFinalOutcomesEmptyLedgerReturnsEmpty() {
+        XCTAssertTrue(RemoteBolusLedger().finalOutcomes(peerId: "garmin").isEmpty)
     }
 
-    // MARK: - A manual clear settles with its OWN status, never a confirmed delivery
-    //
-    // A human verifying on the pump is not the same fact as the pump authoritatively confirming
-    // delivery. `.manuallyCleared` records that a person attested to checking; it must round-trip
-    // distinctly from `.delivered` through both the raw-value encoding and the re-echo query.
+    // MARK: - The v1 wire's outcome statuses
 
     func testManuallyClearedStatusHasItsOwnStableRawValue() {
         XCTAssertEqual(RemoteCommand.Status.manuallyCleared.rawValue, "manuallyCleared")
@@ -328,17 +358,26 @@ final class RemoteBolusLedgerTests: XCTestCase {
         XCTAssertEqual(RemoteCommand.Status.unknown.rawValue, "unknown")
     }
 
-    func testTerminalOutcomesEchoesAManualClearHonestlyNeverAsDelivered() {
+    /// A human checking the pump is not the pump confirming delivery. Changed from the old ledger, where a
+    /// manual clear settled a final "manually cleared" status: the outcome now stays `unknown` and only
+    /// stops blocking, so it is never echoed as a final outcome, and never as delivered.
+    func testConfirmOnPumpNeverRecordsADelivery() {
         var l = RemoteBolusLedger()
-        _ = l.begin(peerId: "garmin", requestId: "mc1", doseKey: key(2.0))
-        l.settle(
-            peerId: "garmin", requestId: "mc1",
-            status: RemoteCommand.Status.manuallyCleared.rawValue,
-            message: "Manually cleared after checking the pump — the app did not confirm delivery.")
-        let outcomes = l.terminalOutcomes(peerId: "garmin")
-        XCTAssertEqual(outcomes.count, 1)
-        XCTAssertEqual(outcomes.first?.status, RemoteCommand.Status.manuallyCleared.rawValue)
-        XCTAssertNotEqual(outcomes.first?.status, RemoteCommand.Status.delivered.rawValue)
+        _ = l.begin(request("garmin", "mc1", 2.0))
+        l.markAccepted(key("garmin", "mc1"), bolusId: 3)
+        l.markUnknown(key("garmin", "mc1"), now: t0)
+        XCTAssertTrue(l.confirmOnPump(key("garmin", "mc1"), now: t0.addingTimeInterval(60)))
+        XCTAssertEqual(l.outcome(key("garmin", "mc1")), .unknown(since: t0))
+        XCTAssertEqual(l.entry(key("garmin", "mc1"))?.confirmedOnPumpAt, t0.addingTimeInterval(60))
+        XCTAssertTrue(l.finalOutcomes(peerId: "garmin").isEmpty)
+        XCTAssertFalse(l.confirmOnPump(key("garmin", "mc1")), "a second confirmation changes nothing")
+    }
+
+    func testConfirmOnPumpOnlyAppliesToAnUnknownOutcome() {
+        var l = RemoteBolusLedger()
+        _ = l.begin(request("phone", "p1", 1.0))
+        XCTAssertFalse(l.confirmOnPump(key("phone", "p1")), "an in-flight request isn't confirmed away")
+        XCTAssertEqual(l.block, .bolusInProgress)
     }
 
     // MARK: - Additive content+time duplicate-recency guard
@@ -347,308 +386,155 @@ final class RemoteBolusLedgerTests: XCTestCase {
     // regardless of a fresh requestId. This is a separate query — begin()'s own key/conflict/replay
     // logic is untouched.
 
+    private func doseKey(_ units: Double) -> String { request("peerA", "-", units).doseKey }
+
     func testRecentlyDeliveredDuplicateDetectedAcrossDifferentRequestIds() {
         var l = RemoteBolusLedger()
-        let t0 = Date(timeIntervalSince1970: 1_000_000)
-        _ = l.begin(peerId: "peerA", requestId: "req1", doseKey: key(2.0))
-        l.settle(peerId: "peerA", requestId: "req1", status: "delivered", deliveredUnits: 2.0, now: t0)
+        deliver(&l, "peerA", "req1", 2.0, now: t0)
         // A FRESH requestId, same content, 2s later: flagged as a recent duplicate.
-        XCTAssertTrue(
-            l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: key(2.0), now: t0.addingTimeInterval(2)))
+        XCTAssertTrue(l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: doseKey(2.0), now: t0 + 2))
     }
 
     func testRecentlyDeliveredDuplicateExpiresAfterWindow() {
         var l = RemoteBolusLedger()
-        let t0 = Date(timeIntervalSince1970: 1_000_000)
-        _ = l.begin(peerId: "peerA", requestId: "req1", doseKey: key(2.0))
-        l.settle(peerId: "peerA", requestId: "req1", status: "delivered", deliveredUnits: 2.0, now: t0)
+        deliver(&l, "peerA", "req1", 2.0, now: t0)
         let window = RemoteBolusLedger.recentDuplicateWindowSec
-        XCTAssertFalse(
-            l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: key(2.0), now: t0.addingTimeInterval(window + 1)))
+        XCTAssertFalse(l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: doseKey(2.0), now: t0 + window + 1))
     }
 
     func testDifferentDoseKeyWithinWindowIsNotFlagged() {
         var l = RemoteBolusLedger()
-        let t0 = Date(timeIntervalSince1970: 1_000_000)
-        _ = l.begin(peerId: "peerA", requestId: "req1", doseKey: key(2.0))
-        l.settle(peerId: "peerA", requestId: "req1", status: "delivered", deliveredUnits: 2.0, now: t0)
-        XCTAssertFalse(
-            l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: key(5.0), now: t0.addingTimeInterval(2)))
+        deliver(&l, "peerA", "req1", 2.0, now: t0)
+        XCTAssertFalse(l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: doseKey(5.0), now: t0 + 2))
     }
 
-    /// Addresses codex HIGH: `settle()` sets `.terminal` for EVERY outcome, so a naive "scan terminal
-    /// entries" would wrongly block a legitimate retry after a clean pre-pump failure. The recency index
-    /// must only populate for an authoritatively-delivered-or-maybe-delivered outcome.
+    /// A clean pre-pump failure must never block a legitimate retry: the recency index only populates
+    /// for an outcome that delivered or may have.
     func testCleanPrePumpFailureDoesNotPopulateRecencyIndex() {
         var l = RemoteBolusLedger()
-        let t0 = Date(timeIntervalSince1970: 1_000_000)
-        _ = l.begin(peerId: "peerA", requestId: "req1", doseKey: key(2.0))
-        // sentToPump == false (never reached markDelivering/markSent), deliveredUnits nil ⇒ a clean
-        // pre-pump failure (e.g. rejected/errored before the pump write).
-        l.settle(peerId: "peerA", requestId: "req1", status: "failed", message: "not connected", now: t0)
-        XCTAssertFalse(
-            l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: key(2.0), now: t0.addingTimeInterval(2)))
+        _ = l.begin(request("peerA", "req1", 2.0))
+        l.markFailed(key("peerA", "req1"), reason: "not connected", now: t0)
+        XCTAssertFalse(l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: doseKey(2.0), now: t0 + 2))
     }
 
-    func testZeroUnitCancellationDoesNotPopulateRecencyIndex() {
+    func testPrePumpRefusalDoesNotPopulateRecencyIndex() {
         var l = RemoteBolusLedger()
-        let t0 = Date(timeIntervalSince1970: 1_000_000)
-        _ = l.begin(peerId: "peerA", requestId: "req1", doseKey: key(2.0))
-        // sentToPump == false, deliveredUnits == 0 ⇒ a genuine 0 U cancellation before the pump write.
-        l.settle(peerId: "peerA", requestId: "req1", status: "cancelled", deliveredUnits: 0, now: t0)
-        XCTAssertFalse(
-            l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: key(2.0), now: t0.addingTimeInterval(2)))
+        _ = l.begin(request("peerA", "req1", 2.0))
+        // Refused at BolusPermission: nothing that delivers was sent.
+        l.markRefused(key("peerA", "req1"), reason: "no cartridge", now: t0)
+        XCTAssertFalse(l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: doseKey(2.0), now: t0 + 2))
     }
 
-    /// A 0 U outcome that DID reach the pump (`sentToPump == true`) is still ambiguous — the pump may have
-    /// delivered before the cancel landed — so it stays flagged. `sentToPump` alone gates this, independent
-    /// of `deliveredUnits`.
-    func testZeroUnitCancellationAfterPumpWriteStillFlagged() {
+    /// A 0 U outcome that DID reach the pump is still ambiguous — the pump may have delivered before the
+    /// stop landed — so it stays flagged.
+    func testZeroUnitStopAfterPumpWriteStillFlagged() {
         var l = RemoteBolusLedger()
-        let t0 = Date(timeIntervalSince1970: 1_000_000)
-        _ = l.begin(peerId: "peerA", requestId: "req1", doseKey: key(2.0))
-        l.markDelivering(peerId: "peerA", requestId: "req1", bolusId: 55)  // sentToPump ⇒ true
-        l.settle(peerId: "peerA", requestId: "req1", status: "cancelled", deliveredUnits: 0, now: t0)
-        XCTAssertTrue(
-            l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: key(2.0), now: t0.addingTimeInterval(2)))
+        _ = l.begin(request("peerA", "req1", 2.0))
+        l.markAccepted(key("peerA", "req1"), bolusId: 55)
+        l.markDelivered(key("peerA", "req1"), units: 0, now: t0)
+        XCTAssertEqual(l.outcome(key("peerA", "req1")), .stopped(delivered: 0, requested: 2.0))
+        XCTAssertTrue(l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: doseKey(2.0), now: t0 + 2))
     }
 
     /// Fail-closed: an ambiguous (may-have-delivered) outcome DOES block a recompose.
-    func testIndeterminateOutcomeIsFlaggedAsRecentDuplicate() {
+    func testUnknownOutcomeIsFlaggedAsRecentDuplicate() {
         var l = RemoteBolusLedger()
-        let t0 = Date(timeIntervalSince1970: 1_000_000)
-        _ = l.begin(peerId: "peerA", requestId: "req1", doseKey: key(2.0))
-        l.markDelivering(peerId: "peerA", requestId: "req1", bolusId: 77)
-        l.markIndeterminate(peerId: "peerA", requestId: "req1", now: t0)
-        XCTAssertTrue(
-            l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: key(2.0), now: t0.addingTimeInterval(2)))
+        _ = l.begin(request("peerA", "req1", 2.0))
+        l.markAccepted(key("peerA", "req1"), bolusId: 77)
+        l.markUnknown(key("peerA", "req1"), now: t0)
+        XCTAssertTrue(l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: doseKey(2.0), now: t0 + 2))
     }
 
     /// begin()'s own (peer,requestId) key semantics are UNCHANGED by this additive guard — a same-requestId
-    /// terminal still replays, and a same-requestId/different-content call still conflicts, even though the
+    /// final still replays, and a same-requestId/different-content call still conflicts, even though the
     /// recency guard ALSO flags the doseKey.
     func testBeginKeySemanticsUnchangedAlongsideRecencyGuard() {
         var l = RemoteBolusLedger()
-        let t0 = Date(timeIntervalSince1970: 1_000_000)
-        _ = l.begin(peerId: "peerA", requestId: "req1", doseKey: key(2.0))
-        l.settle(peerId: "peerA", requestId: "req1", status: "delivered", deliveredUnits: 2.0, now: t0)
-        // Same (peer,requestId) → replay, exactly as before.
-        XCTAssertEqual(
-            l.begin(peerId: "peerA", requestId: "req1", doseKey: key(2.0)),
-            .replay(status: "delivered", message: nil, deliveredUnits: 2.0))
-        // Same requestId, different content → conflict, exactly as before.
-        XCTAssertEqual(l.begin(peerId: "peerA", requestId: "req1", doseKey: key(9.0)), .conflict)
-        // The recency guard itself still separately flags the original doseKey.
-        XCTAssertTrue(
-            l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: key(2.0), now: t0.addingTimeInterval(2)))
+        deliver(&l, "peerA", "req1", 2.0, now: t0)
+        XCTAssertEqual(l.begin(request("peerA", "req1", 2.0)), .replay(.delivered(units: 2.0)))
+        XCTAssertEqual(l.begin(request("peerA", "req1", 9.0)), .conflict)
+        XCTAssertTrue(l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: doseKey(2.0), now: t0 + 2))
     }
 
     /// The recency guard is scoped PER PEER: a settled-echo-loss retry is the SAME actor recomposing its
-    /// own request, not a coincidental content match from an unrelated peer (e.g. a separate local dose
-    /// that happens to use the same units). A different peer's identical content within the window is
-    /// NOT flagged.
+    /// own request, not a coincidental content match from an unrelated peer.
     func testRecentlyDeliveredDuplicateIsScopedPerPeerNotGlobal() {
         var l = RemoteBolusLedger()
-        let t0 = Date(timeIntervalSince1970: 1_000_000)
-        _ = l.begin(peerId: "local", requestId: "local:abc", doseKey: key(1.0))
-        l.settle(peerId: "local", requestId: "local:abc", status: "delivered", deliveredUnits: 1.0, now: t0)
-        // Same content, but a DIFFERENT peer ⇒ not flagged for that peer.
-        XCTAssertFalse(
-            l.hasRecentlyDeliveredDuplicate(peerId: "garmin", doseKey: key(1.0), now: t0.addingTimeInterval(2)))
-        // The SAME peer ("local") is still flagged for its own content.
-        XCTAssertTrue(
-            l.hasRecentlyDeliveredDuplicate(peerId: "local", doseKey: key(1.0), now: t0.addingTimeInterval(2)))
+        deliver(&l, "phone", "local:abc", 1.0, now: t0)
+        XCTAssertFalse(l.hasRecentlyDeliveredDuplicate(peerId: "garmin", doseKey: doseKey(1.0), now: t0 + 2))
+        XCTAssertTrue(l.hasRecentlyDeliveredDuplicate(peerId: "phone", doseKey: doseKey(1.0), now: t0 + 2))
     }
 
     /// `hasExistingEntry` lets a caller skip the recency guard for a genuine protocol retry of the SAME
-    /// id (begin() already handles that via `.replay`/`.duplicateInFlight`/`.conflict`) — true for any
-    /// tracked lifecycle state, false for an id never seen.
-    func testHasExistingEntryTracksAnyLifecycleState() {
+    /// id — true for any tracked outcome, false for an id never seen.
+    func testHasExistingEntryTracksAnyOutcome() {
         var l = RemoteBolusLedger()
-        XCTAssertFalse(l.hasExistingEntry(peerId: "watch", requestId: "new-id"))
-        _ = l.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0))  // awaiting
-        XCTAssertTrue(l.hasExistingEntry(peerId: "watch", requestId: "r1"))
-        l.settle(peerId: "watch", requestId: "r1", status: "delivered", deliveredUnits: 2.0)
-        XCTAssertTrue(l.hasExistingEntry(peerId: "watch", requestId: "r1"))
-        XCTAssertFalse(l.hasExistingEntry(peerId: "garmin", requestId: "r1"))  // different peer, same id string
-    }
-
-    // MARK: - collapseLegacyMultiEntryUnresolved
-    //
-    // With the global block in place at most one unresolved entry can exist going forward. A ledger
-    // written BEFORE that block existed can carry several — this collapses such a ledger back to the
-    // invariant every other reconciliation path assumes, without ever inventing a delivered/failed
-    // outcome for the ones it drops.
-
-    func testCollapseKeepsNewestUnresolvedAndSettlesOlderIdBearingEntriesAsUnknown() {
-        var l = RemoteBolusLedger()
-        _ = l.begin(peerId: "local", requestId: "old", doseKey: key(1.0))
-        l.markDelivering(peerId: "local", requestId: "old", bolusId: 100)
-        _ = l.begin(peerId: "local", requestId: "new", doseKey: key(2.0))
-        l.markDelivering(peerId: "local", requestId: "new", bolusId: 200)
-
-        let changed = l.collapseLegacyMultiEntryUnresolved()
-
-        XCTAssertTrue(changed)
-        let remaining = l.unreconciled()
-        XCTAssertEqual(remaining.count, 1, "only the newest unresolved id-bearing entry may survive")
-        XCTAssertEqual(remaining.first?.requestId, "new")
-        XCTAssertEqual(remaining.first?.bolusId, 200)
-        // The older entry is settled — terminally, honestly, never guessed delivered/failed.
-        XCTAssertEqual(l.state(peerId: "local", requestId: "old"), .terminal)
-        XCTAssertTrue(l.isSettled(peerId: "local", requestId: "old"))
-    }
-
-    func testCollapseLeavesASingleUnresolvedIdBearingEntryUntouched() {
-        var l = RemoteBolusLedger()
-        _ = l.begin(peerId: "local", requestId: "only", doseKey: key(1.0))
-        l.markDelivering(peerId: "local", requestId: "only", bolusId: 100)
-
-        let changed = l.collapseLegacyMultiEntryUnresolved()
-
-        XCTAssertFalse(changed, "a ledger already satisfying the at-most-one invariant must not be touched")
-        XCTAssertEqual(l.unreconciled().count, 1)
-        XCTAssertEqual(l.state(peerId: "local", requestId: "only"), .delivering)
-    }
-
-    /// Once the durable stale-outcome block was removed, a new delivery can proceed while a prior entry
-    /// is still unresolved, so two unresolved id-bearing entries can accumulate in NORMAL operation, not
-    /// only in a legacy ledger. `collapseLegacyMultiEntryUnresolved` is now the routine invariant-maintainer
-    /// that collapses such an accumulation back to at-most-one, and the surviving entry produces no durable
-    /// block when nothing is in flight — the non-blocking disclosure carries it instead.
-    func testCollapseOfAPostRemovalTwoEntryAccumulationKeepsExactlyOneUnresolvedAndDoesNotBlock() {
-        var l = RemoteBolusLedger()
-        _ = l.begin(peerId: "local", requestId: "old", doseKey: key(1.0))
-        l.markDelivering(peerId: "local", requestId: "old", bolusId: 100)
-        _ = l.begin(peerId: "local", requestId: "new", doseKey: key(2.0))
-        l.markDelivering(peerId: "local", requestId: "new", bolusId: 200)
-
-        let changed = l.collapseLegacyMultiEntryUnresolved()
-        let stillUnresolved = l.unreconciled()
-
-        XCTAssertTrue(changed)
-        XCTAssertEqual(stillUnresolved.count, 1, "only the newest unresolved id-bearing entry survives")
-        XCTAssertEqual(stillUnresolved.first?.requestId, "new")
-        XCTAssertEqual(l.state(peerId: "local", requestId: "old"), .terminal)
-        let narrowed = stillUnresolved.map {
-            (peerId: $0.peerId, requestId: $0.requestId, bolusId: $0.bolusId, sentToPump: $0.sentToPump)
-        }
-        XCTAssertNil(
-            RemoteBolusLedger.blockReason(
-                noDurableStore: false, ledgerFailedClosed: false, terminalSaveFailed: false,
-                unresolved: narrowed, inFlightDeliveryKey: nil),
-            "a genuinely unresolved entry with nothing in flight no longer produces a durable block")
+        XCTAssertFalse(l.hasExistingEntry(key("watch", "new-id")))
+        _ = l.begin(request("watch", "r1", 2.0))  // requested
+        XCTAssertTrue(l.hasExistingEntry(key("watch", "r1")))
+        l.markAccepted(key("watch", "r1"), bolusId: 1)
+        l.markDelivered(key("watch", "r1"), units: 2.0)
+        XCTAssertTrue(l.hasExistingEntry(key("watch", "r1")))
+        XCTAssertFalse(l.hasExistingEntry(key("garmin", "r1")))  // different peer, same id string
     }
 
     // MARK: - Pump-identity scoping
-    //
-    // The Entry field, the stamp site (markSent), and the pure comparison oracle used to decide
-    // grandfather/match/mismatch when reconciling.
 
-    /// An Entry encoded WITHOUT the new `pumpKey` key still decodes — the whole ledger stays readable
-    /// after upgrade. A legacy ledger's entries carry a nil key, not a decode failure.
-    func testEntryWithoutPumpKeyStillDecodesReadably() throws {
+    /// An entry with no recorded pump identity round-trips as nil rather than failing the decode.
+    func testEntryWithoutPumpKeyRoundTrips() throws {
         var l = RemoteBolusLedger()
-        _ = l.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0))
-        l.markDelivering(peerId: "watch", requestId: "r1", bolusId: 42)  // no pumpKey — pre-upgrade shape
-        let data = try JSONEncoder().encode(l)
-        let restored = try JSONDecoder().decode(RemoteBolusLedger.self, from: data)
-        XCTAssertEqual(restored.state(peerId: "watch", requestId: "r1"), .delivering)
-        XCTAssertNil(restored.unreconciled().first?.pumpKey)
+        _ = l.begin(request("watch", "r1", 2.0))
+        l.markAccepted(key("watch", "r1"), bolusId: 42)  // no pumpKey
+        let restored = try JSONDecoder().decode(RemoteBolusLedger.self, from: JSONEncoder().encode(l))
+        XCTAssertEqual(restored.outcome(key("watch", "r1")), .accepted)
+        XCTAssertNil(restored.entry(key("watch", "r1"))?.pumpKey)
     }
 
-    /// `markSent` stamps the given pump identity alongside `bolusId`, in the SAME mutation — after it
-    /// returns, `bolusId != nil ⇒ pumpKey != nil` for a normal (paired) identity.
-    func testMarkSentStampsPumpKeyAlongsideBolusId() {
+    /// `markAccepted` stamps the given pump identity alongside `bolusId`, in the SAME mutation.
+    func testMarkAcceptedStampsPumpKeyAlongsideBolusId() {
         var l = RemoteBolusLedger()
-        _ = l.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0))
-        l.markSent(peerId: "watch", requestId: "r1", bolusId: 99, pumpKey: "real|ABCD-1234")
-        let entry = l.unreconciled().first
+        _ = l.begin(request("watch", "r1", 2.0))
+        l.markAccepted(key("watch", "r1"), bolusId: 99, pumpKey: "real|ABCD-1234")
+        let entry = l.entry(key("watch", "r1"))
         XCTAssertEqual(entry?.bolusId, 99)
         XCTAssertEqual(entry?.pumpKey, "real|ABCD-1234")
     }
 
-    /// Two different unpaired pumps would both stamp `"real|unpaired"` and compare equal — `markSent`
+    /// Two different unpaired pumps would both stamp `"real|unpaired"` and compare equal — `markAccepted`
     /// refuses to stamp the sentinel; the entry keeps a nil key rather than that string.
-    func testMarkSentRefusesToStampTheUnpairedSentinel() {
+    func testMarkAcceptedRefusesToStampTheUnpairedSentinel() {
         var l = RemoteBolusLedger()
-        _ = l.begin(peerId: "watch", requestId: "r1", doseKey: key(2.0))
-        l.markSent(
-            peerId: "watch", requestId: "r1", bolusId: 99,
-            pumpKey: RemoteBolusLedger.unpairedPumpKeySentinel)
-        let entry = l.unreconciled().first
+        _ = l.begin(request("watch", "r1", 2.0))
+        l.markAccepted(key("watch", "r1"), bolusId: 99, pumpKey: RemoteBolusLedger.unpairedPumpKeySentinel)
+        let entry = l.entry(key("watch", "r1"))
         XCTAssertEqual(entry?.bolusId, 99, "the id itself is still recorded — only the key is refused")
         XCTAssertNil(entry?.pumpKey)
     }
 
-    /// A nil key means "identity unknown" — GRANDFATHERED, not a mismatch.
     func testComparePumpKeyGrandfathersANilKey() {
-        XCTAssertEqual(
-            RemoteBolusLedger.comparePumpKey(nil, to: "real|ABCD-1234"), .grandfathered)
+        XCTAssertEqual(RemoteBolusLedger.comparePumpKey(nil, to: "real|ABCD-1234"), .grandfathered)
     }
 
-    /// A key equal to the currently-connected pump's identity reconciles normally.
     func testComparePumpKeyMatchesTheSameIdentity() {
-        XCTAssertEqual(
-            RemoteBolusLedger.comparePumpKey("real|ABCD-1234", to: "real|ABCD-1234"), .matches)
+        XCTAssertEqual(RemoteBolusLedger.comparePumpKey("real|ABCD-1234", to: "real|ABCD-1234"), .matches)
     }
 
-    /// A key naming a DIFFERENT pump than the one connected now is a mismatch — refused, never settled
-    /// across pumps.
     func testComparePumpKeyDetectsAMismatchedIdentity() {
-        XCTAssertEqual(
-            RemoteBolusLedger.comparePumpKey("real|OLD-PUMP", to: "real|NEW-PUMP"), .mismatch)
+        XCTAssertEqual(RemoteBolusLedger.comparePumpKey("real|OLD-PUMP", to: "real|NEW-PUMP"), .mismatch)
     }
 
-    /// A cross-pump unresolved entry — one whose ledger `pumpKey` names a DIFFERENT pump than the one
-    /// connected now — is no longer converted into a durable delivery block. The caller
-    /// (`DeliveryLedgerCoordinator`) hands it through as an ordinary unresolved entry, so with nothing
-    /// in flight `blockReason` returns nil and the entry is carried by the non-blocking disclosure
-    /// instead of gating a legitimate dose.
-    func testBlockReasonCrossPumpUnresolvedEntryWithNilInFlightNoLongerBlocks() {
-        let unresolved: [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool)] =
-            [("watch", "cross-pump-dose", 42, true)]
-        XCTAssertNil(
-            RemoteBolusLedger.blockReason(
-                noDurableStore: false, ledgerFailedClosed: false,
-                terminalSaveFailed: false, unresolved: unresolved,
-                inFlightDeliveryKey: nil))
-    }
-
-    /// The live cross-client mutex still holds when a cross-pump entry co-exists with a delivery in
-    /// flight: a concurrent request gets the transient "already being delivered" message, never a
-    /// pass-through (the removed cross-pump branch sat ABOVE this check, so its removal must not open a
-    /// mutex hole).
-    func testBlockReasonCrossPumpUnresolvedEntryWithInFlightUsesTheLiveMessage() {
-        let unresolved: [(peerId: String, requestId: String, bolusId: Int?, sentToPump: Bool)] =
-            [("local", "r1", nil, true), ("watch", "cross-pump-dose", 42, true)]
-        XCTAssertEqual(
-            RemoteBolusLedger.blockReason(
-                noDurableStore: false, ledgerFailedClosed: false,
-                terminalSaveFailed: false, unresolved: unresolved,
-                inFlightDeliveryKey: (peerId: "local", requestId: "r1")),
-            Self.liveInFlightMessage)
-    }
-
-    /// Pre-permission entries (`sentToPump == false`, no bolus id) are the not-delivered loop's
-    /// business, not the collapse's — it must scope strictly to id-bearing entries.
-    func testCollapseDoesNotTouchPrePermissionEntriesWithoutABolusId() {
+    /// Changed from the old ledger, where an unknown outcome from a DIFFERENT pump than the one connected
+    /// stopped blocking: it keeps blocking. That pump's history can't be read here, so only the user
+    /// confirming on the pump releases it.
+    func testCrossPumpUnknownOutcomeStillBlocksUntilConfirmed() {
         var l = RemoteBolusLedger()
-        _ = l.begin(peerId: "local", requestId: "old", doseKey: key(1.0))
-        l.markDelivering(peerId: "local", requestId: "old", bolusId: 100)
-        _ = l.begin(peerId: "local", requestId: "new", doseKey: key(2.0))
-        l.markDelivering(peerId: "local", requestId: "new", bolusId: 200)
-        // Interrupted before the pump granted permission: no id, sentToPump stays false.
-        _ = l.begin(peerId: "local", requestId: "pre-permission", doseKey: key(3.0))
-        l.markDelivering(peerId: "local", requestId: "pre-permission")
-
-        let changed = l.collapseLegacyMultiEntryUnresolved()
-
-        XCTAssertTrue(changed)
-        let remaining = l.unreconciled()
-        XCTAssertEqual(Set(remaining.map(\.requestId)), Set(["new", "pre-permission"]))
-        XCTAssertEqual(
-            l.state(peerId: "local", requestId: "pre-permission"), .delivering,
-            "a pre-permission entry is not this migration's business")
+        _ = l.begin(request("watch", "cross-pump-dose", 2.0))
+        l.markAccepted(key("watch", "cross-pump-dose"), bolusId: 42, pumpKey: "real|OLD-PUMP")
+        l.markUnknown(key("watch", "cross-pump-dose"), now: t0)
+        let entry = l.unresolved.first
+        XCTAssertEqual(RemoteBolusLedger.comparePumpKey(entry?.pumpKey, to: "real|NEW-PUMP"), .mismatch)
+        XCTAssertEqual(l.begin(request("phone", "p1", 1.0)), .blocked(.unknownOutcome(since: t0)))
+        l.confirmOnPump(key("watch", "cross-pump-dose"))
+        XCTAssertEqual(l.begin(request("phone", "p1", 1.0)), .proceed)
     }
 }

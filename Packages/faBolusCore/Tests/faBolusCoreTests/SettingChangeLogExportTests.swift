@@ -3,7 +3,7 @@ import Foundation
 @testable import faBolusCore
 
 /// §2.1(3) B1(b): the full-trail `history()` + deterministic `exportText()` that back the change-log view,
-/// and `BackupValue.displayString` used to render before/after.
+/// and `StoredSettingValue.displayString` used to render before/after.
 struct SettingChangeLogExportTests {
 
     private func seeded() -> SettingChangeLog {
@@ -45,14 +45,14 @@ struct SettingChangeLogExportTests {
     }
 
     @Test func backupValueDisplayString() {
-        #expect(BackupValue.bool(true).displayString == "on")
-        #expect(BackupValue.bool(false).displayString == "off")
-        #expect(BackupValue.int(45).displayString == "45")
-        #expect(BackupValue.double(1.2).displayString == "1.2")
-        #expect(BackupValue.double(12).displayString == "12")
-        #expect(BackupValue.double(0.05).displayString == "0.05")
-        #expect(BackupValue.string("x").displayString == "x")
-        #expect(BackupValue.stringArray(["a", "b"]).displayString == "a, b")
-        #expect(BackupValue.intArray([1, 2]).displayString == "1, 2")
+        #expect(StoredSettingValue.bool(true).displayString == "on")
+        #expect(StoredSettingValue.bool(false).displayString == "off")
+        #expect(StoredSettingValue.int(45).displayString == "45")
+        #expect(StoredSettingValue.double(1.2).displayString == "1.2")
+        #expect(StoredSettingValue.double(12).displayString == "12")
+        #expect(StoredSettingValue.double(0.05).displayString == "0.05")
+        #expect(StoredSettingValue.string("x").displayString == "x")
+        #expect(StoredSettingValue.stringArray(["a", "b"]).displayString == "a, b")
+        #expect(StoredSettingValue.intArray([1, 2]).displayString == "1, 2")
     }
 }

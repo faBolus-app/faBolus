@@ -14,7 +14,7 @@ struct StoredSettingChangeStoreTests {
     }
 
     private func change(
-        _ key: SettingKey, before: BackupValue?, after: BackupValue,
+        _ key: SettingKey, before: StoredSettingValue?, after: StoredSettingValue,
         _ prov: SettingProvenance, at: Int
     ) -> StoredSettingChange {
         StoredSettingChange(key: key, before: before, after: after, provenance: prov, atSeconds: at)

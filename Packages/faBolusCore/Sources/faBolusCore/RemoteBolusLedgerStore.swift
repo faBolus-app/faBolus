@@ -1,23 +1,17 @@
 import Foundation
 
-/// The durable-persistence seam the host depends on, so tests can inject a store that fails on
-/// demand (save throws at a specific transition, load reports corrupt, etc.) without touching the
-/// filesystem. Production uses `RemoteBolusLedgerStore`; tests use a scripted fake.
-/// Kept deliberately small — the three operations the host actually calls.
+/// Where `DurableBolusLedger` keeps the ledger. A protocol so tests can inject a store that fails to
+/// save at a chosen moment or reports a corrupt file, without touching the file system.
 public protocol RemoteBolusLedgerPersisting: AnyObject {
     func loadOutcome() -> RemoteBolusLedgerStore.LoadOutcome
     func save(_ ledger: RemoteBolusLedger) throws
-    func saveBestEffort(_ ledger: RemoteBolusLedger)
 }
 
-/// File-backed persistence for `RemoteBolusLedger`. The host loads once at launch and saves after
-/// every state transition — crucially, right after `markDelivering` and BEFORE the first pump write —
-/// so exactly-once survives a crash or relaunch mid-delivery.
+/// File-backed persistence for `RemoteBolusLedger`.
 ///
-/// Writes are atomic (`Data.write(options: .atomic)`), so a crash mid-save can't leave a truncated ledger.
-/// A missing or corrupt file loads as an empty ledger (fail-safe: an unreadable ledger must not crash the
-/// app nor silently permit a retry of a request it can't see — callers still gate on the pump before any
-/// new delivery). Backing it in the App Group container lets widgets/extensions share one ledger.
+/// Writes are atomic, so a crash mid-save can't leave a truncated file. A missing file is a fresh
+/// install and loads as an empty ledger; a file that exists but can't be read loads as empty with
+/// `failedClosed` set, because it may be hiding an unknown outcome.
 public final class RemoteBolusLedgerStore: RemoteBolusLedgerPersisting {
     private let url: URL
     private let cap: Int
@@ -27,59 +21,41 @@ public final class RemoteBolusLedgerStore: RemoteBolusLedgerPersisting {
         self.cap = cap
     }
 
-    /// At-rest data-protection class the durable ledger is written with:
-    /// `completeUntilFirstUserAuthentication` ("after first unlock"). The file is encrypted at rest but
-    /// stays **readable at a locked background relaunch**, so crash-recovery / reconciliation of an
-    /// in-flight delivery still works. Deliberately NOT `.completeFileProtection` (which locks the file
-    /// whenever the device locks) — that class would make the ledger unreadable during a locked
-    /// background relaunch and break reconciliation of a delivery that was in flight. Exposed so a
-    /// test can pin AfterFirstUnlock and assert it is never `.complete`.
+    /// At-rest protection for the ledger file: encrypted, but readable after the first unlock. A
+    /// relaunch in the background while the phone is locked must still read it to keep blocking an
+    /// unknown outcome, which `.completeFileProtection` would prevent.
     public static let fileProtection: Data.WritingOptions = .completeFileProtectionUntilFirstUserAuthentication
 
-    /// Convenience: a ledger file inside an App Group container (shared with widgets), else Application
-    /// Support. Returns nil only if no usable directory exists.
+    /// The ledger file inside an App Group container when one is available, else Application Support.
+    /// `nil` only when neither directory exists. The name differs from the old app's
+    /// `remote-bolus-ledger.json`, whose format this build doesn't read: the first-launch check reads
+    /// that file on its own.
     public static func defaultURL(appGroupID: String?) -> URL? {
         let fm = FileManager.default
         let dir: URL?
-        if let appGroupID, let g = fm.containerURL(forSecurityApplicationGroupIdentifier: appGroupID) {
-            dir = g
+        if let appGroupID, let group = fm.containerURL(forSecurityApplicationGroupIdentifier: appGroupID) {
+            dir = group
         } else {
-            dir = try? fm.url(
-                for: .applicationSupportDirectory, in: .userDomainMask,
-                appropriateFor: nil, create: true)
+            dir = try? fm.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
         }
-        return dir?.appendingPathComponent("remote-bolus-ledger.json")
+        return dir?.appendingPathComponent("bolus-ledger.json")
     }
 
-    /// Load the persisted ledger, or a fresh empty one if absent/corrupt (legacy convenience; prefer
-    /// `loadOutcome()` which distinguishes a never-initialized store from a corrupt one so callers can
-    /// fail closed on corruption).
-    public func load() -> RemoteBolusLedger { loadOutcome().ledger }
-
-    /// The result of a load that separates "no store yet" (safe empty) from "store existed but is
-    /// unreadable/corrupt" (must fail closed — an unreadable ledger may be hiding an unresolved delivery,
-    /// so the host must block all delivery until the user verifies on the pump).
+    /// A load that tells "no ledger yet" apart from "a ledger that can't be read".
     public struct LoadOutcome: Sendable {
         public let ledger: RemoteBolusLedger
-        /// True when a persisted file exists but could not be read/decoded. The returned `ledger` is empty
-        /// (so idempotency still functions) but the host MUST treat this as a global delivery block.
+        /// A ledger file exists but couldn't be read. `ledger` is empty, and every new bolus is blocked.
         public let failedClosed: Bool
-        /// Public so a test double conforming to `RemoteBolusLedgerPersisting` can construct outcomes.
-        /// Production builds these inside `loadOutcome()` above.
         public init(ledger: RemoteBolusLedger, failedClosed: Bool) {
             self.ledger = ledger
             self.failedClosed = failedClosed
         }
     }
 
-    /// Load the ledger, reporting whether a corrupt/unreadable existing store forced a fail-closed empty.
     public func loadOutcome() -> LoadOutcome {
-        // No file yet ⇒ genuinely fresh install / first run ⇒ safe empty ledger, delivery allowed.
         guard FileManager.default.fileExists(atPath: url.path) else {
             return LoadOutcome(ledger: RemoteBolusLedger(cap: cap), failedClosed: false)
         }
-        // File exists but won't read/decode ⇒ it may be masking an unresolved delivery ⇒ FAIL CLOSED.
-        // Do NOT silently convert corruption into an empty, delivery-enabled ledger.
         guard let data = try? Data(contentsOf: url),
             let ledger = try? JSONDecoder().decode(RemoteBolusLedger.self, from: data)
         else {
@@ -88,18 +64,159 @@ public final class RemoteBolusLedgerStore: RemoteBolusLedgerPersisting {
         return LoadOutcome(ledger: ledger, failedClosed: false)
     }
 
-    /// Atomically persist the ledger. Throwing is surfaced so the caller can decide (a delivery MUST NOT
-    /// proceed if its intent couldn't be recorded — see the host's use).
     public func save(_ ledger: RemoteBolusLedger) throws {
         let data = try JSONEncoder().encode(ledger)
-        // Atomic + AfterFirstUnlock at-rest protection. NEVER `.completeFileProtection` — the
-        // ledger must be readable at a locked background relaunch for crash-recovery (see `fileProtection`).
         try data.write(to: url, options: [.atomic, Self.fileProtection])
     }
+}
 
-    /// Best-effort save that never throws (for the settle/echo paths where the write already happened and
-    /// losing the terminal record only risks a redundant reconcile, not a double dose).
-    public func saveBestEffort(_ ledger: RemoteBolusLedger) {
-        try? save(ledger)
+/// A ledger transition that couldn't be saved. The caller must not send anything that depends on it.
+public struct LedgerNotSaved: Error, Sendable, Equatable {
+    public let underlying: String
+}
+
+/// The one owner of the bolus ledger: every transition is saved before it returns.
+///
+/// An actor, so a phone request and a watch request arriving together are decided one after the
+/// other and only one proceeds. Its storage rules all fail closed:
+/// - with no store, every new bolus is blocked;
+/// - a ledger file that can't be read blocks every new bolus until the user confirms on the pump;
+/// - a request that can't be saved is dropped and the caller is told, before anything is sent;
+/// - an acceptance that can't be saved is undone, so the caller doesn't send InitiateBolus;
+/// - any later outcome that can't be saved stays in memory and blocks new boluses until a save
+///   succeeds, because a restart would otherwise forget it.
+public actor DurableBolusLedger {
+    public private(set) var ledger: RemoteBolusLedger
+    private let store: (any RemoteBolusLedgerPersisting)?
+    private var ledgerUnreadable: Bool
+    private var outcomeNotSaved = false
+
+    /// Loads the ledger and turns anything left in flight by a previous process into its restart
+    /// outcome (`RemoteBolusLedger.recoverAfterRestart`), saving that before any new request.
+    public init(store: sending (any RemoteBolusLedgerPersisting)?, now: Date = Date()) {
+        guard let store else {
+            self.store = nil
+            ledger = RemoteBolusLedger()
+            ledgerUnreadable = false
+            return
+        }
+        let loaded = store.loadOutcome()
+        var ledger = loaded.ledger
+        let recovered = !loaded.failedClosed && ledger.recoverAfterRestart(now: now)
+        if recovered {
+            do { try store.save(ledger) } catch { outcomeNotSaved = true }
+        }
+        self.store = store
+        self.ledger = ledger
+        ledgerUnreadable = loaded.failedClosed
+    }
+
+    /// Why a new bolus can't start now, or `nil` when one may.
+    public var block: BolusBlock? {
+        if store == nil { return .noDurableStore }
+        if ledgerUnreadable { return .ledgerUnreadable }
+        if outcomeNotSaved { return .outcomeNotSaved }
+        return ledger.block
+    }
+
+    /// Record a new request. Only `.proceed` lets the caller go ahead, and it is returned only after the
+    /// request is saved.
+    ///
+    /// - Throws: `LedgerNotSaved` when the request couldn't be saved. It was not recorded and nothing
+    ///   may be sent.
+    public func begin(
+        _ request: DoseRequest, usedIncludedStaleBG: Bool = false, now: Date = Date()
+    ) throws -> RemoteBolusLedger.Decision {
+        // A repeat of a recorded request is answered from its own entry, so a remote always gets its
+        // outcome back, even while storage problems block new requests.
+        if !ledger.hasExistingEntry(request.ledgerKey), let block { return .blocked(block) }
+        var next = ledger
+        let decision = next.begin(request, usedIncludedStaleBG: usedIncludedStaleBG, now: now)
+        guard decision == .proceed else { return decision }
+        try save(next, blocksOnFailure: false)
+        ledger = next
+        return decision
+    }
+
+    /// The pump granted permission and assigned `bolusId`. Send InitiateBolus only if this returns
+    /// `true` without throwing.
+    ///
+    /// - Throws: `LedgerNotSaved`. The acceptance is undone, so the request is still `requested`, and the
+    ///   caller should not send InitiateBolus.
+    @discardableResult
+    public func markAccepted(
+        _ key: RemoteBolusLedger.Key, bolusId: Int, pumpKey: String? = nil, now: Date = Date()
+    ) throws -> Bool {
+        var next = ledger
+        guard next.markAccepted(key, bolusId: bolusId, pumpKey: pumpKey, now: now) else { return false }
+        try save(next, blocksOnFailure: false)
+        ledger = next
+        return true
+    }
+
+    @discardableResult
+    public func markDelivering(_ key: RemoteBolusLedger.Key, now: Date = Date()) throws -> Bool {
+        try apply { $0.markDelivering(key, now: now) }
+    }
+
+    @discardableResult
+    public func markUnknown(_ key: RemoteBolusLedger.Key, now: Date = Date()) throws -> Bool {
+        try apply { $0.markUnknown(key, now: now) }
+    }
+
+    @discardableResult
+    public func markDelivered(_ key: RemoteBolusLedger.Key, units: Double, now: Date = Date()) throws -> Bool {
+        try apply { $0.markDelivered(key, units: units, now: now) }
+    }
+
+    @discardableResult
+    public func markRefused(_ key: RemoteBolusLedger.Key, reason: String, now: Date = Date()) throws -> Bool {
+        try apply { $0.markRefused(key, reason: reason, now: now) }
+    }
+
+    @discardableResult
+    public func markFailed(_ key: RemoteBolusLedger.Key, reason: String, now: Date = Date()) throws -> Bool {
+        try apply { $0.markFailed(key, reason: reason, now: now) }
+    }
+
+    /// The user checked the pump and confirms one unknown outcome.
+    @discardableResult
+    public func confirmOnPump(_ key: RemoteBolusLedger.Key, now: Date = Date()) throws -> Bool {
+        try apply { $0.confirmOnPump(key, now: now) }
+    }
+
+    /// The user checked the pump and confirms every unknown outcome, including any an unreadable ledger
+    /// may have hidden. Writes the ledger fresh, so an unreadable file is replaced. Never called
+    /// automatically.
+    public func confirmAllOnPump(now: Date = Date()) throws {
+        var next = ledger
+        for entry in next.unresolved { next.confirmOnPump(entry.key, now: now) }
+        ledger = next
+        try save(next)
+        ledgerUnreadable = false
+    }
+
+    /// Try again to save an outcome that couldn't be saved. Lifts `.outcomeNotSaved` on success.
+    public func retrySave() throws { try save(ledger) }
+
+    /// Apply a transition that has already happened at the pump. It's kept in memory even if the save
+    /// fails, because it's the truth; the failed save blocks new boluses instead.
+    private func apply(_ transition: (inout RemoteBolusLedger) -> Bool) throws -> Bool {
+        guard transition(&ledger) else { return false }
+        try save(ledger)
+        return true
+    }
+
+    /// - Parameter blocksOnFailure: whether a failure leaves new boluses blocked. Not for a request or
+    ///   an acceptance whose failed save is undone in memory: then nothing unsaved remains.
+    private func save(_ ledger: RemoteBolusLedger, blocksOnFailure: Bool = true) throws {
+        guard let store else { throw LedgerNotSaved(underlying: "No durable store") }
+        do {
+            try store.save(ledger)
+            outcomeNotSaved = false
+        } catch {
+            if blocksOnFailure { outcomeNotSaved = true }
+            throw LedgerNotSaved(underlying: String(describing: error))
+        }
     }
 }

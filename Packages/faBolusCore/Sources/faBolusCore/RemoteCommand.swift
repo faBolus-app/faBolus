@@ -145,7 +145,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     // Extra pump status for a remote's detail screen.
     public var reservoirUnits: Double?
     public var batteryPercent: Double?
-    /// The pump's charging state, mirrored from `PumpSnapshot.batteryCharging`
+    /// The pump's charging state, mirrored from `PumpBattery.isCharging`
     /// (`chargingStatus == 1` at op-145 — the on-wire semantics are unconfirmed live). Additive-optional;
     /// auto-Codable, so the existing memberwise initializer stays
     /// untouched (the host sets it via `cmd.batteryCharging = …`), exactly like `cartridgeReady`. Absent ⇒
@@ -280,7 +280,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// "pumpNotLinked" | "bolusInFlight" | "accessDenied"), so a remote can show WHY its bolus affordance
     /// is disabled. Absent when `canBolus` is true or absent. Swift-only additive field, mirrored.
     public var bolusBlockReason: String?
-    /// The pump's cartridge-ready status (`PumpSnapshot.cartridgeReadyForBolus`),
+    /// The pump's cartridge-ready status (`PumpState.cartridgeReadiness`),
     /// pushed on every `statusRead` reply so watch/Garmin/Mac can show cartridge state even when no
     /// bolus is being attempted — a first-class DISPLAY signal, distinct from `canBolus`/
     /// `bolusBlockReason` (which only surface the block AT bolus-attempt time). Phone is authoritative;
@@ -357,7 +357,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// the disclosure gates on the runtime on/off too. Display-only, never a dose input. Absent ⇒ a
     /// legacy host; the remote treats it as `.none` (renders nothing controller-specific). Additive; mirrored.
     public var controllerVariant: String?
-    /// Whether the pump's Control-IQ is ON at runtime (`PumpSnapshot.controlIQEnabled`), distinct
+    /// Whether the pump's Control-IQ is ON at runtime (`ControlIQStatus.isEnabled`), distinct
     /// from `controllerVariant` (firmware capability). The disclosure renders only when the variant can
     /// auto-correct AND this is true, so a remote needs both. Display-only. Absent ⇒ legacy host; the remote
     /// treats it as `false` (renders no disclosure — a safe, non-misleading default). Additive; mirrored.
@@ -399,7 +399,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
 
     /// The pump's live Control-IQ action zone as a FROZEN wire token
     /// (`ControlIQZone.rawValue`: increases/decreases/maintains/stops/delivers), derived from op-179
-    /// `PumpSnapshot.ciqZone`. A remote decodes the token and renders Tandem's own zone word + icon
+    /// the old app's zone derivation. A remote decodes the token and renders Tandem's own zone word + icon
     /// locally — no prose crosses the wire, mirroring `controllerVariant` exactly. (c) Tandem — the zone
     /// words are Tandem's own labels. Display-only, never a dose input. Absent ⇒ a legacy host OR the
     /// zone is unread/unmapped; the remote renders the chip/row/field ABSENT, never a stale/fabricated 6th
@@ -408,7 +408,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var ciqZone: String?
 
     /// Whether the pump's OWN control-state currently attributes an
-    /// active basal suspend to Control-IQ (`PumpSnapshot.ciqSuspendedForLow`), mirroring `ciqZone`
+    /// active basal suspend to Control-IQ (the old app's `ciqSuspendedForLow`), mirroring `ciqZone`
     /// exactly: a frozen fail-closed fact, never a rendered string. Display-only, never a dose input.
     /// Emitted UNCONDITIONALLY (nil only before the first op-179 read; `false` is a fully-known
     /// "not CIQ-attributed" state) so a remote always sees the host's current knowledge, exactly like
@@ -424,7 +424,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var ciqSuspendStartEpochSec: Int?
 
     /// The immutable SOURCE epoch (Unix seconds) of the most-recent
-    /// Control-IQ auto-correction (`PumpSnapshot.lastAutoCorrectionDate`), mirroring `glucoseEpochSec`'s
+    /// Control-IQ auto-correction (the old app's `lastAutoCorrectionDate`), mirroring `glucoseEpochSec`'s
     /// epoch-not-age convention exactly: set once at origin, propagated unchanged, a receiver computes
     /// age as `now − epoch` at DISPLAY time. Display-only, never a dose input. Absent ⇒ a legacy
     /// host OR no auto-correction has been seen yet — the chip/row/marker renders ABSENT, never a
@@ -433,7 +433,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     /// auto-Codable, so the existing memberwise initializer stays untouched.
     public var lastAutoCorrectionEpochSec: Int?
     /// The immutable SOURCE epoch of the most-recent "Control-IQ tried
-    /// and couldn't deliver an automatic correction" event (`PumpSnapshot.ciqLastCouldNotDeliverDate`).
+    /// and couldn't deliver an automatic correction" event (the old app's `ciqLastCouldNotDeliverDate`).
     /// Remote MARKER only — the full timeline stays phone-only (remotes never had the pump history to
     /// build one from). Never surfaced on widgets. Absent ⇒ the marker
     /// renders ABSENT, never a synthesized "recently" without a real timestamp (fail-closed).
@@ -441,7 +441,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var ciqLastCouldNotDeliverEpochSec: Int?
 
     /// The immutable SOURCE epoch (Unix seconds) of the instant
-    /// Control-IQ's automatic correction becomes available again (`PumpSnapshot.lockoutUntilDate`), set
+    /// Control-IQ's automatic correction becomes available again (the old app's `lockoutUntilDate`), set
     /// once at origin from `lastAutoCorrectionDate` + the descriptor's own documented lockout window and
     /// propagated UNCHANGED — mirroring `glucoseEpochSec`'s epoch-not-age convention exactly: a receiver
     /// reverses the arithmetic (`lockoutStart = lockoutUntilEpochSec - windowMinutes*60`) and calls
@@ -457,7 +457,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var lockoutUntilEpochSec: Int?
 
     /// The pump's configured max-basal delivery limit
-    /// (`PumpSnapshot.maxBasalUnitsPerHour`, from `BasalLimitSettingsResponse`), propagated ALONGSIDE
+    /// (`PumpState.maxBasalUnitsPerHour`, from `BasalLimitSettingsResponse`), propagated ALONGSIDE
     /// the existing `basalRate` so each remote computes the "% of your configured max basal rate"
     /// readout LOCALLY via `MaxBasalFraction.fraction`/`.label` — the % itself is NEVER transmitted
     /// (a fraction, never a dose/units value; also never a pre-rendered percentage string).
@@ -469,7 +469,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
     public var maxBasalUnitsPerHour: Double?
 
     /// The pump's live Sleep/Exercise activity mode
-    /// (`PumpSnapshot.controlIQMode`: 0 normal / 1 sleep / 2 exercise), now ALSO on `RemoteCommand` —
+    /// (`ControlIQStatus.activity`: 0 normal / 1 sleep / 2 exercise), now ALSO on `RemoteCommand` —
     /// previously only `WidgetSnapshot`/`ContentState` carried this, so Watch/Garmin had no way to
     /// gate the Sleep/Exercise card locally. Emitted UNCONDITIONALLY (`0` = normal is a fully-known fact, not
     /// "absent") — mirrors `ciqZone`'s unconditional-knowledge convention, NOT `controllerVariant`'s
@@ -633,6 +633,10 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
 
     public static let maxEncodedBytes = 32 * 1024
     public static let maxRequestIdLength = 128
+    /// The v1 wire's `ciqZone` tokens. The app no longer derives a zone (the byte-to-word mapping was an
+    /// unverified guess), but a v1 message carrying one is still validated against the frozen set.
+    static let ciqZoneTokens: Set<String> = ["increases", "decreases", "maintains", "stops", "delivers"]
+
     public static let maxStringLength = 1024
     public static let maxArrayCount = 1024
 
@@ -760,7 +764,7 @@ public struct RemoteCommand: Codable, Equatable, Sendable {
         // reconstructs Tandem's own zone word locally from it, so an out-of-set string (e.g. a forged
         // "unknown" or a future/renamed token an old remote can't render) must fail closed here rather
         // than let a spoofed/corrupted value reach a render path. `nil` (absent/unread) is always valid.
-        if let z = ciqZone, ControlIQZone(rawValue: z) == nil {
+        if let z = ciqZone, !Self.ciqZoneTokens.contains(z) {
             throw ValidationError.outOfRange("ciqZone")
         }
 

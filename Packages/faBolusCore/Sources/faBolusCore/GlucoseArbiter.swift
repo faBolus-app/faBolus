@@ -8,7 +8,7 @@ import Foundation
 /// - When the pump feed is stale/missing **and** a source has a fresh reading, the source takes over
 ///   the live value and its history is merged in.
 /// - If everything is stale, the pump's own (stale) value is kept and the UI flags it via
-///   `PumpSnapshot.isGlucoseStale` — "old is worse than nothing", so it is shown marked, not as live.
+///   `PumpState.isGlucoseStale` — "old is worse than nothing", so it is shown marked, not as live.
 /// Where the currently-published live glucose value came from — so the UI can surface a small
 /// "via <source>" badge (and *why*) whenever the pump feed isn't the one being shown.
 public enum GlucoseProvenance: Equatable, Sendable {
@@ -50,30 +50,30 @@ public enum UrgentLowAlarm {
     }
 }
 
-@MainActor
 public enum GlucoseArbiter {
-    /// Produce the snapshot + history the app should publish, given the pump's own data and the
-    /// current failover source (if any), plus the provenance of the live value.
+    /// Produce the state + history the app should publish, given the pump's own data and the current
+    /// failover source's state (if any), plus the provenance of the live value. A failover reading
+    /// replaces `glucose` with the source's own measurement time and `.glucoseSource` as its source.
     public static func merge(
-        pumpSnapshot snap: PumpSnapshot,
+        pumpState: PumpState,
         pumpHistory: [GlucoseReading],
-        source: GlucoseSource?
-    ) -> (PumpSnapshot, [GlucoseReading], GlucoseProvenance) {
-        let pumpFresh = snap.glucose != nil && !GlucoseFreshness.isStale(snap.glucoseDate)
-        guard !pumpFresh, let source, let sample = source.latest, !sample.isStale else {
+        source: GlucoseSourceState?,
+        now: Date = Date()
+    ) -> (PumpState, [GlucoseReading], GlucoseProvenance) {
+        let pumpFresh = pumpState.glucoseIfFresh(now: now) != nil
+        guard !pumpFresh, let source, let sample = source.latest, !GlucoseFreshness.isStale(sample.date, now: now)
+        else {
             // Pump is fresh, or there is no usable failover — publish pump data unchanged.
-            return (snap, pumpHistory, .pump)
+            return (pumpState, pumpHistory, .pump)
         }
-        // Fail over: the source's fresh reading becomes the live value.
-        var s = snap
-        s.glucose = sample.mgdl
-        s.glucoseDate = sample.date
-        // C8: a source that reports no trend yields NO arrow ("") — not a flat one.
-        s.trend = sample.trend?.rawValue ?? ""
-        s.cgmActive = true
-        let reason: GlucoseProvenance.Reason = (snap.glucose == nil) ? .pumpMissing : .pumpStale
+        var state = pumpState
+        // A source that reports no trend yields no arrow, not a flat one.
+        state.glucose = Observed(
+            PumpGlucose(mgdl: sample.mgdl, trend: sample.trend), measuredAt: sample.date, receivedAt: now,
+            source: .glucoseSource(id: sample.sourceID))
+        let reason: GlucoseProvenance.Reason = (pumpState.glucose == nil) ? .pumpMissing : .pumpStale
         return (
-            s, mergeHistory(pump: pumpHistory, source: source.history),
+            state, mergeHistory(pump: pumpHistory, source: source.history),
             .failover(sourceID: sample.sourceID, reason: reason)
         )
     }

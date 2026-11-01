@@ -24,6 +24,12 @@ The Dexcom Share follower core in `Packages/ShareClient` is vendored from
 **[LoopKit/dexcom-share-client-swift](https://github.com/LoopKit/dexcom-share-client-swift)** (MIT).
 The reproduced license is in `Packages/ShareClient/LICENSE`.
 
+## LoopKit naming in faBolusCore
+
+`DoseEntry.swift` and `PumpState.swift` in `Packages/faBolusCore` adapt names and shape from
+**[LoopKit](https://github.com/LoopKit/LoopKit)** (MIT): `DoseEntry` (© 2016 Nathan Racklyeft) and
+`PumpManagerStatus` (© 2018 LoopKit Authors). The code is rewritten, without HealthKit.
+
 ## XDripAppGroupSource (xDrip4iOS "Share to Loop" App-Group reader)
 
 The xDrip App-Group glucose reader in `ios/faBolus/Data/Sources/XDripAppGroupSource.swift` is ported

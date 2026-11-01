@@ -10,12 +10,10 @@ import Foundation
 ///  1. **The gate is AGE, never VALUE.** An empty cartridge (`0 U`) and a dead battery (`0%`) are real
 ///     readings and must keep rendering as `0` while FRESH. Every decay assertion below is paired with a
 ///     matched still-fresh assertion and a matched genuine-zero assertion.
-///  2. **The raw fields are frozen.** `reservoirUnits` stays a non-optional `Double` and
-///     `...IfRead` keeps its "was it ever reported" meaning, because
-///     `StackingGuard.insufficientReservoir` reads the raw field and treats `0` as a valid empty
-///     reading (only a NEGATIVE value means "no reading"). Making an aged reservoir read as absent
-///     THERE would flip that disclosure fail-OPEN. The decay lives in additive `...IfFresh(now:)`
-///     accessors, following the `...IfRead` precedent from 48a02cf.
+///  2. **The observation itself is kept.** `reservoirUnits` stays set once read, so "was it ever
+///     reported" keeps its meaning, and `StackingGuard.insufficientReservoir` can still be handed the
+///     raw reading, which treats `0` as a valid empty reading. The decay lives only in the
+///     `…IfFresh(now:)` accessors.
 ///
 /// Dates are deliberately chosen far from any plausible threshold (10 s vs 24 h) so these tests neither
 /// depend on nor mutate the global `GlucoseFreshness.staleAfter` — the one test that DOES pin it is
@@ -28,28 +26,29 @@ struct PumpValueDecayTests {
     /// 24 h old — decayed for every selectable `glucoseStaleMinutes` (the maximum option is 20 min).
     private static let quietInstant = now.addingTimeInterval(-24 * 3600)
 
+    static func read<T>(_ value: T, at instant: Date) -> Observed<T> {
+        Observed(value, measuredAt: instant, receivedAt: instant)
+    }
+
     // MARK: - Reservoir
 
     @Test func reservoirDecaysToUnknownOnceTheReadGoesQuiet() {
-        var s = PumpSnapshot()
-        s.reservoirUnits = 142
-        s.reservoirDate = Self.quietInstant
+        var s = PumpState()
+        s.reservoirUnits = Self.read(142, at: Self.quietInstant)
         #expect(
             s.reservoirUnitsIfFresh(now: Self.now) == nil,
             "a reservoir read 24 h old must stop being presented as the current reading")
     }
 
     @Test func reservoirStillShowsWhileTheReadIsFresh() {
-        var s = PumpSnapshot()
-        s.reservoirUnits = 142
-        s.reservoirDate = Self.freshInstant
+        var s = PumpState()
+        s.reservoirUnits = Self.read(142, at: Self.freshInstant)
         #expect(s.reservoirUnitsIfFresh(now: Self.now) == 142)
     }
 
     @Test func aGenuinelyEmptyCartridgeStillReadsAsZeroWhileFresh() {
-        var s = PumpSnapshot()
-        s.reservoirUnits = 0
-        s.reservoirDate = Self.freshInstant
+        var s = PumpState()
+        s.reservoirUnits = Self.read(0, at: Self.freshInstant)
         #expect(
             s.reservoirUnitsIfFresh(now: Self.now) == 0,
             "an empty cartridge is a real reading — the gate is AGE, never value")
@@ -58,88 +57,77 @@ struct PumpValueDecayTests {
     // MARK: - Battery
 
     @Test func batteryDecaysToUnknownOnceTheReadGoesQuiet() {
-        var s = PumpSnapshot()
-        s.batteryPercent = 84
-        s.batteryDate = Self.quietInstant
-        #expect(s.batteryPercentIfFresh(now: Self.now) == nil)
+        var s = PumpState()
+        s.battery = Self.read(PumpBattery(percent: 84, isCharging: false), at: Self.quietInstant)
+        #expect(s.batteryIfFresh(now: Self.now) == nil)
     }
 
     @Test func batteryStillShowsWhileTheReadIsFresh() {
-        var s = PumpSnapshot()
-        s.batteryPercent = 84
-        s.batteryDate = Self.freshInstant
-        #expect(s.batteryPercentIfFresh(now: Self.now) == 84)
+        var s = PumpState()
+        s.battery = Self.read(PumpBattery(percent: 84, isCharging: false), at: Self.freshInstant)
+        #expect(s.batteryIfFresh(now: Self.now)?.percent == 84)
     }
 
     @Test func aGenuinelyDeadBatteryStillReadsAsZeroWhileFresh() {
-        var s = PumpSnapshot()
-        s.batteryPercent = 0
-        s.batteryDate = Self.freshInstant
+        var s = PumpState()
+        s.battery = Self.read(PumpBattery(percent: 0, isCharging: nil), at: Self.freshInstant)
         #expect(
-            s.batteryPercentIfFresh(now: Self.now) == 0,
+            s.batteryIfFresh(now: Self.now)?.percent == 0,
             "0 % is a real reading — the gate is AGE, never value")
     }
 
     // MARK: - Never-read and untrustworthy-clock cases
 
     @Test func neverReadIsStillUnknown() {
-        let s = PumpSnapshot()  // no receipts at all
+        let s = PumpState()  // no receipts at all
         #expect(s.reservoirUnitsIfFresh(now: Self.now) == nil)
-        #expect(s.batteryPercentIfFresh(now: Self.now) == nil)
-        // The 48a02cf presence funnels are unchanged and agree on this case.
-        #expect(s.reservoirUnitsIfRead == nil)
-        #expect(s.batteryPercentIfRead == nil)
+        #expect(s.batteryIfFresh(now: Self.now) == nil)
+        #expect(s.reservoirUnits == nil)
+        #expect(s.battery == nil)
     }
 
-    @Test func aFutureDatedReceiptNeverPresentsAsFresh() {
-        // Beyond `GlucoseFreshness.futureSkewTolerance` the receipt came from a fast clock, so the
+    @Test func aFutureDatedReadingNeverPresentsAsFresh() {
+        // Beyond `GlucoseFreshness.futureSkewTolerance` the reading came from a fast clock, so the
         // value's true age is unknowable. Same handling the glucose feed already gets — without it a
-        // future-dated receipt would never age out.
-        var s = PumpSnapshot()
-        s.reservoirUnits = 142
-        s.reservoirDate = Self.now.addingTimeInterval(GlucoseFreshness.futureSkewTolerance + 60)
-        s.batteryPercent = 84
-        s.batteryDate = s.reservoirDate
+        // future-dated reading would never age out.
+        let ahead = Self.now.addingTimeInterval(GlucoseFreshness.futureSkewTolerance + 60)
+        var s = PumpState()
+        s.reservoirUnits = Self.read(142, at: ahead)
+        s.battery = Self.read(PumpBattery(percent: 84, isCharging: nil), at: ahead)
         #expect(s.reservoirUnitsIfFresh(now: Self.now) == nil)
-        #expect(s.batteryPercentIfFresh(now: Self.now) == nil)
+        #expect(s.batteryIfFresh(now: Self.now) == nil)
     }
 
     @Test func ordinaryClockJitterIsToleratedNotDecayed() {
-        var s = PumpSnapshot()
-        s.reservoirUnits = 142
-        s.reservoirDate = Self.now.addingTimeInterval(5)  // 5 s ahead — inside the skew tolerance
+        var s = PumpState()
+        s.reservoirUnits = Self.read(142, at: Self.now.addingTimeInterval(5))  // inside the skew tolerance
         #expect(s.reservoirUnitsIfFresh(now: Self.now) == 142)
     }
 
-    // MARK: - The raw fields and their fail-closed guards are untouched
+    // MARK: - The observation and its fail-closed guards are untouched
 
-    @Test func decayDoesNotTouchTheRawFieldTheStackingGuardReads() {
-        var aged = PumpSnapshot()
-        aged.reservoirUnits = 3
-        aged.reservoirDate = Self.quietInstant
+    @Test func decayDoesNotTouchTheReadingTheStackingGuardIsGiven() throws {
+        var aged = PumpState()
+        aged.reservoirUnits = Self.read(3, at: Self.quietInstant)
 
         // The display funnel decays…
         #expect(aged.reservoirUnitsIfFresh(now: Self.now) == nil)
-        // …the raw field does not. `StackingGuard.insufficientReservoir` reads THIS, and only a
-        // NEGATIVE value means "no reading" there — an aged read must not become absent for it.
-        #expect(aged.reservoirUnits == 3)
-        let disclosure = StackingGuard.insufficientReservoir(enteredUnits: 5, reservoirUnits: aged.reservoirUnits)
+        // …the observation does not. An aged read must not become absent for the out-of-insulin check.
+        let raw = try #require(aged.reservoirUnits).value
+        #expect(raw == 3)
+        let disclosure = StackingGuard.insufficientReservoir(enteredUnits: 5, reservoirUnits: raw)
         #expect(
             disclosure.friction == .disclose,
             "the out-of-insulin disclosure must still fire off an aged reading — decaying it here would fail OPEN")
     }
 
-    @Test func theExistingPresenceFunnelKeepsItsPresenceOnlyMeaning() {
-        // `...IfRead` answers "did the pump EVER report this", `...IfFresh` answers "is that report
-        // still current". Collapsing the two would change what every dose-adjacent consumer of
-        // `...IfRead` sees, so the older funnel is pinned here.
-        var aged = PumpSnapshot()
-        aged.reservoirUnits = 142
-        aged.reservoirDate = Self.quietInstant
-        aged.batteryPercent = 84
-        aged.batteryDate = Self.quietInstant
-        #expect(aged.reservoirUnitsIfRead == 142)
-        #expect(aged.batteryPercentIfRead == 84)
+    @Test func theObservationKeepsItsEverReadMeaning() {
+        // "Did the pump EVER report this" and "is that report still current" are different questions.
+        var aged = PumpState()
+        aged.reservoirUnits = Self.read(142, at: Self.quietInstant)
+        aged.battery = Self.read(PumpBattery(percent: 84, isCharging: nil), at: Self.quietInstant)
+        #expect(aged.reservoirUnits?.value == 142)
+        #expect(aged.battery?.value.percent == 84)
     }
 
     // The dose inputs (IOB, therapy) decay on their OWN pre-existing windows, not this one. Their
@@ -167,37 +155,33 @@ struct PumpValueDecayWindowTests {
         defer { GlucoseFreshness.staleAfter = original }
         GlucoseFreshness.staleAfter = 120
 
-        var s = PumpSnapshot()
-        s.reservoirUnits = 142
-        s.batteryPercent = 84
-
-        s.reservoirDate = now.addingTimeInterval(-110)
-        s.batteryDate = now.addingTimeInterval(-110)
+        var s = PumpState()
+        s.reservoirUnits = PumpValueDecayTests.read(142, at: now.addingTimeInterval(-110))
+        s.battery = PumpValueDecayTests.read(
+            PumpBattery(percent: 84, isCharging: nil), at: now.addingTimeInterval(-110))
         #expect(s.reservoirUnitsIfFresh(now: now) == 142, "110 s < 120 s window → still current")
-        #expect(s.batteryPercentIfFresh(now: now) == 84)
+        #expect(s.batteryIfFresh(now: now)?.percent == 84)
 
-        s.reservoirDate = now.addingTimeInterval(-130)
-        s.batteryDate = now.addingTimeInterval(-130)
+        s.reservoirUnits = PumpValueDecayTests.read(142, at: now.addingTimeInterval(-130))
+        s.battery = PumpValueDecayTests.read(
+            PumpBattery(percent: 84, isCharging: nil), at: now.addingTimeInterval(-130))
         #expect(s.reservoirUnitsIfFresh(now: now) == nil, "130 s > 120 s window → decayed")
-        #expect(s.batteryPercentIfFresh(now: now) == nil)
+        #expect(s.batteryIfFresh(now: now) == nil)
     }
 
-    /// The boundary is `>`, not `>=` — identical to `GlucoseFreshness.isStale`, because the decay
-    /// delegates to it rather than re-deriving the comparison. A genuine zero exactly AT the window is
-    /// still a reading.
+    /// The boundary is `>`, not `>=`, matching `GlucoseFreshness.isStale`. A genuine zero exactly AT the
+    /// window is still a reading.
     @Test func aGenuineZeroExactlyAtTheWindowIsStillAReading() {
         let now = Date(timeIntervalSince1970: 1_000_000)
         let original = GlucoseFreshness.staleAfter
         defer { GlucoseFreshness.staleAfter = original }
         GlucoseFreshness.staleAfter = 120
 
-        var s = PumpSnapshot()
-        s.reservoirUnits = 0
-        s.batteryPercent = 0
-        s.reservoirDate = now.addingTimeInterval(-120)
-        s.batteryDate = now.addingTimeInterval(-120)
+        var s = PumpState()
+        s.reservoirUnits = PumpValueDecayTests.read(0, at: now.addingTimeInterval(-120))
+        s.battery = PumpValueDecayTests.read(PumpBattery(percent: 0, isCharging: nil), at: now.addingTimeInterval(-120))
         #expect(s.reservoirUnitsIfFresh(now: now) == 0)
-        #expect(s.batteryPercentIfFresh(now: now) == 0)
+        #expect(s.batteryIfFresh(now: now)?.percent == 0)
     }
 
     /// **This test is a DECISION PIN. Do not delete it to "simplify to one staleness window".**
@@ -250,9 +234,7 @@ struct PumpValueDecayWindowTests {
 /// the display-only fields use.
 ///
 /// **Why, in one sentence:** display decay and the dose gate then fire on the same predicate by
-/// construction, so they cannot disagree for any user setting of `glucoseStaleMinutes`. That is the whole
-/// guarantee the owner bought by accepting three windows app-wide instead of one — and neither window is
-/// new, both already gated the calculator before this change.
+/// construction, so they cannot disagree for any user setting of `glucoseStaleMinutes`.
 ///
 /// These tests do not pin or mutate any global threshold: 10 s is fresh for both windows and 24 h is
 /// decayed for both, so the suite stays parallel-safe.
@@ -261,29 +243,28 @@ struct DoseInputDecayTests {
     private static let now = Date(timeIntervalSince1970: 1_000_000)
     private static let freshInstant = now.addingTimeInterval(-10)
     private static let quietInstant = now.addingTimeInterval(-24 * 3600)
+    private static let calculator = BolusCalculatorSettings(
+        carbRatio: 12, correctionFactor: 45, targetMgdl: 110, maxBolusUnits: 10)
 
     // MARK: - Active insulin
 
     @Test func iobDecaysToUnknownOnceTheReadGoesQuiet() {
-        var s = PumpSnapshot()
-        s.iobUnits = 1.4
-        s.iobDate = Self.quietInstant
-        #expect(s.iobUnitsIfFresh(now: Self.now) == nil)
+        var s = PumpState()
+        s.insulinOnBoard = PumpValueDecayTests.read(1.4, at: Self.quietInstant)
+        #expect(s.insulinOnBoardIfFresh(now: Self.now) == nil)
     }
 
     @Test func iobStillShowsWhileTheReadIsFresh() {
-        var s = PumpSnapshot()
-        s.iobUnits = 1.4
-        s.iobDate = Self.freshInstant
-        #expect(s.iobUnitsIfFresh(now: Self.now) == 1.4)
+        var s = PumpState()
+        s.insulinOnBoard = PumpValueDecayTests.read(1.4, at: Self.freshInstant)
+        #expect(s.insulinOnBoardIfFresh(now: Self.now) == 1.4)
     }
 
     @Test func aGenuineZeroActiveInsulinStillReadsAsZeroWhileFresh() {
-        var s = PumpSnapshot()
-        s.iobUnits = 0
-        s.iobDate = Self.freshInstant
+        var s = PumpState()
+        s.insulinOnBoard = PumpValueDecayTests.read(0, at: Self.freshInstant)
         #expect(
-            s.iobUnitsIfFresh(now: Self.now) == 0,
+            s.insulinOnBoardIfFresh(now: Self.now) == 0,
             "0 U of active insulin is the common state between boluses — a real reading, not an absence")
     }
 
@@ -293,11 +274,10 @@ struct DoseInputDecayTests {
         let w = CalcInputFreshness.staleAfterIob
         let ages: [TimeInterval] = [0, 1, w - 1, w, w + 1, w * 2, 24 * 3600]
         for age in ages {
-            var s = PumpSnapshot()
-            s.iobUnits = 1.4
-            s.iobDate = Self.now.addingTimeInterval(-age)
+            var s = PumpState()
+            s.insulinOnBoard = PumpValueDecayTests.read(1.4, at: Self.now.addingTimeInterval(-age))
             #expect(
-                (s.iobUnitsIfFresh(now: Self.now) == nil) == s.isIobStale(now: Self.now),
+                (s.insulinOnBoardIfFresh(now: Self.now) == nil) == s.isInsulinOnBoardStale(now: Self.now),
                 "at age \(age) s the row and the dose gate disagreed — the divergence this binding exists to prevent")
         }
     }
@@ -305,92 +285,69 @@ struct DoseInputDecayTests {
     // MARK: - Therapy parameters
 
     @Test func therapyParametersDecayToUnknownOnceTheReadGoesQuiet() {
-        var s = PumpSnapshot()
-        s.carbRatio = 12
-        s.isf = 45
-        s.targetBg = 110
-        s.therapyParamsDate = Self.quietInstant
-        #expect(s.carbRatioIfFresh(now: Self.now) == nil)
-        #expect(s.isfIfFresh(now: Self.now) == nil)
-        #expect(s.targetBgIfFresh(now: Self.now) == nil)
+        var s = PumpState()
+        s.bolusCalculator = PumpValueDecayTests.read(Self.calculator, at: Self.quietInstant)
+        #expect(s.bolusCalculatorIfFresh(now: Self.now) == nil)
     }
 
     @Test func therapyParametersStillShowWhileTheReadIsFresh() {
-        var s = PumpSnapshot()
-        s.carbRatio = 12
-        s.isf = 45
-        s.targetBg = 110
-        s.therapyParamsDate = Self.freshInstant
-        #expect(s.carbRatioIfFresh(now: Self.now) == 12)
-        #expect(s.isfIfFresh(now: Self.now) == 45)
-        #expect(s.targetBgIfFresh(now: Self.now) == 110)
+        var s = PumpState()
+        s.bolusCalculator = PumpValueDecayTests.read(Self.calculator, at: Self.freshInstant)
+        #expect(s.bolusCalculatorIfFresh(now: Self.now) == Self.calculator)
     }
 
-    /// The genuine-zero rule does NOT extend to these three, and that asymmetry is deliberate. A carb
-    /// ratio, a correction factor and a target of `0` are physically impossible, so `0` here has always
-    /// meant "unread" — the existing `> 0` idiom every surface and the wire already use. Reservoir and
-    /// battery are the opposite: `0` is a real, clinically meaningful reading there. Preserving both
-    /// conventions in the same change is the point of this test.
+    /// The genuine-zero rule does NOT extend to these, and that asymmetry is deliberate. A carb ratio, a
+    /// correction factor and a target of `0` are physically impossible, so such a set is not a reading.
+    /// Reservoir and battery are the opposite: `0` is a real, clinically meaningful reading there.
     @Test func zeroIsNotARealTherapyReadingAndStaysUnknownEvenWhenFresh() {
-        var s = PumpSnapshot()
-        s.carbRatio = 0
-        s.isf = 0
-        s.targetBg = 0
-        s.therapyParamsDate = Self.freshInstant
-        #expect(s.carbRatioIfFresh(now: Self.now) == nil)
-        #expect(s.isfIfFresh(now: Self.now) == nil)
-        #expect(s.targetBgIfFresh(now: Self.now) == nil)
+        for bad in [
+            BolusCalculatorSettings(carbRatio: 0, correctionFactor: 45, targetMgdl: 110, maxBolusUnits: 10),
+            BolusCalculatorSettings(carbRatio: 12, correctionFactor: 0, targetMgdl: 110, maxBolusUnits: 10),
+            BolusCalculatorSettings(carbRatio: 12, correctionFactor: 45, targetMgdl: 0, maxBolusUnits: 10),
+            BolusCalculatorSettings(carbRatio: .nan, correctionFactor: 45, targetMgdl: 110, maxBolusUnits: 10)
+        ] {
+            var s = PumpState()
+            s.bolusCalculator = PumpValueDecayTests.read(bad, at: Self.freshInstant)
+            #expect(s.bolusCalculatorIfFresh(now: Self.now) == nil)
+            #expect(s.isBolusCalculatorStale(now: Self.now), "an unusable set must make the calculator prompt")
+        }
     }
 
     @Test func therapyDisplayDecayAndTheTherapyDoseGateFireTogetherAtEveryAge() {
         let w = CalcInputFreshness.staleAfterTherapy
         let ages: [TimeInterval] = [0, 1, w - 1, w, w + 1, w * 2, 24 * 3600]
         for age in ages {
-            var s = PumpSnapshot()
-            s.carbRatio = 12
-            s.isf = 45
-            s.targetBg = 110
-            s.therapyParamsDate = Self.now.addingTimeInterval(-age)
-            let gate = s.isTherapyStale(now: Self.now)
-            #expect((s.carbRatioIfFresh(now: Self.now) == nil) == gate, "carbRatio at age \(age) s")
-            #expect((s.isfIfFresh(now: Self.now) == nil) == gate, "isf at age \(age) s")
-            #expect((s.targetBgIfFresh(now: Self.now) == nil) == gate, "targetBg at age \(age) s")
+            var s = PumpState()
+            s.bolusCalculator = PumpValueDecayTests.read(Self.calculator, at: Self.now.addingTimeInterval(-age))
+            #expect(
+                (s.bolusCalculatorIfFresh(now: Self.now) == nil) == s.isBolusCalculatorStale(now: Self.now),
+                "calculator settings at age \(age) s")
         }
     }
 
-    // MARK: - The raw dose-path fields stay frozen
+    // MARK: - The observations stay available to the calculator
 
-    /// The calculator reads the RAW fields plus `isIobStale`/`isTherapyStale`; none of that is routed
-    /// through the new funnels. An aged snapshot must still hand the raw values over unchanged, or this
-    /// display change would have become a silent dose-path change.
-    @Test func theRawCalculatorInputsAreUnchangedByTheDisplayFunnels() {
-        var aged = PumpSnapshot()
-        aged.iobUnits = 1.4
-        aged.iobDate = Self.quietInstant
-        aged.carbRatio = 12
-        aged.isf = 45
-        aged.targetBg = 110
-        aged.therapyParamsDate = Self.quietInstant
+    /// The calculator is handed the observed values plus the stale gates; an aged state must still hold
+    /// the values, and the gates that make the calculator PROMPT on them must fire.
+    @Test func theCalculatorInputsAreKeptWhileTheirGatesFire() {
+        var aged = PumpState()
+        aged.insulinOnBoard = PumpValueDecayTests.read(1.4, at: Self.quietInstant)
+        aged.bolusCalculator = PumpValueDecayTests.read(Self.calculator, at: Self.quietInstant)
 
-        #expect(aged.iobUnitsIfFresh(now: Self.now) == nil)  // display decays…
-        #expect(aged.iobUnits == 1.4)  // …the calculator's input does not
-        #expect(aged.carbRatio == 12)
-        #expect(aged.isf == 45)
-        #expect(aged.targetBg == 110)
-        // And the gates that make the calculator PROMPT on those raw values still fire.
-        #expect(aged.isIobStale(now: Self.now))
-        #expect(aged.isTherapyStale(now: Self.now))
+        #expect(aged.insulinOnBoardIfFresh(now: Self.now) == nil)  // display decays…
+        #expect(aged.insulinOnBoard?.value == 1.4)  // …the observation does not
+        #expect(aged.bolusCalculator?.value == Self.calculator)
+        #expect(aged.isInsulinOnBoardStale(now: Self.now))
+        #expect(aged.isBolusCalculatorStale(now: Self.now))
     }
 
-    /// A future-dated stamp is untrustworthy, not fresh — same guard the CGM-window fields get, inherited
-    /// here from `CalcInputFreshness.isStale` rather than re-derived.
-    @Test func aFutureDatedStampNeverPresentsAnyDoseInputAsFresh() {
-        var s = PumpSnapshot()
-        s.iobUnits = 1.4
-        s.iobDate = Self.now.addingTimeInterval(CalcInputFreshness.futureSkewTolerance + 60)
-        s.carbRatio = 12
-        s.therapyParamsDate = s.iobDate
-        #expect(s.iobUnitsIfFresh(now: Self.now) == nil)
-        #expect(s.carbRatioIfFresh(now: Self.now) == nil)
+    /// A future-dated reading is untrustworthy, not fresh.
+    @Test func aFutureDatedReadingNeverPresentsAnyDoseInputAsFresh() {
+        let ahead = Self.now.addingTimeInterval(CalcInputFreshness.futureSkewTolerance + 60)
+        var s = PumpState()
+        s.insulinOnBoard = PumpValueDecayTests.read(1.4, at: ahead)
+        s.bolusCalculator = PumpValueDecayTests.read(Self.calculator, at: ahead)
+        #expect(s.insulinOnBoardIfFresh(now: Self.now) == nil)
+        #expect(s.bolusCalculatorIfFresh(now: Self.now) == nil)
     }
 }

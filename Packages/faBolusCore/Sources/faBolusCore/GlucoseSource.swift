@@ -169,15 +169,30 @@ public enum GlucoseSourceStatus: Sendable, Equatable {
     case error(String)
 }
 
+/// What a glucose source reports right now.
+public struct GlucoseSourceState: Sendable, Equatable {
+    /// Most recent reading, or nil if none yet.
+    public var latest: GlucoseSample?
+    /// Recent history (newest last), to backfill the chart when failing over.
+    public var history: [GlucoseReading]
+    public var status: GlucoseSourceStatus
+    public init(latest: GlucoseSample?, history: [GlucoseReading] = [], status: GlucoseSourceStatus) {
+        self.latest = latest
+        self.history = history
+        self.status = status
+    }
+}
+
 /// The **glucose source** seam — an independent CGM feed used as a failover when the pump-relayed
-/// glucose goes stale (pump↔phone, watch↔phone, or pump↔sensor drops). Parallels `PumpBackend`
-/// (async + `onChange`, the repo doesn't use Combine) and mirrors LoopKit's `CGMManager`. Sources are
-/// **read-only** and must never displace the pump or the official vendor app.
+/// glucose goes stale (pump↔phone, watch↔phone, or pump↔sensor drops), mirroring LoopKit's
+/// `CGMManager`. Sources are **read-only** and must never displace the pump or the official vendor app.
+///
+/// Not tied to the main actor: a source runs wherever its Bluetooth or network work runs (an actor
+/// is the natural conformer) and is read through `state` and `updates()`.
 ///
 /// **To add a CGM source:** conform a new type to this protocol, then add a `GlucoseSourceDescriptor`
 /// for it to `GlucoseSourceRegistry.enabled` (in the app target). `GlucoseArbiter` handles failover.
-@MainActor
-public protocol GlucoseSource: AnyObject {
+public protocol GlucoseSource: AnyObject, Sendable {
     /// Stable id (matches its `GlucoseSourceDescriptor.id`), stamped onto every `GlucoseSample`.
     var id: String { get }
     /// Selection priority when several sources are healthy (higher wins). Local BLE outranks cloud.
@@ -185,21 +200,14 @@ public protocol GlucoseSource: AnyObject {
     /// Typed connection classification — Test-flow/copy logic branches on this instead of `id`-string
     /// literals. No extension default: every source must classify itself.
     var connectionKind: GlucoseConnectionKind { get }
-    /// Most recent reading, or nil if none yet.
-    var latest: GlucoseSample? { get }
-    /// Recent history (newest last), to backfill the chart when failing over.
-    var history: [GlucoseReading] { get }
-    var status: GlucoseSourceStatus { get }
+    /// The latest reading, history and status.
+    var state: GlucoseSourceState { get async }
+    /// Every later change to `state`. Each call returns its own stream.
+    func updates() async -> AsyncStream<GlucoseSourceState>
     func start() async
-    func stop()
+    func stop() async
     /// Tell the source whether the PRIMARY (pump) feed is currently healthy, so it can throttle its
     /// work. Cloud pollers poll lazily while the primary is healthy and ramp up when it goes stale;
-    /// local BLE sources ignore this and run continuously for instant failover. Default: no-op.
-    func setPrimaryHealthy(_ healthy: Bool)
-    /// Called whenever `latest`/`status` change so the app can re-arbitrate promptly.
-    var onChange: (@MainActor () -> Void)? { get set }
-}
-
-public extension GlucoseSource {
-    func setPrimaryHealthy(_ healthy: Bool) {}
+    /// local BLE sources ignore this and run continuously for instant failover.
+    func setPrimaryHealthy(_ healthy: Bool) async
 }

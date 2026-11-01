@@ -8,7 +8,7 @@ public struct GlucoseSourceDescriptor: Identifiable, Sendable {
     public let name: String
     /// Sensors this source can serve, for display/selection (e.g. ["Dexcom G7", "Dexcom ONE+"]).
     public let sensors: [String]
-    /// Builds a fresh source instance. `@MainActor` because sources are main-actor bound.
+    /// Builds a fresh source instance.
     ///
     /// `restoreStateEnabled`: true for the one long-lived production instance
     /// (`GlucoseSourceRegistry.makeSelected()`), false for the ephemeral credentials "Test" instance
@@ -16,10 +16,10 @@ public struct GlucoseSourceDescriptor: Identifiable, Sendable {
     /// identifier uses this to scope that identifier to at most one live manager per process — two
     /// managers sharing a restore-identifier string is a CoreBluetooth SIGABRT. Most descriptor
     /// closures ignore the flag (`{ _ in SomeSource() }`).
-    public let make: @MainActor (_ restoreStateEnabled: Bool) -> GlucoseSource
+    public let make: @Sendable (_ restoreStateEnabled: Bool) -> any GlucoseSource
     public init(
         id: String, name: String, sensors: [String] = [],
-        make: @escaping @MainActor (_ restoreStateEnabled: Bool) -> GlucoseSource
+        make: @escaping @Sendable (_ restoreStateEnabled: Bool) -> any GlucoseSource
     ) {
         self.id = id
         self.name = name

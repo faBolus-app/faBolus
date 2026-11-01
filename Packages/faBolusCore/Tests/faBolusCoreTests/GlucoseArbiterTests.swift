@@ -1,82 +1,76 @@
 import XCTest
 @testable import faBolusCore
 
-/// A stand-in `GlucoseSource` for arbiter tests.
-@MainActor
-private final class MockGlucoseSource: GlucoseSource {
-    let id = "mock"
-    let priority = 100
-    let connectionKind: GlucoseConnectionKind = .localBLE  // conformers must classify
-    var latest: GlucoseSample?
-    var history: [GlucoseReading]
-    var status: GlucoseSourceStatus = .connected
-    var onChange: (@MainActor () -> Void)?
-    init(latest: GlucoseSample?, history: [GlucoseReading] = []) {
-        self.latest = latest
-        self.history = history
-    }
-    func start() async {}
-    func stop() {}
-}
-
-@MainActor
 final class GlucoseArbiterTests: XCTestCase {
-    private func snapshot(glucose: Int?, ageSec: TimeInterval) -> PumpSnapshot {
-        var s = PumpSnapshot()
-        s.glucose = glucose
-        s.glucoseDate = glucose == nil ? nil : Date().addingTimeInterval(-ageSec)
-        s.trend = GlucoseTrend.flat.rawValue
+    private let now = Date()
+    private func pumpState(glucose: Int?, ageSec: TimeInterval) -> PumpState {
+        var s = PumpState()
+        if let glucose {
+            let at = now.addingTimeInterval(-ageSec)
+            s.glucose = Observed(PumpGlucose(mgdl: glucose, trend: .flat), measuredAt: at, receivedAt: at)
+        }
         return s
+    }
+    private func source(_ latest: GlucoseSample?, history: [GlucoseReading] = []) -> GlucoseSourceState {
+        GlucoseSourceState(latest: latest, history: history, status: .connected)
     }
     private func sample(_ mgdl: Int, ageSec: TimeInterval, trend: GlucoseTrend = .up) -> GlucoseSample {
         // The failable init never fails here — every caller passes an in-range mgdl (e.g. 120).
-        GlucoseSample(mgdl: mgdl, date: Date().addingTimeInterval(-ageSec), trend: trend, sourceID: "mock")!
+        GlucoseSample(mgdl: mgdl, date: now.addingTimeInterval(-ageSec), trend: trend, sourceID: "mock")!
     }
 
     func testFreshPumpKeepsPumpValue() {
-        let src = MockGlucoseSource(latest: sample(120, ageSec: 30))
-        let (snap, _, prov) = GlucoseArbiter.merge(
-            pumpSnapshot: snapshot(glucose: 100, ageSec: 60),
-            pumpHistory: [], source: src)
-        XCTAssertEqual(snap.glucose, 100)  // pump is fresh → source ignored
+        let (state, _, prov) = GlucoseArbiter.merge(
+            pumpState: pumpState(glucose: 100, ageSec: 60),
+            pumpHistory: [], source: source(sample(120, ageSec: 30)), now: now)
+        XCTAssertEqual(state.glucose?.value.mgdl, 100)  // pump is fresh → source ignored
+        XCTAssertEqual(state.glucose?.source, .pump)
         XCTAssertEqual(prov, .pump)  // provenance = pump
     }
 
     func testFailsOverWhenPumpStale() {
-        let src = MockGlucoseSource(latest: sample(120, ageSec: 30, trend: .up))
-        let (snap, _, prov) = GlucoseArbiter.merge(
-            pumpSnapshot: snapshot(glucose: 100, ageSec: 10 * 60),
-            pumpHistory: [], source: src)
-        XCTAssertEqual(snap.glucose, 120)  // stale pump → fresh source takes over
-        XCTAssertEqual(snap.trend, GlucoseTrend.up.rawValue)
-        XCTAssertTrue(snap.cgmActive)
+        let failover = sample(120, ageSec: 30, trend: .up)
+        let (state, _, prov) = GlucoseArbiter.merge(
+            pumpState: pumpState(glucose: 100, ageSec: 10 * 60),
+            pumpHistory: [], source: source(failover), now: now)
+        XCTAssertEqual(state.glucose?.value.mgdl, 120)  // stale pump → fresh source takes over
+        XCTAssertEqual(state.glucose?.value.trend, .up)
+        // The failover value keeps the source's own measurement time and names its source.
+        XCTAssertEqual(state.glucose?.measuredAt, failover.date)
+        XCTAssertEqual(state.glucose?.source, .glucoseSource(id: "mock"))
         XCTAssertEqual(prov, .failover(sourceID: "mock", reason: .pumpStale))  // pump had a value → stale
     }
 
+    func testFailoverWithNoTrendShowsNoArrow() {
+        let noTrend = GlucoseSample(mgdl: 120, date: now.addingTimeInterval(-30), trend: nil, sourceID: "mock")!
+        let (state, _, _) = GlucoseArbiter.merge(
+            pumpState: pumpState(glucose: nil, ageSec: 0), pumpHistory: [], source: source(noTrend), now: now)
+        XCTAssertNil(state.glucose?.value.trend)
+    }
+
     func testFailoverReasonMissingWhenPumpHasNoReading() {
-        let src = MockGlucoseSource(latest: sample(120, ageSec: 30))
-        let (snap, _, prov) = GlucoseArbiter.merge(
-            pumpSnapshot: snapshot(glucose: nil, ageSec: 0),
-            pumpHistory: [], source: src)
-        XCTAssertEqual(snap.glucose, 120)
+        let (state, _, prov) = GlucoseArbiter.merge(
+            pumpState: pumpState(glucose: nil, ageSec: 0),
+            pumpHistory: [], source: source(sample(120, ageSec: 30)), now: now)
+        XCTAssertEqual(state.glucose?.value.mgdl, 120)
         XCTAssertEqual(prov, .failover(sourceID: "mock", reason: .pumpMissing))  // pump never had one
     }
 
     func testAllStaleKeepsPumpFlagged() {
-        let src = MockGlucoseSource(latest: sample(120, ageSec: 10 * 60))  // source also stale
-        let pump = snapshot(glucose: 100, ageSec: 10 * 60)
-        let (snap, _, prov) = GlucoseArbiter.merge(pumpSnapshot: pump, pumpHistory: [], source: src)
-        XCTAssertEqual(snap.glucose, 100)  // never promotes a stale source
-        XCTAssertTrue(snap.isGlucoseStale)  // shown, but flagged stale
+        let pump = pumpState(glucose: 100, ageSec: 10 * 60)
+        let (state, _, prov) = GlucoseArbiter.merge(
+            pumpState: pump, pumpHistory: [], source: source(sample(120, ageSec: 10 * 60)), now: now)
+        XCTAssertEqual(state.glucose?.value.mgdl, 100)  // never promotes a stale source
+        XCTAssertTrue(state.isGlucoseStale(now: now))  // shown, but flagged stale
         XCTAssertEqual(prov, .pump)  // no failover → still pump
     }
 
     func testNoSourceReturnsPumpUnchanged() {
-        let (snap, hist, prov) = GlucoseArbiter.merge(
-            pumpSnapshot: snapshot(glucose: 100, ageSec: 10 * 60),
-            pumpHistory: [GlucoseReading(date: Date(), mgdl: 100)],
-            source: nil)
-        XCTAssertEqual(snap.glucose, 100)
+        let (state, hist, prov) = GlucoseArbiter.merge(
+            pumpState: pumpState(glucose: 100, ageSec: 10 * 60),
+            pumpHistory: [GlucoseReading(date: now, mgdl: 100)],
+            source: nil, now: now)
+        XCTAssertEqual(state.glucose?.value.mgdl, 100)
         XCTAssertEqual(hist.count, 1)
         XCTAssertEqual(prov, .pump)
     }

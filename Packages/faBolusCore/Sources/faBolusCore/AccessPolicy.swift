@@ -1,7 +1,7 @@
 import Foundation
 
 /// Single access-policy evaluator: whether a `GatedPumpWrite` is permitted from a `Surface`.
-/// Folds child mode, phone/remote read-only, and pump capabilities into one ordered check.
+/// Folds phone/remote read-only, the remote bolus settings and pump capabilities into one ordered check.
 /// Every funnel (`runControl`, `runLedgeredDelivery`, remote hosts) must go through this so a
 /// surface cannot be gated on one layer and open on another. Pure over `AccessContext` —
 /// faBolusCore must not read app globals.
@@ -13,7 +13,7 @@ public enum AccessPolicy {
     /// Where an action originates. Determines which read-only flag applies.
     public enum Surface: String, CaseIterable, Sendable {
         case phoneUI, quickBolusWidget, siriShortcuts  // local (this phone)
-        case garmin  // paired remote governed by remotesReadOnly + child
+        case garmin  // paired remote governed by remotesReadOnly
 
         /// Local surfaces are subject to `phoneReadOnly`.
         public var isLocal: Bool {
@@ -29,14 +29,10 @@ public enum AccessPolicy {
     /// Everything the evaluator needs, snapshotted by the app from `AppSettings` / the backend. Pure
     /// data — no globals, no side effects.
     public struct AccessContext: Sendable {
-        // Gate 2 — child mode
-        public var childModeEnabled: Bool
-        public var childAllowed: Set<ChildFeature>
-        // Gate 3 — read-only
+        // Read-only
         public var phoneReadOnly: Bool
         public var remotesReadOnly: Bool
-        // Gate 5 — pump capability. Capabilities are pump-derived (from the pump's own feature
-        // bitmask) and are the sole capability signal — not a raw `isMobi` check.
+        // Pump capability: the connected model's capability set, never a raw model check.
         public var capabilities: PumpCapabilities
         // Per-surface remote bolus authorization (default true so no OTHER surface/action is
         // affected; the host passes the real default-OFF settings). Only consulted for `.deliverBolus`
@@ -52,7 +48,6 @@ public enum AccessPolicy {
         public var bolusPasscodeSatisfied: Bool
 
         public init(
-            childModeEnabled: Bool, childAllowed: Set<ChildFeature>,
             phoneReadOnly: Bool, remotesReadOnly: Bool,
             capabilities: PumpCapabilities,
             // Fail-closed default: a caller that forgets to thread the per-surface remote
@@ -64,8 +59,6 @@ public enum AccessPolicy {
             // behavior) but `satisfied=false`, so a required-but-unsatisfied pair always denies.
             bolusPasscodeRequired: Bool = false, bolusPasscodeSatisfied: Bool = false
         ) {
-            self.childModeEnabled = childModeEnabled
-            self.childAllowed = childAllowed
             self.phoneReadOnly = phoneReadOnly
             self.remotesReadOnly = remotesReadOnly
             self.capabilities = capabilities
@@ -77,7 +70,6 @@ public enum AccessPolicy {
 
     /// Why an action was denied. `userMessage` is the string the app surfaces in `lastError`.
     public enum DenialReason: Sendable, Equatable {
-        case childLocked(ChildFeature)
         case phoneReadOnly
         case remotesReadOnly
         case capabilityUnavailable
@@ -86,7 +78,6 @@ public enum AccessPolicy {
 
         public var userMessage: String {
             switch self {
-            case .childLocked(let f): return "Locked (child mode): \(f.label.lowercased()) is disabled."
             case .phoneReadOnly: return "This action is disabled — the app is in read-only mode."
             case .remotesReadOnly: return "Remote control is turned off — remotes are read-only."
             case .capabilityUnavailable: return "This pump doesn't support that action."
@@ -116,17 +107,10 @@ public enum AccessPolicy {
         surface: Surface,
         context: AccessContext
     ) -> AccessDecision {
-        // Gate 2 — child mode. Local + Garmin surfaces are subject to it.
-        if context.childModeEnabled {
-            if !context.childAllowed.contains(action.requiredChildFeature) {
-                return .deny(.childLocked(action.requiredChildFeature))
-            }
-        }
-
-        // Gate 3 — read-only. CARVE-OUT: `.childOnly` actions (cancel bolus, dismiss alert) are never
-        // read-only-blocked — cancelling is a safety STOP that must stay available, and clearing an alert
-        // is low-risk. Every other action: local ⇒ phoneReadOnly, remote ⇒ remotesReadOnly.
-        if action.gate != .childOnly {
+        // Read-only. `.alwaysAllowed` actions (cancel bolus, dismiss alert) are never read-only-blocked:
+        // cancelling is a safety stop that must stay available, and clearing an alert is low-risk.
+        // Every other action: local ⇒ phoneReadOnly, remote ⇒ remotesReadOnly.
+        if action.gate != .alwaysAllowed {
             if surface.isLocal && context.phoneReadOnly { return .deny(.phoneReadOnly) }
             if surface.isRemote && context.remotesReadOnly { return .deny(.remotesReadOnly) }
         }
@@ -156,13 +140,8 @@ public enum AccessPolicy {
             return .deny(.remoteBolusPasscodeRequired)
         }
 
-        // Gate 5 — pump capability, enforced at the funnel. One axis: the capability set is
-        // driver-derived from the connected pump's own feature bitmask (`PumpCapabilities.derive`),
-        // whose own input is a BLE-name substring match with an `ApiVersionResponse` fallback on the
-        // wire. Delivery and childOnly require no capability, so Gate 5 stays a no-op there; the
-        // pump clock-sync write that once denied here (`syncTimeToNow`/`supportsTimeSync`) is retired,
-        // so this axis currently has no denial subject — a fail-safe default for whatever
-        // `.controlInterlock` action is added next (see `GatedPumpWrite.hasRequiredCapability`).
+        // Pump capability, enforced at the funnel and not only in the UI: only a model that can take a
+        // dose receives one, and an action never needs a capability to be cancelled or dismissed.
         if !action.hasRequiredCapability(in: context.capabilities) {
             return .deny(.capabilityUnavailable)
         }

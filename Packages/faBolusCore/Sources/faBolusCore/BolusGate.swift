@@ -5,7 +5,7 @@ import Foundation
 /// stateless, like `AccessPolicy` — the caller supplies the inputs it can see and gets back
 /// `(canBolus, reason)`; the `reason` is what the surface shows when disabled.
 ///
-/// It composes with, and does not replace, `AccessPolicy` (permission: child/read-only/capability/ack/peer)
+/// It composes with, and does not replace, `AccessPolicy` (permission: read-only/capability/remote settings)
 /// — the caller passes the `AccessPolicy.AccessDecision` in as one input. What `BolusGate` adds on top is
 /// the *therapy-availability* axis the access policy has no view of: the pump LINK health and whether a
 /// dose is already in flight.
@@ -19,7 +19,7 @@ public enum BolusBlockReason: Equatable, Sendable {
     case noCartridge  // cartridge is mid change/load/prime-tubing — dosing is physically impossible
     case belowMinimum(Double)  // entered amount is below the minimum deliverable
     case aboveMax(Double)  // entered amount exceeds the pump's configured max
-    case accessDenied(AccessPolicy.DenialReason)  // child / read-only / capability / ack
+    case accessDenied(AccessPolicy.DenialReason)  // read-only / capability / remote settings
 
     public var userMessage: String {
         switch self {
@@ -57,11 +57,13 @@ public enum BolusGate {
     ///
     /// - Parameters:
     ///   - reachable: can this surface reach the host? (host surfaces pass `true`; remotes pass their link state)
-    ///   - linked: is the pump link healthy? (host: `PumpSnapshot.isLinked`; remote: the relayed pump-connected flag)
-    ///   - bolusInFlight: is a dose already running? (host: `PumpSnapshot.bolusInFlight`; remote: relayed)
+    ///   - linked: is the pump link healthy? (host: `PumpState.link.isConnected`; remote: the relayed
+    ///     pump-connected flag)
+    ///   - bolusInFlight: is a dose already running? (host: `RemoteBolusLedger.block == .bolusInProgress`;
+    ///     remote: relayed)
     ///   - cartridgeReady: is the cartridge NOT mid change/load/prime-tubing? (host:
-    ///     `PumpSnapshot.cartridgeReadyForBolus`; remote: relayed). Dosing is physically impossible while
-    ///     `false`, so this is checked before access/bounds.
+    ///     `PumpState.cartridgeReadiness != .notReady`; remote: relayed). Dosing is physically impossible
+    ///     while `false`, so this is checked before access/bounds.
     ///   - access: the `AccessPolicy` decision for `.deliverBolus` on this surface (host: the real evaluation;
     ///     a remote pre-wire passes `.allow`, or `.deny(.remotesReadOnly)` when it locally knows it's read-only)
     public static func evaluate(

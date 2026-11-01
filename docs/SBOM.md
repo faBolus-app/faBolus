@@ -43,6 +43,15 @@ TandemKit in turn vendors (see its own `NOTICE`):
 | pumpx2-oracle | jwoglom/pumpx2 (© James Woglom) | MIT | Reverse-engineered protocol reference + parity fixtures |
 | Mbed TLS | Mbed-TLS/mbedtls | `Apache-2.0 OR GPL-2.0` | EC-JPAKE pairing |
 
+## Adapted source inside the local packages
+
+Files in `Packages/` that carry an `Adapted from` attribution, checked by the same `check-sbom.sh` scan.
+
+| File | Upstream | License (SPDX) | What was taken |
+|---|---|---|---|
+| `Packages/faBolusCore/Sources/faBolusCore/DoseEntry.swift` | LoopKit/LoopKit `a5beee96`, `InsulinKit/DoseEntry.swift` (© 2016 Nathan Racklyeft) | MIT | Field names and the programmed-versus-delivered split; rewritten without HealthKit |
+| `Packages/faBolusCore/Sources/faBolusCore/PumpState.swift` | LoopKit/LoopKit `a5beee96`, `DeviceManager/PumpManagerStatus.swift` (© 2018 LoopKit Authors) | MIT | The `basalDeliveryState` / `bolusState` names and their cases |
+
 ## Ported / API-derived app-tree source (not a Package — lives in the app target)
 
 CGM feed readers that originate from a documented upstream. `check-sbom.sh` scans the app tree for a

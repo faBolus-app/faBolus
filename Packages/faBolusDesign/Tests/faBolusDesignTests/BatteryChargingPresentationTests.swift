@@ -51,8 +51,8 @@ struct BatteryChargingPresentationTests {
         #expect(BatteryChargingPresentation.make(percent: 100, charging: false).symbolName == "battery.100")
     }
 
-    @Test func defaultSnapshotBatteryChargingIsFailClosedFalse() {
-        // Fail-closed default — never a false charging badge.
-        #expect(PumpSnapshot().batteryCharging == false)
+    @Test func aStateWithNoBatteryReadingHasNoChargingBadge() {
+        // Never read means unknown — never a false charging badge.
+        #expect(PumpState().battery?.value.isCharging == nil)
     }
 }

@@ -3,18 +3,6 @@ import XCTest
 
 final class CoreModelTests: XCTestCase {
 
-    func testGlucoseStaleness() {
-        var s = PumpSnapshot()
-        XCTAssertFalse(s.isGlucoseStale)  // no glucose at all → not "stale" per rule
-        s.glucose = 120
-        s.glucoseDate = nil
-        XCTAssertTrue(s.isGlucoseStale)  // have a value but unknown age → stale
-        s.glucoseDate = Date()
-        XCTAssertFalse(s.isGlucoseStale)  // fresh
-        s.glucoseDate = Date().addingTimeInterval(-7 * 60)
-        XCTAssertTrue(s.isGlucoseStale)  // older than 6 min
-    }
-
     func testGlucoseRangeBoundaries() {
         // Closed clinical convention (owner 2026-08-06), agreeing with GlucoseStatistics: 180 is
         // in-range and 250 is high, so coloring matches the reported TIR at the exact boundaries.
@@ -52,15 +40,5 @@ final class CoreModelTests: XCTestCase {
         let remote = RemoteCommand.RemoteAlert(id: a.id, kind: a.kind.rawValue, title: a.title)
         XCTAssertEqual(remote.kind, 3)
         XCTAssertEqual(PumpAlertKind(rawValue: remote.kind), .cgmAlert)
-    }
-
-    func testCapabilitiesFullDefaults() {
-        let c = PumpCapabilities.full
-        XCTAssertTrue(
-            c.supportsCarbEntry && c.supportsBolusCancel && c.supportsAlertClear
-                && c.supportsHistoryBackfill && c.supportsPairing)
-        let limited = PumpCapabilities(supportsCarbEntry: false)
-        XCTAssertFalse(limited.supportsCarbEntry)
-        XCTAssertTrue(limited.supportsBolusCancel)  // others default true
     }
 }
