@@ -55,12 +55,6 @@ final class WatchSetup {
         #endif
     }
 
-    func openStore() {
-        #if GARMIN
-        garmin.openStore()
-        #endif
-    }
-
     func handleOpenURL(_ url: URL) {
         #if GARMIN
         garmin.handleOpenURL(url)

@@ -11,6 +11,9 @@ struct RemotesSettingsView: View {
 
     private var settings: AppSettings { model.settings }
 
+    /// The docs site's page on getting the watch app onto a watch.
+    static let watchAppGuide = URL(string: "https://fabolus.org/build/garmin-build/")!
+
     var body: some View {
         @Bindable var settings = settings
         Form {
@@ -19,7 +22,7 @@ struct RemotesSettingsView: View {
                     LabeledContent("Watch", value: watch.deviceName ?? "Not chosen")
                     LabeledContent("Link", value: linkText)
                     Button("Choose watch in Garmin Connect") { watch.selectDevice() }
-                    Button("Get the faBolus watch app") { watch.openStore() }
+                    Link("How to install the watch app", destination: Self.watchAppGuide)
                     if watch.deviceName != nil { Button("Forget watch", role: .destructive) { watch.forgetDevice() } }
                 } else {
                     Label("Garmin not included in this build", systemImage: "exclamationmark.triangle").foregroundStyle(

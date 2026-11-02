@@ -64,11 +64,6 @@ public final class GarminTransport: NSObject, WatchTransport {
 
     public var deviceName: String? { device?.friendlyName ?? device?.modelName }
 
-    public func openStore() {
-        guard let app else { return }
-        ConnectIQ.sharedInstance().showStore(for: app)
-    }
-
     private func restoreDevice() {
         guard let parts = defaults.array(forKey: Self.deviceKey) as? [String], parts.count == 3,
             let uuid = UUID(uuidString: parts[0])
