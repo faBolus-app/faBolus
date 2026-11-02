@@ -74,7 +74,7 @@ On or off, its style, fields and chart. See [Widgets and Live Activity](../remot
 
 | Section | What's there |
 | --- | --- |
-| **Garmin watch** | The chosen watch and the link's state; **Choose watch in Garmin Connect**; **Get the faBolus watch app** (the Connect IQ Store; not needed when you built the watch app yourself); **Forget watch**. A build without Garmin's SDK says so here. |
+| **Garmin watch** | The chosen watch and the link's state; **Choose watch in Garmin Connect**; **How to install the watch app** (opens the build guide's [Garmin watch](../build/garmin-build.md) page); **Forget watch**. A build without Garmin's SDK says so here. |
 | **Bolusing** | **Read-only (view only)**; **Allow bolusing from the watch** (off by default, and it asks you to confirm each time you turn it on); **Limit remote bolus size**, from 1 to 20 U a dose. |
 | **Watch bolus screen** | Default mode, Carbs or Units. The increments are the phone's. |
 | **Watch layout** | The watch's screens and their swipe order, the screen it opens on, its Details rows, the chart ranges a tap steps through (3, 6, 12, 24 hours), and optional chart bounds of its own. |

@@ -143,8 +143,7 @@ the phone would lose the watch. More detail is in faBolusGarmin's
 Bolusing from the watch is off until you turn on **Allow bolusing from the watch** on the same screen.
 See [Garmin watch](../remotes/garmin.md).
 
-The same screen has **Get the faBolus watch app**, which opens the Connect IQ Store. You built the watch
-app yourself, so you don't need it.
+The same screen has **How to install the watch app**, which opens this page.
 
 <div class="cx2-check" markdown>
 **Success looks like:** the watch shows your glucose and its age, and **Settings → Watch** on the phone
