@@ -35,6 +35,15 @@ import faBolusCore
         #expect(ChartReadout(at: t0, glucose: Array(readings.reversed()), iob: [], boluses: []).glucoseMgdl == 90)
     }
 
+    /// Ported from the old app's `GlucoseChartAccessibilityTests` (the range word): VoiceOver hears the
+    /// band the chart shows by colour, in each of the four ranges.
+    @Test func voiceOverSpeaksTheRangeWord() {
+        for (mgdl, word) in [(60, "Low"), (100, "In range"), (200, "High"), (300, "Very high")] {
+            let r = ChartReadout(at: t0, glucose: [GlucoseReading(date: t0, mgdl: mgdl)], iob: [], boluses: [])
+            #expect(r.spoken(unit: .mgdl).contains("glucose \(mgdl) mg/dL, \(word),"), "\(mgdl)")
+        }
+    }
+
     @Test func voiceOverSaysWhatIsMissing() {
         let r = ChartReadout(at: t0, glucose: [], iob: [], boluses: [])
         #expect(r.spoken(unit: .mgdl).contains("glucose no reading"))

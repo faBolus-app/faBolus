@@ -37,10 +37,14 @@ public struct ChartReadout: Sendable, Equatable {
         return best.sample
     }
 
-    /// What VoiceOver reads for the readout; a missing value is "no reading", not a dash.
+    /// What VoiceOver reads for the readout; a missing value is "no reading", not a dash. Glucose carries
+    /// its range word, so the band the chart shows by colour is heard too (`GlucoseRange.shortLabel`, as
+    /// the widgets say it).
     public func spoken(unit: GlucoseUnit) -> String {
         let time = date.formatted(date: .omitted, time: .shortened)
-        let g = glucoseMgdl.map { "\(unit.format(mgdl: $0)) mg/dL" } ?? "no reading"
+        let g =
+            glucoseMgdl.map { "\(unit.format(mgdl: $0)) mg/dL, \(GlucoseRange.classify($0).shortLabel)" }
+            ?? "no reading"
         let i = iob.map { String(format: "%.2f units", $0) } ?? "no value"
         let b = bolusUnits.map { String(format: "%.2f units", $0) } ?? "none"
         return "At \(time): glucose \(g), active insulin \(i), bolus \(b)"
