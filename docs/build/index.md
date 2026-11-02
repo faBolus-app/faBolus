@@ -33,7 +33,7 @@ time so the app doesn't expire (see [Keeping it running and updating](updating.m
 
     ---
 
-    Install Xcode, GitHub Desktop and one small command-line tool.
+    Install Xcode, GitHub Desktop, and two small command-line tools.
 
     [:octicons-arrow-right-24: Xcode and tools](xcode.md)
 

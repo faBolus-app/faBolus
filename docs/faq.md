@@ -17,8 +17,7 @@
     and glucose that go with a bolus, and clearing an alert you choose to clear.
 
 ??? question "Can I use faBolus and t:connect at the same time?"
-    No. The pump pairs with one app at a time, and switching needs a new code from the pump each time.
-    Some settings can only be changed in t:connect: pair it for that, then pair faBolus again. See
+    No. The pump pairs with one app at a time, and switching needs a new code from the pump each time. See
     [Pair your pump](setup/pairing.md#fabolus-and-tconnect).
 
 ??? question "Can faBolus get glucose without the pump?"

@@ -7,8 +7,8 @@ The same build as the step-by-step guide, for people comfortable in a terminal.
 - Xcode 27.2 and an Apple team.
 - XcodeGen (`brew install xcodegen`).
 - Optional, for the watch: Garmin's iOS companion SDK 1.8.0, unzipped at
-  `../../vendor/connectiq-companion-app-sdk-ios-1.8.0` relative to the faBolus checkout, and the Connect
-  IQ SDK (9.2.0) with the Venu 3S device.
+  `../../vendor/connectiq-companion-app-sdk-ios-1.8.0` relative to the faBolus checkout, the Connect IQ
+  SDK (9.2.0) with the Venu 3S device, and a Java runtime for `monkeyc`.
 
 ## The phone app
 
@@ -26,7 +26,8 @@ xcrun devicectl list devices
 xcrun devicectl device install app --device <device id> build/DD/Build/Products/Debug-iphoneos/faBolus.app
 ```
 
-TandemKit isn't cloned: `Packages/PumpSession` pins it by revision and Xcode fetches it. To build
+TandemKit isn't cloned: `Packages/PumpSession` and `Packages/PhoneApp` pin the same revision, and Xcode
+fetches it. To build
 against a local TandemKit checkout, see [CONTRIBUTING.md](https://github.com/faBolus-app/faBolus/blob/main/CONTRIBUTING.md).
 
 ### What `generate-project.sh` settles
@@ -65,8 +66,9 @@ SDK="$(ls -d "$HOME/Library/Application Support/Garmin/ConnectIQ/Sdks/"connectiq
 ```
 
 Copy `bin/faBolus.prg` to `GARMIN/APPS` on the watch over USB (MTP), or publish a private beta with
-`scripts/beta-build.sh` (see [Garmin watch](garmin-build.md#step-5b-or-publish-a-private-beta)).
-`./scripts/build-and-test.sh` compiles every jungle and runs the unit suite in the simulator.
+`scripts/beta-build.sh` (see [Garmin watch](garmin-build.md#step-6b-or-publish-a-private-beta)).
+`CIQ_KEY=../developer_key.der ./scripts/build-and-test.sh` compiles the app and test jungles, fails on any
+compiler warning, and runs the unit suite in the simulator; its key defaults to `./developer_key.der`.
 
 ## The docs site
 

@@ -24,7 +24,8 @@ it comes up.
 
     ---
 
-    One that runs **Xcode 27.2**, Apple's free app-building tool.
+    One that runs **Xcode 27.2**, Apple's free app-building tool. The App Store's Xcode page shows the
+    macOS version it needs.
 
 - :material-watch:{ .lg .middle } **Optional: a Garmin Venu 3S**
 
@@ -62,5 +63,6 @@ See [Backup CGM](setup/cgm.md). faBolus shows glucose in mg/dL only.
 | **GitHub Desktop** | Downloads the code with buttons instead of commands | [Xcode and tools](build/xcode.md) |
 | **Garmin's iOS companion SDK** *(optional)* | Lets the phone app talk to the watch. Without it the app builds with no watch support. | [Put it on your iPhone](build/build-app.md#garmin-sdk) |
 | **Garmin's Connect IQ SDK** *(optional)* | Builds the watch app itself | [Garmin watch](build/garmin-build.md) |
+| **Java** *(optional)* | Garmin's compiler runs on it | [Garmin watch](build/garmin-build.md#step-3-install-java) |
 
 Got everything? Go to the [build guide :material-arrow-right:](build/index.md).

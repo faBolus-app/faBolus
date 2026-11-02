@@ -41,7 +41,8 @@ Common problems, by where you hit them. If yours isn't here, see the [FAQ](faq.m
 ## Pairing and connecting
 
 ??? question "The pump doesn't appear"
-    - Put the pump in pairing mode (**Options → Device Settings → Bluetooth Settings → Pair Device**).
+    - Put the pump in pairing mode: **Options → Device Settings → Bluetooth Settings**, **Mobile
+      Connection** on, then **Pair Device**.
     - Make sure faBolus may use Bluetooth: iPhone **Settings → faBolus → Bluetooth**.
     - Disconnect or unpair t:connect: the pump connects to one app at a time.
     - Wait for **Search again**, then try once more with the phone next to the pump.

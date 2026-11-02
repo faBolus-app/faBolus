@@ -12,7 +12,9 @@ You'll install three things: **Xcode**, a small tool called **XcodeGen**, and **
 <li>When it asks which <strong>platforms</strong> to download, make sure <strong>iOS</strong> is included, and let it finish.</li>
 </ol>
 
-faBolus is built and tested with **Xcode 27.2**. A newer Xcode normally works too; an older one doesn't.
+faBolus is built and tested with **Xcode 27.2**; an older Xcode doesn't work. A newer one usually does,
+but the project treats every compiler warning as an error, so a newer Xcode's new warnings can stop the
+build. If that happens, install 27.2 from [Apple's downloads page](https://developer.apple.com/download/all/).
 To see your version, choose **Xcode → About Xcode** in the menu bar.
 
 !!! note "If the App Store won't install it"
@@ -39,8 +41,9 @@ description file. You install XcodeGen with **Homebrew**, the usual way to insta
 Open **Terminal** (in **Applications → Utilities**). You type or paste a command, press Return, and wait
 until it finishes before the next.
 
-**If you don't have Homebrew yet**, paste this and follow what it prints. It asks for your Mac password;
-the characters don't show as you type, which is normal.
+**If you don't have Homebrew yet**, paste this and follow what it prints. It needs an administrator
+account on the Mac, and asks for your Mac password; the characters don't show as you type, which is
+normal.
 
 ```sh
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"

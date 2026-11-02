@@ -71,8 +71,7 @@ contact your healthcare provider.
 ## Using it alongside the official Tandem app
 
 The pump pairs with one controller at a time. faBolus and t:connect can both be installed, but switching
-between them is a full pairing with a new code from the pump. Some pump settings can only be changed in
-t:connect. See [Pair your pump](docs/setup/pairing.md#fabolus-and-tconnect).
+between them is a full pairing with a new code from the pump. See [Pair your pump](docs/setup/pairing.md#fabolus-and-tconnect).
 
 ## Acknowledgments
 

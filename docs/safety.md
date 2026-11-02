@@ -15,7 +15,9 @@ and what it leaves to the pump.
   either way, the pump refuses a dose over its limit. faBolus adds no limit of its own, apart from an
   optional limit on bolus size from the watch that you can set.
 - **The pump alarms on its own.** Its alarms and alerts appear on its own screen whether or not a phone
-  is paired. faBolus shows them too, as a convenience.
+  is paired. faBolus shows them too, as a convenience. When faBolus can't run, for example once a
+  self-built app's signing has run out, its notifications, the watch and the widgets stop; the pump's
+  alarms don't.
 - **Only signed commands deliver.** A bolus is a signed Bluetooth message the pump checks before it
   acts. faBolus never changes the pump's software.
 

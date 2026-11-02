@@ -19,7 +19,7 @@ from the app.
 ## Step 1: Download the code {#download}
 
 <ol class="cx2-steps">
-<li>In Finder, choose <strong>Go → Home</strong>. If there's no <strong>Developer</strong> folder, make one (<strong>File → New Folder</strong>). Inside it, make a folder named <strong>faBolus</strong>.</li>
+<li>In Finder, choose <strong>Go → Home</strong>. If there's no <strong>Developer</strong> folder, make one: <strong>File → New Folder</strong>, type <code>Developer</code> and press Return. Open it and make a folder named <strong>faBolus</strong> the same way.</li>
 <li>Open <strong>GitHub Desktop</strong> and choose <strong>File → Clone Repository…</strong>, then the <strong>URL</strong> tab.</li>
 <li>For the URL, paste <code>https://github.com/faBolus-app/faBolus</code>.</li>
 <li>Click <strong>Choose…</strong> next to <strong>Local Path</strong> and pick the <strong>Developer/faBolus</strong> folder you made. Check that the Local Path now ends in <code>Developer/faBolus/faBolus</code>; type it in if it doesn't.</li>
@@ -71,8 +71,8 @@ In TextEdit, change two lines:
 
 - **`APP_BUNDLE_ID`**: a name only you use, written like a reversed web address, for example
   `com.janesmith.fabolus`. Every App ID must be unique across Apple, so the project's own
-  `com.fabolus.app` won't work for your account. The widgets and the shared App Group are named from
-  it automatically.
+  `com.fabolus.app` won't work for your account. Use only letters, numbers, hyphens and dots (no spaces
+  or underscores). The widgets and the shared App Group are named from it automatically.
 - **`DEVELOPMENT_TEAM`**: your 10-character Team ID (see below), or nothing after the `=` if you'd
   rather pick your team in Xcode. Don't leave the example's `ABCDE12345`.
 
@@ -92,7 +92,7 @@ Save (<kbd>⌘</kbd> + <kbd>S</kbd>) and close TextEdit.
         Your Team ID is the 10 characters after `OU=`.
 
     With the Team ID in the file, the team is set every time the project is made. Without it, you pick
-    the team in Xcode (Step 6) after each time you make the project.
+    the team in Xcode (Step 7) after each time you make the project.
 
 ## Step 4: Make the Xcode project
 
@@ -130,18 +130,7 @@ open faBolus.xcodeproj
 Xcode opens. Near the top it says it's resolving packages: it's downloading TandemKit and the other
 libraries the app uses. The first time this takes a few minutes. Wait until it finishes.
 
-## Step 6: Check signing
-
-<ol class="cx2-steps">
-<li>In the left panel, click the blue <strong>faBolus</strong> project icon at the top.</li>
-<li>Under <strong>TARGETS</strong>, click <strong>faBolus</strong>, then the <strong>Signing &amp; Capabilities</strong> tab.</li>
-<li>Check that <strong>Automatically manage signing</strong> is ticked and <strong>Team</strong> shows your team. If it shows none, pick your team.</li>
-<li>Do the same for the <strong>faBolusWidgets</strong> target.</li>
-</ol>
-
-There's a third target, **faBolusAppTests**. It isn't installed on the phone and needs no team.
-
-## Step 7: Turn on Developer Mode on the iPhone
+## Step 6: Connect the iPhone and turn on Developer Mode
 
 <ol class="cx2-steps">
 <li>Connect the iPhone to the Mac with a cable. When the phone asks <strong>Trust This Computer?</strong>, tap <strong>Trust</strong> and enter your passcode.</li>
@@ -151,17 +140,29 @@ There's a third target, **faBolusAppTests**. It isn't installed on the phone and
 
 !!! note "No Developer Mode switch?"
     It appears only after the phone has been connected to a Mac running Xcode. Keep the cable in, choose
-    your iPhone in Xcode as in Step 8, then look again.
+    your iPhone in Xcode's device menu (Step 7), then look again.
+
+## Step 7: Choose your iPhone and check signing
+
+<ol class="cx2-steps">
+<li>At the top of Xcode, check that the scheme says <strong>faBolus</strong>. Click the device menu next to it and choose <strong>your iPhone</strong>. The first time, Xcode spends a few minutes preparing the phone for development; wait for it.</li>
+<li>In the left panel, click the blue <strong>faBolus</strong> project icon at the top.</li>
+<li>Under <strong>TARGETS</strong>, click <strong>faBolus</strong>, then the <strong>Signing &amp; Capabilities</strong> tab.</li>
+<li>Check that <strong>Automatically manage signing</strong> is ticked and <strong>Team</strong> shows your team. If it shows none, pick your team.</li>
+<li>Do the same for the <strong>faBolusWidgets</strong> target.</li>
+</ol>
+
+There's a third target, **faBolusAppTests**. It isn't installed on the phone and needs no team.
+
+Signing errors such as "no devices from which to generate a provisioning profile" go away once your iPhone
+is chosen and connected. If Xcode offers to register the device, accept: it adds your iPhone to your team.
 
 ## Step 8: Run
 
-<ol class="cx2-steps">
-<li>At the top of Xcode, check that the scheme says <strong>faBolus</strong>. Click the device menu next to it and choose <strong>your iPhone</strong>.</li>
-<li>Click <strong>▶</strong> (Run), or press <kbd>⌘</kbd> + <kbd>R</kbd>.</li>
-</ol>
+Click **▶** (Run), or press <kbd>⌘</kbd> + <kbd>R</kbd>. The first build takes several minutes.
 
-The first build takes several minutes. If Xcode says the device isn't registered, or asks to register
-it, accept: it adds your iPhone to your team.
+If macOS asks that **codesign wants to access a key** in your keychain, enter your Mac login password and
+click **Always Allow**. It may ask more than once during the first build.
 
 ## Step 9: Trust yourself as the developer (free account)
 
@@ -172,7 +173,7 @@ The first time, a free account's app won't open until you trust it. On the iPhon
 <li>Under <strong>Developer App</strong>, tap your Apple account, then <strong>Trust</strong>.</li>
 </ol>
 
-Then press **Run** in Xcode again, or tap the app's icon.
+Then press **▶** in Xcode again, or tap the app's icon.
 
 ## Step 10: First launch
 

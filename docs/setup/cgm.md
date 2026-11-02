@@ -9,7 +9,8 @@ says which source a reading came from.
   <figcaption>Settings → CGM &amp; backup</figcaption>
 </figure>
 
-Open **Settings → CGM & backup** and choose one **Backup CGM**:
+Open **Settings → CGM & backup** and choose one **Backup CGM**: **Dexcom Share (cloud)**, **Dexcom G6
+(direct Bluetooth)** or **Dexcom G7 (direct Bluetooth)**.
 
 ## Dexcom Share
 
@@ -17,7 +18,7 @@ Reads your readings from Dexcom's servers, so it needs an internet connection an
 the Dexcom app.
 
 <ol class="cx2-steps">
-<li>Choose <strong>Dexcom Share</strong>.</li>
+<li>Choose <strong>Dexcom Share (cloud)</strong>.</li>
 <li>Enter the <strong>username</strong> and <strong>password</strong> of the Dexcom account that shares your readings, and your <strong>region</strong>: US, Outside US, or Asia-Pacific (Japan).</li>
 <li>Tap <strong>Save and check</strong>.</li>
 </ol>
@@ -57,6 +58,6 @@ reading, or what's wrong.
   faBolus is running. Your pump and the Dexcom app keep their own alarms.
 
 !!! note "Helping check the direct G6 and G7 readers"
-    **Settings → About & help → Export Dexcom Bluetooth log** saves everything the transmitter sent
-    since faBolus started. It includes glucose readings. It helps when a direct reader misbehaves; see
+    While a direct G6 or G7 is the backup, **Settings → About & help → Export Dexcom Bluetooth log** saves
+    everything the transmitter sent since faBolus started. It includes glucose readings. It helps when a direct reader misbehaves; see
     [Send feedback](../feedback.md).

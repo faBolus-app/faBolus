@@ -22,14 +22,15 @@ When it runs out, the icon stays but the app won't open. Nothing is lost: instal
 Your pairing, settings and history stay on the phone, so you don't pair again.
 
 !!! tip "Set a reminder"
-    On a free account, a weekly calendar reminder saves you from finding the app expired when you need
-    it.
+    While the app won't open, nothing of faBolus runs: no notifications, no backup urgent low, nothing on
+    the watch or in the widgets. Your pump's own alarms carry on. On a free account, a weekly calendar
+    reminder saves you from finding the app expired when you need it.
 
 ## Get the newest version
 
 1. Open **GitHub Desktop**, choose **faBolus** in the repository list at the top left, and click
    **Fetch origin**, then **Pull origin** if it offers it.
-2. In Terminal, make the project again, since files may have been added. Put
+2. Quit Xcode. In Terminal, make the project again, since files may have been added. Put
    `FABOLUS_TIME_SENSITIVE=1` in front if you built with it:
 
     ```sh
@@ -45,13 +46,22 @@ If the build fails right after an update, see [Troubleshooting](../troubleshoot.
 
 The watch app doesn't expire. Update it when the phone app's update needs it: pull **faBolusGarmin** in
 GitHub Desktop the same way, then build and install it again as in
-[Garmin watch](garmin-build.md#step-4-build-the-watch-app). When the phone and watch apps are too far
+[Garmin watch](garmin-build.md#step-5-build-the-watch-app). When the phone and watch apps are too far
 apart to talk, the watch says which one to update.
 
 ## Coming from the earlier faBolus
 
-This version is a new app. If you built the earlier faBolus with the same bundle ID, the new one
-installs over it, and on its first launch it removes everything the earlier app stored on the phone:
+This version is a new app.
+
+**Your folders.** The earlier guide kept the code in `Documents/faBolus/faBolus`, with a TandemKit clone
+beside it and Garmin's SDK in `Documents/vendor`. You can keep using that folder: pull the update, and use
+`cd ~/Documents/faBolus/faBolus` wherever this guide says `~/Developer/faBolus/faBolus`. The SDK in
+`Documents/vendor` is still found, two folders up. The TandemKit clone isn't needed any more. If a
+repository you cloned in Terminal doesn't appear in GitHub Desktop, add it with **File → Add Local
+Repository…**. Or start fresh with [the build guide](build-app.md).
+
+**Your data.** If you built the earlier faBolus with the same bundle ID, the new one installs over it, and
+on its first launch it removes everything the earlier app stored on the phone:
 
 - its settings;
 - its pump pairing, so you [pair again](../setup/pairing.md) with a new code from the pump;
