@@ -41,9 +41,10 @@ notifications are and aren't.
 
 Turn each one on or off in **Settings → Notifications**. All are on by default.
 
-A pump-alert notification has a **Clear** action. From the Lock Screen it clears the alert on the pump,
-even if faBolus wasn't running; it waits up to 20 seconds for the pump to connect. If the pump doesn't
-clear it, the notification comes back saying to clear it on the pump.
+A pump-alert notification has a **Clear** action when the phone may clear that alert (the same rule as
+in the app, so not for an alert to clear on the pump, and never for a malfunction). From the Lock Screen
+it clears the alert on the pump, even if faBolus wasn't running; it waits up to 20 seconds for the pump
+to connect. If the pump doesn't clear it, the notification comes back saying to clear it on the pump.
 
 ## Focus and Time Sensitive
 

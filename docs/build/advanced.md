@@ -61,7 +61,7 @@ cd ~/Developer/faBolus
 git clone https://github.com/faBolus-app/faBolusGarmin.git
 cd faBolusGarmin
 ./scripts/stamp-revision.sh
-SDK="$(ls -d "$HOME/Library/Application Support/Garmin/ConnectIQ/Sdks/"connectiq-sdk-* | sort | tail -1)"
+SDK="$(ls -d "$HOME/Library/Application Support/Garmin/ConnectIQ/Sdks/"connectiq-sdk-* | sort -V | tail -1)"
 "$SDK/bin/monkeyc" -f monkey.jungle -d venu3s -y <developer_key.der> -o bin/faBolus.prg
 ```
 

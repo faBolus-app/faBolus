@@ -101,7 +101,7 @@ Common problems, by where you hit them. If yours isn't here, see the [FAQ](faq.m
     The phone must be near the watch, with Bluetooth on and Garmin Connect running. Open faBolus on the
     phone. In **Settings → Watch**, check the chosen watch, or choose it again in Garmin Connect.
 
-??? question "**Link** says \"faBolus not installed on the watch\""
+??? question "Link says \"faBolus not installed on the watch\""
     The watch app isn't installed, or it was built with a different app ID than the phone expects. Install
     it as in [Garmin watch (build)](build/garmin-build.md). If you used a private beta, make sure the phone
     app was built after `beta-build.sh` set your ID.

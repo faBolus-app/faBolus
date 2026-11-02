@@ -64,7 +64,7 @@ signed with the same key.
 ```sh
 cd ~/Developer/faBolus/faBolusGarmin
 ./scripts/stamp-revision.sh
-SDK="$(ls -d "$HOME/Library/Application Support/Garmin/ConnectIQ/Sdks/"connectiq-sdk-* | sort | tail -1)"
+SDK="$(ls -d "$HOME/Library/Application Support/Garmin/ConnectIQ/Sdks/"connectiq-sdk-* | sort -V | tail -1)"
 "$SDK/bin/monkeyc" -f monkey.jungle -d venu3s -y ../developer_key.der -o bin/faBolus.prg
 ```
 
@@ -114,7 +114,7 @@ Quit Xcode first, because the script makes the phone app's project again. Then:
 
 ```sh
 cd ~/Developer/faBolus/faBolusGarmin
-SDK="$(ls -d "$HOME/Library/Application Support/Garmin/ConnectIQ/Sdks/"connectiq-sdk-* | sort | tail -1)"
+SDK="$(ls -d "$HOME/Library/Application Support/Garmin/ConnectIQ/Sdks/"connectiq-sdk-* | sort -V | tail -1)"
 MONKEYC="$SDK/bin/monkeyc" KEY=../developer_key.der ./scripts/beta-build.sh
 ```
 
