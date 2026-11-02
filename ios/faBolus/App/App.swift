@@ -78,6 +78,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         return .device(makeWatchTransport: makeWatch, reloadWidgets: reload, liveActivity: liveActivity)
     }
 
+    func applicationWillTerminate(_ application: UIApplication) { model.willTerminate() }
+
     func open(_ url: URL) {
         if url.scheme == DeepLink.scheme {
             if url.host == "bolus" { model.openBolusRequested = true }

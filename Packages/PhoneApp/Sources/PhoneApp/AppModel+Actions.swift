@@ -81,7 +81,7 @@ extension AppModel {
         await session.scanForPairing()
     }
 
-    /// Pairing left without pairing: the paired pump reconnects.
+    /// Pairing left without pairing (a pairing under way is abandoned): the paired pump reconnects.
     public func endPairingScan() async { await session.endPairingScan() }
 
     public func pair(_ pump: FoundPump, code: String) async throws(PumpSession.PairingRefusal) {
@@ -99,9 +99,10 @@ extension AppModel {
         pumpsFound = []
         linkFailure = nil
         lastDisconnect = nil
+        connectionUnstable = false
         pump = await session.state
         recompute()
-        publishSurfaces()
+        await settingsChanged()
     }
 
     public func syncHistory() async { await session.syncHistory() }
@@ -148,6 +149,21 @@ extension AppModel {
 
     /// Switches the backup source (`nil` for none). One runs at a time.
     public func selectBackupSource(_ id: String?) async {
+        let previous = backupSwitch
+        let change = Task { [weak self] in
+            await previous?.value
+            await self?.switchBackupSource(to: id)
+        }
+        backupSwitch = change
+        await change.value
+    }
+
+    /// The process is ending in order: the backup source's recovery policy counts this launch as clean.
+    public func willTerminate() {
+        if backupSource != nil { environment.glucoseSources.markCleanShutdown() }
+    }
+
+    private func switchBackupSource(to id: String?) async {
         backupTask?.cancel()
         backupTask = nil
         if let old = backupSource {

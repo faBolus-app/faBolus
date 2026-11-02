@@ -17,6 +17,31 @@ import Testing
         return (phone, model)
     }
 
+    /// A review left open while the pump's readings move on isn't sent as it was: Deliver reads the pump
+    /// again and shows the new dose, and nothing reaches the pump until that one is confirmed.
+    @Test func aReviewLeftOpenIsReadAgainBeforeItIsSent() async {
+        let (phone, model) = await connected()
+        let flow = BolusFlow(model: model)
+        flow.mode = .carbs
+        flow.carbsText = "30"
+        flow.entryChanged()
+        await phone.driving(model) { await flow.confirm() }
+        guard case .review(let reviewed) = flow.phase else {
+            Issue.record("expected the review, got \(flow.phase)")
+            return
+        }
+        phone.mock.pump.glucose = (260, 30)
+        await phone.run(model, for: 30)
+        await phone.driving(model) { await flow.deliver() }
+        switch flow.phase {
+        case .review(let fresh): #expect(fresh.units != reviewed.units)
+        case .prompt: break
+        default: Issue.record("expected the dose reviewed again, got \(flow.phase)")
+        }
+        #expect(model.latestOutcome == nil, "nothing was sent")
+        await model.shutdown()
+    }
+
     /// A typed glucose that isn't a number holds the dose: it isn't quietly replaced by the CGM reading.
     @Test func aGlucoseThatIsntANumberHoldsTheDose() async {
         let (phone, model) = await connected()

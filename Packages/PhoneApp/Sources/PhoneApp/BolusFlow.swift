@@ -184,14 +184,29 @@ public final class BolusFlow {
         case useLastKnownInputs, includeStaleReading, carbsOnly, useNewDose, keepEnteredDose
     }
 
-    /// The reviewed dose, sent. The dose sent is exactly the one reviewed. The phase leaves the review
-    /// before the first suspension, so the review sheet can't be read as cancelled meanwhile.
+    /// The reviewed dose, sent. The inputs are read from the pump again first, as the review may have
+    /// sat open (a bolus from the watch meanwhile, a new glucose): the dose sent is the one reviewed only
+    /// while that reading still gives the same dose for the same reasons; otherwise the new one is shown
+    /// for review, or the composer's question asked. The phase leaves the review before the first
+    /// suspension, so the review sheet can't be read as cancelled meanwhile.
     public func deliver() async {
-        guard case .review(let dose) = phase else { return }
+        guard case .review(let reviewed) = phase, let attempt else { return }
         phase = .delivering
-        let result = await model.deliver(dose)
-        phase = .done(result)
-        if case .started = result { reset() }
+        switch await model.composePhoneDose(attempt) {
+        case .deliver(let fresh) where Self.sameDose(fresh, reviewed):
+            let result = await model.deliver(fresh)
+            phase = .done(result)
+            if case .started = result { reset() }
+        case .deliver(let changed): phase = .review(changed)
+        case .confirm(let prompt): phase = .prompt(prompt)
+        case .refused(let refusal): phase = .refused(refusal.userMessage)
+        }
+    }
+
+    /// The same units, correcting from the same glucose, with the same kinds of notice.
+    static func sameDose(_ a: ComposedDose, _ b: ComposedDose) -> Bool {
+        func kinds(_ d: ComposedDose) -> [Int] { d.notices.map(rank).sorted() }
+        return a.units == b.units && a.correctionGlucoseMgdl == b.correctionGlucoseMgdl && kinds(a) == kinds(b)
     }
 
     /// Any prompt or the review cancelled: nothing is sent.
@@ -259,16 +274,18 @@ public final class BolusFlow {
 
     /// The notices for a dose, most important first. They never change the dose.
     public static func notices(_ dose: ComposedDose) -> [String] {
-        func rank(_ n: DoseNotice) -> Int {
-            switch n {
-            case .moreThanReservoir: return 0
-            case .stacking: return 1
-            case .atPumpMax: return 2
-            case .differsFromCalculator: return 3
-            case .cartridgeStateUnknown: return 4
-            }
+        dose.notices.sorted { rank($0) < rank($1) }.compactMap(text(for:))
+    }
+
+    /// A notice's kind, most important first.
+    static func rank(_ n: DoseNotice) -> Int {
+        switch n {
+        case .moreThanReservoir: return 0
+        case .stacking: return 1
+        case .atPumpMax: return 2
+        case .differsFromCalculator: return 3
+        case .cartridgeStateUnknown: return 4
         }
-        return dose.notices.sorted { rank($0) < rank($1) }.compactMap(text(for:))
     }
 
     static func text(for notice: DoseNotice) -> String? {

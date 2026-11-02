@@ -49,6 +49,18 @@ import Testing
         await rig.settle()
         await rig.run(for: 40, step: 1)
         #expect(await rig.session.state.link == .connected)
+
+        // Leaving while a pairing is under way abandons it: the stored pairing is the one kept.
+        let before = rig.store.load()?.pairing
+        await rig.session.scanForPairing()
+        await rig.settle()
+        // A 6-digit code: the scripted pump only knows the long one, so this pairing stays under way.
+        try? await rig.session.pair(
+            peripheralID: ScriptedPump.peripheralID, advertisedName: "tslim X2 ***693", code: "123456")
+        await rig.session.endPairingScan()
+        await rig.settle()
+        #expect(rig.store.load()?.pairing == before)
+        #expect(await rig.session.state.link == .connected)
         await rig.stop()
     }
 

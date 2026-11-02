@@ -567,10 +567,17 @@ public actor PumpSession {
         await connection.scanForPairing()
     }
 
-    /// The user left pairing without pairing: back to the pump paired before. Nothing changes while a
-    /// pairing is under way or the scan has already ended.
+    /// The user left pairing without pairing: a pairing under way is abandoned, and the link goes back
+    /// to the pump paired before. Nothing changes once the scan has ended without one.
     public func endPairingScan() async {
-        guard pendingPairing == nil, case .scanning(forPairing: true) = await connection.state.phase else { return }
+        if pendingPairing != nil {
+            pendingPairing = nil
+            state.model = record.pairing?.model ?? .unknown
+            await connection.stop()
+            await connectToStoredPairing()
+            return
+        }
+        guard case .scanning(forPairing: true) = await connection.state.phase else { return }
         await connectToStoredPairing()
     }
 

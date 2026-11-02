@@ -36,6 +36,8 @@ public final class AppModel {
     @ObservationIgnored let connection: PumpConnection
     @ObservationIgnored var backupSource: (any GlucoseSource)?
     @ObservationIgnored var backupTask: Task<Void, Never>?
+    /// The backup-source switch under way, so switches run one at a time.
+    @ObservationIgnored var backupSwitch: Task<Void, Never>?
     @ObservationIgnored var tasks: [Task<Void, Never>] = []
     @ObservationIgnored let watchTransport: (any WatchTransport)?
     @ObservationIgnored var watchLink: WatchLink?
@@ -188,6 +190,8 @@ public final class AppModel {
                     while !Task.isCancelled {
                         try? await Task.sleep(for: .seconds(60))
                         await self?.updatePrimaryHealth()
+                        // The pump's reading may have aged past its window: the backup's takes over now.
+                        self?.recompute()
                         self?.publishSurfaces()
                     }
                 })
@@ -263,7 +267,9 @@ public final class AppModel {
             if pairing != nil { settings.hasCompletedOnboarding = true }
             // A new pairing starts with an empty logbook.
             logbook = await session.historyEvents
-            // The pump's model decides what the watch may do.
+            // The pump's model decides what the watch may do: the session set it without a reading change.
+            pump = await session.state
+            recompute()
             await settingsChanged()
         case .alertsChanged:
             // Already in `state` from the `.readingsChanged` before it.
