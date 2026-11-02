@@ -250,3 +250,17 @@ that worked.
   `Packages/GlucoseSources/Sources/GlucoseSources/GlucoseSourceRegistry.swift`.
 - **Verify:** with a G6 paired to the pump, compare **From the pump** in **Settings → CGM & backup** with
   the transmitter's printed ID.
+
+## 21. The delivered amount after a mid-delivery cancel, and at a larger dose
+
+- **The guess:** when a bolus ends, the amount the pump reports in `LastBolusStatusV2` (or, failing
+  that, the history's completed record) is what went in: the partial amount when the bolus was cancelled
+  or stopped partway, and the full amount at any size. Only a 0.10 U delivery has been checked on a pump
+  (its screen agreed), and it finishes too fast to cancel partway.
+- **Where:** `Packages/PumpSession/Sources/PumpSession/PumpSession+Delivery.swift` (`settleFinished`),
+  which sets the outcome the phone and the watch show.
+- **Risk:** the bolus outcome shows the wrong amount ("Bolus stopped" with a partial amount, or
+  "delivered").
+- **Verify:** with a saline cartridge, deliver 1–2 U and compare the request, `LastBolusStatusV2` and the
+  pump screen; then start a 2 U bolus, cancel it partway, and compare the reported amount with the pump
+  screen and t:connect, including a cancel that arrives just as the bolus finishes.

@@ -10,12 +10,11 @@ Fill in what applies; delete what doesn't. See CONTRIBUTING.md and BRANCHES.md.
 ## Safety
 
 - [ ] Does **not** weaken a safety interlock (confirmation, the pump's limits, single-flight, the
-      idempotency ledger, fail-closed transport gating), and adds no dose path around the composer,
-      the access policy, TandemKit's `WritePolicy` and the signed message
+      idempotency ledger, fail-closed transport gating), and adds no dose path around the composer
+      (with the access policy), the ledger, `PumpSession`, TandemKit's per-call write grant
+      (`send(_:allowing:)`) and the signed message
 - [ ] No glucose value reaches a display layer without a source timestamp; no client-derived trend
       arrow; no locally-invented IOB or therapy parameter
-- [ ] If this touches dosing guidance, thresholds, or automation copy: the clinical-review gate
-      (BRANCHES.md) is noted — such work does not reach anyone but the developer until that review lands
 
 ## Contract
 

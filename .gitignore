@@ -34,5 +34,9 @@ project.generated.yml
 *.mlmodel
 *.mlmodelc
 
+# Claude Code's worktrees, and the link a worktree uses to reach ../../vendor (Garmin's SDK).
+/.claude/worktrees/
+/.claude/vendor
+
 # Local dispatch-isolation runtime state — re-created per session, never a repo artifact.
 .gsd/
