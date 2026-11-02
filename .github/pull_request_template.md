@@ -36,4 +36,4 @@ Fill in what applies; delete what doesn't. See CONTRIBUTING.md and BRANCHES.md.
 
 - [ ] N/A — single repo
 - [ ] Touches the contract, a shared constant or TandemKit → sibling PR(s) linked, with the pin
-      (`contract/PIN`, or the TandemKit revision in the packages' `Package.swift`) at the sibling's commit
+      (`contract/PIN`, or the TandemKit release in the packages' `Package.swift`) at the sibling's release

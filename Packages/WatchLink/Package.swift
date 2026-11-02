@@ -3,7 +3,7 @@
 // the remote from the pump session, the bolus ledger and the alerts (RemoteHost), and the thin Connect IQ
 // adapter under the link (GarminTransport, compiled only where the Connect IQ SDK is present).
 //
-// PumpSession pins TandemKit by revision; to build against a local checkout, use a SwiftPM mirror
+// PumpSession pins a TandemKit release; to build against a local checkout, use a SwiftPM mirror
 // (CONTRIBUTING.md).
 import PackageDescription
 

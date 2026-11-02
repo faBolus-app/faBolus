@@ -32,8 +32,8 @@ TandemKit (pinned)
 | `PhoneApp` | The app's state and wiring, tested with `swift test`: `AppModel` (the only app state; views read it and act through it), `AppSettings`, the bolus flow, the first-launch wipe, the diagnostics export and the widget publisher. `WidgetContent` is what the widgets and the Live Activity read. |
 | `faBolusDesign` | Glucose-band colours and the other shared presentation tokens. |
 
-TandemKit, the pump protocol, is a separate repository. `PumpSession` and `PhoneApp` pin it by the same
-revision.
+TandemKit, the pump protocol, is a separate repository. `PumpSession` and `PhoneApp` pin the same
+release of it.
 
 ## The dose path
 

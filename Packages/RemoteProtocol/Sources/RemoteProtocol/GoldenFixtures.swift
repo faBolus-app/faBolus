@@ -93,18 +93,20 @@ public enum GoldenFixtures {
             .dismissResult(
                 DismissResultPayload(requestId: "1793534395-r3-119001", alertId: "pump.alert.2", result: .cleared))),
         v2("incompatible", .incompatible(IncompatiblePayload(peerVersion: 3))),
+        // A remote's poll carries its app version, which a release keeps equal to the phone's
+        // MARKETING_VERSION; the watch writes its poll from that constant, so its tests compare this one.
         v2(
             "poll",
             .poll(
                 PollPayload(
                     configRevision: config.revision, awaitingRequestId: "1793534390-7-118220", wantsHistory: true,
-                    freshGlucose: false, appVersion: "0.1.0"))),
+                    freshGlucose: false, appVersion: "0.4.0"))),
         v2(
             "poll-empty",
             .poll(
                 PollPayload(
                     configRevision: nil, awaitingRequestId: nil, wantsHistory: false, freshGlucose: true,
-                    appVersion: "0.1.0"))),
+                    appVersion: "0.4.0"))),
         v2(
             "bolus-units",
             .bolus(

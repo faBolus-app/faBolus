@@ -16,8 +16,8 @@ watch apps don't talk to each other's phone apps, so a `main` phone app needs a 
 
 How the three are tied together on `rebuild`:
 
-- faBolus pins TandemKit by revision in `Packages/PumpSession/Package.swift`. CONTRIBUTING.md says how
-  to build against a local TandemKit checkout.
+- faBolus pins a TandemKit release by version, the same one in `Packages/PumpSession/Package.swift` and
+  `Packages/PhoneApp/Package.swift`. CONTRIBUTING.md says how to build against a local TandemKit checkout.
 - faBolusGarmin vendors the phone↔watch contract from a faBolus commit, recorded in `contract/PIN`, with
   `scripts/sync-contract.sh`. Its CI checks the vendored files against faBolus at that commit, so the
   commit must be pushed.
@@ -39,7 +39,7 @@ The three `rebuild` branches merge into `main` together, and then:
 - **`archive/<branch>`**: every side branch, kept as a tag when it was deleted. `archive/dev/*` holds
   features that aren't in the new app, each with a `REINTEGRATION.md` saying what it holds. They're
   reference, not merge candidates.
-- **Version tags** (`v0.1.0`, `v0.3.0` and so on) mark builds of the earlier app. `CHANGELOG.md` lists
-  them.
+- **Version tags** mark releases, and each repository's `CHANGELOG.md` lists its own. `v0.1.0` to `v0.3.0`
+  are builds of the earlier app; `v0.4.0`, in all three repositories, is the first release of the new one.
 - **`deprecated/*`, `safe-baseline/*`, `pre-narrow/*` and similar** are historical snapshots of the earlier
   app, kept for comparison only.

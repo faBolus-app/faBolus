@@ -26,7 +26,7 @@ xcrun devicectl list devices
 xcrun devicectl device install app --device <device id> build/DD/Build/Products/Debug-iphoneos/faBolus.app
 ```
 
-TandemKit isn't cloned: `Packages/PumpSession` and `Packages/PhoneApp` pin the same revision, and Xcode
+TandemKit isn't cloned: `Packages/PumpSession` and `Packages/PhoneApp` pin the same release, and Xcode
 fetches it. To build
 against a local TandemKit checkout, see [CONTRIBUTING.md](https://github.com/faBolus-app/faBolus/blob/main/CONTRIBUTING.md).
 

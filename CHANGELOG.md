@@ -8,8 +8,10 @@ experimental and demonstration use.
 
 ## [Unreleased]
 
-A new app, rebuilt from the ground up on the `rebuild` branch. It keeps the earlier app's bundle ID but
-none of its data. The last build of the earlier app is tagged `v1-final`.
+## [0.4.0] — 2026-11-01
+
+A new app, rebuilt from the ground up. It keeps the earlier app's bundle ID but none of its data. The
+last build of the earlier app is tagged `v1-final`.
 
 ### Added
 
@@ -42,7 +44,7 @@ none of its data. The last build of the earlier app is tagged `v1-final`.
   sheet, with its notices, before it's sent.
 - Notifications are one switch per kind, with fixed urgency.
 - Turning on bolusing from the watch asks for confirmation each time.
-- The pump library, TandemKit, is fetched by Xcode at a pinned revision; there's no sibling clone.
+- The pump library, TandemKit, is fetched by Xcode at its 0.4.0 release; there's no sibling clone.
 
 ### Removed
 
@@ -63,6 +65,7 @@ A tagged build of the earlier app.
 
 The first tagged build of the earlier app.
 
-[Unreleased]: https://github.com/faBolus-app/faBolus/compare/v1-final...HEAD
+[Unreleased]: https://github.com/faBolus-app/faBolus/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/faBolus-app/faBolus/compare/v1-final...v0.4.0
 [0.3.0]: https://github.com/faBolus-app/faBolus/releases/tag/v0.3.0
 [0.1.0]: https://github.com/faBolus-app/faBolus/releases/tag/v0.1.0

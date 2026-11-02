@@ -72,9 +72,11 @@ can ignore.
 
 ## Building against a local TandemKit
 
-`Packages/PumpSession` and `Packages/PhoneApp` each pin TandemKit by the same revision (SwiftPM refuses two
-different pins). To build against a TandemKit checkout with commits that aren't on GitHub yet, point
-SwiftPM at it with a mirror, for each package you build; the pins in `Package.swift` stay as they are:
+`Packages/PumpSession` and `Packages/PhoneApp` each pin the same TandemKit release, `exact:` its version
+(SwiftPM refuses two different pins). To build against a TandemKit checkout that isn't on GitHub yet,
+point SwiftPM at it with a mirror, for each package you build; the pins in `Package.swift` stay as they
+are, so the checkout needs the release's tag (for commits after it, pin both packages by `revision:`
+while you work):
 
 ```sh
 for p in PumpSession PhoneApp; do
@@ -85,7 +87,7 @@ done
 
 A mirror lives in that package's `.swiftpm/`, which git ignores, and applies when that package is the one
 you build or test. `config unset-mirror` removes it. The Xcode project
-still resolves the GitHub revision, so the app target sees TandemKit commits only once they're pushed.
+still resolves TandemKit from GitHub, so the app target sees a TandemKit release only once it's pushed.
 
 ## Before you open a pull request
 

@@ -43,7 +43,7 @@ cp LocalConfig.xcconfig.example LocalConfig.xcconfig   # your bundle ID and Team
 open faBolus.xcodeproj                                 # then Run on your iPhone
 ```
 
-Xcode fetches TandemKit, the pump library, at the revision `Packages/PumpSession` pins. For the watch,
+Xcode fetches TandemKit, the pump library, at the release `Packages/PumpSession` pins. For the watch,
 Garmin's iOS companion SDK 1.8.0 goes at `../../vendor/connectiq-companion-app-sdk-ios-1.8.0`; without it
 the app builds with no watch support. The watch app itself is
 [faBolusGarmin](https://github.com/faBolus-app/faBolusGarmin).

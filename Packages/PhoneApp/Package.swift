@@ -4,8 +4,8 @@
 // in the order they need, and gives the views one thin observable state with no pump logic. WidgetContent is
 // what the app publishes for its widgets and Live Activity; the widget extension links only it.
 //
-// TandemKit is pinned by revision, the same one PumpSession pins (SwiftPM refuses two different pins, so
-// a bump that misses one fails to resolve). To build against a local checkout, use a SwiftPM mirror
+// TandemKit is pinned to a release tag, the same one PumpSession pins (SwiftPM refuses two different pins,
+// so a bump that misses one fails to resolve). To build against a local checkout, use a SwiftPM mirror
 // (CONTRIBUTING.md).
 import PackageDescription
 
@@ -26,7 +26,7 @@ let package = Package(
         .package(path: "../RemoteProtocol"),
         .package(path: "../WatchLink"),
         .package(
-            url: "https://github.com/faBolus-app/TandemKit.git", revision: "1164dfbbdb6cddb4fba36bcfb552a122a768c441")
+            url: "https://github.com/faBolus-app/TandemKit.git", exact: "0.4.0")
     ],
     targets: [
         .target(name: "WidgetContent", dependencies: ["faBolusCore"]),

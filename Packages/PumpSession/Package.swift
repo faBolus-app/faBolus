@@ -4,8 +4,8 @@
 // handles the pump's alerts, and reports all of it as PumpEvents. PumpScript is a scripted pump under the
 // same session, for tests and the debug-only mock.
 //
-// TandemKit is pinned by revision. To build against a local checkout with commits not yet pushed, point
-// SwiftPM at it with a mirror (`swift package config set-mirror`, see CONTRIBUTING.md); the pin stays.
+// TandemKit is pinned to a release tag. To build against a local checkout, point SwiftPM at it with a
+// mirror (`swift package config set-mirror`, see CONTRIBUTING.md); the pin stays.
 import PackageDescription
 
 let package = Package(
@@ -19,7 +19,7 @@ let package = Package(
         .package(path: "../faBolusCore"),
         .package(path: "../HistoryStore"),
         .package(
-            url: "https://github.com/faBolus-app/TandemKit.git", revision: "1164dfbbdb6cddb4fba36bcfb552a122a768c441")
+            url: "https://github.com/faBolus-app/TandemKit.git", exact: "0.4.0")
     ],
     targets: [
         .target(

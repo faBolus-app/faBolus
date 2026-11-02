@@ -6,8 +6,8 @@ Tandem t:slim X2. Companion map: [`llms.txt`](llms.txt). Branches: [`BRANCHES.md
 ## Layout
 
 - `Packages/` holds everything that compiles: `faBolusCore` (domain types, the dose composer, the access
-  policy), `PumpSession` (the one owner of the pump; it pins `../TandemKit` by revision, and
-  `CONTRIBUTING.md` says how to build against a local checkout), `HistoryStore`, `Alerts` (the phone's
+  policy), `PumpSession` (the one owner of the pump; it and `PhoneApp` pin the same TandemKit release,
+  and `CONTRIBUTING.md` says how to build against a local checkout), `HistoryStore`, `Alerts` (the phone's
   alert pipeline), the CGM sources (`GlucoseSources`, `DexcomBLE`, the vendored `ShareClient`),
   `RemoteProtocol` (the phone↔remote protocol, version 2, with its contract files in `contract/`),
   `WatchLink` (the link to the watch, the host that answers it, and the Connect IQ adapter), `PhoneApp`

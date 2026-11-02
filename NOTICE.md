@@ -15,16 +15,18 @@ faBolus is built on the Tandem pump Bluetooth protocol as reverse-engineered by 
 **[pumpX2](https://github.com/jwoglom/pumpx2)** project (© James Woglom, MIT License). faBolus is an
 independent reimplementation for iPhone and Garmin; it is **not** a fork of, affiliated with, or endorsed
 by pumpX2 or controlX2. Captured pumpX2 message bytes are copied as test fixtures in
-`Packages/PumpSession/Tests/PumpSessionTests/Support/Captures.swift`.
+`Packages/PumpSession/Tests/PumpSessionTests/Support/Captures.swift`, and the bolus calculator in
+`Packages/faBolusCore/Sources/faBolusCore/BolusMath.swift` is a port of pumpX2's `BolusCalculator`, tested
+against rows that calculator computed.
 
 The protocol, pairing and Bluetooth core lives in the separate **TandemKit** package, which vendors
-**Mbed TLS** (Apache-2.0 OR GPL-2.0) for its EC-JPAKE implementation; see TandemKit's own `NOTICE.md` for
+**Mbed TLS** (Apache-2.0 OR GPL-2.0-or-later) for its EC-JPAKE implementation; see TandemKit's own `NOTICE.md` for
 that attribution.
 
 ## ShareClient (Dexcom Share follower)
 
 The Dexcom Share follower core in `Packages/ShareClient` is vendored from
-**[LoopKit/dexcom-share-client-swift](https://github.com/LoopKit/dexcom-share-client-swift)** (MIT,
+**[LoopKit/dexcom-share-client-swift](https://github.com/LoopKit/dexcom-share-client-swift)** `21d8657` (MIT,
 © 2016 Mark Wilson). The license is reproduced in `Packages/ShareClient/LICENSE`.
 
 ## Dexcom Bluetooth readers
@@ -35,6 +37,10 @@ its upstream license:
 - `G6/` and the shared files in `Sources/DexcomBLE`: **[CGMBLEKit](https://github.com/LoopKit/CGMBLEKit)**
   passive mode (© 2015 Nathan Racklyeft);
 - `G7/`: **[G7SensorKit](https://github.com/LoopKit/G7SensorKit)** (© 2022 LoopKit Authors).
+
+Their message tests are ported with the upstream fixtures. `Data(hexadecimalString:)` in
+`Sources/DexcomBLE/Data.swift` is adapted from a
+[Stack Overflow answer](https://stackoverflow.com/a/40278391) (CC BY-SA 3.0), as CGMBLEKit carries it.
 
 ## LoopKit and Loop, adapted
 
