@@ -1,70 +1,80 @@
 # Contributing to faBolus
 
-faBolus is designed so new pumps and new host apps are added **in-tree, behind stable interfaces**
-— not by forking. Read `ARCHITECTURE.md` first for the two seams. All contributions are
-for **experimental use only** (in development, not FDA-cleared).
+Contributions are welcome by pull request. Until the rebuild merges, target `rebuild`; after that,
+`main` (see [BRANCHES.md](BRANCHES.md)). Read [ARCHITECTURE.md](ARCHITECTURE.md) first.
 
-**Which branch does your change target?** Read `BRANCHES.md` before opening a PR. In short: `main` is
-the CI-green baseline; `experimental` holds anything that fires on a threshold, automates a decision, or
-produces output you can't check against the pump (§1.2). Anything touching dosing guidance, thresholds,
-or automation copy is behind a **clinical-review gate** and must not reach anyone but the developer
-until that review lands. The delivery disposition is **NO-GO for real insulin delivery** — keep it so.
+faBolus is experimental, in-development software — not a medical device and not FDA-cleared, for
+experimental and demonstration use.
 
-## Ground rules
+## Setup
 
-- Keep the app pump- and host-agnostic: no `import` of a specific pump library outside its backend
-  module.
-- Never weaken a safety interlock (confirmation + max-bolus clamp). Dosing changes get extra review.
-- Everything outgoing to a pump must stay byte-validated against the pumpX2 oracle (for the Tandem
-  backend) or the equivalent for your backend.
+- Xcode 27.2 (CI uses the same).
+- `brew install xcodegen swiftlint shellcheck actionlint` and `npm install --global markdownlint-cli2@0.24.0`.
+  CI checks XcodeGen 2.46.0.
+- `cp LocalConfig.xcconfig.example LocalConfig.xcconfig` and `./scripts/generate-project.sh` for the app
+  target (the [build guide](docs/build/build-app.md) has the details). The packages need neither.
+- For the Garmin adapter, Garmin's iOS companion SDK 1.8.0 at
+  `../../vendor/connectiq-companion-app-sdk-ios-1.8.0`.
 
-## Add a pump backend (support a new pump)
+## The gates
 
-1. **Copy `ios/faBolus/Data/MockBackend.swift`** as a template — it's a full `PumpBackend`.
-2. Implement `PumpBackend`: `snapshot`, `glucoseHistory`, `iobHistory`, `bolusMarkers`,
-   `activeNotifications` (map your pump's alerts → neutral `PumpAlert`), `connect/disconnect`,
-   `recommendBolus`, `deliverBolus` (return actual delivered units), `cancelBolus`,
-   `dismissNotification`, pairing, and `onChange`.
-3. Declare **`PumpCapabilities`** honestly — the UI hides features you don't support.
-4. Put your pump's protocol/BLE engine in its **own package** and depend on it from your backend
-   module only (like `TandemBackend` → TandemKit).
-5. Register it: append one `BackendDescriptor` to `BackendRegistry.enabled`
-   (`ios/faBolus/Data/BackendRegistry.swift`). That's the whole wiring — the Settings picker and the
-   app pick it up automatically.
-6. Add tests that validate your outgoing messages against your pump's reference/oracle.
+`./scripts/check.sh` runs every gate, and CI runs the same script, one gate per step. Name gates to run
+only those (`./scripts/check.sh build test`).
 
-## Host the remotes from another app (e.g. Loop)
+| Gate | What fails it |
+| --- | --- |
+| `build` | A compiler warning in any package (Swift 6 language mode, warnings as errors). |
+| `test` | A failing package test. |
+| `app` | The app or widgets failing to build for the simulator, or an app test failing, the light and dark snapshot of every screen among them. It runs on an "iPhone 17" simulator with iOS 27.2: another device or OS renders differently. |
+| `format` | `xcrun swift-format lint --strict`. `./scripts/format.sh` fixes it. |
+| `swiftlint` | A rule in `.swiftlint.yml`. |
+| `shell`, `actions`, `markdown` | ShellCheck, actionlint, markdownlint. |
+| `contract` | A version 2 golden fixture that doesn't match the schema, a broken message the schema accepts, or a provenance row (`docs/SBOM.md`) that doesn't match its file. |
 
-Garmin (and other remotes) speak the JSON contract in `schema/command.schema.json`. To let your app
-drive them:
+Nothing is grandfathered. A suppression is written inline, names the rule and gives a reason. Semgrep
+(`.semgrep/deslop.yml`), Periphery and CodeQL report but don't fail.
 
-1. Implement the **host** side of the contract: receive `RemoteCommand`s (statusRead, bolusRequest
-   with units *or* carbs, cancelBolus, dismissAlert) and emit the status payload. Use faBolus's
-   `GarminRemoteBridge` (Connect IQ) as the reference implementation. (An Apple Watch host is not
-   on `main`; see `BRANCHES.md` / preservation branches.)
-2. Map the contract to your app's APIs (for Loop: LoopKit stores for status; Loop's dosing +
-   authorization for boluses, **keeping Loop's own confirmation**). A starting sketch lives in
-   `hosts/loop/`.
-3. **Enforce the interlocks** (confirm + max clamp) in your host — the spec requires it.
-4. For Garmin: register for the faBolusGarmin Connect IQ app UUID (see faBolusGarmin) — the wire
-   payload is identical, so the watch app needs no changes.
+The Connect IQ adapter (`Packages/WatchLink/Sources/GarminTransport`) compiles only against Garmin's SDK,
+which isn't in the repository, so no gate covers it. After changing it or the link it drives, run
+`CIQ_IOS_SDK=<path to the SDK> ./scripts/check-garmin-transport.sh`.
 
-## Contract changes
+## Tests
 
-`schema/command.schema.json` is the source of truth (versioned via `version`). If you change it,
-update **both** the Swift `RemoteCommand` and the Monkey C mirror, and bump the version. Prefer
-additive, optional fields so older remotes keep working.
+Tests check behavior, never source text. A ported test keeps its expectations unless its commit names
+the change. A new test for a fix should fail without the fix.
 
-## Versioning & the cross-repo contract
+## Copy before writing
 
-`BRANCHES.md` is canonical (branch model, experimental gate, promotion, TandemKit pin, Garmin
-lockstep). App version is single-sourced in `Config.xcconfig`. The live TandemKit pin is the
-`revision:` in `project.yml` (`FABOLUS_TANDEM_LOCAL=1` for a sibling checkout).
+Existing MIT code beats new code: the earlier app (on the `v1-final` tag and the `archive/*` tags),
+pumpX2 and LoopKit. Record a copied third-party file in `THIRD_PARTY.md` and `docs/SBOM.md`, keeping its
+license header. controlX2 has no license: read it for structure, copy nothing.
+
+## Pump behavior
+
+Message bytes live in TandemKit: change them there, with an oracle test. Don't invent pump behavior. A
+field or behavior that isn't confirmed on hardware goes in
+[`docs/UNVERIFIED-GUESSES.md`](docs/UNVERIFIED-GUESSES.md).
+
+## Changing the phone↔remote contract
+
+The contract is `Packages/RemoteProtocol`: its Swift types, and the files in `contract/` the watch is
+built against.
+
+1. Change the types, then rewrite the golden fixtures:
+   `UPDATE_CONTRACT=1 swift test --package-path Packages/RemoteProtocol`. Update `schema.json` and the
+   field reference in `contract/README.md` to match, and run `./scripts/check.sh contract test`.
+2. Commit and push it.
+3. In faBolusGarmin, run `./scripts/sync-contract.sh <that commit>`, update the Monkey C, and run its
+   gates.
+
+A change an older remote can't read is a new protocol version. Prefer an optional field an older remote
+can ignore.
 
 ## Building against a local TandemKit
 
-`Packages/PumpSession` pins TandemKit by revision. To build against a TandemKit checkout with commits that
-aren't on GitHub yet, point SwiftPM at it with a mirror; the pin in `Package.swift` stays as it is:
+`Packages/PumpSession` pins TandemKit by revision, and `PhoneApp` and `WatchLink` resolve the same pin. To
+build against a TandemKit checkout with commits that aren't on GitHub yet, point SwiftPM at it with a
+mirror; the pin in `Package.swift` stays as it is:
 
 ```sh
 swift package --package-path Packages/PumpSession config set-mirror \
@@ -73,16 +83,8 @@ swift package --package-path Packages/PumpSession config set-mirror \
 
 The mirror lives in `Packages/PumpSession/.swiftpm/`, which git ignores. `config unset-mirror` removes it.
 
-## Before you open a PR
+## Before you open a pull request
 
-- `xcodegen generate` after adding/removing files.
-- Build the `faBolus` scheme (and widgets if you touched `Shared` / `ios/faBolusWidgets`).
-- Run the core tests: `swift test --package-path Packages/faBolusCore` (models, remote round-trips,
-  and the `PumpBackend` conformance harness — a good template for your own backend's tests).
-- If you touched the contract, run `scripts/check-schema-drift.sh` (also enforced in CI) and update
-  the Monkey C mirror in faBolusGarmin.
-- For pump-protocol work in TandemKit, its own `scripts/test.sh` (oracle parity) must be green.
-- Note anything hardware-tested vs. only compiled.
-
-CI (`.github/workflows/ci.yml`) runs the drift check and `faBolusCore` tests on every PR, so these
-are the same gates a reviewer sees.
+- `./scripts/check.sh` passes.
+- Every change is reviewed before it lands.
+- Say what was tested on hardware and what only in tests.

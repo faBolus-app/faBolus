@@ -1,39 +1,39 @@
 # faBolus — LLM guide
 
-> A pump-agnostic remote-bolus + status app for Tandem t:slim X2. The iPhone owns the pump's
-> Bluetooth link (via sibling `TandemKit`). On `main` the remotes are the Garmin watch app and
-> the Quick-Bolus widget: each takes one explicit human confirmation, then relays the dose to the
-> host phone, which recomputes and clamps it before delivering. The Mac menu-bar and
-> iPhone-peer remote clients are off `main` (BRANCHES.md §1.2c). Experimental, not FDA-cleared.
+> An iPhone app that owns a Tandem t:slim X2's Bluetooth link (through sibling `TandemKit`), with
+> widgets, a Live Activity, and a Garmin watch remote (sibling `faBolusGarmin`) that asks the phone to
+> act. The phone checks every remote request through the same dose path as its own bolus screen.
+> Experimental, not a medical device, not FDA-cleared.
 
 ## Start with
-- [AGENTS.md](AGENTS.md) — commands, how-to-add-X, safety, gotchas.
-- [BRANCHES.md](BRANCHES.md) — branch model and experimental gate.
-- [docs/glossary.md](docs/glossary.md) — terms.
+- [AGENTS.md](AGENTS.md): layout, safety, gates, gotchas.
+- [ARCHITECTURE.md](ARCHITECTURE.md): the packages and the dose path.
+- [CONTRIBUTING.md](CONTRIBUTING.md): gates, tests, the contract workflow.
+- [BRANCHES.md](BRANCHES.md): `main` and `rebuild`.
+- [docs/UNVERIFIED-GUESSES.md](docs/UNVERIFIED-GUESSES.md): pump and CGM behavior not yet confirmed.
+- [docs/glossary.md](docs/glossary.md): terms.
 
-## Safety (never violate)
-- Insulin-affecting commands: UI confirm/hold → backend clamp (`Interlocks.absoluteMaxUnits` = 25 U,
-  ≥ 0.05 U) → `WritePolicy` (default `.readOnly`) → signed `modifiesInsulinDelivery` message,
-  byte-verified against the TandemKit oracle.
-- Stale glucose (> ~6 min, `GlucoseFreshness`) is marked, never current, never auto-fills a correction.
-- Gating is `AccessPolicy` via `AppModel.allow` / `accessDecision` — one chokepoint.
+## The dose path
+`DoseComposer` (with `AccessPolicy`) → the durable bolus ledger → `PumpSession` → TandemKit's per-call
+write grant (`send(_:allowing:)`) → a signed message, byte-verified against the pumpX2 oracle.
 
 ## Layout
-- `Packages/faBolusCore/` — `PumpBackend`, `GlucoseSource` / `GlucoseArbiter`, `RemoteCommand`,
-  `AccessPolicy`, the `RemoteTransport` protocol, models.
-- `ios/faBolus/Data/` — `AppModel`, `TandemBackend`, `MockBackend`, `GarminRemoteBridge`, `AppSettings`.
-- `ios/faBolus/Views/` — SwiftUI. Display views take plain values.
-- `Shared/` — widget store and shared snapshot types.
-- `ios/faBolusWidgets/` — Lock/Home Screen widgets.
-- `schema/command.schema.json` — phone↔remote contract (source of truth).
-- `hosts/loop/` — unbuilt sketch.
-
-No `watch/` tree on `main`. Garmin lives in `../faBolusGarmin`. Pump bytes live in `../TandemKit`.
+- `Packages/faBolusCore/`: `PumpState`, `Observed<T>`, `PumpModel`/`PumpCapabilities`, `BolusOutcome`,
+  `DurableBolusLedger`, `DoseComposer`, `AccessPolicy`, `GlucoseArbiter`, `PumpAlert`.
+- `Packages/PumpSession/`: the pump's one owner; `PumpScript` is the scripted pump.
+- `Packages/Alerts/`: the notification pipeline.
+- `Packages/GlucoseSources/`, `Packages/DexcomBLE/`, `Packages/ShareClient/`: backup CGM.
+- `Packages/RemoteProtocol/`: protocol v2; `contract/` holds the schema, golden fixtures and calculator rows.
+- `Packages/WatchLink/`: `WatchLink` (state machine), `RemoteHost`, `GarminTransport`.
+- `Packages/PhoneApp/`: `AppModel`, `AppSettings`, `BolusFlow`, `WidgetContent`.
+- `Packages/HistoryStore/`, `Packages/faBolusDesign/`.
+- `ios/`: SwiftUI views, the widget extension, snapshot tests.
 
 ## Commands
-- Core tests: `swift test --package-path Packages/faBolusCore`
-- Simulator: `./scripts/build-sim.sh`
-- Schema: `scripts/check-schema-drift.sh`
+- All gates: `./scripts/check.sh` (or name gates: `build test app format swiftlint shell actions markdown contract`)
+- One package: `swift test --package-path Packages/<name>`
+- App project: `./scripts/generate-project.sh`; simulator build: `./scripts/build-sim.sh`
+- Rewrite golden fixtures: `UPDATE_CONTRACT=1 swift test --package-path Packages/RemoteProtocol`
 
 ## Conventions
 Match surrounding style. Don't invent pump behavior; unverified fields go in

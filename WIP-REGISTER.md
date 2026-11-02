@@ -1,30 +1,14 @@
-# Standing open work — faBolus
+# Open work
 
-This is **not** a phase diary. Capture-day archaeology (2026-08-04) and later RESOLVED/SUPERSEDED rows live in git history of this file.
+What's known to be unfinished and isn't a bug. Unverified pump and CGM behavior is in
+[`docs/UNVERIFIED-GUESSES.md`](docs/UNVERIFIED-GUESSES.md); this list is everything else.
 
-Branch model and promotion: [`BRANCHES.md`](BRANCHES.md). Product backlog: [`ROADMAP.md`](ROADMAP.md). Hardware NO-GO: [`docs/RELEASE-GATES.md`](docs/RELEASE-GATES.md).
-
-Apple Watch host / remote / widgets are **not on `main`**. They live on `dev/watch-host` and `dev/watch-remote`. Do not treat `watch/` as a live tree here.
-
-## Open
-
-| Item | Why it stays listed |
-|---|---|
-| Hardware release gates | `docs/RELEASE-GATES.md` — NO-GO for real insulin until saline-bench categories close. Software CI is not a substitute. |
-| Configurable max bolus / remote dose ceiling | Owner-deferred. Interacts with a remote-only cap. See ROADMAP. |
-| Chained remotes | Designed, not enabled. Mac → parent phone → child host still needs a three-device bench. |
-| Apple Watch host / phone-as-remote swap | Tracked on ROADMAP; code is on preservation branches, not `main`. |
-| Garmin official listing | Dormant; the app defaults to beta. Do not publish. |
-| Debug factory reset / shelf / raw console | Ported, deliberately unwired. Permanent. |
-| `FABOLUS_GARMIN` | Off in CI (ConnectIQ xcframework uncommitted). The compile flag is `GARMIN`. |
-| `FABOLUS_ICLOUD` | Default off so a free-account clone signs. Real KV store only when the flag is on. |
-| `hosts/loop/` | Design scaffold, not a build. `RemoteHost.swift.example` is deliberately uncompilable. |
-| Commented Apple-team entitlements | Paid-team gated (xDrip App Groups, ubiquity-kvstore, HealthKit extras). |
-| Vendored `ShareClient` TODO | LoopKit upstream; the only strict TODO in-tree. |
-
-CI already runs `faBolusCore`, `HistoryStore`, `G7SensorKit`, and `DexcomG6Kit` tests. Do not re-open those as missing.
-
-## Do not "fix"
-
-- Do not set `PUMPX2_ALLOW_ORACLE_SKIP` (lives in TandemKit) or weaken fail-closed tests to green a build.
-- Do not put Watch trees back on `main`.
+| Item | State |
+| --- | --- |
+| Hardware checks | The unverified guesses each name a check on a real pump, CGM or watch. They're run as hardware is available. |
+| Critical Alerts | Not requested from Apple. The alert model carries the level, so a pump without its own screen can use it later. |
+| Time Sensitive and data protection | Entitlements a free account can't sign, so `generate-project.sh` leaves them out unless asked (`FABOLUS_TIME_SENSITIVE=1`, `FABOLUS_DATA_PROTECTION=1`). |
+| Garmin store listings | Self-builders install the watch app over USB or as their own private beta. The official Connect IQ listing isn't kept current. |
+| Room left in the types | Mobi, extended boluses and alarm escalation have cases in the types but aren't built. |
+| The Connect IQ adapter | Garmin's SDK isn't in the repository, so no CI gate compiles `GarminTransport`; `scripts/check-garmin-transport.sh` compiles it locally. |
+| Vendored `ShareClient` | Kept as LoopKit wrote it, so drift against upstream stays visible. |

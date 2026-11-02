@@ -1,146 +1,100 @@
 > [!CAUTION]
-> **Not a medical device. Do not use it for treatment decisions.** faBolus is experimental software
-> under active development. It is **not FDA-cleared or approved** and has **not** been clinically
-> validated. **Do not rely on it to make or carry out any insulin-dosing, treatment, or other clinical
-> decision.** It is for software development and evaluation only: always confirm every reading and dose
-> directly on your pump and CGM, and talk to your healthcare provider about your therapy.
+> faBolus is experimental, in-development software — not a medical device and not FDA-cleared. It is for
+> experimental and demonstration use. Not medical advice — check every value against your pump and your
+> clinician. If you build or use it, you assume all responsibility.
 
 # faBolus
 
-A remote-bolus and status-viewing app for the **iPhone**, designed to be **pump-agnostic**. The
-iPhone owns the pump's Bluetooth connection; a **Garmin Venu 3S** watch and the **Home/Lock Screen
-widgets** (including Quick Bolus) are thin remotes that relay confirmed commands to the phone;
-they never talk to the pump directly.
+An iPhone app for the **Tandem t:slim X2**. It shows your glucose and pump status, delivers a bolus
+from the phone, and puts glucose on the Lock Screen, in widgets, in a Live Activity and on a
+**Garmin Venu 3S** watch, which can also ask the phone for a bolus.
 
-**Today it works with one pump:** the Tandem **t:slim X2**, via [`TandemKit`](../TandemKit). (Tandem's
-**Mobi** isn't supported in this build: the app declines to pair with one.) The app talks to the
-pump only through a backend interface, so support for other pumps can be added without forking,
-see [ARCHITECTURE.md](ARCHITECTURE.md).
+The iPhone is the only thing that talks to the pump. The watch is a remote: it asks, and the phone checks
+every request against the same rules as its own bolus screen. The widgets and the Live Activity only
+show.
 
-**Dexcom Share (optional):** glucose normally arrives through the pump. faBolus can also poll
-**Dexcom Share** as a fallback so a reading keeps flowing if the pump's own glucose goes stale. The
-pump stays the primary source, and a Share reading is shown marked, never as current. See
-[Glucose (Dexcom Share)](docs/operate/glucose.md).
+Glucose normally comes through the pump. As a backup, faBolus can read Dexcom Share, or a Dexcom G6 or
+G7 directly alongside the Dexcom app, and uses it only while the pump's reading is old or missing. A
+reading past its freshness window is shown marked, never as current.
 
 _Built by Zev and Tia in tandem._
 
-> [!WARNING]
-> **Experimental, in development.** faBolus is an independent, open-source project in development
-> for experimental use. It is **not FDA-cleared**; if you build or use it, you assume all
-> responsibility. Not affiliated with, endorsed by, or a product of **Tandem Diabetes Care or
-> Dexcom**.
+## Documentation
 
-## 📖 Documentation
+The full docs, with a step-by-step build guide that needs no programming, are at **<https://fabolus.org/>**
+and in [`docs/`](docs/index.md):
 
-**Full docs (a no-experience-required build guide, usage, and customization) live at the
-documentation site:**
+- [Safety](docs/safety.md): read it first.
+- [Build it yourself](docs/build/index.md): Apple account, Xcode, then the app on your iPhone, and the
+  [Garmin watch](docs/build/garmin-build.md).
+- [Pair your pump](docs/setup/pairing.md), [using the app](docs/operate/status.md) and
+  [settings](docs/customize/settings.md).
 
-### 👉 <https://fabolus.org/>
+## Build (quick reference)
 
-- [Safety](docs/safety.md), read before anything else.
-- [Build it yourself](docs/build/index.md): Apple account → Xcode → iPhone, step by step, plus
-  the [Garmin](docs/build/garmin-build.md) app (and a [command-line build](docs/build/advanced.md)).
-- [Using the app](docs/operate/status.md) · [Settings & options](docs/customize/settings.md).
+You need a Mac with Xcode 27.2, [XcodeGen](https://github.com/yonaskolb/XcodeGen) and an Apple account
+(free works; paid lasts a year). The [build guide](docs/build/build-app.md) has every step.
 
-## 💬 Feedback
+```sh
+git clone https://github.com/faBolus-app/faBolus.git
+cd faBolus
+cp LocalConfig.xcconfig.example LocalConfig.xcconfig   # your bundle ID and Team ID
+./scripts/generate-project.sh                          # makes faBolus.xcodeproj
+open faBolus.xcodeproj                                 # then Run on your iPhone
+```
 
-Bug, confusion, or an idea, technical or not? See **[Send feedback](docs/feedback.md)**, or go
-straight to the [feedback form](https://github.com/faBolus-app/faBolus/issues/new?labels=feedback&template=feedback.md)
-(or email [feedback@fabolus.org](mailto:feedback@fabolus.org)). faBolus is experimental and not
-FDA-cleared. For anything urgent about your therapy, contact your healthcare provider.
-
-## Using it alongside the official Tandem app
-
-The pump pairs to **one** controller at a time, so faBolus and the official **t:connect** app can
-both be installed but only one is connected at once, and switching is a full re-pair with a new
-6-digit code, not a quick toggle (the pump doesn't store two pairings, and the code can't be shared
-between apps). faBolus isn't a full replacement either: some pump settings can only be changed in
-t:connect. Pick faBolus as your everyday controller (it reconnects with no code) and pair t:connect
-only when you need an official-app-only setting, then re-pair faBolus. More in the
-[FAQ](docs/faq.md) and [Pairing](docs/setup/pairing.md).
+Xcode fetches TandemKit, the pump library, at the revision `Packages/PumpSession` pins. For the watch,
+Garmin's iOS companion SDK 1.8.0 goes at `../../vendor/connectiq-companion-app-sdk-ios-1.8.0`; without it
+the app builds with no watch support. The watch app itself is
+[faBolusGarmin](https://github.com/faBolus-app/faBolusGarmin).
 
 ## Layout
 
 ```text
-Packages/faBolusCore/        # in-repo SwiftPM package: the stable contracts + neutral models
-                             #   (PumpBackend, PumpCapabilities, PumpAlert, RemoteCommand, GlucoseSource + GlucoseArbiter)
-Packages/ShareClient/        # Dexcom Share follower, vendored from LoopKit/dexcom-share-client-swift (MIT)
-ios/faBolus/                 # iOS host app, owns the pump connection; tabbed UI
-ios/faBolus/Data/            # backends (TandemBackend, MockBackend) + BackendRegistry + hosts
-ios/faBolus/Data/Sources/    # the Dexcom Share glucose follower + its keychain credential store
-ios/faBolusWidgets/          # Lock/Home Screen widgets (incl. Quick Bolus)
-Shared/                      # WidgetShared (App Group snapshot) + widget bolus intents
-schema/                      # THE phone↔remote message contract, single source of truth
-hosts/                       # sketches for hosting the remotes from another app (e.g. Loop)
-docs/                        # the documentation site (MkDocs Material)
+Packages/       everything that compiles: the pump session, the dose code, alerts, CGM sources,
+                the phone↔watch protocol and link, the app's model, and the design system
+ios/            the app target, the widgets and Live Activity, and the app's snapshot tests
+scripts/        project generation, the quality gates (check.sh), formatting
+docs/           the documentation site (MkDocs Material)
 ```
 
-This is narrow `main`: a small, hardware-validated core. A number of surfaces an earlier build of
-this app had (other remotes, other CGM sources, an advisory meal-detection assistant, and more) live
-on `experimental` and their own `dev/<surface>` branch instead; see `BRANCHES.md` §1.2c for the full
-roster and why.
+[ARCHITECTURE.md](ARCHITECTURE.md) explains the packages, [CONTRIBUTING.md](CONTRIBUTING.md) how to work
+on them, and [BRANCHES.md](BRANCHES.md) the `main` and `rebuild` branches.
 
-New pumps and new host apps are added **in-tree behind stable interfaces, not by forking**: see
-**[ARCHITECTURE.md](ARCHITECTURE.md)** for the two seams and **[CONTRIBUTING.md](CONTRIBUTING.md)**
-for step-by-step "add a pump backend" / "host the remotes" guides.
+## Feedback
 
-- The iOS app + widgets are targets of one Xcode project (`faBolus.xcodeproj`), generated from
-  `project.yml` with [XcodeGen](https://github.com/yonaskolb/XcodeGen). Depends on `TandemKit` via
-  SPM.
-- The **Garmin** (Connect IQ / Monkey C) remote lives in its own repo,
-  **[faBolusGarmin](https://github.com/faBolus-app/faBolusGarmin)**; the iPhone-side bridge stays
-  here and talks to it over the shared `schema/`.
-- The widgets read a snapshot the app publishes to a shared App Group; they can't drive
-  Bluetooth, so they show the last published value with its age (older than 6 minutes shows marked).
+A bug, something confusing or an idea: see [Send feedback](docs/feedback.md), use the
+[feedback form](https://github.com/faBolus-app/faBolus/issues/new?labels=feedback&template=feedback.md),
+or email [feedback@fabolus.org](mailto:feedback@fabolus.org). For anything urgent about your therapy,
+contact your healthcare provider.
 
-## Build (quick reference)
+## Using it alongside the official Tandem app
 
-> [!NOTE]
-> On the `rebuild` branch the app is being rebuilt and doesn't build yet. Build from `main`; the steps
-> below describe `main`.
-
-Full walkthrough: [docs/build](docs/build/index.md). In short:
-
-```sh
-git clone --recurse-submodules https://github.com/faBolus-app/TandemKit.git
-git clone https://github.com/faBolus-app/faBolus.git
-cd faBolus
-./scripts/generate-project.sh      # generates faBolus.xcodeproj (auto-detects the Garmin SDK)
-open faBolus.xcodeproj             # set your Team under Signing & Capabilities, then Run
-```
-
-Requires **Xcode 16+** and an **Apple ID** (free works; paid recommended).
-
-**Garmin is optional at build time.** `scripts/generate-project.sh` auto-detects the **Connect IQ
-Mobile SDK for iOS**: if it's not present, the app builds **without** Garmin (no SDK needed) and shows
-a note where Garmin pairing would be. To use a Garmin watch, place the Connect IQ SDK where
-`project.yml` expects it (see [docs/build](docs/build/index.md)) and re-run the script (force Garmin
-on/off with `FABOLUS_GARMIN=1/0`). Plain `xcodegen generate` still works.
-
-## Status
-
-The protocol/BLE/auth core ([`TandemKit`](../TandemKit)) supports read-only monitoring, JPAKE
-pairing, and a signed bolus path validated on hardware. This app layer is under active
-development on top of it.
+The pump pairs with one controller at a time. faBolus and t:connect can both be installed, but switching
+between them is a full pairing with a new code from the pump. Some pump settings can only be changed in
+t:connect. See [Pair your pump](docs/setup/pairing.md#fabolus-and-tconnect).
 
 ## Acknowledgments
 
 faBolus is built on **[pumpX2](https://github.com/jwoglom/pumpx2)** by **James Woglom
 ([@jwoglom](https://github.com/jwoglom))**. His reverse-engineering of the Tandem pump's Bluetooth
-protocol is the foundation of this entire project. [`TandemKit`](../TandemKit) is a Swift port of
-that work, validated byte-for-byte against pumpX2's `cliparser` oracle. **faBolus would not exist
-without it.** (faBolus is an independent reimplementation, not a fork of, affiliated with, or
-endorsed by pumpX2/controlX2.)
+protocol is the foundation of this project. [TandemKit](https://github.com/faBolus-app/TandemKit) is a
+Swift port of it, validated byte for byte against pumpX2's `cliparser` oracle. faBolus would not exist
+without it. faBolus is an independent reimplementation, not a fork of, affiliated with, or endorsed by
+pumpX2 or controlX2.
 
-It also draws on the wider **[LoopKit](https://github.com/LoopKit)** / **[Loop](https://github.com/LoopKit/Loop)**
-ecosystem: the app's visual design and parts of this documentation take inspiration from Loop and
-[LoopDocs](https://loopkit.github.io/loopdocs/).
+It also draws on **[LoopKit](https://github.com/LoopKit)** and **[Loop](https://github.com/LoopKit/Loop)**:
+the Dexcom readers and the Dexcom Share client are copied from LoopKit's MIT code, and parts of the design
+and the docs take inspiration from Loop and [LoopDocs](https://loopkit.github.io/loopdocs/). Full
+attributions are in [NOTICE.md](NOTICE.md) and [THIRD_PARTY.md](THIRD_PARTY.md).
 
-Full attributions are in [NOTICE.md](NOTICE.md).
+> [!NOTE]
+> faBolus is an independent, open-source project. It is not affiliated with Tandem Diabetes Care or
+> Dexcom.
 
-## License & trademark
+## License and trademark
 
-Code is MIT-licensed (see [LICENSE](LICENSE)). **faBolus™** is a trademark of Zev Granowitz; the license
-covers the source code, not the name, logo, or branding. Forks are welcome under the MIT terms;
+The code is MIT-licensed (see [LICENSE](LICENSE)). **faBolus™** is a trademark of Zev Granowitz; the
+license covers the source code, not the name, logo or branding. Forks are welcome under the MIT terms;
 please don't use the faBolus name in a way that implies your fork is the official project. See
-[NOTICE.md](NOTICE.md) for details.
+[NOTICE.md](NOTICE.md).
