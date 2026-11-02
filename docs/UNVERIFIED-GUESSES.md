@@ -4,6 +4,9 @@ Values and behavior faBolus takes from pumpx2, captures or other references that
 on a real pump or device. If something misbehaves, start here. Each entry gives the guess, where it lives,
 what a wrong guess costs, and how to check it.
 
+Two pumps are named: **P1**, a t:slim X2 at API 2.5 with the 16-character pairing code and no
+cartridge, used on the bench; and **P2**, a t:slim X2 at API 4.0 with the 6-digit code.
+
 Entries keep their numbers: code, tests and notes cite them, and a number isn't reused when its entry is
 resolved. Remove an entry once it's confirmed on hardware.
 
