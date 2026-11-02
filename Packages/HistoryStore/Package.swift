@@ -1,11 +1,10 @@
 // swift-tools-version: 6.0
 import PackageDescription
 
-// HistoryStore — faBolus's own persistent glucose/insulin/carb history (SwiftData). faBolus OWNS the
-// data (this is the on-device DB behind plotting + time-in-range, and the source the advisory kits read
-// from). Speaks faBolusCore's neutral models; merges multi-source data by source priority + recency
-// (same idea as GlucoseArbiter). Default retention is UNLIMITED (storage ≈ 1 MB/month); a clear-history
-// action + optional auto-delete cover data-minimization. See ../../MIGRATION.md.
+// HistoryStore — faBolus's own persistent glucose/insulin/carb history and the pump logbook (SwiftData),
+// on the device only: the data behind the chart and time-in-range. Speaks faBolusCore's neutral models and
+// merges multi-source glucose by source priority and recency (the same idea as GlucoseArbiter). The app
+// keeps one day of glucose and can clear everything.
 let package = Package(
     name: "HistoryStore",
     platforms: [.iOS(.v17), .watchOS(.v10), .macOS(.v14)],  // SwiftData

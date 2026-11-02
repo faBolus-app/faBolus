@@ -1,9 +1,8 @@
 // swift-tools-version: 6.0
-// faBolusDesign — the shared, host-agnostic presentation layer: §13 glucose-band color tokens and
+// faBolusDesign — the shared, host-agnostic presentation layer: the glucose-band color tokens and
 // accent/grey tokens. Depends on faBolusCore for the SINGLE classifier (GlucoseRange.classify) +
-// thresholds (GlucoseThresholds) — logic stays in Core, presentation lives here. Every UI
-// target (app, widgets, Live Activity, watch, mac) reads band colors from this one place instead of
-// re-implementing them.
+// thresholds (GlucoseThresholds) — logic stays in Core, presentation lives here. The app, the widgets
+// and the Live Activity read band colors from this one place instead of re-implementing them.
 //
 // This package deliberately provides no icon+word band-indicator view. The pinned VoiceOver zone
 // word is composed inline as `.accessibilityLabel`/`.accessibilityValue` on each glucose surface

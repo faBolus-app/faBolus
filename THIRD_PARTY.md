@@ -16,7 +16,7 @@ itself is MIT (see `LICENSE`).
 | LoopKit `DoseEntry`, `PumpManagerStatus` naming | MIT (© 2016 Nathan Racklyeft, © 2018 LoopKit Authors) | adapted (names and shape, rewritten; LoopKit `a5beee96`) | `Packages/faBolusCore` `DoseEntry.swift`, `PumpState.swift` |
 | LoopKit bolus-volume rounding (`roundToSupportedBolusVolume`, `matchingOrTruncatedValue`) | MIT (© 2018, © 2020 LoopKit Authors) | adapted (the round-down rule and its tolerance, rewritten for a fixed step; LoopKit `a5beee96`) | `Packages/faBolusCore` `BolusVolume.swift` |
 | LoopKit `Alert` interruption level and Loop `UserNotificationAlertScheduler` | MIT (© 2020 LoopKit Authors) | adapted (the interruption-level model and the notification-center protocol and request shape, rewritten; LoopKit `a5beee96`, Loop `5465bcd`) | `Packages/faBolusCore` `NotificationBroker.swift`, `Packages/Alerts` `NotificationScheduling.swift` |
-| TandemKit | MIT | local-path dependency (separate repo; vendors pumpX2-oracle MIT + Mbed TLS `Apache-2.0 OR GPL-2.0`) | `../TandemKit` |
+| TandemKit | MIT | package dependency pinned by revision (separate repo; vendors pumpX2-oracle MIT + Mbed TLS `Apache-2.0 OR GPL-2.0`) | github.com/faBolus-app/TandemKit |
 | Garmin Connect IQ Mobile SDK | proprietary (`LicenseRef-Garmin-Proprietary`) | binary xcframework, credential-gated | Garmin companion build only |
 
 **Trademarks.** "faBolus" is a trademark of Zev Granowitz (the code is MIT; the name is not licensed).

@@ -8,7 +8,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-SDK="${CIQ_IOS_SDK:-$HOME/Code/vendor/connectiq-companion-app-sdk-ios-1.8.0}"
+SDK="${CIQ_IOS_SDK:-../../vendor/connectiq-companion-app-sdk-ios-1.8.0}"
 [ -d "$SDK/ConnectIQ.xcframework" ] || { echo "❌ ConnectIQ.xcframework not found under $SDK (set CIQ_IOS_SDK)" >&2; exit 2; }
 
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT

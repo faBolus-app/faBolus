@@ -3,7 +3,7 @@ import PackageDescription
 
 // Vendored from LoopKit/dexcom-share-client-swift (MIT) — the validated Dexcom Share follower Loop
 // uses. Only the `ShareClient` core (login + fetchLast) is vendored; the LoopKit/HealthKit-coupled
-// ShareGlucose+GlucoseKit, the CGMManager, and the UI are omitted. See Phase 6 in MIGRATION.md.
+// ShareGlucose+GlucoseKit, the CGMManager, and the UI are omitted (docs/SBOM.md lists what changed).
 let package = Package(
     name: "ShareClient",
     platforms: [.iOS(.v15), .watchOS(.v9), .macOS(.v12)],

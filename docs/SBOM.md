@@ -37,11 +37,11 @@ Format per row: component · version/revision · SPDX license · source · how f
 | xctest-dynamic-overlay | as resolved (1.x) | MIT | github.com/pointfreeco/xctest-dynamic-overlay | Dependency of swift-snapshot-testing |
 | swift-syntax | as resolved | Apache-2.0 | github.com/swiftlang/swift-syntax | Dependency of swift-snapshot-testing (its inline-snapshot macros) |
 
-## Local path dependency (separate repo)
+## Package dependency (separate repo)
 
 | Component | Version | License (SPDX) | Source | Usage |
 |---|---|---|---|---|
-| TandemKit | `../TandemKit` | MIT | github.com/faBolus-app/TandemKit | Tandem BLE protocol / auth / messages |
+| TandemKit | pinned revision (`Packages/PumpSession/Package.swift`) | MIT | github.com/faBolus-app/TandemKit | Tandem BLE protocol / auth / messages |
 
 TandemKit in turn vendors (see its own `NOTICE`):
 
