@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 import faBolusCore
 @testable import faBolusDesign
@@ -54,5 +55,31 @@ struct BatteryChargingPresentationTests {
     @Test func aStateWithNoBatteryReadingHasNoChargingBadge() {
         // Never read means unknown — never a false charging badge.
         #expect(PumpState().battery?.value.isCharging == nil)
+    }
+
+    /// Absence and zero are different facts: an aged report shows no level and no warning, while a fresh
+    /// 0 % shows and warns.
+    @Test func anAgedBatteryNeitherShowsAPercentNorTheLowBatteryTint() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        var aged = PumpState()
+        let read = now.addingTimeInterval(-24 * 3600)
+        aged.battery = Observed(PumpBattery(percent: 84, isCharging: false), measuredAt: read, receivedAt: read)
+        let p = BatteryChargingPresentation.make(
+            percent: aged.batteryIfFresh(thresholds: .standard, now: now)?.percent, charging: false)
+        #expect(p.valueText == BatteryChargingPresentation.unknownText)
+        #expect(!p.usesLowTint, "unknown is neither live nor a warning — never a false low-battery tint")
+    }
+
+    @Test func aFreshGenuinelyDeadBatteryStillRendersZeroPercentAndWarns() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        var dead = PumpState()
+        let read = now.addingTimeInterval(-10)
+        dead.battery = Observed(PumpBattery(percent: 0, isCharging: false), measuredAt: read, receivedAt: read)
+        let p = BatteryChargingPresentation.make(
+            percent: dead.batteryIfFresh(thresholds: .standard, now: now)?.percent, charging: false)
+        #expect(
+            p.valueText != BatteryChargingPresentation.unknownText, "a real 0 % is the alarm, not the absence of one")
+        #expect(p.usesLowTint)
+        #expect(p.symbolName == "battery.0")
     }
 }

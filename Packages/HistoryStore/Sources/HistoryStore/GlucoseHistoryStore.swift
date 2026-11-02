@@ -2,23 +2,17 @@ import Foundation
 import SwiftData
 import faBolusCore
 
-/// faBolus's persistent history store. Write-through target for the live pump/CGM/source data (keeps the
-/// 24 h in-memory buffers for the UI; this holds the long-term history) and the read source for
-/// time-in-range, future plotting, and the advisory kits. On-device only.
+/// faBolus's persistent history store: the pump's glucose, boluses, carbs and logbook, and the backup CGM's
+/// readings, read back for the chart and time-in-range. On-device only.
 ///
 /// Merge rule (multi-source): de-duplicate readings in the same 5-min slot, keeping the **higher source
 /// priority** (imports / local BLE outrank cloud follows, per `GlucoseSource.priority`), ties broken by
 /// the most recent `recordedAt` — the same policy as `GlucoseArbiter`.
 ///
-/// Retention: **unlimited by default** (≈ 1 MB/month). `clear()` wipes everything (data-minimization);
-/// `deleteGlucose(olderThan:)` powers the optional advanced auto-delete.
+/// Retention is the app's: it keeps one day of glucose (`deleteGlucose(olderThan:)` at launch), and
+/// `clear()` wipes everything.
 @MainActor
 public final class GlucoseHistoryStore {
-    /// The single `sourceID` stamped on the benign LoopInsights caffeine/alcohol tracker entries so they
-    /// are attributable in export/backup (IN-02). Hoisted here — the one type both the vendored trackers
-    /// and `AppModel` already reference — so the literal is declared once instead of three times.
-    public static let loopInsightsTrackerSourceID = "app.loopInsightsTrackers"
-
     private let container: ModelContainer
     private var context: ModelContext { container.mainContext }
 
@@ -188,18 +182,13 @@ public final class GlucoseHistoryStore {
     // MARK: Query (conflict-resolved)
 
     /// Glucose in range, de-duplicated to one reading per 5-min slot (priority, then recency).
-    /// `excludingSourceIDs` (CR-01, default empty so every existing caller — import gap-fill's
-    /// `existingSlots` computation, the logbook/chart reads, `statistics(in:)` — is unaffected) drops
-    /// rows whose `sourceID` is in the set BEFORE the per-slot merge, so a HealthKit-imported reading
-    /// can never win a slot and be handed to a HealthKit *export* read path (which would re-write it
-    /// to Apple Health as a brand-new, duplicate sample).
-    public func glucose(in range: ClosedRange<Date>, excludingSourceIDs: Set<String> = []) -> [GlucoseReading] {
+    public func glucose(in range: ClosedRange<Date>) -> [GlucoseReading] {
         let lo = range.lowerBound, hi = range.upperBound
         var desc = FetchDescriptor<StoredGlucose>(predicate: #Predicate { $0.date >= lo && $0.date <= hi })
         desc.sortBy = [SortDescriptor(\.date)]
         let rows = (try? context.fetch(desc)) ?? []
         var best: [Int: StoredGlucose] = [:]
-        for r in rows where !excludingSourceIDs.contains(r.sourceID) {
+        for r in rows {
             let slot = Int(r.date.timeIntervalSince1970 / 300)
             if let cur = best[slot] {
                 if r.priority > cur.priority || (r.priority == cur.priority && r.recordedAt >= cur.recordedAt) {
@@ -212,32 +201,20 @@ public final class GlucoseHistoryStore {
         return best.values.sorted { $0.date < $1.date }.map { GlucoseReading(date: $0.date, mgdl: $0.mgdl) }
     }
 
-    /// `excludingSourceIDs` (CR-01, default empty — existing callers unchanged) drops rows whose
-    /// `sourceID` is in the set, so a HealthKit-imported bolus marker never reaches a HealthKit
-    /// *export* read path.
-    public func boluses(in range: ClosedRange<Date>, excludingSourceIDs: Set<String> = []) -> [BolusMarker] {
+    public func boluses(in range: ClosedRange<Date>) -> [BolusMarker] {
         let lo = range.lowerBound, hi = range.upperBound
         var desc = FetchDescriptor<StoredBolus>(predicate: #Predicate { $0.date >= lo && $0.date <= hi })
         desc.sortBy = [SortDescriptor(\.date)]
-        return ((try? context.fetch(desc)) ?? [])
-            .filter { !excludingSourceIDs.contains($0.sourceID) }
-            .map { BolusMarker(date: $0.date, units: $0.units) }
+        return ((try? context.fetch(desc)) ?? []).map { BolusMarker(date: $0.date, units: $0.units) }
     }
 
-    /// `excludingSourceIDs` (CR-01, default empty — existing callers unchanged) drops rows whose
-    /// `sourceID` is in the set, so a HealthKit-imported carb entry never reaches a HealthKit
-    /// *export* read path (closing the loop on the echo-guard: the importer already refuses to
-    /// re-import faBolus's own exported writes via `HealthKitOriginTag`/`filterOutOwnWrites`; this
-    /// is the missing other half — the exporter refusing to re-export what was just imported).
-    public func carbs(in range: ClosedRange<Date>, excludingSourceIDs: Set<String> = []) -> [(
+    public func carbs(in range: ClosedRange<Date>) -> [(
         date: Date, grams: Double
     )] {
         let lo = range.lowerBound, hi = range.upperBound
         var desc = FetchDescriptor<StoredCarb>(predicate: #Predicate { $0.date >= lo && $0.date <= hi })
         desc.sortBy = [SortDescriptor(\.date)]
-        return ((try? context.fetch(desc)) ?? [])
-            .filter { !excludingSourceIDs.contains($0.sourceID) }
-            .map { (date: $0.date, grams: $0.grams) }
+        return ((try? context.fetch(desc)) ?? []).map { (date: $0.date, grams: $0.grams) }
     }
 
     /// Time-in-range / GMI / CV over the window, using faBolusCore's stats on the merged readings.

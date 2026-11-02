@@ -23,6 +23,9 @@ public struct BatteryPresentation: Equatable, Sendable {
 /// host-agnostic — no SwiftUI/UIKit — so it is trivially unit-testable and every consumer (status
 /// pill, widgets, Mac, remote) gets byte-identical treatment.
 public enum BatteryChargingPresentation {
+    /// What the battery shows when the pump hasn't reported it, or the report has aged out: never a level.
+    public static let unknownText = "—"
+
     /// - Parameters:
     ///   - percent: the battery percent (0...100), from `PumpState.battery`.
     ///   - charging: the pump's POSITIVELY-reported charging state, from `PumpBattery.isCharging`
@@ -46,7 +49,7 @@ public enum BatteryChargingPresentation {
                 // frame there is no charging claim either (`batteryCharging` is already fail-closed).
                 showsChargingText: false,
                 usesLowTint: false,
-                valueText: PumpValuePresentation.unknownText)
+                valueText: unknownText)
         }
         return make(percent: percent, charging: charging)
     }
