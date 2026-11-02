@@ -25,7 +25,7 @@ only those (`./scripts/check.sh build test`).
 | --- | --- |
 | `build` | A compiler warning in any package (Swift 6 language mode, warnings as errors). |
 | `test` | A failing package test. |
-| `app` | The app or widgets failing to build for the simulator, or an app test failing, the light and dark snapshot of every screen among them. It runs on an "iPhone 17" simulator with iOS 27.2: another device or OS renders differently. |
+| `app` | The app or widgets failing to build for the simulator, any compiler warning in that build (even one warnings as errors leaves a warning), or an app test failing, the light and dark snapshot of every screen among them. It runs on an "iPhone 17" simulator with iOS 27.2: another device or OS renders differently. |
 | `format` | `xcrun swift-format lint --strict`. `./scripts/format.sh` fixes it. |
 | `swiftlint` | A rule in `.swiftlint.yml`. |
 | `shell`, `actions`, `markdown` | ShellCheck, actionlint, markdownlint. |

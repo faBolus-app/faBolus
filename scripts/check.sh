@@ -32,7 +32,25 @@ gate_test() {
 }
 # The app target: the project generated, the app and widgets built for the simulator with warnings as
 # errors, and the app's tests run, the light and dark snapshots of every screen among them.
-gate_app() { ./scripts/test-ios.sh -quiet; }
+#
+# The build log must also have no compiler warning at all. Warnings as errors isn't enough on its own:
+# Swift leaves a diagnostic that `@preconcurrency` downgraded a warning under -warnings-as-errors and
+# -Werror alike (a nonisolated test calling a SwiftUI view's static method, whose main-actor isolation
+# comes from the View conformance). Only diagnostics count, with a location or the compiler's or linker's
+# prefix, not a test's runtime log. CI builds from clean, so every file's warnings are in its log.
+gate_app() {
+  local log status=0 warnings
+  log="$(mktemp)"
+  ./scripts/test-ios.sh -quiet 2>&1 | tee "$log" || status=$?
+  # awk, not grep: it exits 0 with no match, so any failure to read the log fails the gate.
+  warnings="$(awk '/^([^ ].*:[0-9]+:[0-9]+: |macro expansion .*: |ld: |<unknown>:0: )?warning: /' "$log")" || status=$?
+  rm -f "$log"
+  [ "$status" -eq 0 ] || return "$status"
+  if [ -n "$warnings" ]; then
+    printf 'app gate: the build has warnings:\n%s\n' "$warnings" >&2
+    return 1
+  fi
+}
 gate_format() { swift_files | xargs -0 xcrun swift-format lint --strict; }
 gate_swiftlint() { swiftlint lint --strict --quiet; }
 gate_shell() { git ls-files -z '*.sh' | xargs -0 shellcheck; }
