@@ -1,6 +1,5 @@
 import Foundation
 import RemoteProtocol
-import os
 
 /// Where the host keeps the watch's last few dismiss results, so a copy of a clear that reaches a relaunched
 /// phone gets the answer the first one did. Re-resolving it instead would clear the alert again if the pump
@@ -42,5 +41,3 @@ public struct FileDismissResultStore: DismissResultPersisting {
             to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
 }
-
-let hostLog = Logger(subsystem: "com.fabolus.app", category: "remote")

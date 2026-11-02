@@ -73,8 +73,8 @@ public struct SessionRemoteServices: RemoteHostServices {
         await ledger.ledger.remoteRefusal(key)
     }
 
-    /// A failed save keeps it in memory and blocks new boluses until a save succeeds (the ledger's rule), so
-    /// there's nothing more to do here.
+    /// A failed save keeps it in memory, where this process still refuses a resend, and it goes with the
+    /// ledger's next save. It doesn't block new boluses (the ledger's rule): a refusal never does.
     public func recordRefusal(_ key: RemoteBolusLedger.Key, reason: String) async {
         _ = try? await ledger.recordRemoteRefusal(key, reason: reason, now: clock())
     }

@@ -4,6 +4,9 @@ import PumpSession
 import RemoteProtocol
 import WatchLink
 import faBolusCore
+import os
+
+let hostLog = Logger(subsystem: "com.fabolus.app", category: "remote")
 
 /// What the host reads and does. `SessionRemoteServices` is the app's; tests use a fake.
 public protocol RemoteHostServices: Sendable {
@@ -207,9 +210,11 @@ public actor RemoteHost {
             // Never gated. A bolus still being composed is stopped here; one with the session is the
             // session's to stop; one that hasn't arrived yet is refused when it does.
             cancelledBeforeStart.formUnion(composing)
-            // A request that hasn't arrived, or is still being composed, hasn't reached the session.
-            if let id = p.bolusRequestId, boluses[id] == nil || composing.contains(id), !cancelledRequests.contains(id)
-            {
+            // What this cancel stops before it reaches the session: every request being composed, and the
+            // one it names if that hasn't arrived.
+            var stopped = composing
+            if let id = p.bolusRequestId, boluses[id] == nil { stopped.insert(id) }
+            for id in stopped.sorted() where !cancelledRequests.contains(id) {
                 cancelledRequests.append(id)
                 if cancelledRequests.count > Self.maxCancelledRequests { cancelledRequests.removeFirst() }
                 // Durable, so a copy that arrives after a relaunch is refused too, one being composed when
@@ -275,6 +280,10 @@ public actor RemoteHost {
         switch decision {
         case .refused(.refusedBefore(let reason)):
             await sendRefusal(p.requestId, reason)
+        case .refused where cancelledBeforeStart.contains(p.requestId):
+            // The user cancelled it first: that's the answer, now and to a copy after a relaunch, which the
+            // cancel's record gives.
+            await refused(p.requestId, Self.cancelledMessage, announce: false)
         case .refused(let refusal):
             await refused(p.requestId, refusal.userMessage)
         case .alreadyRecorded(let outcome):

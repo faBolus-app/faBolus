@@ -143,10 +143,14 @@ struct HostRig {
     let host: RemoteHost
     nonisolated static let now = Date(timeIntervalSince1970: TimeInterval(GoldenFixtures.now))
 
-    init(settings: RemoteSettings = HostRig.settings(), services: FakeServices = FakeServices()) {
+    init(
+        settings: RemoteSettings = HostRig.settings(), services: FakeServices = FakeServices(),
+        dismissResults: (any DismissResultPersisting)? = nil
+    ) {
         self.services = services
         link = WatchLink(transport: transport, clock: TestClock(), jitter: { 0 })
-        host = RemoteHost(link: link, services: services, settings: settings, clock: { HostRig.now })
+        host = RemoteHost(
+            link: link, services: services, settings: settings, dismissResults: dismissResults, clock: { HostRig.now })
     }
 
     static func settings(readOnly: Bool = false, enabled: Bool = true) -> RemoteSettings {

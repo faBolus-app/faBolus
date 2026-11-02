@@ -309,6 +309,20 @@ import Testing
         #expect(rig.pump.arrivals(of: ControlIQIOBRequest.self).count > before)
     }
 
+    /// While paused the session ticks at its busy rhythm, so sends go on when the pause ends rather than at
+    /// the next idle tick; after it, the idle rhythm comes back.
+    @Test func theSessionTicksOftenWhilePaused() async {
+        let rig = Rig(configure: { $0.unsupportedReads = [] })
+        await rig.startHeld()
+        let config = PumpSession.Configuration()
+        #expect(await rig.session.tickInterval == config.idleTick)
+        rig.transport.qualifyingEvents(.pumpCommunicationsSuspended)
+        await rig.settle()
+        #expect(await rig.session.tickInterval == config.busyTick)
+        await rig.run(for: 6)
+        #expect(await rig.session.tickInterval == config.idleTick)
+    }
+
     /// Any other notice only brings its reads forward.
     @Test func anotherNoticeDoesntPause() async {
         let rig = Rig(configure: { $0.unsupportedReads = [] })

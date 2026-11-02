@@ -375,6 +375,51 @@ import faBolusCore
         #expect(seen.transport.dismissResults.map(\.result) == [.unsupported])
     }
 
+    /// The file keeps what the host saved; a missing or damaged file, or a result it doesn't know, reads as
+    /// nothing rather than a wrong answer.
+    @Test func theResultsFileReadsBackWhatWasSaved() throws {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("dismiss-\(UUID()).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let store = FileDismissResultStore(url: url)
+        #expect(store.load().isEmpty)
+        let saved = [
+            DismissResultPayload(requestId: "d1", alertId: "a", result: .cleared),
+            DismissResultPayload(requestId: "d2", alertId: "b", result: .refused)
+        ]
+        try store.save(saved)
+        #expect(store.load() == saved)
+        try Data(#"[{"requestId":"d3","alertId":"c","result":"someday"},"#.utf8).write(to: url)
+        #expect(store.load().isEmpty)
+        try Data(#"[{"requestId":"d3","alertId":"c","result":"someday"}]"#.utf8).write(to: url)
+        #expect(store.load().isEmpty)
+    }
+
+    /// A launch takes the newest results the file holds, at most as many as the host keeps.
+    @Test func aLaunchKeepsTheNewestResults() async {
+        let saved = (0..<20).map { DismissResultPayload(requestId: "d\($0)", alertId: "a", result: .cleared) }
+        let store = MemoryDismissStore(saved)
+        let rig = HostRig(dismissResults: store)
+        await rig.start()
+        await rig.host.alertsChanged([Self.active("pump.alert.2", pump: Self.pumpAlert)])
+        await rig.receive(.dismiss(.init(requestId: "d19", alertId: "a")))
+        await rig.receive(.dismiss(.init(requestId: "d0", alertId: "pump.alert.2")))
+        #expect(rig.transport.dismissResults.map(\.requestId) == ["d19", "d0"])
+        // The newest was answered from the file; the oldest, dropped, was judged again.
+        #expect(await rig.services.dismissed.count == 1)
+        #expect(store.results.count == RemoteHost.maxDismissResults)
+    }
+
+    /// A result that can't be saved is still the truth, and the watch is told.
+    @Test func aResultThatCantBeSavedIsStillSent() async {
+        let store = MemoryDismissStore([])
+        store.failSaves = true
+        let rig = HostRig(dismissResults: store)
+        await rig.start()
+        await rig.host.alertsChanged([Self.active("pump.alert.2", pump: Self.pumpAlert)])
+        await rig.receive(fixture: "dismiss")
+        #expect(rig.transport.dismissResults.map(\.result) == [.cleared])
+    }
+
     /// An unconfirmed dismiss may be tried again.
     @Test func anUnconfirmedDismissIsRetried() async {
         let rig = HostRig()
@@ -493,6 +538,24 @@ import faBolusCore
     }
 
     /// A damaged copy of a request being worked on doesn't call it failed.
+    /// A request cancelled while it was composed and then refused by the composer for its own reason is
+    /// answered as cancelled, as a copy after a relaunch would be, and isn't announced as refused.
+    @Test func aCancelledRequestTheComposerRefusesIsAnsweredAsCancelled() async {
+        let rig = HostRig()
+        await rig.services.set(decision: .refused(.unavailable(.pumpNotLinked)), delay: .milliseconds(80))
+        await rig.start()
+        rig.transport.handler?(.received(bolus("b1").wire))
+        await rig.settle()
+        await rig.receive(.cancel(CancelPayload(requestId: "c1", bolusRequestId: "b1")))
+        try? await Task.sleep(for: .milliseconds(150))
+        await rig.settle()
+        #expect(rig.transport.outcomes.last { $0.requestId == "b1" }?.message == RemoteHost.cancelledMessage)
+        #expect(await rig.services.refusals.isEmpty)
+        #expect(
+            await rig.services.ledgerRefusal(.init(peerId: "garmin", requestId: "b1"))?.reason
+                == RemoteHost.cancelledMessage)
+    }
+
     @Test func anUnreadableDuplicateOfALiveRequestIsIgnored() async {
         let rig = HostRig()
         await rig.services.set(
@@ -602,5 +665,26 @@ import faBolusCore
     @Test func aClockOutOfRangeStillMakesReadableMessages() {
         #expect(wireEpoch(Date(timeIntervalSince1970: 0)) == WireLimits.epochs.lowerBound)
         #expect(wireEpoch(.distantFuture) == WireLimits.epochs.upperBound)
+    }
+}
+
+/// Dismiss results in memory, as a file would hold them across a relaunch.
+final class MemoryDismissStore: DismissResultPersisting, @unchecked Sendable {
+    // @unchecked Sendable: guarded by `lock`.
+    private let lock = NSLock()
+    private var saved: [DismissResultPayload]
+    private var failing = false
+    init(_ saved: [DismissResultPayload]) { self.saved = saved }
+    var results: [DismissResultPayload] { lock.withLock { saved } }
+    var failSaves: Bool {
+        get { lock.withLock { failing } }
+        set { lock.withLock { failing = newValue } }
+    }
+    func load() -> [DismissResultPayload] { results }
+    func save(_ results: [DismissResultPayload]) throws {
+        try lock.withLock {
+            if failing { throw CocoaError(.fileWriteUnknown) }
+            saved = results
+        }
     }
 }

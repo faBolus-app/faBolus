@@ -277,8 +277,10 @@ that worked.
 - **Where:** `Packages/PumpSession/Sources/PumpSession/PumpSession.swift` (`qualifyingEvents`,
   `sendsPaused`), `PumpSession.Configuration.commsSuspendedPause`.
 - **Risk:** if the bit means something else, a cancel, a bolus or an alert read waits 5 s for nothing.
-  If the pump stays suspended longer than 5 s, what's sent after the pause may go unanswered, which a
-  delivery treats as unknown.
+  Each notice restarts the 5 s, so a pump that keeps sending it holds everything, a cancel included, for
+  as long as it does, with no ceiling (controlX2 has none either; the earlier app's unused gate stopped at
+  5 minutes). If the pump stays suspended longer than 5 s, what's sent after the pause may go unanswered,
+  which a delivery treats as unknown.
 - **Verify:** on P1 and P2, record the qualifying events across a bolus, a cancel, a cartridge change and
   a suspend and resume, and note when bit 19 comes and whether a request sent within 5 s of it is
   answered.

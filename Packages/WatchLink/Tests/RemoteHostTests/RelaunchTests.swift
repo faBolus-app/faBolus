@@ -12,54 +12,85 @@ import WatchLink
 @testable import RemoteHost
 @testable import faBolusCore
 
-/// What a phone keeps on disk across a relaunch: the ledger and the watch's dismiss results. A process
-/// writes to it only while it's alive, so a dead one's late work never lands.
+/// What a phone keeps on disk across a relaunch: the ledger, the session's record and the watch's dismiss
+/// results.
 final class PhoneDisk: @unchecked Sendable {
     // @unchecked Sendable: every access goes through `lock`.
     private let lock = NSLock()
     private var ledger: RemoteBolusLedger?
+    private var record: PumpSessionRecord?
     private var files: [String: Data] = [:]
+
+    init(record: PumpSessionRecord?) { self.record = record }
 
     func loadLedger() -> RemoteBolusLedger? { lock.withLock { ledger } }
     func saveLedger(_ value: RemoteBolusLedger) { lock.withLock { ledger = value } }
+    func loadRecord() -> PumpSessionRecord? { lock.withLock { record } }
+    func saveRecord(_ value: PumpSessionRecord) { lock.withLock { record = value } }
     func data(_ name: String) -> Data? { lock.withLock { files[name] } }
     func setData(_ value: Data?, _ name: String) { lock.withLock { files[name] = value } }
 }
 
-/// One process's handle on the ledger file.
-final class ProcessLedgerStore: RemoteBolusLedgerPersisting, @unchecked Sendable {
-    // @unchecked Sendable: `alive` is set once, at the process's end, while nothing else runs.
-    let disk: PhoneDisk
-    var alive = true
-    init(_ disk: PhoneDisk) { self.disk = disk }
-    func loadOutcome() -> RemoteBolusLedgerStore.LoadOutcome {
-        .init(ledger: disk.loadLedger() ?? RemoteBolusLedger(), failedClosed: false)
-    }
-    func save(_ ledger: RemoteBolusLedger) throws {
-        guard alive else { throw CocoaError(.fileWriteUnknown) }
-        disk.saveLedger(ledger)
+/// Whether a process is still running. Its stores write to the disk only while it is, so a dead one's
+/// late work (its link's timers still fire on the shared clock) never lands.
+final class ProcessLife: @unchecked Sendable {
+    // @unchecked Sendable: guarded by `lock`.
+    private let lock = NSLock()
+    private var alive = true
+    func end() { lock.withLock { alive = false } }
+    func write(_ body: () throws -> Void) throws {
+        try lock.withLock {
+            guard alive else { throw CocoaError(.fileWriteUnknown) }
+            try body()
+        }
     }
 }
 
-/// One process's handle on the dismiss results file.
-final class ProcessDismissStore: DismissResultPersisting, @unchecked Sendable {
-    // @unchecked Sendable: `alive` is set once, at the process's end, while nothing else runs.
+/// One process's handle on the ledger file.
+final class ProcessLedgerStore: RemoteBolusLedgerPersisting, @unchecked Sendable {
+    // @unchecked Sendable: its own state is immutable; the disk and the life lock themselves.
     let disk: PhoneDisk
-    var alive = true
+    let life: ProcessLife
+    init(disk: PhoneDisk, life: ProcessLife) {
+        self.disk = disk
+        self.life = life
+    }
+    func loadOutcome() -> RemoteBolusLedgerStore.LoadOutcome {
+        .init(ledger: disk.loadLedger() ?? RemoteBolusLedger(), failedClosed: false)
+    }
+    func save(_ ledger: RemoteBolusLedger) throws { try life.write { disk.saveLedger(ledger) } }
+}
+
+/// One process's handle on the session's record.
+struct ProcessSessionStore: PumpSessionPersisting {
+    let disk: PhoneDisk
+    let life: ProcessLife
+    func load() -> PumpSessionRecord? { disk.loadRecord() }
+    func save(_ record: PumpSessionRecord) throws { try life.write { disk.saveRecord(record) } }
+}
+
+/// One process's handle on the dismiss results file, through the real file format.
+final class ProcessDismissStore: DismissResultPersisting, @unchecked Sendable {
+    // @unchecked Sendable: its own state is immutable; the file is written only inside `life.write`.
+    let disk: PhoneDisk
+    let life: ProcessLife
     let file = FileDismissResultStore(
         url: URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("dismiss-\(UUID()).json"))
-    init(_ disk: PhoneDisk) { self.disk = disk }
+    init(disk: PhoneDisk, life: ProcessLife) {
+        self.disk = disk
+        self.life = life
+    }
     deinit { try? FileManager.default.removeItem(at: file.url) }
-    // Through the real file format, then onto the disk the next process reads.
     func load() -> [DismissResultPayload] {
         guard let data = disk.data("dismiss") else { return [] }
         try? data.write(to: file.url)
         return file.load()
     }
     func save(_ results: [DismissResultPayload]) throws {
-        guard alive else { throw CocoaError(.fileWriteUnknown) }
-        try file.save(results)
-        disk.setData(try Data(contentsOf: file.url), "dismiss")
+        try life.write {
+            try file.save(results)
+            disk.setData(try Data(contentsOf: file.url), "dismiss")
+        }
     }
 }
 
@@ -88,8 +119,7 @@ actor SilentNotifications: NotificationScheduling {
 final class RelaunchingPhone {
     struct Process {
         let transport: ScriptedTransport
-        let ledgerStore: ProcessLedgerStore
-        let dismissStore: ProcessDismissStore
+        let life: ProcessLife
         let ledger: DurableBolusLedger
         let session: PumpSession
         let alerts: AlertCoordinator
@@ -101,8 +131,7 @@ final class RelaunchingPhone {
     static let unit = TandemMessages.PumpUnit(serialNumber: 1693, armSoftwareVersion: 7, mspSoftwareVersion: 7)
     let clock = ScriptClock()
     let pump: ScriptedPump
-    let disk = PhoneDisk()
-    let sessionStore: MemoryPumpSessionStore
+    let disk: PhoneDisk
     let secrets = PhoneSecrets()
     let alertDirectory = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("relaunch-\(UUID())")
     private(set) var process: Process!
@@ -112,8 +141,8 @@ final class RelaunchingPhone {
         pump.unsupportedReads = []
         configure(pump)
         // This unit is known to act on a clear, so the watch may clear its alerts.
-        sessionStore = MemoryPumpSessionStore(
-            PumpSessionRecord(
+        disk = PhoneDisk(
+            record: PumpSessionRecord(
                 pairing: StoredPairing(
                     peripheralID: ScriptedPump.peripheralID, model: .tslimX2, scheme: .legacy,
                     advertisedName: pump.name, trustedSerial: 1693, pairedAt: Date(timeIntervalSince1970: 1_700_000_000)
@@ -136,10 +165,11 @@ final class RelaunchingPhone {
         let clock = clock
         let transport = ScriptedTransport(pump: pump)
         let connection = PumpConnection(transport: transport, clock: clock)
-        let ledgerStore = ProcessLedgerStore(disk)
-        let ledger = DurableBolusLedger(store: ledgerStore, now: clock.date)
+        let life = ProcessLife()
+        let ledger = DurableBolusLedger(store: ProcessLedgerStore(disk: disk, life: life), now: clock.date)
         let session = PumpSession(
-            connection: connection, ledger: ledger, store: sessionStore, secrets: PairingSecrets(store: secrets),
+            connection: connection, ledger: ledger, store: ProcessSessionStore(disk: disk, life: life),
+            secrets: PairingSecrets(store: secrets),
             historySink: nil, clock: { clock.date })
         let alerts = AlertCoordinator(
             store: FileAlertStore(directory: alertDirectory), scheduler: SilentNotifications(), ledger: ledger,
@@ -149,9 +179,9 @@ final class RelaunchingPhone {
         let services = SessionRemoteServices(
             session: session, ledger: ledger, alerts: alerts, backupGlucose: { nil }, history: { _ in [] },
             clock: { clock.date })
-        let dismissStore = ProcessDismissStore(disk)
         let host = RemoteHost(
-            link: link, services: services, settings: HostRig.settings(), dismissResults: dismissStore,
+            link: link, services: services, settings: HostRig.settings(),
+            dismissResults: ProcessDismissStore(disk: disk, life: life),
             clock: { clock.date })
         // Every consumer subscribes before the session starts, as the app does.
         let alertEvents = await session.events()
@@ -171,7 +201,7 @@ final class RelaunchingPhone {
         watch.handler?(.characteristicsDiscovered)
         await host.start()
         process = Process(
-            transport: transport, ledgerStore: ledgerStore, dismissStore: dismissStore, ledger: ledger,
+            transport: transport, life: life, ledger: ledger,
             session: session, alerts: alerts,
             watch: watch, host: host, tasks: tasks)
         await run(for: 12, step: 1)
@@ -181,8 +211,7 @@ final class RelaunchingPhone {
     /// the pump or the disk.
     func kill() async {
         process.transport.processEnded()
-        process.ledgerStore.alive = false
-        process.dismissStore.alive = false
+        process.life.end()
         await process.alerts.stop()
         for task in process.tasks { task.cancel() }
     }
@@ -322,13 +351,15 @@ extension PumpSession {
     }
 
     /// The user cancels on the watch while the phone is still composing the request, and the phone dies.
-    /// A copy of the request that arrives after the relaunch is refused as cancelled, never delivered.
-    @Test func aRequestCancelledWhileComposingStaysCancelledAfterARelaunch() async {
+    /// A copy of the request that arrives after the relaunch is refused as cancelled, never delivered,
+    /// whether the cancel named it or not.
+    @Test(arguments: [true, false])
+    func aRequestCancelledWhileComposingStaysCancelledAfterARelaunch(named: Bool) async {
         let phone = RelaunchingPhone()
         await phone.launch()
         phone.pump.answers[MessageKey(BolusCalcDataSnapshotRequest.self)] = .silent
         await phone.receive(phone.bolus("w1"))
-        await phone.receive(.cancel(CancelPayload(requestId: "c1", bolusRequestId: "w1")))
+        await phone.receive(.cancel(CancelPayload(requestId: "c1", bolusRequestId: named ? "w1" : nil)))
         await phone.kill()
         phone.pump.answers = [:]
 
