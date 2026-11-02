@@ -140,6 +140,19 @@ import Testing
         #expect(PumpSession.commandNames[MessageKey(LoadStatusRequest.self)] == "LoadStatusRequest")
     }
 
+    /// Control-IQ's high alert (#50), which TandemKit leaves unnamed, reaches every surface with Tandem's
+    /// own copy rather than "Alert 50"; a named alert keeps its name.
+    @Test func controlIQsHighAlertGetsTandemsCopy() async throws {
+        let rig = Rig(configure: { $0.alertBitmap = (1 << 50) | (1 << 7) })
+        await rig.startHeld()
+        let alerts = try #require(await rig.session.state.alerts?.value)
+        let high = try #require(alerts.first { $0.id == 50 })
+        #expect(high.title == "Control-IQ high")
+        #expect(high.detail.contains("Test your blood glucose"))
+        let named = try #require(alerts.first { $0.id == 7 })
+        #expect(named.title != "Alert 7")
+    }
+
     /// Around the time the next CGM reading is due, glucose is read every 10 s until it arrives.
     @Test func glucoseIsReadOftenAroundTheNextExpectedReading() async {
         let rig = Rig(configure: { $0.glucose = (120, 280) })  // the next reading is due in 20 s

@@ -139,6 +139,12 @@ enum HistoryProjection {
         func named(_ name: (title: String, detail: String?)?, _ fallback: String, _ id: Int) -> (String, String) {
             name.map { ($0.title, $0.detail ?? "") } ?? (fallback, "id \(id)")
         }
+        // An alert TandemKit doesn't name gets the same copy the live alert shows (`PumpReadings.alert`).
+        func alertNamed(_ id: Int) -> (String, String) {
+            if let name = AlertStatusResponse.name(for: id) { return (name.title, name.detail ?? "") }
+            let copy = PumpAlertCopyOverlay.resolve(kind: .alert, id: id, decodedTitle: "Alert", decodedDetail: nil)
+            return copy.detail.isEmpty ? ("Alert", "id \(id)") : copy
+        }
         switch e {
         case let m as BolusCompletedHistoryLog:
             return HistoryEvent(
@@ -200,13 +206,13 @@ enum HistoryProjection {
             let n = named(AlarmStatusResponse.name(for: m.alarmId), "Alarm", m.alarmId)
             return HistoryEvent(id: seq, date: date, category: .alarm, title: n.0 + " acknowledged")
         case let m as AlertActivatedHistoryLog:
-            let n = named(AlertStatusResponse.name(for: m.alertId), "Alert", m.alertId)
+            let n = alertNamed(m.alertId)
             return HistoryEvent(id: seq, date: date, category: .alert, title: n.0, detail: n.1)
         case let m as AlertClearedHistoryLog:
-            let n = named(AlertStatusResponse.name(for: m.alertId), "Alert", m.alertId)
+            let n = alertNamed(m.alertId)
             return HistoryEvent(id: seq, date: date, category: .alert, title: n.0 + " cleared")
         case let m as AlertAckHistoryLog:
-            let n = named(AlertStatusResponse.name(for: m.alertId), "Alert", m.alertId)
+            let n = alertNamed(m.alertId)
             return HistoryEvent(id: seq, date: date, category: .alert, title: n.0 + " acknowledged")
         case let m as CgmAlertActivatedHistoryLog:
             let n = named(CGMAlertStatusResponse.name(for: m.alertId), "CGM alert", m.alertId)

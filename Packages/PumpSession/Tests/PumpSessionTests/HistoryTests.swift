@@ -248,3 +248,26 @@ private func addGlucoseHistory(_ pump: ScriptedPump, count: Int) {
 private func readStart(_ cargo: [UInt8]) -> UInt32 {
     (0..<4).reduce(0) { $0 | UInt32(cargo[$1]) << (8 * UInt32($1)) }
 }
+
+/// The logbook names an alert as the live alert does: Control-IQ's high alert (#50), which TandemKit
+/// leaves unnamed, gets Tandem's copy there too; another unnamed alert keeps its id.
+@Suite struct HistoryAlertNameTests {
+    private func activated(_ alertId: UInt32) -> AlertActivatedHistoryLog {
+        var raw = [UInt8](repeating: 0, count: 26)
+        for i in 0..<4 { raw[10 + i] = UInt8((alertId >> (8 * UInt32(i))) & 0xFF) }
+        return AlertActivatedHistoryLog(cargo: raw)
+    }
+
+    @Test func controlIQsHighAlertIsNamedInTheLogbook() throws {
+        let event = try #require(HistoryProjection.event(activated(50), date: Date()))
+        #expect(event.title == "Control-IQ high")
+        #expect(event.detail.contains("Test your blood glucose"))
+    }
+
+    @Test func anotherUnnamedAlertKeepsItsId() throws {
+        let unnamed = try #require((0..<64).first { AlertStatusResponse.name(for: $0) == nil && $0 != 50 })
+        let event = try #require(HistoryProjection.event(activated(UInt32(unnamed)), date: Date()))
+        #expect(event.title == "Alert")
+        #expect(event.detail == "id \(unnamed)")
+    }
+}

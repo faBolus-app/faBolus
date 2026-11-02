@@ -45,10 +45,12 @@ struct PumpAlertLists: Sendable, Equatable {
         }
     }
 
+    /// TandemKit names an alert it knows; one it doesn't comes as "Alert N" with no detail, and a few of
+    /// those get Tandem's own copy from `PumpAlertCopyOverlay`.
     static func alert(_ n: PumpNotification) -> PumpAlert {
-        PumpAlert(
-            id: n.id, kind: PumpAlertKind(rawValue: n.kind.rawValue) ?? .alert, title: n.title,
-            detail: n.detail ?? "", isDismissable: n.dismissable)
+        let kind = PumpAlertKind(rawValue: n.kind.rawValue) ?? .alert
+        let copy = PumpAlertCopyOverlay.resolve(kind: kind, id: n.id, decodedTitle: n.title, decodedDetail: n.detail)
+        return PumpAlert(id: n.id, kind: kind, title: copy.title, detail: copy.detail, isDismissable: n.dismissable)
     }
 
     /// The pump names a malfunction only by its bit in the malfunction status (pumpx2 decodes no other

@@ -2,10 +2,9 @@ import Foundation
 
 // MARK: - Pump-alert copy overlay
 
-/// The existing pump-alert mirror (`TandemBackend.activeNotifications` → `AlertsView`) already
-/// surfaces Control-IQ's own alerts — no new faBolus advisory is added. This is a client-side copy
-/// overlay for specific pump alert ids whose decoded name the protocol layer doesn't yet carry, so
-/// the mirror still surfaces them with clean, neutral, Tandem-sourced copy instead of a generic
+/// PumpSession mirrors the pump's own alerts (`PumpReadings.alert`) — no new faBolus advisory is added.
+/// This is a copy overlay for specific pump alert ids whose decoded name the protocol layer doesn't yet
+/// carry, so the mirror still surfaces them with clean, neutral, Tandem-sourced copy instead of a generic
 /// `"Alert N"` fallback.
 ///
 /// **Control-IQ High Alert (#50)** — Tandem's own "CIQ increased delivery but glucose is still high"
