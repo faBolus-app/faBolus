@@ -29,7 +29,7 @@ only those (`./scripts/check.sh build test`).
 | `format` | `xcrun swift-format lint --strict`. `./scripts/format.sh` fixes it. |
 | `swiftlint` | A rule in `.swiftlint.yml`. |
 | `shell`, `actions`, `markdown` | ShellCheck, actionlint, markdownlint. |
-| `contract` | A version 2 golden fixture that doesn't match the schema, a broken message the schema accepts, or a provenance row (`docs/SBOM.md`) that doesn't match its file. |
+| `contract` | A version 2 golden fixture that doesn't match the schema, a broken message the schema accepts, a poll fixture whose `appVersion` isn't `MARKETING_VERSION`, or a provenance row (`docs/SBOM.md`) that doesn't match its file. |
 
 Nothing is grandfathered. A suppression is written inline, names the rule and gives a reason. Semgrep
 (`.semgrep/deslop.yml`), Periphery and CodeQL report but don't fail.

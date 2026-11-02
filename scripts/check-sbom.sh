@@ -31,7 +31,7 @@ done
 # basename to appear in $SBOM WITH a recognizable SPDX/license token. Deliberately narrow to those two
 # markers (NOT "derived from", which legitimately describes many pump-derived values) to keep false
 # positives out; a genuine port must carry the marker AND an SBOM row.
-LICENSE_RE='MIT|Apache-2\.0|Apache 2|BSD|ISC|MPL|GPL|LicenseRef|independent Swift impl'
+LICENSE_RE='MIT|Apache-2\.0|Apache 2|BSD|ISC|MPL|GPL|CC-BY-SA|LicenseRef|independent Swift impl'
 while IFS= read -r f; do
   [[ -z "$f" ]] && continue
   base="$(basename "$f")"

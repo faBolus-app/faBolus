@@ -17,7 +17,7 @@ APP_BUNDLE_ID = com.fabolus.app
 // carries the same version: faBolusGarmin's scripts/check-version-sync.sh fails when its AppVersion.NAME
 // differs from MARKETING_VERSION here, at the faBolus commit in its contract/PIN. The poll golden fixtures
 // (RemoteProtocol's GoldenFixtures.swift) carry it as the watch's appVersion: bump them with it and
-// rewrite the contract (CONTRIBUTING.md).
+// rewrite the contract (CONTRIBUTING.md); the contract gate fails until they match.
 MARKETING_VERSION = 0.4.0
 CURRENT_PROJECT_VERSION = 1
 
@@ -26,9 +26,10 @@ CURRENT_PROJECT_VERSION = 1
 // developer.apple.com → Account → Membership.)
 DEVELOPMENT_TEAM =
 
-// Connect IQ BETA app id the phone pairs with (dashed UUID). Defaults to the shared beta app. If you
-// build your OWN private Garmin beta (faBolusGarmin/scripts/beta-build.sh — the store requires a unique
-// id per beta listing), set this to the id that script prints, in LocalConfig.xcconfig.
+// Connect IQ app id the phone pairs with (dashed UUID). Defaults to the watch app's own id, which a
+// sideloaded build has. If you upload your own private beta (faBolusGarmin/scripts/beta-build.sh — the
+// store requires a unique id per beta), set this to the id that script prints, in LocalConfig.xcconfig
+// (the script does it for you).
 GARMIN_BETA_APP_ID = A1B2C3D4-E5F6-0011-2233-445566778899
 
 // Local, gitignored overrides win over the defaults above. Keep this the last line.

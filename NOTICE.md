@@ -40,7 +40,7 @@ its upstream license:
 
 Their message tests are ported with the upstream fixtures. `Data(hexadecimalString:)` in
 `Sources/DexcomBLE/Data.swift` is adapted from a
-[Stack Overflow answer](https://stackoverflow.com/a/40278391) (CC BY-SA 3.0), as CGMBLEKit carries it.
+[Stack Overflow answer](https://stackoverflow.com/a/40278391) by Martin R (CC BY-SA 3.0), as CGMBLEKit carries it.
 
 ## LoopKit and Loop, adapted
 
@@ -65,6 +65,12 @@ faBolus's visual design draws inspiration from the **[Loop](https://github.com/L
 and portions of this project's documentation are adapted from
 **[LoopDocs](https://loopkit.github.io/loopdocs/)**. faBolus is an independent project and is not
 affiliated with, or endorsed by, the Loop / LoopKit projects.
+
+## License texts
+
+The license notices that go with the code ported or adapted from these projects are in `LICENSES/`:
+`pumpx2.txt` (pumpX2), `LoopKit.txt` (LoopKit) and `Loop.txt` (Loop). CGMBLEKit's, G7SensorKit's and
+ShareClient's are the `LICENSE` files in their package folders.
 
 See `docs/SBOM.md` for the full component inventory, checked by `scripts/check-sbom.sh`.
 

@@ -125,9 +125,22 @@ def main():
             failed = True
             print(f"FAIL self-test: {label} passed the schema")
 
+    # The watch writes its poll's appVersion from its version constant, which a release keeps equal to
+    # MARKETING_VERSION, and its tests compare that poll with these fixtures; a version bump that misses
+    # them would only show up in the watch's local tests.
+    xcconfig = open(os.path.join(ROOT, "Config.xcconfig"), encoding="utf-8").read()
+    version = re.search(r"^\s*MARKETING_VERSION\s*=\s*(\S+)", xcconfig, re.M)
+    for name in ("poll.json", "poll-empty.json"):
+        app_version = v2[name]["payload"]["appVersion"]
+        if not version or app_version != version.group(1):
+            failed = True
+            print(f"FAIL {name}: appVersion {app_version} isn't MARKETING_VERSION "
+                  f"{version.group(1) if version else '(unreadable)'}; bump GoldenFixtures.swift and rewrite the contract")
+
     if failed:
         sys.exit(1)
-    print(f"✅ contract: {len(v2)} version 2 fixtures match schema.json; {len(broken)} broken messages refused")
+    print(f"✅ contract: {len(v2)} version 2 fixtures match schema.json; {len(broken)} broken messages refused; "
+          f"poll appVersion is MARKETING_VERSION {version.group(1)}")
 
 
 main()
