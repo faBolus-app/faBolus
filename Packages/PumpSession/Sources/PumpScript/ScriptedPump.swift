@@ -219,6 +219,7 @@ public final class ScriptedTransport: LinkTransport {
     public let clock: ScriptClock
     public private(set) var commands: [TransportCommand] = []
     private var pendingConnect = false
+    private var ended = false
     private var reassembly: [Characteristic: PacketReassembler] = [:]
     private var key: [UInt8] { Array(ScriptedPump.code.utf8) }
 
@@ -241,6 +242,7 @@ public final class ScriptedTransport: LinkTransport {
     }
 
     public func perform(_ command: TransportCommand) {
+        guard !ended else { return }
         commands.append(command)
         switch command {
         case .scan:
@@ -300,10 +302,20 @@ public final class ScriptedTransport: LinkTransport {
     }
 
     public func drop(code: Int = 7) {
-        guard pump.linked else { return }
+        guard !ended, pump.linked else { return }
         pump.linked = false
         report?(
             .disconnected(peripheralID: ScriptedPump.peripheralID, BluetoothError(domain: "CBErrorDomain", code: code)))
+    }
+
+    /// The app's process ended (a crash, or iOS killing it): this radio is gone. The pump's link to it
+    /// drops, nothing more reaches the pump through it, and nothing more is reported, so a relaunch's new
+    /// transport is the pump's only one.
+    public func processEnded() {
+        ended = true
+        report = nil
+        pendingConnect = false
+        pump.linked = false
     }
 
     /// Sends the qualifying-events bitmap, as the pump does when something changes.

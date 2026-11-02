@@ -52,14 +52,24 @@ public struct RemoteSettings: Sendable {
 
 /// Answers one remote from the pump session, the ledger and the alerts, through its link.
 ///
-/// It keeps only what makes a repeated message harmless: the requests being worked on now, and the last
-/// few dismiss results. Everything else is read when needed: an outcome the watch asks for again comes from
-/// the ledger, and a status is built from the session's state. So a relaunched phone answers a watch that
-/// was waiting before it went away.
+/// What it holds in memory only makes a repeated message harmless while this process runs: the requests
+/// being worked on now. Everything a relaunched phone needs to answer a watch that was waiting is durable
+/// elsewhere, written before the watch is told:
+/// - A bolus's every move is in the ledger before it is sent, and an outcome the watch asks for again, by a
+///   poll or a resent request, comes from there. A request the ledger has is never delivered again, and
+///   one left in flight by a dead process reads back as unknown, which blocks until history settles it.
+/// - A request refused before it became an entry, or cancelled before it reached the session, is recorded
+///   in the ledger as refused, so a copy that arrives later gets the same answer.
+/// - A request the phone said it had but hadn't recorded when it died was never sent to the pump; the
+///   watch's poll gets no answer, and a copy that comes later is a new attempt, delivered at most once.
+/// - The last few dismiss results are saved (`DismissResultPersisting`), because a dismiss judged again
+///   could clear the same alert raised again since.
+/// A status is built from the session's state each time.
 public actor RemoteHost {
     public let peerId: String
     private let link: WatchLink
     private let services: any RemoteHostServices
+    private let dismissStore: (any DismissResultPersisting)?
     private let clock: @Sendable () -> Date
 
     private var settings: RemoteSettings
@@ -95,15 +105,21 @@ public actor RemoteHost {
     static let maxCancelledRequests = 16
     static let historySpan: TimeInterval = 24 * 3600
 
+    /// - Parameter dismissResults: where the last dismiss results are kept across launches; `nil` keeps them
+    ///   in memory only.
     public init(
         link: WatchLink, services: any RemoteHostServices, settings: RemoteSettings, peerId: String = "garmin",
-        clock: @escaping @Sendable () -> Date = { Date() }
+        dismissResults: (any DismissResultPersisting)? = nil, clock: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.link = link
         self.services = services
         self.settings = settings
         self.peerId = peerId
         self.clock = clock
+        dismissStore = dismissResults
+        self.dismissResults = (dismissResults?.load() ?? []).suffix(Self.maxDismissResults).map {
+            (requestId: $0.requestId, payload: $0)
+        }
         config = ConfigComposer.compose(settings.preferences, access: settings.access, freshness: settings.freshness)
     }
 
@@ -133,6 +149,12 @@ public actor RemoteHost {
             await submit(.setConfig(next))
         }
         await refreshStatus()
+    }
+
+    /// The pump was forgotten: the dismiss results named its alerts.
+    public func forgetDismissResults() {
+        dismissResults = []
+        saveDismissResults()
     }
 
     /// A backup glucose source has a new reading. The pump's own changes come as pump events; this one
@@ -185,11 +207,14 @@ public actor RemoteHost {
             // Never gated. A bolus still being composed is stopped here; one with the session is the
             // session's to stop; one that hasn't arrived yet is refused when it does.
             cancelledBeforeStart.formUnion(composing)
-            if let id = p.bolusRequestId, boluses[id] == nil, !cancelledRequests.contains(id) {
+            // A request that hasn't arrived, or is still being composed, hasn't reached the session.
+            if let id = p.bolusRequestId, boluses[id] == nil || composing.contains(id), !cancelledRequests.contains(id)
+            {
                 cancelledRequests.append(id)
                 if cancelledRequests.count > Self.maxCancelledRequests { cancelledRequests.removeFirst() }
-                // Durable, so a copy that arrives after a relaunch is refused too. The ledger keeps an
-                // entry's answer over this, should the request turn out to have arrived.
+                // Durable, so a copy that arrives after a relaunch is refused too, one being composed when
+                // the phone died included. The ledger keeps an entry's answer over this, should the request
+                // turn out to have reached the session.
                 Task { await self.services.recordRefusal(self.key(id), reason: Self.cancelledMessage) }
             }
             guard !cancelling else {
@@ -383,10 +408,12 @@ public actor RemoteHost {
             result = .notFound
         }
         let payload = DismissResultPayload(requestId: p.requestId, alertId: p.alertId, result: result)
-        // Only a definite answer is kept for a resend; an unconfirmed one may be tried again.
+        // Only a definite answer is kept for a resend; an unconfirmed one may be tried again. Saved before
+        // the answer goes, so a copy that reaches a relaunched phone gets it too.
         if result != .unconfirmed {
             dismissResults.append((p.requestId, payload))
             if dismissResults.count > Self.maxDismissResults { dismissResults.removeFirst() }
+            saveDismissResults()
         }
         await submit(.sendResult(.dismissResult(payload)))
         await refreshStatus()
@@ -426,6 +453,14 @@ public actor RemoteHost {
     }
 
     private var now: Date { clock() }
+
+    /// A save that fails still lets the answer go: it's true, and only a copy arriving after a relaunch would
+    /// be judged again.
+    private func saveDismissResults() {
+        do { try dismissStore?.save(dismissResults.map(\.payload)) } catch {
+            hostLog.error("watch dismiss results not saved: \(String(describing: error), privacy: .public)")
+        }
+    }
 
     private func key(_ requestId: String) -> RemoteBolusLedger.Key { .init(peerId: peerId, requestId: requestId) }
 

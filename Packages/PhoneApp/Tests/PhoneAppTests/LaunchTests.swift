@@ -1,7 +1,10 @@
 import Alerts
 import Foundation
+import HistoryStore
 import PumpScript
 import PumpSession
+import RemoteHost
+import RemoteProtocol
 import TandemMessages
 import Testing
 import WidgetContent
@@ -61,6 +64,37 @@ import faBolusCore
         let third = await phone.launch(paired: false)
         #expect(third.logbook.isEmpty)
         await third.shutdown()
+    }
+
+    /// Each launch keeps one day of glucose: a reading from 25 hours ago is gone, one from an hour ago stays.
+    @Test func launchKeepsOneDayOfGlucose() async throws {
+        let phone = Phone()
+        let now = phone.mock.clock.date
+        do {
+            let store = try GlucoseHistoryStore(url: phone.historyURL)
+            store.ingestGlucose(
+                [
+                    faBolusCore.GlucoseReading(date: now.addingTimeInterval(-25 * 3600), mgdl: 90),
+                    faBolusCore.GlucoseReading(date: now.addingTimeInterval(-3600), mgdl: 140)
+                ], sourceID: "pump", priority: 1, recordedAt: now)
+        }
+        let model = await phone.launch()
+        let store = try #require(model.historyStore)
+        let kept = store.glucose(in: now.addingTimeInterval(-48 * 3600)...now)
+        #expect(kept.map(\.mgdl) == [140])
+        await model.shutdown()
+    }
+
+    /// The watch's dismiss results name the pump's alerts, so forgetting the pump forgets them too, on disk.
+    @Test func forgettingThePumpForgetsTheWatchsDismissResults() async throws {
+        let phone = Phone()
+        let file = FileDismissResultStore(url: FileDismissResultStore.url(in: phone.directory))
+        try file.save([DismissResultPayload(requestId: "d1", alertId: "pumpalert-1-7", result: .cleared)])
+        let model = await phone.launch()
+        #expect(file.load().count == 1)
+        await model.forgetPump()
+        #expect(file.load().isEmpty)
+        await model.shutdown()
     }
 
     /// Unpaired, the app scans, lists the pump and pairs with its code; the link comes up and the pairing

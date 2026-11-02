@@ -113,6 +113,7 @@ extension AppModel {
     public func forgetPump() async {
         await session.forgetPairing()
         await alerts.pairingForgotten()
+        if let host { await host.forgetDismissResults() } else { try? dismissResultStore?.save([]) }
         pairing = nil
         logbook = []
         pumpsFound = []
@@ -240,6 +241,11 @@ extension AppModel {
 // MARK: - Watch
 
 extension AppModel {
+    /// The watch's dismiss results, kept beside the ledger; none without a data directory.
+    var dismissResultStore: FileDismissResultStore? {
+        environment.dataDirectory.map { FileDismissResultStore(url: FileDismissResultStore.url(in: $0)) }
+    }
+
     func startWatch(appActive: Bool) {
         guard let transport = watchTransport else { return }
         let link = WatchLink(transport: transport, clock: environment.watchClock ?? SystemWatchLinkClock())
@@ -251,7 +257,9 @@ extension AppModel {
                 await MainActor.run { self?.glucoseHistory.filter { $0.date >= since } ?? [] }
             },
             clock: environment.clock)
-        let host = RemoteHost(link: link, services: services, settings: remoteSettings, clock: environment.clock)
+        let host = RemoteHost(
+            link: link, services: services, settings: remoteSettings, dismissResults: dismissResultStore,
+            clock: environment.clock)
         watchLink = link
         self.host = host
         link.start()

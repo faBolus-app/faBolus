@@ -542,6 +542,31 @@ import faBolusCore
         #expect(rig.transport.statuses.count == before)
     }
 
+    /// A new reading at the same mg/dL is news: it carries its own time, so the status goes again. A backup
+    /// CGM's reading reaches the watch through `glucoseChanged()`; with nothing new, nothing is sent.
+    @Test func aNewReadingAtTheSameValueSendsAStatus() async {
+        let rig = HostRig()
+        var state = PumpState()
+        state.link = .connected
+        state.model = .tslimX2
+        state.glucose = Observed(
+            PumpGlucose(mgdl: 120, trend: .flat), measuredAt: HostRig.now.addingTimeInterval(-300),
+            receivedAt: HostRig.now)
+        await rig.services.set(state: state)
+        await rig.start()
+        let before = rig.transport.statuses.count
+        state.glucose = Observed(PumpGlucose(mgdl: 120, trend: .flat), measuredAt: HostRig.now, receivedAt: HostRig.now)
+        await rig.services.set(state: state)
+        await rig.host.glucoseChanged()
+        await rig.settle()
+        #expect(rig.transport.statuses.count == before + 1)
+        #expect(rig.transport.statuses.last?.glucose?.at == GoldenFixtures.now)
+        #expect(rig.transport.statuses.last?.glucose?.value.mgdl == 120)
+        await rig.host.glucoseChanged()
+        await rig.settle()
+        #expect(rig.transport.statuses.count == before + 1)
+    }
+
     /// A finished history sync that found an auto-correction sends it with the next status. A host with
     /// none known, as after a relaunch before history shows one again, sends none: never a zero or an old
     /// time.

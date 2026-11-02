@@ -63,6 +63,19 @@ import Testing
         #expect(s.sentAt == GoldenFixtures.now)
     }
 
+    /// The pump's max basal goes as milliunits per hour with the time it was read: the golden status's
+    /// `maxBasal`, which the watch's tests read. None reported goes as nothing.
+    @Test func theMaxBasalGoesAsTheGoldenStatusCarriesIt() {
+        var p = connected
+        p.maxBasalUnitsPerHour = observed(3.0, age: 600)
+        let s = compose(p)
+        #expect(s.maxBasalMilliunitsPerHour == GoldenFixtures.status.maxBasalMilliunitsPerHour)
+        #expect(s.maxBasalMilliunitsPerHour == Timed(3000, at: GoldenFixtures.now - 600))
+        p.maxBasalUnitsPerHour = observed(2.95, age: 0)
+        #expect(compose(p).maxBasalMilliunitsPerHour?.value == 2950)
+        #expect(compose(connected).maxBasalMilliunitsPerHour == nil)
+    }
+
     /// A value dated in the future can't be trusted, so it isn't sent as current.
     @Test func aValueFromTheFutureIsLeftOut() {
         var p = connected
