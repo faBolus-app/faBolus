@@ -18,6 +18,7 @@ struct DiagnosticsBundle {
     let watch: WatchLinkState?
     let alerts: AlertSnapshot?
     let ledger: RemoteBolusLedger
+    let glucoseProvenance: GlucoseProvenance
     let backupSourceID: String?
     let backup: GlucoseSourceState?
     let historySync: HistorySyncState
@@ -114,6 +115,10 @@ struct DiagnosticsBundle {
         }
 
         section("Other")
+        switch glucoseProvenance {
+        case .pump: out.append("Glucose shown from: pump")
+        case .failover(let id, let reason): out.append("Glucose shown from: \(id) (\(reason.rawValue))")
+        }
         out.append("Backup CGM: \(backupSourceID ?? "none") \(backup.map { "\($0.status)" } ?? "")")
         out.append("History sync: \(historySync), logbook events: \(logbookCount)")
         return out.joined(separator: "\n")

@@ -333,7 +333,8 @@ extension AppModel {
         return await DiagnosticsBundle(
             generatedAt: now, appVersion: Self.appVersion, pairing: pairing, pump: pump, link: link,
             linkNow: connection.now, watch: watch, alerts: alertSnapshot, ledger: ledger.ledger,
-            backupSourceID: backupSourceID, backup: backup, historySync: historySync, logbookCount: logbook.count
+            glucoseProvenance: glucoseProvenance, backupSourceID: backupSourceID, backup: backup,
+            historySync: historySync, logbookCount: logbook.count
         ).text
     }
 

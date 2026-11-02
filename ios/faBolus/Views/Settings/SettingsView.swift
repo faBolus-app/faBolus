@@ -202,13 +202,16 @@ struct CustomizeListView: View {
     @Binding var order: [String]
     let footer: String
 
+    /// A delete that would leave no item is refused: every customizable list keeps at least one.
+    static func canDelete(currentCount: Int, removingCount: Int) -> Bool { currentCount > removingCount }
+
     var body: some View {
         List {
             Section {
                 ForEach(order, id: \.self) { Text(label($0)) }
                     .onMove { order.move(fromOffsets: $0, toOffset: $1) }
                     .onDelete { offsets in
-                        guard order.count > offsets.count else { return }
+                        guard Self.canDelete(currentCount: order.count, removingCount: offsets.count) else { return }
                         order.remove(atOffsets: offsets)
                     }
             } header: {
