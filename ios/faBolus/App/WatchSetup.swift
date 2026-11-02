@@ -11,19 +11,15 @@ final class WatchSetup {
     private let garmin: GarminTransport
     #endif
 
-    static func make() -> WatchSetup? {
-        #if GARMIN
-        return WatchSetup()
-        #else
-        return nil
-        #endif
-    }
+    static func make() -> WatchSetup? { WatchSetup() }
 
     #if GARMIN
     private init() {
         garmin = GarminTransport(appUUID: Self.watchAppUUID)
         transport = garmin
     }
+    #else
+    private init?() { nil }
     #endif
 
     /// The Connect IQ app the phone talks to: the beta listing (a self-builder's own, from
