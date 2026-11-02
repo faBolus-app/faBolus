@@ -59,7 +59,7 @@ docs/           the documentation site (MkDocs Material)
 ```
 
 [ARCHITECTURE.md](ARCHITECTURE.md) explains the packages, [CONTRIBUTING.md](CONTRIBUTING.md) how to work
-on them, and [BRANCHES.md](BRANCHES.md) the `main` and `rebuild` branches.
+on them, and [BRANCHES.md](BRANCHES.md) the branch and the tags.
 
 ## Feedback
 

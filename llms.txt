@@ -9,7 +9,7 @@
 - [AGENTS.md](AGENTS.md): layout, safety, gates, gotchas.
 - [ARCHITECTURE.md](ARCHITECTURE.md): the packages and the dose path.
 - [CONTRIBUTING.md](CONTRIBUTING.md): gates, tests, the contract workflow.
-- [BRANCHES.md](BRANCHES.md): `main` and `rebuild`.
+- [BRANCHES.md](BRANCHES.md): `main` and the tags.
 - [docs/UNVERIFIED-GUESSES.md](docs/UNVERIFIED-GUESSES.md): pump and CGM behavior not yet confirmed.
 - [docs/glossary.md](docs/glossary.md): terms.
 

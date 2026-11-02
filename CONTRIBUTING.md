@@ -1,7 +1,7 @@
 # Contributing to faBolus
 
-Contributions are welcome by pull request. Until the rebuild merges, target `rebuild`; after that,
-`main` (see [BRANCHES.md](BRANCHES.md)). Read [ARCHITECTURE.md](ARCHITECTURE.md) first.
+Contributions are welcome by pull request into `main` (see [BRANCHES.md](BRANCHES.md)). Read
+[ARCHITECTURE.md](ARCHITECTURE.md) first.
 
 faBolus is experimental, in-development software — not a medical device and not FDA-cleared, for
 experimental and demonstration use.
