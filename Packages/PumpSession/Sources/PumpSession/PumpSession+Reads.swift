@@ -126,6 +126,7 @@ extension PumpSession {
         resumeLinkWaiters()
         resumeQueue()
         historyTick(now: now)
+        ledgerSaveTick(now: now)
         guard state.link.isConnected, identity != nil else { return }
         deliveryTick(now: now)
         for group in [ReadGroup.essential, .alerts, .status, .settings, .cgmHardware] where isDue(group, now: now) {

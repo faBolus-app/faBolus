@@ -102,6 +102,18 @@ import faBolusCore
 
 @MainActor
 @Suite struct DeviceTests {
+    /// When the session saves an outcome it couldn't save before, the bolus screen's block lifts with it
+    /// rather than waiting for some other event.
+    @Test func aSavedOutcomeLiftsTheBolusScreensBlock() async {
+        let phone = Phone()
+        let model = await phone.launch()
+        #expect(await model.ledger.block == nil)
+        model.bolusBlock = .outcomeNotSaved  // what the screen showed while the save was failing
+        await model.handle(.bolusOutcomesSaved)
+        #expect(model.bolusBlock == nil)
+        await model.shutdown()
+    }
+
     /// Ported from `RootTabSelectionGuardTests`: read-only hides the Bolus tab.
     @Test func readOnlyHidesTheBolusTab() async {
         let phone = Phone()

@@ -55,6 +55,8 @@ public actor PumpSession {
         public var reconcileAttemptsPerConnection = 5
         /// How soon an unknown bolus the pump still reports active is looked at again.
         public var reconcileWhileDelivering: TimeInterval = 15
+        /// How often a bolus outcome that couldn't be saved is saved again (the old app's interval).
+        public var ledgerSaveRetry: TimeInterval = 5
         /// The ticker's rhythm while nothing is in flight, and while a bolus or history page is.
         public var idleTick: TimeInterval = 5
         public var busyTick: TimeInterval = 0.5
@@ -140,6 +142,10 @@ public actor PumpSession {
     var reconcileAttempts = 0
     var reconciling = false
     var nextReconcileAt: Date?
+    var nextLedgerSaveAt: Date?
+    var savingLedger = false
+    /// The last retry failed too; logged once, not every retry.
+    var ledgerSaveFailing = false
 
     // Events
     var subscribers: [UUID: AsyncStream<PumpEvent>.Continuation] = [:]

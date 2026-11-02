@@ -337,6 +337,32 @@ extension PumpSession {
         }
     }
 
+    // MARK: - Unsaved outcomes
+
+    /// An outcome the ledger couldn't save blocks new boluses until a save succeeds. Saving it again on a
+    /// timer lifts the block once storage recovers (a full disk, say), rather than leaving the user stuck
+    /// until the app relaunches. This includes an outcome whose save failed at launch.
+    func ledgerSaveTick(now: Date) {
+        guard !savingLedger, now >= nextLedgerSaveAt ?? .distantPast else { return }
+        nextLedgerSaveAt = now.addingTimeInterval(config.ledgerSaveRetry)
+        savingLedger = true
+        Task { await self.saveUnsavedOutcomes() }
+    }
+
+    func saveUnsavedOutcomes() async {
+        defer { savingLedger = false }
+        guard await ledger.hasUnsavedOutcome else { return }
+        do {
+            try await ledger.retrySave()
+            ledgerSaveFailing = false
+            emit(.bolusOutcomesSaved)
+        } catch {
+            guard !ledgerSaveFailing else { return }
+            ledgerSaveFailing = true
+            sessionLog.error("bolus outcome still not saved: \(String(describing: error), privacy: .public)")
+        }
+    }
+
     // MARK: - Ledger moves
 
     enum LedgerMove {

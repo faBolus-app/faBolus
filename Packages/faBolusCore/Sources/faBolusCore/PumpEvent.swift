@@ -52,6 +52,8 @@ public enum PumpEvent: Sendable, Hashable {
     case alertDismissed(PumpAlert, DismissOutcome)
     /// A bolus request's outcome moved. The ledger records it before this is emitted.
     case bolusOutcome(RemoteBolusLedger.Key, BolusOutcome)
+    /// Outcomes the ledger couldn't save before are saved now, so they no longer block a new bolus.
+    case bolusOutcomesSaved
     /// A pairing scan found a pump. `model` is from its advertised name.
     case pumpFound(peripheralID: UUID, name: String?, model: PumpModel)
     /// The link stopped trying on its own.

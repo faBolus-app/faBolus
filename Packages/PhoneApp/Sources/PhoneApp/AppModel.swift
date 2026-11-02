@@ -280,6 +280,8 @@ public final class AppModel {
             let entry = await ledger.ledger.entry(key)
             latestOutcome = BolusStatus(key: key, outcome: outcome, requestedUnits: entry?.request.totalUnits, at: now)
             bolusBlock = await ledger.block
+        case .bolusOutcomesSaved:
+            bolusBlock = await ledger.block
         case .pumpFound(let id, let name, let model):
             if !pumpsFound.contains(where: { $0.peripheralID == id }) {
                 pumpsFound.append(FoundPump(peripheralID: id, name: name, model: model))

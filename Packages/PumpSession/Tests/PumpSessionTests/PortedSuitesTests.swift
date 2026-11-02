@@ -437,4 +437,27 @@ private func deliver(_ rig: Rig, _ dose: ComposedDose, for seconds: Double = 2) 
         try? await rig.ledger.retrySave()
         #expect(await rig.ledger.block == nil)
     }
+
+    /// The session saves it again on its own: once storage recovers, the block lifts within the retry
+    /// interval and the session says so, with no relaunch and nothing for the user to do.
+    @Test func anOutcomeThatCantBeSavedIsSavedAgainOnItsOwn() async {
+        let store = MemoryLedgerStore()
+        let rig = Rig(ledgerStore: store, configure: { $0.unsupportedReads = [] })
+        await rig.startHeld()
+        store.failFromSave = 3
+        _ = await deliver(rig, composed(1.0), for: 20)
+        #expect(await rig.ledger.block == .outcomeNotSaved)
+        let saves = store.saveCount
+        await rig.run(for: 12, step: 1)
+        #expect(await rig.ledger.block == .outcomeNotSaved, "still failing, still blocked")
+        // Tried again on the retry interval (5 s), not on every tick.
+        #expect((2...3).contains(store.saveCount - saves), "\(store.saveCount - saves) saves in 12 s")
+        store.failFromSave = nil
+        await rig.run(for: 6, step: 1)
+        #expect(await rig.until { await rig.ledger.block == nil })
+        #expect(await rig.events.contains(.bolusOutcomesSaved))
+        let outcome = await rig.ledger.ledger.outcome(key)
+        #expect(outcome != nil)
+        #expect(store.saved?.outcome(key) == outcome, "what blocked is now on disk")
+    }
 }

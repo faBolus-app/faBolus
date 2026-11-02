@@ -435,6 +435,22 @@ import faBolusCore
         #expect(rig.transport.statuses.last?.bolusBlock == .readOnly)
     }
 
+    /// An outcome the phone couldn't save locks delivery on the watch; once it's saved, the watch is told.
+    @Test func aSavedOutcomeUnlocksTheWatch() async {
+        let rig = HostRig()
+        var state = PumpState()
+        state.link = .connected
+        state.model = .tslimX2
+        await rig.services.set(state: state)
+        await rig.services.set(block: .outcomeNotSaved)
+        await rig.start()
+        #expect(rig.transport.statuses.last?.bolusBlock == .deliveryLocked)
+        await rig.services.set(block: nil)
+        await rig.host.pumpEvent(.bolusOutcomesSaved)
+        await rig.settle()
+        #expect(rig.transport.statuses.last?.bolusBlock == nil)
+    }
+
     @Test func historyIsSentWhenAsked() async {
         let rig = HostRig()
         await rig.services.set(

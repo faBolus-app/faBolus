@@ -239,6 +239,11 @@ public actor DurableBolusLedger {
         ledgerUnreadable = false
     }
 
+    /// Whether an outcome is held only in memory because its save failed, and saving again may lift that.
+    /// Never while the file on disk is unreadable: replacing it is the user's call, through
+    /// `confirmAllOnPump`, not a retry's.
+    public var hasUnsavedOutcome: Bool { outcomeNotSaved && !ledgerUnreadable && store != nil }
+
     /// Try again to save an outcome that couldn't be saved. Lifts `.outcomeNotSaved` on success.
     public func retrySave() throws { try save(ledger) }
 

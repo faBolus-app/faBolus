@@ -270,7 +270,8 @@ public struct AlertEngine: Sendable {
             state.clearFailed.formIntersection(alerts.map(Self.pumpAlertIdentifier))
         case .bolusOutcome(let key, let outcome):
             bolusMoved(key, to: outcome, into: &announcements)
-        case .linkFailed, .identified, .readingsChanged, .alertDismissed, .pumpFound, .historySync:
+        case .linkFailed, .identified, .readingsChanged, .alertDismissed, .pumpFound, .historySync,
+            .bolusOutcomesSaved:
             break
         }
     }
