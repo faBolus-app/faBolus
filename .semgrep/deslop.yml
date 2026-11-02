@@ -5,9 +5,9 @@
 # record of which ticket touched the line? Safety rationale, fail-closed notes, hardware
 # observations, and clamp/confirm rules are KEEP even when a rule below matches them.
 #
-# The path lists cover all three sibling repos (faBolus `ios/`, `Packages/faBolusCore`,
-# `Packages/faBolusDesign`; TandemKit `Sources/` + `Tests/`; faBolusGarmin `source/app`,
-# `tests/`, `datafield/`) so one config can be pointed at any of them.
+# The path lists cover all three sibling repos (faBolus `ios/` and every first-party package under
+# `Packages/`, the vendored ShareClient and copied Dexcom readers excepted; TandemKit `Sources/` +
+# `Tests/`; faBolusGarmin `source/app`, `tests/`, `datafield/`) so one config can be pointed at any of them.
 #
 # TWO STRUCTURAL LIMITS, so a clean run is not mistaken for a clean tree:
 #   1. Every comment rule is anchored to a comment prefix, so a ticket ID inside a STRING LITERAL is
@@ -37,9 +37,7 @@ rules:
     paths:
       include:
         - "/ios/**/*.swift"
-        - "/Packages/faBolusCore/**/*.swift"
-        - "/Packages/faBolusDesign/**/*.swift"
-        - "/Packages/*/Package.swift"
+        - "/Packages/**/*.swift"
         - "/Sources/**/*.swift"
         - "/Tests/**/*.swift"
         - "/source/app/*.mc"
@@ -49,7 +47,8 @@ rules:
         - "**/Vendor/**"
         - "**/vendor/**"
         - "**/ShareClient/**"
-        - "**/HistoryStore/**"
+        - "**/DexcomBLE/G6/**"
+        - "**/DexcomBLE/G7/**"
         - "**/cliparser/**"
     # `(?<!bytes )` / `(?<!byte )` fence the wire-offset form ("carbs 13 g @ bytes 17-18"), which is
     # a field position, not a ticket — pervasive in TandemKit's oracle byte-locks. The `"` fences fence
@@ -75,9 +74,7 @@ rules:
     paths:
       include:
         - "/ios/**/*.swift"
-        - "/Packages/faBolusCore/**/*.swift"
-        - "/Packages/faBolusDesign/**/*.swift"
-        - "/Packages/*/Package.swift"
+        - "/Packages/**/*.swift"
         - "/Sources/**/*.swift"
         - "/Tests/**/*.swift"
         - "/source/app/*.mc"
@@ -87,7 +84,8 @@ rules:
         - "**/Vendor/**"
         - "**/vendor/**"
         - "**/ShareClient/**"
-        - "**/HistoryStore/**"
+        - "**/DexcomBLE/G6/**"
+        - "**/DexcomBLE/G7/**"
         - "**/cliparser/**"
     # Two fixes over the naive pattern, both from real false positives in this tree:
     #  * `\bmoved` — without the word boundary, `moved from` matched inside "REmoved from", so
@@ -107,9 +105,7 @@ rules:
     paths:
       include:
         - "/ios/**/*.swift"
-        - "/Packages/faBolusCore/**/*.swift"
-        - "/Packages/faBolusDesign/**/*.swift"
-        - "/Packages/*/Package.swift"
+        - "/Packages/**/*.swift"
         - "/Sources/**/*.swift"
         - "/Tests/**/*.swift"
         - "/source/app/*.mc"
@@ -119,7 +115,8 @@ rules:
         - "**/Vendor/**"
         - "**/vendor/**"
         - "**/ShareClient/**"
-        - "**/HistoryStore/**"
+        - "**/DexcomBLE/G6/**"
+        - "**/DexcomBLE/G7/**"
         - "**/cliparser/**"
     pattern-regex: '(?://|/\*|^\s*\*)[^\n]*\b[A-Za-z][A-Za-z0-9+]*\.(?:swift|mc):\d+'
 
