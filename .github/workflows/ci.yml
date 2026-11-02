@@ -34,6 +34,13 @@ jobs:
         run: |
           brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
           xcodegen --version | grep -qx 'Version: 2.46.0'
+      # The snapshots are recorded on an iPhone 17 at iOS 27.2. The runner image can lack that runtime
+      # or that device, so add whichever is missing.
+      - name: iPhone 17 simulator at iOS 27.2
+        run: |
+          xcrun simctl list runtimes | grep -q 'SimRuntime.iOS-27-2$' || xcodebuild -downloadPlatform iOS
+          runtime=$(xcrun simctl list runtimes | awk '$NF ~ /SimRuntime\.iOS-27-2$/ {print $NF; exit}')
+          xcrun simctl list devices 'iOS 27.2' | grep -q 'iPhone 17 (' || xcrun simctl create 'iPhone 17' 'iPhone 17' "$runtime"
       - name: App (no Connect IQ SDK here, so Garmin is off)
         run: ./scripts/check.sh app
 
@@ -74,6 +81,10 @@ jobs:
           brew list periphery >/dev/null 2>&1 || brew install periphery
       - name: Semgrep (residue rules)
         run: semgrep --config .semgrep/deslop.yml --metrics=off --exclude legacy .
+      # SwiftPM's default build system writes no index store, which Periphery reads, so it builds
+      # with the native one.
       - name: Periphery (unused code, faBolusCore)
         working-directory: Packages/faBolusCore
-        run: periphery scan --retain-public
+        run: |
+          swift build --build-system native --scratch-path .build-periphery
+          periphery scan --retain-public --skip-build --index-store-path .build-periphery/debug/index/store
