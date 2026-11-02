@@ -82,6 +82,12 @@ extension AppModel {
 
     public func alertPolicy() async -> AlertPolicy { await alerts.policy }
 
+    /// The developer retest setting: the commands this pump is recorded not to answer or that are sitting
+    /// out, and forgetting that so a command is tried again.
+    public func retestableCommands() async -> [PumpSession.RetestableCommand] { await session.retestableCommands() }
+
+    public func retest(_ command: PumpSession.RetestableCommand) async { await session.retest(command.key) }
+
     public func setAlertPolicy(_ policy: AlertPolicy) async { await alerts.setPolicy(policy) }
 }
 

@@ -1,5 +1,6 @@
 import GlucoseSources
 import PhoneApp
+import PumpSession
 import SwiftUI
 
 struct AboutSettingsView: View {
@@ -83,10 +84,11 @@ struct ShareSheet: UIViewControllerRepresentable {
 }
 
 #if DEBUG
-/// Debug builds only: the scripted pump instead of a real one.
+/// Debug builds only: the scripted pump instead of a real one, and retesting a command the pump rejected.
 struct DebugMenuView: View {
     @Bindable var model: AppModel
     @AppStorage(DebugMock.key) private var mockPump = false
+    @State private var retestable: [PumpSession.RetestableCommand] = []
 
     var body: some View {
         Form {
@@ -101,8 +103,41 @@ struct DebugMenuView: View {
                 LabeledContent("Mock pump", value: model.isMock ? "on" : "off")
                 LabeledContent("Logbook events", value: "\(model.logbook.count)")
             }
+            Section {
+                if retestable.isEmpty { Text("None") }
+                ForEach(retestable) { command in
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(command.name)
+                            Text(Self.label(command.reason)).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("Retest") {
+                            Task {
+                                await model.retest(command)
+                                retestable = await model.retestableCommands()
+                            }
+                        }
+                    }
+                }
+            } header: {
+                Text("Commands not sent to this pump")
+            } footer: {
+                Text(
+                    "Retest forgets what this pump did with a command, so it's sent again. A command the pump doesn't have can make it drop the link once more."
+                )
+            }
         }
         .navigationTitle("Debug")
+        .task { retestable = await model.retestableCommands() }
+    }
+
+    private static func label(_ reason: PumpSession.RetestableCommand.Reason) -> String {
+        switch reason {
+        case .unsupported: return "The pump doesn't answer it"
+        case .suspected: return "The link dropped after it once"
+        case .sittingOut: return "Errored on this connection"
+        }
     }
 }
 #endif

@@ -241,9 +241,72 @@ public actor PumpSession {
     }
 
     /// Forget the recorded support evidence for a command, so it is tried again (a developer setting).
+    /// The pairing's copy is replaced at once, so a reconnect can't merge the forgotten evidence back.
     public func retest(_ key: MessageKey) async {
         await connection.retest(key)
+        record.support = await connection.state.support
+        saveRecord()
     }
+
+    /// A command the developer retest setting offers.
+    public struct RetestableCommand: Sendable, Equatable, Identifiable {
+        public enum Reason: Sendable, Equatable {
+            /// This pump is recorded not to answer it, so it's never sent.
+            case unsupported
+            /// A drop after an error counted one strike against it; another makes it unsupported.
+            case suspected
+            /// It drew the undefined error code past the retry budget on this connection.
+            case sittingOut
+        }
+        public let key: MessageKey
+        /// The request's name where the session sends it, else its opcode.
+        public let name: String
+        public let reason: Reason
+        public var id: MessageKey { key }
+    }
+
+    /// What the retest setting lists for the last pump the link identified, by name.
+    public func retestableCommands() async -> [RetestableCommand] {
+        let link = await connection.state
+        // Field by field, as the link's own retest does: a connection still in its handshake hasn't read
+        // the unit yet.
+        let current = link.connection?.identity
+        guard let unit = current?.unit ?? link.lastIdentity?.unit else { return [] }
+        let model = current?.model ?? link.lastIdentity?.model
+        let apiVersion = current?.apiVersion ?? link.lastIdentity?.apiVersion
+        var reasons: [MessageKey: RetestableCommand.Reason] = [:]
+        for key in (link.support.recorded[unit] ?? [:]).keys {
+            let entry = link.support.entry(for: key, unit: unit, model: model, apiVersion: apiVersion)
+            if entry.status == .unsupported {
+                reasons[key] = .unsupported
+            } else if entry.suspected {
+                reasons[key] = .suspected
+            }
+        }
+        for key in link.sittingOut where reasons[key] == nil { reasons[key] = .sittingOut }
+        return reasons.map { key, reason in
+            RetestableCommand(
+                key: key, name: Self.commandNames[key] ?? "opcode \(key.opCode) (\(key.characteristic))",
+                reason: reason)
+        }
+        .sorted { $0.name < $1.name }
+    }
+
+    /// Every command the session sends, by name.
+    static let commandNames: [MessageKey: String] = {
+        var names: [MessageKey: String] = [:]
+        for read in ReadGroup.allCases.flatMap(\.reads) {
+            names[MessageKey(read)] = String(describing: type(of: read))
+        }
+        let others: [any TandemMessages.Message.Type] = [
+            DismissNotificationRequest.self, HistoryLogRequest.self, HistoryLogStatusRequest.self,
+            LastBolusStatusV2Request.self, CancelBolusRequest.self, BolusPermissionRequest.self,
+            BolusPermissionReleaseRequest.self, InitiateBolusRequest.self, RemoteBgEntryRequest.self,
+            RemoteCarbEntryRequest.self
+        ]
+        for type in others { names[MessageKey(type)] = String(describing: type) }
+        return names
+    }()
 
     /// The link's own state, for diagnostics: phase, telemetry and the reconnect ladder.
     public func linkState() async -> LinkState { await connection.state }

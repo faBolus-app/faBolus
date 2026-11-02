@@ -99,6 +99,47 @@ import Testing
         #expect(await rig.session.state.link == .connected)
     }
 
+    /// The developer retest setting lists a read the pump was recorded not to answer, by name, and
+    /// retesting it sends it again.
+    @Test func aRejectedReadIsListedForRetestAndRetestSendsItAgain() async {
+        let rig = Rig(configure: { $0.unsupportedReads = [MessageKey(LoadStatusRequest.self)] })
+        await rig.start()
+        await rig.run(for: 180, step: 5)
+        let listed = await rig.session.retestableCommands()
+        #expect(listed.map(\.name) == ["LoadStatusRequest"])
+        #expect(listed.first?.reason == .unsupported)
+        let sent = rig.pump.arrivals(of: LoadStatusRequest.self).count
+        rig.pump.unsupportedReads = []
+        await rig.session.retest(MessageKey(LoadStatusRequest.self))
+        #expect(await rig.session.retestableCommands().isEmpty)
+        // Saved with the pairing at once, so the next launch or reconnect doesn't bring it back.
+        let unit = TandemMessages.PumpUnit(serialNumber: 1693, armSoftwareVersion: 7, mspSoftwareVersion: 7)
+        #expect(
+            rig.store.load()?.support.entry(for: LoadStatusRequest(), unit: unit, model: .tslim, apiVersion: .v2_5)
+                .status == .untested)
+        await rig.run(for: 180, step: 5)
+        #expect(rig.pump.arrivals(of: LoadStatusRequest.self).count > sent)
+    }
+
+    /// One error-0 drop is a strike, not a verdict: the read is listed as suspected, under its name.
+    @Test func aReadWithOneStrikeIsListedAsSuspected() async {
+        let rig = Rig(configure: { $0.unsupportedReads = [MessageKey(LoadStatusRequest.self)] })
+        await rig.start()
+        // Until the first try has drawn its error and the drop after it, before the reconnect tries again.
+        for _ in 0..<60 where await !rig.events.contains(.disconnected(.afterUnsupportedRequest(opcode: 20))) {
+            await rig.run(for: 0.5, step: 0.5)
+        }
+        #expect(rig.pump.arrivals(of: LoadStatusRequest.self).count == 1)
+        let listed = await rig.session.retestableCommands()
+        #expect(listed.map(\.name) == ["LoadStatusRequest"])
+        #expect(listed.first?.reason == .suspected)
+    }
+
+    @Test func everyCommandTheSessionSendsHasAName() {
+        #expect(PumpSession.commandNames[MessageKey(DismissNotificationRequest.self)] == "DismissNotificationRequest")
+        #expect(PumpSession.commandNames[MessageKey(LoadStatusRequest.self)] == "LoadStatusRequest")
+    }
+
     /// Around the time the next CGM reading is due, glucose is read every 10 s until it arrives.
     @Test func glucoseIsReadOftenAroundTheNextExpectedReading() async {
         let rig = Rig(configure: { $0.glucose = (120, 280) })  // the next reading is due in 20 s
