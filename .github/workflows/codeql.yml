@@ -18,9 +18,9 @@ name: CodeQL
 
 on:
   push:
-    branches: [main, rebuild]
+    branches: [main]
   pull_request:
-    branches: [main, rebuild]
+    branches: [main]
   schedule:
     # Weekly, so a newly published query reaches the default branch without waiting for a push.
     - cron: '41 6 * * 1'
