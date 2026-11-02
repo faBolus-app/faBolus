@@ -8,14 +8,19 @@
 
 // 1) A bundle ID that is UNIQUE TO YOU.
 //    Apple requires every App ID / App Group to be globally unique, so use a
-//    reverse-DNS string based on a domain or name YOU control. Everything else
-//    (watch app, widgets, App Group) is derived from this automatically.
+//    reverse-DNS string based on a domain or name YOU control: letters,
+//    numbers, hyphens and dots only. The widgets' ID and the App Group are
+//    derived from this automatically.
 //    Examples:  com.janesmith.fabolus   org.yourdomain.fabolus
 APP_BUNDLE_ID = com.yourname.fabolus
 
-// 2) Your Apple Developer Team ID (10 characters).
-//    Find it in Xcode → Settings → Accounts (select your team; the ID is shown
-//    in parentheses), or at developer.apple.com → Account → Membership details.
-//    You can leave this blank and instead pick your Team in Xcode's
-//    Signing & Capabilities tab.
+// 2) Your Apple Developer Team ID (10 characters), or nothing after the "="
+//    to pick your Team in Xcode's Signing & Capabilities tab instead (you then
+//    pick it again each time you regenerate the project).
+//    Paid account: developer.apple.com/account → Membership details.
+//    Free account: make an Apple Development certificate (Xcode → Settings →
+//    Accounts → your team → Manage Certificates… → + → Apple Development), then
+//    run in Terminal:
+//      security find-certificate -c "Apple Development" -p | openssl x509 -noout -subject
+//    The Team ID is the 10 characters after "OU=".
 DEVELOPMENT_TEAM = ABCDE12345
