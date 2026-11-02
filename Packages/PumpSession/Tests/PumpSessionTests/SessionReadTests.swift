@@ -277,6 +277,26 @@ import Testing
         }
     }
 
+    /// A request already sent is left to its answer: a notice that arrives while an InitiateBolus is in
+    /// flight doesn't fail it, and its reply starts the bolus.
+    @Test func aRequestInFlightKeepsItsAnswer() async {
+        let rig = Rig(configure: {
+            $0.unsupportedReads = []
+            $0.nextAnswers[MessageKey(InitiateBolusRequest.self)] = [.notice(.pumpCommunicationsSuspended)]
+        })
+        await rig.startHeld()
+        let session = rig.session
+        let delivery = Task { await session.deliver(composed(1.0)) }
+        await rig.run(for: 1)
+        #expect(await rig.session.sendsPaused)
+        await rig.run(for: 6)
+        guard case .started(_, .delivering) = await delivery.value else {
+            Issue.record("expected delivering")
+            return
+        }
+        #expect(rig.pump.arrivals(of: InitiateBolusRequest.self).count == 1)
+    }
+
     /// Each notice pauses from when it arrives.
     @Test func aSecondNoticeRestartsThePause() async {
         let rig = Rig(configure: { $0.unsupportedReads = [] })

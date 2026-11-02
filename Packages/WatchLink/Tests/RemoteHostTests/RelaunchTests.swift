@@ -12,21 +12,13 @@ import WatchLink
 @testable import RemoteHost
 @testable import faBolusCore
 
-/// What a phone keeps on disk across a relaunch: the ledger, the session's record and the watch's dismiss
-/// results.
+/// What a phone keeps on disk across a relaunch, as bytes: the ledger, the session's record and the watch's
+/// dismiss results, each in its real file format.
 final class PhoneDisk: @unchecked Sendable {
     // @unchecked Sendable: every access goes through `lock`.
     private let lock = NSLock()
-    private var ledger: RemoteBolusLedger?
-    private var record: PumpSessionRecord?
     private var files: [String: Data] = [:]
 
-    init(record: PumpSessionRecord?) { self.record = record }
-
-    func loadLedger() -> RemoteBolusLedger? { lock.withLock { ledger } }
-    func saveLedger(_ value: RemoteBolusLedger) { lock.withLock { ledger = value } }
-    func loadRecord() -> PumpSessionRecord? { lock.withLock { record } }
-    func saveRecord(_ value: PumpSessionRecord) { lock.withLock { record = value } }
     func data(_ name: String) -> Data? { lock.withLock { files[name] } }
     func setData(_ value: Data?, _ name: String) { lock.withLock { files[name] = value } }
 }
@@ -46,52 +38,65 @@ final class ProcessLife: @unchecked Sendable {
     }
 }
 
-/// One process's handle on the ledger file.
-final class ProcessLedgerStore: RemoteBolusLedgerPersisting, @unchecked Sendable {
+/// One process's handle on a file on the phone's disk, for a real store that reads and writes a file of
+/// its own: the bytes are copied in before a load, and out after a save while the process lives.
+final class ProcessFile: @unchecked Sendable {
     // @unchecked Sendable: its own state is immutable; the disk and the life lock themselves.
     let disk: PhoneDisk
     let life: ProcessLife
-    init(disk: PhoneDisk, life: ProcessLife) {
+    let name: String
+    let url: URL
+    init(disk: PhoneDisk, life: ProcessLife, name: String) {
         self.disk = disk
         self.life = life
+        self.name = name
+        url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("\(name)-\(UUID()).json")
     }
-    func loadOutcome() -> RemoteBolusLedgerStore.LoadOutcome {
-        .init(ledger: disk.loadLedger() ?? RemoteBolusLedger(), failedClosed: false)
+    deinit { try? FileManager.default.removeItem(at: url) }
+    func load<T>(_ read: () -> T) -> T {
+        if let data = disk.data(name) { try? data.write(to: url) } else { try? FileManager.default.removeItem(at: url) }
+        return read()
     }
-    func save(_ ledger: RemoteBolusLedger) throws { try life.write { disk.saveLedger(ledger) } }
-}
-
-/// One process's handle on the session's record.
-struct ProcessSessionStore: PumpSessionPersisting {
-    let disk: PhoneDisk
-    let life: ProcessLife
-    func load() -> PumpSessionRecord? { disk.loadRecord() }
-    func save(_ record: PumpSessionRecord) throws { try life.write { disk.saveRecord(record) } }
-}
-
-/// One process's handle on the dismiss results file, through the real file format.
-final class ProcessDismissStore: DismissResultPersisting, @unchecked Sendable {
-    // @unchecked Sendable: its own state is immutable; the file is written only inside `life.write`.
-    let disk: PhoneDisk
-    let life: ProcessLife
-    let file = FileDismissResultStore(
-        url: URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("dismiss-\(UUID()).json"))
-    init(disk: PhoneDisk, life: ProcessLife) {
-        self.disk = disk
-        self.life = life
-    }
-    deinit { try? FileManager.default.removeItem(at: file.url) }
-    func load() -> [DismissResultPayload] {
-        guard let data = disk.data("dismiss") else { return [] }
-        try? data.write(to: file.url)
-        return file.load()
-    }
-    func save(_ results: [DismissResultPayload]) throws {
+    func save(_ write: () throws -> Void) throws {
         try life.write {
-            try file.save(results)
-            disk.setData(try Data(contentsOf: file.url), "dismiss")
+            try write()
+            disk.setData(try Data(contentsOf: url), name)
         }
     }
+}
+
+final class ProcessLedgerStore: RemoteBolusLedgerPersisting, @unchecked Sendable {
+    // @unchecked Sendable: the store is used only through `file`, whose writes are serialized.
+    let file: ProcessFile
+    let store: RemoteBolusLedgerStore
+    init(disk: PhoneDisk, life: ProcessLife) {
+        file = ProcessFile(disk: disk, life: life, name: "ledger")
+        store = RemoteBolusLedgerStore(url: file.url)
+    }
+    func loadOutcome() -> RemoteBolusLedgerStore.LoadOutcome { file.load { store.loadOutcome() } }
+    func save(_ ledger: RemoteBolusLedger) throws { try file.save { try store.save(ledger) } }
+}
+
+struct ProcessSessionStore: PumpSessionPersisting {
+    let file: ProcessFile
+    let store: FilePumpSessionStore
+    init(disk: PhoneDisk, life: ProcessLife) {
+        file = ProcessFile(disk: disk, life: life, name: "session")
+        store = FilePumpSessionStore(url: file.url)
+    }
+    func load() -> PumpSessionRecord? { file.load { store.load() } }
+    func save(_ record: PumpSessionRecord) throws { try file.save { try store.save(record) } }
+}
+
+struct ProcessDismissStore: DismissResultPersisting {
+    let file: ProcessFile
+    let store: FileDismissResultStore
+    init(disk: PhoneDisk, life: ProcessLife) {
+        file = ProcessFile(disk: disk, life: life, name: "dismiss")
+        store = FileDismissResultStore(url: file.url)
+    }
+    func load() -> [DismissResultPayload] { file.load { store.load() } }
+    func save(_ results: [DismissResultPayload]) throws { try file.save { try store.save(results) } }
 }
 
 final class PhoneSecrets: SecretStore, @unchecked Sendable {
@@ -123,6 +128,7 @@ final class RelaunchingPhone {
         let ledger: DurableBolusLedger
         let session: PumpSession
         let alerts: AlertCoordinator
+        let services: SessionRemoteServices
         let watch: Transport
         let host: RemoteHost
         let tasks: [Task<Void, Never>]
@@ -135,14 +141,18 @@ final class RelaunchingPhone {
     let secrets = PhoneSecrets()
     let alertDirectory = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("relaunch-\(UUID())")
     private(set) var process: Process!
+    /// The app's backup CGM source and glucose history, as the next launch sees them.
+    var backupGlucose: @Sendable () async -> GlucoseSourceState? = { nil }
+    var glucoseHistory: @Sendable (Date) async -> [faBolusCore.GlucoseReading] = { _ in [] }
 
     init(configure: (ScriptedPump) -> Void = { _ in }) {
         pump = ScriptedPump(clock: clock)
         pump.unsupportedReads = []
         configure(pump)
         // This unit is known to act on a clear, so the watch may clear its alerts.
-        disk = PhoneDisk(
-            record: PumpSessionRecord(
+        disk = PhoneDisk()
+        try? ProcessSessionStore(disk: disk, life: ProcessLife()).save(
+            PumpSessionRecord(
                 pairing: StoredPairing(
                     peripheralID: ScriptedPump.peripheralID, model: .tslimX2, scheme: .legacy,
                     advertisedName: pump.name, trustedSerial: 1693, pairedAt: Date(timeIntervalSince1970: 1_700_000_000)
@@ -177,7 +187,7 @@ final class RelaunchingPhone {
         let watch = Transport()
         let link = WatchLink(transport: watch, clock: TestClock(), jitter: { 0 })
         let services = SessionRemoteServices(
-            session: session, ledger: ledger, alerts: alerts, backupGlucose: { nil }, history: { _ in [] },
+            session: session, ledger: ledger, alerts: alerts, backupGlucose: backupGlucose, history: glucoseHistory,
             clock: { clock.date })
         let host = RemoteHost(
             link: link, services: services, settings: HostRig.settings(),
@@ -202,7 +212,7 @@ final class RelaunchingPhone {
         await host.start()
         process = Process(
             transport: transport, life: life, ledger: ledger,
-            session: session, alerts: alerts,
+            session: session, alerts: alerts, services: services,
             watch: watch, host: host, tasks: tasks)
         await run(for: 12, step: 1)
     }
@@ -292,6 +302,65 @@ extension PumpSession {
         #expect(phone.watch.statuses.last?.bolusBlock == nil)
     }
 
+    /// The pump granted the bolus, the InitiateBolus went out and the pump started it, but its answer was
+    /// lost and the phone died with the entry still accepted. The next launch reads it back as unknown: the
+    /// poll gets that and a new bolus is refused. The pump's history settles it as delivered, and a resent
+    /// copy never sends a second InitiateBolus.
+    @Test func killedBeforeTheInitiatesAnswerThePumpActed() async {
+        let phone = RelaunchingPhone()
+        await phone.launch()
+        phone.pump.nextAnswers[MessageKey(InitiateBolusRequest.self)] = [.actedWithoutReply]
+        // 5 U: 50 s at the scripted rate, so it's still going after the relaunch.
+        await phone.receive(phone.bolus("w1", milliunits: 5000))
+        await phone.run(for: 2)
+        #expect(phone.pump.activeBolus != nil)
+        #expect(await phone.ledger.ledger.outcome(.init(peerId: "garmin", requestId: "w1")) == .accepted)
+        await phone.kill()
+
+        await phone.launch()
+        await phone.receive(phone.poll("w1"))
+        #expect(phone.outcomes("w1").first == .unknown)
+        #expect(phone.watch.statuses.last?.bolusBlock != nil)
+        await phone.receive(phone.bolus("w2"))
+        #expect(phone.outcomes("w2").last == .failed)
+        await phone.receive(phone.bolus("w1", milliunits: 5000))
+        await phone.run(for: 60, step: 1)
+        await phone.receive(phone.poll("w1"))
+        #expect(phone.outcomes("w1").last == .delivered)
+        #expect(phone.pump.arrivals(of: InitiateBolusRequest.self).count == 1)
+        #expect(phone.watch.statuses.last?.bolusBlock == nil)
+    }
+
+    /// As above, but the pump never acted on the InitiateBolus. Its history reaches back past the grant
+    /// with no record of the bolus, so the next launch settles it as failed; the watch's poll and a resent
+    /// copy get that, and nothing more is sent.
+    @Test func killedBeforeTheInitiatesAnswerThePumpDidntAct() async {
+        let phone = RelaunchingPhone()
+        // A glucose record an hour old, so a search can reach back past the grant.
+        _ = phone.pump.appendHistory(
+            typeId: 256, at: phone.pump.wallClockAtStart - 3600, body: [UInt8](repeating: 0, count: 6) + [100, 0])
+        await phone.launch()
+        phone.pump.nextAnswers[MessageKey(InitiateBolusRequest.self)] = [.silent]
+        await phone.receive(phone.bolus("w1"))
+        await phone.run(for: 2)
+        #expect(phone.pump.arrivals(of: InitiateBolusRequest.self).count == 1)
+        #expect(phone.pump.activeBolus == nil)
+        #expect(await phone.ledger.ledger.outcome(.init(peerId: "garmin", requestId: "w1")) == .accepted)
+        await phone.kill()
+
+        await phone.launch()
+        await phone.run(for: 10, step: 1)
+        await phone.receive(phone.poll("w1"))
+        await phone.receive(phone.bolus("w1"))
+        await phone.run(for: 14, step: 1)
+        #expect(!phone.outcomes("w1").isEmpty)
+        #expect(phone.outcomes("w1").contains(.failed))
+        #expect(Set(phone.outcomes("w1")).isSubset(of: [.received, .failed]))
+        #expect(phone.pump.arrivals(of: BolusPermissionRequest.self).count == 1)
+        #expect(phone.pump.arrivals(of: InitiateBolusRequest.self).count == 1)
+        #expect(phone.watch.statuses.last?.bolusBlock == nil)
+    }
+
     /// The outcome is known and saved, but the phone dies before the watch hears it. The next launch
     /// answers the watch's poll, and a resent copy, from the ledger.
     @Test func killedAfterTheOutcomeBeforeTheWatchHearsIt() async {
@@ -351,8 +420,8 @@ extension PumpSession {
     }
 
     /// The user cancels on the watch while the phone is still composing the request, and the phone dies.
-    /// A copy of the request that arrives after the relaunch is refused as cancelled, never delivered,
-    /// whether the cancel named it or not.
+    /// After the relaunch the watch's poll, and a copy of the request, are answered as cancelled, never
+    /// delivered, whether the cancel named it or not.
     @Test(arguments: [true, false])
     func aRequestCancelledWhileComposingStaysCancelledAfterARelaunch(named: Bool) async {
         let phone = RelaunchingPhone()
@@ -364,6 +433,10 @@ extension PumpSession {
         phone.pump.answers = [:]
 
         await phone.launch()
+        // The watch had heard "received", so it polls rather than resends.
+        await phone.receive(phone.poll("w1"))
+        #expect(phone.outcomes("w1") == [.failed])
+        #expect(phone.watch.outcomes.last { $0.requestId == "w1" }?.message == RemoteHost.cancelledMessage)
         await phone.receive(phone.bolus("w1", sentAt: phone.now - 20))
         await phone.run(for: 14, step: 1)
         #expect(phone.pump.arrivals(of: BolusPermissionRequest.self).isEmpty)
@@ -414,8 +487,11 @@ extension PumpSession {
     }
 
     /// The pump cleared the alert and the phone died, before or after the watch heard. The pump raises the
-    /// same alert again; a copy of the old clear arriving after the relaunch gets the old answer and leaves
-    /// the new alert showing.
+    /// same alert again; a copy of the old clear arriving after the relaunch gets the old answer, and the
+    /// new alert stays raised on the pump and listed in the status. A watch acts only on the answer to its
+    /// latest dismiss, once: one that never heard the first answer takes this one and hides the alert for
+    /// the minute it hides any alert it was told was cleared, as it would had the pump raised it again just
+    /// after an ordinary clear.
     @Test func killedAfterThePumpClearedItThenTheAlertCameBack() async throws {
         let (phone, alert) = try await launched()
         await phone.receive(dismiss("d1", alert))

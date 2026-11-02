@@ -8,7 +8,10 @@ struct PageCollector {
     let id: UInt64
     let range: ClosedRange<UInt32>
     var records: [UInt32: [UInt8]] = [:]
-    let startedAt: Date
+    /// The page's clocks start when its request goes out: one waiting in the queue (behind a pause or a
+    /// delivery) hasn't been asked for yet, so it can't have gone quiet.
+    var sent = false
+    var startedAt: Date
     var lastFrameAt: Date
     let continuation: CheckedContinuation<[[UInt8]]?, Never>
 
@@ -89,6 +92,15 @@ extension PumpSession {
         if collector.isComplete { finishPage(collector.records.keys.sorted().compactMap { collector.records[$0] }) }
     }
 
+    func pageRequestSent() {
+        guard var collector = page, !collector.sent else { return }
+        let now = clock()
+        collector.sent = true
+        collector.startedAt = now
+        collector.lastFrameAt = now
+        page = collector
+    }
+
     private func finishPage(_ records: [[UInt8]]?) {
         guard let collector = page else { return }
         page = nil
@@ -96,7 +108,7 @@ extension PumpSession {
     }
 
     func historyTick(now: Date) {
-        guard let collector = page else { return }
+        guard let collector = page, collector.sent else { return }
         let quiet = now.timeIntervalSince(collector.lastFrameAt)
         let open = now.timeIntervalSince(collector.startedAt)
         // A clock stepped backwards ends the page too, rather than holding the history lock until it

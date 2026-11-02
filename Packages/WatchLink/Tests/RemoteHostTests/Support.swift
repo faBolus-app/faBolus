@@ -98,9 +98,14 @@ actor FakeServices: RemoteHostServices {
 final class Transport: WatchTransport {
     var handler: (@MainActor (WatchTransportEvent) -> Void)?
     var sent: [WireValue] = []
+    /// Records each dismiss result as it goes, for tests that check what came first.
+    var log: OrderLog?
     func start(_ handler: @escaping @MainActor (WatchTransportEvent) -> Void) { self.handler = handler }
     func transmit(_ message: WireValue, send: Int) {
         sent.append(message)
+        if let log, case .message(.dismissResult(let p)) = RemoteMessage.receive(message) {
+            log.append("sent \(p.requestId)")
+        }
         // A watch that takes everything at once.
         let handler = handler
         Task { @MainActor in handler?(.sendCompleted(send: send, .delivered)) }

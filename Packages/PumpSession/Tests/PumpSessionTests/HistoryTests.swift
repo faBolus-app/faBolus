@@ -65,6 +65,26 @@ private func addGlucoseHistory(_ pump: ScriptedPump, count: Int) {
         #expect(abs(date.timeIntervalSince(entered)) < 2)
     }
 
+    /// A page asked for during a comms-suspended pause (a sync's next page, a search for a bolus) waits
+    /// for its request to go out before it is judged quiet: its records arrive after the pause, from one
+    /// request.
+    @Test func aPageAskedForDuringAPauseIsCollectedAfterIt() async {
+        let rig = Rig(configure: {
+            $0.unsupportedReads = []
+            addGlucoseHistory($0, count: 20)
+        })
+        await rig.startHeld()
+        rig.transport.qualifyingEvents(.pumpCommunicationsSuspended)
+        await rig.settle()
+        let session = rig.session
+        let start = rig.pump.firstHeldSequence!
+        let requests = rig.pump.arrivals(of: HistoryLogRequest.self).count
+        let page = Task { await session.fetchPage(start: start, count: 20, priority: .history) }
+        await rig.run(for: 8)
+        #expect(await page.value?.count == 20)
+        #expect(rig.pump.arrivals(of: HistoryLogRequest.self).count == requests + 1)
+    }
+
     /// The link drops after the first page. The sync pauses with the first page credited, and the next
     /// connection fetches only what's still missing; every record is stored exactly once.
     @Test func anInterruptedSyncResumesWhereItStopped() async {

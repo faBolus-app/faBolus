@@ -273,6 +273,46 @@ private func deliver(_ rig: Rig, _ dose: ComposedDose, for seconds: Double = 2) 
         await rig.run(for: 15)
         #expect(await rig.ledger.ledger.outcome(key) == .delivered(units: 2.0))
     }
+
+    /// A cancel that never goes out (the link drops while it waits behind a status read) says so, and the
+    /// bolus runs on: its outcome is the full amount the pump reports once it's back.
+    @Test func aCancelThatIsNeverSentSaysNotConnected() async {
+        let rig = Rig(configure: { $0.unsupportedReads = [] })
+        await rig.startHeld()
+        _ = await deliver(rig, composed(2.0))
+        rig.pump.answers[MessageKey(CurrentBolusStatusRequest.self)] = .silent
+        await rig.run(for: 2)
+        let session = rig.session
+        let cancel = Task { await session.cancelBolus() }
+        await rig.settle()
+        rig.pump.answers[MessageKey(CurrentBolusStatusRequest.self)] = nil
+        rig.transport.drop()
+        #expect(await cancel.value == .notConnected)
+        #expect(rig.pump.arrivals(of: CancelBolusRequest.self).isEmpty)
+        await rig.run(for: 40, step: 2)
+        #expect(await rig.ledger.ledger.outcome(key) == .delivered(units: 2.0))
+    }
+
+    /// The pump acts on a cancel and the link drops before its answer: the cancel is unconfirmed, and the
+    /// dose is never taken as delivered. It ends stopped, from what the pump reports once it's back.
+    @Test func aCancelThePumpActedOnWithTheAnswerLostEndsStopped() async {
+        let rig = Rig(configure: { $0.unsupportedReads = [] })
+        await rig.startHeld()
+        _ = await deliver(rig, composed(2.0))
+        await rig.run(for: 3)
+        rig.pump.nextAnswers[MessageKey(CancelBolusRequest.self)] = [.drop(acted: true)]
+        #expect(await rig.session.cancelBolus() == .unconfirmed)
+        #expect(rig.pump.activeBolus == nil)
+        await rig.run(for: 60, step: 2)
+        guard case .stopped(let delivered, let requested) = await rig.ledger.ledger.outcome(key) else {
+            Issue.record("expected stopped")
+            return
+        }
+        #expect(delivered > 0 && delivered < 2.0)
+        #expect(requested == 2.0)
+        #expect(!(await rig.outcomes(key)).contains(.delivered(units: 2.0)))
+        #expect(await rig.ledger.block == nil)
+    }
 }
 
 /// Unknown outcomes settled from the paired pump's history. Ported from the old app's suite.

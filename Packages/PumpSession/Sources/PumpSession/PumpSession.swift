@@ -390,6 +390,7 @@ public actor PumpSession {
         guard !sending, let index = nextJobIndex() else { return }
         let job = queue.remove(at: index)
         sending = true
+        if job.message is HistoryLogRequest { pageRequestSent() }
         let connection = connection
         Task {
             let result = await connection.send(job.message, allowing: job.allowing, deadline: job.deadline)

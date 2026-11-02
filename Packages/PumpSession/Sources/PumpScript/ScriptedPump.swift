@@ -76,9 +76,14 @@ public final class ScriptedPump {
         case error(code: UInt8, drops: Bool)
         /// No reply at all.
         case silent
+        /// The pump acts on the request and its reply is lost.
+        case actedWithoutReply
         /// The link drops once the request arrives: after the pump acted on it when `acted`, before
         /// when not.
         case drop(acted: Bool)
+        /// These qualifying events, then the scripted reply: a notice that reaches the phone while the
+        /// request is in flight.
+        case notice(QualifyingEvent)
     }
     /// Answers by request, overriding the scripted one each time it arrives.
     public var answers: [MessageKey: Answer] = [:]
@@ -359,9 +364,12 @@ public final class ScriptedTransport: LinkTransport {
         } else {
             answer = .normal
         }
+        if case .notice(let events) = answer { qualifyingEvents(events) }
         switch answer {
         case .silent:
             return
+        case .actedWithoutReply:
+            _ = respond(characteristic, opCode, cargo)
         case .drop(let acted):
             if acted { _ = respond(characteristic, opCode, cargo) }
             drop()
@@ -371,7 +379,7 @@ public final class ScriptedTransport: LinkTransport {
         case .cargo(let captured):
             guard let reply = respond(characteristic, opCode, cargo) else { return }
             send(type(of: reply).init(cargo: captured), txId: txId)
-        case .normal:
+        case .normal, .notice:
             // A request the pump doesn't know gets BAD_OPCODE, as a real pump's does.
             guard let reply = respond(characteristic, opCode, cargo) else {
                 return sendError(characteristic, request: opCode, code: 6, txId: txId)

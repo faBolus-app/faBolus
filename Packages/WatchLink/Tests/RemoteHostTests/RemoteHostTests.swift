@@ -409,7 +409,19 @@ import faBolusCore
         #expect(store.results.count == RemoteHost.maxDismissResults)
     }
 
-    /// A result that can't be saved is still the truth, and the watch is told.
+    /// A result is saved before the watch is told, so a relaunch right after the answer still has it.
+    @Test func aResultIsSavedBeforeItIsSent() async {
+        let log = OrderLog()
+        let rig = HostRig(dismissResults: MemoryDismissStore([], log: log))
+        rig.transport.log = log
+        await rig.start()
+        await rig.host.alertsChanged([Self.active("pump.alert.2", pump: Self.pumpAlert)])
+        await rig.receive(.dismiss(.init(requestId: "d1", alertId: "pump.alert.2")))
+        #expect(log.entries == ["saved d1", "sent d1"])
+    }
+
+    /// A result that can't be saved is still the truth, and the watch is told: losing it costs only a
+    /// late copy being judged again, as before results were kept.
     @Test func aResultThatCantBeSavedIsStillSent() async {
         let store = MemoryDismissStore([])
         store.failSaves = true
@@ -537,18 +549,22 @@ import faBolusCore
         #expect(await rig.services.refusals.isEmpty)
     }
 
-    /// A damaged copy of a request being worked on doesn't call it failed.
     /// A request cancelled while it was composed and then refused by the composer for its own reason is
-    /// answered as cancelled, as a copy after a relaunch would be, and isn't announced as refused.
+    /// answered as cancelled, as a copy after a relaunch would be, and isn't announced as refused. The
+    /// compose is slow enough that the cancel reaches it, and the test waits for the answer rather than a
+    /// fixed time.
     @Test func aCancelledRequestTheComposerRefusesIsAnsweredAsCancelled() async {
         let rig = HostRig()
-        await rig.services.set(decision: .refused(.unavailable(.pumpNotLinked)), delay: .milliseconds(80))
+        await rig.services.set(decision: .refused(.unavailable(.pumpNotLinked)), delay: .milliseconds(500))
         await rig.start()
         rig.transport.handler?(.received(bolus("b1").wire))
         await rig.settle()
         await rig.receive(.cancel(CancelPayload(requestId: "c1", bolusRequestId: "b1")))
-        try? await Task.sleep(for: .milliseconds(150))
-        await rig.settle()
+        for _ in 0..<300
+        where !rig.transport.outcomes.contains(where: { $0.requestId == "b1" && $0.outcome == .failed }) {
+            try? await Task.sleep(for: .milliseconds(10))
+            await rig.settle()
+        }
         #expect(rig.transport.outcomes.last { $0.requestId == "b1" }?.message == RemoteHost.cancelledMessage)
         #expect(await rig.services.refusals.isEmpty)
         #expect(
@@ -556,6 +572,7 @@ import faBolusCore
                 == RemoteHost.cancelledMessage)
     }
 
+    /// A damaged copy of a request being worked on doesn't call it failed.
     @Test func anUnreadableDuplicateOfALiveRequestIsIgnored() async {
         let rig = HostRig()
         await rig.services.set(
@@ -674,7 +691,11 @@ final class MemoryDismissStore: DismissResultPersisting, @unchecked Sendable {
     private let lock = NSLock()
     private var saved: [DismissResultPayload]
     private var failing = false
-    init(_ saved: [DismissResultPayload]) { self.saved = saved }
+    let log: OrderLog?
+    init(_ saved: [DismissResultPayload], log: OrderLog? = nil) {
+        self.saved = saved
+        self.log = log
+    }
     var results: [DismissResultPayload] { lock.withLock { saved } }
     var failSaves: Bool {
         get { lock.withLock { failing } }
@@ -686,5 +707,15 @@ final class MemoryDismissStore: DismissResultPersisting, @unchecked Sendable {
             if failing { throw CocoaError(.fileWriteUnknown) }
             saved = results
         }
+        if let newest = results.last { log?.append("saved \(newest.requestId)") }
     }
+}
+
+/// What happened, in order, across actors.
+final class OrderLog: @unchecked Sendable {
+    // @unchecked Sendable: guarded by `lock`.
+    private let lock = NSLock()
+    private var all: [String] = []
+    var entries: [String] { lock.withLock { all } }
+    func append(_ entry: String) { lock.withLock { all.append(entry) } }
 }
