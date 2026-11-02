@@ -35,7 +35,7 @@ Nothing is grandfathered. A suppression is written inline, names the rule and gi
 (`.semgrep/deslop.yml`), Periphery and CodeQL report but don't fail.
 
 The Connect IQ adapter (`Packages/WatchLink/Sources/GarminTransport`) compiles only against Garmin's SDK,
-which isn't in the repository, so no gate covers it. After changing it or the link it drives, run
+which isn't in the repository, so CI builds the app with Garmin off and no gate covers the adapter. After changing it or the link it drives, run
 `CIQ_IOS_SDK=<path to the SDK> ./scripts/check-garmin-transport.sh`.
 
 ## Tests
