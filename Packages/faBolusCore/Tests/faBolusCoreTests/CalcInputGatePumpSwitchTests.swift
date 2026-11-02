@@ -1,11 +1,8 @@
 import Testing
 @testable import faBolusCore
 
-/// Pins the two `CalcInputGate` classifications either side of a pump switch. Companion to
-/// `PumpSwitchSnapshotFreshnessTests` (`faBolusApp`), which drives the REAL `TandemBackend` input
-/// (`calcSnapshot`) into this same gate via `recommendBolus` and is where the actual regression is caught —
-/// `decide` itself is a pure, already-correct function; this file exists so the switch scenario's two
-/// classifications are pinned at the gate level too, independent of any backend.
+/// Pins the two `CalcInputGate` classifications either side of a pump switch, at the gate level,
+/// independent of the session. A new pairing clearing the old pump's readings is PumpSession's job.
 @Suite struct CalcInputGatePumpSwitchTests {
 
     /// Before a switch reset nils the previous pump's calculator snapshot, an unverified carbs-mode compose

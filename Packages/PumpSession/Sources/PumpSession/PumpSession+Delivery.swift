@@ -196,7 +196,7 @@ extension PumpSession {
 
         // A bolus confirmed long ago (the app was suspended in between) isn't started now: the user may
         // have dosed some other way since. The limit is the remote-request freshness window.
-        if let started = delivery?.startedAt, abs(clock().timeIntervalSince(started)) > RemoteCommandFreshness.maxAgeSec
+        if let started = delivery?.startedAt, abs(clock().timeIntervalSince(started)) > RemoteRequestFreshness.maxAgeSec
         {
             return await abandon("Too long passed since the bolus was confirmed, so it wasn't started.")
         }

@@ -344,20 +344,6 @@ final class RemoteBolusLedgerTests: XCTestCase {
         XCTAssertTrue(RemoteBolusLedger().finalOutcomes(peerId: "garmin").isEmpty)
     }
 
-    // MARK: - The v1 wire's outcome statuses
-
-    func testManuallyClearedStatusHasItsOwnStableRawValue() {
-        XCTAssertEqual(RemoteCommand.Status.manuallyCleared.rawValue, "manuallyCleared")
-        XCTAssertNotEqual(RemoteCommand.Status.manuallyCleared.rawValue, RemoteCommand.Status.delivered.rawValue)
-    }
-
-    func testExistingStatusRawValuesAreUnchangedByTheNewCase() {
-        XCTAssertEqual(RemoteCommand.Status.delivered.rawValue, "delivered")
-        XCTAssertEqual(RemoteCommand.Status.cancelled.rawValue, "cancelled")
-        XCTAssertEqual(RemoteCommand.Status.failed.rawValue, "failed")
-        XCTAssertEqual(RemoteCommand.Status.unknown.rawValue, "unknown")
-    }
-
     /// A human checking the pump is not the pump confirming delivery: the outcome stays `unknown` and
     /// only stops blocking, so it is never echoed as a final outcome, and never as delivered.
     func testConfirmOnPumpNeverRecordsADelivery() {

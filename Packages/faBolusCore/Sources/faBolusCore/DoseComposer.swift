@@ -276,7 +276,7 @@ public enum DoseRefusal: Sendable, Equatable {
         switch self {
         case .unavailable(let reason): return reason.userMessage
         case .blocked(let block): return block.userMessage
-        case .requestTooOld: return RemoteCommandFreshness.rejectionMessage
+        case .requestTooOld: return RemoteRequestFreshness.rejectionMessage
         case .supersededByDelivery:
             return "A bolus was delivered after this request was created — reopen the remote and try again."
         case .recentlyDelivered:

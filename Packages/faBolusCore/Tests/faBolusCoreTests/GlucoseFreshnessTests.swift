@@ -82,8 +82,9 @@ final class NonFiniteFreshnessWindowTests: XCTestCase {
             let t = FreshnessThresholds(
                 glucoseStaleAfter: bad, insulinOnBoardStaleAfter: bad, therapyStaleAfter: bad)
             XCTAssertTrue(GlucoseFreshness.isStale(justNow, thresholds: t, now: now), "\(bad)")
-            XCTAssertTrue(CalcInputFreshness.isIobStale(justNow, thresholds: t, now: now), "\(bad)")
-            XCTAssertTrue(CalcInputFreshness.isTherapyStale(justNow, thresholds: t, now: now), "\(bad)")
+            XCTAssertTrue(
+                CalcInputFreshness.isStale(justNow, staleAfter: t.insulinOnBoardStaleAfter, now: now), "\(bad)")
+            XCTAssertTrue(CalcInputFreshness.isStale(justNow, staleAfter: t.therapyStaleAfter, now: now), "\(bad)")
             XCTAssertNotEqual(GlucoseFreshness.presentation(of: justNow, thresholds: t, now: now), .fresh)
             var s = PumpState()
             s.glucose = Observed(PumpGlucose(mgdl: 120, trend: nil), measuredAt: justNow, receivedAt: justNow)

@@ -6,7 +6,7 @@
 # observations, and clamp/confirm rules are KEEP even when a rule below matches them.
 #
 # The path lists cover all three sibling repos (faBolus `ios/`, `Packages/faBolusCore`,
-# `Packages/faBolusDesign`, `Shared/`; TandemKit `Sources/` + `Tests/`; faBolusGarmin `source/app`,
+# `Packages/faBolusDesign`; TandemKit `Sources/` + `Tests/`; faBolusGarmin `source/app`,
 # `tests/`, `datafield/`) so one config can be pointed at any of them.
 #
 # TWO STRUCTURAL LIMITS, so a clean run is not mistaken for a clean tree:
@@ -40,7 +40,6 @@ rules:
         - "/Packages/faBolusCore/**/*.swift"
         - "/Packages/faBolusDesign/**/*.swift"
         - "/Packages/*/Package.swift"
-        - "/Shared/**/*.swift"
         - "/Sources/**/*.swift"
         - "/Tests/**/*.swift"
         - "/source/app/*.mc"
@@ -79,7 +78,6 @@ rules:
         - "/Packages/faBolusCore/**/*.swift"
         - "/Packages/faBolusDesign/**/*.swift"
         - "/Packages/*/Package.swift"
-        - "/Shared/**/*.swift"
         - "/Sources/**/*.swift"
         - "/Tests/**/*.swift"
         - "/source/app/*.mc"
@@ -112,7 +110,6 @@ rules:
         - "/Packages/faBolusCore/**/*.swift"
         - "/Packages/faBolusDesign/**/*.swift"
         - "/Packages/*/Package.swift"
-        - "/Shared/**/*.swift"
         - "/Sources/**/*.swift"
         - "/Tests/**/*.swift"
         - "/source/app/*.mc"

@@ -5,9 +5,8 @@ import Foundation
 /// **These are DISCLOSURE / FRICTION facts, never therapy — and they NEVER affect delivery.** Nothing here
 /// blocks, disables, clamps, delays, resizes, or reorders a dose; the deliver button and the number that
 /// reaches the pump are unchanged. Every function here returns a `Disclosure` — a friction level plus a
-/// string to show, or `nil` — never a units/dose value. This mirrors `AutoCorrectionDisclosure`'s exact
-/// shape: a namespace enum of static pure functions over explicit inputs, mechanism-gated on the pump's OWN
-/// reported values (never a hardcoded clinical constant).
+/// string to show, or `nil` — never a units/dose value: a namespace enum of static pure functions over
+/// explicit inputs, mechanism-gated on the pump's OWN reported values (never a hardcoded clinical constant).
 ///
 /// **Structural "never a dose decision" guarantee:** `Friction` has NO `.block`
 /// case — it is `Comparable`/`CaseIterable` over exactly four levels, none of which the delivery path is

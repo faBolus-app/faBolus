@@ -8,8 +8,7 @@ import Foundation
 /// Garmin watch to `Toybox.Attention`.
 public enum NotificationRules {
 
-    /// A surface's intent for one notification, ordered `off < quiet < alert < urgent`. The v1 watch wire
-    /// carries it as a token (`RemoteCommand.watchIntentWireToken`).
+    /// A surface's intent for one notification, ordered `off < quiet < alert < urgent`.
     public enum Intent: Int, Comparable, Sendable, Codable, CaseIterable {
         case off = 0, quiet = 1, alert = 2, urgent = 3
         public static func < (a: Intent, b: Intent) -> Bool { a.rawValue < b.rawValue }

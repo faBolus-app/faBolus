@@ -251,9 +251,6 @@ public final class GlucoseHistoryStore {
         (try? context.fetchCount(FetchDescriptor<StoredGlucose>())) ?? 0
     }
 
-    /// Approximate on-disk size of stored history (for a "history uses ~X MB" line). ~100 bytes/reading.
-    public func approximateBytes() -> Int { glucoseCount() * 100 }
-
     /// Optional advanced auto-delete: drop glucose older than `date`.
     public func deleteGlucose(olderThan date: Date) {
         try? context.delete(model: StoredGlucose.self, where: #Predicate { $0.date < date })

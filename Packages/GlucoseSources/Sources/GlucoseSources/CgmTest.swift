@@ -166,28 +166,3 @@ public final class CgmTestCoordinator {
         }
     }
 }
-
-/// The badge shown while the live glucose comes from a backup source instead of the pump.
-public enum FailoverBadgePresenter {
-    /// A short source name and the reason, or `nil` while the pump's feed is shown. `name(for:)` looks
-    /// up a source's display name; an unknown id shows as itself.
-    public static func failoverBadge(provenance: GlucoseProvenance, name: (String) -> String?)
-        -> (name: String, reason: String)?
-    {
-        guard case .failover(let sourceID, let reason) = provenance else { return nil }
-        let full = name(sourceID) ?? sourceID
-        switch reason {
-        case .pumpMissing: return (shortSourceName(full), "Showing \(full) — the pump has no CGM reading.")
-        case .pumpStale: return (shortSourceName(full), "Showing \(full) — the pump's CGM reading went stale.")
-        }
-    }
-
-    /// The name without its qualifier, so it fits the badge: "Dexcom Share (cloud)" → "Dexcom Share".
-    public static func shortSourceName(_ full: String) -> String {
-        var name = full
-        for separator in [" (", " — ", " / "] {
-            if let range = name.range(of: separator) { name = String(name[..<range.lowerBound]) }
-        }
-        return name.trimmingCharacters(in: .whitespaces)
-    }
-}

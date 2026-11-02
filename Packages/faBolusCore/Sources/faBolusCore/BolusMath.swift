@@ -3,17 +3,16 @@ import Foundation
 /// The single, canonical bolus-dose calculator for faBolus.
 ///
 /// This is a faithful Swift port of the vendored Tandem oracle `BolusCalculator.parse()`
-/// (TandemKit `vendor/pumpx2-oracle/.../calculator/BolusCalculator.java`). It replaces four
-/// divergent formulas that previously lived in `TandemBackend`, `RemoteClientModel`, the Garmin
-/// `AppState`, and `MockBackend`. The most important behavior it fixes: a **below-target**
+/// (TandemKit `vendor/pumpx2-oracle/.../calculator/BolusCalculator.java`). It replaced four divergent
+/// formulas in the old app. The most important behavior it fixes: a **below-target**
 /// BG correction is kept **signed** and only the *total* is floored at zero — so a low glucose reduces
 /// the dose, instead of the old `max(0, …)` that clamped the correction term before combining and
 /// produced an over-recommendation.
 ///
 /// The pump cannot compute a dose from carbs; this mirrors the calculator the pump/t:connect use so a
-/// faBolus-computed dose matches what the pump would suggest. Every surface (phone, Watch, Mac,
-/// remote-iPhone) must route through this; the Garmin watch carries a hand-port of the same branch
-/// logic in `AppState.mc` (Monkey C can't call Swift) that is kept in lockstep.
+/// faBolus-computed dose matches what the pump would suggest. Every Swift surface must route through
+/// this; the Garmin watch carries a hand-port of the same branch logic in `Calculator.mc` (Monkey C can't
+/// call Swift) that is kept in lockstep.
 ///
 /// Verified against the real oracle: `BolusMathParityTests` runs **563** input vectors through the actual
 /// `BolusCalculator.java` (fixtures captured from the JVM) and asserts this port matches its `getTotal()`.

@@ -63,8 +63,8 @@ public enum StaleTherapyPrompt {
     /// when only the fact of staleness is known.
     ///
     /// - Parameter unit: the ACTIVE DISPLAY unit for the ISF/target figures.
-    ///   `StaleCalcInputPrompt` is a `faBolusCore` type and must stay app-independent — it cannot read
-    ///   `AppSettings.shared` — so the caller (`BolusEntryView`) passes the unit through. Defaults to
+    ///   `StaleCalcInputPrompt` is a `faBolusCore` type and must stay app-independent — it cannot read the
+    ///   app's settings — so the caller passes the unit through. Defaults to
     ///   `.mgdl` so every pre-existing call site (and this method's own mg/dL-mode wording) is
     ///   byte-identical to before this parameter was added. `p.isfMgdlPerUnit`/`p.targetBgMgdl` stay
     ///   mg/dL `Int` on `BolusMath.Profile` — only the rendered text changes. Carb ratio is

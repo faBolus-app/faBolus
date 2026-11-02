@@ -52,16 +52,6 @@ public enum GlucoseTrend: String, Sendable, Hashable, Codable {
         case .falling: return "down45"
         }
     }
-
-    /// Map a raw trend string (may be a Unicode arrow) to its direction token, or `nil` when there is
-    /// no trend to report.
-    ///
-    /// An empty or unrecognized arrow means *unknown*, and must stay unknown all the way to the
-    /// remote. This used to fall back to `.flat`, so a pump reporting "no arrow" became a flat arrow on
-    /// the watch and on Garmin — an inferred trend presented as a reported one.
-    public static func token(from raw: String) -> String? {
-        GlucoseTrend(rawValue: raw)?.token
-    }
 }
 
 /// Modern glucose ranges for coloring. Uses the **closed clinical convention** (matching
@@ -104,66 +94,4 @@ public enum GlucoseRange: Sendable {
         case .urgentHigh: return "Very high"
         }
     }
-}
-
-/// The honest "% of your configured max basal rate" readout. This is faBolus's OWN construct
-/// (Tandem ships no such gauge): `basalRateUnitsPerHour ÷ maxBasalUnitsPerHour`, both already
-/// decoded from the pump (`CurrentBasalStatusResponse` / `BasalLimitSettingsResponse`). Labeled
-/// honestly as the pump's CONFIGURED max-basal delivery limit — a cap on ALL basal delivery —
-/// and NEVER a Control-IQ or auto-bolus figure. Binding anti-misconstrual rules: (i) the label
-/// always contains "basal"; (ii) the absolute U/hr always accompanies the %; (iii) the readout
-/// lives physically separated from any bolus/correction surface (enforced at the call site,
-/// `PumpControlView`'s pump-settings area — not here); (iv) a copy-audit test
-/// (`CiqMaxBasalCopyAuditTests`) fails the build if the label ever contains one of
-/// `forbiddenMisconstrualWords`; (v) opt-in, off by default, with a one-time feature-specific
-/// explainer (also enforced at the call site).
-public enum MaxBasalFraction {
-    /// The exact forbidden misconstrual vocabulary, case-insensitive substring match. Any of
-    /// these words in the label would misconstrue this faBolus-computed configured-basal-cap readout as
-    /// a bolus, an automatic correction, a hard ceiling override, or "maxed out" delivery — none of
-    /// which this feature is. Exposed as one shared list so the label builder and its test never drift.
-    // <!-- planner-discipline-allow: bolus correction ceiling maxed -->
-    public static let forbiddenMisconstrualWords: [String] = ["bolus", "correction", "ceiling", "maxed"]
-
-    /// True when `text` contains any forbidden misconstrual word (case-insensitive substring).
-    public static func hasForbiddenWord(_ text: String) -> Bool {
-        forbiddenMisconstrualWords.contains { text.localizedCaseInsensitiveContains($0) }
-    }
-
-    /// A fraction, NEVER a dose/units value: `currentUnitsPerHour ÷ maxUnitsPerHour`, clamped to
-    /// `[0.0, 1.0]`. `nil` (fail-closed) when `maxUnitsPerHour <= 0` — the pump's configured
-    /// max-basal limit is unknown/not yet read, so there is nothing honest to divide by; the caller
-    /// must render the readout entirely ABSENT (not zero/dash) in that case.
-    public static func fraction(currentUnitsPerHour: Double, maxUnitsPerHour: Double) -> Double? {
-        guard maxUnitsPerHour > 0 else { return nil }
-        let raw = currentUnitsPerHour / maxUnitsPerHour
-        return min(max(raw, 0.0), 1.0)
-    }
-
-    /// Locked wording pair, or `nil` under the exact same fail-closed guard `fraction` uses.
-    /// `headline` ALWAYS contains "basal"; `detail` ALWAYS shows both the current and configured
-    /// max U/hr together (never the % alone). Both are guaranteed (by the copy-audit test) to never
-    /// contain a `forbiddenMisconstrualWords` entry.
-    public static func label(currentUnitsPerHour: Double, maxUnitsPerHour: Double) -> (
-        headline: String, detail: String
-    )? {
-        guard let f = fraction(currentUnitsPerHour: currentUnitsPerHour, maxUnitsPerHour: maxUnitsPerHour) else {
-            return nil
-        }
-        let pct = Int((f * 100).rounded())
-        let headline = "\(pct)% of your configured max basal rate"
-        let detail = String(format: "%.2f / %.2f U/hr", currentUnitsPerHour, maxUnitsPerHour)
-        return (headline, detail)
-    }
-}
-
-/// Which automated controller a pump runs, from the pump's own `PumpFeaturesV1` bits (op 79), never
-/// guessed from the model name: none, classic Control-IQ, or Control-IQ+.
-public enum ControllerVariant: String, Sendable, Hashable, Codable, CaseIterable {
-    // The raw values are a v1 remote wire contract (`RemoteCommand.controllerVariant`), pinned so a
-    // rename can't change the token an older remote parses. The product name is "Control-IQ+", but the
-    // token stays `controlIQPro`.
-    case none = "none"
-    case controlIQ = "controlIQ"
-    case controlIQPro = "controlIQPro"
 }

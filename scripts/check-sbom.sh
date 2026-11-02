@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Audit L-01: fail if a vendored/local package lacks a LICENSE or a row in docs/SBOM.md.
+# Fail if a vendored/local package lacks a LICENSE or a row in docs/SBOM.md.
 # Keeps the provenance chain honest — a new bundled dependency can't slip in undocumented.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -26,12 +26,11 @@ for dir in Packages/*/; do
   esac
 done
 
-# App-tree ported/adapted source (§3.1 / plan Q4). The Packages/* loop above cannot see the app target,
-# so a CGM reader copied/derived from an upstream could ship un-attributed (exactly what happened to
-# XDripAppGroupSource). Scan every first-party Swift file outside legacy/ for a `Ported from` / `Adapted from` attribution comment and
-# require the file's basename to appear in $SBOM WITH a recognizable SPDX/license token. Deliberately
-# narrow to those two markers (NOT "derived from", which legitimately describes many pump-derived values)
-# to keep false positives out; a genuine port must carry the marker AND an SBOM row.
+# Ported/adapted source. The Packages/* loop above can't see a single copied file, so scan every
+# first-party Swift file for a `Ported from` / `Adapted from` attribution comment and require the file's
+# basename to appear in $SBOM WITH a recognizable SPDX/license token. Deliberately narrow to those two
+# markers (NOT "derived from", which legitimately describes many pump-derived values) to keep false
+# positives out; a genuine port must carry the marker AND an SBOM row.
 LICENSE_RE='MIT|Apache-2\.0|Apache 2|BSD|ISC|MPL|GPL|LicenseRef|independent Swift impl'
 while IFS= read -r f; do
   [[ -z "$f" ]] && continue
@@ -42,10 +41,10 @@ while IFS= read -r f; do
   elif ! grep -qE "$LICENSE_RE" <<<"$row"; then
     echo "MISSING LICENSE: the $SBOM row for $base carries no recognizable SPDX/license token"; fail=1
   fi
-done < <(git ls-files -z '*.swift' ':!:legacy/*' | xargs -0 grep -lE '(^|[^[:alnum:]])[Pp]orted from|(^|[^[:alnum:]])[Aa]dapted from' 2>/dev/null | grep -vE '/[^/]*Tests?/|Tests?\.swift' || true)
+done < <(git ls-files -z '*.swift' | xargs -0 grep -lE '(^|[^[:alnum:]])[Pp]orted from|(^|[^[:alnum:]])[Aa]dapted from' 2>/dev/null | grep -vE '/[^/]*Tests?/|Tests?\.swift' || true)
 
 if [[ "$fail" -ne 0 ]]; then
-  echo "SBOM check FAILED — reconcile the component with $SBOM (audit L-01)." >&2
+  echo "SBOM check FAILED — reconcile the component with $SBOM." >&2
   exit 1
 fi
 echo "SBOM check passed: all Packages/* and ported first-party source accounted for in $SBOM."

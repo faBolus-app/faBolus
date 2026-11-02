@@ -1,21 +1,19 @@
 import Foundation
 
-/// The single glucose display-unit funnel. mg/dL `Int` is canonical everywhere in faBolusCore /
-/// BolusMath / RemoteCommand — conversion happens only here, at `format` (mg/dL → display string)
+/// The single glucose display-unit funnel. mg/dL `Int` is canonical everywhere in faBolusCore,
+/// BolusMath and on the remote wire — conversion happens only here, at `format` (mg/dL → display string)
 /// and `parse` (entry string → mg/dL `Int`). Every glucose-, ISF-, and target-BG-displaying surface
-/// must route through `format`; every glucose-entry surface must route through `parse`. Widget and
-/// Garmin mirrors pin against this file (those targets cannot link faBolusCore).
+/// must route through `format`; every glucose-entry surface must route through `parse`. The widgets and
+/// the Live Activity call it directly; the Garmin watch gets the unit's `wireToken`.
 ///
-/// mg/dL is the only display unit `main` offers today — mmol/L display was removed as dead code
-/// (`AppSettings.glucoseDisplayUnit` force-sets `.mgdl` unconditionally on every launch); the
-/// funnel itself stays so a future unit re-adds behind one switch, not scattered call sites.
+/// mg/dL is the only display unit this release offers; the funnel stays so a future unit is added behind
+/// one switch, not scattered call sites.
 public enum GlucoseUnit: String, Codable, Sendable, CaseIterable {
     case mgdl
 
     /// The stable, locale-independent wire token (never raw English on the wire). Identical to
     /// `rawValue` today; kept as a separate name so a future wire representation change does not
-    /// require touching every call site, and so `RemoteCommand`'s wire field can stay typed `String?`
-    /// rather than the enum itself.
+    /// require touching every call site (the watch preferences carry it as a string).
     public var wireToken: String { rawValue }
 
     /// mg/dL → a display string in this unit (the plain integer).

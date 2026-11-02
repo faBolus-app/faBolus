@@ -445,41 +445,6 @@ import Testing
         }
     }
 
-    // MARK: - v1 messages
-
-    @Test func v1BolusRequestMapsToARemoteRequest() throws {
-        var command = RemoteCommand(
-            kind: .bolusRequest, requestId: "r1", sentAt: 1_800_000_000, carbsGrams: 0, bgMgdl: 179.6)
-        command.remoteEstimateUnits = 1.2
-        command.includeStaleBG = true
-        let request = try #require(RemoteDoseRequest(v1: command, peerId: "garmin", surface: .garmin))
-        #expect(request.id == "r1")
-        #expect(request.amount == .calculator(carbsGrams: 0, estimateUnits: 1.2))
-        #expect(request.glucoseMgdl == 180)
-        #expect(request.includeStaleGlucose)
-        #expect(request.sentAt == Date(timeIntervalSince1970: 1_800_000_000))
-
-        let units = try #require(
-            RemoteDoseRequest(v1: RemoteCommand(kind: .bolusRequest, units: 2), peerId: "garmin", surface: .garmin))
-        #expect(units.amount == .units(2))
-        let empty = try #require(
-            RemoteDoseRequest(v1: RemoteCommand(kind: .bolusRequest, bgMgdl: .nan), peerId: "garmin", surface: .garmin))
-        #expect(empty.amount == nil)
-        #expect(empty.glucoseMgdl == nil)
-        #expect(RemoteDoseRequest(v1: RemoteCommand(kind: .cancelBolus), peerId: "garmin", surface: .garmin) == nil)
-    }
-
-    /// An extended bolus isn't offered, so its request has no amount and is refused rather than delivered
-    /// all at once.
-    @Test func v1ExtendedRequestIsRefused() throws {
-        var command = RemoteCommand(kind: .bolusRequest, sentAt: Int(F.now.timeIntervalSince1970), units: 6)
-        command.extendedNowUnits = 2
-        command.extendedMinutes = 120
-        let request = try #require(RemoteDoseRequest(v1: command, peerId: "garmin", surface: .garmin))
-        #expect(request.amount == nil)
-        #expect(compose(request).refusal == .noDoseSpecified)
-    }
-
     // MARK: - The two IOB readings
 
     /// Right after a bolus the IOB reading can lag the calculator reply's own IOB. When they disagree by

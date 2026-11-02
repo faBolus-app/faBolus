@@ -6,7 +6,7 @@ import Testing
 /// false-negative, structural, or forbidden-phrase hole fails here rather than shipping.
 // `.serialized`: the escalation-boundary tests mutate process-global OSAllocatedUnfairLock-backed
 // statics (`confirmExtraOverrideRatio`/`reenterOverrideRatio`); Swift Testing's default concurrent
-// scheduling otherwise races them against sibling rows (flaky reds). Mirrors StackingGuardNoticeAckTests.
+// scheduling otherwise races them against sibling rows (flaky reds).
 @Suite(.serialized) struct StackingGuardTests {
 
     private let target = 120  // arbitrary pump-reported op-115 target for these rows

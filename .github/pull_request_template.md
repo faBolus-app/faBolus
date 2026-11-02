@@ -1,6 +1,5 @@
 <!--
-faBolus is experimental software controlling an insulin pump. The delivery disposition is NO-GO for
-real insulin delivery; keep it that way unless changing it is the explicit subject of this PR.
+faBolus is experimental software controlling an insulin pump.
 Fill in what applies; delete what doesn't. See CONTRIBUTING.md and BRANCHES.md.
 -->
 
@@ -8,42 +7,33 @@ Fill in what applies; delete what doesn't. See CONTRIBUTING.md and BRANCHES.md.
 
 <!-- One or two sentences. What changes, and the problem it solves. -->
 
-## Branch target
-
-- [ ] `main` — meets every §1.4 promotion criterion (see BRANCHES.md)
-- [ ] `experimental` — fires on a threshold / automates a decision / produces output not verifiable
-      against the pump (§1.2), or otherwise not yet promotable
-
 ## Safety
 
-- [ ] Does **not** weaken a safety interlock (confirmation, max-bolus clamp, single-flight, the
-      idempotency ledger, fail-closed transport gating)
-- [ ] Delivery disposition unchanged (**NO-GO for real insulin delivery**) — or this PR's explicit
-      subject is changing it, and says so
+- [ ] Does **not** weaken a safety interlock (confirmation, the pump's limits, single-flight, the
+      idempotency ledger, fail-closed transport gating), and adds no dose path around the composer,
+      the access policy, TandemKit's `WritePolicy` and the signed message
 - [ ] No glucose value reaches a display layer without a source timestamp; no client-derived trend
-      arrow; no locally-invented IOB or therapy parameter (C4/C7/C8)
+      arrow; no locally-invented IOB or therapy parameter
 - [ ] If this touches dosing guidance, thresholds, or automation copy: the clinical-review gate
       (BRANCHES.md) is noted — such work does not reach anyone but the developer until that review lands
 
 ## Contract
 
-- [ ] Did **not** touch `schema/command.schema.json`
-- [ ] — or did, and: bumped `version`, updated the Swift `RemoteCommand` **and** the Monkey C mirror in
-      faBolusGarmin, kept changes additive/optional, and `scripts/check-schema-drift.sh` passes in both repos
+- [ ] Did **not** touch `Packages/RemoteProtocol/contract/`
+- [ ] — or did, and: rewrote the golden fixtures (`UPDATE_CONTRACT=1` on RemoteProtocol's tests), and
+      updated faBolusGarmin's `contract/PIN` with its `scripts/sync-contract.sh` in a linked PR whose
+      `./scripts/check.sh` passes
 
 ## Verification
 
 <!-- Paste the commands you ran and their result. CI's Xcode is stricter than a typical local one, so
      "builds locally" is necessary but not sufficient — say what you expect CI to confirm. -->
 
-- [ ] `swift test --package-path Packages/faBolusCore` (and HistoryStore / G7SensorKit / DexcomG6Kit if touched)
 - [ ] `./scripts/check.sh` passes
-- [ ] Shared-code changes build cleanly (watch/Mac remotes are removed from `main` — delete-on-main;
-      see `dev/watch-remote`/`dev/watch-host`/`dev/mac` if you're restoring one of them)
 - [ ] Hardware-tested vs. compile-only noted
 
 ## Cross-repo
 
 - [ ] N/A — single repo
-- [ ] Touches the contract or a shared constant → sibling PR(s) linked, and the branch-aware CI resolved
-      the matching sibling branch (check the `resolve-refs` / `fbref` log line for the ref **and SHA**)
+- [ ] Touches the contract, a shared constant or TandemKit → sibling PR(s) linked, with the pin
+      (`contract/PIN`, or the TandemKit revision in the packages' `Package.swift`) at the sibling's commit

@@ -1,81 +1,55 @@
 import XCTest
 @testable import faBolusCore
 
-/// DIF-core: the calc-input freshness policy (IOB + therapy params) and the `PumpState` staleness
+/// The calc-input freshness policy (IOB + therapy params) and the `PumpState` staleness
 /// seams that gate the dose path. Mirrors `GlucoseFreshnessTests` for the glucose feed.
 final class CalcInputFreshnessTests: XCTestCase {
+
+    private let iob = FreshnessThresholds.standard.insulinOnBoardStaleAfter
+    private let therapy = FreshnessThresholds.standard.therapyStaleAfter
+
+    private func stale(_ ago: TimeInterval?, _ window: TimeInterval, now: Date) -> Bool {
+        CalcInputFreshness.isStale(ago.map { now.addingTimeInterval(-$0) }, staleAfter: window, now: now)
+    }
 
     // MARK: - IOB threshold (default 300 s)
 
     func testIobStaleThresholdBoundary() {
         let now = Date()
-        XCTAssertTrue(CalcInputFreshness.isIobStale(nil, thresholds: .standard, now: now))  // unknown → stale
-        // 1 min → fresh
-        XCTAssertFalse(CalcInputFreshness.isIobStale(now.addingTimeInterval(-60), thresholds: .standard, now: now))
-        // just under 5 min
-        XCTAssertFalse(CalcInputFreshness.isIobStale(now.addingTimeInterval(-299), thresholds: .standard, now: now))
-        XCTAssertFalse(CalcInputFreshness.isIobStale(now, thresholds: .standard, now: now))  // at "now" → fresh
-        // just over 5 min
-        XCTAssertTrue(CalcInputFreshness.isIobStale(now.addingTimeInterval(-301), thresholds: .standard, now: now))
+        XCTAssertTrue(stale(nil, iob, now: now))  // unknown → stale
+        XCTAssertFalse(stale(60, iob, now: now))  // 1 min → fresh
+        XCTAssertFalse(stale(299, iob, now: now))  // just under 5 min
+        XCTAssertFalse(stale(0, iob, now: now))  // at "now" → fresh
+        XCTAssertTrue(stale(301, iob, now: now))  // just over 5 min
         // Exactly at the threshold is NOT stale (`>`), one second past IS.
-        XCTAssertFalse(CalcInputFreshness.isIobStale(now.addingTimeInterval(-300), thresholds: .standard, now: now))
+        XCTAssertFalse(stale(300, iob, now: now))
     }
 
     func testTherapyStaleThresholdBoundary() {
         let now = Date()
-        XCTAssertTrue(CalcInputFreshness.isTherapyStale(nil, thresholds: .standard, now: now))  // unknown → stale
-        // 5 min → still fresh (wider window)
-        XCTAssertFalse(CalcInputFreshness.isTherapyStale(now.addingTimeInterval(-300), thresholds: .standard, now: now))
-        // just under 15 min
-        XCTAssertFalse(CalcInputFreshness.isTherapyStale(now.addingTimeInterval(-899), thresholds: .standard, now: now))
-        // exactly at threshold
-        XCTAssertFalse(CalcInputFreshness.isTherapyStale(now.addingTimeInterval(-900), thresholds: .standard, now: now))
-        // just over 15 min
-        XCTAssertTrue(CalcInputFreshness.isTherapyStale(now.addingTimeInterval(-901), thresholds: .standard, now: now))
+        XCTAssertTrue(stale(nil, therapy, now: now))  // unknown → stale
+        XCTAssertFalse(stale(300, therapy, now: now))  // 5 min → still fresh (wider window)
+        XCTAssertFalse(stale(899, therapy, now: now))  // just under 15 min
+        XCTAssertFalse(stale(900, therapy, now: now))  // exactly at threshold
+        XCTAssertTrue(stale(901, therapy, now: now))  // just over 15 min
     }
 
     func testFutureDatedIsStaleBeyondClockSkew() {
         let now = Date()
         // A read dated far in the future has an untrustworthy clock → stale, never "fresh" from a negative age.
-        XCTAssertTrue(CalcInputFreshness.isIobStale(now.addingTimeInterval(30 * 60), thresholds: .standard, now: now))
-        XCTAssertTrue(
-            CalcInputFreshness.isTherapyStale(now.addingTimeInterval(30 * 60), thresholds: .standard, now: now))
+        XCTAssertTrue(stale(-30 * 60, iob, now: now))
+        XCTAssertTrue(stale(-30 * 60, therapy, now: now))
         // Just past / just inside the skew boundary.
-        XCTAssertTrue(
-            CalcInputFreshness.isIobStale(
-                now.addingTimeInterval(CalcInputFreshness.futureSkewTolerance + 1), thresholds: .standard, now: now))
-        XCTAssertFalse(
-            CalcInputFreshness.isIobStale(
-                now.addingTimeInterval(CalcInputFreshness.futureSkewTolerance - 1), thresholds: .standard, now: now))
+        XCTAssertTrue(stale(-(CalcInputFreshness.futureSkewTolerance + 1), iob, now: now))
+        XCTAssertFalse(stale(-(CalcInputFreshness.futureSkewTolerance - 1), iob, now: now))
     }
 
     func testThresholdsAreConfigurable() {
         let now = Date()
         let t = FreshnessThresholds(insulinOnBoardStaleAfter: 120, therapyStaleAfter: 120)
-        XCTAssertTrue(CalcInputFreshness.isIobStale(now.addingTimeInterval(-130), thresholds: t, now: now))
-        XCTAssertFalse(CalcInputFreshness.isIobStale(now.addingTimeInterval(-110), thresholds: t, now: now))
-        XCTAssertTrue(CalcInputFreshness.isTherapyStale(now.addingTimeInterval(-130), thresholds: t, now: now))
-    }
-
-    // MARK: - Three-state presentation (fresh / stale / hidden)
-
-    func testPresentationThreeStates() {
-        let now = Date()
-        // no value → "--"
-        XCTAssertEqual(CalcInputFreshness.iobPresentation(of: nil, thresholds: .standard, now: now), .hidden)
-        XCTAssertEqual(
-            CalcInputFreshness.iobPresentation(of: now.addingTimeInterval(-60), thresholds: .standard, now: now), .fresh
-        )
-        XCTAssertEqual(
-            CalcInputFreshness.iobPresentation(of: now.addingTimeInterval(-600), thresholds: .standard, now: now),
-            .stale)
-        XCTAssertEqual(CalcInputFreshness.therapyPresentation(of: nil, thresholds: .standard, now: now), .hidden)
-        XCTAssertEqual(
-            CalcInputFreshness.therapyPresentation(of: now.addingTimeInterval(-60), thresholds: .standard, now: now),
-            .fresh)
-        XCTAssertEqual(
-            CalcInputFreshness.therapyPresentation(of: now.addingTimeInterval(-1200), thresholds: .standard, now: now),
-            .stale)
+        XCTAssertTrue(stale(130, t.insulinOnBoardStaleAfter, now: now))
+        XCTAssertFalse(stale(110, t.insulinOnBoardStaleAfter, now: now))
+        XCTAssertTrue(stale(130, t.therapyStaleAfter, now: now))
     }
 
     func testAgeLabel() {

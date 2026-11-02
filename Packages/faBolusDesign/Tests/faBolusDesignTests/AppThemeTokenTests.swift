@@ -3,9 +3,8 @@ import faBolusCore
 @testable import faBolusDesign
 
 /// In-package sanity pin: `AppTheme.glucoseColor` routes each `GlucoseRange` case to the matching
-/// §13-locked token. Not a contrast/byte-identity gate (that's `WCAGContrastTests` in faBolusCore and
-/// `AppThemeContrastAuditTests` in the app target) — just proves the classify→color wiring is
-/// correct.
+/// §13-locked token. Not a contrast gate (that's `WCAGContrastTests` in faBolusCore) — just proves the
+/// classify→color wiring is correct.
 struct AppThemeTokenTests {
     @Test func glucoseColorRoutesEachBandToItsToken() {
         // Values chosen well inside each band per GlucoseThresholds (70/180/250).

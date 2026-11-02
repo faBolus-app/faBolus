@@ -19,8 +19,8 @@ struct UnpairAdvisoryTests {
         }
     }
 
-    /// The offline fallback (C19) — the load-bearing path the live MockBackend can't exercise: when the
-    /// snapshot model is `.unknown` (disconnected), the persisted Mobi flag decides the warning.
+    /// The offline fallback: when the snapshot model is `.unknown` (disconnected), the persisted Mobi flag
+    /// decides the warning.
     @Test func resolvedModelPrefersSnapshotThenFallsBackToStoredSignal() {
         // A known snapshot model always wins, regardless of the stored flag.
         #expect(UnpairAdvisory.resolvedModel(snapshotModel: .mobi, storedIsMobi: false) == .mobi)

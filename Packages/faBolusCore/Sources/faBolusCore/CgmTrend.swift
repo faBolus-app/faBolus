@@ -7,7 +7,7 @@ import Foundation
 /// *reported* trend and maps to `.flat`; but an absent, unknown, none, not-computable, or
 /// out-of-range code means the source reports **no** trend and maps to `nil` — which renders as no
 /// arrow, never a flat one. (These used to fall back to `.flat`, silently dressing "no trend" as an
-/// inferred "steady" — the same drift `GlucoseTrend.token(from:)` was fixed to eliminate.)
+/// inferred "steady".)
 public enum CgmTrend {
     /// Dexcom Share numeric trend (1…7). 0 None, 8 NotComputable, 9 RateOutOfRange, other → no trend.
     public static func dexcom(_ n: Int) -> GlucoseTrend? {

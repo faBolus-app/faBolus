@@ -1,20 +1,9 @@
 import Foundation
 
-/// The pump's own category for a notification. Raw values match the v1 remote protocol's alert kinds
-/// (reminder 0 / alert 1 / alarm 2 / cgmAlert 3), so the v1 `RemoteAlert` mapping is a passthrough.
+/// The pump's own category for a notification. Raw values match TandemKit's notification kinds
+/// (reminder 0 / alert 1 / alarm 2 / cgmAlert 3), so PumpSession maps between them by raw value.
 public enum PumpAlertKind: Int, Sendable, Equatable, Hashable, Codable, CaseIterable {
     case reminder = 0, alert = 1, alarm = 2, cgmAlert = 3
-
-    /// The tier this kind maps to on the v1 Garmin alert wire (`RemoteAlert.severity`). The watch fails
-    /// an absent or unknown tier closed to "critical", so a kind not mapped here is never under-alerted.
-    public var wireSeverityTier: String {
-        switch self {
-        case .alarm: return "critical"
-        case .alert: return "high"
-        case .cgmAlert: return "high"
-        case .reminder: return "info"
-        }
-    }
 }
 
 /// How serious an alert is. Ordered, so the most serious open alert can be picked.

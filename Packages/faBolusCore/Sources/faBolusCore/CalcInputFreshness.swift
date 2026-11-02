@@ -28,43 +28,6 @@ public enum CalcInputFreshness {
         return elapsed > staleAfter
     }
 
-    /// True when the IOB read taken at `date` is stale (nil → stale).
-    public static func isIobStale(_ date: Date?, thresholds: FreshnessThresholds, now: Date = Date()) -> Bool {
-        isStale(date, staleAfter: thresholds.insulinOnBoardStaleAfter, now: now)
-    }
-
-    /// True when the therapy-settings read taken at `date` is stale (nil → stale).
-    public static func isTherapyStale(_ date: Date?, thresholds: FreshnessThresholds, now: Date = Date()) -> Bool {
-        isStale(date, staleAfter: thresholds.therapyStaleAfter, now: now)
-    }
-
-    /// How a read of a given age should be presented on screen (3-state), against an explicit threshold.
-    /// `nil` date → `.stale` (unknown age is conservative). There is no separate "hide" age for calc
-    /// inputs — an absent/stale input is surfaced (and, on the dose path, blocks), never silently dropped —
-    /// so this is fresh/stale, with `.hidden` reserved for a caller that has literally no value to show.
-    public static func presentation(of date: Date?, staleAfter: TimeInterval, now: Date = Date())
-        -> CalcInputPresentation
-    {
-        guard let date, staleAfter.isFinite, staleAfter >= 0 else { return .stale }
-        let age = now.timeIntervalSince(date)
-        if age < -futureSkewTolerance { return .stale }  // future-dated beyond clock skew → stale, never fresh
-        return age <= staleAfter ? .fresh : .stale
-    }
-
-    /// Presentation for an IOB read.
-    public static func iobPresentation(
-        of date: Date?, thresholds: FreshnessThresholds, now: Date = Date()
-    ) -> CalcInputPresentation {
-        date == nil ? .hidden : presentation(of: date, staleAfter: thresholds.insulinOnBoardStaleAfter, now: now)
-    }
-
-    /// Presentation for a therapy-params read.
-    public static func therapyPresentation(
-        of date: Date?, thresholds: FreshnessThresholds, now: Date = Date()
-    ) -> CalcInputPresentation {
-        date == nil ? .hidden : presentation(of: date, staleAfter: thresholds.therapyStaleAfter, now: now)
-    }
-
     /// Compact relative age label, identical in form to `GlucoseFreshness.ageLabel` ("now", "3 min ago",
     /// "1h 12m ago"), so an IOB / therapy row reads the same as a glucose row.
     public static func ageLabel(for date: Date, now: Date = Date()) -> String {
@@ -74,11 +37,4 @@ public enum CalcInputFreshness {
         let h = s / 3600, m = (s % 3600) / 60
         return m == 0 ? "\(h)h ago" : "\(h)h \(m)m ago"
     }
-}
-
-/// How a calc-input read should be shown, by age (see `CalcInputFreshness`). Mirrors `GlucosePresentation`.
-public enum CalcInputPresentation: Sendable, Equatable {
-    case fresh  // within the threshold — normal styling, live value
-    case stale  // past the threshold — shown de-emphasized (grey) with its age
-    case hidden  // no value at all to show ("--")
 }

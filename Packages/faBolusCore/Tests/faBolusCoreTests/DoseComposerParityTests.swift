@@ -151,30 +151,23 @@ import Testing
 @Suite struct SentAtStampTests {
     typealias F = DoseFixtures
 
-    private func command(sentAt: Date) -> RemoteCommand {
-        RemoteCommand(kind: .bolusRequest, requestId: "r1", sentAt: Int(sentAt.timeIntervalSince1970), units: 2)
+    private func compose(sentAt: Date?, now: Date) -> RemoteDoseDecision {
+        DoseComposer.composeRemote(
+            F.remote(.units(2), sentAt: sentAt, id: "r1"), ledger: .init(), context: F.context(now: now))
     }
 
-    private func compose(_ command: RemoteCommand, now: Date) throws -> RemoteDoseDecision {
-        let request = try #require(RemoteDoseRequest(v1: command, peerId: "garmin", surface: .garmin))
-        return DoseComposer.composeRemote(request, ledger: .init(), context: F.context(now: now))
+    @Test func aJustSentBolusIsAccepted() {
+        #expect(!RemoteRequestFreshness.isStale(sentAt: F.now, now: F.now))
+        #expect(compose(sentAt: F.now, now: F.now).dose?.units == 2)
     }
 
-    @Test func aJustSentBolusIsAccepted() throws {
-        let cmd = command(sentAt: F.now)
-        #expect(!RemoteCommandFreshness.isStale(cmd, now: F.now))
-        #expect(try compose(cmd, now: F.now).dose?.units == 2)
+    @Test func theSameBolusGoneStaleIsRefused() {
+        let sentAt = F.now.addingTimeInterval(-RemoteRequestFreshness.maxAgeSec - 10)
+        #expect(RemoteRequestFreshness.isStale(sentAt: sentAt, now: F.now))
+        #expect(compose(sentAt: sentAt, now: F.now).refusal == .requestTooOld)
     }
 
-    @Test func theSameBolusGoneStaleIsRefused() throws {
-        let cmd = command(sentAt: F.now.addingTimeInterval(-RemoteCommandFreshness.maxAgeSec - 10))
-        #expect(RemoteCommandFreshness.isStale(cmd, now: F.now))
-        #expect(try compose(cmd, now: F.now).refusal == .requestTooOld)
-    }
-
-    @Test func aBolusWithNoStampIsRefused() throws {
-        var cmd = command(sentAt: F.now)
-        cmd.sentAt = nil
-        #expect(try compose(cmd, now: F.now).refusal == .requestTooOld)
+    @Test func aBolusWithNoStampIsRefused() {
+        #expect(compose(sentAt: nil, now: F.now).refusal == .requestTooOld)
     }
 }

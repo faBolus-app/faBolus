@@ -20,7 +20,6 @@ ignores:
   - "**/.build/**"
   - "**/node_modules/**"
   - "site/**"
-  - "legacy/**"
   - "vendor/**"
   # Agent tooling, and a symlink to the Connect IQ SDK outside the repo.
   - ".claude/**"

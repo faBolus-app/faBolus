@@ -34,10 +34,5 @@ project.generated.yml
 *.mlmodel
 *.mlmodelc
 
-# §1.3 version-pin: track the root-level canonical Package.resolved so every clone/CI run resolves
-# the exact pinned TandemKit + faBolusNudge/LoopAlgorithm graph (D-04). Only negates the root copy —
-# it cannot and must not reach the generated copy under the still-excluded *.xcodeproj/ tree.
-!/Package.resolved
-
 # Local dispatch-isolation runtime state — re-created per session, never a repo artifact.
 .gsd/

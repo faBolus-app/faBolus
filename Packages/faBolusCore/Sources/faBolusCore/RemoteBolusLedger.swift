@@ -370,7 +370,7 @@ public struct RemoteBolusLedger: Sendable, Codable {
     /// How long `hasRecentlyDeliveredDuplicate` remembers a dose: the same window as a remote request's
     /// freshness limit, since both bound how long a remote's stale view of the phone is a double-dose
     /// risk.
-    public static let recentDuplicateWindowSec: TimeInterval = RemoteCommandFreshness.maxAgeSec
+    public static let recentDuplicateWindowSec: TimeInterval = RemoteRequestFreshness.maxAgeSec
 
     /// True when `peerId`'s dose `doseKey` went in, or may have, within `window` of `now`, whatever
     /// request ID it had. Scoped to one peer: the risk is a remote recomposing its own request after

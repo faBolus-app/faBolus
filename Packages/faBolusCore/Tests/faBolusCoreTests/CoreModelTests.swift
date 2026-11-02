@@ -18,27 +18,23 @@ final class CoreModelTests: XCTestCase {
         XCTAssertEqual(GlucoseTrend.up.token, "up")
         XCTAssertEqual(GlucoseTrend.rising.token, "up45")
         XCTAssertEqual(GlucoseTrend.downDown.token, "downdown")
-        // token(from:) maps a raw unicode arrow → the stable ASCII token remotes use.
-        XCTAssertEqual(GlucoseTrend.token(from: "↑"), "up")
-        XCTAssertEqual(GlucoseTrend.token(from: "→"), "flat")
-        // C8: unknown or absent means UNKNOWN, and must stay unknown all the way to the remote. This
-        // assertion previously pinned the opposite ("unknown → flat"), which turned a pump reporting
-        // *no arrow* into a flat arrow on the watch and on Garmin — an inferred trend shown as a
-        // reported one. When choosing between showing less and showing something inferred, show less.
-        XCTAssertNil(GlucoseTrend.token(from: "garbage"))
-        XCTAssertNil(GlucoseTrend.token(from: ""))
+        // The pump's Unicode arrow maps to its trend (PumpSession reads it this way), and from there to the
+        // ASCII token remotes use.
+        XCTAssertEqual(GlucoseTrend(rawValue: "↑")?.token, "up")
+        XCTAssertEqual(GlucoseTrend(rawValue: "→")?.token, "flat")
+        // Unknown or absent means UNKNOWN, and must stay unknown all the way to the remote. An old version
+        // pinned the opposite ("unknown → flat"), which turned a pump reporting *no arrow* into a flat
+        // arrow on the watch — an inferred trend shown as a reported one. Show less, never something inferred.
+        XCTAssertNil(GlucoseTrend(rawValue: "garbage"))
+        XCTAssertNil(GlucoseTrend(rawValue: ""))
     }
 
-    /// The neutral PumpAlertKind raw values MUST match the remote-protocol alert kinds
-    /// (reminder 0 / alert 1 / alarm 2 / cgmAlert 3) so the RemoteCommand mapping is a passthrough.
-    func testAlertKindRawValuesMatchRemoteProtocol() {
+    /// The neutral PumpAlertKind raw values match TandemKit's notification kinds (reminder 0 / alert 1 /
+    /// alarm 2 / cgmAlert 3), so PumpSession maps between them by raw value.
+    func testAlertKindRawValuesMatchTheNotificationKinds() {
         XCTAssertEqual(PumpAlertKind.reminder.rawValue, 0)
         XCTAssertEqual(PumpAlertKind.alert.rawValue, 1)
         XCTAssertEqual(PumpAlertKind.alarm.rawValue, 2)
         XCTAssertEqual(PumpAlertKind.cgmAlert.rawValue, 3)
-        let a = PumpAlert(id: 2, kind: .cgmAlert, title: "High glucose")
-        let remote = RemoteCommand.RemoteAlert(id: a.id, kind: a.kind.rawValue, title: a.title)
-        XCTAssertEqual(remote.kind, 3)
-        XCTAssertEqual(PumpAlertKind(rawValue: remote.kind), .cgmAlert)
     }
 }

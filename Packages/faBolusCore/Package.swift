@@ -1,7 +1,7 @@
 // swift-tools-version: 6.0
-// faBolusCore — the stable, pump- and host-agnostic contracts for faBolus: domain models,
-// the PumpBackend interface + capabilities, and the phone↔remote command protocol. Backends
-// (TandemBackend/TandemKit, community backends) and hosts (faBolus, a Loop adapter) depend on this.
+// faBolusCore — the stable, pump- and host-agnostic core of faBolus: the domain models and pump
+// capabilities, the bolus calculator, the dose composer, the access policy and the remote-bolus ledger.
+// PumpSession, the remote protocol and the app depend on this.
 import PackageDescription
 
 let package = Package(

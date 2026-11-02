@@ -6,24 +6,23 @@
 # Default owner for everything.
 *                                   @zgranowitz
 
-# The cross-app contract. On narrow `main` a change here ripples to Garmin (Venu 3S) and the widgets, and
-# to the faBolusGarmin repo's Monkey C mirror — the schema-drift checks enforce the mirror, but the
-# semantics are a human-review concern. The Apple Watch remote and the Mac menu-bar remote are
-# EXPERIMENTAL-ONLY (v0.5.0 narrow-main; preserved on `dev/watch-remote` / `dev/mac`, not on `main`) — a
-# schema change there is a `dev/*`/`experimental` concern, not a `main` one.
-/schema/                            @zgranowitz
+# The phone↔remote contract. faBolusGarmin vendors these files from a pinned commit, so a change here
+# reaches the watch; the golden fixtures test real messages, but the semantics are a human-review concern.
+/Packages/RemoteProtocol/           @zgranowitz
 
-# Safety-critical core: the idempotency ledger, remote-command classification/validation, the send
-# dispositions, and the transport gating. Dosing changes get extra review (CONTRIBUTING.md).
-# (RemoteLink.swift, the Apple-Watch WatchConnectivity transport, was retired in Phase 17.5 and
-# preserved on `dev/watch-host` — no `main` path left to route review for it.)
-/Packages/faBolusCore/Sources/faBolusCore/RemoteBolusLedger.swift   @zgranowitz
-/Packages/faBolusCore/Sources/faBolusCore/RemoteCommand.swift       @zgranowitz
-/Packages/faBolusCore/Sources/faBolusCore/RemoteTransport.swift     @zgranowitz
+# Safety-critical core: the dose composer, the access policy and the durable idempotency ledger. Dosing
+# changes get extra review (CONTRIBUTING.md).
+/Packages/faBolusCore/Sources/faBolusCore/DoseComposer.swift          @zgranowitz
+/Packages/faBolusCore/Sources/faBolusCore/DoseComposer+Phone.swift    @zgranowitz
+/Packages/faBolusCore/Sources/faBolusCore/DoseComposer+Remote.swift   @zgranowitz
+/Packages/faBolusCore/Sources/faBolusCore/AccessPolicy.swift          @zgranowitz
+/Packages/faBolusCore/Sources/faBolusCore/RemoteBolusLedger.swift     @zgranowitz
+/Packages/faBolusCore/Sources/faBolusCore/RemoteBolusLedgerStore.swift @zgranowitz
 
-# The pump-facing backend + the central therapy gate.
-/ios/faBolus/Data/TandemBackend.swift   @zgranowitz
-/ios/faBolus/Data/AppModel.swift        @zgranowitz
+# The one owner of the pump, the watch's way in to it, and the app state.
+/Packages/PumpSession/                                @zgranowitz
+/Packages/WatchLink/Sources/RemoteHost/               @zgranowitz
+/Packages/PhoneApp/Sources/PhoneApp/AppModel.swift    @zgranowitz
 
 # CI, the branch model, and governance — changes to how the project proves itself.
 /.github/                           @zgranowitz

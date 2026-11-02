@@ -80,7 +80,7 @@ jobs:
           pipx install semgrep
           brew list periphery >/dev/null 2>&1 || brew install periphery
       - name: Semgrep (residue rules)
-        run: semgrep --config .semgrep/deslop.yml --metrics=off --exclude legacy .
+        run: semgrep --config .semgrep/deslop.yml --metrics=off .
       # SwiftPM's default build system writes no index store, which Periphery reads, so it builds
       # with the native one.
       - name: Periphery (unused code, faBolusCore)

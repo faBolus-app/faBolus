@@ -17,7 +17,7 @@ public enum UnpairAdvisory {
     /// (disconnected / the name has cleared), fall back to the persisted offline Mobi signal. C19: that
     /// stored flag is the only offline Mobi signal, so a Mobi still warns about the charging base even
     /// after it has disconnected. `storedIsMobi == nil` (never recorded) ⇒ `.unknown` (plain note). Pure
-    /// so the fallback — which the live MockBackend never exercises — is deterministically testable.
+    /// so the fallback is deterministically testable.
     public static func resolvedModel(snapshotModel: PumpModel, storedIsMobi: Bool?) -> PumpModel {
         if snapshotModel != .unknown { return snapshotModel }
         switch storedIsMobi {

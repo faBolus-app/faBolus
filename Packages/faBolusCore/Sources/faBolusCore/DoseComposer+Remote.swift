@@ -38,26 +38,6 @@ public struct RemoteDoseRequest: Sendable, Equatable {
         self.includeStaleGlucose = includeStaleGlucose
     }
 
-    /// A v1 `bolusRequest`, or `nil` for any other kind. A carb request is signalled by `carbsGrams`
-    /// being present at all, including zero, so a correction-only dose isn't read as zero units. An
-    /// extended bolus has no amount, so it is refused rather than delivered all at once.
-    public init?(v1 command: RemoteCommand, peerId: String, surface: AccessPolicy.Surface) {
-        guard command.kind == .bolusRequest else { return nil }
-        let amount: Amount?
-        if command.extendedMinutes != nil || command.extendedNowUnits != nil {
-            amount = nil
-        } else if let carbs = command.carbsGrams {
-            amount = .calculator(carbsGrams: carbs, estimateUnits: command.remoteEstimateUnits)
-        } else {
-            amount = command.units.map { .units($0) }
-        }
-        let glucose = command.bgMgdl.flatMap { $0.isFinite ? Int(exactly: $0.rounded()) : nil }
-        self.init(
-            id: command.requestId, peerId: peerId, surface: surface,
-            sentAt: command.sentAt.map { Date(timeIntervalSince1970: TimeInterval($0)) },
-            amount: amount, glucoseMgdl: glucose, includeStaleGlucose: command.includeStaleBG ?? false)
-    }
-
     public var ledgerKey: RemoteBolusLedger.Key { .init(peerId: peerId, requestId: id) }
 
     /// Whether `recorded` is this same request, by what the remote sent rather than what the phone
@@ -103,7 +83,7 @@ extension DoseComposer {
         // Refused before it became an entry: the same refusal again, never a second attempt at the dose.
         if let refusal = ledger.remoteRefusal(request.ledgerKey) { return .refused(.refusedBefore(refusal.reason)) }
         guard let amount = request.amount else { return .refused(.noDoseSpecified) }
-        guard let sentAt = request.sentAt, !RemoteCommandFreshness.isStale(sentAt: sentAt, now: context.now) else {
+        guard let sentAt = request.sentAt, !RemoteRequestFreshness.isStale(sentAt: sentAt, now: context.now) else {
             return .refused(.requestTooOld)
         }
         if let last = context.lastDeliveryAt, last > sentAt { return .refused(.supersededByDelivery) }
