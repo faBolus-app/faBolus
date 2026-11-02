@@ -3,7 +3,7 @@ import PhoneApp
 import WatchLink
 
 /// The watch's transport and the setup actions that are Garmin's own (choosing the watch in Garmin
-/// Connect, the store page). `nil` in a build without Garmin's SDK.
+/// Connect). `nil` in a build without Garmin's SDK.
 @MainActor
 final class WatchSetup {
     let transport: any WatchTransport
@@ -22,18 +22,15 @@ final class WatchSetup {
     private init?() { nil }
     #endif
 
-    /// The Connect IQ app the phone talks to: the beta listing (a self-builder's own, from
-    /// `GARMIN_BETA_APP_ID`) or the store one. Read at launch; a change applies on the next launch.
+    /// The Connect IQ app the phone talks to: `GARMIN_BETA_APP_ID`, which the build writes into Info.plist
+    /// (a self-builder's private beta, or the watch app's own id).
     static var watchAppUUID: UUID {
-        let app = UserDefaults.standard.string(forKey: AppSettings.Key.garminApp.rawValue)
-        if app == AppSettings.GarminApp.store.rawValue { return storeAppUUID }
         let beta = (Bundle.main.object(forInfoDictionaryKey: "GarminBetaAppID") as? String)
             .flatMap { UUID(uuidString: $0.trimmingCharacters(in: .whitespaces)) }
-        return beta ?? sharedBetaAppUUID
+        return beta ?? defaultAppUUID
     }
 
-    static let sharedBetaAppUUID = UUID(uuidString: "A1B2C3D4-E5F6-0011-2233-445566778899")!
-    static let storeAppUUID = UUID(uuidString: "DED131EC-B69D-4649-3650-153AEF623BE6")!
+    static let defaultAppUUID = UUID(uuidString: "A1B2C3D4-E5F6-0011-2233-445566778899")!
 
     var deviceName: String? {
         #if GARMIN

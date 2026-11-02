@@ -99,7 +99,7 @@ SDK you installed, and the fourth builds.
 <li>The Venu 3S doesn't appear in Finder. Install a free file-transfer app for Android-style devices, such as <a href="https://openmtp.ganeshrvel.com/">OpenMTP</a>, and open it.</li>
 <li>On the watch's side, open the <strong>GARMIN</strong> folder, then <strong>APPS</strong>.</li>
 <li>Copy <strong>faBolus.prg</strong> from <strong>Developer → faBolus → faBolusGarmin → bin</strong> into <strong>APPS</strong>.</li>
-<li>Disconnect the watch. The app appears in its app list as <strong>faBolus (Beta)</strong>.</li>
+<li>Disconnect the watch. The app appears in its app list as <strong>faBolus</strong>.</li>
 </ol>
 
 To update the watch app later, build again and copy the new **faBolus.prg** over the old one.
@@ -108,7 +108,7 @@ To update the watch app later, build again and copy the new **faBolus.prg** over
 
 Instead of copying over USB, you can upload the app to the Connect IQ Store as a beta that only your
 Garmin account sees. The store needs a unique app ID for every beta, so a script makes one for you, builds
-the store file, and points your phone app at that ID:
+the file to upload, and points your phone app at that ID:
 
 Quit Xcode first, because the script makes the phone app's project again. Then:
 
@@ -130,7 +130,7 @@ Then:
 The script keeps your app ID in a hidden file, `.beta-app-id`, in the faBolusGarmin folder, and reuses it
 every time. Keep that file, and copy it into any new clone of faBolusGarmin: a new ID is a new app, and
 the phone would lose the watch. More detail is in faBolusGarmin's
-[store builds guide](https://github.com/faBolus-app/faBolusGarmin/blob/main/docs/STORE-BUILDS.md).
+[build guide](https://github.com/faBolus-app/faBolusGarmin/blob/main/docs/BUILDING.md).
 
 ## Step 7: Connect the watch to the phone
 

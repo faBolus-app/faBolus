@@ -30,8 +30,7 @@ struct FaBolusApp: App {
 /// the user opens.
 @MainActor
 final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
-    /// Made by the model once the first-launch wipe has run: it reads which watch app to talk to from the
-    /// settings, and the old app's mustn't be read.
+    /// Made by the model, when it builds the watch link.
     private(set) var watch: WatchSetup?
     let liveActivity = LiveActivityHost()
     lazy var model: AppModel = AppModel(environment: environment())

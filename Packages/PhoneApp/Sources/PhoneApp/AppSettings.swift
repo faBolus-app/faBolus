@@ -96,12 +96,6 @@ public final class AppSettings {
     public var complicationSlots: [String] { didSet { set(complicationSlots, .complicationSlots) } }
     /// The complication slots name what they show ("IOB 1.25"). Off by default: the value alone.
     public var complicationNames: Bool { didSet { set(complicationNames, .complicationNames) } }
-    /// Which Connect IQ app the phone talks to: the beta listing or the store one.
-    public var garminApp: GarminApp { didSet { set(garminApp.rawValue, .garminApp) } }
-
-    public enum GarminApp: String, Sendable, CaseIterable {
-        case beta, store
-    }
 
     // MARK: Live Activity
 
@@ -178,7 +172,6 @@ public final class AppSettings {
                 value(.complicationSlots), allowed: Self.complicationFields, fallback: watch.complicationSlots
             ).prefix(3))
         complicationNames = value(.complicationNames) ?? false
-        garminApp = value(.garminApp).flatMap(GarminApp.init(rawValue:)) ?? .beta
 
         liveActivityEnabled = value(.liveActivityEnabled) ?? false
         liveActivityLayout =
@@ -221,7 +214,6 @@ public final class AppSettings {
         case watchDetailsOrder, watchChartRanges
         case complicationSlots = "garminComplicationSlots"
         case complicationNames = "garminComplicationNames"
-        case garminApp = "garminTargetApp"
         case liveActivityEnabled, liveActivityLayout
         case hasCompletedOnboarding, notificationDisclosureShown
     }
