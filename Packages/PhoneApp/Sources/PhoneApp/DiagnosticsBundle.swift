@@ -57,7 +57,9 @@ struct DiagnosticsBundle {
         out.append(String(format: "Uptime (closed spans): %.0fs", t.closedUptime))
         if let down = t.downSince { out.append("Down since: \(ago(down))") }
         if let r = t.lastReconnectDuration { out.append(String(format: "Last reconnect took %.1fs", r)) }
-        out.append("Sitting out this session: \(link.sittingOut.map { "\($0)" }.sorted().joined(separator: ", "))")
+        out.append(
+            "Sitting out (this connection, or after a drop until retested): \(link.sittingOut.map { "\($0)" }.sorted().joined(separator: ", "))"
+        )
         out.append("Connections, newest last (up, held, reason, flaps after):")
         for span in t.spans.suffix(50) {
             out.append(
