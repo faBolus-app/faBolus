@@ -1,24 +1,24 @@
-# Erase & full reset
+# Delete data and reset
 
-Two ways to wipe faBolus's own data, both under **Settings → Privacy & data**. Neither touches your
-pump's therapy settings, and neither is a backup — once you erase, that history is gone.
+Both are in **Settings → Privacy & data**.
 
-## Delete all on-device data
+## Delete history on this phone
 
-Permanently deletes everything faBolus has stored on this phone: glucose/insulin/carb history, the
-settings-change log, and the bolus delivery audit trail. Your pump pairing and saved logins are
-kept, and your pump and CGM aren't touched — this only clears local history. If a bolus is in
-progress or unconfirmed, deletion is refused until it resolves.
+Deletes the glucose, bolus and carb history and the logbook. Your pump pairing, CGM account and settings
+are kept. The pump's own history is untouched, and faBolus reads it again on the next sync.
 
 ## Full reset
 
-Everything **Delete all on-device data** does, plus it deletes your saved logins — pump pairing,
-PIN, and CGM credentials — and unpairs the pump. Your app preferences (modes, toggles) are kept.
-Like the delete above, a full reset is refused while a bolus is unresolved.
+Deletes the history, forgets the pump and removes the Dexcom Share account. Your settings are kept. To
+use the pump again, you pair with a new code.
 
-Both actions ask for confirmation before running, and neither can be undone.
+## When they're refused
 
-!!! danger "Not a backup"
-    There's no way to recover erased data or a reset pairing. If you want to keep a record of your
-    pump's therapy settings before wiping the app, write them down or photograph the pump's own
-    settings screens first.
+Neither runs while a bolus is delivering or its outcome is unknown. The record of that bolus is never
+deleted, because it's what keeps an unknown outcome from being forgotten. Settle it first (see
+[Bolus and cancel](bolus.md#if-the-outcome-is-unknown)).
+
+## Removing the app
+
+If you delete faBolus and install it again, it starts fresh on its first launch, and you pair the pump
+again with a new code.

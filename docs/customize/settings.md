@@ -1,116 +1,104 @@
-# Settings & options
+# Settings
 
-faBolus has a dedicated **Settings** tab (the app is organized as **Dashboard · Bolus · Alerts ·
-Settings**). This page covers everything you can adjust. Most bolus and display settings are
-shared with the Garmin remote, set independently from the phone, so the two stay consistent
-without forcing the same numbers on a small screen.
+<figure class="cx2-shot phone" markdown="span">
+  ![The Settings tab](../assets/screenshots/settings.png)
+  <figcaption>Settings, by category</figcaption>
+</figure>
 
-<div class="cx2-shots" markdown>
-<figure class="cx2-shot phone" markdown="span">
-  ![Tab bar](../assets/screenshots/tabbar.svg)
-  <figcaption>Dashboard · Bolus · Alerts · Settings</figcaption>
-</figure>
-<figure class="cx2-shot phone" markdown="span">
-  ![Settings tab](../assets/screenshots/settings-tab.svg)
-  <figcaption>The Settings tab</figcaption>
-</figure>
-</div>
+## Pump
+
+The paired pump's model, name, status and API version, why the link last dropped, and the history sync.
+**Pair a different pump or new code**, **Forget this pump** and **Sync history now** are here. See
+[Pair your pump](../setup/pairing.md).
 
 ## Bolus & entry
 
-- **Phone default mode** — open the bolus screen on the phone in **Carbs** or **Units**.
-- **Garmin default mode** — the same choice for the watch, set independently of the phone.
-- **Unit increment** — the step size for the units stepper (e.g. 0.01 / 0.05 / 0.1 / 0.5 / 1 / 2 U).
-- **Carb increment** — the step size for carb entry (e.g. 1 / 5 / 10 / 15 g).
-- **Garmin increments** — a separate unit/carb step size for the watch, so it can use bigger steps
-  than the phone.
-- **Show recommendation reasoning** — the collapsible breakdown under the recommended dose; see
-  [Bolus & cancel](../operate/bolus.md#recommendation-reasoning).
+| Setting | Options | Default |
+| --- | --- | --- |
+| Default mode | Carbs or Units | Carbs |
+| Unit increment | 0.05, 0.1, 0.5, 1 or 2 U | 0.05 U |
+| Carb increment | 1, 5, 10 or 15 g | 5 g |
+| Show the calculation | A breakdown under the suggested dose | On |
 
-## Display & chart
+The increments are the steps of the bolus screen, on the phone and the watch.
+
+## CGM & backup
+
+The backup glucose source: none, Dexcom Share, Dexcom G6 or Dexcom G7. See [Backup CGM](../setup/cgm.md).
+
+## Freshness {#freshness}
 
 <figure class="cx2-shot phone" markdown="span">
-  ![Chart with IOB overlay and bolus bars](../assets/screenshots/chart-overlay.svg)
-  <figcaption>Glucose with an IOB overlay and bolus bars</figcaption>
+  ![Freshness settings](../assets/screenshots/freshness.png)
+  <figcaption>One set of windows for the phone, the watch, widgets and the Live Activity</figcaption>
 </figure>
 
-- **Time window** — 3 / 6 / 12 / 24 h.
-- **IOB overlay** — a second axis showing insulin-on-board over time (toggleable).
-- **Bolus bars** — vertical bars at each bolus, height ∝ units (toggleable).
-- **Plot ceiling / floor** — preset high/low bounds for the glucose chart's y-axis, so it doesn't
-  stretch to fit one outlier reading.
-- **Show statistics card** — see [Dashboard & status](../operate/status.md#statistics-card).
+| Setting | Options | Default |
+| --- | --- | --- |
+| Glucose: mark stale after | 4, 5, 6, 8, 10, 15 or 20 min | 6 min |
+| Glucose: then hide after | right away, 5 to 45 min later, or never | Never |
+| Reservoir, battery, basal, Control-IQ: mark stale after | 5, 10, 15, 20, 30 or 60 min | 15 min |
 
-Both chart axes toggle on/off independently. A **Customize** section under the same screen lets you
-drag-reorder or hide the **details card rows** and **dashboard pills** — the same customization is
-available for the watch's own Details page, independently, under Remotes & devices below.
+A stale glucose is greyed and never fills a correction; after the hide delay it shows as "—". Stale pump
+values show as "—". Age counts from when a value was measured.
 
-## Connecting & pairing
-
-The **Connect** control adapts to your state — first-time pairing (enter the 6-digit code),
-**Connect (saved pairing)** to reconnect with no code, and **Re-pair with new code** after a pump
-reset. The app auto-reconnects to a saved pump and uses iOS state restoration in the background.
-See [Pairing](../setup/pairing.md).
-
-## Glucose (Dexcom Share)
-
-Under **Settings → CGM & failover**, pick **Dexcom Share** from the **Failover CGM** picker to add
-it as an independent fallback for when the pump's own glucose goes stale, then open **CGM
-credentials & testing** to enter your Share account. See [Glucose (Dexcom
-Share)](../operate/glucose.md) for the full setup and what "failover" actually means here — there's
-no live multi-source switching, just one optional fallback. The same screen has **Glucose
-staleness**, where you can adjust how long a reading stays "current" before it's marked stale.
-
-## Garmin bolusing
-
-Under **Settings → Remotes & devices**, **Allow bolusing from Garmin** is off by default — you
-confirm a one-time warning the first time you turn it on. Once it's on you can also **limit remote
-bolus size** (a cap on top of your pump's own max bolus) and, optionally, **require a 4-digit
-passcode** to bolus from the watch instead of the usual tap-to-confirm — useful since a Garmin has
-no wrist detection to confirm it's actually on your arm. A separate **read-only (view only)** switch
-overrides all of it: while it's on, the watch shows pump and CGM data only, no matter what the
-bolusing switch says. See [Garmin remote](../remotes/garmin.md) for how the confirm and passcode
-flows look on the watch itself.
-
-## Garmin remote
-
-**Settings → Garmin remote → Screen order** lets you drag to reorder the Garmin screens (Glance /
-Alerts / History / Details) and pick which opens first. The layout is pushed to the watch and
-remembered there. See [Garmin remote](../remotes/garmin.md).
+Two windows guard doses and can't be changed: active insulin expires after **5 minutes** and the pump's
+bolus calculator settings after **15 minutes**.
 
 ## Notifications
 
-**Settings → Notifications** groups alert delivery by source: pump-relayed alerts and several
-app-generated categories each get their own enable / quiet-hours / critical-break-through controls,
-an **Interruption Strength** section holds the **Use Critical Alerts** toggle, and **Safety
-alerts** covers the three that are on by default and always break through quiet hours and Do Not
-Disturb (pump disconnected, CGM data lost, unresolved bolus). Each of those three has its own
-switch if you ever want to turn it off, but doing so asks you to confirm a warning specific to that
-alert first. See [Alerts & alarms](../operate/alerts.md) for what each notification looks like and
-how clearing works on the t:slim X2.
+One switch per kind of notification, all on by default, and a delay for **Pump disconnected**. The bolus
+result can't be turned off. See [Alerts and notifications](../operate/alerts.md#notifications).
 
-## Safety (read-only mode)
+## Display & chart {#display-chart}
 
-**Settings → Safety** has a **Read-only mode** switch that turns your phone into a safe viewer —
-bolusing and pump control are disabled and their screens hidden, which is useful for a caregiver or
-a spare phone that should only watch pump and CGM data. A sub-toggle, **Still allow clearing
-alerts**, lets that phone keep clearing notifications even in read-only mode. The Garmin remote has
-its own independent read-only switch, under Garmin bolusing above.
+- **Chart:** show glucose, the active insulin (IOB) line and bolus bars; the plot's ceiling and floor; and
+  unit labels.
+- **Statistics card:** time in range, average, GMI and variability over the last day. Off by default.
+- **Details rows** and **Dashboard pills:** choose which appear and in what order. Drag to reorder, swipe
+  to hide, tap a hidden one to add it back. The **Last auto-correction** row appears once the pump's
+  history has one.
+
+Glucose is shown in mg/dL.
+
+## Live Activity
+
+On or off, its style, fields and chart. See [Widgets and Live Activity](../remotes/iphone-widgets.md#live-activity).
+
+## Watch
+
+<figure class="cx2-shot phone" markdown="span">
+  ![Watch settings](../assets/screenshots/watch-settings.png)
+  <figcaption>Settings → Watch</figcaption>
+</figure>
+
+| Section | What's there |
+| --- | --- |
+| **Garmin watch** | The chosen watch and the link's state; **Choose watch in Garmin Connect**; **Forget watch**. A build without Garmin's SDK says so here. |
+| **Bolusing** | **Read-only (view only)**; **Allow bolusing from the watch** (off by default, and it asks you to confirm each time you turn it on); **Limit remote bolus size**, from 1 to 20 U a dose. |
+| **Watch bolus screen** | Default mode, Carbs or Units. The increments are the phone's. |
+| **Watch layout** | The watch's screens and their swipe order, the screen it opens on, its Details rows, the chart ranges a tap steps through (3, 6, 12, 24 hours), and optional chart bounds of its own. |
+| **Complications** | Up to three values besides glucose (active insulin, reservoir, pump battery, basal rate), and whether they show names such as "IOB 1.25". Names are off by default. |
+
+Changes reach the watch at once if it's connected, or the next time it connects. See
+[Garmin watch](../remotes/garmin.md).
+
+## Safety {#safety}
+
+**Read-only mode** makes this phone show the pump and CGM but not bolus: the Bolus tab is hidden.
+Cancelling a bolus and clearing pump alerts still work. The watch has its own switch under **Watch**.
 
 ## Privacy & data
 
-**Settings → Privacy & data** holds the two data-wipe controls — see [Erase & full
-reset](../operate/erase.md).
+**Delete history on this phone** and **Full reset**. See [Delete data and reset](../operate/erase.md).
 
-## Safety behaviors you can rely on (not configurable)
+## About & help
 
-Always on by design:
-
-- A CGM reading older than **6 minutes** is treated as stale — shown greyed with its age on the
-  phone and Garmin, and greyed on the Quick-Bolus widget until it's hidden entirely. It's never
-  presented as the live value.
-- Every bolus needs an **explicit confirmation**; remote requests are confirmed deliberately, and
-  the **Quick Bolus** widget requires a 1-2-3 tap.
-- Every insulin-affecting command is **cryptographically signed** — the pump rejects anything
-  that isn't.
-- There is **no voice or automated bolus** — nothing in faBolus can start a dose on its own.
+- **Help & documentation** opens this site.
+- **Version** and **Build**, the commit the app was built from. Include them when you report a problem.
+- **Export diagnostics**: a text file for debugging, with the pump and watch connection history, the
+  pump's identity, alerts and bolus outcomes. It has no pairing code, password or glucose readings.
+  Share it only with people you trust.
+- **Export Dexcom Bluetooth log**, when the backup is a direct G6 or G7: what the transmitter sent since
+  faBolus started. It includes glucose readings and the transmitter's identity.
+- The regulatory statement.

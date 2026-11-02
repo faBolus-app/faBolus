@@ -1,37 +1,23 @@
 # Build it yourself
 
-You do **not** need to know how to code. If you can follow a recipe, you can do this. This guide
-holds your hand through every step — from making an Apple account to seeing the app on your own
-iPhone.
+faBolus isn't in the App Store. You build it on your Mac and Xcode puts it on your iPhone. You don't
+need to know how to code: every step is written out, and the few Terminal commands are given word for
+word.
 
-Take it slowly, one page at a time, in order. If a step doesn't work, don't worry — the
-[Troubleshooting](../troubleshoot.md) page covers the common snags.
+Go one page at a time, in order. If a step doesn't work, [Troubleshooting](../troubleshoot.md) covers the
+common problems.
 
-!!! warning "Experimental — in development"
-    faBolus can tell an insulin pump to deliver insulin, and it is **not FDA-cleared**. It's an
-    open-source project for experimental use — you assume all responsibility. Please read
-    [Safety](../safety.md) before you build anything.
+!!! warning "Read Safety first"
+    faBolus can tell your pump to deliver insulin, and it is not a medical device or FDA-cleared. Read
+    [Safety](../safety.md) before you build it.
 
-## What "building" means (in plain words)
+## What "building" means
 
-This app isn't in the App Store. Instead, you copy its recipe (the "source code") onto a **Mac**,
-and a free Apple program called **Xcode** turns that recipe into the actual app and puts it on
-your iPhone. That's "building."
+The app's source code is a recipe. **Xcode**, Apple's free app-building tool, turns it into the app and
+installs it on your iPhone over a cable. You build once; after that you re-run the last step from time to
+time so the app doesn't expire (see [Keeping it running and updating](updating.md)).
 
-You do it once. Every so often you'll redo the last step to keep the app from expiring — that
-takes about a minute (see [Keeping the app running](updating.md)).
-
-!!! tip "You won't be typing commands (much)"
-    This guide is click-and-point wherever possible: you'll use free apps like **GitHub Desktop**
-    and **Xcode**, and **Finder** to move a file. There's just **one** short step that uses the
-    Terminal, and it's written out word-for-word with plain-English explanations. Anything meant
-    only for advanced users is tucked inside a *"click to open"* box you can ignore.
-
-## The whole process, start to finish
-
-Four short chapters. The first three get the app on your iPhone; the last is an optional Garmin
-watch. The Garmin app is optional at build time — the phone app builds and runs fine on its own,
-and you can add the watch later.
+## The steps
 
 <div class="grid cards" markdown>
 
@@ -39,60 +25,53 @@ and you can add the watch later.
 
     ---
 
-    Sign in with an Apple ID so you're allowed to put your own app on your phone.
+    Sign in with an Apple account so Apple lets you install your own app.
 
-    [:octicons-arrow-right-24: Start here](apple-developer.md)
+    [:octicons-arrow-right-24: Apple account](apple-developer.md)
 
-- :material-download:{ .lg .middle } **2 · Install Xcode**
-
-    ---
-
-    Get Apple's free app-building tool from the Mac App Store.
-
-    [:octicons-arrow-right-24: Install Xcode](xcode.md)
-
-- :material-cellphone-arrow-down:{ .lg .middle } **3 · Put the app on your iPhone**
+- :material-download:{ .lg .middle } **2 · Xcode and tools**
 
     ---
 
-    Download the code and press one button to install it.
+    Install Xcode, GitHub Desktop and one small command-line tool.
+
+    [:octicons-arrow-right-24: Xcode and tools](xcode.md)
+
+- :material-cellphone-arrow-down:{ .lg .middle } **3 · Put it on your iPhone**
+
+    ---
+
+    Download the code, set your details, and press Run.
 
     [:octicons-arrow-right-24: Build the app](build-app.md)
 
-- :material-watch-variant:{ .lg .middle } **4 · Add a Garmin (Venu 3S)**
+- :material-watch-variant:{ .lg .middle } **4 · Garmin watch (optional)**
 
     ---
 
-    Build the Garmin remote for a Garmin Venu 3S — the one watch this app supports. Optional.
+    Build the watch app for a Garmin Venu 3S and connect it to the phone. You can add it later.
 
-    [:octicons-arrow-right-24: Build for Garmin](garmin-build.md)
+    [:octicons-arrow-right-24: Garmin watch](garmin-build.md)
 
 </div>
 
-## Do you have everything?
+Then [pair your pump](../setup/pairing.md), and optionally set up a [backup CGM](../setup/cgm.md).
 
-You'll want all of these before you start (details on [What you'll need](../requirements.md)):
+## Free or paid Apple account
 
-- [x] A **Mac** computer (any recent one).
-- [x] An **iPhone** (iOS 17 or newer) and a cable to plug it into the Mac.
-- [x] An **Apple ID** — the same email/password you use for the App Store.
-- [x] A **Tandem t:slim X2** pump.
-- [x] *Optional:* a **Garmin Venu 3S**.
-
-## How much time and money?
-
-| | Free Apple account | Paid account ($99/year) |
+| | Free Apple account | Apple Developer Program ($99 a year) |
 | --- | --- | --- |
-| Time for the first build | About 1–2 hours, mostly waiting on downloads | About 1–2 hours |
-| App keeps working for | **7 days**, then you redo one step | **1 year** |
-| Widgets | Can be fiddly | Work smoothly |
+| The app keeps opening for | **7 days**, then you install it again from the Mac | **1 year** |
+| Time Sensitive notifications (break through Focus) | No: they arrive as normal notifications | Yes, with one extra setting |
+| Everything else | Works | Works |
 
-!!! tip "Which should I pick?"
-    **Start free** — it costs nothing and works. If you end up using the app regularly, the
-    $99/year account means you only re-install once a year instead of weekly, and the widgets
-    behave better. You can switch to paid later without redoing anything.
+Start free if you're trying it out. You can switch to a paid account later without starting over.
+
+## How long it takes
+
+About an hour or two the first time, mostly waiting for Xcode to download. Updating later takes a few
+minutes.
 
 <div class="cx2-check" markdown>
-**Ready?** Go to [Step 1 · Apple account](apple-developer.md). Just follow each page in order and
-you'll be fine.
+**Ready?** Start with [Step 1 · Apple account](apple-developer.md).
 </div>

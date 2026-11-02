@@ -1,65 +1,64 @@
 # Safety
 
-!!! warning "Experimental software — you assume all responsibility"
-    faBolus is an independent, open-source project **in development for experimental use**. It can
-    command an insulin pump to deliver insulin, and it is **not FDA-cleared or otherwise approved**.
-    It is provided as-is, with no warranty; if you build, install, or use it, **you take full
-    responsibility** for what it does. Work with your own clinician and use your own judgment.
+!!! warning "Experimental"
+    faBolus is experimental, in-development software — not a medical device and not FDA-cleared. It
+    is for experimental and demonstration use. Not medical advice — check every value against your pump
+    and your clinician. If you build or use it, you assume all responsibility.
 
-## How faBolus is built for safety
+faBolus can tell your pump to deliver insulin. This page says what it does to keep that deliberate,
+and what it leaves to the pump.
 
-Several checks are built in so a bolus can't happen by accident:
+## Your pump stays in charge
 
-<div class="grid cards" markdown>
+- **The pump's own limits govern.** Its minimum bolus and the maximum bolus set on the pump apply to
+  every dose. When faBolus knows your pump's maximum it checks against it first, so the error is clear;
+  either way, the pump refuses a dose over its limit. faBolus adds no limit of its own, apart from an
+  optional limit on bolus size from the watch that you can set.
+- **The pump alarms on its own.** Its alarms and alerts appear on its own screen whether or not a phone
+  is paired. faBolus shows them too, as a convenience.
+- **Only signed commands deliver.** A bolus is a signed Bluetooth message the pump checks before it
+  acts. faBolus never changes the pump's software.
 
-- :material-numeric:{ .lg .middle } **Max-units clamp**
+## Before a bolus is sent
 
-    ---
+- **The pump is read again.** When you confirm, faBolus reads the pump's bolus settings and active
+  insulin again. If the dose they give differs from the one you saw, it asks which to use.
+- **You see the dose last.** A sheet shows the dose, what it's for and any notices, with a Deliver
+  button. Nothing is sent until you press it.
+- **Old glucose never fills a correction.** A reading past the freshness window you set is shown greyed,
+  and the calculator won't correct from it unless you say so. Freshness counts from when the sensor
+  measured the reading, not when faBolus received it.
+- **Old pump values expire.** Active insulin older than 5 minutes and bolus settings older than 15 minutes
+  aren't used without asking you.
 
-    Every bolus is capped at your pump's configured maximum, and the pump enforces its own limit
-    independently.
+## When an outcome is unknown
 
-- :material-gesture-tap-button:{ .lg .middle } **Explicit confirmation**
+If the link drops after a bolus starts, faBolus may not know how much was delivered. Then:
 
-    ---
+- it tells you at once, and never calls the bolus failed unless the pump's history shows it never
+  happened;
+- it blocks every new bolus, including after the app restarts, until the pump's history settles it or
+  you check the pump and confirm in the app.
 
-    Delivery always requires a deliberate confirmation: the Quick Bolus widget and the Garmin
-    Venu 3S both use the same sequential 1-2-3 tap. (Button-only Garmin watches use a two-button
-    hold instead, but that hardware isn't part of this build — it lives on `experimental`.)
+## From the watch
 
-- :material-shield-lock:{ .lg .middle } **Signed commands**
+- **Off by default.** Bolusing from the watch stays off until you turn it on in the app, and the app
+  asks you to confirm each time you do. A switch makes the watch view-only.
+- **A deliberate confirm.** Every watch bolus needs a 1 → 2 → 3 tap in order on the watch. A wrong tap
+  starts over.
+- **The phone checks every request.** A request must be less than 2 minutes old, and each one delivers at
+  most once, even if it's sent again. For a carb bolus the phone works the dose out again from the pump's
+  latest values and refuses it if it differs from what the watch showed by more than 0.10 U.
 
-    ---
+## Always available
 
-    Every insulin-affecting command is cryptographically signed; the pump rejects anything that
-    isn't. faBolus never modifies pump firmware — it only speaks the existing Bluetooth protocol.
+- **Cancel** is never blocked: from the dashboard while a bolus delivers, or from the watch.
+- **Read-only mode** hides the Bolus tab on the phone. Cancelling and clearing alerts still work.
 
-- :material-close-octagon:{ .lg .middle } **Cancel any time**
+## One controller at a time
 
-    ---
-
-    A bolus can be cancelled mid-delivery, and faBolus reports the amount actually delivered.
-
-</div>
-
-!!! note "One connection at a time"
-    The pump accepts a single control connection, so while faBolus is paired the official Tandem
-    app cannot be, and vice versa.
-
-## Validation
-
-Every change that can affect delivery is put through the same checks before it's trusted:
-
-| Check | What it proves |
-| --- | --- |
-| **Protocol parity** | Outgoing messages byte-match the pumpX2 `cliparser` reference. |
-| **Delivery accuracy** | Requested units match the amount actually delivered. |
-| **Signature enforcement** | Malformed / incorrectly-signed requests are rejected. |
-| **Cancel** | A mid-delivery cancel stops the pump and reports partial delivery. |
-| **Interruption** | App kill / Bluetooth drop mid-bolus fails safe. |
-| **Connection handoff** | Switching control between apps never leaves an ambiguous state. |
-| **Soak** | Multi-hour stability; reconnect after suspend. |
+The pump pairs with one app at a time. While faBolus is paired, the official t:connect app isn't, and
+switching back means pairing again with a new code. See [Pair your pump](setup/pairing.md).
 
 !!! note "Independent project"
-    faBolus is not affiliated with, endorsed by, or a product of **Tandem Diabetes Care or
-    Dexcom**. See the [FAQ](faq.md).
+    faBolus is not affiliated with Tandem Diabetes Care or Dexcom. See the [FAQ](faq.md).

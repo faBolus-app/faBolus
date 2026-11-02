@@ -1,111 +1,78 @@
-# Advanced (command line)
+# Command line
 
-If you're comfortable in a terminal, you can build and install everything without clicking around
-Xcode. This mirrors what CI does. The friendly, step-by-step route is the rest of the
-[build guide](index.md) — use this page if you'd rather script it.
-
-!!! warning "Experimental"
-    faBolus is in development for experimental use and is not FDA-cleared. See [Safety](../safety.md).
+The same build as the step-by-step guide, for people comfortable in a terminal.
 
 ## Prerequisites
 
-- **Xcode 16+** (full app) + an Apple Developer team id.
-- **XcodeGen** — `brew install xcodegen` (the `.xcodeproj` is generated from `project.yml` via
-  `./scripts/generate-project.sh`).
-- *Optional:* the **Connect IQ Mobile SDK for iOS**, placed where `project.yml`'s `ConnectIQ`
-  package points (default `../../vendor/connectiq-companion-app-sdk-ios-1.8.0`). Only needed for the
-  Garmin remote — if it's absent, `generate-project.sh` auto-detects that and builds without Garmin.
-- **JDK 21** — `brew install openjdk@21` — only for TandemKit's oracle tests.
-- *Optional:* for the Garmin watch app, the **Connect IQ device SDK** + a developer key (see
-  [Build the Garmin remote](garmin-build.md)).
+- Xcode 27.2 and an Apple team.
+- XcodeGen (`brew install xcodegen`).
+- Optional, for the watch: Garmin's iOS companion SDK 1.8.0, unzipped at
+  `../../vendor/connectiq-companion-app-sdk-ios-1.8.0` relative to the faBolus checkout, and the Connect
+  IQ SDK (9.2.0) with the Venu 3S device.
 
-## Clone (siblings)
+## The phone app
 
 ```sh
-mkdir -p ~/faBolus && cd ~/faBolus
-git clone --recurse-submodules https://github.com/faBolus-app/TandemKit.git
+mkdir -p ~/Developer/faBolus && cd ~/Developer/faBolus
 git clone https://github.com/faBolus-app/faBolus.git
+cd faBolus
+cp LocalConfig.xcconfig.example LocalConfig.xcconfig   # set APP_BUNDLE_ID and DEVELOPMENT_TEAM
+./scripts/generate-project.sh
+
+xcodebuild -project faBolus.xcodeproj -scheme faBolus -configuration Debug \
+  -destination 'generic/platform=iOS' -allowProvisioningUpdates -derivedDataPath build/DD build
+
+xcrun devicectl list devices
+xcrun devicectl device install app --device <device id> build/DD/Build/Products/Debug-iphoneos/faBolus.app
 ```
 
-`faBolus` consumes `TandemKit` via a local SPM path (`../TandemKit`), so keep them side by
-side.
+TandemKit isn't cloned: `Packages/PumpSession` pins it by revision and Xcode fetches it. To build
+against a local TandemKit checkout, see [CONTRIBUTING.md](https://github.com/faBolus-app/faBolus/blob/main/CONTRIBUTING.md).
 
-## TandemKit (core + byte-exact oracle tests)
+### What `generate-project.sh` settles
 
-```sh
-cd ~/faBolus/TandemKit
-git submodule update --init            # vendors the pumpX2 oracle + mbedTLS
-./scripts/test.sh                      # builds the cliparser JAR + runs byte-exact tests
-```
-
-`scripts/test.sh` works around the Command Line Tools swift-testing rpath issue; the tests use
-`import Testing`.
-
-## iOS app (build + install to a device)
-
-```sh
-cd ~/faBolus/faBolus
-./scripts/generate-project.sh          # regenerate the .xcodeproj (auto-detects Garmin SDK)
-
-xcodebuild -project faBolus.xcodeproj -scheme faBolus \
-  -destination 'generic/platform=iOS' -configuration Debug \
-  -allowProvisioningUpdates DEVELOPMENT_TEAM=<TEAMID> -derivedDataPath build/DD build
-
-xcrun devicectl device list            # find your device UDID
-xcrun devicectl device install app --device <UDID> \
-  build/DD/Build/Products/Debug-iphoneos/faBolus.app
-```
-
-- **`DEVELOPMENT_TEAM`** is your Apple team id (the signing cert's OU). It isn't stored in the
-  repo — pass it on the command line. For a compile-only check, add `CODE_SIGNING_ALLOWED=NO` and
-  drop the team.
-- **App Group** (`group.com.fabolus.app`) is shared by the app and the widget extension. It
-  registers automatically on first signed build; entitlements are generated from `project.yml`.
-- The **WidgetKit extension** builds as a target of the same project.
-
-### Choosing what's included (env flags)
-
-`./scripts/generate-project.sh` reads an environment variable to decide whether Garmin support is
-baked into the generated `.xcodeproj`. When it's dropped, the ConnectIQ package/dependency and its
-compile flag are stripped from a derived spec (`project.generated.yml`), and the app shows a note in
-its **Remotes & devices** settings section explaining that it was left out and how to add it back
-(rebuild with the SDK present).
+It writes `project.generated.yml` (git-ignored) from `project.yml` and generates `faBolus.xcodeproj`
+from it. Plain `xcodegen generate` would need everything below present.
 
 | Variable | Default | Effect |
 | --- | --- | --- |
-| `FABOLUS_GARMIN` | auto-detected | Unset: Garmin is included only if the Connect IQ SDK is present at the vendored path. `FABOLUS_GARMIN=1` / `=0` forces Garmin on/off, overriding auto-detection (`=1` requires the SDK; `=0` drops the ConnectIQ package + `GARMIN` flag). |
+| `FABOLUS_GARMIN` | on when the SDK folder exists | `0` leaves out the Connect IQ package, the adapter and the `GARMIN` compile flag; `1` requires the SDK. |
+| `FABOLUS_TIME_SENSITIVE` | off | `1` keeps the Time Sensitive notification entitlement. Needs a paid account. |
+| `FABOLUS_DATA_PROTECTION` | off | `1` keeps the default data-protection entitlement (`NSFileProtectionCompleteUntilFirstUserAuthentication`, iOS's default class anyway). Needs the capability on the App ID. |
+
+It also writes `ios/faBolus/Generated/AppRevision.swift`, the commit the build came from, shown in
+**Settings → About & help**.
+
+### Your settings
+
+`LocalConfig.xcconfig` (git-ignored) overrides `Config.xcconfig`:
+
+| Setting | What it is |
+| --- | --- |
+| `APP_BUNDLE_ID` | Unique to you. The widgets' ID, the App Group (`group.<id>`) and the URL type names derive from it. |
+| `DEVELOPMENT_TEAM` | Your Team ID, or empty to choose in Xcode. |
+| `GARMIN_BETA_APP_ID` | The Connect IQ app the phone talks to. Defaults to the watch app's own ID in `manifest.xml`; faBolusGarmin's `beta-build.sh` sets it to your private beta's. |
+
+## The watch app
 
 ```sh
-# phone app only — no Garmin
-FABOLUS_GARMIN=0 ./scripts/generate-project.sh
+cd ~/Developer/faBolus
+git clone https://github.com/faBolus-app/faBolusGarmin.git
+cd faBolusGarmin
+./scripts/stamp-revision.sh
+SDK="$(ls -d "$HOME/Library/Application Support/Garmin/ConnectIQ/Sdks/"connectiq-sdk-* | sort | tail -1)"
+"$SDK/bin/monkeyc" -f monkey.jungle -d venu3s -y <developer_key.der> -o bin/faBolus.prg
 ```
 
-That's the only optional component left to gate — the watchOS companion app and its on-device
-eating detector were removed from `main` entirely, so there's no target or SDK left for a flag to
-control. A handful of other flags (`FABOLUS_ICLOUD`, `FABOLUS_TANDEM_LOCAL`, and similar) exist for
-paid-account entitlements and co-development — read the comments at the top of
-`generate-project.sh` if you need one of those.
+Copy `bin/faBolus.prg` to `GARMIN/APPS` on the watch over USB (MTP), or publish a private beta with
+`scripts/beta-build.sh` (see [Garmin watch](garmin-build.md#step-5b-or-publish-a-private-beta)).
+`./scripts/build-and-test.sh` compiles every jungle and runs the unit suite in the simulator.
 
-!!! note "Plain `xcodegen generate` includes everything"
-    Running `xcodegen generate` directly (instead of the script) still works, but always builds the
-    full project — Garmin linked — so it requires the Connect IQ SDK to be present. Use the script
-    if you want the optional-component handling.
+## The docs site
 
-## Garmin watch app (Connect IQ)
-
-The Garmin app is in the separate [faBolusGarmin](https://github.com/faBolus-app/faBolusGarmin) repo:
+The site is MkDocs Material, published from `main` by `.github/workflows/docs.yml`. To preview it:
 
 ```sh
-cd ~/faBolus/faBolusGarmin
-SDK=~/Library/Application\ Support/Garmin/ConnectIQ/Sdks/<sdk-version>
-"$SDK/bin/monkeyc" -f monkey.jungle -o bin/faBolus.iq -y <developer_key.der> -e -r -w
+python3 -m venv .venv && .venv/bin/pip install -r requirements-docs.txt
+.venv/bin/mkdocs serve
 ```
-
-Sideload in the Connect IQ simulator, or upload `bin/faBolus.iq` to the Connect IQ store as a
-beta and install from Garmin Connect Mobile. See that repo's README for the venu3s input model and
-complication notes.
-
-## Docs site
-
-mkdocs-material, auto-deployed to GitHub Pages by `.github/workflows/docs.yml` on pushes that
-touch `docs/`. Local preview: `pip install mkdocs-material && mkdocs serve`.

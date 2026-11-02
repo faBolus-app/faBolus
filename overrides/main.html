@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 
-<!-- Persistent, non-dismissible safety banner shown on every docs page. -->
+<!-- The safety banner on every docs page: the app's own first-run wording. -->
 {% block announce %}
-<span>⚠️ <strong>faBolus is experimental software under active development — not a medical device.</strong>
-It is not FDA-cleared or clinically validated. Do not use it to make or carry out any insulin-dosing or
-treatment decision; always confirm every value directly on your pump and CGM.</span>
+<span>⚠️ <strong>faBolus is experimental, in-development software — not a medical device and not FDA-cleared.</strong>
+It is for experimental and demonstration use. Not medical advice — check every value against your pump and your
+clinician.</span>
 {% endblock %}

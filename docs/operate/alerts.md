@@ -1,87 +1,56 @@
-# Alerts & alarms
+# Alerts and notifications
 
-View and clear the pump's active notifications from the phone or your Garmin watch, without
-reaching for the pump. On the phone they live on the **Alerts** tab (and as a banner on the
-Dashboard).
+Your pump alarms and alerts on its own screen, with or without a phone. faBolus mirrors the pump's alerts
+on the phone and the watch as a convenience, and adds its own notices for a few things only it can see.
 
-<figure class="cx2-shot phone" markdown="span">
-  ![Alerts on the phone](../assets/screenshots/alerts.svg)
-  <figcaption>Active notifications, most-serious first, each with Snooze</figcaption>
-</figure>
+## The Alerts tab
 
-## What's shown
+The **Alerts** tab lists the pump's open alerts and alarms, most serious first, then any of faBolus's own
+notices that are showing. If the list is older than your pump-status window, it says when it was read:
+check the pump for its current alerts.
 
-The app polls the pump's notification bitmaps frequently and groups them by severity:
+## Clearing an alert from the phone
 
-| Type | Examples | Can clear? |
-| --- | --- | --- |
-| **Alarms** (most serious) | Occlusion, empty cartridge | Yes |
-| **Alerts** | Low insulin, incomplete bolus, low power | Yes |
-| **CGM alerts** | High / low / urgent-low, signal loss | Yes* |
-| **Reminders** | Configured reminders | Yes |
-| **Malfunctions** | Hardware faults | View-only |
+Whether a t:slim acts on a clear sent from a phone isn't known yet for every pump, so faBolus learns it
+from your pump:
 
-\* See *How clearing works* below: on the t:slim X2, "clear" is really a local snooze.
+- **Try clearing from phone** appears while it isn't known for your pump. faBolus sends one clear and
+  reads the pump's alerts again. If the alert is gone, your pump clears; from then on its alerts offer
+  **Clear**. If the alert is still there, the app says "The pump didn't clear it — clear it on the pump."
+- **Clear** appears once your pump has accepted a clear.
+- **Clear it on the pump** appears when the phone can't clear this alert.
 
-## On the phone and Garmin
+A clear needs the pump connected. The same choice applies on the watch, except that the watch offers
+Clear only once your pump has accepted one.
 
-Notifications appear most-serious first, each with a button. Because the t:slim X2 doesn't accept
-a remote dismiss, that button always reads **Snooze**, not Clear: tapping it hides the item on
-your phone for a while rather than telling the pump to clear it (see *How clearing works* below).
-On Garmin, the **Alerts** screen shows the same list; tap a row to snooze it there, and the watch
-relays the request to the phone. (The raw pump bitmaps and poll count are no longer shown on the
-Alerts screen; they now live only in the hidden debug panel.)
+## Notifications
 
-## Condition-based (CGM) alerts
+faBolus asks for permission to notify at first launch. After onboarding, a short note explains what its
+notifications are and aren't.
 
-Some alerts are **condition-based**, chiefly the CGM **high / low glucose** alerts.
-While the reading is genuinely out of range the pump re-raises the alert on every poll, so it
-**cannot be cleared on the pump** until glucose returns to range (the official Tandem/Dexcom app
-behaves the same way; you can only acknowledge/snooze it). In faBolus, tapping **Snooze** on
-such an alert hides it and stops re-notifying for 30 minutes (or until the pump condition clears).
-The Alerts screen says so when a CGM alert is active.
+| Notification | When |
+| --- | --- |
+| **Bolus result** | A bolus finished, stopped, was refused, or its outcome is unknown. Can't be turned off. |
+| **Pump disconnected** | The pump stayed out of reach for the delay you choose (immediately up to 30 minutes, or never), with reminders 15 and 30 minutes after the drop. |
+| **Connection unstable** | The pump keeps dropping the link. |
+| **Urgent low (backup CGM)** | The [backup CGM](../setup/cgm.md) reads an urgent low while the pump's glucose is down. |
+| **Pump alerts & alarms** | The pump raised an alarm, alert, reminder or malfunction. |
+| **CGM alerts & errors** | The pump raised a CGM alert. |
+| **Bolus not delivered** | A bolus couldn't be delivered. |
+| **Remote bolus refused** | The phone refused a bolus request from the watch. |
 
-## How clearing works on the t:slim X2
+Turn each one on or off in **Settings → Notifications**. All are on by default.
 
-faBolus only pairs with the **t:slim X2** (any other pump model is rejected at pairing, see
-[Pairing](../setup/pairing.md)), and the t:slim X2 doesn't honor a remote dismiss. So tapping
-**Snooze** never sends anything to the pump: it just hides the alert on your phone
-(`TandemBackend.dismissNotification` skips the send outright, since `supportsRemoteAlertDismiss`
-is false for this pump model; the debug panel's diagnostic line reads `local-snoozed … — t:slim X2
-rejects remote dismiss`). Clear an acknowledgeable pump alert or alarm on the pump itself if you
-want it gone there too. Condition-based CGM alerts (see above) work the same way either way: the
-pump keeps re-raising them while glucose is out of range, so faBolus never tries to dismiss them
-remotely.
+A pump-alert notification has a **Clear** action. From the Lock Screen it clears the alert on the pump,
+even if faBolus wasn't running; it waits up to 20 seconds for the pump to connect. If the pump doesn't
+clear it, the notification comes back saying to clear it on the pump.
 
-## Critical Alerts: current status
+## Focus and Time Sensitive
 
-faBolus requests Apple's **Critical Alerts** capability so its safety alerts (pump disconnected,
-CGM data lost, unresolved bolus) can break through Do Not Disturb and the ringer switch. That
-capability requires a special Apple-issued entitlement
-(`com.apple.developer.usernotifications.critical-alerts`), which faBolus does **not** currently
-hold.
+The bolus result, pump disconnected, connection unstable and the backup urgent low are sent as
+**Time Sensitive**, so they can come through a Focus, when the app was built with that capability (a
+paid account, see [the build guide](../build/build-app.md#step-4-make-the-xcode-project)). Otherwise
+they arrive as normal notifications. faBolus doesn't use Critical Alerts.
 
-All three safety alerts are on by default and stay on even during quiet hours or Do Not Disturb;
-each has its own switch under **Settings → Notifications → Safety alerts** if you ever need to turn
-one off, but doing so asks you to confirm a specific warning about what you'd be giving up.
-
-!!! note "Pending Apple approval (this is expected, not an error)"
-    Until Apple grants the entitlement, faBolus **degrades gracefully**: an enabled safety alert is
-    still delivered every time, just as a **time-sensitive** notification rather than a true
-    Critical Alert. Under **Settings → Notifications → Interruption Strength**, the "Use Critical
-    Alerts" toggle shows an honest status line: "Critical Alerts aren't active yet — pending Apple
-    approval," for as long as this is the case. This is the normal, everyday pre-approval state and
-    can persist for months; it is not a bug.
-
-**How to flip it on once Apple grants the entitlement:** add
-`com.apple.developer.usernotifications.critical-alerts` (Boolean `true`) to
-`ios/faBolus/faBolus.entitlements` and regenerate the app's **provisioning profile** with the
-granted entitlement. No code change is required: the `.critical`/`.defaultCritical` delivery
-path already gates purely on the user's own "Use Critical Alerts" setting, and iOS activates true
-break-through delivery for an entitled app automatically. The honest-status notice clears itself
-once the app's cached grant state reflects the new entitlement.
-
-**Tracking:** filing the Apple approval request is an owner action, tracked in
-`.planning/todos/pending/2026-08-13-file-apple-critical-alerts-entitlement-request.md`. Real
-Do-Not-Disturb break-through behavior can only be verified on a device after Apple grants the
-entitlement; it cannot be exercised in CI or the Simulator.
+If notifications or Time Sensitive notifications are turned off for faBolus in iOS Settings, a banner in
+the app says so, with a button to open Settings.

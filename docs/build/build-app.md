@@ -1,257 +1,200 @@
 # 3 · Put the app on your iPhone
 
-This is the main event. We'll download the app's code, do one short setup step, then press **Run**
-in Xcode to install it on your phone. Do the steps in order and you'll be fine: most of it is
-pointing and clicking.
+You'll download the code, give it your details, make the Xcode project, and press **Run**.
 
-!!! tip "Almost no typing"
-    We use a free app called **GitHub Desktop** to download the code (no commands), and **Finder**
-    to move one file. There is exactly **one** step that uses the Terminal, and it's spelled out
-    word-for-word when we get there.
+The guide keeps everything in one folder, **Developer** in your home folder:
+
+```text
+Developer/
+├── faBolus/
+│   ├── faBolus/          the app (this step)
+│   └── faBolusGarmin/    the watch app (step 4, optional)
+└── vendor/
+    └── connectiq-companion-app-sdk-ios-1.8.0/   Garmin's SDK (optional, below)
+```
+
+Keep these names and places. The project looks for Garmin's SDK at exactly that spot, two folders up
+from the app.
 
 ## Step 1: Download the code {#download}
 
-The app comes in two parts that must sit next to each other: **faBolus** (the app) and
-**TandemKit** (a helper library it's built on). The easiest way to download both, and everything
-they need, is **GitHub Desktop**, a free app from GitHub.
-
-!!! info "What's GitHub? What's a repository?"
-    **GitHub** is a website where code is stored and shared. A **repository** (or "repo") is just
-    a project folder on GitHub. "Cloning" a repo means downloading a copy to your Mac. GitHub
-    Desktop does this with a button instead of commands.
-
-<figure class="cx2-shot wide" markdown="span">
-  ![GitHub Desktop: Clone a repository](../assets/screenshots/github-desktop.svg)
-  <figcaption>GitHub Desktop → File → Clone Repository → paste the URL</figcaption>
-</figure>
-
 <ol class="cx2-steps">
-<li>Download <strong>GitHub Desktop</strong> from <a href="https://desktop.github.com/">desktop.github.com</a> and open it. (You can sign in with a free GitHub account, or skip sign-in; either works for downloading.)</li>
-<li>In the menu bar: <strong>File → Clone Repository…</strong> → click the <strong>URL</strong> tab.</li>
-<li>Paste this and set the <strong>Local Path</strong> so it saves into a folder called <code>faBolus</code> inside your <strong>Documents</strong>, for example <code>~/Documents/faBolus/TandemKit</code>:
-<div></div>
-```
-https://github.com/faBolus-app/TandemKit
-```
-Click <strong>Clone</strong> and wait for it to finish.</li>
-<li>Do it again for the second project: <strong>File → Clone Repository…</strong> → <strong>URL</strong>, and this time paste:
-<div></div>
-```
-https://github.com/faBolus-app/faBolus
-```
-Save it right next to the first one: <code>~/Documents/faBolus/faBolus</code>.</li>
+<li>In Finder, choose <strong>Go → Home</strong>. If there's no <strong>Developer</strong> folder, make one (<strong>File → New Folder</strong>). Inside it, make a folder named <strong>faBolus</strong>.</li>
+<li>Open <strong>GitHub Desktop</strong> and choose <strong>File → Clone Repository…</strong>, then the <strong>URL</strong> tab.</li>
+<li>For the URL, paste <code>https://github.com/faBolus-app/faBolus</code>.</li>
+<li>Click <strong>Choose…</strong> next to <strong>Local Path</strong> and pick the <strong>Developer/faBolus</strong> folder you made. Check that the Local Path now ends in <code>Developer/faBolus/faBolus</code>; type it in if it doesn't.</li>
+<li>Click <strong>Clone</strong> and wait for it to finish.</li>
 </ol>
 
 <div class="cx2-check" markdown>
-**Success looks like:** inside **Documents → faBolus** you now have two folders:
-**TandemKit** and **faBolus**, side by side.
+**Success looks like:** **Developer → faBolus → faBolus** holds the code, with files such as
+`project.yml` and a `scripts` folder.
 </div>
 
-??? note "Advanced: prefer the Terminal? (optional)"
-    If you'd rather use the command line, this does the same thing (the `--recurse-submodules`
-    part is what GitHub Desktop does automatically):
+You don't download TandemKit, the pump library: Xcode fetches the exact version the app needs when you
+open the project.
 
-    ```sh
-    mkdir -p ~/Documents/faBolus && cd ~/Documents/faBolus
-    git clone --recurse-submodules https://github.com/faBolus-app/TandemKit.git
-    git clone https://github.com/faBolus-app/faBolus.git
-    ```
+## Step 2: Garmin's SDK (only for the watch) {#garmin-sdk}
 
-## Step 2: Add the Garmin helper file (optional) {#connectiq}
+**Skip this step if you won't use a Garmin watch.** The app then builds without watch support, and its
+**Settings → Watch** screen says so. You can add the SDK later and build again.
 
-**Only do this step if you want to use a Garmin watch or cycling computer as a remote.** If you
-don't, **skip straight to Step 3**: the build script notices the Garmin SDK isn't there and builds
-the app without Garmin. (You can always add Garmin later by doing this step and re-running Step 3.)
-
-To include Garmin, you download one file from Garmin once and drop it into a folder. No commands.
+The phone app needs Garmin's **Connect IQ companion SDK for iOS**, version **1.8.0**, to talk to the
+watch. Garmin licenses it separately, so it isn't in the repository.
 
 <ol class="cx2-steps">
-<li>Go to the <a href="https://developer.garmin.com/connect-iq/sdk/">Garmin Connect IQ SDK page</a> and download the <strong>Connect IQ Companion (Mobile) SDK for iOS</strong>. (You'll make a free Garmin account and accept their license.)</li>
-<li>In your <strong>Downloads</strong>, double-click the zip to unzip it. You'll get a folder named something like <code>connectiq-companion-app-sdk-ios-1.8.0</code>.</li>
-<li>Open <strong>Finder</strong> → go to your <strong>Documents</strong> folder → make a <strong>new folder</strong> called <code>vendor</code> (right-click → New Folder).</li>
-<li><strong>Drag</strong> the unzipped Garmin folder into that <code>vendor</code> folder.</li>
+<li>Download <a href="https://github.com/garmin/connectiq-companion-app-sdk-ios/archive/refs/tags/1.8.0.zip">connectiq-companion-app-sdk-ios-1.8.0.zip</a> from Garmin's GitHub page. Downloading it accepts Garmin's license, which its README links to.</li>
+<li>In <strong>Downloads</strong>, double-click the zip if it wasn't unzipped already. You get a folder named <code>connectiq-companion-app-sdk-ios-1.8.0</code>.</li>
+<li>In your <strong>Developer</strong> folder, make a folder named <strong>vendor</strong>, and drag the Garmin folder into it. Don't rename it.</li>
 </ol>
 
 <div class="cx2-check" markdown>
-**Success looks like:** **Documents → vendor** contains the
-`connectiq-companion-app-sdk-ios-1.8.0` folder. (So `Documents` now has both a **faBolus**
-folder and a **vendor** folder.)
-
-**Skipped this step?** That's fine: the build in Step 3 will simply leave Garmin out, and inside
-the app the **Remotes & devices** settings section shows a note that it was built without the
-Garmin SDK.
+**Success looks like:** **Developer → vendor → connectiq-companion-app-sdk-ios-1.8.0** contains
+`ConnectIQ.xcframework` and `Package.swift`.
 </div>
 
-??? note "If you saved things somewhere else"
-    The app looks for the Garmin folder two levels up from itself, in a `vendor` folder. If you
-    put your projects somewhere other than `Documents/faBolus`, either move things to match the
-    layout above, or open `faBolus/project.yml` in **TextEdit**, find the line under
-    `ConnectIQ:` that starts with `path:`, and change it to the full path of your Garmin folder.
-    (Re-do Step 3 afterward.)
+## Step 3: Your details {#your-details}
 
-## Step 3: Create the project (the one Terminal step)
+Apple needs two things from you: a **bundle ID** that's unique to you, and your **team**. They go in a
+file named `LocalConfig.xcconfig`, which stays on your Mac and is never uploaded.
 
-The project is described by a small text file, and a short **script** (which uses a tiny free tool
-called **XcodeGen**) turns it into the file Xcode opens. The script automatically detects whether
-you added the Garmin SDK in Step 2 and builds with or without Garmin accordingly. This is the only
-step that uses the **Terminal**. It's two commands: just copy, paste, and press Return.
-
-!!! info "What's the Terminal?"
-    The **Terminal** is a Mac app where you type commands instead of clicking. Find it in
-    **Applications → Utilities → Terminal**. You don't need to understand the commands; copy each
-    one, paste it in, and press Return. It's safe.
-
-<figure class="cx2-shot wide" markdown="span">
-  ![Terminal app](../assets/screenshots/terminal.svg)
-  <figcaption>Paste each line, press Return, wait for it to finish before the next</figcaption>
-</figure>
-
-**3a. Install XcodeGen (one time).** This uses **Homebrew**, the standard way to install small
-Mac tools. Paste this line and press Return; if it asks for your Mac password, type it (you won't
-see the characters, that's normal) and press Return:
+Open **Terminal** and run these three commands, one at a time. The first moves into the app's folder,
+the second makes your settings file from the example, and the third opens it in TextEdit.
 
 ```sh
-brew install xcodegen
+cd ~/Developer/faBolus/faBolus
+cp LocalConfig.xcconfig.example LocalConfig.xcconfig
+open -e LocalConfig.xcconfig
 ```
 
-??? note "\"command not found: brew\": install Homebrew first (one time)"
-    If you've never used Homebrew, install it by pasting this line, pressing Return, and following
-    the prompts, then run `brew install xcodegen` again:
+In TextEdit, change two lines:
 
-    ```sh
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-    ```
+- **`APP_BUNDLE_ID`**: a name only you use, written like a reversed web address, for example
+  `com.janesmith.fabolus`. Every App ID must be unique across Apple, so the project's own
+  `com.fabolus.app` won't work for your account. The widgets and the shared App Group are named from
+  it automatically.
+- **`DEVELOPMENT_TEAM`**: your 10-character Team ID (see below), or nothing after the `=` if you'd
+  rather pick your team in Xcode. Don't leave the example's `ABCDE12345`.
 
-**3b. Create the project.** Now point the Terminal at your app folder and run XcodeGen. The
-easiest way to avoid typing the folder path: type `cd` and a space, then **drag the faBolus
-folder from Finder into the Terminal window** (it fills in the path for you), then press Return:
+Save (<kbd>⌘</kbd> + <kbd>S</kbd>) and close TextEdit.
+
+??? note "Finding your Team ID"
+    - **Paid account:** sign in at [developer.apple.com/account](https://developer.apple.com/account)
+      and open **Membership details**. The Team ID is listed there.
+    - **Free account:** first make your signing certificate. In Xcode choose **Xcode → Settings… →
+      Accounts**, select your Apple account, select your team, click **Manage Certificates…**, then
+      **+** → **Apple Development**, and close the window. Then run this in Terminal:
+
+        ```sh
+        security find-certificate -c "Apple Development" -p | openssl x509 -noout -subject
+        ```
+
+        Your Team ID is the 10 characters after `OU=`.
+
+    With the Team ID in the file, the team is set every time the project is made. Without it, you pick
+    the team in Xcode (Step 6) after each time you make the project.
+
+## Step 4: Make the Xcode project
+
+Still in Terminal, in the same folder, run:
 
 ```sh
-cd ~/Documents/faBolus/faBolus
 ./scripts/generate-project.sh
 ```
 
 <div class="cx2-check" markdown>
-**Success looks like:** the Terminal prints something like *"Created project at …faBolus.xcodeproj"*,
-and a new **faBolus.xcodeproj** file appears in the faBolus folder.
+**Success looks like:** `Generated faBolus.xcodeproj (Garmin: on)`, or `(Garmin: off)` if you skipped
+Step 2. A **faBolus.xcodeproj** file now sits in the folder.
 </div>
 
-## Step 4: Open the project in Xcode
+If it says `xcodegen: command not found`, go back to
+[Install Homebrew and XcodeGen](xcode.md#step-3-install-homebrew-and-xcodegen), then run it again.
 
-In Finder, open **Documents → faBolus → faBolus** and **double-click**
-**`faBolus.xcodeproj`**. Xcode opens.
+??? note "Paid account: let notifications break through Focus"
+    A paid account can give the bolus result, "pump disconnected" and the backup urgent low the Time
+    Sensitive level, so they come through a Focus. Make the project this way instead:
 
-Give it a minute: a bar near the top says it's "resolving packages" (downloading the helper
-library). Wait for that to finish.
+    ```sh
+    FABOLUS_TIME_SENSITIVE=1 ./scripts/generate-project.sh
+    ```
 
-## Step 5: Choose your Team (signing) {#your-team}
+    Use the same command whenever you make the project again. A free account can't sign this
+    capability; without it those notifications arrive as normal ones.
 
-"Signing" is Xcode proving the app is yours. This trips people up, so go slowly.
+## Step 5: Open the project
 
-<figure class="cx2-shot wide" markdown="span">
-  ![Xcode Signing & Capabilities tab](../assets/screenshots/xcode-signing.svg)
-  <figcaption>Signing &amp; Capabilities → tick "Automatically manage signing" → pick your Team</figcaption>
-</figure>
+```sh
+open faBolus.xcodeproj
+```
+
+Xcode opens. Near the top it says it's resolving packages: it's downloading TandemKit and the other
+libraries the app uses. The first time this takes a few minutes. Wait until it finishes.
+
+## Step 6: Check signing
 
 <ol class="cx2-steps">
-<li>In the tall left panel, click the blue <strong>faBolus</strong> icon at the very top.</li>
-<li>In the list that appears, under <strong>TARGETS</strong>, click <strong>faBolus</strong>.</li>
-<li>Along the top of the middle area, click the <strong>Signing &amp; Capabilities</strong> tab.</li>
-<li>Tick the box <strong>Automatically manage signing</strong>.</li>
-<li>In the <strong>Team</strong> dropdown, pick your name (the account from <a href="apple-developer.md">Step 1</a>).</li>
+<li>In the left panel, click the blue <strong>faBolus</strong> project icon at the top.</li>
+<li>Under <strong>TARGETS</strong>, click <strong>faBolus</strong>, then the <strong>Signing &amp; Capabilities</strong> tab.</li>
+<li>Check that <strong>Automatically manage signing</strong> is ticked and <strong>Team</strong> shows your team. If it shows none, pick your team.</li>
+<li>Do the same for the <strong>faBolusWidgets</strong> target.</li>
 </ol>
 
-Then do the same **Team** choice for the other row in the TARGETS list: **faBolusWidgets**.
+There's a third target, **faBolusAppTests**. It isn't installed on the phone and needs no team.
 
-!!! warning "\"Identifier is not available\"? Set your own bundle ID (it's one line)"
-    Every App ID and App Group must be **unique across all of Apple**, so the project's default
-    `com.fabolus.app` belongs to the faBolus team and can't be reused by your account. Point the
-    build at an ID that's yours: you only change **one value**:
+## Step 7: Turn on Developer Mode on the iPhone
 
-    1. In the `faBolus` folder, find **`LocalConfig.xcconfig.example`**. Make a copy of it in the
-       same folder and rename the copy to **`LocalConfig.xcconfig`** (just drop the `.example`).
-    2. Open `LocalConfig.xcconfig` in **TextEdit** and set two values. Set **`APP_BUNDLE_ID`** to
-       a reverse-domain string unique to you, e.g. `com.janesmith.fabolus` (based on a domain or
-       name you control); the widgets and the shared App Group are all derived from this
-       automatically, so you don't touch them. Set **`DEVELOPMENT_TEAM`** to your 10-character
-       Team ID (or leave it blank and pick your Team in Xcode's Signing tab).
-    3. Save, then re-do **Step 3b** (`./scripts/generate-project.sh`) and reopen the project.
+<ol class="cx2-steps">
+<li>Connect the iPhone to the Mac with a cable. When the phone asks <strong>Trust This Computer?</strong>, tap <strong>Trust</strong> and enter your passcode.</li>
+<li>On the iPhone, open <strong>Settings → Privacy &amp; Security</strong>, scroll down to <strong>Developer Mode</strong> and turn it on.</li>
+<li>Tap <strong>Restart</strong>. After the phone restarts, tap <strong>Turn On</strong> and enter your passcode.</li>
+</ol>
 
-    `LocalConfig.xcconfig` stays on your machine (it's gitignored), so your details are never
-    committed or shared. This is a normal one-time setup.
+!!! note "No Developer Mode switch?"
+    It appears only after the phone has been connected to a Mac running Xcode. Keep the cable in, choose
+    your iPhone in Xcode as in Step 8, then look again.
 
-!!! info "Free account and widgets"
-    Free accounts sometimes can't set up the widgets. If a widget row shows a signing error, you
-    can still install the main app: just build **faBolus** for now and add widgets later on a
-    paid account.
+## Step 8: Run
 
-## Step 6: Turn on Developer Mode on your iPhone
+<ol class="cx2-steps">
+<li>At the top of Xcode, check that the scheme says <strong>faBolus</strong>. Click the device menu next to it and choose <strong>your iPhone</strong>.</li>
+<li>Click <strong>▶</strong> (Run), or press <kbd>⌘</kbd> + <kbd>R</kbd>.</li>
+</ol>
 
-Newer iPhones need "Developer Mode" switched on before they'll run an app you built.
+The first build takes several minutes. If Xcode says the device isn't registered, or asks to register
+it, accept: it adds your iPhone to your team.
+
+## Step 9: Trust yourself as the developer (free account)
+
+The first time, a free account's app won't open until you trust it. On the iPhone:
+
+<ol class="cx2-steps">
+<li>Open <strong>Settings → General → VPN &amp; Device Management</strong>.</li>
+<li>Under <strong>Developer App</strong>, tap your Apple account, then <strong>Trust</strong>.</li>
+</ol>
+
+Then press **Run** in Xcode again, or tap the app's icon.
+
+## Step 10: First launch
 
 <figure class="cx2-shot phone" markdown="span">
-  ![iPhone Privacy & Security → Developer Mode](../assets/screenshots/developer-mode.svg)
-  <figcaption>Settings → Privacy &amp; Security → Developer Mode → on → Restart</figcaption>
+  ![The first-launch screen](../assets/screenshots/onboarding.png)
+  <figcaption>The first screen: connect a pump, or skip for now</figcaption>
 </figure>
 
-<ol class="cx2-steps">
-<li>On the iPhone, open <strong>Settings</strong> → <strong>Privacy &amp; Security</strong>.</li>
-<li>Scroll to the bottom and tap <strong>Developer Mode</strong>.</li>
-<li>Turn the switch <strong>on</strong> (green), tap <strong>Restart</strong>, and after it reboots choose <strong>Turn On</strong>.</li>
-</ol>
-
-!!! note "Don't see \"Developer Mode\"?"
-    It only appears after your phone has been connected to Xcode at least once. If it's missing,
-    plug your phone into the Mac with Xcode open (Step 7), then come back here.
-
-## Step 7: Plug in your iPhone and press Run
-
-<figure class="cx2-shot wide" markdown="span">
-  ![Choosing your iPhone and pressing Run in Xcode](../assets/screenshots/xcode-run.svg)
-  <figcaption>Pick your iPhone in the bar at the top, then click the ▶ button</figcaption>
-</figure>
-
-<ol class="cx2-steps">
-<li>Connect your iPhone to the Mac with a cable.</li>
-<li>The first time, the phone shows <strong>Trust This Computer?</strong>: tap <strong>Trust</strong> and enter your passcode.</li>
-<li>Near the top-middle of Xcode, click the device menu and choose <strong>your iPhone</strong> (listed under "iOS Device").</li>
-<li>Click the <strong>▶</strong> (Run) button at the top-left, or press <kbd>⌘</kbd> + <kbd>R</kbd>.</li>
-</ol>
-
-The first build takes a few minutes; let it work. If Xcode says *"Device isn't registered,"*
-click to register it (your Mac needs to be online); this is a one-time thing.
-
-## Step 8: Let your phone trust the app
-
-The first time, iOS won't open an app from a developer it doesn't recognize yet; that developer
-is you. You just tell it that's OK.
-
-<figure class="cx2-shot phone" markdown="span">
-  ![Trusting the developer profile in iPhone Settings](../assets/screenshots/developer-trust.svg)
-  <figcaption>Settings → General → VPN &amp; Device Management → tap your profile → Trust</figcaption>
-</figure>
-
-<ol class="cx2-steps">
-<li>On the iPhone: <strong>Settings → General → VPN &amp; Device Management</strong>.</li>
-<li>Under <strong>Developer App</strong>, tap your Apple account name.</li>
-<li>Tap <strong>Trust</strong>, then confirm.</li>
-</ol>
-
-## Step 9: Open it and allow Bluetooth
-
-Tap the **faBolus** icon on your Home Screen. The first time you tap **Connect**, iOS asks to
-use Bluetooth: tap **Allow**. (Without Bluetooth the app can't find your pump.)
+- iOS asks whether faBolus may send **notifications**: allow them. faBolus uses them for bolus results,
+  a pump that stays disconnected, and your pump's alerts.
+- iOS asks for **Bluetooth**: allow it. Without it faBolus can't reach the pump.
+- The first screen offers **Connect a pump**. Continue with [Pair your pump](../setup/pairing.md).
 
 <div class="cx2-check" markdown>
-**🎉 You did it: the app is on your iPhone.** Until you pair a pump it shows a waiting screen.
-Next:
+**The app is on your iPhone.** Next:
 
-- [Pair it with your pump →](../setup/pairing.md)
-- Optional: [add a Garmin](garmin-build.md)
-- Learn [what everything does](../operate/status.md)
+- [Pair your pump →](../setup/pairing.md)
+- Optional: [set up a backup CGM](../setup/cgm.md)
+- Optional: [add the Garmin watch](garmin-build.md)
 
 </div>
 
-!!! note "The app will stop opening after a while: that's normal"
-    Free account: after **7 days**. Paid account: after **1 year**. Fixing it takes about a
-    minute; see [Keeping the app running](updating.md).
+!!! note "The app will stop opening after a while"
+    A free account's install lasts 7 days, a paid one a year. Installing again takes a minute: see
+    [Keeping it running and updating](updating.md).

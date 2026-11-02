@@ -1,59 +1,69 @@
-# Keeping the app running
+# Keeping it running and updating
 
-Because you install faBolus yourself (not from the App Store), it has an expiry date. This
-page explains why, and the quick routine to keep it working. Good news: it's almost all clicking.
+## Why the app expires
 
-## Why it expires
+An app you install yourself is signed with a certificate that runs out:
 
-The certificate that signs your app has a limited life:
-
-| Account | The app keeps working for |
+| Account | The app keeps opening for |
 | --- | --- |
-| Free Apple ID | **7 days** |
-| Apple Developer Program ($99/yr) | **1 year** |
+| Free Apple account | **7 days** |
+| Apple Developer Program | **1 year** |
 
-When it expires, the icon stays on your Home Screen but the app won't open (or shows a signing
-error). Nothing is broken — it just needs re-installing.
+When it runs out, the icon stays but the app won't open. Nothing is lost: install it again.
 
-## The quick reinstall (about a minute)
-
-<ol class="cx2-steps">
-<li>Plug your iPhone into the Mac.</li>
-<li>In Finder, open <strong>Documents → faBolus → faBolus</strong> and double-click <strong>faBolus.xcodeproj</strong>.</li>
-<li>Pick your iPhone in the device bar at the top and click <strong>▶ Run</strong> (or press <kbd>⌘</kbd> + <kbd>R</kbd>).</li>
-<li>If the phone asks you to <strong>Trust</strong> the developer again, do so (<a href="build-app.md#step-8-let-your-phone-trust-the-app">Step 8</a>).</li>
-</ol>
-
-That's it — the fresh install resets the clock. Your saved pump pairing stays put (it's stored
-securely on the phone), so you won't need the 6-digit code again.
-
-!!! tip "Put a reminder on your calendar"
-    On a free account, a weekly reminder saves you from finding an expired app right when you need
-    it. On the paid program, once a year is plenty.
-
-## Getting the newest version of the app
-
-When the project gets updates, refresh your copy with **GitHub Desktop** — no commands:
+## Install again (about a minute)
 
 <ol class="cx2-steps">
-<li>Open <strong>GitHub Desktop</strong>.</li>
-<li>Pick <strong>TandemKit</strong> from the repository list (top-left), then click <strong>Fetch origin</strong> → <strong>Pull origin</strong>.</li>
-<li>Do the same for <strong>faBolus</strong>.</li>
-<li>Re-do <a href="build-app.md#step-3-create-the-project-the-one-terminal-step">Step 3b</a> (<code>./scripts/generate-project.sh</code>) in case files were added, then open the project and <strong>Run</strong>.</li>
+<li>Connect the iPhone to the Mac.</li>
+<li>Open <strong>Developer → faBolus → faBolus → faBolus.xcodeproj</strong>.</li>
+<li>Choose your iPhone at the top of Xcode and press <strong>▶</strong> (Run).</li>
 </ol>
 
-??? note "Advanced: update from the Terminal (optional)"
+Your pairing, settings and history stay on the phone, so you don't pair again.
+
+!!! tip "Set a reminder"
+    On a free account, a weekly calendar reminder saves you from finding the app expired when you need
+    it.
+
+## Get the newest version
+
+1. Open **GitHub Desktop**, choose **faBolus** in the repository list at the top left, and click
+   **Fetch origin**, then **Pull origin** if it offers it.
+2. In Terminal, make the project again, since files may have been added. Put
+   `FABOLUS_TIME_SENSITIVE=1` in front if you built with it:
+
     ```sh
-    cd ~/Documents/faBolus/TandemKit && git pull --recurse-submodules
-    cd ~/Documents/faBolus/faBolus && git pull
+    cd ~/Developer/faBolus/faBolus
     ./scripts/generate-project.sh
-    open faBolus.xcodeproj
     ```
 
-If a build ever fails right after updating, see [Troubleshooting](../troubleshoot.md) — the usual
-fixes are re-fetching the helper files and re-running `./scripts/generate-project.sh`.
+3. Open the project and press **Run**.
 
-## Updating the Garmin app
+If the build fails right after an update, see [Troubleshooting](../troubleshoot.md#building-the-app).
 
-Rebuild and re-install it — see [Add a Garmin](garmin-build.md). The Garmin app doesn't expire
-like the iOS app does; you only reinstall it to get changes.
+### The watch app
+
+The watch app doesn't expire. Update it when the phone app's update needs it: pull **faBolusGarmin** in
+GitHub Desktop the same way, then build and install it again as in
+[Garmin watch](garmin-build.md#step-4-build-the-watch-app). When the phone and watch apps are too far
+apart to talk, the watch says which one to update.
+
+## Coming from the earlier faBolus
+
+This version is a new app. If you built the earlier faBolus with the same bundle ID, the new one
+installs over it, and on its first launch it removes everything the earlier app stored on the phone:
+
+- its settings;
+- its pump pairing, so you [pair again](../setup/pairing.md) with a new code from the pump;
+- its Dexcom Share login, so you sign in again under [Backup CGM](../setup/cgm.md);
+- its history and the files it shared with the widgets.
+
+The new app doesn't read the earlier app's bolus records. Before you switch, let any bolus finish and
+check the pump's own history.
+
+The earlier and the new watch apps don't talk to each other's phone apps. Update the watch app at the
+same time: an earlier watch app on the new phone app shows **Update watch app**, and the new watch app
+with the earlier phone app shows **Update faBolus on phone**.
+
+If you built the earlier app with a different bundle ID, the new one installs beside it. Delete the
+earlier app from the iPhone so only one of them connects to the pump.

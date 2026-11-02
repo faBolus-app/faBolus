@@ -1,80 +1,73 @@
-# Bolus & cancel
+# Bolus and cancel
 
-!!! warning "Confirm every bolus"
-    faBolus is experimental and not FDA-cleared. Always confirm the amount before you deliver.
+!!! warning "Check every dose"
+    faBolus is experimental and not FDA-cleared. Check the dose before you press Deliver.
 
-<div class="cx2-shots" markdown>
 <figure class="cx2-shot phone" markdown="span">
-  ![Bolus entry](../assets/screenshots/bolus-entry.svg)
-  <figcaption>Enter units, or carbs + BG for a recommendation</figcaption>
+  ![The bolus screen](../assets/screenshots/bolus.png)
+  <figcaption>Carbs, glucose, the suggested dose, and Confirm</figcaption>
 </figure>
-<figure class="cx2-shot phone" markdown="span">
-  ![Bolus confirmation dialog](../assets/screenshots/bolus-confirm.svg)
-  <figcaption>Explicit confirm before anything is delivered</figcaption>
-</figure>
-<figure class="cx2-shot phone" markdown="span">
-  ![Delivering with a Cancel button](../assets/screenshots/bolus-delivering.svg)
-  <figcaption>Cancel any time while it's delivering</figcaption>
-</figure>
-</div>
 
-## Deliver a bolus
+## Give a bolus
 
 <ol class="cx2-steps">
-<li>Open the <strong>Bolus</strong> tab (enabled only when connected). It opens in your default mode (Carbs or Units) from <a href="../customize/settings/">Settings</a>.</li>
-<li>Either enter <strong>units</strong> directly, or enter <strong>carbs</strong> (and optionally <strong>BG</strong>) — the recommendation updates <strong>automatically as you type</strong>, using the pump's own calculator (carb ratio, ISF, target, IOB) to suggest a dose. (There's no separate button to press; tapping anywhere on the carbs/units row focuses the field.)</li>
-<li>Adjust units with the stepper (step = your <strong>unit increment</strong> from Settings). The <strong>max-units clamp</strong> blocks anything over your pump's configured ceiling.</li>
-<li>Tap <strong>Bolus N U</strong>, then confirm the dialog.</li>
+<li>Open the <strong>Bolus</strong> tab. It opens in <strong>Carbs</strong> or <strong>Units</strong>, as set in <strong>Settings → Bolus &amp; entry</strong>.</li>
+<li><strong>Carbs:</strong> enter the grams. The glucose field shows the current CGM reading; leave it to correct from that reading, or type a fingerprick value in mg/dL. The <strong>Suggested dose</strong> comes from your pump's carb ratio, correction factor, target and active insulin, and the dose below follows it until you change it.<br><strong>Units:</strong> enter the dose.</li>
+<li>Tap <strong>Confirm</strong>.</li>
+<li>Check the sheet that opens and tap <strong>Deliver</strong>.</li>
 </ol>
 
-!!! note "Carbs are recorded on the pump"
-    When you deliver a **carb** bolus, faBolus sends the carb amount (and BG, if entered) to the pump
-    as part of the bolus, so the carbs show up on the **pump graph / t:connect** and feed Control-IQ's
-    carb awareness. The delivered **units are still computed by faBolus** — the pump can't calculate a
-    dose from carbs, so faBolus mirrors its calculator (carb ratio, ISF, target, IOB) and the carbs
-    ride along as recorded metadata.
+The steppers move by your unit and carb increments. **Show the calculation** breaks the suggestion into
+carbs, correction and active insulin.
 
-## Carb boluses from a remote (single calculator + safety guard)
+## What happens at Confirm
 
-When you enter **carbs** on the Garmin remote, the **host phone is the single calculator**: it
-recomputes the dose from your carbs using its live settings and delivers that. The Garmin also
-sends the estimate it showed you, and the phone **compares** the two — if they differ by more than
-**0.10 U** (a sign the remote was working from stale settings, IOB, or glucose) the bolus is **not
-delivered**; the remote shows "Dose changed since your estimate — reopen and confirm," and you
-retry with fresh data. Units-mode entries are delivered exactly as confirmed.
+faBolus reads the pump's bolus settings and active insulin again, then:
 
-## Cancel & partial delivery
+- **If a value changed the dose**, it says so and asks whether to use the new dose or keep yours.
+- **If the CGM reading is old or missing**, it asks whether to include it or bolus for carbs only. An old
+  reading is never used without asking.
+- **If the pump's settings couldn't be read fresh**, it asks before using the last ones it has.
+- **If a bolus can't be given now**, it says why: for example the pump isn't connected, another bolus is
+  running, or an earlier bolus's outcome is unknown.
 
-While a bolus is delivering, a prominent **Cancel** button is available on the HUD and the bolus
-sheet. Tapping it sends a cancel to the pump, and the app reports the **actual amount delivered**
-before the stop — so a cancelled bolus tells you exactly how much went through.
+The last sheet shows the dose, what it's for (carbs, the glucose it corrects from, active insulin), and
+any notices above **Deliver**, most important first. For example: the cartridge state wasn't read, or
+the dose differs from what the calculator suggests. Nothing is sent until you tap **Deliver**.
 
-## From a remote
+The pump's own limits apply: its minimum bolus and the maximum bolus set on the pump.
 
-Your Garmin watch can *request* a bolus, but the phone stays in control — it is the single
-calculator and the only device that talks to the pump. You complete a hold-to-deliver confirmation
-on the wrist — tap **1 → 2 → 3** on a touchscreen (like the Venu 3S), or a two-button hold on a
-button-only device. The phone then **recomputes the dose from the carbs**, checks it against the
-estimate the watch showed (a divergence beyond the tolerance above is rejected, not delivered), and
-carries it out. There is *not* a second confirm tap on the iPhone for a Garmin request.
+## While it delivers
 
-If the phone is unreachable, the watch shows a clean failure and **nothing is delivered**. Garmin
-bolusing is off by default and has its own switch, plus an optional 4-digit passcode you can require
-instead of the tap-to-confirm — see [Garmin remote](../remotes/garmin.md).
+The dashboard shows the bolus delivering, then its result: delivered, stopped (with how much went in),
+refused by the pump, or not delivered. A notification also tells you the result.
 
-## Under the hood (for the curious)
+## Cancel {#cancel}
 
-??? info "The signed delivery sequence"
-    Via TandemKit: `BolusPermissionRequest` → *(carb bolus only)* best-effort `RemoteCarbEntryRequest`
-    + `RemoteBgEntryRequest` to record the carbs/BG on the pump → `InitiateBolusRequest` (signed and
-    insulin-delivery-gated; also carries `bolusCarbs`/`bolusBG` inline) → status polling until the bolus
-    finishes or is cancelled → `LastBolusStatus` for the delivered amount. The carb/BG records are
-    best-effort — a rejected record never blocks the bolus. Every outgoing message is asserted
-    byte-exact against the pumpX2 `cliparser` oracle.
+While a bolus delivers, tap **Cancel bolus** on the dashboard. faBolus tells you what happened:
 
-## Recommendation reasoning
+- **Bolus cancelled**;
+- **Stopped before anything was delivered**;
+- the pump didn't cancel, so the bolus may have finished: check the pump;
+- the pump isn't connected or the cancel wasn't confirmed: cancel on the pump.
 
-Under the recommended dose there's a collapsible **Show reasoning** breakdown: the **carb + correction**
-total and the **active insulin (IOB)** subtracted. Hide the whole breakdown with **Settings → Bolus &
-entry → Show recommendation reasoning**. (The enforced pump-max limit still caps the dose — see the
-max-units clamp above.)
+A cancel is never blocked, by read-only mode or anything else. A bolus that ends with less than asked
+shows as **stopped**, with the amount the pump reports.
+
+## If the outcome is unknown
+
+If the link drops after a bolus starts, faBolus may not know how much went in. It notifies you at once
+and shows a banner, and no new bolus can start, even after a restart, until either:
+
+- the pump's history settles it (faBolus searches it on its own when the pump reconnects), or
+- you check the pump's history and tap **I checked the pump**, then **Yes, I checked the pump**. The
+  outcome stays unknown in the app until the history settles it, but you can bolus again.
+
+## Carbs recorded on the pump
+
+A carb bolus also sends the carbs, and the glucose it corrects from, to the pump with the bolus, in the
+same form Tandem's own app sends them, so the pump records them with the bolus.
+
+## From the watch
+
+The watch can ask for a bolus too. See [Garmin watch](../remotes/garmin.md).

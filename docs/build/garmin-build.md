@@ -1,129 +1,124 @@
-# 5 · Add a Garmin (optional)
+# 4 · Garmin watch (optional)
 
-The Garmin remote is **optional**. It's a small app for the **Garmin Venu 3S** (the currently
-supported watch) that asks your iPhone to bolus — the phone still owns the pump and confirms
-everything. It also shows glucose on your watch face and a history plot. (See
-[Garmin remote](../remotes/garmin.md) for how it's used; the app adapts to touch vs. button devices
-at runtime, so adding another Garmin watch or Edge cycling computer is usually just a manifest entry
-— see the faBolusGarmin
-[contributor guide](https://github.com/faBolus-app/faBolusGarmin/blob/master/CONTRIBUTING.md#add-support-for-another-garmin-device).)
-
-!!! note "What is Connect IQ?"
-    **Connect IQ** is Garmin's system for third-party watch apps (like the App Store, but for
-    Garmin). Building a Connect IQ app uses different (free) tools than the iPhone app. We'll do it
-    all inside **Visual Studio Code**, a free editor, using buttons — not commands.
-
-!!! note "The Garmin app lives in its own project"
-    It's in the separate **[faBolusGarmin](https://github.com/faBolus-app/faBolusGarmin)** repo. The
-    iPhone side is already in the app you built in [Step 3](build-app.md), so here you just build
-    the watch app and pair it.
-
-<div class="cx2-shots" markdown>
-<figure class="cx2-shot watch" markdown="span">
-  ![Garmin glance](../assets/screenshots/garmin-glance.svg)
-  <figcaption>Glance</figcaption>
-</figure>
-<figure class="cx2-shot watch" markdown="span">
-  ![Garmin history](../assets/screenshots/garmin-history.svg)
-  <figcaption>History plot</figcaption>
-</figure>
-<figure class="cx2-shot watch" markdown="span">
-  ![Garmin confirm](../assets/screenshots/garmin-confirm.svg)
-  <figcaption>Tap 1-2-3 to confirm</figcaption>
-</figure>
-</div>
+The watch app runs on a **Garmin Venu 3S**. It shows your glucose and pump status and can ask the phone
+for a bolus. The phone checks every request and is the only thing that talks to the pump. How to use it
+is on the [Garmin watch](../remotes/garmin.md) page.
 
 ## What you'll need
 
-- The **iPhone app already built _with Garmin support_** — that means you completed
-  [Step 2](build-app.md#connectiq) (added the Connect IQ Mobile SDK) before generating and building
-  the app. If you skipped it, the app was built without Garmin and its **Remotes & devices** settings
-  section says so; add the SDK, re-run [Step 3](build-app.md), and rebuild first.
-- **Visual Studio Code** (free) with Garmin's **Monkey C** extension (installs the tools for you).
-- The **Garmin Connect** app on your iPhone, with your **venu3s** already paired to it.
+- The phone app **built with Garmin's SDK**: [Step 3, Garmin's SDK](build-app.md#garmin-sdk). If
+  **Settings → Watch** in the app says Garmin isn't included, add the SDK, make the project again and
+  run it on the phone.
+- The **Garmin Connect** app on the iPhone, with your Venu 3S paired to it.
+- A free **Garmin account**, to download Garmin's developer tools.
+- The watch's USB cable.
 
-## Step 1 — Download the Garmin app
+There are two ways to get the app onto the watch. **Copying it over USB** needs nothing more than the
+cable. **A private beta in the Connect IQ Store** installs and updates over the air, but needs a Garmin
+developer account and an upload each time. Both build from the same code.
 
-In **GitHub Desktop** (the same app from [Step 3](build-app.md#download)): **File → Clone
-Repository → URL**, paste the address below, and save it next to your other projects:
+## Step 1: Download the watch app's code
 
-```text
-https://github.com/faBolus-app/faBolusGarmin
-```
+In **GitHub Desktop**, choose **File → Clone Repository… → URL** and paste
+`https://github.com/faBolus-app/faBolusGarmin`. Choose the **Developer/faBolus** folder as before, so the
+Local Path ends in `Developer/faBolus/faBolusGarmin`, and click **Clone**.
 
-## Step 2 — Install the Garmin tools (in VS Code)
-
-<ol class="cx2-steps">
-<li>Download and open <a href="https://code.visualstudio.com/">Visual Studio Code</a> (free).</li>
-<li>Click the <strong>Extensions</strong> icon in the left bar (four squares), search <strong>Monkey C</strong>, and click <strong>Install</strong> (it's by Garmin).</li>
-<li>Press <kbd>⌘</kbd> + <kbd>⇧</kbd> + <kbd>P</kbd> to open the command box, type <strong>Verify Installation</strong>, and pick <strong>Monkey C: Verify Installation</strong>. It walks you through downloading the Garmin <strong>SDK</strong> and the <strong>venu3s</strong> device files — just say yes to the prompts.</li>
-</ol>
-
-## Step 3 — Make a developer key (one click)
-
-Garmin apps must be "signed" with a key, like the iPhone app. In VS Code, press
-<kbd>⌘</kbd> + <kbd>⇧</kbd> + <kbd>P</kbd>, type **Generate**, and choose **Monkey C: Generate a
-Developer Key**. VS Code makes it and remembers it. That's all.
-
-??? note "Advanced: make the key in the Terminal instead (optional)"
-    ```sh
-    openssl genrsa -out ~/Documents/faBolus/developer_key.pem 4096
-    openssl pkcs8 -topk8 -inform PEM -outform DER \
-      -in ~/Documents/faBolus/developer_key.pem \
-      -out ~/Documents/faBolus/developer_key.der -nocrypt
-    ```
-
-## Step 4 — Build and preview it
-
-<figure class="cx2-shot wide" markdown="span">
-  ![Connect IQ simulator](../assets/screenshots/garmin-sim.svg)
-  <figcaption>The Connect IQ simulator shows the app on a virtual venu3s</figcaption>
-</figure>
+## Step 2: Install Garmin's Connect IQ SDK
 
 <ol class="cx2-steps">
-<li>In VS Code, open the <strong>faBolusGarmin</strong> folder (<strong>File → Open Folder…</strong>).</li>
-<li>Press <kbd>⌘</kbd> + <kbd>⇧</kbd> + <kbd>P</kbd>, type <strong>Run</strong>, and choose <strong>Monkey C: Run</strong>.</li>
-<li>When it asks for a device, pick <strong>venu3s</strong>. The <strong>Connect IQ simulator</strong> opens with the app running.</li>
+<li>Go to <a href="https://developer.garmin.com/connect-iq/sdk/">developer.garmin.com/connect-iq/sdk</a>, download the <strong>SDK Manager</strong> for Mac, and open it.</li>
+<li>Sign in with your Garmin account and accept the license.</li>
+<li>On the <strong>SDK</strong> tab, download the newest SDK. The watch app is built and tested with <strong>9.2.0</strong>.</li>
+<li>On the <strong>Devices</strong> tab, download <strong>Venu 3S</strong>.</li>
 </ol>
 
-The simulator can't reach your iPhone or pump, so bolus screens show the "phone unreachable" path
-there — that's expected. It's just for checking the screens look right.
+## Step 3: Make a developer key
 
-??? note "Advanced: build from the Terminal (optional)"
-    ```sh
-    cd ~/Documents/faBolus/faBolusGarmin
-    SDK=~/Library/Application\ Support/Garmin/ConnectIQ/Sdks/<sdk-version>
-    "$SDK/bin/monkeyc" -f monkey.jungle -o bin/faBolus.iq -y ~/Documents/faBolus/developer_key.der -e -r -w
-    ```
-    Check the faBolusGarmin README for the exact device/flags.
-
-## Step 5 — Put it on your watch
-
-Easiest: publish it as your **own private beta** with one command. The Connect IQ store needs a unique
-app id per beta listing, so faBolusGarmin ships a script that handles everything automatable:
+Garmin apps are signed with a key you make once. In Terminal:
 
 ```sh
-cd faBolusGarmin && ./scripts/beta-build.sh
+cd ~/Developer/faBolus
+openssl genrsa -out developer_key.pem 4096
+openssl pkcs8 -topk8 -inform PEM -outform DER -in developer_key.pem -out developer_key.der -nocrypt
 ```
 
-It generates your personal app id (once), builds a signed store `.iq`, **and points the iPhone app at
-it automatically** (writes `GARMIN_BETA_APP_ID` into `faBolus/LocalConfig.xcconfig` and regenerates the
-project — no files to edit, no debug toggle). Then just: **Run** the iPhone app in Xcode, and **upload**
-the revealed `.iq` at the Connect IQ dashboard → install to your watch from the Garmin Connect IQ Store
-app. Full details + prerequisites: [faBolusGarmin `docs/STORE-BUILDS.md`](https://github.com/faBolus-app/faBolusGarmin/blob/main/docs/STORE-BUILDS.md).
+This makes `developer_key.der` in **Developer → faBolus**. Keep it: an update to the watch app must be
+signed with the same key.
 
-(Alternatively, sideload over USB with a developer key — see the faBolusGarmin README.)
+## Step 4: Build the watch app
 
-## Step 6 — Pair the remote to your iPhone
+```sh
+cd ~/Developer/faBolus/faBolusGarmin
+./scripts/stamp-revision.sh
+SDK="$(ls -d "$HOME/Library/Application Support/Garmin/ConnectIQ/Sdks/"connectiq-sdk-* | sort | tail -1)"
+"$SDK/bin/monkeyc" -f monkey.jungle -d venu3s -y ../developer_key.der -o bin/faBolus.prg
+```
 
-<ol class="cx2-steps">
-<li>Make sure <strong>Garmin Connect</strong> is installed on your iPhone and your venu3s is paired to it.</li>
-<li>Open the <strong>faBolus</strong> iPhone app, tap the <strong>watch icon</strong> (top-right) → <strong>Set up Garmin remote</strong>. Garmin Connect opens so you can pick your venu3s.</li>
-<li>Come back to faBolus — it remembers your watch and shows "Garmin remote: &lt;your watch&gt; ✓".</li>
-</ol>
+The first line moves to the watch app's folder. The second records which version of the code you're
+building; the watch shows it in its Details screen, and the build fails without it. The third finds the
+SDK you installed, and the fourth builds.
 
 <div class="cx2-check" markdown>
-**Success looks like:** the faBolus app on your venu3s shows your glucose, and the iPhone app
-lists your watch as the Garmin remote. Learn the screens on the
-[Garmin remote](../remotes/garmin.md) page.
+**Success looks like:** `BUILD SUCCESSFUL`, and a file **faBolus.prg** in **faBolusGarmin → bin**.
+</div>
+
+??? note "Optional: try it in the simulator first"
+    ```sh
+    "$SDK/bin/connectiq" &
+    "$SDK/bin/monkeydo" bin/faBolus.prg venu3s
+    ```
+
+    The simulator opens with the app on a virtual Venu 3S. It can't reach your phone, so it shows that
+    the phone is unreachable. That's expected.
+
+## Step 5a: Copy it to the watch over USB
+
+<ol class="cx2-steps">
+<li>Connect the watch to the Mac with its cable.</li>
+<li>The Venu 3S doesn't appear in Finder. Install a free file-transfer app for Android-style devices, such as <a href="https://openmtp.ganeshrvel.com/">OpenMTP</a>, and open it.</li>
+<li>On the watch's side, open the <strong>GARMIN</strong> folder, then <strong>APPS</strong>.</li>
+<li>Copy <strong>faBolus.prg</strong> from <strong>Developer → faBolus → faBolusGarmin → bin</strong> into <strong>APPS</strong>.</li>
+<li>Disconnect the watch. faBolus appears in its app list.</li>
+</ol>
+
+To update the watch app later, build again and copy the new **faBolus.prg** over the old one.
+
+## Step 5b: Or publish a private beta
+
+Instead of copying over USB, you can upload the app to the Connect IQ Store as a beta that only your
+Garmin account sees. The store needs a unique app ID for every beta, so a script makes one for you, builds
+the store file, and points your phone app at that ID:
+
+```sh
+cd ~/Developer/faBolus/faBolusGarmin
+MONKEYC="$SDK/bin/monkeyc" KEY=../developer_key.der ./scripts/beta-build.sh
+```
+
+Run it in the same Terminal window as Step 4, so `$SDK` is still set. Then:
+
+<ol class="cx2-steps">
+<li>The script wrote your app ID into the phone app's <code>LocalConfig.xcconfig</code> and made the Xcode project again. If you use <code>FABOLUS_TIME_SENSITIVE=1</code>, make the project again with it (<code>cd ../faBolus</code>, then the command from Step 4 of the iPhone guide).</li>
+<li>In Xcode, press <strong>Run</strong> to put the updated phone app on your iPhone.</li>
+<li>Sign in to the <a href="https://apps.garmin.com/developer/">Connect IQ developer dashboard</a>, create a beta app, and upload <strong>bin/faBolus-beta-personal.iq</strong>, which the script showed in Finder.</li>
+<li>Install it on the watch from the <strong>Connect IQ Store</strong> app on the iPhone.</li>
+</ol>
+
+The script keeps your app ID in `.beta-app-id` and reuses it every time. Don't delete that file: a new ID
+is a new app, and the phone would lose the watch. More detail is in faBolusGarmin's
+[store builds guide](https://github.com/faBolus-app/faBolusGarmin/blob/main/docs/STORE-BUILDS.md).
+
+## Step 6: Connect the watch to the phone
+
+<ol class="cx2-steps">
+<li>In faBolus on the iPhone, open <strong>Settings → Watch</strong>.</li>
+<li>Tap <strong>Choose watch in Garmin Connect</strong>. Garmin Connect opens: choose your Venu 3S, and it returns to faBolus.</li>
+<li>Open faBolus on the watch. In <strong>Settings → Watch</strong> on the phone, <strong>Link</strong> shows <strong>Connected</strong>.</li>
+</ol>
+
+Bolusing from the watch is off until you turn on **Allow bolusing from the watch** on the same screen.
+See [Garmin watch](../remotes/garmin.md).
+
+<div class="cx2-check" markdown>
+**Success looks like:** the watch shows your glucose and its age, and **Settings → Watch** on the phone
+names your watch.
 </div>

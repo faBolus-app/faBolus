@@ -1,7 +1,6 @@
 # Send feedback
 
-Found a bug, hit something confusing, or have an idea? We'd love to hear it — from anyone, technical
-or not.
+Found a bug, something confusing, or have an idea? Tell us, technical or not.
 
 ## Quick form
 
@@ -15,23 +14,27 @@ or not.
 
 [:material-message-plus: **Open the feedback form**](https://github.com/faBolus-app/faBolus/issues/new?labels=feedback&template=feedback.md){ .md-button .md-button--primary }
 
-The button opens a short GitHub form. A free GitHub account is needed to submit — if you'd rather not
-create one, use email below.
+The button opens a short GitHub form. Sending it needs a free GitHub account; if you'd rather not make
+one, use email.
 
 ## Other ways
 
-- **Email:** [feedback@fabolus.org](mailto:feedback@fabolus.org?subject=faBolus%20feedback) — tell us
-  what you were doing, what you expected, and what happened. Screenshots help.
+- **Email:** [feedback@fabolus.org](mailto:feedback@fabolus.org?subject=faBolus%20feedback): what you
+  were doing, what you expected and what happened. Screenshots help.
 - **Bug or feature request (developers):** open a
   [GitHub issue](https://github.com/faBolus-app/faBolus/issues/new/choose).
 
 ## What helps us most
 
-- **Which app** — iPhone or Garmin.
-- **What you did**, step by step, and **what you expected vs. what happened**.
-- **Your setup** — pump model (t:slim X2), iOS/Garmin version, and CGM.
-- A **screenshot** or the on-screen error text.
+- **Which app**: iPhone or Garmin.
+- **What you did**, step by step, and what you expected and what happened.
+- **Your setup**: the app's version and build (**Settings → About & help**), your iPhone's iOS version,
+  and your CGM.
+- A **screenshot** or the error text on screen.
+- For a connection problem, the file from **Settings → About & help → Export diagnostics**. It has no
+  pairing code, password or glucose readings. For a direct G6 or G7 problem, also the Dexcom Bluetooth
+  log, which does include glucose readings.
 
 !!! warning "Safety first"
     faBolus is experimental and not FDA-cleared. For anything urgent about your therapy, contact your
-    healthcare provider — not this form.
+    healthcare provider, not this form.

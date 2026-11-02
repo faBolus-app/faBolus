@@ -1,90 +1,55 @@
-# Pairing your pump
+# Pair your pump
 
-Before the pump accepts any command, it needs an authenticated Bluetooth connection. You do this
-once — after that, faBolus reconnects on its own using a securely-stored key, no code needed.
+faBolus pairs with your t:slim X2 once, using a code the pump shows. After that it reconnects on its own.
 
-<figure class="cx2-shot phone" markdown="span">
-  ![Enter the 6-digit pairing code](../assets/screenshots/pairing.svg)
-  <figcaption>Enter the pump's pairing code, then Connect</figcaption>
-</figure>
+!!! warning "One controller at a time"
+    The pump pairs with one app at a time. Pairing faBolus replaces the official t:connect app's pairing,
+    and pairing t:connect again replaces faBolus's. Each switch needs a new code from the pump.
 
-!!! warning "Unpair the official app first"
-    Only **one** control connection can be active at a time. Remove/close the official Tandem
-    **t:connect** app's pairing before pairing faBolus, and don't expect them to work at once.
-
-## Pair your pump
-
-The t:slim X2 uses a secure **JPAKE** handshake, in one of two forms depending on its firmware:
-a 6-digit code on v7.7 and later, or an older 16-character code before that. faBolus auto-selects
-the right handshake from the code you enter, so you never have to choose a "scheme."
-
-!!! note "Mobi isn't supported yet"
-    This build only pairs a t:slim X2. If faBolus detects a Mobi during pairing, it disconnects and
-    shows "Tandem Mobi isn't supported in this version of faBolus. This build supports the Tandem
-    t:slim X2 only." — support for Mobi is planned for a later release.
-
-### t:slim X2 (v7.7+)
-
-The t:slim X2 has a screen, so it shows a fresh 6-digit code when you start pairing on the pump.
+## Pair
 
 <ol class="cx2-steps">
-<li>On the pump: <strong>Options → Device Settings → Bluetooth Settings → Pair Device</strong>. The pump screen shows a <strong>6-digit</strong> code.</li>
-<li>In faBolus, tap <strong>Connect</strong> and type those 6 digits.</li>
-<li>Tap <strong>Connect</strong>. The app scans for the pump, runs the handshake, and derives a signing key.</li>
-<li>When the HUD shows <strong>Connected</strong>, you're paired. Live data starts filling in.</li>
+<li>Keep the pump next to the phone.</li>
+<li>In faBolus, tap <strong>Connect a pump</strong> (on the first screen, the dashboard, or <strong>Settings → Pump</strong>). faBolus starts looking for pumps in pairing mode.</li>
+<li>On the pump, go to <strong>Options → Device Settings → Bluetooth Settings → Pair Device</strong>. The pump shows a pairing code.</li>
+<li>In faBolus, your pump appears in the list. Select it if it isn't already.</li>
+<li>Type the code and tap <strong>Pair</strong>.</li>
 </ol>
 
-### Older t:slim X2 (pre-v7.7 — 16-character)
+The code is one of two kinds, and faBolus handles both:
 
-<ol class="cx2-steps">
-<li>On the pump: <strong>Options → Device Settings → Bluetooth Settings → Pair Device</strong> to show the <strong>16-character</strong> code.</li>
-<li>Enter it in faBolus and connect. The app performs the legacy challenge/response handshake.</li>
-</ol>
+- **6 digits** on most pumps;
+- **16 letters and numbers** on older firmware (before v7.7). Type it exactly as shown; it's
+  case-sensitive.
 
 <div class="cx2-check" markdown>
-**Success looks like:** the top of the app says **Connected**, and your glucose, insulin, and
-battery start filling in within a few seconds.
+**Success looks like:** the sheet closes, **Settings → Pump** shows **Connected**, and the dashboard
+fills in with glucose, active insulin, reservoir and battery within a few seconds.
 </div>
+
+If the pump doesn't show up, the sheet offers **Search again** after a while. A Mobi is listed but can't
+be chosen: faBolus doesn't connect to a Mobi yet.
 
 ## After pairing
 
-- The pairing is saved **securely in the iOS Keychain**, so future connects use
-  **Connect (saved pairing)** — no code required, even after you rebuild the app.
-- If you ever reset the pump or it forgets the app, use **Re-pair with new code** from the
-  Connect menu to start fresh.
-- The signing key authorizes every insulin-affecting command (bolus permission / initiate /
-  cancel). The app tracks the pump's clock so those commands are signed with correct timing.
+- The pairing stays on the phone. faBolus reconnects by itself when the pump comes back in range, also in
+  the background, and after you install a new build.
+- **Settings → Pump** shows the pump's model, name, status and API version, and why the link last
+  dropped.
+- **Pair a different pump or new code** pairs again. If you cancel, the pump you had reconnects.
+- **Forget this pump** disconnects and removes the pairing and the logbook. To use the pump again you
+  pair with a new code.
 
-!!! tip "Nothing connecting?"
-    Make sure the pump is in pairing mode, Bluetooth permission is granted to faBolus, and the
-    official app isn't holding the connection. More in [Troubleshooting](../troubleshoot.md).
+## Pump history
 
-## Using faBolus alongside the official t:connect app
+faBolus reads the pump's history every 15 minutes and keeps it on the phone, in the
+[logbook](../operate/logbook.md). **Settings → Pump → Sync history now** reads it at once.
 
-The pump keeps **one** paired controller and issues a **new code** every time you pair — it never
-stores two, and the code can't be shared between apps (each derives its own key). So faBolus and the
-official **t:connect** app can both be installed, but only one is paired/connected at a time, and
-switching is a **full re-pair, not a quick toggle**:
+## faBolus and t:connect
 
-<ol class="cx2-steps">
-<li>On the pump, <strong>Pair Device</strong> shows a new code; pair whichever app you want to use.</li>
-<li>That <strong>evicts</strong> the other app's pairing — to switch back, you re-pair it with another new code.</li>
-</ol>
+faBolus doesn't replace the official app: some pump settings can only be changed in t:connect. To change
+one, pair t:connect, make the change, then pair faBolus again with a new code.
 
-Day-to-day this is painless if you pick one everyday controller: while faBolus stays paired it
-reconnects with **no code**, so the new-code step only appears when you bounce between the two.
-
-!!! note "faBolus doesn't replace the official app"
-    Some pump settings and configuration can only be changed in **t:connect**; faBolus doesn't
-    support them yet. When you need one, pair t:connect, make the change, then re-pair faBolus for
-    monitoring and remote bolus.
-
-## Under the hood (for the curious)
-
-??? info "What the handshake actually does"
-    - **6-digit:** an **EC-JPAKE** handshake (secp256r1 / SHA-256, via mbedTLS in TandemKit) —
-      rounds 1–2 plus derive, then Tandem's session-key / key-confirmation rounds 3–4. The
-      derived key is `authKey = HKDF(serverNonce, derivedSecret)`, which signs subsequent
-      commands.
-    - **16-character:** the app sends `CentralChallengeRequest`, receives the pump's HMAC key,
-      and replies with a `PumpChallengeRequest` carrying `HMAC-SHA1(pairingCode, hmacKey)`.
+!!! tip "Nothing connects?"
+    Check that the pump is in pairing mode, that faBolus may use Bluetooth (iPhone **Settings → faBolus**),
+    and that t:connect isn't connected to the pump. More in [Troubleshooting](../troubleshoot.md).

@@ -1,46 +1,45 @@
 # Glossary
 
-Plain-language definitions of terms used across faBolus and its docs — for users and for anyone (or any
-LLM) reading the code.
+Plain-language definitions of the terms used in faBolus and these docs.
 
-## Diabetes / therapy
+## Diabetes and therapy
 
-- **Bolus** — a dose of insulin delivered at once (e.g. for a meal or a correction).
-- **Extended / combo bolus** — a bolus split into a part delivered now and the rest over a set duration.
-- **Basal** — the slow background insulin the pump delivers continuously (a *temp basal* is a temporary
-  change to it).
-- **IOB (insulin on board)** — insulin from recent boluses still active in the body; the calculator
-  subtracts it so you don't "stack" doses. Shown as "Active Insulin".
-- **Carb ratio** — grams of carbohydrate covered by 1 unit of insulin.
-- **ISF / correction factor** — how far 1 unit of insulin is expected to lower glucose (mg/dL per unit).
-- **Target (BG)** — the glucose value corrections aim for.
-- **Correction** — insulin to bring a high glucose down toward target (IOB is subtracted first).
-- **CGM** — continuous glucose monitor (e.g. Dexcom, Libre) reporting glucose every few minutes.
-- **Control-IQ** — Tandem's automated insulin-adjustment feature that runs **on the pump** (faBolus does
-  not automate dosing — it's a manual remote + viewer).
-- **TIR (time in range)** — % of readings in 70–180 mg/dL. **GMI** — an estimated A1C from average
-  glucose. **CV** — glucose variability (std ÷ mean); ≤ 36% is a common stability target.
-- **Stale reading** — a glucose value older than ~6 min; shown greyed with its age, never used as
-  current or to auto-fill a correction.
+- **Bolus**: a dose of insulin given at once, for a meal or a correction.
+- **Basal**: the background insulin the pump delivers all the time. A *temporary rate* changes it for a
+  while.
+- **Active insulin (IOB, insulin on board)**: insulin from recent boluses that's still working. The
+  calculator subtracts it, so doses don't stack.
+- **Carb ratio**: grams of carbohydrate covered by 1 unit of insulin.
+- **Correction factor (ISF)**: how far 1 unit is expected to lower glucose, in mg/dL.
+- **Target**: the glucose a correction aims for.
+- **Correction**: insulin to bring a high glucose down toward the target, after subtracting active
+  insulin.
+- **CGM**: continuous glucose monitor, such as a Dexcom G6 or G7, reporting glucose every few minutes.
+- **Control-IQ**: Tandem's automated insulin adjustment, which runs on the pump. faBolus doesn't automate
+  dosing; it shows Control-IQ's state and history.
+- **Time in range (TIR)**: the share of readings between 70 and 180 mg/dL. **GMI**: an estimate of A1C
+  from average glucose. **CV**: glucose variability; 36% or less is a common stability target.
 
-## Devices / roles
+## faBolus
 
-- **Host** — the device physically paired to the pump over Bluetooth (the iPhone). It owns the
-  pump link and is the only thing that dispenses insulin.
-- **Remote** — something that shows status and *requests* actions the host carries out: the Garmin
-  **Venu 3S** watch, or a Home Screen/Lock Screen widget on the phone itself. Neither one touches
-  the pump directly.
-- **Dexcom Share** — the optional cloud CGM source you can turn on so glucose keeps flowing if the
-  pump-to-sensor link drops; it's the only fallback source in this version (**Settings → CGM &
-  failover**).
+- **Stale**: a value older than its freshness window. It's greyed or shown as "—", never as current, and
+  a stale glucose never fills a correction.
+- **Backup CGM**: a second glucose source (Dexcom Share, or a G6 or G7 read directly), used only while
+  the pump's reading is old or missing.
+- **Outcome unknown**: faBolus lost track of a bolus after it may have started. New boluses wait until
+  pump history settles it or you confirm on the pump.
+- **Stopped**: a bolus that delivered less than asked, for example because it was cancelled.
+- **Read-only**: a switch that stops the phone, or the watch, from bolusing. Cancel still works.
+- **Remote**: something that shows status and asks the phone to act: the Garmin watch. The widgets and
+  Live Activity only show.
 
-## Security / protocol (developer)
+## Developer
 
-- **JPAKE** — the password-authenticated key exchange used to pair with the pump (a code proves both
-  sides without sending it).
-- **WritePolicy** — the transport interlock (`.readOnly` / `.allowNonDelivery` / `.allowDelivery`) that
-  blocks insulin-affecting messages unless explicitly permitted.
-- **Oracle** — the reference Java implementation the Swift pump messages are tested byte-exact against
-  (in `TandemKit`).
-- **RemoteCommand** — the small JSON contract every remote uses to talk to the host
-  (`schema/command.schema.json`).
+- **JPAKE**: the key exchange used to pair with a 6-digit code: both sides prove they know the code
+  without sending it.
+- **Signed message**: a command carrying a signature made with the pairing key. The pump refuses an
+  unsigned or wrongly signed bolus.
+- **pumpX2 / the oracle**: James Woglom's reverse-engineering of the pump protocol. TandemKit's messages
+  are tested byte for byte against its Java implementation.
+- **Protocol version 2**: the message format between the phone and a remote, defined in faBolus's
+  `Packages/RemoteProtocol/contract/`.

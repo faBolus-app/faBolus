@@ -1,107 +1,75 @@
-# Garmin remote
+# Garmin watch
 
-A Connect IQ (Monkey C) companion for the **Garmin Venu 3S**. It's a **thin remote**: it messages
-the iPhone host via the Connect IQ mobile SDK, and the phone runs the confirm interlock and
-delivers through TandemKit. To build and install it, see
-[Build the Garmin remote](../build/garmin-build.md).
+The faBolus watch app runs on a **Garmin Venu 3S**. It shows what the phone sends it and can ask the
+phone to bolus, cancel or clear an alert. It never talks to the pump: the phone checks every request and
+sends the bolus. To install it, see [Garmin watch (build)](../build/garmin-build.md).
 
-!!! note "Garmin support is an optional build"
-    The iPhone side of the Garmin bridge is compiled in only when the app is built with the Connect
-    IQ SDK. If it was built without the SDK, the **Garmin** section under **Settings → Remotes &
-    devices** shows a note saying so — rebuild with the Connect IQ SDK to enable it.
+## The screens
 
-!!! note "The Garmin app lives in its own repo"
-    The Garmin app is maintained in the separate
-    **[faBolusGarmin](https://github.com/faBolus-app/faBolusGarmin)** repo. The *iPhone side* of the
-    bridge is part of the faBolus app, so the two talk over the shared command contract.
+Swipe up and down to move between them. Choose which appear, their order and the one the app opens on in
+**Settings → Watch → Watch layout** on the phone.
 
-!!! note "Venu 3S only"
-    The Connect IQ manifest builds for the **Venu 3S** alone — it's the one device this app
-    supports, and the one it's actually been tested on.
+| Screen | Shows |
+| --- | --- |
+| **Glance** | Glucose with its trend and age, and the bolus button |
+| **Glucose only** | Glucose, without a bolus button |
+| **Clock + glucose** | The time and glucose, without a bolus button |
+| **Bolus button only** | Just the bolus button |
+| **Alerts** | The pump's open alerts |
+| **History plot** | Recent glucose; tap to step through the chart ranges you chose |
+| **Details** | Rows you choose, such as active insulin, reservoir, battery and last bolus |
 
-<div class="cx2-shots" markdown>
-<figure class="cx2-shot watch" markdown="span">
-  ![Garmin glance](../assets/screenshots/garmin-glance.svg)
-  <figcaption>Glance</figcaption>
-</figure>
-<figure class="cx2-shot watch" markdown="span">
-  ![Garmin history](../assets/screenshots/garmin-history.svg)
-  <figcaption>History plot</figcaption>
-</figure>
-<figure class="cx2-shot watch" markdown="span">
-  ![Garmin details](../assets/screenshots/garmin-details.svg)
-  <figcaption>Details</figcaption>
-</figure>
-<figure class="cx2-shot watch" markdown="span">
-  ![Garmin alerts](../assets/screenshots/garmin-alerts.svg)
-  <figcaption>Alerts</figcaption>
-</figure>
-</div>
+The watch also has a glance in Garmin's glance list, and complications for watch faces that show them:
+glucose, and up to three values you choose on the phone. A complication can't show a value's age, so an
+old value shows as `--`, never as a number that could pass for current. Arrows are drawn with plain characters (`^ / -> \ v`) so every face's
+font can show them.
 
-## The screens (swipe up/down to move between them)
+## Bolus from the watch
 
-- **Glance** — current glucose + a drawn, range-colored trend arrow, and a **Bolus** button.
-- **Alerts** — active pump alerts/alarms; **tap a row to clear** one.
-- **History** — a CGM history plot; **tap to cycle** the window **3 → 6 → 12 h**.
-- **Details** — last bolus, Active Insulin, reservoir, battery, and an alert count.
-
-### Reorder the screens / pick the default
-
-The **order** of these screens and **which one opens first** are configurable from the phone:
-**Settings → Garmin remote → Screen order**. Drag to reorder and choose the screen that opens
-first. The layout is sent to the watch on its next status update and is remembered on the watch
-(it survives restarts and offline launches). Default: Glance → Alerts → History → Details,
-opening on Glance.
-
-## Using it
-
-**Tap** the on-screen buttons — bolus −/+, Deliver, the confirm targets, an alert row — and
-**swipe up/down** to move between screens.
-
-## Bolus flow
-
-<div class="cx2-shots" markdown>
-<figure class="cx2-shot watch" markdown="span">
-  ![Garmin bolus entry](../assets/screenshots/garmin-bolus.svg)
-  <figcaption>Set units or carbs</figcaption>
-</figure>
-<figure class="cx2-shot watch" markdown="span">
-  ![Garmin 1-2-3 confirm](../assets/screenshots/garmin-confirm.svg)
-  <figcaption>Tap 1 → 2 → 3 to confirm</figcaption>
-</figure>
-</div>
+Bolusing from the watch is **off** until you turn on **Allow bolusing from the watch** in
+**Settings → Watch** on the phone. The phone asks you to confirm each time you turn it on. With
+**Read-only (view only)** on, the watch can't bolus at all.
 
 <ol class="cx2-steps">
-<li><strong>Set the amount.</strong> Tap the mode chip to switch <strong>Units / Carbs</strong>, tap <strong>−/+</strong> to set the amount, then <strong>Deliver</strong>.</li>
-<li><strong>Confirm.</strong> Tap <strong>1 → 2 → 3</strong> in order (like unlocking a t:slim) — a wrong tap resets.</li>
-<li>Completing the confirm sends the request to the phone, which carries it out. The remote never delivers on its own, and the pump still enforces its max and signature.</li>
+<li>Tap the bolus button. The screen opens in <strong>Carbs</strong> or <strong>Units</strong>, as set on the phone, and steps by the phone's increments.</li>
+<li>Set the carbs or the units. In carbs, the watch shows the dose it works out from the pump's settings as you go.</li>
+<li>If the CGM reading is old, the watch asks: <strong>Include reading</strong> or <strong>Carbs only</strong>.</li>
+<li>Tap <strong>Deliver</strong>, then tap <strong>1 → 2 → 3</strong> in order. A wrong tap starts over.</li>
 </ol>
 
-## BG complication
+The phone then checks the request and delivers it, or refuses it and says why. The watch shows the
+outcome: **Delivering…**, **Delivered**, **Stopped**, **Pump refused**, **Not delivered** or
+**Outcome unknown**.
 
-The app publishes a **public BG complication** (a numeric value + a trend arrow) that Garmin
-**Face It** faces and Connect IQ faces can show on your watch face; the number is range-colored by the
-face. It refreshes while the app is open and via a background refresh (~5 min); fresh data needs the
-iPhone app open and connected.
+What the phone checks:
 
-!!! note "Complication staleness"
-    A numeric complication can't render `--`, so when a reading goes stale the trend arrow is dropped
-    but the last number stays on screen — the complication can lag the CGM (and shows nothing new while
-    the phone is unreachable). Use the in-app screens, or the "value + trend" **string** display mode,
-    when you need staleness called out. Set the style in **Settings → Remotes & devices**.
+- the request is less than 2 minutes old by the phone's clock, and is acted on at most once, even if the
+  watch sends it again;
+- for carbs, the phone works the dose out again from the pump's latest values, and refuses it as
+  **Dose changed** if it differs from the watch's by more than 0.10 U;
+- your remote bolus size limit, if you set one, and the pump's own limits;
+- everything the phone's own bolus checks, such as no unknown outcome waiting.
 
-<figure class="cx2-shot watch" markdown="span">
-  ![Garmin BG complication](../assets/screenshots/garmin-complication.svg)
-  <figcaption>The BG complication on a Face It / CIQ watch face</figcaption>
-</figure>
+While a bolus delivers, the watch offers **Cancel**. A cancel is never refused.
 
-!!! note "Stock Garmin faces can't show it"
-    Third-party complication data only appears on **Face It** faces or CIQ faces that support
-    complications. Pick one of those and add the *faBolus BG* field.
+If the phone isn't reachable, the watch says **Phone not connected. Nothing was sent.** If the phone
+doesn't answer after a request went out, it says **No answer from the phone. Check the pump before dosing
+again.**
 
-## Why your iPhone has to be nearby
+## Alerts on the watch
 
-The Garmin is a remote — it talks to your **iPhone**, which owns the pump connection and confirms
-and delivers every bolus. So keep your iPhone with you and connected while you use the Garmin.
-Running the pump directly from the Garmin with no phone is a separate future project, not something
-the app does today.
+The watch mirrors the pump alerts the phone shows: the phone is the authority, and the watch shows what
+it sends. An alert appears as a card. The watch offers **Clear** only once your pump has accepted a clear
+from the phone (see [Alerts](../operate/alerts.md#clearing-an-alert-from-the-phone)); otherwise the card
+says to clear it on the pump.
+
+## The phone has to be nearby
+
+The watch reaches the phone through Garmin Connect over Bluetooth, and the phone reaches the pump. If the
+phone is out of range, the watch keeps showing the last values with their age, and greys or hides them
+as they get old.
+
+## When the versions don't match
+
+The phone and watch apps speak one version of their message format. If they don't match, the watch says
+**Update faBolus on phone** or **Update the watch app**, and offers no bolus.

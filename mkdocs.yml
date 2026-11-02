@@ -1,16 +1,17 @@
 site_name: faBolus
-site_description: faBolus — an iPhone and Garmin (Venu 3S) remote for the Tandem t:slim X2 insulin pump. Built by Zev and Tia in tandem.
+site_description: faBolus — an iPhone app, with a Garmin Venu 3S watch app, for the Tandem t:slim X2 insulin pump. Built by Zev and Tia in tandem.
 site_url: https://fabolus.org/
 repo_url: https://github.com/faBolus-app/faBolus
 repo_name: faBolus-app/faBolus
 copyright: >-
-  Built by Zev and Tia in tandem · faBolus is an independent, open-source project in development
-  for experimental use — not FDA-cleared; you assume all responsibility. Not affiliated with
-  Tandem Diabetes Care or Dexcom.
+  Built by Zev and Tia in tandem · faBolus™ is an independent, open-source project in development for
+  experimental use. It is not a medical device and is not FDA-cleared; it is for experimental and
+  demonstration use. If you build or use it, you assume all responsibility. Not affiliated with Tandem
+  Diabetes Care or Dexcom. faBolus™ is a trademark of Zev Granowitz.
 
 theme:
   name: material
-  custom_dir: overrides   # persistent safety banner lives in overrides/main.html (block announce)
+  custom_dir: overrides   # the safety banner on every page: overrides/main.html (block announce)
   language: en
   font:
     text: Inter
@@ -93,29 +94,29 @@ validation:
 nav:
   - Home: index.md
   - Get started:
-      - Safety first: safety.md
+      - Safety: safety.md
       - What you'll need: requirements.md
       - How it works: architecture.md
   - Build it yourself:
       - Overview: build/index.md
       - 1 · Apple account: build/apple-developer.md
-      - 2 · Install Xcode: build/xcode.md
+      - 2 · Xcode and tools: build/xcode.md
       - 3 · Put it on your iPhone: build/build-app.md
-      - 4 · Add a Garmin (Venu 3S): build/garmin-build.md
-      - Advanced (command line): build/advanced.md
-      - Keeping the app running: build/updating.md
-  - Set up & pair:
-      - Pairing your pump: setup/pairing.md
+      - 4 · Garmin watch (optional): build/garmin-build.md
+      - Command line: build/advanced.md
+      - Keeping it running and updating: build/updating.md
+  - Set up:
+      - Pair your pump: setup/pairing.md
+      - Backup CGM: setup/cgm.md
   - Using the app:
-      - Dashboard & status: operate/status.md
-      - Bolus & cancel: operate/bolus.md
-      - Glucose (Dexcom Share): operate/glucose.md
-      - Alerts & alarms: operate/alerts.md
-      - Erase & full reset: operate/erase.md
-      - Settings & options: customize/settings.md
-  - Remotes:
-      - Garmin (Venu 3S): remotes/garmin.md
-      - iPhone widgets: remotes/iphone-widgets.md
+      - Dashboard: operate/status.md
+      - Bolus and cancel: operate/bolus.md
+      - Alerts and notifications: operate/alerts.md
+      - Logbook: operate/logbook.md
+      - Widgets and Live Activity: remotes/iphone-widgets.md
+      - Settings: customize/settings.md
+      - Delete data and reset: operate/erase.md
+  - Garmin watch: remotes/garmin.md
   - Help:
       - Troubleshooting: troubleshoot.md
       - FAQ: faq.md

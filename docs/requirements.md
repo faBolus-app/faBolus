@@ -1,74 +1,66 @@
 # What you'll need
 
-A checklist of the hardware, accounts, and tools before you start the [build](build/index.md).
-Don't worry if some terms are unfamiliar — the build guide explains each as you go.
+Everything to have before you start the [build](build/index.md). The build guide explains each term as
+it comes up.
 
 ## Hardware
 
 <div class="grid cards" markdown>
 
-- :material-needle:{ .lg .middle } **A supported pump**
+- :material-needle:{ .lg .middle } **A Tandem t:slim X2**
 
     ---
 
-    faBolus currently supports the Tandem **t:slim X2**, plus the usual cartridges and infusion
-    sets.
+    Either pairing kind works: the 6-digit code of newer firmware or the 16-character code of older
+    firmware. faBolus doesn't connect to a Mobi.
 
 - :material-cellphone:{ .lg .middle } **An iPhone**
 
     ---
 
-    On **iOS 17 or later**, with a cable to connect it to your Mac.
+    On **iOS 18 or newer**, with a cable to connect it to your Mac. iPad isn't supported.
 
 - :material-laptop:{ .lg .middle } **A Mac**
 
     ---
 
-    Running a recent macOS — needed to run Xcode and build the app.
+    One that runs **Xcode 27.2**, Apple's free app-building tool.
 
-- :material-watch:{ .lg .middle } **Optional: a Garmin remote**
+- :material-watch:{ .lg .middle } **Optional: a Garmin Venu 3S**
 
     ---
 
-    A **Garmin Venu 3S** if you want a wrist remote for bolusing and checking glucose without
-    pulling out your phone.
+    The one watch the Garmin app is built for. You also need Garmin's **Garmin Connect** app on the
+    iPhone, with the watch paired to it.
 
 </div>
 
 ## Accounts
 
-- An **Apple ID**. A **free** one works (apps expire after 7 days); the **paid** Apple Developer
-  Program ($99/year) means the app lasts a year and widgets/watch features are more reliable. See
-  [Apple ID & Developer account](build/apple-developer.md).
-- A free **Garmin developer account** — only if you're building the Garmin remote (to download
-  its SDK and accept the license).
+- An **Apple account**. A free one works, but the app stops opening after 7 days until you install it
+  again. The Apple Developer Program ($99 a year) makes an install last a year and allows Time Sensitive
+  notifications. See [Apple account](build/apple-developer.md).
+- A free **GitHub** account is optional. It's only needed for GitHub Desktop sign-in or to send feedback
+  through GitHub.
+- A free **Garmin** account, only for the watch: it lets you install Garmin's developer tools.
 
-## Software / toolchain
+## Glucose
+
+Glucose normally comes from the CGM paired with your pump. As a backup, faBolus can also read:
+
+- **Dexcom Share**: your Dexcom account, with Share turned on in the Dexcom app;
+- **Dexcom G6 or G7 directly**: the Dexcom app installed, paired and running on the same iPhone.
+
+See [Backup CGM](setup/cgm.md). faBolus shows glucose in mg/dL only.
+
+## Software you'll install
 
 | Tool | What it's for | Where |
 | --- | --- | --- |
-| **Xcode 16+** | Builds the iPhone app | [Install Xcode](build/xcode.md) |
-| **XcodeGen** | Generates the Xcode project from `project.yml` (`brew install xcodegen`) | [Install Xcode](build/xcode.md) |
-| **[TandemKit](https://github.com/faBolus-app/TandemKit)** | The protocol/Bluetooth core the app is built on (downloaded alongside the app) | [Build the app](build/build-app.md#download) |
-| **Connect IQ Mobile SDK for iOS** *(optional)* | Lets the iPhone talk to a Garmin watch — only needed if you want the Garmin remote. If it's absent, the app auto-builds without Garmin. | [Build the app](build/build-app.md#connectiq) |
-| **Connect IQ device SDK** *(optional)* | Builds the Garmin watch app itself — only for Garmin users | [Build for Garmin](build/garmin-build.md) |
+| **Xcode 27.2** | Builds the app and puts it on your iPhone | [Xcode and tools](build/xcode.md) |
+| **Homebrew** and **XcodeGen** | XcodeGen makes the Xcode project from the repository's `project.yml` | [Xcode and tools](build/xcode.md) |
+| **GitHub Desktop** | Downloads the code with buttons instead of commands | [Xcode and tools](build/xcode.md) |
+| **Garmin's iOS companion SDK** *(optional)* | Lets the phone app talk to the watch. Without it the app builds with no watch support. | [Put it on your iPhone](build/build-app.md#garmin-sdk) |
+| **Garmin's Connect IQ SDK** *(optional)* | Builds the watch app itself | [Garmin watch](build/garmin-build.md) |
 
-!!! note "For contributors validating the protocol"
-    Verifying the protocol core (TandemKit's byte-exact tests) also needs a **JDK 17+** to run
-    the pumpX2 `cliparser` oracle, and ideally a Bluetooth sniffer to capture a known-good
-    pairing/bolus trace. This is only relevant if you're changing TandemKit itself — see its
-    repo.
-
-## Pairing codes
-
-Your pump uses one of two pairing schemes; faBolus supports both and auto-selects:
-
-- A **6-digit** code — t:slim X2 running firmware v7.7 or later (a modern JPAKE handshake). Most
-  current pumps.
-- A **16-character** code — older t:slim X2 (pre-v7.7).
-
-See [Pairing your pump](setup/pairing.md).
-
----
-
-Got everything? Head to the [Build guide :material-arrow-right:](build/index.md).
+Got everything? Go to the [build guide :material-arrow-right:](build/index.md).

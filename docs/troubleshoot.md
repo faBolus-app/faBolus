@@ -1,77 +1,114 @@
 # Troubleshooting
 
-Common snags, grouped by where you hit them. If something here doesn't cover it, check the
-[FAQ](faq.md).
+Common problems, by where you hit them. If yours isn't here, see the [FAQ](faq.md) or
+[send feedback](feedback.md).
 
 ## Building the app
 
-??? question "Build fails right after downloading: missing `mbedtls` files"
-    TandemKit's crypto submodule wasn't fetched. Run:
+??? question "`xcodegen: command not found`"
+    XcodeGen isn't installed, or Terminal doesn't know about Homebrew yet. Do
+    [Install Homebrew and XcodeGen](build/xcode.md#step-3-install-homebrew-and-xcodegen) again, including
+    the **Next steps** commands Homebrew prints, then open a new Terminal window.
 
-    ```sh
-    cd ~/faBolus/TandemKit && git submodule update --init --recursive
-    ```
+??? question "\"Failed to register bundle identifier\" or \"App Group is not available\""
+    The bundle ID is taken: every App ID and App Group is unique across Apple. Set your own
+    `APP_BUNDLE_ID` in `LocalConfig.xcconfig` (see [Your details](build/build-app.md#your-details)), make
+    the project again with `./scripts/generate-project.sh`, and reopen it.
 
-??? question "Xcode can't find the ConnectIQ package"
-    The Connect IQ **Mobile** SDK isn't where `project.yml` expects it. Re-check
-    [Step 2 of the build](build/build-app.md#connectiq), place the
-    `connectiq-companion-app-sdk-ios-1.8.0` folder correctly (or edit the `ConnectIQ` `path:` in
-    `project.yml`), then re-run `xcodegen generate` and reopen the project.
+??? question "\"Signing requires a development team\""
+    No team is set. Put your Team ID in `LocalConfig.xcconfig` and make the project again, or pick your
+    team under **Signing & Capabilities** for both **faBolus** and **faBolusWidgets**. If the file still
+    has the example's `ABCDE12345`, replace it.
 
-??? question "\"Failed to register bundle identifier\", \"An Application Group … is not available\", or other signing errors"
-    App IDs and App Groups must be unique across all of Apple, so the default `com.fabolus.app`
-    (owned by the faBolus team) can't be reused by your account. Set your own: copy
-    `LocalConfig.xcconfig.example` to **`LocalConfig.xcconfig`**, set **`APP_BUNDLE_ID`** to a
-    value unique to you (and **`DEVELOPMENT_TEAM`** to your Team ID), then run `xcodegen generate`
-    again. The widgets and App Group both update from that one value. See the
-    [signing note](build/build-app.md#your-team).
+??? question "Package resolution fails, or a TandemKit or mbedTLS file is missing"
+    Xcode's download of a library was interrupted. In Xcode choose **File → Packages → Reset Package
+    Caches**, then **File → Packages → Resolve Package Versions**, and wait for it to finish. Check that
+    the Mac is online: the libraries come from GitHub.
 
-??? question "The widget target won't sign on a free account"
-    Free \"Personal Team\" accounts sometimes can't register App Groups or app extensions. Build
-    just the main **faBolus** app for now; add the widgets once you're on the paid Apple
-    Developer Program.
+??? question "Garmin's SDK isn't found, or the build says Garmin: off"
+    The folder must be exactly `Developer/vendor/connectiq-companion-app-sdk-ios-1.8.0`, two folders up
+    from the app (see [Garmin's SDK](build/build-app.md#garmin-sdk)), and contain
+    `ConnectIQ.xcframework`. Move it there and make the project again.
 
-??? question "I changed `project.yml` and nothing happened"
-    Re-run `xcodegen generate` and reopen `faBolus.xcodeproj`; the project file is generated
-    from `project.yml`, so edits only take effect after regenerating.
+??? question "A build fails right after an update"
+    Make the project again (`./scripts/generate-project.sh`), since files may have been added. If it
+    still fails, choose **Product → Clean Build Folder** in Xcode and build again.
 
-??? question "The app expired / won't open"
-    That's the signing certificate's normal life (7 days on free, 1 year on paid). Just
-    reinstall: see [Keeping the app running](build/updating.md).
+??? question "The app won't open any more"
+    Its signing ran out: 7 days on a free account, a year on a paid one. Install it again; see
+    [Keeping it running](build/updating.md).
 
-## Connecting & pairing
+## Pairing and connecting
 
-??? question "Can't find or connect to the pump"
-    - Make sure the official Tandem **t:connect** app is unpaired/closed; only one control
-      connection is allowed at a time.
-    - Confirm Bluetooth permission is granted to faBolus (**Settings → faBolus → Bluetooth**).
-    - Put the pump in pairing mode; the app scans for the Tandem service (`0000fdfb…`).
+??? question "The pump doesn't appear"
+    - Put the pump in pairing mode (**Options → Device Settings → Bluetooth Settings → Pair Device**).
+    - Make sure faBolus may use Bluetooth: iPhone **Settings → faBolus → Bluetooth**.
+    - Disconnect or unpair t:connect: the pump connects to one app at a time.
+    - Wait for **Search again**, then try once more with the phone next to the pump.
 
 ??? question "Pairing fails"
-    - Double-check the code type (16-char vs 6-digit) matches your pump's firmware.
-    - For a 6-digit (JPAKE) code, a **wrong** code still completes the handshake but fails
-      **key confirmation**: re-enter the correct code.
+    Pair Device shows a new code each time. Enter the code the pump shows now, exactly: the 16-character
+    code is case-sensitive. Then try again.
+
+??? question "\"Connection unstable\" or the pump keeps disconnecting"
+    Keep the phone closer to the pump. **Settings → Pump** says why the link last dropped. If it keeps
+    happening, export diagnostics (**Settings → About & help**) and [send them](feedback.md).
 
 ## Using it
 
-??? question "A bolus is rejected"
-    - The command must be correctly signed with a recent pump time. Reconnect to refresh timing.
-    - Check the max-units clamp: the pump also rejects anything over its own configured max.
+??? question "Confirm is greyed out or a bolus is refused"
+    The line under the dose says why: for example the pump isn't connected, a bolus is running, or an
+    earlier bolus's outcome is unknown. For an unknown outcome, check the pump's history and use
+    **I checked the pump** on the dashboard. The pump also refuses a dose over its own maximum or without
+    a cartridge.
 
-??? question "A Garmin request doesn't deliver"
-    - The iPhone does the actual delivery, so it must be **reachable and connected to the pump**.
-    - You confirm the bolus on the watch itself (the deliberate confirmation); the
-      phone then delivers.
-    - If the phone is out of range, the request fails cleanly on the watch; reconnect and retry.
+??? question "The suggested dose says it's waiting for the pump's settings"
+    faBolus hasn't read the pump's bolus settings and active insulin yet, or they're too old. Keep the pump
+    connected for a moment. You can still enter units.
+
+??? question "Glucose is grey or shows \"—\""
+    The reading is older than your freshness window, so it isn't shown as current. Check the CGM on the
+    pump, or set up a [backup CGM](setup/cgm.md).
 
 ??? question "A cleared alert comes back"
-    Some alerts are **condition-based** (e.g. a high-glucose alert re-raises while BG is still
-    high). Also note the dismiss path isn't fully verified yet, see
-    [Alerts & alarms](operate/alerts.md).
+    Some alerts come back while their cause lasts, such as a CGM high while glucose is still high. Clear
+    them on the pump.
 
-## Remotes & devices
+??? question "Notifications don't arrive, or don't come through a Focus"
+    Check iPhone **Settings → Notifications → faBolus**; a banner in the app also says when they're off.
+    Breaking through a Focus needs the Time Sensitive capability, which needs a paid account (see the
+    [build guide](build/build-app.md#step-4-make-the-xcode-project)).
 
-??? question "The Garmin complication shows `--` or nothing"
-    - It needs the iPhone app open and connected for fresh data.
-    - Stock Garmin faces can't show third-party data: use a **Face It** or CIQ face that
-      supports complications and add the *faBolus BG* field.
+## Backup CGM
+
+??? question "Dexcom Share doesn't connect"
+    Check the username, password and region, and that Share is on in the Dexcom app. The phone needs
+    internet.
+
+??? question "The direct G6 or G7 doesn't get readings"
+    Keep the Dexcom app installed, paired and running. For G6, check the transmitter ID, or clear it to
+    use the pump's. The **Status** line says what's wrong. If it keeps failing, export the Dexcom Bluetooth
+    log (**Settings → About & help**) and [send it](feedback.md).
+
+## Garmin watch
+
+??? question "Settings → Watch says Garmin isn't included"
+    The app was built without Garmin's SDK. Add it ([Garmin's SDK](build/build-app.md#garmin-sdk)), make the
+    project again and run it on the phone.
+
+??? question "The watch says \"Phone not connected\" or \"No reply from faBolus\""
+    The phone must be near the watch, with Bluetooth on and Garmin Connect running. Open faBolus on the
+    phone. In **Settings → Watch**, check the chosen watch, or choose it again in Garmin Connect.
+
+??? question "**Link** says \"faBolus not installed on the watch\""
+    The watch app isn't installed, or it was built with a different app ID than the phone expects. Install
+    it as in [Garmin watch (build)](build/garmin-build.md). If you used a private beta, make sure the phone
+    app was built after `beta-build.sh` set your ID.
+
+??? question "The watch offers no bolus"
+    Turn on **Allow bolusing from the watch** in **Settings → Watch** on the phone, and check that
+    **Read-only** is off there. The watch's bolus screen says what's stopping it.
+
+??? question "A complication shows `--` or nothing"
+    `--` means the value is too old to show. Open faBolus on the phone to refresh it. Garmin's stock faces
+    may not show third-party complications; use a face that does, such as Face It.

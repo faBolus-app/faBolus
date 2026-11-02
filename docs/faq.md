@@ -1,66 +1,54 @@
 # FAQ
 
 ??? question "Is this an official Tandem or Dexcom product?"
-    No. faBolus is an independent, open-source project — not affiliated with, endorsed by, or a
-    product of Tandem Diabetes Care or Dexcom. It's a manual remote-bolus + status viewer, not an
-    automated closed-loop system.
+    No. faBolus is an independent, open-source project, not affiliated with Tandem Diabetes Care or
+    Dexcom. It is experimental, not a medical device and not FDA-cleared. See [Safety](safety.md).
 
 ??? question "Is this the Tandem app, or controlX2?"
-    No. It's an independent reimplementation for iOS, inspired by the naming of jwoglom's Android
-    `controlX2` and built on the `pumpX2` protocol work. Not affiliated with or endorsed by
-    either, nor by Tandem Diabetes Care.
+    Neither. faBolus is its own app. Its pump library, TandemKit, is a Swift port of James Woglom's
+    pumpX2, the reverse-engineering controlX2 also builds on.
 
-??? question "Can I use this to dose insulin?"
-    faBolus is experimental and in development — **not FDA-cleared**. Use it responsibly, with your
-    clinician, and at your own risk. See [Safety](safety.md).
+??? question "Which pumps work?"
+    The Tandem t:slim X2, with either the 6-digit or the 16-character pairing code. faBolus doesn't
+    connect to a Mobi.
 
-??? question "Which pumps are supported?"
-    Tandem **t:slim X2** — and only the t:slim X2. Other Tandem pump models aren't supported in
-    this version; faBolus declines to connect to one and says so rather than trying to talk to it.
-    Support is also pinned to a specific t:slim X2 firmware version that's been tested; the
-    protocol can break on a pump firmware update, so the app is treated as disposable against
-    vendor changes.
+??? question "Does it change my pump's settings?"
+    No. It reads them. The only commands it sends that change anything are a bolus, a cancel, the carbs
+    and glucose that go with a bolus, and clearing an alert you choose to clear.
 
-??? question "Can faBolus get glucose without going through the pump?"
-    Yes — optionally, through **Dexcom Share**: a cloud-polled feed you can turn on so a reading
-    keeps flowing if the pump-to-sensor link drops. The pump stays the primary source; Share is the
-    only fallback in this version. See [Glucose (Dexcom Share)](operate/glucose.md).
+??? question "Can I use faBolus and t:connect at the same time?"
+    No. The pump pairs with one app at a time, and switching needs a new code from the pump each time.
+    Some settings can only be changed in t:connect: pair it for that, then pair faBolus again. See
+    [Pair your pump](setup/pairing.md#fabolus-and-tconnect).
 
-??? question "Can I use faBolus and the official Tandem app (t:connect) at the same time?"
-    You can install both, but the pump pairs to **one** controller at a time — so only one can be
-    connected at once, and there's **no way to keep both paired or switch instantly**. The pump
-    never stores two pairings, and the 6-digit code can't be shared between the apps (each app runs
-    its own pairing handshake and derives its own key, so writing the code into both doesn't help).
-    Switching means putting the pump in **Pair Device** mode, which hands out a **new code**, and
-    pairing the app you want — which evicts the other. While faBolus stays the paired app it
-    reconnects with **no code** ("Connect (saved pairing)"); the new-code step only comes up when
-    you bounce between the two. See [Pairing your pump](setup/pairing.md).
+??? question "Can faBolus get glucose without the pump?"
+    Yes, as a backup: Dexcom Share, or a G6 or G7 read directly alongside the Dexcom app. It's used only
+    while the pump's reading is old or missing. See [Backup CGM](setup/cgm.md).
 
-    **faBolus is not a full replacement for the official app.** Some pump settings and
-    configuration can only be changed in **t:connect**; faBolus doesn't support them yet. A common
-    setup: use faBolus day-to-day for monitoring and remote bolus, and when you
-    need an official-app-only setting, pair **t:connect**, make the change, then re-pair faBolus.
-    See [Pairing your pump](setup/pairing.md).
+??? question "Does it show mmol/L?"
+    Not in this version: glucose is in mg/dL.
 
 ??? question "Do I need to be a programmer to build it?"
-    No. The [build guide](build/index.md) walks through every step in plain language — get an
-    Apple account, install Xcode, and run the app on your iPhone.
+    No. The [build guide](build/index.md) walks through every step, with the few Terminal commands
+    written out.
 
 ??? question "Do I need to pay Apple?"
-    Not necessarily. A **free** Apple ID works but the app expires after 7 days; the **paid**
-    Apple Developer Program ($99/yr) lasts a year and makes the widgets more reliable.
-    See [Apple ID & Developer account](build/apple-developer.md).
+    No. A free Apple account works, but the app has to be installed again every 7 days. The paid Apple
+    Developer Program makes an install last a year and allows Time Sensitive notifications.
 
-??? question "Does the Garmin talk to the pump directly?"
-    No. The iPhone owns the connection; the Garmin remote lives in the
-    separate [faBolusGarmin](https://github.com/faBolus-app/faBolusGarmin) repo and always relays
-    through the phone.
+??? question "Does the Garmin talk to the pump?"
+    No. The watch asks the phone, and the phone checks the request and talks to the pump. See
+    [Garmin watch](remotes/garmin.md).
+
+??? question "Which watches work?"
+    The Garmin Venu 3S, the one watch the app is built and tested for.
+
+??? question "Can a widget or the Live Activity bolus?"
+    No. They show glucose and status. The Live Activity's bolus button only opens the app.
 
 ??? question "Can I bolus by carbs?"
-    Yes. Enter carbs (and optionally BG) and the app uses the pump's own calculator — carb ratio,
-    correction factor (ISF), target, and IOB — to recommend a dose you then confirm. Entering
-    units directly is always available too. See [Bolus & cancel](operate/bolus.md).
+    Yes, on the phone and the watch. The suggestion uses your pump's carb ratio, correction factor,
+    target and active insulin, read from the pump. See [Bolus and cancel](operate/bolus.md).
 
-??? question "How do you know the protocol bytes are right?"
-    Every outgoing message is tested **byte-for-byte** against the pumpX2 `cliparser` oracle, in
-    CI, on every push.
+??? question "How do you know the pump messages are right?"
+    Every message TandemKit builds is tested byte for byte against pumpX2's reference implementation.

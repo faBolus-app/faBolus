@@ -1,57 +1,72 @@
-# 2 · Install Xcode
+# 2 · Xcode and tools
 
-## What is Xcode?
+You'll install three things: **Xcode**, a small tool called **XcodeGen**, and **GitHub Desktop**.
 
-**Xcode** is a free program made by Apple for Apple computers. You'll use it to turn the app's
-"raw" code into a real app and put it on your iPhone. Think of it as the oven that bakes the app
-from the recipe.
+## Step 1: Install Xcode
 
-It's a **big** download (several gigabytes), so start it now and read on while it installs.
-
-## Step 1: Get Xcode from the App Store
+**Xcode** is Apple's free app for building apps. It's a large download, so start it first.
 
 <ol class="cx2-steps">
-<li>On your Mac, open the <strong>App Store</strong> (the blue "A" icon).</li>
-<li>In the search box (top-left), type <strong>Xcode</strong> and press Return.</li>
-<li>Click <strong>Get</strong>, then <strong>Install</strong>. Now wait: it's large and can take 20–60 minutes. That's completely normal.</li>
+<li>On your Mac, open the <strong>App Store</strong>, search for <strong>Xcode</strong>, and click <strong>Get</strong>, then <strong>Install</strong>. It can take 20 to 60 minutes.</li>
+<li>Open <strong>Xcode</strong> from your Applications folder. If it offers to install <strong>additional components</strong>, click <strong>Install</strong> and enter your Mac password.</li>
+<li>When it asks which <strong>platforms</strong> to download, make sure <strong>iOS</strong> is included, and let it finish.</li>
 </ol>
 
-!!! note "If the App Store won't let you install it"
-    Xcode needs a fairly up-to-date Mac. If it says you can't install it, update your Mac first:
-    click the **Apple menu** (top-left) → **System Settings** → **General** → **Software Update**,
-    then try the App Store again. You need **Xcode 16 or newer**.
+faBolus is built and tested with **Xcode 27.2**. A newer Xcode normally works too; an older one doesn't.
+To see your version, choose **Xcode → About Xcode** in the menu bar.
 
-## Step 2: Open Xcode once and let it finish
+!!! note "If the App Store won't install it"
+    Xcode needs a recent macOS. Update your Mac in **System Settings → General → Software Update** and
+    try again.
 
-The very first time you open Xcode, it downloads a few more pieces. Let it.
-
-<ol class="cx2-steps">
-<li>Open <strong>Xcode</strong> from your Applications folder (or Launchpad).</li>
-<li>If a window offers to install <strong>additional required components</strong>, click <strong>Install</strong> and type your Mac password.</li>
-<li>If it asks which <strong>platforms</strong> you want to support, make sure <strong>iOS</strong> is ticked. Let it download.</li>
-</ol>
-
-!!! tip "You can leave Xcode open"
-    Once it's done, you can leave Xcode open. You'll use it in the next step.
-
-## Step 3: Tell Xcode who you are
-
-This connects Xcode to the Apple account you set up in [Step 1](apple-developer.md), so it's
-allowed to put apps on *your* phone.
+## Step 2: Sign in to Xcode
 
 <ol class="cx2-steps">
-<li>In the menu bar at the very top of the screen: click <strong>Xcode</strong> → <strong>Settings…</strong></li>
-<li>Click the <strong>Accounts</strong> tab.</li>
-<li>Click the <strong>+</strong> button (bottom-left) → choose <strong>Apple ID</strong> → sign in with your Apple ID.</li>
+<li>In the menu bar, choose <strong>Xcode → Settings…</strong> and click <strong>Accounts</strong>.</li>
+<li>Click <strong>+</strong> (bottom left), choose <strong>Apple Account</strong>, and sign in.</li>
 </ol>
 
 <div class="cx2-check" markdown>
-**Success looks like:** your name now appears in the Accounts list, with a **Team** listed under
-it: either **(Personal Team)** for a free account, or your name for a paid one. Xcode will use
-this "Team" to sign the app later. You don't need to do anything else with it here.
+**Success looks like:** your name in the list, with a **team** under it: "(Personal Team)" for a free
+account, or your name for a paid one. Xcode uses this team to sign the app.
 </div>
 
+## Step 3: Install Homebrew and XcodeGen
+
+The app's Xcode project isn't stored in the repository. A tool called **XcodeGen** makes it from a short
+description file. You install XcodeGen with **Homebrew**, the usual way to install small Mac tools.
+
+Open **Terminal** (in **Applications → Utilities**). You type or paste a command, press Return, and wait
+until it finishes before the next.
+
+**If you don't have Homebrew yet**, paste this and follow what it prints. It asks for your Mac password;
+the characters don't show as you type, which is normal.
+
+```sh
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+At the end Homebrew prints **Next steps** with one or two commands to run. Run them, then close the
+Terminal window and open a new one.
+
+Then install XcodeGen:
+
+```sh
+brew install xcodegen
+```
+
 <div class="cx2-check" markdown>
-**Next:** [Step 3 · Put it on your iPhone →](build-app.md). That page gets you a couple of free
-helper tools and then installs the app.
+**Success looks like:** `xcodegen --version` prints a version number.
+</div>
+
+## Step 4: Install GitHub Desktop
+
+The code lives on **GitHub**, a website for sharing code. **GitHub Desktop** downloads it, and later
+fetches updates, with buttons instead of commands.
+
+Download it from [desktop.github.com](https://desktop.github.com/), move it to Applications and open it.
+Signing in to GitHub is optional; you can skip it.
+
+<div class="cx2-check" markdown>
+**Next:** [Step 3 · Put it on your iPhone →](build-app.md)
 </div>

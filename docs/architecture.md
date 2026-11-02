@@ -1,100 +1,52 @@
 # How it works
 
-A quick tour of the pieces and who's responsible for what. You don't need this to build or use
-the app — it's here if you're curious or want to contribute.
+A plain-language picture of who talks to whom. The developer version is
+[ARCHITECTURE.md](https://github.com/faBolus-app/faBolus/blob/main/ARCHITECTURE.md).
 
-## The big picture
-
-**One rule organizes everything: only the iPhone talks to the pump.** The Garmin Venu 3S and the
-Lock/Home Screen widgets are *remotes* — they ask the iPhone to do something, and the iPhone is
-the one device that owns the Bluetooth connection, runs the safety interlocks, and does the actual
-delivery.
+## The phone owns the pump
 
 ```mermaid
 flowchart LR
-    Pump[("Insulin pump\n(Tandem t:slim X2)")]
-    Share[("Dexcom Share\n(optional, cloud)")]
-    Phone["iPhone app\n(owns BLE, runs TandemKit,\nconfirms every bolus)"]
-    Garmin["Garmin Venu 3S"]
-    Widgets["Lock/Home\nwidgets"]
-
-    Pump <-->|Bluetooth · signed| Phone
-    Share -.->|optional, only when pump\nglucose goes stale| Phone
-    Garmin <-->|Connect IQ SDK| Phone
-    Phone -->|App Group snapshot| Widgets
+  pump["t:slim X2"] <-- "Bluetooth, signed for a bolus" --> phone["faBolus on the iPhone"]
+  phone -- "status" --> watch["Garmin Venu 3S"]
+  watch -- "bolus request, cancel, clear" --> phone
+  phone -- "what to show" --> widgets["Widgets and Live Activity"]
+  cgm["Dexcom Share, G6 or G7 (optional backup)"] --> phone
 ```
 
-Glucose normally reaches the phone **through the pump**. **Dexcom Share** (dotted above) is the
-one optional add-on: a cloud-polled feed the app falls back to only when the pump's own glucose
-goes stale, never in place of a fresh pump reading. See [Glucose (Dexcom
-Share)](operate/glucose.md).
+- **The iPhone is the only thing that talks to the pump.** It keeps the Bluetooth link up, reads the
+  pump's status, and is the only place a bolus is sent from.
+- **The watch is a remote.** It shows what the phone sends it and asks the phone to bolus, cancel or
+  clear an alert. The phone checks every request before anything reaches the pump. Garmin's own
+  Garmin Connect app carries the messages between the watch and the phone.
+- **Widgets and the Live Activity only show.** They display what the app last published, with its age,
+  and open the app when tapped. None of them can bolus.
 
-## The repositories
+## Where glucose comes from
 
-```text
-TandemKit  (Swift package — build once, reuse everywhere)
-├── TandemMessages   framing, opcodes, request/response models, packetization, CRC/HMAC
-├── TandemAuth       legacy pairing + EC-JPAKE (mbedTLS), per-command signing
-└── TandemBLE        Core Bluetooth central
+The pump receives your CGM's readings and faBolus reads them from the pump. If you set up a
+[backup CGM](setup/cgm.md), faBolus uses it only while the pump's own reading is old or missing, and
+marks where a reading came from.
 
-faBolus  (this repo, consumes TandemKit via SPM)
-├── Packages/faBolusCore/  contracts + models (RemoteCommand, PumpBackend, GlucoseSource, GlucoseArbiter)
-├── Packages/ShareClient/  Dexcom Share API client (vendored from LoopKit, MIT)
-├── ios/faBolus/         iOS host app — owns the pump connection; tabbed modern UI
-│   └── Data/Sources/    the Dexcom Share glucose source + its stored credentials
-├── ios/faBolusWidgets/  Lock/Home Screen widgets (incl. Quick Bolus)
-├── schema/                command.schema.json — the single source of truth for the contract
-└── docs/                  this site
+Every value carries the time it was measured. That's what "1 min ago" means everywhere in the app, and
+what decides when a value is too old to show as current.
 
-faBolusGarmin  (separate repo)
-└── Connect IQ (Monkey C) remote for the Garmin Venu 3S — pairs to the iPhone app
-```
+## Pairing and signing
 
-!!! note "The Garmin app lives in its own repo"
-    The Garmin (Monkey C) app lives in the separate
-    **[faBolusGarmin](https://github.com/faBolus-app/faBolusGarmin)** repo. The *iPhone side* of the
-    Garmin bridge (`GarminRemoteBridge`, the Connect IQ Mobile SDK dependency) is part of this app,
-    so the two talk over the shared command contract.
+Pairing with the code your pump shows gives faBolus a key that only it and your pump share. Every bolus
+and cancel is signed with that key, and the pump ignores commands that aren't. The pairing is stored on
+the phone, so faBolus reconnects on its own after that.
 
-!!! note "Other remotes live on `experimental`"
-    A few other remote surfaces were built and then scoped out of this narrow-`main` build — each
-    is preserved on its own `dev/*` branch, not part of the app you're reading about here (e.g. the
-    Apple Watch app's `RemoteLink` WatchConnectivity transport, on `dev/watch-host`).
+## Bolus outcomes
 
-## Who owns the pump
+faBolus keeps a record of every bolus it sends, on the phone. Each one ends as delivered, stopped
+(less than asked was delivered), refused by the pump, or failed. If the link drops at the wrong moment
+the outcome is unknown until the pump's history settles it, and until then no new bolus can start.
+See [Safety](safety.md#when-an-outcome-is-unknown).
 
-The iPhone owns the single Bluetooth control connection and runs **TandemKit**. Garmin is a thin
-client: it sends a command to the phone, and the phone runs the confirm interlock, recomputes the
-dose, and delivers.
+## The three projects
 
-**The pump link always wins.** Serving a remote never touches the pump connection — the iPhone's
-CoreBluetooth link to the pump lives in TandemKit's `PumpBLEClient`, and the Garmin path into
-`AppModel` is a separate route entirely, so a busy or reconnecting remote can't starve, drop, or
-delay the pump link. This is structural, not a setting.
-
-## Glucose (Dexcom Share)
-
-Glucose is normally one facet of the pump feed — a t:slim X2 paired with a Dexcom sensor relays
-its own readings to faBolus. On top of that, faBolus has a small **`GlucoseSource`** seam (in
-`faBolusCore`, modeled on LoopKit's `CGMManager`) for an *independent* backup feed. This version
-compiles in exactly one: **Dexcom Share**, a cloud-polled follower selected in Settings.
-
-A **`GlucoseArbiter`** keeps the pump feed primary and switches to Share only when the pump's
-glucose goes stale, deduping history so nothing is double-counted. One shared freshness rule
-(`GlucoseFreshness`, default 6 min) governs both the pump feed and Share, and a stale reading is
-always shown *marked* (greyed, with its age) rather than as a current value. See [Glucose (Dexcom
-Share)](operate/glucose.md) for the user-facing side.
-
-## The command contract
-
-`schema/command.schema.json` defines the tiny phone↔remote protocol — fields like `kind`,
-`requestId`, `units`, `carbsGrams`, `bgMgdl`, `confirmToken`, and `status`. Both the Swift side
-(`faBolusCore/RemoteCommand.swift`) and the Monkey C side generate and validate against it, which is
-what keeps the Garmin remote and the phone from drifting apart.
-
-## Byte-exact protocol
-
-Every outgoing pump message in TandemKit is asserted **byte-for-byte equal** to the pumpX2
-`cliparser` oracle in tests, and CI re-runs this on every push. A scheduled CI job watches for
-upstream protocol drift. This is what makes a hand-ported dosing protocol trustworthy — see the
-[TandemKit](https://github.com/faBolus-app/TandemKit) repo.
+- **faBolus**: the iPhone app, its widgets and Live Activity, and the message format the watch speaks.
+- **TandemKit**: the library that speaks the pump's protocol. Every message it builds is checked byte for
+  byte against pumpX2, the reverse-engineering it's ported from. The app build downloads it for you.
+- **faBolusGarmin**: the watch app. It speaks the same message format and is built separately.
