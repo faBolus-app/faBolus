@@ -1,6 +1,7 @@
 import Foundation
 import PumpScript
 import Testing
+import Alerts
 import WidgetContent
 import faBolusCore
 
@@ -60,6 +61,39 @@ import faBolusCore
         let points = activity.shown.last?.content.snapshot.recent ?? []
         #expect(points.count > 24)
         #expect((points.first?.t).map { model.now.timeIntervalSince($0) > 5 * 3600 } == true)
+        await model.shutdown()
+    }
+
+    /// A notification's Clear on a launch whose pump can't be reached in time: the alert's notification
+    /// comes back saying to clear it on the pump. One that clears doesn't.
+    @Test func aNotificationClearThatCantReachThePumpSaysSo() async throws {
+        let phone = Phone()
+        phone.mock.pump.alertBitmap = 1 << 7
+        let first = await phone.launch()
+        _ = await phone.until(first) { first.pump.alerts?.value.isEmpty == false }
+        let alert = try #require(first.pump.alerts?.value.first)
+        await first.shutdown()
+
+        phone.mock.pump.inRange = false
+        let model = await phone.launch(appActive: false)
+        var outcome: DismissOutcome?
+        await phone.driving(model) { outcome = await model.clearFromNotification(alert) }
+        #expect(outcome == .unconfirmed)
+        let told = await phone.notifications.added.last { $0.identifier == AlertEngine.pumpAlertIdentifier(alert) }
+        #expect(told?.body == AlertEngine.clearFailedBody)
+        await model.shutdown()
+    }
+
+    @Test func aNotificationClearThatClearsSaysNothingMore() async throws {
+        let phone = Phone()
+        phone.mock.pump.alertBitmap = 1 << 7
+        let model = await phone.launch()
+        _ = await phone.until(model) { model.pump.alerts?.value.isEmpty == false }
+        let alert = try #require(model.pump.alerts?.value.first)
+        var outcome: DismissOutcome?
+        await phone.driving(model) { outcome = await model.clearFromNotification(alert) }
+        #expect(outcome == .cleared)
+        #expect(await phone.notifications.added.allSatisfy { $0.body != AlertEngine.clearFailedBody })
         await model.shutdown()
     }
 }

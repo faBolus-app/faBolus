@@ -132,6 +132,8 @@ public actor PumpSession {
     // History
     var historyBusy = false
     var historyWaiters: [CheckedContinuation<Void, Never>] = []
+    /// Clears waiting for the pump to be reachable, each until its deadline.
+    var linkWaiters: [(deadline: Date, continuation: CheckedContinuation<Void, Never>)] = []
     var page: PageCollector?
     public internal(set) var historySync: HistorySyncState = .idle(lastSynced: nil)
     public internal(set) var historyEvents: [HistoryEvent] = []
@@ -207,6 +209,8 @@ public actor PumpSession {
         ticker?.cancel()
         ticker = nil
         await connection.stop()
+        // After the link is closed, so a clear waiting for the pump ends as not reachable.
+        resumeLinkWaiters(all: true)
     }
 
     /// Tell the session whenever the app enters or leaves the foreground, including `true` at launch in
@@ -261,7 +265,10 @@ public actor PumpSession {
     func emitReadings(_ changed: Set<PumpState.Reading>) {
         guard !changed.isEmpty else { return }
         emit(.readingsChanged(changed, state))
-        if changed.contains(.alerts) { emit(.alertsChanged(state.alerts?.value ?? [])) }
+        if changed.contains(.alerts) {
+            emit(.alertsChanged(state.alerts?.value ?? []))
+            resumeLinkWaiters()
+        }
     }
 
     // MARK: - Persistence
@@ -526,6 +533,7 @@ public actor PumpSession {
         anchor = await handshakeAnchor(now: now)
         holdWindow = await connection.state.config.holdWindow
         emit(.identified(state.model))
+        resumeLinkWaiters()
     }
 
     /// The anchor from the handshake's TimeSinceReset, which the link read before it was ready.

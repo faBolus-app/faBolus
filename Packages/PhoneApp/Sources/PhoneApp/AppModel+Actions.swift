@@ -67,6 +67,19 @@ extension AppModel {
     /// Clear a pump alert from the phone (or the "Try clearing from phone" trial).
     public func dismiss(_ alert: PumpAlert) async -> DismissOutcome { await session.dismiss(alert) }
 
+    /// How long a notification's Clear waits for the pump: a background launch has about 30 s.
+    static let notificationClearWait: TimeInterval = 20
+
+    /// "Clear" on a pump alert's notification. The app may have just been launched for it, with no link
+    /// yet, so the clear waits (bounded) for the pump, then goes the same way as the app's button. When it
+    /// doesn't clear the alert, the user is told to clear it on the pump: the notification they acted on
+    /// is gone.
+    public func clearFromNotification(_ alert: PumpAlert) async -> DismissOutcome {
+        let outcome = await session.dismiss(alert, waitingForLinkUpTo: Self.notificationClearWait)
+        if outcome != .cleared { await alerts.pumpClearFailed(alert) }
+        return outcome
+    }
+
     public func alertPolicy() async -> AlertPolicy { await alerts.policy }
 
     public func setAlertPolicy(_ policy: AlertPolicy) async { await alerts.setPolicy(policy) }

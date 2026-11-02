@@ -123,6 +123,7 @@ extension PumpSession {
     /// suspended app catches up on its next one.
     public func tick() {
         let now = clock()
+        resumeLinkWaiters()
         resumeQueue()
         historyTick(now: now)
         guard state.link.isConnected, identity != nil else { return }

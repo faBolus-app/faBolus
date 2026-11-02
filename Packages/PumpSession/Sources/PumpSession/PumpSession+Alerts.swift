@@ -8,11 +8,39 @@ extension PumpSession {
     /// authenticated "cleared" lets a remote stop showing the alert. A pump that doesn't support remote
     /// dismissal, or a notification it marks not dismissable (a malfunction), gets nothing sent and says
     /// so. The pump's alerts are read again soon after either way.
-    public func dismiss(_ alert: PumpAlert) async -> DismissOutcome {
+    ///
+    /// - Parameter wait: how long a clear asked for before the pump is reachable (a notification's Clear
+    ///   that launched the app) waits for it: connected, identified and its alerts read, so the clear is
+    ///   judged, and a remote-clear trial recorded, exactly as from the app. Past it, the clear goes the
+    ///   same way it would have at once: `.unconfirmed` with no link.
+    public func dismiss(_ alert: PumpAlert, waitingForLinkUpTo wait: TimeInterval = 0) async -> DismissOutcome {
+        if wait > 0 { await waitForReachablePump(until: clock().addingTimeInterval(wait)) }
         let outcome = await sendDismiss(alert)
         due[.alerts] = clock()
         emit(.alertDismissed(alert, outcome))
         return outcome
+    }
+
+    /// Connected, identified and its alerts read in this process.
+    var pumpReachable: Bool { state.link.isConnected && identity != nil && state.alerts != nil }
+
+    private func waitForReachablePump(until deadline: Date) async {
+        guard !pumpReachable, clock() < deadline else { return }
+        await withCheckedContinuation { linkWaiters.append((deadline, $0)) }
+    }
+
+    /// Lets the waiting clears go once the pump is reachable or their deadline has passed (`all`: the
+    /// session is stopping).
+    func resumeLinkWaiters(all: Bool = false) {
+        guard !linkWaiters.isEmpty else { return }
+        let now = clock()
+        let release = all || pumpReachable
+        let (go, stay) = (
+            linkWaiters.filter { release || now >= $0.deadline },
+            linkWaiters.filter { !(release || now >= $0.deadline) }
+        )
+        linkWaiters = stay
+        for waiter in go { waiter.continuation.resume() }
     }
 
     private func sendDismiss(_ alert: PumpAlert) async -> DismissOutcome {

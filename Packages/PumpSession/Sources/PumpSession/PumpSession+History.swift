@@ -124,6 +124,11 @@ extension PumpSession {
     /// before it is credited as held, so records the store didn't keep are fetched again next time; a drop
     /// leaves the sync paused, and the next one picks up where the coverage ends.
     public func syncHistory() async {
+        // Only from the pump the pairing trusts. A new pairing is trusted at the end of `ready()`, after it
+        // has emptied the logbook under the history lock, so a sync asked for meanwhile ("Sync history
+        // now") can't hold that lock while `ready()` waits on it with the link's events stalled behind it.
+        // One that can't run doesn't move the next one back.
+        guard state.link.isConnected, identity != nil, identityTrusted else { return }
         due[.history] = clock().addingTimeInterval(config.historySyncInterval)
         await acquireHistory()
         await runHistorySync()
@@ -131,7 +136,8 @@ extension PumpSession {
     }
 
     private func runHistorySync() async {
-        guard state.link.isConnected, identity != nil else { return }
+        // The pump may have gone, or changed, while the sync waited for its turn.
+        guard state.link.isConnected, identity != nil, identityTrusted else { return }
         setHistorySync(.syncing)
         guard case .reply(let reply) = await exchange(HistoryLogStatusRequest(), priority: .history),
             let status = reply.message as? HistoryLogStatusResponse

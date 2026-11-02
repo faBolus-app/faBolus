@@ -40,6 +40,9 @@ public enum AlertInput: Sendable {
     case policy(AlertPolicy)
     /// The phone refused a remote's bolus request before it reached the pump.
     case remoteBolusRefused(peerId: String, requestId: String, reason: String)
+    /// A clear the user asked for from a pump alert's notification didn't clear it (the pump wasn't
+    /// reachable in time, or didn't act on it): they're told to clear it on the pump.
+    case pumpClearFailed(PumpAlert)
     /// Time passed; nothing else changed.
     case tick
     /// Notifications are allowed again after being off: post again what the OS refused meanwhile.
@@ -99,6 +102,9 @@ public struct AlertEngine: Sendable {
         public internal(set) var urgentLow = false
         public internal(set) var cgmLost = false
         public internal(set) var pumpAlerts: [PumpAlert] = []
+        /// The pump alerts (by notification identifier) a clear from their notification didn't clear: their
+        /// notification is shown again saying to clear it on the pump, until the alert ends.
+        public internal(set) var clearFailed: Set<String> = []
         /// What was last handed to the OS for the conditions, by identifier.
         public internal(set) var posted: [String: AlertRequest] = [:]
         /// Effects not yet acknowledged as performed, in order.
@@ -117,7 +123,7 @@ public struct AlertEngine: Sendable {
         // the last process owed the OS.
         private enum CodingKeys: String, CodingKey {
             case boluses, ledgerUnreadable, linkDownSince, linkDownGrace, closedAfterFailure, connectionUnstable
-            case urgentLow, cgmLost, pumpAlerts, posted, outbox, refused, recentlyAnnounced, nextSequence
+            case urgentLow, cgmLost, pumpAlerts, clearFailed, posted, outbox, refused, recentlyAnnounced, nextSequence
         }
 
         public init(from decoder: Decoder) throws {
@@ -135,6 +141,7 @@ public struct AlertEngine: Sendable {
             urgentLow = field(.urgentLow, false)
             cgmLost = field(.cgmLost, false)
             pumpAlerts = field(.pumpAlerts, [])
+            clearFailed = field(.clearFailed, [])
             posted = field(.posted, [:])
             outbox = field(.outbox, [])
             refused = field(.refused, [:])
@@ -172,6 +179,7 @@ public struct AlertEngine: Sendable {
             state.closedAfterFailure = false
             state.connectionUnstable = false
             state.pumpAlerts = []
+            state.clearFailed = []
         case .ledger(let ledger):
             reconcile(ledger, afterRelaunch: false, into: &announcements)
         case .pump(let event):
@@ -189,6 +197,11 @@ public struct AlertEngine: Sendable {
                 announcements += announce(
                     .remoteBolusRejected, .warning, id: id, title: "Remote bolus not delivered", body: reason)
             }
+        case .pumpClearFailed(let alert):
+            // The alert's own notification comes back saying so (the one the user acted on is gone), at its
+            // own level, and goes when the alert does.
+            state.clearFailed.insert(Self.pumpAlertIdentifier(alert))
+            state.posted[Self.pumpAlertIdentifier(alert)] = nil
         case .tick:
             break
         case .notificationsAllowed:
@@ -254,6 +267,7 @@ public struct AlertEngine: Sendable {
             state.connectionUnstable = false
         case .alertsChanged(let alerts):
             state.pumpAlerts = alerts
+            state.clearFailed.formIntersection(alerts.map(Self.pumpAlertIdentifier))
         case .bolusOutcome(let key, let outcome):
             bolusMoved(key, to: outcome, into: &announcements)
         case .linkFailed, .identified, .readingsChanged, .alertDismissed, .pumpFound, .historySync:
@@ -403,6 +417,8 @@ public struct AlertEngine: Sendable {
 
     /// A pump notification's identifier. A malfunction is keyed by its code, because an alarm and a
     /// malfunction on the same bit are two notifications.
+    public static let clearFailedBody = "faBolus couldn't clear this from the phone. Clear it on the pump."
+
     public static func pumpAlertIdentifier(_ alert: PumpAlert) -> String {
         if let code = alert.malfunctionCode { return "pumpalert-malfunction-\(code)" }
         return "pumpalert-\(alert.kind.rawValue)-\(alert.id)"
@@ -478,9 +494,13 @@ public struct AlertEngine: Sendable {
                 body: "faBolus stopped receiving CGM readings. Check your sensor and transmitter.")
         }
         for alert in state.pumpAlerts {
+            let id = Self.pumpAlertIdentifier(alert)
+            let body =
+                state.clearFailed.contains(id)
+                ? Self.clearFailedBody : alert.detail.isEmpty ? "Active pump alert" : alert.detail
             add(
-                NotificationRules.category(for: alert), alert.severity, id: Self.pumpAlertIdentifier(alert),
-                title: alert.title, body: alert.detail.isEmpty ? "Active pump alert" : alert.detail, pumpAlert: alert)
+                NotificationRules.category(for: alert), alert.severity, id: id, title: alert.title, body: body,
+                pumpAlert: alert)
         }
         return out
     }

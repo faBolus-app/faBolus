@@ -108,8 +108,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         guard let alert = AlertNotificationCategories.pumpAlertToClear(actionIdentifier: action, userInfo: info) else {
             return
         }
-        // Awaited, so iOS keeps a background launch running until the clear has gone to the pump.
+        // Awaited, so iOS keeps a background launch running while the clear waits for the pump and is sent.
         guard let model = await MainActor.run(body: { [weak self] in self?.model }) else { return }
-        _ = await model.dismiss(alert)
+        _ = await model.clearFromNotification(alert)
     }
 }

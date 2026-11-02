@@ -288,7 +288,8 @@ public final class AppModel {
             linkFailure = failure
         case .historySync(let state):
             historySync = state
-            if case .idle = state {
+            // Pages saved before a sync ended in an error or a pause count too, not only a finished sync.
+            if state != .syncing {
                 logbook = await session.historyEvents
                 reloadHistory()
             }

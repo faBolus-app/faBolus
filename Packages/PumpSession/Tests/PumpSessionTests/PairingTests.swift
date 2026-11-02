@@ -244,6 +244,72 @@ import Testing
         #expect(await rig.events.contains(.alertDismissed(alert, .cleared)))
     }
 
+    /// A clear asked for before the pump is reachable (a notification's Clear that launched the app) waits
+    /// for it, then goes the same way as from the app: sent, answered, the alert gone.
+    @Test func aClearBeforeTheLinkIsUpWaitsForItThenClears() async throws {
+        let configure: (ScriptedPump) -> Void = {
+            $0.unsupportedReads = []
+            $0.alertBitmap = 1 << 7
+        }
+        let first = Rig(configure: configure)
+        await first.startHeld()
+        let alert = try #require(await first.session.state.alerts?.value.first)
+        await first.stop()
+
+        let relaunched = Rig(record: first.store.load(), configure: configure)
+        let session = relaunched.session
+        let dismiss = Task { await session.dismiss(alert, waitingForLinkUpTo: 20) }
+        await relaunched.start()
+        await relaunched.run(for: 12, step: 1)
+        #expect(await dismiss.value == .cleared)
+        #expect(relaunched.pump.arrivals(of: DismissNotificationRequest.self).count == 1)
+        await relaunched.stop()
+    }
+
+    /// A pump that doesn't become reachable in time: nothing is sent, and the clear says so.
+    @Test func aClearWhoseLinkNeverComesIsUnconfirmedAfterTheWait() async throws {
+        let rig = Rig(paired: false)
+        await rig.start()
+        let session = rig.session
+        let alert = PumpAlert(id: 7, kind: .alert, title: "Low insulin", remoteClear: .tryable)
+        let clock = rig.clock
+        let asked = clock.date
+        let dismiss = Task { (await session.dismiss(alert, waitingForLinkUpTo: 20), clock.date) }
+        await rig.run(for: 25, step: 1)
+        let (outcome, answeredAt) = await dismiss.value
+        #expect(outcome == .unconfirmed)
+        #expect(answeredAt.timeIntervalSince(asked) >= 20, "it waited for the pump first")
+        #expect(rig.pump.arrivals(of: DismissNotificationRequest.self).isEmpty)
+        await rig.stop()
+    }
+
+    /// A new pairing is stored without waiting on a history sync: "Sync history now" asked for again and
+    /// again while the new pump is being identified never holds the pairing up (a sync needs a trusted
+    /// pump, and the pump is trusted only once the pairing is in place).
+    @Test func aSyncAskedForDuringANewPairingDoesntHoldItUp() async throws {
+        let rig = Rig(configure: { $0.unsupportedReads = [] })
+        await rig.startHeld()
+        let before = try #require(rig.store.load()?.pairing)
+        let session = rig.session
+        await session.scanForPairing()
+        await rig.settle()
+        try await session.pair(
+            peripheralID: ScriptedPump.peripheralID, advertisedName: "tslim X2 ***693", code: ScriptedPump.code)
+        let start = rig.clock.date
+        var stored: StoredPairing?
+        for _ in 0..<200 {
+            Task { await session.syncHistory() }
+            await rig.run(for: 0.1, step: 0.1)
+            if let p = rig.store.load()?.pairing, p.pairedAt != before.pairedAt {
+                stored = p
+                break
+            }
+        }
+        let pairing = try #require(stored, "the new pairing was stored")
+        #expect(pairing.pairedAt.timeIntervalSince(start) < 2, "stored without waiting on a sync")
+        await rig.stop()
+    }
+
     private static let tslimAPI25 = PumpClass(model: .tslim, apiVersion: ApiVersion(major: 2, minor: 5))
 
     private static func classKnown(_ answer: RemoteClearEvidence) -> PumpSession.Configuration {

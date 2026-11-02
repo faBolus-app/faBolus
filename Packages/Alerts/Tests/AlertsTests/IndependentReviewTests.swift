@@ -36,6 +36,29 @@ import faBolusCore
         #expect(await next.scheduler.calls.isEmpty, "still the same low: not posted again")
     }
 
+    /// After a relaunch with no reading yet from anywhere (the backup reported "none", the pump hasn't
+    /// sent glucose), a posted urgent low stays: nothing is withdrawn and posted again however long the
+    /// wait. A reading that shows it has ended withdraws it.
+    @Test func aRelaunchWithNoReadingYetLeavesTheUrgentLowPosted() async {
+        let h = await Harness.launch()
+        await h.coordinator.backupGlucoseChanged(low(h.clock))
+        #expect(await h.scheduler.held[UrgentLowAlarm.dedupeKey] != nil)
+        await h.scheduler.clearCalls()
+        let next = await h.relaunch()
+        await next.send(.readingsChanged([.battery], PumpState()))
+        for _ in 0..<30 {
+            next.clock.advance(m)
+            await next.coordinator.tick()
+        }
+        #expect(await next.scheduler.calls.isEmpty, "nothing withdrawn or re-posted with no reading yet")
+        var fine = PumpState()
+        fine.glucose = Observed(
+            PumpGlucose(mgdl: 140, trend: nil), measuredAt: next.clock.now, receivedAt: next.clock.now)
+        await next.send(.readingsChanged([.glucose], fine))
+        #expect(await next.scheduler.removed.contains(UrgentLowAlarm.dedupeKey))
+        #expect(await next.scheduler.held[UrgentLowAlarm.dedupeKey] == nil)
+    }
+
     /// An input during the fresh-start clean-up's await is performed after it, never removed by it.
     @Test func anInputDuringTheCleanUpIsNotRemovedByIt() async throws {
         let scheduler = FakeScheduler()

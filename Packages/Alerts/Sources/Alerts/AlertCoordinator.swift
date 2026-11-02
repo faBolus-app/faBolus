@@ -39,6 +39,11 @@ public actor AlertCoordinator {
     /// judged: a relaunched process knows nothing of the backup yet, and judging without it would withdraw
     /// an urgent low that is still real.
     private var backupKnown = false
+    /// A glucose reading, from the pump or the backup, has been seen in this process. Until then the
+    /// conditions the last process left stand: "no reading yet" after a relaunch says nothing about
+    /// whether a CGM-lost or urgent low has ended, and withdrawing one only to post it again re-alerts.
+    /// If none comes at all, a CGM-lost stays (the data is still lost) and nothing new is posted.
+    private var readingSeen = false
     private let tickInterval: TimeInterval?
     private var lastPublished: AlertSnapshot?
     private var draining = false
@@ -170,12 +175,19 @@ public actor AlertCoordinator {
         await run(.remoteBolusRefused(peerId: peerId, requestId: requestId, reason: reason))
     }
 
+    /// A clear from a pump alert's notification didn't clear it; the user is told to clear it on the pump.
+    public func pumpClearFailed(_ alert: PumpAlert) async {
+        await run(.pumpClearFailed(alert))
+    }
+
     /// Re-judge everything that depends on time: readings ageing, a scheduled notice coming due. Call it
     /// every so often while the app runs, and when it comes to the foreground.
     public func tick() async {
         permission = await scheduler.permission()
         await retryRefused()
-        await judgeGlucose()
+        // Notices come due and readings age with no event: the engine runs whether or not glucose can be
+        // judged yet.
+        if await !judgeGlucose() { await run(.tick) }
     }
 
     /// Post again what the OS refused, once it lets the app post (authorized, or provisional).
@@ -225,14 +237,19 @@ public actor AlertCoordinator {
 
     // MARK: - Running the engine
 
-    private func judgeGlucose() async {
-        guard backupKnown else { return }
+    /// Returns whether the conditions were judged (and the engine run).
+    @discardableResult
+    private func judgeGlucose() async -> Bool {
+        // A LOW is a reading too: the backup reports it apart, as `belowRangeAt`.
+        if pumpState.glucose != nil || backup?.latest != nil || backup?.belowRangeAt != nil { readingSeen = true }
+        guard backupKnown, readingSeen else { return false }
         let now = clock()
         let urgentLow = UrgentLowAlarm.isActive(pumpState: pumpState, source: backup, thresholds: thresholds, now: now)
         // Lost when the newest reading from any source is stale; no reading at all is "no data".
         let newest = [pumpState.glucose?.measuredAt, backup?.latest?.date].compactMap { $0 }.max()
         let cgmLost = newest.map { GlucoseFreshness.isStale($0, thresholds: thresholds, now: now) } ?? false
         await run(.glucose(urgentLow: urgentLow, cgmLost: cgmLost))
+        return true
     }
 
     private func ledgerView() async -> LedgerView {
