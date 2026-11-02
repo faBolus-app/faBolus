@@ -187,6 +187,92 @@ private func deliver(_ rig: Rig, _ dose: ComposedDose, for seconds: Double = 2) 
         #expect(decision == .refused(.unavailable(.noCartridge)))
         #expect(rig.pump.arrivals.filter { $0.characteristic == .control }.isEmpty)
     }
+
+    /// An InitiateBolus reply too short to read says nothing about what the pump did: unknown, and new
+    /// boluses wait until history settles it.
+    @Test func aMalformedInitiateReplyIsUnknownAndBlocks() async {
+        let rig = Rig(configure: {
+            $0.unsupportedReads = []
+            $0.answers[MessageKey(InitiateBolusRequest.self)] = .cargo([0x00])
+        })
+        await rig.startHeld()
+        guard case .started(_, .unknown) = await deliver(rig, composed(1.0), for: 12) else {
+            Issue.record("expected unknown")
+            return
+        }
+        guard case .unknownOutcome = await rig.ledger.block else {
+            Issue.record("expected bolusing blocked")
+            return
+        }
+    }
+
+    /// A cancel that reaches the pump as the bolus finishes: the pump says it didn't cancel, and the
+    /// outcome is the full amount it reports, never "stopped".
+    @Test func aCancelRacingTheCompletionIsDelivered() async {
+        let rig = Rig(configure: { $0.unsupportedReads = [] })
+        await rig.startHeld()
+        _ = await deliver(rig, composed(2.0))
+        // The session doesn't see the bolus finish (20 s at the scripted rate) before its cancel arrives.
+        rig.pump.answers[MessageKey(CurrentBolusStatusRequest.self)] = .silent
+        await rig.run(for: 20, step: 2)
+        // A status read still waiting for its answer goes first; the cancel follows it.
+        let session = rig.session
+        let cancel = Task { await session.cancelBolus() }
+        await rig.run(for: 12, step: 2)
+        #expect(await cancel.value == .notCancelled)
+        #expect(rig.pump.arrivals(of: CancelBolusRequest.self).count == 1)
+        rig.pump.answers[MessageKey(CurrentBolusStatusRequest.self)] = nil
+        await rig.run(for: 5)
+        #expect(await rig.ledger.ledger.outcome(key) == .delivered(units: 2.0))
+        #expect(await rig.ledger.block == nil)
+    }
+
+    /// The pump confirms a cancel, then stops answering the bolus status: the amount that went in isn't
+    /// known, so the outcome is unknown and blocks until history settles it as stopped.
+    @Test func aCancelFollowedByASilentStatusIsUnknownUntilHistorySettlesIt() async {
+        let rig = Rig(configure: { $0.unsupportedReads = [] })
+        await rig.startHeld()
+        _ = await deliver(rig, composed(2.0))
+        await rig.run(for: 3)
+        rig.pump.answers[MessageKey(CurrentBolusStatusRequest.self)] = .silent
+        #expect(await rig.session.cancelBolus() == .cancelled)
+        var blockedWhileUnknown = false
+        for _ in 0..<60 where await rig.ledger.ledger.outcome(key)?.isUnknown != true {
+            await rig.run(for: 2, step: 2)
+        }
+        #expect(await rig.ledger.ledger.outcome(key)?.isUnknown == true)
+        if case .unknownOutcome = await rig.ledger.block { blockedWhileUnknown = true }
+        #expect(blockedWhileUnknown)
+        // Never settled from a guess: the status reads said nothing, so the cancel isn't taken as the amount.
+        #expect(!(await rig.outcomes(key)).contains { if case .stopped = $0 { return true } else { return false } })
+        await rig.run(for: 60, step: 2)
+        guard case .stopped(let delivered, let requested) = await rig.ledger.ledger.outcome(key) else {
+            Issue.record("expected stopped, from history")
+            return
+        }
+        #expect(delivered > 0 && delivered < 2.0)
+        #expect(requested == 2.0)
+        #expect(await rig.ledger.block == nil)
+    }
+
+    /// A cancel with no answer from the pump doesn't stop the bolus as far as the app knows: the cancel is
+    /// unconfirmed, and the outcome is whatever the pump reports, here the full amount.
+    @Test func aCancelThatFailsLeavesTheDoseToItsOutcome() async {
+        let rig = Rig(configure: {
+            $0.unsupportedReads = []
+            $0.answers[MessageKey(CancelBolusRequest.self)] = .silent
+        })
+        await rig.startHeld()
+        _ = await deliver(rig, composed(2.0))
+        await rig.run(for: 3)
+        let session = rig.session
+        let cancel = Task { await session.cancelBolus() }
+        await rig.run(for: 12)
+        #expect(await cancel.value == .unconfirmed)
+        #expect(rig.pump.activeBolus != nil)
+        await rig.run(for: 15)
+        #expect(await rig.ledger.ledger.outcome(key) == .delivered(units: 2.0))
+    }
 }
 
 /// Unknown outcomes settled from the paired pump's history. Ported from the old app's suite.

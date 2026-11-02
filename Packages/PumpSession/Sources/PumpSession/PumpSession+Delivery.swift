@@ -297,6 +297,8 @@ extension PumpSession {
 
     /// Cancels the bolus in progress. Never blocked by any setting or gate: it reaches the pump ahead of
     /// everything else, except an InitiateBolus already queued, which it follows so it can't arrive first.
+    /// Only the pause after the pump reports its communications suspended holds it, as it holds everything
+    /// (the owner's choice, following controlX2).
     public func cancelBolus() async -> CancelResult {
         if var d = delivery, !d.initiateQueued {
             d.cancelRequested = true

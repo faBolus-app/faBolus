@@ -54,7 +54,8 @@ Every bolus, from the phone's bolus screen or a remote, goes through one path:
    pumpX2 oracle.
 
 The pump's own limits govern; the app adds none of its own beyond the optional remote size limit. Cancel
-is never gated.
+is never gated. Like every send, it waits out the 5 s after the pump reports its communications suspended
+(qualifying-event bit 19, as controlX2 does; `docs/UNVERIFIED-GUESSES.md` #22).
 
 ## The pump session
 

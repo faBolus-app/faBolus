@@ -80,6 +80,40 @@ import Testing
         #expect(rig.pump.arrivals(of: ControlIQIOBRequest.self).count - iobBefore == 1)
     }
 
+    /// On every connection the essential reads go first, in order, and nothing else goes until the
+    /// connection has held (10 s), so a new connection never starts with a burst. The alert, status and
+    /// settings reads follow the hold.
+    @Test func theEssentialReadsGoFirstAndTheRestWaitForTheHold() async {
+        let rig = Rig(configure: { $0.unsupportedReads = [] })
+        await rig.start()
+        // After the link's handshake (ApiVersion, PumpVersion, TimeSinceReset).
+        let reads = rig.pump.arrivals.filter { $0.characteristic == .currentStatus }.map(\.opCode).dropFirst(3)
+        #expect(
+            Array(reads) == [
+                TimeSinceResetRequest.props.opCode, CurrentBolusStatusRequest.props.opCode,
+                BolusCalcDataSnapshotRequest.props.opCode, ControlIQIOBRequest.props.opCode,
+                CurrentEGVGuiDataRequest.props.opCode
+            ])
+        let afterTheHold: [any TandemMessages.Message.Type] = [
+            AlertStatusRequest.self, InsulinStatusRequest.self, CurrentBasalStatusRequest.self
+        ]
+        await rig.run(for: 9, step: 1)
+        for type in afterTheHold { #expect(rig.pump.arrivals(of: type).isEmpty) }
+        await rig.run(for: 2, step: 1)
+        for type in afterTheHold { #expect(rig.pump.arrivals(of: type).count == 1) }
+    }
+
+    /// What changes rarely (basal, limits, Control-IQ, the CGM session) is read every 10 minutes.
+    @Test func settingsAreReadEveryTenMinutes() async {
+        let rig = Rig(configure: { $0.unsupportedReads = [] })
+        await rig.startHeld()
+        #expect(rig.pump.arrivals(of: CurrentBasalStatusRequest.self).count == 1)
+        await rig.run(for: 580, step: 20)
+        #expect(rig.pump.arrivals(of: CurrentBasalStatusRequest.self).count == 1)
+        await rig.run(for: 20, step: 5)
+        #expect(rig.pump.arrivals(of: CurrentBasalStatusRequest.self).count == 2)
+    }
+
     /// P1 answers LoadStatus with op-77 and drops the link. The probe costs two drops (an error 0 and a
     /// drop is a strike, and it takes two), the result is kept with the pairing, and it is never sent again.
     @Test func anUnsupportedReadCostsTwoDropsAndIsNeverSentAgain() async {
@@ -188,6 +222,101 @@ import Testing
         let anchor = PumpClockAnchor(pumpTime: 500_000_000, phoneTime: phone)
         #expect(anchor.date(forPumpTime: 500_000_000 - 300) == phone.addingTimeInterval(-300))
         #expect(anchor.pumpTime(at: phone.addingTimeInterval(90)) == 500_000_090)
+    }
+}
+
+/// The pump's comms-suspended notice (qualifying-event bit 19). What it means isn't known; each notice
+/// pauses every send for 5 s, as controlX2 does, the cancel included (the owner's choice).
+@MainActor
+@Suite struct CommsSuspendedPauseTests {
+    /// A read asked for while paused goes once the 5 s are up.
+    @Test func aNoticeHoldsEverySendForFiveSeconds() async {
+        let rig = Rig(configure: { $0.unsupportedReads = [] })
+        await rig.startHeld()
+        rig.transport.qualifyingEvents(.pumpCommunicationsSuspended)
+        await rig.settle()
+        let before = rig.pump.arrivals.count
+        let session = rig.session
+        let refresh = Task { await session.refreshGlucose() }
+        await rig.run(for: 4.5)
+        #expect(rig.pump.arrivals.count == before)
+        await rig.run(for: 1)
+        await refresh.value
+        #expect(rig.pump.arrivals(of: CurrentEGVGuiDataRequest.self).count > 0)
+        #expect(rig.pump.arrivals.count > before)
+    }
+
+    @Test func aCancelWaitsOutThePauseToo() async {
+        let rig = Rig(configure: { $0.unsupportedReads = [] })
+        await rig.startHeld()
+        _ = await rig.session.deliver(composed(2.0))
+        rig.transport.qualifyingEvents(.pumpCommunicationsSuspended)
+        await rig.settle()
+        let session = rig.session
+        let cancel = Task { await session.cancelBolus() }
+        await rig.run(for: 4.5)
+        #expect(rig.pump.arrivals(of: CancelBolusRequest.self).isEmpty)
+        await rig.run(for: 1)
+        #expect(await cancel.value == .cancelled)
+        #expect(rig.pump.arrivals(of: CancelBolusRequest.self).count == 1)
+    }
+
+    @Test func aBolusConfirmedDuringThePauseStartsAfterIt() async {
+        let rig = Rig(configure: { $0.unsupportedReads = [] })
+        await rig.startHeld()
+        rig.transport.qualifyingEvents(.pumpCommunicationsSuspended)
+        await rig.settle()
+        let session = rig.session
+        let delivery = Task { await session.deliver(composed(1.0)) }
+        await rig.run(for: 4.5)
+        #expect(rig.pump.arrivals.filter { $0.characteristic == .control }.isEmpty)
+        await rig.run(for: 2)
+        guard case .started(_, .delivering) = await delivery.value else {
+            Issue.record("expected delivering")
+            return
+        }
+    }
+
+    /// Each notice pauses from when it arrives.
+    @Test func aSecondNoticeRestartsThePause() async {
+        let rig = Rig(configure: { $0.unsupportedReads = [] })
+        await rig.startHeld()
+        rig.transport.qualifyingEvents(.pumpCommunicationsSuspended)
+        await rig.settle()
+        let before = rig.pump.arrivals.count
+        await rig.run(for: 3)
+        rig.transport.qualifyingEvents(.pumpCommunicationsSuspended)
+        await rig.settle()
+        let session = rig.session
+        let refresh = Task { await session.refreshGlucose() }
+        await rig.run(for: 4.5)
+        #expect(rig.pump.arrivals.count == before)
+        await rig.run(for: 1)
+        await refresh.value
+        #expect(rig.pump.arrivals.count > before)
+    }
+
+    /// The pause belongs to the connection that reported it: a new one reads at once.
+    @Test func thePauseEndsWithTheConnection() async {
+        let rig = Rig(configure: { $0.unsupportedReads = [] })
+        await rig.startHeld()
+        rig.transport.qualifyingEvents(.pumpCommunicationsSuspended)
+        await rig.settle()
+        let before = rig.pump.arrivals(of: ControlIQIOBRequest.self).count
+        rig.transport.drop()
+        await rig.run(for: 3)
+        #expect(await rig.session.state.link == .connected)
+        #expect(rig.pump.arrivals(of: ControlIQIOBRequest.self).count > before)
+    }
+
+    /// Any other notice only brings its reads forward.
+    @Test func anotherNoticeDoesntPause() async {
+        let rig = Rig(configure: { $0.unsupportedReads = [] })
+        await rig.startHeld()
+        let before = rig.pump.arrivals(of: AlertStatusRequest.self).count
+        rig.transport.qualifyingEvents(.alert)
+        await rig.settle()
+        #expect(rig.pump.arrivals(of: AlertStatusRequest.self).count == before + 1)
     }
 }
 

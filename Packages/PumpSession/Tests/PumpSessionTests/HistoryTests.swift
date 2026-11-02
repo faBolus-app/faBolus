@@ -45,6 +45,26 @@ private func addGlucoseHistory(_ pump: ScriptedPump, count: Int) {
         #expect(rig.pump.arrivals(of: HistoryLogRequest.self).count == pages)
     }
 
+    /// A carb entry in the pump's history becomes carbs in the store. The record's body is pumpx2's
+    /// CarbEnteredHistoryLog capture (45 g), stamped five minutes ago.
+    @Test func aCarbEntryInHistoryIsStoredAsCarbs() async throws {
+        let captured: [UInt8] = [
+            0x30, 0x00, 0xce, 0xa4, 0x97, 0x1a, 0xd1, 0xd6, 0x02, 0x00, 0x00, 0x00, 0x34, 0x42, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+        ]
+        let rig = Rig(configure: {
+            $0.unsupportedReads = []
+            _ = $0.appendHistory(typeId: 48, at: $0.wallClockAtStart - 300, body: Array(captured[10...]))
+        })
+        await rig.startHeld()
+        let entered = rig.clock.date.addingTimeInterval(-300 - rig.clock.now)
+        await sync(rig)
+        let carbs = await rig.sink.batches.flatMap(\.carbs)
+        #expect(carbs.map(\.grams) == [45])
+        let date = try #require(carbs.first?.date)
+        #expect(abs(date.timeIntervalSince(entered)) < 2)
+    }
+
     /// The link drops after the first page. The sync pauses with the first page credited, and the next
     /// connection fetches only what's still missing; every record is stored exactly once.
     @Test func anInterruptedSyncResumesWhereItStopped() async {

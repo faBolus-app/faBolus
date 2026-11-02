@@ -114,7 +114,8 @@ extension PumpSession {
     // MARK: - The tick
 
     var tickInterval: TimeInterval {
-        tracked != nil || page != nil || delivery != nil ? config.busyTick : config.idleTick
+        // While sends are paused too, so they resume when the pause ends, not at the next idle tick.
+        tracked != nil || page != nil || delivery != nil || sendsPausedUntil != nil ? config.busyTick : config.idleTick
     }
 
     /// Does whatever has come due by the clock: routine reads, the reads around the next CGM reading, a
@@ -123,6 +124,7 @@ extension PumpSession {
     /// suspended app catches up on its next one.
     public func tick() {
         let now = clock()
+        if sendsPausedUntil != nil, !sendsPaused { sendsPausedUntil = nil }
         resumeLinkWaiters()
         resumeQueue()
         historyTick(now: now)

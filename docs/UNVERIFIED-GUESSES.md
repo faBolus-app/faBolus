@@ -264,3 +264,21 @@ that worked.
 - **Verify:** with a saline cartridge, deliver 1–2 U and compare the request, `LastBolusStatusV2` and the
   pump screen; then start a 2 U bolus, cancel it partway, and compare the reported amount with the pump
   screen and t:connect, including a cancel that arrives just as the bolus finishes.
+
+## 22. The pump's comms-suspended notice (qualifying-event bit 19)
+
+- **The guess:** what the bit means. pumpx2 names it `PUMP_COMMUNICATIONS_SUSPENDED` (524288) and gives it
+  no handler; nothing there says when a pump sets it or how it ends. Qualifying events are one-shot notices
+  the link clears, and no bit says communications resumed. faBolus does what controlX2 does: each notice
+  pauses every send for 5 s from its arrival, then sends go on. A request already sent is left to its
+  answer, and a new connection starts with no pause.
+- **The owner's choice:** the pause holds everything, a cancel and a delivery's steps included, exactly as
+  in controlX2. A cancel asked for during it reaches the pump up to 5 s later.
+- **Where:** `Packages/PumpSession/Sources/PumpSession/PumpSession.swift` (`qualifyingEvents`,
+  `sendsPaused`), `PumpSession.Configuration.commsSuspendedPause`.
+- **Risk:** if the bit means something else, a cancel, a bolus or an alert read waits 5 s for nothing.
+  If the pump stays suspended longer than 5 s, what's sent after the pause may go unanswered, which a
+  delivery treats as unknown.
+- **Verify:** on P1 and P2, record the qualifying events across a bolus, a cancel, a cartridge change and
+  a suspend and resume, and note when bit 19 comes and whether a request sent within 5 s of it is
+  answered.

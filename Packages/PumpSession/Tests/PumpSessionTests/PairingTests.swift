@@ -505,6 +505,30 @@ import Testing
         #expect(await rig.session.state.alerts?.value.map(\.remoteClear) == [.tryable])
     }
 
+    /// A new pairing starts with nothing read from the pump paired before: its calculator settings and IOB
+    /// aren't carried over, even when the new pump can't be read for them.
+    @Test func aNewPairingDropsTheLastPumpsCalculatorInputs() async throws {
+        let rig = Rig(configure: { $0.unsupportedReads = [] })
+        await rig.startHeld()
+        #expect(await rig.session.state.bolusCalculator != nil)
+        #expect(await rig.session.state.insulinOnBoard != nil)
+        // Another pump, which doesn't answer the calculator or IOB reads.
+        rig.pump.serialNumber = 2001
+        rig.pump.answers[MessageKey(BolusCalcDataSnapshotRequest.self)] = .error(code: 6, drops: false)
+        rig.pump.answers[MessageKey(ControlIQIOBRequest.self)] = .error(code: 6, drops: false)
+        await rig.session.scanForPairing()
+        await rig.settle()
+        try await rig.session.pair(
+            peripheralID: ScriptedPump.peripheralID, advertisedName: rig.pump.name, code: ScriptedPump.code)
+        await rig.run(for: 30, step: 5)
+        #expect(rig.store.load()?.pairing?.trustedSerial == 2001)
+        let state = await rig.session.state
+        #expect(state.link == .connected)
+        #expect(state.reservoirUnits != nil)
+        #expect(state.bolusCalculator == nil)
+        #expect(state.insulinOnBoard == nil)
+    }
+
     /// A record saved before this field existed reads as unknown for every unit.
     @Test func anOlderRecordReadsAsUnknown() throws {
         let unit = PumpUnit(serialNumber: 1693, armSoftwareVersion: 7, mspSoftwareVersion: 7)
@@ -532,6 +556,24 @@ import Testing
         let dismiss = Task { await session.dismiss(alert) }
         await rig.run(for: 2)
         #expect(await dismiss.value == .unsupported)
+    }
+
+    /// The pump answers the clear with a non-zero status: refused, and the alert stays shown.
+    @Test func aNonZeroStatusIsRefusedAndTheAlertStays() async throws {
+        let rig = Rig(configure: {
+            $0.unsupportedReads = []
+            $0.alertBitmap = 1 << 7
+            // A pump that refuses leaves the alert, and answers status 1.
+            $0.dismissLeavesAlert = true
+            $0.answers[MessageKey(DismissNotificationRequest.self)] = .cargo([1])
+        })
+        await rig.startHeld()
+        let alert = try #require(await rig.session.state.alerts?.value.first)
+        let session = rig.session
+        let dismiss = Task { await session.dismiss(alert) }
+        await rig.run(for: 2)
+        #expect(await dismiss.value == .refused)
+        #expect(await rig.session.state.alerts?.value.count == 1)
     }
 
     /// No authenticated answer: unconfirmed, and the alert stays shown.

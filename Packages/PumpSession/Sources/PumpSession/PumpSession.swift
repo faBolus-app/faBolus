@@ -62,6 +62,9 @@ public actor PumpSession {
         public var busyTick: TimeInterval = 0.5
         /// Whether each class of pump acts on a remote clear (`RemoteClearing.knownClasses`; tests set rows).
         public var remoteClearClasses = RemoteClearing.knownClasses
+        /// How long every send waits after the pump reports its communications suspended (controlX2's
+        /// pause; UNVERIFIED-GUESSES #22).
+        public var commsSuspendedPause: TimeInterval = 5
 
         public init() {}
     }
@@ -126,6 +129,8 @@ public actor PumpSession {
     /// The link's hold window: until a connection has held this long, it holds back untested commands.
     var holdWindow: TimeInterval = 10
     var onceThisConnection: Set<ReadGroup> = []
+    /// Until when nothing is sent, after the pump reported its communications suspended.
+    var sendsPausedUntil: Date?
 
     // Delivery
     var delivery: DeliveryInProgress?
@@ -409,7 +414,11 @@ public actor PumpSession {
     /// cancel included. While a bolus is being followed no untested read goes out either: a probe's op-77
     /// can drop the link. A delivery's own steps are left to the link: holding one back here would let a
     /// cancel overtake the InitiateBolus it is meant to stop. A tick sends what has come due.
+    ///
+    /// After the pump reports its communications suspended, nothing goes for a few seconds, a cancel
+    /// and a delivery's steps included: the owner's choice, following controlX2, which pauses every send.
     func nextJobIndex() -> Int? {
+        if sendsPaused { return nil }
         let elapsed = connectedAt.map { clock().timeIntervalSince($0) } ?? .infinity
         // A clock stepped backwards counts as held: waiting for it to catch up would stall the queue.
         let held = elapsed >= holdWindow || elapsed < 0
@@ -424,6 +433,14 @@ public actor PumpSession {
             return queue[i].owner == owner || queue[i].priority == .cancel
         }
         return eligible.min { (queue[$0].priority, queue[$0].id) < (queue[$1].priority, queue[$1].id) }
+    }
+
+    /// Within the pause after a comms-suspended notice. A clock stepped backwards ends it: waiting for the
+    /// clock to catch up would stall the queue, a cancel included.
+    var sendsPaused: Bool {
+        guard let until = sendsPausedUntil else { return false }
+        let left = until.timeIntervalSince(clock())
+        return left > 0 && left <= config.commsSuspendedPause
     }
 
     func isSuspected(_ message: any TandemMessages.Message) -> Bool {
@@ -618,6 +635,8 @@ public actor PumpSession {
         identityTrusted = false
         connectedAt = nil
         pendingTrial = nil
+        // The pause belongs to the connection that reported it.
+        sendsPausedUntil = nil
         failQueued()
         emit(.disconnected(Self.reason(reason)))
         deliveryLinkDropped()
@@ -626,6 +645,11 @@ public actor PumpSession {
 
     private func qualifyingEvents(_ events: QualifyingEvent) {
         let now = clock()
+        // What the bit means isn't known (pumpx2 only names it). Each notice pauses every send from now,
+        // as controlX2 does; a request already sent is left to its answer.
+        if events.contains(.pumpCommunicationsSuspended) {
+            sendsPausedUntil = now.addingTimeInterval(config.commsSuspendedPause)
+        }
         if !events.intersection([.alert, .alarm, .reminder, .malfunction, .cgmAlert]).isEmpty { due[.alerts] = now }
         if !events.intersection([.bolusChange, .iobChange, .cgmChange, .remainingInsulin, .battery]).isEmpty {
             due[.status] = now
