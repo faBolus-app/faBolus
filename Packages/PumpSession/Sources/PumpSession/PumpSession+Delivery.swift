@@ -69,6 +69,12 @@ struct TrackedBolus {
 extension PumpSession {
     static let cancelledBeforeStartReason = "Cancelled before the bolus was sent to the pump."
 
+    static func iobRoseReason(from before: Double, to now: Double) -> String {
+        let f = { (u: Double) in String(format: "%.2f", u) }
+        return "Active insulin rose from \(f(before)) to \(f(now)) U while the bolus was starting, so it wasn't "
+            + "started. Check the pump's last bolus, then review the dose again."
+    }
+
     /// Delivers a composed dose: records it, asks the pump for permission, records the bolus ID durably,
     /// sends the BG and carb entries and InitiateBolus, and follows the bolus until the pump reports it
     /// done. Every move is recorded in the ledger before it is emitted as `.bolusOutcome`.
@@ -121,6 +127,18 @@ extension PumpSession {
             await exchange(message, allowing: allowing ?? message.operationRisk, priority: .delivery, owner: owner)
         }
 
+        // The IOB the dose was decided against: the larger of the readings from preparing the dose (a
+        // reading older than the IOB window says nothing about now) and the IOB the calculator subtracted.
+        // The larger, because right after a bolus one reading can lag, and the two models can differ by a
+        // step even when they agree.
+        let now = clock()
+        func fresh<T>(_ reading: Observed<T>?) -> T? {
+            reading.flatMap { $0.isStale(after: freshness.insulinOnBoardStaleAfter, now: now) ? nil : $0.value }
+        }
+        let iobBeforePermission = [
+            fresh(state.insulinOnBoard), fresh(state.bolusCalculator)?.insulinOnBoardUnits, dose.calculatorIOBUnits
+        ]
+        .compactMap { $0 }.max()
         // The pump checks a signed request against its own clock, so the clock is read first.
         guard case .reply(let firstClock) = await send(TimeSinceResetRequest(), allowing: .read),
             firstClock.message is TimeSinceResetResponse
@@ -161,6 +179,20 @@ extension PumpSession {
             return await settle(key, .failed(reason))
         }
         if delivery?.cancelRequested == true { return await abandon(Self.cancelledBeforeStartReason) }
+
+        // The dose was sized from an IOB read before permission was asked. A bolus the pump started in
+        // between, from its own screen or by Control-IQ, isn't in it. So the calculator snapshot, which
+        // carries the pump's IOB, is read again now that the permission is held, as Tandem's app reads it
+        // after permission in the recorded bolus 3.
+        if let sizedFrom = iobBeforePermission {
+            guard case .reply(let reply) = await send(BolusCalcDataSnapshotRequest(), allowing: .read),
+                let snapshot = reply.message as? BolusCalcDataSnapshotResponse, snapshot.cargo.first == 0
+            else { return await abandon("The pump's active insulin couldn't be read again. Nothing was delivered.") }
+            let iob = Double(snapshot.iob) / 1000
+            if iob > sizedFrom + BolusVolume.stepUnits + 1e-9 {
+                return await abandon(Self.iobRoseReason(from: sizedFrom, to: iob))
+            }
+        }
 
         // The durable point: InitiateBolus is sent only once the bolus ID is saved, so a crash after this
         // restarts as unknown, never as "not sent".
@@ -270,10 +302,12 @@ extension PumpSession {
     /// available (one pump answers it with op-77) or names a different bolus. With neither, the outcome
     /// is unknown and history settles it later.
     private func settleFinished(_ bolus: TrackedBolus) async {
-        // An untested read here would be a probe, and its op-77 can drop the link: history settles it.
+        // An untested read here would be a probe, and its op-77 can drop the link: history settles it. A
+        // reply is used only when its first byte marks it valid (1); any other value says nothing about
+        // what went in, whatever bolus ID it carries.
         if !isUntested(LastBolusStatusV2Request()),
             case .reply(let reply) = await exchange(LastBolusStatusV2Request(), priority: .delivery),
-            let last = reply.message as? LastBolusStatusV2Response, last.bolusId == bolus.bolusId
+            let last = reply.message as? LastBolusStatusV2Response, last.status == 1, last.bolusId == bolus.bolusId
         {
             await settle(bolus.key, .delivered(last.deliveredUnits))
             return
@@ -331,7 +365,9 @@ extension PumpSession {
         case .reply(let reply):
             return (reply.message as? CancelBolusResponse)?.wasCancelled == true ? .cancelled : .notCancelled
         case .pumpError:
-            return .notCancelled
+            // The pump didn't take the request, which says nothing about the bolus: it may still be
+            // delivering, so the user is told to check the pump and cancel there.
+            return .unconfirmed
         case .notSent:
             return .notConnected
         case .unknown:

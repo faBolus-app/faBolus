@@ -86,6 +86,9 @@ enum PumpReadings {
             return [.insulinOnBoard]
 
         case let m as BolusCalcDataSnapshotResponse:
+            // The first byte is 0 when the pump acknowledges the request. Any other snapshot is no reading:
+            // the last one stays, and the dose path sees the settings as not read for this attempt.
+            guard m.cargo.first == 0 else { return [] }
             let settings = BolusCalculatorSettings(
                 carbRatio: m.carbRatioGramsPerUnit, correctionFactor: m.isf, targetMgdl: m.targetBg,
                 maxBolusUnits: Double(m.maxBolusAmount) / 1000, insulinOnBoardUnits: Double(m.iob) / 1000)
