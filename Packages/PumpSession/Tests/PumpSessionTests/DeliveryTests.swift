@@ -275,7 +275,7 @@ private func addOldHistory(_ pump: ScriptedPump, count: Int = 20) {
         let rig = Rig(configure: { $0.unsupportedReads = [] })
         await rig.startHeld()
         _ = await rig.session.deliver(composed(2.0))
-        await rig.run(for: 5)
+        await rig.run(for: rig.pump.pendingSeconds + 5)
         #expect(await rig.session.cancelBolus() == .cancelled)
         await rig.run(for: 3)
         guard case .stopped(let delivered, let requested) = await rig.session.ledger.ledger.outcome(key) else {
@@ -371,5 +371,137 @@ private func addOldHistory(_ pump: ScriptedPump, count: Int = 20) {
         await rig.startHeld()
         #expect(await rig.session.cancelBolus() == .noBolus)
         #expect(rig.pump.arrivals(of: CancelBolusRequest.self).isEmpty)
+    }
+}
+
+/// The scripted pump's bolus engine, run through the session: the pending phase and rate of the one
+/// recorded t:slim bolus, how a bolus ends, and the history records a t:slim writes for it.
+@MainActor
+@Suite struct ScriptedBolusEngineTests {
+    private func types(_ records: [[UInt8]]) -> [Int] { records.map { Bytes.readShort($0, 0) } }
+
+    private func records(_ pump: ScriptedPump, _ typeId: Int) -> [[UInt8]] {
+        pump.historyRecords.filter { Bytes.readShort($0, 0) == typeId }
+    }
+
+    /// For 15 s after it's accepted the pump reports the bolus pending (status 2) and delivers nothing; the
+    /// session follows it through that and then through delivery, and never settles it early.
+    @Test func aPendingBolusIsFollowedNotSettled() async throws {
+        let rig = Rig(configure: { $0.unsupportedReads = [] })
+        await rig.startHeld()
+        #expect(await rig.session.deliver(composed(1.0)) == .started(key, .delivering))
+        await rig.run(for: 10)
+        let bolus = try #require(rig.pump.activeBolus)
+        #expect(rig.clock.now < bolus.deliversFrom)
+        #expect(rig.pump.deliveredMilliunits(bolus) == 0)
+        #expect(await rig.session.tracked != nil)
+        #expect(await rig.session.ledger.ledger.outcome(key) == .delivering)
+        // 1 U: 15 s pending, then 40 s at the recorded rate.
+        await rig.run(for: rig.pump.deliverySeconds(milliunits: 1000) - 10 + 5)
+        #expect(await rig.session.ledger.ledger.outcome(key) == .delivered(units: 1.0))
+        #expect(await rig.outcomes(key) == [.requested, .accepted, .delivering, .delivered(units: 1.0)])
+    }
+
+    /// A pending bolus the pump drops is never taken as delivered: nothing went in.
+    @Test func aPendingBolusThePumpDropsIsNeverDelivered() async {
+        let rig = Rig(configure: {
+            $0.unsupportedReads = []
+            $0.dropsPendingBolus = true
+        })
+        await rig.startHeld()
+        _ = await rig.session.deliver(composed(1.0))
+        await rig.run(for: rig.pump.deliverySeconds(milliunits: 1000) + 5)
+        let outcome = await rig.session.ledger.ledger.outcome(key)
+        #expect(outcome == .stopped(delivered: 0, requested: 1.0), "\(String(describing: outcome))")
+        #expect(!(await rig.outcomes(key)).contains(.delivered(units: 1.0)))
+        #expect(records(rig.pump, BolusActivatedHistoryLog.typeId).isEmpty)
+    }
+
+    /// The pump stops a bolus on its own (an alarm) with no cancel from the phone: the outcome is the
+    /// amount that went in, and the alarm is shown once the pump's notice arrives.
+    @Test func aBolusThePumpStopsSettlesStoppedAndShowsTheAlarm() async throws {
+        let rig = Rig(configure: { $0.unsupportedReads = [] })
+        await rig.startHeld()
+        _ = await rig.session.deliver(composed(2.0))
+        await rig.run(for: rig.pump.pendingSeconds + 32)
+        let delivered = rig.pump.deliveredMilliunits(try #require(rig.pump.activeBolus))
+        #expect(delivered > 0 && delivered < 2000)
+        rig.pump.stopBolus(completionStatus: ScriptedPump.CompletionStatus.alarm, alarmBit: 5)
+        rig.transport.qualifyingEvents([.alarm, .bolusChange])
+        await rig.run(for: 10)
+        #expect(
+            await rig.session.ledger.ledger.outcome(key)
+                == .stopped(delivered: Double(delivered) / 1000, requested: 2.0))
+        #expect(rig.pump.arrivals(of: CancelBolusRequest.self).isEmpty)
+        let alerts = await rig.session.state.alerts?.value ?? []
+        #expect(alerts.contains { $0.id == 5 && $0.kind == .alarm })
+        let completed = BolusCompletedHistoryLog(cargo: try #require(records(rig.pump, 20).last))
+        #expect(completed.completionStatusId == ScriptedPump.CompletionStatus.alarm)
+    }
+
+    /// A cancel from the phone is recorded with the phone-cancel completion status, a full delivery with
+    /// the delivered one.
+    @Test func eachEndIsRecordedWithItsCompletionStatus() async throws {
+        let rig = Rig(configure: { $0.unsupportedReads = [] })
+        await rig.startHeld()
+        _ = await rig.session.deliver(composed(2.0))
+        await rig.run(for: rig.pump.pendingSeconds + 5)
+        #expect(await rig.session.cancelBolus() == .cancelled)
+        await rig.run(for: 5)
+        let cancelled = BolusCompletedHistoryLog(cargo: try #require(records(rig.pump, 20).last))
+        #expect(cancelled.completionStatusId == ScriptedPump.CompletionStatus.cancelledFromPhone)
+
+        _ = await rig.session.deliver(composed(1.0, id: "phone-2"))
+        await rig.run(for: rig.pump.deliverySeconds(milliunits: 1000) + 5)
+        let full = BolusCompletedHistoryLog(cargo: try #require(records(rig.pump, 20).last))
+        #expect(full.completionStatusId == ScriptedPump.CompletionStatus.delivered)
+        #expect(full.insulinDelivered == 1.0)
+    }
+
+    /// An engine bolus writes the records the capture of bolus 3 shows, in its order and with its timing:
+    /// 15 s from the request records to activation, then 40 s for 1 U.
+    @Test func anEngineBolusWritesTheCapturesRecords() async throws {
+        let rig = Rig(configure: { $0.unsupportedReads = [] })
+        await rig.startHeld()
+        _ = await rig.session.deliver(composed(1.0))
+        await rig.run(for: rig.pump.deliverySeconds(milliunits: 1000) + 15)
+        let captured = CapturedBolus3.historyRecords.sorted { Bytes.readUint32($0, 6) < Bytes.readUint32($1, 6) }
+        // Type 23 in the capture is a record of something else between the bolus's records.
+        #expect(types(rig.pump.historyRecords) == types(captured).filter { $0 != 23 })
+
+        let initiate = InitiateBolusRequestMsg1HistoryLog(cargo: try #require(records(rig.pump, 292).first))
+        let activated = BolusActivatedHistoryLog(cargo: try #require(records(rig.pump, 55).first))
+        let deliveries = records(rig.pump, 280).map { BolusDeliveryHistoryLog(cargo: $0) }
+        let completed = BolusCompletedHistoryLog(cargo: try #require(records(rig.pump, 20).first))
+        #expect(initiate.bolusId == 10650 && initiate.totalVolume == 1000 && initiate.bolusTypeBitmask == 8)
+        #expect(activated.bolusId == 10650 && activated.bolusSize == 1.0)
+        #expect(deliveries.map(\.bolusDeliveryStatusId) == [1, 0])
+        #expect(deliveries.map(\.deliveredTotal) == [0, 1000])
+        #expect(completed.bolusId == 10650 && completed.insulinDelivered == 1.0)
+        #expect(activated.pumpTimeSec - initiate.pumpTimeSec == 15)
+        #expect(completed.pumpTimeSec - activated.pumpTimeSec == 40)
+        // Every record the session reads as naming a bolus names this one: the requested, initiate,
+        // activated, two delivery and completed records.
+        let named = rig.pump.historyRecords.compactMap {
+            HistoryProjection.bolusId(of: HistoryLogParser.parse(record: $0))
+        }
+        #expect(named == [Int](repeating: 10650, count: 11))
+    }
+
+    /// While the status read goes unanswered mid-bolus, a history search finds the bolus from the records
+    /// the pump wrote when it accepted it, and never calls it absent.
+    @Test func aBolusWhoseStatusGoesUnansweredIsPresentInHistory() async {
+        let rig = Rig(configure: { $0.unsupportedReads = [] })
+        addOldHistory(rig.pump)
+        await rig.startHeld()
+        let acceptedAt = rig.pump.wallClock
+        _ = await rig.session.deliver(composed(2.0))
+        await rig.run(for: rig.pump.pendingSeconds + 5)
+        rig.pump.answers[MessageKey(CurrentBolusStatusRequest.self)] = .silent
+        let session = rig.session
+        let search = Task { await session.searchHistory(for: 10650, acceptedAt: acceptedAt) }
+        // The status read first waits out its timeout, then the history pages are read.
+        await rig.run(for: 60)
+        #expect(await search.value == .present)
     }
 }

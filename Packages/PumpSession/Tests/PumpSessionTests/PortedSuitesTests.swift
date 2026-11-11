@@ -89,7 +89,7 @@ private func deliver(_ rig: Rig, _ dose: ComposedDose, for seconds: Double = 2) 
         rig.transport.drop()
         await rig.settle()
         #expect(await rig.ledger.ledger.outcome(key)?.isUnknown == true)
-        await rig.run(for: 60, step: 1)
+        await rig.run(for: rig.pump.deliverySeconds(milliunits: 2000) + 25, step: 1)
         #expect(await rig.ledger.ledger.outcome(key) == .delivered(units: 2.0))
     }
 
@@ -97,7 +97,7 @@ private func deliver(_ rig: Rig, _ dose: ComposedDose, for seconds: Double = 2) 
         let rig = Rig(configure: { $0.unsupportedReads = [] })
         await rig.startHeld()
         _ = await deliver(rig, composed(2.0))
-        await rig.run(for: 25)
+        await rig.run(for: rig.pump.deliverySeconds(milliunits: 2000) + 5)
         #expect(await rig.ledger.ledger.outcome(key) == .delivered(units: 2.0))
     }
 
@@ -109,7 +109,7 @@ private func deliver(_ rig: Rig, _ dose: ComposedDose, for seconds: Double = 2) 
         })
         await rig.startHeld()
         _ = await deliver(rig, composed(2.0))
-        await rig.run(for: 30)
+        await rig.run(for: rig.pump.deliverySeconds(milliunits: 2000) + 10)
         #expect(await rig.ledger.ledger.outcome(key) == .delivered(units: 2.0))
     }
 
@@ -125,7 +125,7 @@ private func deliver(_ rig: Rig, _ dose: ComposedDose, for seconds: Double = 2) 
         })
         await rig.startHeld()
         _ = await deliver(rig, composed(2.0))
-        await rig.run(for: 30)
+        await rig.run(for: rig.pump.deliverySeconds(milliunits: 2000) + 10)
         #expect(await rig.ledger.ledger.outcome(key) == .delivered(units: 2.0))
     }
 
@@ -209,10 +209,15 @@ private func deliver(_ rig: Rig, _ dose: ComposedDose, for seconds: Double = 2) 
     /// A cancel that reaches the pump as the bolus finishes: the pump says it didn't cancel, and the
     /// outcome is the full amount it reports, never "stopped".
     @Test func aCancelRacingTheCompletionIsDelivered() async {
-        let rig = Rig(configure: { $0.unsupportedReads = [] })
+        // A fast pump: the bolus finishes in 20 s, inside the session's 60 s status-silence limit.
+        let rig = Rig(configure: {
+            $0.unsupportedReads = []
+            $0.deliveryMilliunitsPerSecond = 100
+            $0.pendingSeconds = 0
+        })
         await rig.startHeld()
         _ = await deliver(rig, composed(2.0))
-        // The session doesn't see the bolus finish (20 s at the scripted rate) before its cancel arrives.
+        // The session doesn't see the bolus finish before its cancel arrives.
         rig.pump.answers[MessageKey(CurrentBolusStatusRequest.self)] = .silent
         await rig.run(for: 20, step: 2)
         // A status read still waiting for its answer goes first; the cancel follows it.
@@ -233,7 +238,7 @@ private func deliver(_ rig: Rig, _ dose: ComposedDose, for seconds: Double = 2) 
         let rig = Rig(configure: { $0.unsupportedReads = [] })
         await rig.startHeld()
         _ = await deliver(rig, composed(2.0))
-        await rig.run(for: 3)
+        await rig.run(for: rig.pump.pendingSeconds + 5)
         rig.pump.answers[MessageKey(CurrentBolusStatusRequest.self)] = .silent
         #expect(await rig.session.cancelBolus() == .cancelled)
         var blockedWhileUnknown = false
@@ -270,7 +275,7 @@ private func deliver(_ rig: Rig, _ dose: ComposedDose, for seconds: Double = 2) 
         await rig.run(for: 12)
         #expect(await cancel.value == .unconfirmed)
         #expect(rig.pump.activeBolus != nil)
-        await rig.run(for: 15)
+        await rig.run(for: rig.pump.deliverySeconds(milliunits: 2000) - 15 + 5)
         #expect(await rig.ledger.ledger.outcome(key) == .delivered(units: 2.0))
     }
 
@@ -289,7 +294,7 @@ private func deliver(_ rig: Rig, _ dose: ComposedDose, for seconds: Double = 2) 
         rig.transport.drop()
         #expect(await cancel.value == .notConnected)
         #expect(rig.pump.arrivals(of: CancelBolusRequest.self).isEmpty)
-        await rig.run(for: 40, step: 2)
+        await rig.run(for: rig.pump.deliverySeconds(milliunits: 2000) + 25, step: 2)
         #expect(await rig.ledger.ledger.outcome(key) == .delivered(units: 2.0))
     }
 
@@ -299,7 +304,7 @@ private func deliver(_ rig: Rig, _ dose: ComposedDose, for seconds: Double = 2) 
         let rig = Rig(configure: { $0.unsupportedReads = [] })
         await rig.startHeld()
         _ = await deliver(rig, composed(2.0))
-        await rig.run(for: 3)
+        await rig.run(for: rig.pump.pendingSeconds + 5)
         rig.pump.nextAnswers[MessageKey(CancelBolusRequest.self)] = [.drop(acted: true)]
         #expect(await rig.session.cancelBolus() == .unconfirmed)
         #expect(rig.pump.activeBolus == nil)
@@ -557,7 +562,7 @@ private func deliver(_ rig: Rig, _ dose: ComposedDose, for seconds: Double = 2) 
         let rig = Rig(ledgerStore: store, configure: { $0.unsupportedReads = [] })
         await rig.startHeld()
         store.failFromSave = 3
-        _ = await deliver(rig, composed(1.0), for: 20)
+        _ = await deliver(rig, composed(1.0), for: rig.pump.deliverySeconds(milliunits: 1000) + 5)
         #expect(await rig.ledger.block == .outcomeNotSaved)
         store.failFromSave = nil
         try? await rig.ledger.retrySave()
@@ -571,7 +576,7 @@ private func deliver(_ rig: Rig, _ dose: ComposedDose, for seconds: Double = 2) 
         let rig = Rig(ledgerStore: store, configure: { $0.unsupportedReads = [] })
         await rig.startHeld()
         store.failFromSave = 3
-        _ = await deliver(rig, composed(1.0), for: 20)
+        _ = await deliver(rig, composed(1.0), for: rig.pump.deliverySeconds(milliunits: 1000) + 5)
         #expect(await rig.ledger.block == .outcomeNotSaved)
         let saves = store.saveCount
         await rig.run(for: 12, step: 1)
