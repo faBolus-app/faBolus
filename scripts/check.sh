@@ -4,7 +4,7 @@
 #   scripts/check.sh                 # every gate
 #   scripts/check.sh build format    # just these
 #
-# Gates: build, test, app, format, swiftlint, shell, actions, markdown, contract.
+# Gates: traits, build, test, app, format, swiftlint, shell, actions, markdown, contract.
 # The vendored ShareClient is compiled under the same rules but is not reformatted or linted, so drift
 # against upstream stays visible.
 set -euo pipefail
@@ -16,6 +16,10 @@ swift_files() {
   git ls-files -z '*.swift' ':!:Packages/ShareClient/*'
 }
 
+# No app build may turn on a TandemKit package trait. BenchWrites adds two signed writes for TandemKit's
+# bench only; the check covers the manifests, SwiftPM's resolved graph and TandemKit's default traits, and
+# first proves each check fails on a package that enables the trait.
+gate_traits() { python3 scripts/check-tandemkit-traits.py; }
 gate_build() {
   for p in "${PACKAGES[@]}"; do
     echo "-- $p"
@@ -64,7 +68,7 @@ gate_contract() {
 }
 
 gates=("$@")
-[ "${#gates[@]}" -gt 0 ] || gates=(build test app format swiftlint shell actions markdown contract)
+[ "${#gates[@]}" -gt 0 ] || gates=(traits build test app format swiftlint shell actions markdown contract)
 for g in "${gates[@]}"; do
   echo "== $g"
   "gate_$g"

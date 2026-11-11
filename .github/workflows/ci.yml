@@ -16,6 +16,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Select Xcode 27.2
         run: sudo xcode-select -s /Applications/Xcode_27.2.app && xcodebuild -version
+      # Resolves the packages the build then reuses.
+      - name: No TandemKit trait in the app
+        run: ./scripts/check.sh traits
       - name: Build (warnings are errors)
         run: ./scripts/check.sh build
       - name: Test
