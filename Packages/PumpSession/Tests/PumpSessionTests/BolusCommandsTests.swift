@@ -39,6 +39,15 @@ import Testing
         #expect(b.initiate.cargo == TandemAppRequests.initiate10678)
     }
 
+    /// The glucose a dose corrected from goes with it from 20 to 600 mg/dL, the calculator's range; one
+    /// outside it isn't sent.
+    @Test(arguments: [(20, 20), (600, 600), (19, 0), (601, 0)])
+    func theCorrectionGlucoseGoesFrom20To600(bg: Int, sent: Int) throws {
+        let c = try make(0.77, bolusId: 10677, carbs: 5, bg: bg, iob: 0, carbUnits: 0.05)
+        #expect(c.initiate.bolusBG == sent)
+        #expect(c.bgEntry?.bg == (sent > 0 ? sent : nil))
+    }
+
     @Test func theEntriesCarryThePumpsSecondsSinceBootAsTandemsAppSends() throws {
         let c = try make(
             0.77, bolusId: 10677, carbs: 5, bg: 185, iob: 0, carbUnits: 0.05, uptime: TandemAppRequests.uptime10677)

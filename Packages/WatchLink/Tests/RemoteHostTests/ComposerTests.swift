@@ -279,7 +279,7 @@ import Testing
             object["glucoseBands"] == [
                 "low": GlucoseThresholds.low, "high": GlucoseThresholds.high, "veryHigh": GlucoseThresholds.veryHigh
             ])
-        #expect(object["plausibleGlucose"] == ["min": GlucosePlausibility.minimum, "max": GlucosePlausibility.maximum])
+        #expect(object["calculatorGlucose"] == ["min": CalculatorGlucose.minimum, "max": CalculatorGlucose.maximum])
     }
 
     /// The default preferences are the golden config.

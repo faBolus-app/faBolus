@@ -154,10 +154,10 @@ extension DoseComposer {
         _ entry: PhoneDoseEntry, carbs: Double, glucose: PhoneDoseEntry.Glucose, recommended: Double,
         entered: Double, context: DoseContext
     ) -> PhoneDoseDecision {
-        // A typed low is refused: the calculator drops an implausible reading, so a typed 30 would size a
-        // dose with no low correction at all. A CGM reading is the source's to gate.
-        if case .typed(let mgdl) = glucose, !GlucosePlausibility.isPlausible(mgdl: mgdl) {
-            return .refused(.implausibleGlucose(mgdl: mgdl))
+        // A typed glucose outside 20–600 is refused: the calculator drops it, so a typed 15 would size a
+        // dose with no low correction at all.
+        if case .typed(let mgdl) = glucose, !CalculatorGlucose.isValid(mgdl: mgdl) {
+            return .refused(.invalidGlucose(mgdl: mgdl))
         }
         let inputs = CalculatorInputs(context: context)
         guard inputs.isAvailable else { return .refused(.pumpSettingsNotRead) }
@@ -222,16 +222,16 @@ extension DoseComposer {
 
         case .currentReading(let shownMgdl):
             if let reading = glucoseForCorrection(context) {
-                // The pump's own calculator gives no dose for a LOW or HIGH reading.
-                guard GlucosePlausibility.isPlausible(mgdl: reading.mgdl) else {
-                    return .refused(.implausibleGlucose(mgdl: reading.mgdl))
+                // A reading outside the calculator's range gives no dose, as a typed one doesn't.
+                guard CalculatorGlucose.isValid(mgdl: reading.mgdl) else {
+                    return .refused(.invalidGlucose(mgdl: reading.mgdl))
                 }
                 // Also ask when the reading itself changed and moved the dose at all, or when the user last
                 // answered a stale-glucose prompt that no longer holds.
                 let moved = units(reading.mgdl).map { abs($0 - recommended) > mismatchSlack } ?? false
                 let mustAsk = (shownMgdl != reading.mgdl && moved) || entry.answers.staleGlucose != nil
                 // The entered dose is recorded with the reading it came from, if that one was usable.
-                let shown = shownMgdl.flatMap { GlucosePlausibility.isPlausible(mgdl: $0) ? $0 : nil }
+                let shown = shownMgdl.flatMap { CalculatorGlucose.isValid(mgdl: $0) ? $0 : nil }
                 return checkRecompute(mgdl: reading.mgdl, recorded: shown, mustAsk: mustAsk)
             }
 

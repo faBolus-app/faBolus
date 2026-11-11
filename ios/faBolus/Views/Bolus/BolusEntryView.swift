@@ -171,9 +171,9 @@ struct BolusEntryView: View {
     @ViewBuilder private func recommendation(_ flow: BolusFlow) -> some View {
         let r = flow.recommendation
         Section("Suggested") {
-            if !r.glucoseIsPlausible {
+            if !r.glucoseIsValid {
                 Label(
-                    "That glucose looks out of range. Re-check it before dosing.",
+                    "That glucose is outside 20–600 mg/dL. Re-check it before dosing.",
                     systemImage: "exclamationmark.triangle.fill"
                 )
                 .foregroundStyle(AppTheme.low)

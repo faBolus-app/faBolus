@@ -12,8 +12,8 @@ The files here are the contract:
   phone's and produce the remote's exactly.
 - `bolus_oracle_fixtures.jsonl`: the bolus calculator rows both calculators are tested against.
 - `shared_constants.json`: values a remote keeps its own copy of and never receives: the glucose colour bands
-  (faBolusCore `GlucoseThresholds`) and the plausible glucose range (`GlucosePlausibility`). The phone's tests
-  and the remote's both check their copy against it.
+  (faBolusCore `GlucoseThresholds`) and the glucose range the calculator corrects from (`CalculatorGlucose`).
+  The phone's tests and the remote's both check their copy against it.
 
 A remote vendors these files from a pinned faBolus commit. faBolusGarmin keeps them in `contract/` with the
 commit in `contract/PIN`; `scripts/sync-contract.sh` updates them and its CI checks them against the pin.
@@ -126,7 +126,7 @@ arrive. A remote stops waiting once the request would be refused as too old.
 A bolus request may be sent again with the same `requestId` and `sentAt` until any outcome arrives; the
 phone answers a repeat from its ledger and never delivers a request twice. It refuses a request sent more
 than two minutes ago. The phone recomputes a `carbs` dose from its own inputs and refuses one that differs
-from `estimateMU` by more than 0.10 U, or that corrects from a reading outside 40–400 mg/dL.
+from `estimateMU` by more than 0.10 U, or that corrects from a reading outside 20–600 mg/dL.
 
 ### Confirming on the remote
 

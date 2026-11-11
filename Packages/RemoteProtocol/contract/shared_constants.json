@@ -1,4 +1,4 @@
 {
   "glucoseBands": { "low": 70, "high": 180, "veryHigh": 250 },
-  "plausibleGlucose": { "min": 40, "max": 400 }
+  "calculatorGlucose": { "min": 20, "max": 600 }
 }

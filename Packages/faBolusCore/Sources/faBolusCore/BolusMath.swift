@@ -73,15 +73,15 @@ public enum BolusMath {
                 bgSanityFail = true  // target out of range / empty
             } else if profile.isfMgdlPerUnit <= 0 {
                 bgSanityFail = true  // no ISF present
-            } else if !GlucosePlausibility.isPlausible(mgdl: bg) {
-                // Dose-path backstop (independent of the source-level GlucoseSample gate): the
-                // reading itself is outside [40,400] — implausible/corrupt. Treat it as "no BG
+            } else if !CalculatorGlucose.isValid(mgdl: bg) {
+                // Dose-path backstop (independent of the composer's refusal): the reading itself is
+                // outside [20,600], the calculator's range. Treat it as "no BG
                 // correction" — identical to the nil-bg path: `fromBG` stays 0.0 and carbs are
                 // preserved. Deliberately NOT a `bgSanityFail` (that would also zero a valid carb
                 // component — never a silent dose transform). This branch is ordered STRICTLY AFTER
-                // the target/ISF checks so the 3 confounded oracle rows (out-of-range bg AND
-                // out-of-range target) still zero via the existing target check above, keeping
-                // BolusMathParityTests at 563/563. REJECT, never clamp.
+                // the target/ISF checks, as the oracle checks the target first: a row with an
+                // out-of-range target zeroes whatever its glucose, keeping BolusMathParityTests at
+                // 563/563. REJECT, never clamp.
             } else {
                 fromBG = dp(Double(bg - profile.targetBgMgdl) / Double(profile.isfMgdlPerUnit))
             }

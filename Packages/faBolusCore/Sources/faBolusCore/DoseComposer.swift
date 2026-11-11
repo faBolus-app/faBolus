@@ -175,10 +175,10 @@ public struct DoseRecommendation: Sendable, Equatable {
     /// settings and IOB there is nothing to size a dose from, so the screen waits instead.
     public var displaysNumericDose: Bool { calculation.map { !$0.sanityFailed } ?? false }
 
-    /// The calculator ignores a glucose outside 40–400 mg/dL, so the number above has no correction for
-    /// it. A typed one is refused at delivery (`DoseRefusal.implausibleGlucose`); the screen says so rather
+    /// The calculator ignores a glucose outside 20–600 mg/dL, so the number above has no correction for
+    /// it. A typed one is refused at delivery (`DoseRefusal.invalidGlucose`); the screen says so rather
     /// than present the number as a correction.
-    public var glucoseIsPlausible: Bool { glucoseMgdl.map { GlucosePlausibility.isPlausible(mgdl: $0) } ?? true }
+    public var glucoseIsValid: Bool { glucoseMgdl.map { CalculatorGlucose.isValid(mgdl: $0) } ?? true }
 }
 
 extension DoseComposer {
@@ -260,9 +260,9 @@ public enum DoseRefusal: Sendable, Equatable {
     case pumpSettingsUnusable
     /// The phone's recompute differs from the remote's estimate by more than 0.10 U.
     case doseChanged(estimateUnits: Double, doseUnits: Double)
-    /// A glucose outside 40–400 mg/dL, typed or from the CGM (its LOW and HIGH). The pump's own calculator
-    /// gives no dose for one, so a calculated dose is refused rather than sized without it.
-    case implausibleGlucose(mgdl: Int)
+    /// A glucose outside 20–600 mg/dL (`CalculatorGlucose`), typed or from the CGM. A calculated dose is
+    /// refused rather than sized without it.
+    case invalidGlucose(mgdl: Int)
     /// The dose comes to zero.
     case nothingToDeliver
     /// Above the user's remote bolus size limit.
@@ -303,8 +303,9 @@ public enum DoseRefusal: Sendable, Equatable {
         case .doseChanged(let estimate, let dose):
             return String(
                 format: "Dose changed since your estimate (%.2f U → %.2f U). Reopen and confirm.", estimate, dose)
-        case .implausibleGlucose:
-            return "That glucose reading looks out of range — re-check your glucose before dosing."
+        case .invalidGlucose:
+            return "That glucose is outside 20–600 mg/dL, so the calculator can't use it. Re-check it before "
+                + "dosing."
         case .nothingToDeliver: return "No insulin needed."
         case .aboveRemoteLimit(let limit):
             return String(format: "This dose is above your remote limit of %.2f U — lower it and try again.", limit)
@@ -363,7 +364,7 @@ extension DoseComposer {
     }
 
     /// The current reading when it is stale but may still be included in a correction: no older than
-    /// `FreshnessThresholds.maxIncludableGlucoseAge`, inside 40–400 mg/dL, with a time that can be trusted.
+    /// `FreshnessThresholds.maxIncludableGlucoseAge`, inside 20–600 mg/dL, with a time that can be trusted.
     /// `nil` otherwise, including when the reading is fresh.
     /// The pump's caution on its reading for this attempt: its CGM state must have been read for it.
     static func glucoseCaution(_ context: DoseContext) -> PumpGlucoseCaution? {
@@ -380,7 +381,7 @@ extension DoseComposer {
         // A reading the pump cautions against is never offered, however old.
         guard glucoseCaution(context) == nil else { return nil }
         guard let reading = context.pump.glucose, reading.hasValidTime,
-            GlucosePlausibility.isPlausible(mgdl: reading.value.mgdl),
+            CalculatorGlucose.isValid(mgdl: reading.value.mgdl),
             StaleBolusPrompt.mayOfferInclude(
                 glucoseMgdl: reading.value.mgdl, glucoseDate: reading.measuredAt, thresholds: context.freshness,
                 now: context.now)

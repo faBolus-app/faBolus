@@ -48,9 +48,9 @@ import Testing
             let label =
                 "carbs=\(String(describing: row.carbs)) bg=\(String(describing: row.bg)) cr=\(row.cr) "
                 + "isf=\(row.isf) tgt=\(row.tgt) iob=\(row.iob) oracle=\(row.u)"
-            if let bg = row.bg, !(40...400).contains(bg) {
-                // The pump's calculator gives no dose for a reading outside 40–400, and neither does this.
-                #expect(decision.refusal == .implausibleGlucose(mgdl: bg), "\(label)")
+            if let bg = row.bg, !(20...600).contains(bg) {
+                // A reading outside the calculator's 20–600 gives no dose.
+                #expect(decision.refusal == .invalidGlucose(mgdl: bg), "\(label)")
             } else if row.bg != nil && !(40...400).contains(row.tgt) {
                 #expect(decision.refusal == .pumpSettingsUnusable, "\(label)")
             } else if expected == 0 {
@@ -97,12 +97,14 @@ import Testing
         #expect(rec.units == 7.25)
     }
 
-    /// The calculator ignores an implausible glucose, so the screen is told rather than shown a number
+    /// The calculator ignores a glucose outside 20–600, so the screen is told rather than shown a number
     /// that looks like a correction.
-    @Test func implausibleGlucoseIsFlagged() {
-        #expect(!DoseComposer.recommend(carbsGrams: 60, glucoseMgdl: 30, context: F.context()).glucoseIsPlausible)
-        #expect(DoseComposer.recommend(carbsGrams: 60, glucoseMgdl: 180, context: F.context()).glucoseIsPlausible)
-        #expect(DoseComposer.recommend(carbsGrams: 60, glucoseMgdl: nil, context: F.context()).glucoseIsPlausible)
+    @Test func invalidGlucoseIsFlagged() {
+        #expect(!DoseComposer.recommend(carbsGrams: 60, glucoseMgdl: 19, context: F.context()).glucoseIsValid)
+        #expect(!DoseComposer.recommend(carbsGrams: 60, glucoseMgdl: 601, context: F.context()).glucoseIsValid)
+        #expect(DoseComposer.recommend(carbsGrams: 60, glucoseMgdl: 30, context: F.context()).glucoseIsValid)
+        #expect(DoseComposer.recommend(carbsGrams: 60, glucoseMgdl: 180, context: F.context()).glucoseIsValid)
+        #expect(DoseComposer.recommend(carbsGrams: 60, glucoseMgdl: nil, context: F.context()).glucoseIsValid)
     }
 
     /// When the two IOB readings disagree, the dose is sized from the larger, so it never subtracts less
