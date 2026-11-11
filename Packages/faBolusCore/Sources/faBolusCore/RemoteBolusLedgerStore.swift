@@ -206,8 +206,12 @@ public actor DurableBolusLedger {
     ///
     /// - Throws: `LedgerNotSaved` when it couldn't be saved now.
     @discardableResult
-    public func recordRemoteRefusal(_ key: RemoteBolusLedger.Key, reason: String, now: Date = Date()) throws -> Bool {
-        guard ledger.recordRemoteRefusal(key, reason: reason, now: now) else { return false }
+    public func recordRemoteRefusal(
+        _ key: RemoteBolusLedger.Key, reason: String, confirmations: [DoseConfirmation.Kind] = [], now: Date = Date()
+    ) throws -> Bool {
+        guard ledger.recordRemoteRefusal(key, reason: reason, confirmations: confirmations, now: now) else {
+            return false
+        }
         try save(ledger, blocksOnFailure: false)
         return true
     }

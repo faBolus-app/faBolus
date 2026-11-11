@@ -88,6 +88,15 @@ public enum GoldenFixtures {
                     requestId: "1793534390-8-120004", outcome: .failed, requestedMilliunits: nil,
                     deliveredMilliunits: nil, message: "Remote control is turned off — remotes are read-only.",
                     sentAt: now))),
+        // Not delivered until the user confirms on the watch, which sends the dose again as a new request.
+        v2(
+            "bolusOutcome-confirm",
+            .bolusOutcome(
+                BolusOutcomePayload(
+                    requestId: "1793534390-12-121500", outcome: .failed, requestedMilliunits: nil,
+                    deliveredMilliunits: nil,
+                    message: "Too many boluses: the pump may not track IOB. Low insulin: 4.00 U left.",
+                    confirm: [.tooManyBoluses, .lowInsulin], sentAt: now))),
         v2(
             "dismissResult",
             .dismissResult(
@@ -127,6 +136,14 @@ public enum GoldenFixtures {
                     requestId: "1793534390-10-119500", sentAt: now - 10,
                     amount: .calculator(carbsGrams: 30, estimateMilliunits: 4000), glucoseMgdl: 160,
                     includeStaleGlucose: true))),
+        // The same dose sent again once the user confirmed what the phone asked.
+        v2(
+            "bolus-carbs-confirmed",
+            .bolus(
+                BolusRequestPayload(
+                    requestId: "1793534390-13-121520", sentAt: now - 10,
+                    amount: .calculator(carbsGrams: 45, estimateMilliunits: 6000), glucoseMgdl: 142,
+                    includeStaleGlucose: false, confirmed: [.tooManyBoluses, .lowInsulin]))),
         v2("cancel", .cancel(CancelPayload(requestId: "1793534399-11-121000", bolusRequestId: "1793534390-7-118220"))),
         v2("dismiss", .dismiss(DismissPayload(requestId: "1793534395-r3-119001", alertId: "pump.alert.2"))),
         // What the old apps send, so each side can test meeting one.

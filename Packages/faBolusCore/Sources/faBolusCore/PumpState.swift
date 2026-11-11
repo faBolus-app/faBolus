@@ -120,10 +120,31 @@ public struct BolusCalculatorSettings: Sendable, Hashable, Codable {
     /// Whether the pump lets its CGM reading fill in a correction, when it said. `false` turns off every
     /// automatic correction from the pump's reading.
     public var glucoseAutoFillAllowed: Bool?
+    /// The insulin left in the cartridge, whole units, as the calculator reply reports it.
+    public var insulinRemainingUnits: Double?
+    /// The insulin bolused in the last hour, units, as the calculator reply reports it.
+    public var bolusedLastHourUnits: Double?
+    /// The pump's own word that too many boluses were asked for in a short time, when it said.
+    public var tooManyBoluses: TooManyBoluses?
+
+    /// The calculator reply's two too-many-boluses flags. Either set means the pump may stop tracking that
+    /// limit if the user goes on.
+    public struct TooManyBoluses: Sendable, Hashable, Codable {
+        /// The max hourly bolus limit (byte 24).
+        public var hourlyLimit: Bool
+        /// IOB (byte 25).
+        public var insulinOnBoard: Bool
+        public init(hourlyLimit: Bool, insulinOnBoard: Bool) {
+            self.hourlyLimit = hourlyLimit
+            self.insulinOnBoard = insulinOnBoard
+        }
+        public var isSet: Bool { hourlyLimit || insulinOnBoard }
+    }
 
     public init(
         carbRatio: Double, correctionFactor: Int, targetMgdl: Int, maxBolusUnits: Double,
-        insulinOnBoardUnits: Double? = nil, glucoseAutoFillAllowed: Bool? = nil
+        insulinOnBoardUnits: Double? = nil, glucoseAutoFillAllowed: Bool? = nil, insulinRemainingUnits: Double? = nil,
+        bolusedLastHourUnits: Double? = nil, tooManyBoluses: TooManyBoluses? = nil
     ) {
         self.carbRatio = carbRatio
         self.correctionFactor = correctionFactor
@@ -131,6 +152,9 @@ public struct BolusCalculatorSettings: Sendable, Hashable, Codable {
         self.maxBolusUnits = maxBolusUnits
         self.insulinOnBoardUnits = insulinOnBoardUnits
         self.glucoseAutoFillAllowed = glucoseAutoFillAllowed
+        self.insulinRemainingUnits = insulinRemainingUnits
+        self.bolusedLastHourUnits = bolusedLastHourUnits
+        self.tooManyBoluses = tooManyBoluses
     }
 
     /// A carb ratio, correction factor or target of zero (or less) is impossible, so such a set isn't a

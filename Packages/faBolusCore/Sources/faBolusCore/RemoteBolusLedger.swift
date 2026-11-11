@@ -120,6 +120,9 @@ public struct RemoteBolusLedger: Sendable, Codable {
         public let key: Key
         /// What the remote was told.
         public let reason: String
+        /// What the remote may confirm to send the dose again; `nil` (as in a refusal saved before there
+        /// were any) is none.
+        public let confirmations: [DoseConfirmation.Kind]?
         public let refusedAt: Date
     }
 
@@ -184,9 +187,12 @@ public struct RemoteBolusLedger: Sendable, Codable {
     /// Returns whether it was recorded: a request with an entry is answered from it, and a second refusal
     /// keeps the first.
     @discardableResult
-    public mutating func recordRemoteRefusal(_ key: Key, reason: String, now: Date = Date()) -> Bool {
+    public mutating func recordRemoteRefusal(
+        _ key: Key, reason: String, confirmations: [DoseConfirmation.Kind] = [], now: Date = Date()
+    ) -> Bool {
         guard entries[key] == nil, remoteRefusals[key] == nil else { return false }
-        remoteRefusals[key] = RemoteRefusal(key: key, reason: reason, refusedAt: now)
+        remoteRefusals[key] = RemoteRefusal(
+            key: key, reason: reason, confirmations: confirmations.isEmpty ? nil : confirmations, refusedAt: now)
         refusalOrder.append(key)
         // Over the cap the oldest go, but never one a remote may still resend.
         while refusalOrder.count > Self.remoteRefusalCap, let oldest = refusalOrder.first,

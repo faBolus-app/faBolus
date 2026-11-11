@@ -224,8 +224,6 @@ public enum DoseNotice: Sendable, Equatable {
     case stacking(StackingGuard.Disclosure)
     /// At the pump's own max bolus.
     case atPumpMax(StackingGuard.Disclosure)
-    /// More than the reservoir reports remaining.
-    case moreThanReservoir(StackingGuard.Disclosure)
     /// A carb dose more than 0.10 U from the calculator's suggestion. The carbs are still recorded.
     case differsFromCalculator(deliveredUnits: Double, suggestedUnits: Double)
 }
@@ -271,6 +269,15 @@ public enum DoseRefusal: Sendable, Equatable {
     case aboveRemoteLimit(Double)
     /// This remote request was refused before (the ledger's `RemoteRefusal`); the same answer again.
     case refusedBefore(String)
+    /// A remote dose of `units` that needs these confirmations, not all of which the request carried. The
+    /// remote asks the user and sends a new request with them.
+    case needsConfirmation([DoseConfirmation], units: Double)
+
+    /// What a remote may confirm to send the dose again: none but for `needsConfirmation`.
+    public var confirmationKinds: [DoseConfirmation.Kind] {
+        guard case .needsConfirmation(let needed, _) = self else { return [] }
+        return needed.map(\.kind)
+    }
 
     public var userMessage: String {
         switch self {
@@ -302,6 +309,9 @@ public enum DoseRefusal: Sendable, Equatable {
         case .aboveRemoteLimit(let limit):
             return String(format: "This dose is above your remote limit of %.2f U — lower it and try again.", limit)
         case .refusedBefore(let reason): return reason
+        case .needsConfirmation(let needed, _):
+            // A remote's screen is small: each in a few words. The remote's button names the dose.
+            return needed.map(\.shortMessage).joined(separator: " ")
         }
     }
 }
@@ -348,10 +358,6 @@ extension DoseComposer {
         if let max = context.pumpMaxBolusUnits {
             let disclosure = StackingGuard.maxBolusProximity(enteredUnits: units, maxBolusUnits: max)
             if disclosure.friction != .none { notices.append(.atPumpMax(disclosure)) }
-        }
-        if let reservoir = context.pump.reservoirUnitsIfFresh(thresholds: context.freshness, now: context.now) {
-            let disclosure = StackingGuard.insufficientReservoir(enteredUnits: units, reservoirUnits: reservoir)
-            if disclosure.friction != .none { notices.append(.moreThanReservoir(disclosure)) }
         }
         return notices
     }

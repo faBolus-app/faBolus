@@ -145,11 +145,11 @@ import Testing
     /// The pump notices ride on a remote dose too, without changing it.
     @Test func remoteDoseCarriesPumpNotices() throws {
         var pump = F.pump()
-        pump.reservoirUnits = F.observed(10, age: 1)
+        pump.cartridge = nil
         let dose = try #require(compose(F.remote(.units(25)), context: F.context(pump: pump)).dose)
         #expect(dose.units == 25)
         #expect(dose.notices.contains { if case .atPumpMax = $0 { true } else { false } })
-        #expect(dose.notices.contains { if case .moreThanReservoir = $0 { true } else { false } })
+        #expect(dose.notices.contains(.cartridgeStateUnknown))
     }
 
     /// A CGM LOW or HIGH gives no calculated dose, as on the pump: refused, never carbs only. A units

@@ -888,6 +888,19 @@
           "type": "string",
           "maxLength": 256
         },
+        "confirm": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "tooManyBoluses",
+              "maxHourlyBolus",
+              "lowInsulin"
+            ]
+          }
+        },
         "sentAt": {
           "type": "integer",
           "minimum": 1577836800,
@@ -1020,6 +1033,19 @@
         },
         "includeStaleGlucose": {
           "type": "boolean"
+        },
+        "confirmed": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "tooManyBoluses",
+              "maxHourlyBolus",
+              "lowInsulin"
+            ]
+          }
         }
       },
       "oneOf": [

@@ -24,10 +24,12 @@ public struct RemoteDoseRequest: Sendable, Equatable {
     public var glucoseMgdl: Int?
     /// The user chose, for this attempt, to include a stale reading in the correction.
     public var includeStaleGlucose: Bool
+    /// The confirmations the user went on from, on the remote, for this request.
+    public var confirmed: Set<DoseConfirmation.Kind>
 
     public init(
         id: String, peerId: String, surface: AccessPolicy.Surface, sentAt: Date?, amount: Amount?,
-        glucoseMgdl: Int? = nil, includeStaleGlucose: Bool = false
+        glucoseMgdl: Int? = nil, includeStaleGlucose: Bool = false, confirmed: Set<DoseConfirmation.Kind> = []
     ) {
         self.id = id
         self.peerId = peerId
@@ -36,6 +38,7 @@ public struct RemoteDoseRequest: Sendable, Equatable {
         self.amount = amount
         self.glucoseMgdl = glucoseMgdl
         self.includeStaleGlucose = includeStaleGlucose
+        self.confirmed = confirmed
     }
 
     public var ledgerKey: RemoteBolusLedger.Key { .init(peerId: peerId, requestId: id) }
@@ -62,7 +65,8 @@ public enum RemoteDoseDecision: Sendable, Equatable {
 
 extension DoseComposer {
     /// Compose a remote's request. The remote has already had the user confirm on it; there's no
-    /// prompt here, so every check either passes or refuses.
+    /// prompt here, so every check either passes or refuses. A confirmation the request doesn't carry is
+    /// refused with what to confirm, and the remote asks the user and sends a new request.
     ///
     /// - Parameter ledger: the ledger as it stands (`DurableBolusLedger.ledger`). A resent request is
     ///   answered from its entry before any other check, so a remote that missed an outcome gets it back
@@ -130,6 +134,11 @@ extension DoseComposer {
         // A remote that missed the outcome and resends under a new ID would otherwise dose twice.
         if ledger.hasRecentlyDeliveredDuplicate(peerId: request.peerId, doseKey: dose.doseKey, now: context.now) {
             return .refused(.recentlyDelivered)
+        }
+        // After the duplicate check, so a resend of a dose just delivered isn't offered to go on again.
+        let needed = confirmations(units: units, context: context)
+        if needed.contains(where: { !request.confirmed.contains($0.kind) }) {
+            return .refused(.needsConfirmation(needed, units: units))
         }
         return .deliver(
             ComposedDose(

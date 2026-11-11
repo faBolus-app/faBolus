@@ -98,7 +98,27 @@ extension RemoteDoseRequest {
         self.init(
             id: p.requestId, peerId: peerId, surface: surface,
             sentAt: Date(timeIntervalSince1970: TimeInterval(p.sentAt)), amount: amount, glucoseMgdl: p.glucoseMgdl,
-            includeStaleGlucose: p.includeStaleGlucose)
+            includeStaleGlucose: p.includeStaleGlucose, confirmed: Set(p.confirmed.map(DoseConfirmation.Kind.init)))
+    }
+}
+
+extension ConfirmationToken {
+    init(_ kind: DoseConfirmation.Kind) {
+        switch kind {
+        case .tooManyBoluses: self = .tooManyBoluses
+        case .maxHourlyBolus: self = .maxHourlyBolus
+        case .lowInsulin: self = .lowInsulin
+        }
+    }
+}
+
+extension DoseConfirmation.Kind {
+    init(_ token: ConfirmationToken) {
+        switch token {
+        case .tooManyBoluses: self = .tooManyBoluses
+        case .maxHourlyBolus: self = .maxHourlyBolus
+        case .lowInsulin: self = .lowInsulin
+        }
     }
 }
 
@@ -134,10 +154,13 @@ extension BolusOutcomePayload {
     }
 
     /// Nothing was delivered, for a reason the phone gave before anything was sent.
-    public static func notDelivered(requestId: String, reason: String, sentAt: Int) -> BolusOutcomePayload {
+    public static func notDelivered(
+        requestId: String, reason: String, confirm: [DoseConfirmation.Kind] = [], sentAt: Int
+    ) -> BolusOutcomePayload {
         BolusOutcomePayload(
             requestId: requestId, outcome: .failed, requestedMilliunits: nil, deliveredMilliunits: nil,
-            message: truncated(reason, WireLimits.maxTextLength), sentAt: sentAt)
+            message: truncated(reason, WireLimits.maxTextLength), confirm: confirm.map(ConfirmationToken.init),
+            sentAt: sentAt)
     }
 
     public static let unknownMessage = "Bolus sent but outcome is unknown — check the pump before dosing again."

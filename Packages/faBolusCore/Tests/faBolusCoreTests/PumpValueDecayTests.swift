@@ -11,9 +11,7 @@ import Foundation
 ///     readings and must keep rendering as `0` while FRESH. Every decay assertion below is paired with a
 ///     matched still-fresh assertion and a matched genuine-zero assertion.
 ///  2. **The observation itself is kept.** `reservoirUnits` stays set once read, so "was it ever
-///     reported" keeps its meaning, and `StackingGuard.insufficientReservoir` can still be handed the
-///     raw reading, which treats `0` as a valid empty reading. The decay lives only in the
-///     `…IfFresh(now:)` accessors.
+///     reported" keeps its meaning. The decay lives only in the `…IfFresh(now:)` accessors.
 ///
 /// Dates are deliberately chosen far from any plausible window (10 s vs 24 h), so these tests hold for
 /// any glucose window a user could choose; `PumpValueDecayWindowTests` below passes its own.
@@ -105,7 +103,7 @@ struct PumpValueDecayTests {
 
     // MARK: - The observation and its fail-closed guards are untouched
 
-    @Test func decayDoesNotTouchTheReadingTheStackingGuardIsGiven() throws {
+    @Test func decayDoesNotTouchTheRawReading() throws {
         var aged = PumpState()
         aged.reservoirUnits = Self.read(3, at: Self.quietInstant)
 
@@ -114,10 +112,6 @@ struct PumpValueDecayTests {
         // …the observation does not. An aged read must not become absent for the out-of-insulin check.
         let raw = try #require(aged.reservoirUnits).value
         #expect(raw == 3)
-        let disclosure = StackingGuard.insufficientReservoir(enteredUnits: 5, reservoirUnits: raw)
-        #expect(
-            disclosure.friction == .disclose,
-            "the out-of-insulin disclosure must still fire off an aged reading — decaying it here would fail OPEN")
     }
 
     @Test func theObservationKeepsItsEverReadMeaning() {

@@ -385,14 +385,6 @@ import Testing
                 $0 == .differsFromCalculator(deliveredUnits: 2.3, suggestedUnits: 2.25)
             } == false)
     }
-
-    @Test func moreThanTheReservoirIsNoticed() throws {
-        var pump = F.pump()
-        pump.reservoirUnits = F.observed(2, age: 1)
-        let dose = try #require(compose(.units(2.5), context: F.context(pump: pump)).dose)
-        #expect(dose.notices.contains { if case .moreThanReservoir = $0 { true } else { false } })
-        #expect(dose.units == 2.5)
-    }
 }
 
 /// Ported from the old app's `StackingGuardDeliverInvariantTests`: while a stacking notice fires, the

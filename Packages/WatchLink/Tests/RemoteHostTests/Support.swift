@@ -89,8 +89,9 @@ actor FakeServices: RemoteHostServices {
     func ledgerRefusal(_ key: RemoteBolusLedger.Key) async -> RemoteBolusLedger.RemoteRefusal? {
         await refusalLedger.ledger.remoteRefusal(key)
     }
-    func recordRefusal(_ key: RemoteBolusLedger.Key, reason: String) async {
-        _ = try? await refusalLedger.recordRemoteRefusal(key, reason: reason, now: HostRig.now)
+    func recordRefusal(_ key: RemoteBolusLedger.Key, reason: String, confirmations: [DoseConfirmation.Kind]) async {
+        _ = try? await refusalLedger.recordRemoteRefusal(
+            key, reason: reason, confirmations: confirmations, now: HostRig.now)
     }
 }
 

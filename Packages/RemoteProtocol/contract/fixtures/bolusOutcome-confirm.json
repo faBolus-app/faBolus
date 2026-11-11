@@ -1,0 +1,14 @@
+{
+  "kind": "bolusOutcome",
+  "payload": {
+    "confirm": [
+      "tooManyBoluses",
+      "lowInsulin"
+    ],
+    "message": "Too many boluses: the pump may not track IOB. Low insulin: 4.00 U left.",
+    "outcome": "failed",
+    "requestId": "1793534390-12-121500",
+    "sentAt": 1793534400
+  },
+  "version": 2
+}

@@ -30,6 +30,27 @@ import Testing
         #expect(refused(message("bolus", p)))
     }
 
+    /// Confirmations are known tokens, each once, and only on a request that wasn't delivered.
+    @Test func confirmationsAreKnownTokensOnAnUndeliveredRequest() {
+        var p = payload(of: "bolus-carbs-confirmed")
+        p["confirmed"] = .array([.string("lowInsulin"), .string("lowInsulin")])
+        #expect(refused(message("bolus", p)))
+        p["confirmed"] = .array([.string("youSaidSo")])
+        #expect(refused(message("bolus", p)))
+        p["confirmed"] = nil
+        guard case .message(.bolus(let none)) = RemoteMessage.receive(message("bolus", p)) else {
+            Issue.record("a bolus without confirmations didn't read")
+            return
+        }
+        #expect(none.confirmed.isEmpty)
+
+        var o = payload(of: "bolusOutcome-confirm")
+        o["outcome"] = .string("delivered")
+        #expect(refused(message("bolusOutcome", o)))
+        o["outcome"] = .string("refused")
+        #expect(!refused(message("bolusOutcome", o)))
+    }
+
     @Test func outOfRangeValuesAreRefused() {
         var p = payload(of: "bolus-units")
         p["mU"] = .int(-50)

@@ -31,7 +31,7 @@ public protocol RemoteHostServices: Sendable {
     /// A refusal the ledger holds for a request that never became an entry.
     func ledgerRefusal(_ key: RemoteBolusLedger.Key) async -> RemoteBolusLedger.RemoteRefusal?
     /// Record a refusal in the ledger, so the request's resend gets it after a restart too.
-    func recordRefusal(_ key: RemoteBolusLedger.Key, reason: String) async
+    func recordRefusal(_ key: RemoteBolusLedger.Key, reason: String, confirmations: [DoseConfirmation.Kind]) async
 }
 
 /// The phone's settings the remote depends on.
@@ -220,7 +220,9 @@ public actor RemoteHost {
                 // Durable, so a copy that arrives after a relaunch is refused too, one being composed when
                 // the phone died included. The ledger keeps an entry's answer over this, should the request
                 // turn out to have reached the session.
-                Task { await self.services.recordRefusal(self.key(id), reason: Self.cancelledMessage) }
+                Task {
+                    await self.services.recordRefusal(self.key(id), reason: Self.cancelledMessage, confirmations: [])
+                }
             }
             guard !cancelling else {
                 cancelAgain = true
@@ -261,7 +263,7 @@ public actor RemoteHost {
         // arrived is refused, but only without an entry: a delivery that started stays its own answer.
         if await services.ledgerEntry(key(p.requestId)) == nil {
             if let refusal = await services.ledgerRefusal(key(p.requestId)) {
-                await sendRefusal(p.requestId, refusal.reason)
+                await sendRefusal(p.requestId, refusal)
                 return
             }
             if cancelledRequests.contains(p.requestId) {
@@ -279,11 +281,18 @@ public actor RemoteHost {
             request, access: settings.access, remoteSizeLimitUnits: settings.remoteSizeLimitUnits)
         switch decision {
         case .refused(.refusedBefore(let reason)):
-            await sendRefusal(p.requestId, reason)
+            if let refusal = await services.ledgerRefusal(key(p.requestId)) {
+                await sendRefusal(p.requestId, refusal)
+            } else {
+                await sendRefusal(p.requestId, reason)
+            }
         case .refused where cancelledBeforeStart.contains(p.requestId):
             // The user cancelled it first: that's the answer, now and to a copy after a relaunch, which the
             // cancel's record gives.
             await refused(p.requestId, Self.cancelledMessage, announce: false)
+        case .refused(let refusal) where !refusal.confirmationKinds.isEmpty:
+            // The watch asks the user; that isn't a refusal to announce on the phone.
+            await refused(p.requestId, refusal.userMessage, confirm: refusal.confirmationKinds, announce: false)
         case .refused(let refusal):
             await refused(p.requestId, refusal.userMessage)
         case .alreadyRecorded(let outcome):
@@ -335,7 +344,7 @@ public actor RemoteHost {
                     requestId: id, outcome: current, requestedMilliunits: nil, deliveredMilliunits: nil, message: nil,
                     sentAt: now))
         } else if let refusal = await services.ledgerRefusal(key(id)) {
-            await sendRefusal(id, refusal.reason)
+            await sendRefusal(id, refusal)
         }
     }
 
@@ -348,23 +357,31 @@ public actor RemoteHost {
         // duplicate must not call it failed.
         if boluses[id] != nil { return }
         if let refusal = await services.ledgerRefusal(key(id)) {
-            await sendRefusal(id, refusal.reason)
+            await sendRefusal(id, refusal)
             return
         }
         await refused(id, "The phone couldn't read this request. Nothing was delivered — update the watch app.")
     }
 
     /// - Parameter announce: post the "Remote bolus refused" notification; not for one the user cancelled.
-    private func refused(_ id: String, _ reason: String, announce: Bool = true) async {
+    /// - Parameter confirm: what the watch may ask the user to confirm and send again.
+    private func refused(
+        _ id: String, _ reason: String, confirm: [DoseConfirmation.Kind] = [], announce: Bool = true
+    ) async {
         // In the ledger before the answer goes, so a resend after a relaunch finds it.
-        await services.recordRefusal(key(id), reason: reason)
-        await sendRefusal(id, reason)
+        await services.recordRefusal(key(id), reason: reason, confirmations: confirm)
+        await sendRefusal(id, reason, confirm: confirm)
         if announce { await services.remoteBolusRefused(requestId: id, reason: reason) }
     }
 
     /// "Not delivered", with the reason the request was refused for. Not announced: that's `refused`'s, once.
-    private func sendRefusal(_ id: String, _ reason: String) async {
-        await sendOutcome(.notDelivered(requestId: id, reason: reason, sentAt: now))
+    private func sendRefusal(_ id: String, _ reason: String, confirm: [DoseConfirmation.Kind] = []) async {
+        await sendOutcome(.notDelivered(requestId: id, reason: reason, confirm: confirm, sentAt: now))
+    }
+
+    /// The same answer as when it was refused.
+    private func sendRefusal(_ id: String, _ refusal: RemoteBolusLedger.RemoteRefusal) async {
+        await sendRefusal(id, refusal.reason, confirm: refusal.confirmations ?? [])
     }
 
     private func sendRecorded(_ id: String, _ outcome: BolusOutcome) async {
@@ -500,8 +517,10 @@ extension BolusOutcomePayload {
         self.init(requestId: requestId, outcome: outcome, requestedUnits: requestedUnits, sentAt: wireEpoch(sentAt))
     }
 
-    fileprivate static func notDelivered(requestId: String, reason: String, sentAt: Date) -> BolusOutcomePayload {
-        .notDelivered(requestId: requestId, reason: reason, sentAt: wireEpoch(sentAt))
+    fileprivate static func notDelivered(
+        requestId: String, reason: String, confirm: [DoseConfirmation.Kind], sentAt: Date
+    ) -> BolusOutcomePayload {
+        .notDelivered(requestId: requestId, reason: reason, confirm: confirm, sentAt: wireEpoch(sentAt))
     }
 
     fileprivate init(

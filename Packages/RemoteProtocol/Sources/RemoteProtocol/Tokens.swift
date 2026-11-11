@@ -55,6 +55,18 @@ public enum BolusModeToken: String, Sendable, Hashable, CaseIterable {
     case units
 }
 
+/// Something about the pump the user confirms before a remote dose goes. A refused `bolusOutcome` names the
+/// ones to ask (`confirm`); the new request the user sends from them names the ones they went on from
+/// (`confirmed`).
+public enum ConfirmationToken: String, Sendable, Hashable, CaseIterable {
+    /// The pump says too many boluses were asked for in a short time.
+    case tooManyBoluses
+    /// This dose and the last hour's boluses come to more than the max hourly bolus.
+    case maxHourlyBolus
+    /// The dose is more than the insulin left, or little is left.
+    case lowInsulin
+}
+
 public enum GlucoseUnitToken: String, Sendable, Hashable, CaseIterable {
     case mgdl, mmol
 }

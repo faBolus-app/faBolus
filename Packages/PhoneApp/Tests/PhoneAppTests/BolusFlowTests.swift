@@ -119,6 +119,39 @@ import Testing
         await model.shutdown()
     }
 
+    /// The pump flags too many boluses: the screen asks, in the pump's words, and Deliver sends the dose
+    /// it showed.
+    @Test func aConfirmationIsAskedAndGoingOnReviewsTheDose() async {
+        let phone = Phone()
+        phone.mock.pump.tooManyBolusesIOB = true
+        let model = await phone.launch()
+        _ = await phone.until(model) { model.pump.link == .connected }
+        await phone.run(model, for: 12)
+        let flow = BolusFlow(model: model)
+        flow.mode = .units
+        flow.unitsTyped("1.5")
+        await phone.driving(model) { await flow.confirm() }
+        guard case .prompt(let prompt) = flow.phase, case .confirmation(.tooManyBoluses, 1.5) = prompt else {
+            Issue.record("expected the too-many-boluses question, got \(flow.phase)")
+            return
+        }
+        let text = flow.text(for: prompt)
+        #expect(text.title == "Too many boluses")
+        #expect(text.message.contains("may not track IOB"))
+        #expect(text.choices.map(\.0) == [.goOn])
+        flow.choose(.goOn)
+        await phone.driving(model) {
+            while flow.phase == .composing { await Task.yield() }
+        }
+        guard case .review(let dose) = flow.phase else {
+            Issue.record("expected the review, got \(flow.phase)")
+            return
+        }
+        #expect(dose.units == 1.5)
+        flow.cancel()
+        await model.shutdown()
+    }
+
     /// Read-only: the screen says why and the composer refuses; nothing reaches the pump.
     @Test func readOnlyRefusesBeforeAnythingIsSent() async {
         let (phone, model) = await connected()
@@ -144,17 +177,17 @@ import Testing
 
     /// Notices are text above the confirm, most important first.
     @Test func noticesAreRankedMostImportantFirst() {
-        let d = StackingGuard.Disclosure(friction: .disclose, message: "More than the reservoir holds.")
+        let d = StackingGuard.Disclosure(friction: .disclose, message: "At the pump's max bolus.")
         let s = StackingGuard.Disclosure(friction: .disclose, message: "A bolus was given 10 minutes ago.")
         let dose = ComposedDose(
             request: DoseRequest(id: "x", origin: .phone, shape: .now(units: 1), carbsGrams: nil, bgMgdl: nil),
             calculatorIOBUnits: nil, correctionGlucoseMgdl: nil, calculatorCarbUnits: nil,
             usedIncludedStaleGlucose: false,
-            notices: [.cartridgeStateUnknown, .stacking(s), .moreThanReservoir(d)])
+            notices: [.cartridgeStateUnknown, .atPumpMax(d), .stacking(s)])
         let notices = BolusFlow.notices(dose)
         #expect(notices.count == 3)
-        #expect(notices[0] == "More than the reservoir holds.")
-        #expect(notices[1] == "A bolus was given 10 minutes ago.")
+        #expect(notices[0] == "A bolus was given 10 minutes ago.")
+        #expect(notices[1] == "At the pump's max bolus.")
         #expect(notices[2].contains("cartridge"))
     }
 }
