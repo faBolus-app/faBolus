@@ -12,7 +12,9 @@ import TandemMessages
 /// so the link's checks run on it unchanged.
 ///
 /// Faults are set per request (`answers`): a captured reply in place of the scripted one, an op-77 with
-/// or without a drop, silence, or a drop before or after the pump acts on the request.
+/// or without a drop, silence, a drop before or after the pump acts on the request, or a damaged reply (a
+/// bad CRC or signature, another request's txId, or the reply twice). With `raisesNotices` the pump also
+/// sends a qualifying-events notice for each of its own changes.
 @MainActor
 public final class ScriptedPump {
     public static let peripheralID = UUID(uuidString: "00000000-0000-0000-0000-00000000C0DE")!
@@ -40,8 +42,8 @@ public final class ScriptedPump {
     // MARK: Readings
 
     public var insulinOnBoardMilliunits: UInt32 = 500
-    public var reservoirUnits = 150
-    public var batteryPercent = 80
+    public var reservoirUnits = 150 { didSet { if reservoirUnits != oldValue { notice(.remainingInsulin) } } }
+    public var batteryPercent = 80 { didSet { if batteryPercent != oldValue { notice(.battery) } } }
     public var charging = false
     public var carbRatioMilli: UInt32 = 10_000
     public var correctionFactor = 40
@@ -50,17 +52,23 @@ public final class ScriptedPump {
     /// The IOB the calculator reply itself reports (op-115).
     public var calculatorInsulinOnBoardMilliunits: UInt32 = 500
     /// The CGM reading and how long before now it was measured, or nil for none.
-    public var glucose: (mgdl: Int, ageSeconds: Double)? = (120, 60)
+    public var glucose: (mgdl: Int, ageSeconds: Double)? = (120, 60) {
+        didSet {
+            if glucose?.mgdl != oldValue?.mgdl || glucose?.ageSeconds != oldValue?.ageSeconds { notice(.cgmChange) }
+        }
+    }
     /// The home-screen trend icon id (4 is flat, 0 no arrow).
     public var trendIcon = 4
     public var cgmHardwareInfo = "8KX21P"
     public var basalMilliunitsPerHour: UInt32 = 800
     public var controlIQEnabled = false
-    public var alertBitmap: UInt64 = 0
-    public var alarmBitmap: UInt64 = 0
-    public var cgmAlertBitmap: UInt64 = 0
-    public var reminderBitmap: UInt64 = 0
-    public var malfunctionBitmap: UInt64 = 0
+    public var alertBitmap: UInt64 = 0 { didSet { if alertBitmap != oldValue { notice(.alert) } } }
+    public var alarmBitmap: UInt64 = 0 { didSet { if alarmBitmap != oldValue { notice(.alarm) } } }
+    public var cgmAlertBitmap: UInt64 = 0 { didSet { if cgmAlertBitmap != oldValue { notice(.cgmAlert) } } }
+    public var reminderBitmap: UInt64 = 0 { didSet { if reminderBitmap != oldValue { notice(.reminder) } } }
+    public var malfunctionBitmap: UInt64 = 0 {
+        didSet { if malfunctionBitmap != oldValue { notice(.malfunction) } }
+    }
     /// A cartridge is in: without one the pump refuses bolus permission.
     public var cartridgeLoaded = true
     /// Answers a DismissNotification with status 0 but leaves the alert showing, as some firmware may.
@@ -85,6 +93,16 @@ public final class ScriptedPump {
         /// These qualifying events, then the scripted reply: a notice that reaches the phone while the
         /// request is in flight.
         case notice(QualifyingEvent)
+        /// The pump acts, and its reply arrives with its CRC broken.
+        case badCRC
+        /// The pump acts, and its signed reply carries a signature made with another key. Only for a
+        /// request whose reply is signed.
+        case badSignature
+        /// The pump acts, and its reply carries a txId no request uses: the request's with its top bit
+        /// flipped, so it can't be matched to another request in flight.
+        case wrongTxId
+        /// The pump acts once, and its reply arrives twice.
+        case duplicate
     }
     /// Answers by request, overriding the scripted one each time it arrives.
     public var answers: [MessageKey: Answer] = [:]
@@ -96,6 +114,25 @@ public final class ScriptedPump {
     ]
     /// Stop answering anything.
     public var silent = false
+
+    // MARK: Notices
+
+    /// Send a qualifying-events notice for each of the pump's own changes: an alert, alarm, reminder,
+    /// CGM-alert or malfunction bitmap set or cleared (its own bit), a bolus accepted, starting to deliver
+    /// or ending (bolus change), a new reading (CGM change), the battery (battery) and the reservoir
+    /// (remaining insulin). Off by default: which bit a t:slim raises for which change is unconfirmed, and
+    /// a pump that raises none is the worst case the session's timed reads must cover. A change made while
+    /// answering a request (a cancel, a dismiss) sends its notice before that reply; that order is
+    /// unconfirmed too. A bolus's start and end are timed at its acceptance, at the rate then.
+    public var raisesNotices = false
+    /// The notices sent because of `raisesNotices`, in order.
+    public private(set) var noticesSent: [QualifyingEvent] = []
+
+    func notice(_ events: QualifyingEvent) {
+        guard raisesNotices, let transport else { return }
+        noticesSent.append(events)
+        transport.qualifyingEvents(events)
+    }
 
     // MARK: Bolus engine
 
@@ -240,6 +277,8 @@ public final class ScriptedPump {
         activeBolus = Bolus(
             id: id, requestedMilliunits: milliunits, startedAt: clock.now, deliversFrom: clock.now, source: 0,
             carbs: 0, bg: 0, typeBitmask: 8, foodMilliunits: 0, correctionMilliunits: 0, iobMilliunits: 0)
+        notice(.bolusChange)
+        scheduleBolusSteps()
         settleBolus()
     }
 
@@ -264,6 +303,18 @@ public final class ScriptedPump {
         if dropsPendingBolus {
             activeBolus?.stop = Stop(at: bolus.deliversFrom, completionStatus: CompletionStatus.stoppedOnPump)
         }
+        notice(.bolusChange)
+        scheduleBolusSteps()
+    }
+
+    /// With `raisesNotices`, settles the active bolus when it starts to deliver and when it's due to end,
+    /// so its notices go out then rather than on the next request.
+    private func scheduleBolusSteps() {
+        guard raisesNotices, let bolus = activeBolus else { return }
+        let fullEnd = bolus.deliversFrom + Double(bolus.requestedMilliunits) / deliveryMilliunitsPerSecond
+        for due in [bolus.deliversFrom, fullEnd] where due > clock.now {
+            _ = clock.schedule(after: due - clock.now) { [weak self] in self?.settleBolus() }
+        }
     }
 
     /// Writes what has happened to the active bolus by now: the start of delivery, then its end, when it
@@ -278,6 +329,7 @@ public final class ScriptedPump {
             let at = wallClockAtStart &+ UInt32(bolus.deliversFrom)
             append(typeId: BolusActivatedHistoryLog.typeId, at: at, body: Self.activatedBody(bolus))
             append(typeId: BolusDeliveryHistoryLog.typeId, at: at, body: Self.deliveryBody(bolus, delivered: nil))
+            notice(.bolusChange)
         }
         guard clock.now >= end else { return }
         let status =
@@ -297,6 +349,7 @@ public final class ScriptedPump {
             body: Self.bolusCompletedBody(
                 bolusId: bolus.id, completionStatus: status, iob: Float(insulinOnBoardMilliunits) / 1000,
                 delivered: Float(delivered) / 1000, requested: Float(bolus.requestedMilliunits) / 1000))
+        notice(.bolusChange)
     }
 
     public func deliveredMilliunits(_ bolus: Bolus, at time: LinkTime? = nil) -> UInt32 {
@@ -528,12 +581,12 @@ public final class ScriptedTransport: LinkTransport {
         case .cargo(let captured):
             guard let reply = respond(characteristic, opCode, cargo) else { return }
             send(type(of: reply).init(cargo: captured), txId: txId)
-        case .normal, .notice:
+        case .normal, .notice, .badCRC, .badSignature, .wrongTxId, .duplicate:
             // A request the pump doesn't know gets BAD_OPCODE, as a real pump's does.
             guard let reply = respond(characteristic, opCode, cargo) else {
                 return sendError(characteristic, request: opCode, code: 6, txId: txId)
             }
-            send(reply, txId: txId)
+            send(reply, txId: txId, fault: answer)
             if characteristic == .currentStatus, opCode == HistoryLogRequest.props.opCode {
                 streamHistory(start: readU32(cargo, 0), count: Int(cargo[4]))
             }
@@ -725,13 +778,30 @@ public final class ScriptedTransport: LinkTransport {
         }
     }
 
-    private func send(_ message: any ResponseMessage, txId: UInt8) {
-        let signed = message.signed
+    /// Frames, signs and reports a reply, damaged as `fault` says.
+    private func send(_ message: any ResponseMessage, txId: UInt8, fault: ScriptedPump.Answer = .normal) {
+        var signingKey = message.signed ? key : []
+        var replyTxId = txId
+        switch fault {
+        case .badSignature:
+            precondition(message.signed, "badSignature is for a request whose reply is signed")
+            signingKey = signingKey.reversed()
+        case .wrongTxId: replyTxId = txId ^ 0x80
+        default: break
+        }
         // swiftlint:disable:next force_try - the pump's replies are well-formed
-        let packets = try! Packetize.packetize(
-            message, authenticationKey: signed ? key : [], txId: txId, pumpTimeSinceReset: pump.wallClock,
-            maxChunkSize: 18)
-        for packet in packets { report?(.notified(message.characteristic, packet.build())) }
+        var packets = try! Packetize.packetize(
+            message, authenticationKey: signingKey, txId: replyTxId, pumpTimeSinceReset: pump.wallClock,
+            maxChunkSize: 18
+        ).map { $0.build() }
+        if case .badCRC = fault, var last = packets.popLast(), !last.isEmpty {
+            last[last.count - 1] ^= 0xFF
+            packets.append(last)
+        }
+        let copies = if case .duplicate = fault { 2 } else { 1 }
+        for _ in 0..<copies {
+            for packet in packets { report?(.notified(message.characteristic, packet)) }
+        }
     }
 
     /// An op-77, on the request's characteristic. On CONTROL the pump signs it.
