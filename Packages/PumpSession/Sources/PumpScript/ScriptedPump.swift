@@ -64,8 +64,17 @@ public final class ScriptedPump {
             if glucose?.mgdl != oldValue?.mgdl || glucose?.ageSeconds != oldValue?.ageSeconds { notice(.cgmChange) }
         }
     }
-    /// The home-screen trend icon id (4 is flat, 0 no arrow).
+    /// The home-screen trend icon id (4 is flat, 0 no arrow, 8-13 a Libre's Check BG).
     public var trendIcon = 4
+    /// The home-screen CGM alert icon id: 255 is no error, the only one that shows the reading. Which icon a
+    /// t:slim shows in which sensor state is unconfirmed.
+    public var cgmAlertIcon = 255
+    /// The CGM reading's status: 1 valid, 2 LOW, 3 HIGH. What number a t:slim sends with LOW or HIGH is
+    /// unconfirmed.
+    public var egvStatus: UInt8 = 1
+    /// The calculator snapshot lets the CGM reading fill in a correction (byte 37). Which pump states clear
+    /// it is unconfirmed.
+    public var glucoseAutoFillAllowed = true
     public var cgmHardwareInfo = "8KX21P"
     public var basalMilliunitsPerHour: UInt32 = 800
     public var controlIQEnabled = false
@@ -650,6 +659,7 @@ public final class ScriptedTransport: LinkTransport {
             v[13] = 1
             v.replaceSubrange(14..<18, with: le32(pump.carbRatioMilli))
             v.replaceSubrange(18..<20, with: le16(pump.maxBolusMilliunits))
+            v[37] = pump.glucoseAutoFillAllowed ? 1 : 0
             return BolusCalcDataSnapshotResponse(cargo: v)
         case (.currentStatus, InsulinStatusRequest.props.opCode):
             return InsulinStatusResponse(cargo: le16(pump.reservoirUnits) + [0, 20])
@@ -662,10 +672,11 @@ public final class ScriptedTransport: LinkTransport {
         case (.currentStatus, CurrentEGVGuiDataRequest.props.opCode):
             guard let g = pump.glucose else { return CurrentEGVGuiDataResponse(cargo: [UInt8](repeating: 0, count: 8)) }
             let at = UInt32(max(0, Double(pump.wallClock) - g.ageSeconds))
-            return CurrentEGVGuiDataResponse(cargo: le32(at) + le16(g.mgdl) + [1, 0])
+            return CurrentEGVGuiDataResponse(cargo: le32(at) + le16(g.mgdl) + [pump.egvStatus, 0])
         case (.currentStatus, HomeScreenMirrorRequest.props.opCode):
             var v = [UInt8](repeating: 0, count: 9)
             v[0] = UInt8(pump.trendIcon)
+            v[1] = UInt8(pump.cgmAlertIcon)
             return HomeScreenMirrorResponse(cargo: v)
         case (.currentStatus, CurrentBasalStatusRequest.props.opCode):
             return CurrentBasalStatusResponse(

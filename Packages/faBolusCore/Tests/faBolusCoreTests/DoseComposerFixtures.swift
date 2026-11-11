@@ -31,6 +31,8 @@ enum DoseFixtures {
         pump.bolusCalculator = observed(settings, age: 2)
         pump.insulinOnBoard = observed(0.5, age: 2)
         pump.glucose = glucose.map { observed(PumpGlucose(mgdl: $0, trend: nil), age: glucoseAge) }
+        // The pump's CGM state, read for the attempt: no error, so the reading may correct a dose.
+        pump.cgmDisplay = observed(PumpCGMDisplay(state: .noError, checkBG: false), age: 2)
         pump.cartridge = observed(CartridgeLoadState(rawValue: 5), age: 2)
         pump.reservoirUnits = observed(150, age: 2)
         return pump

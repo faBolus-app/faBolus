@@ -88,10 +88,11 @@ enum PumpReadings {
         case let m as BolusCalcDataSnapshotResponse:
             // The first byte is 0 when the pump acknowledges the request. Any other snapshot is no reading:
             // the last one stays, and the dose path sees the settings as not read for this attempt.
-            guard m.cargo.first == 0 else { return [] }
+            guard m.isAck else { return [] }
             let settings = BolusCalculatorSettings(
                 carbRatio: m.carbRatioGramsPerUnit, correctionFactor: m.isf, targetMgdl: m.targetBg,
-                maxBolusUnits: Double(m.maxBolusAmount) / 1000, insulinOnBoardUnits: Double(m.iob) / 1000)
+                maxBolusUnits: Double(m.maxBolusAmount) / 1000, insulinOnBoardUnits: Double(m.iob) / 1000,
+                glucoseAutoFillAllowed: m.isAutopopAllowed)
             state.bolusCalculator = observed(settings)
             return [.bolusCalculator]
 
@@ -116,15 +117,25 @@ enum PumpReadings {
             }
             let measured = anchor.date(forPumpTime: UInt32(truncatingIfNeeded: m.bgReadingTimestampSeconds))
             let trend = state.glucose?.value.trend
-            state.glucose = observed(PumpGlucose(mgdl: m.cgmReading, trend: trend), measuredAt: measured)
+            let outOfRange: GlucoseOutOfRange? =
+                switch m.egvStatus {
+                case .low: .low
+                case .high: .high
+                default: nil
+                }
+            state.glucose = observed(
+                PumpGlucose(mgdl: m.cgmReading, trend: trend, outOfRange: outOfRange), measuredAt: measured)
             return [.glucose]
 
         case let m as HomeScreenMirrorResponse:
+            // The CGM state is kept with or without a reading: it says why there's no number, and whether
+            // the number there is may correct a dose.
+            state.cgmDisplay = observed(PumpCGMDisplay(state: cgmState(m), checkBG: m.isCheckBG))
             // The pump's own trend icon is the trend. "No arrow" is a real answer: no trend, not flat.
-            guard var glucose = state.glucose else { return [] }
+            guard var glucose = state.glucose else { return [.cgmDisplay] }
             glucose.value.trend = GlucoseTrend(rawValue: m.cgmTrendArrow)
             state.glucose = glucose
-            return [.glucose]
+            return [.glucose, .cgmDisplay]
 
         case let m as CurrentBasalStatusResponse:
             state.basalDeliveryState = observed(.active(unitsPerHour: m.currentBasalUnitsPerHour))
@@ -198,6 +209,26 @@ enum PumpReadings {
     /// The IOB the pump displays, by the model it reports (pumpx2's `getPumpDisplayedIOB`): Mudaliar for
     /// type 0, Swan 6-hour for type 1, and the larger of the two for a type it doesn't know, so an
     /// unknown model never subtracts less insulin than either implies.
+    /// The pump's CGM alert icon as the state it shows.
+    static func cgmState(_ m: HomeScreenMirrorResponse) -> PumpCGMState {
+        guard let icon = m.cgmAlertIcon else { return .unknown(m.cgmAlertIconId) }
+        if icon.isStartup { return .warmingUp }
+        switch icon {
+        case .noError: return .noError
+        case .calibrate, .startupCalibrate, .checkmarkBloodDrop: return .calibrate
+        case .errorHighWedge, .errorLowWedge: return .calibrationError
+        case .replaceSensor: return .replaceSensor
+        case .failedSensor: return .sensorFailed
+        case .replaceTransmitter: return .replaceTransmitter
+        case .restartSession: return .restartSensor
+        case .outOfRange: return .outOfRange
+        case .tripleDashes: return .noReading
+        case .low: return .low
+        case .high: return .high
+        default: return .unknown(m.cgmAlertIconId)
+        }
+    }
+
     static func displayedIOB(_ m: ControlIQIOBResponse) -> UInt32 {
         switch m.iobType {
         case 0: return m.mudaliarIOB
