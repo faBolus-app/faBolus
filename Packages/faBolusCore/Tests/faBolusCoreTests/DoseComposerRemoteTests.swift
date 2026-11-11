@@ -152,14 +152,14 @@ import Testing
         #expect(dose.notices.contains(.cartridgeStateUnknown))
     }
 
-    /// A CGM LOW or HIGH gives no calculated dose, as on the pump: refused, never carbs only. A units
-    /// request isn't calculated, so it goes ahead.
+    /// A CGM reading outside 20–600 gives no calculated dose: refused, never carbs only. A units request
+    /// isn't calculated, so it goes ahead.
     @Test func outOfRangeReadingRefusesACalculatedDose() {
-        for mgdl in [39, 401] {
+        for mgdl in [19, 601] {
             let context = F.context(pump: F.pump(glucose: mgdl))
             #expect(
                 compose(F.remote(F.carbs(60, estimate: 6), glucose: mgdl), context: context).refusal
-                    == .implausibleGlucose(mgdl: mgdl))
+                    == .invalidGlucose(mgdl: mgdl))
             #expect(compose(F.remote(.units(2)), context: context).dose?.units == 2)
         }
     }

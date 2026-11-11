@@ -195,12 +195,24 @@ import Testing
 
     // MARK: - Typed glucose
 
-    @Test func implausibleTypedGlucoseIsRefused() {
-        for mgdl in [39, 401] {
+    /// Outside 20–600 a typed glucose is invalid.
+    @Test func aTypedGlucoseOutsideTheCalculatorsRangeIsRefused() {
+        for mgdl in [0, 19, 601] {
             let amount = PhoneDoseEntry.Amount.calculator(
                 carbsGrams: 0, glucose: .typed(mgdl: mgdl), recommendedUnits: 0, enteredUnits: 1)
-            #expect(compose(amount).refusal == .implausibleGlucose(mgdl: mgdl))
+            #expect(compose(amount).refusal == .invalidGlucose(mgdl: mgdl))
         }
+    }
+
+    /// A meter reads to 600: a typed 450 corrects from 450, and a typed 20 or 39 reduces the dose.
+    @Test(arguments: [(450, 14.0), (600, 17.75), (39, 3.7), (20, 3.25)])
+    func aTypedGlucoseFrom20To600Corrects(mgdl: Int, units: Double) throws {
+        // 60 g at 10 g/U, ISF 40, target 110, IOB 0.5 U.
+        let amount = PhoneDoseEntry.Amount.calculator(
+            carbsGrams: 60, glucose: .typed(mgdl: mgdl), recommendedUnits: units, enteredUnits: units)
+        let dose = try #require(compose(amount).dose)
+        #expect(dose.units == units)
+        #expect(dose.correctionGlucoseMgdl == mgdl)
     }
 
     @Test func typedGlucoseDeliversTheEnteredDose() throws {
@@ -300,16 +312,16 @@ import Testing
         #expect(compose(F.cgmDose(carbs: 100, entered: 11), answers: carbsOnly, context: context).prompt != nil)
     }
 
-    /// A CGM LOW or HIGH gives no calculated dose, as on the pump.
+    /// A CGM reading outside 20–600 gives no calculated dose.
     @Test func outOfRangeReadingRefuses() {
-        for mgdl in [39, 401] {
+        for mgdl in [19, 601] {
             #expect(
                 compose(F.cgmDose(), context: F.context(pump: F.pump(glucose: mgdl))).refusal
-                    == .implausibleGlucose(mgdl: mgdl))
+                    == .invalidGlucose(mgdl: mgdl))
         }
-        // A stale LOW is never offered for inclusion.
+        // A stale one is never offered for inclusion.
         #expect(
-            compose(F.cgmDose(), context: F.context(pump: F.pump(glucose: 39, glucoseAge: 10 * 60))).prompt?
+            compose(F.cgmDose(), context: F.context(pump: F.pump(glucose: 19, glucoseAge: 10 * 60))).prompt?
                 .includeUnits
                 == .some(nil))
     }

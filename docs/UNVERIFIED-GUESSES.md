@@ -355,3 +355,14 @@ that worked.
 - **Verify:** on P1 and P2 with saline, run the bench's `snapshot` read before and after two boluses a
   few minutes apart, and note bytes 7-8 against the pump's insulin screen, bytes 20-23 against the
   boluses given, and bytes 24 and 25 when the pump refuses a bolus for its hourly limit.
+
+## 28. A correction glucose of 20-39 or 401-600 mg/dL in the bolus message
+
+- **The guess:** the pump takes a BG from 20 to 600 mg/dL in InitiateBolus's BG field, as Tandem's app
+  sends one in that range. faBolus sent 40-400 only; the calculator now corrects from 20-600 and sends the
+  glucose it corrected from.
+- **Where:** `Packages/PumpSession/Sources/PumpSession/BolusCommands.swift`;
+  `Packages/faBolusCore/Sources/faBolusCore/CalculatorGlucose.swift`.
+- **Risk:** fails closed: a pump that refuses the value refuses the bolus, and nothing is delivered.
+- **Verify:** with saline on P1 and P2, bolus from a typed 30 mg/dL and a typed 450 mg/dL, and note
+  whether each is accepted and what the pump's history records as the BG.

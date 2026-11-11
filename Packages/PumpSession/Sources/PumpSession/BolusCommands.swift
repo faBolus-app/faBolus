@@ -44,7 +44,7 @@ struct BolusCommands: Sendable {
         let total = UInt32((units * 1000).rounded())
 
         let carbs = try carbGrams(dose.request.carbsGrams)
-        let bg = dose.correctionGlucoseMgdl.flatMap { GlucosePlausibility.isPlausible(mgdl: $0) ? $0 : nil } ?? 0
+        let bg = dose.correctionGlucoseMgdl.flatMap { CalculatorGlucose.isValid(mgdl: $0) ? $0 : nil } ?? 0
         let iobUnits = dose.calculatorIOBUnits.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? 0
         let iob = UInt32(min((iobUnits * 1000).rounded(), 1_000_000))
 

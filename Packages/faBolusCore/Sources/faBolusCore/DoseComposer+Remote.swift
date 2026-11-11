@@ -109,8 +109,8 @@ extension DoseComposer {
             let inputs = CalculatorInputs(context: context)
             guard inputs.isVerified else { return .refused(.pumpSettingsNotVerified) }
             (correction, usedStale) = remoteCorrectionGlucose(request, context: context)
-            if let mgdl = correction, !GlucosePlausibility.isPlausible(mgdl: mgdl) {
-                return .refused(.implausibleGlucose(mgdl: mgdl))
+            if let mgdl = correction, !CalculatorGlucose.isValid(mgdl: mgdl) {
+                return .refused(.invalidGlucose(mgdl: mgdl))
             }
             guard let dose = inputs.units(carbsGrams: carbs, glucoseMgdl: correction) else {
                 return .refused(.pumpSettingsUnusable)

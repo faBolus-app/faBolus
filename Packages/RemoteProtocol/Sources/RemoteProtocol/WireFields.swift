@@ -23,7 +23,7 @@ public enum WireLimits {
     public static let maxHistoryPoints = 144
     /// Insulin, milliunits. Far above any pump's max bolus or cartridge.
     public static let maxMilliunits = 1_000_000
-    /// Glucose, mg/dL. Readings outside 40–400 are passed on as read; the calculator refuses them.
+    /// Glucose, mg/dL. Readings outside 20–600 are passed on as read; the calculator refuses them.
     public static let maxGlucose = 1000
     public static let maxCarbsGrams = 999
     /// Epoch seconds: after 2020 and before 2038, when the watch's 32-bit integers run out.

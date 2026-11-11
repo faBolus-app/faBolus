@@ -9,8 +9,7 @@ import Foundation
 /// The `[40, 400]` mg/dL range matches the vendored `G7SensorKit.GlucoseLimits` and
 /// `DexcomG6Kit.GlucoseLimits` — one source of truth, both ends inclusive. Enforced at
 /// `GlucoseSample`'s failable init (every `GlucoseSource` inherits it at construction, before
-/// `latest` / `history` can hold a bad value) and, independently, inside `BolusMath.estimate` as a
-/// dose-path backstop.
+/// `latest` / `history` can hold a bad value). The dose path's range is `CalculatorGlucose`.
 public enum GlucosePlausibility {
     /// Inclusive lower bound (mg/dL) — matches the vendored kit `GlucoseLimits.minimum`.
     public static let minimum = 40
