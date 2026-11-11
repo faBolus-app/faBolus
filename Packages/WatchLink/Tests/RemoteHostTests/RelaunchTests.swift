@@ -148,6 +148,10 @@ final class RelaunchingPhone {
     init(configure: (ScriptedPump) -> Void = { _ in }) {
         pump = ScriptedPump(clock: clock)
         pump.unsupportedReads = []
+        // These tests are about the ledger across a relaunch, not delivery timing: a fast pump (no pending
+        // phase, 1 U in 10 s) keeps their windows short.
+        pump.pendingSeconds = 0
+        pump.deliveryMilliunitsPerSecond = 100
         configure(pump)
         // This unit is known to act on a clear, so the watch may clear its alerts.
         disk = PhoneDisk()

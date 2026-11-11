@@ -6,8 +6,9 @@ import TandemMessages
 /// A t:slim X2 and its radio, as CoreBluetooth would report them, for running the real session and link
 /// with no pump. It pairs with the legacy 16-character code, answers the handshake, the status reads the
 /// session makes, the signed bolus writes and the history log, and keeps a bolus engine: a granted
-/// permission, an initiated bolus that delivers at `deliveryMilliunitsPerSecond` of clock time, cancel,
-/// release, and history records for what it did. Every reply is framed and signed as the pump's would be,
+/// permission, an initiated bolus that waits `pendingSeconds` and then delivers at
+/// `deliveryMilliunitsPerSecond` of clock time, cancel, a stop on the pump, release, and the history
+/// records a t:slim writes for each step. Every reply is framed and signed as the pump's would be,
 /// so the link's checks run on it unchanged.
 ///
 /// Faults are set per request (`answers`): a captured reply in place of the scripted one, an op-77 with
@@ -101,8 +102,19 @@ public final class ScriptedPump {
     public struct Bolus: Sendable, Equatable {
         public let id: Int
         public let requestedMilliunits: UInt32
+        /// When the pump accepted it, or when it started on the pump.
         public let startedAt: LinkTime
-        public var cancelledAt: LinkTime?
+        /// When insulin starts to flow: after the pending phase for a remote bolus.
+        public let deliversFrom: LinkTime
+        /// Set when something ends it before it delivers everything.
+        public var stop: Stop?
+        /// How it ended, once it has.
+        public var ended: Stop?
+        /// CurrentBolusStatus's source byte: 8 for a remote bolus, as in the capture of bolus 3; 0 for one
+        /// started on the pump, unconfirmed.
+        public let source: UInt8
+        /// Whether the records for the start of delivery are written.
+        public var deliveryRecorded = false
         public let carbs: Int
         public let bg: Int
         public let typeBitmask: Int
@@ -110,8 +122,40 @@ public final class ScriptedPump {
         public let correctionMilliunits: UInt32
         public let iobMilliunits: UInt32
     }
+
+    /// When a bolus ends, or is to end, and the completion status the pump records for it.
+    public struct Stop: Sendable, Equatable {
+        public let at: LinkTime
+        public let completionStatus: Int
+    }
+
+    /// The completion status in a bolus's completed record. Only `delivered` is recorded on a t:slim (the
+    /// capture of bolus 3); the others are unconfirmed (docs/UNVERIFIED-GUESSES.md #19), so a test that
+    /// depends on them tests a guess.
+    public enum CompletionStatus {
+        public static let delivered = 3
+        public static let cancelledFromPhone = 4
+        public static let stoppedOnPump = 0
+        public static let alarm = 1
+        public static let malfunction = 2
+    }
+
     public var nextBolusId = 10650
-    public var deliveryMilliunitsPerSecond: Double = 100
+    /// 1 U per 40 s, the rate of the one recorded t:slim bolus (bolus 3: activated at pump time
+    /// 0x1A8E638A, completed 40 s later). A test that doesn't time delivery can raise it.
+    public var deliveryMilliunitsPerSecond: Double = 25
+    /// How long an accepted remote bolus stays pending (CurrentBolusStatus 2) before it delivers: 15 s in
+    /// the capture of bolus 3, between its initiate records and its activated record.
+    public var pendingSeconds: Double = 15
+    /// The pump drops a pending bolus instead of delivering it: nothing goes in, and its status read
+    /// stops naming it. Unconfirmed: no record shows how a t:slim does this.
+    public var dropsPendingBolus = false
+
+    /// How long a remote bolus of `milliunits` takes from acceptance to its end: the pending phase, then
+    /// delivery at the current rate.
+    public func deliverySeconds(milliunits: UInt32) -> Double {
+        pendingSeconds + Double(milliunits) / deliveryMilliunitsPerSecond
+    }
     public internal(set) var grantedPermission: Int?
     public internal(set) var activeBolus: Bolus?
     public private(set) var completed: [Bolus] = []
@@ -152,9 +196,16 @@ public final class ScriptedPump {
 
     // MARK: History records
 
-    /// Appends a 26-byte history record of `typeId` stamped now (or `at`), with `body` at bytes 10...25.
+    /// Appends a 26-byte history record of `typeId` stamped now (or `at`), with `body` at bytes 10...25,
+    /// after the records the bolus engine has due by now, so sequence numbers follow pump time.
     @discardableResult
     public func appendHistory(typeId: Int, at pumpTime: UInt32? = nil, body: [UInt8]) -> UInt32 {
+        settleBolus()
+        return append(typeId: typeId, at: pumpTime, body: body)
+    }
+
+    @discardableResult
+    private func append(typeId: Int, at pumpTime: UInt32? = nil, body: [UInt8]) -> UInt32 {
         let seq = lastSequence.map { $0 &+ 1 } ?? firstSequence
         historyRecords.append(Self.record(typeId: typeId, pumpTime: pumpTime ?? wallClock, sequence: seq, body: body))
         return seq
@@ -183,36 +234,134 @@ public final class ScriptedPump {
         le16(completionStatus) + le16(bolusId) + float(iob) + float(delivered) + float(requested)
     }
 
-    /// A bolus started on the pump itself, as if from its own screen or before an app relaunch.
+    /// A bolus started on the pump itself, as if from its own screen or before an app relaunch. It delivers
+    /// at once, with no pending phase and no initiate or requested records.
     public func startBolus(id: Int, milliunits: UInt32) {
         activeBolus = Bolus(
-            id: id, requestedMilliunits: milliunits, startedAt: clock.now, cancelledAt: nil, carbs: 0, bg: 0,
-            typeBitmask: 8, foodMilliunits: 0, correctionMilliunits: 0, iobMilliunits: 0)
+            id: id, requestedMilliunits: milliunits, startedAt: clock.now, deliversFrom: clock.now, source: 0,
+            carbs: 0, bg: 0, typeBitmask: 8, foodMilliunits: 0, correctionMilliunits: 0, iobMilliunits: 0)
+        settleBolus()
+    }
+
+    /// Ends the active bolus now, as an alarm, a malfunction or a stop on the pump's own screen does, with
+    /// that completion status (see `CompletionStatus`), and raises `alarmBit` in the alarm bitmap.
+    public func stopBolus(completionStatus: Int, alarmBit: Int? = nil) {
+        if let alarmBit { alarmBitmap |= 1 << UInt64(alarmBit) }
+        settleBolus()
+        guard var bolus = activeBolus else { return }
+        bolus.stop = Stop(at: clock.now, completionStatus: completionStatus)
+        activeBolus = bolus
+        settleBolus()
     }
 
     // MARK: Bolus progress
 
-    /// Moves an active bolus to completed when its time is up.
+    /// Accepts a remote bolus: it goes pending, and the pump writes its initiate and requested records.
+    func acceptBolus(_ bolus: Bolus) {
+        activeBolus = bolus
+        append(typeId: IobSnapshotPreBolusHistoryLog.typeId, body: iobSnapshotBody(bolus))
+        for (typeId, body) in Self.requestRecords(bolus, at: wallClock) { append(typeId: typeId, body: body) }
+        if dropsPendingBolus {
+            activeBolus?.stop = Stop(at: bolus.deliversFrom, completionStatus: CompletionStatus.stoppedOnPump)
+        }
+    }
+
+    /// Writes what has happened to the active bolus by now: the start of delivery, then its end, when it
+    /// moves to `completed`.
     func settleBolus() {
-        guard let bolus = activeBolus else { return }
-        let end =
-            bolus.cancelledAt ?? (bolus.startedAt + Double(bolus.requestedMilliunits) / deliveryMilliunitsPerSecond)
+        guard var bolus = activeBolus else { return }
+        let fullEnd = bolus.deliversFrom + Double(bolus.requestedMilliunits) / deliveryMilliunitsPerSecond
+        let end = min(bolus.stop?.at ?? fullEnd, fullEnd)
+        if !bolus.deliveryRecorded, clock.now >= bolus.deliversFrom, end > bolus.deliversFrom {
+            bolus.deliveryRecorded = true
+            activeBolus = bolus
+            let at = wallClockAtStart &+ UInt32(bolus.deliversFrom)
+            append(typeId: BolusActivatedHistoryLog.typeId, at: at, body: Self.activatedBody(bolus))
+            append(typeId: BolusDeliveryHistoryLog.typeId, at: at, body: Self.deliveryBody(bolus, delivered: nil))
+        }
         guard clock.now >= end else { return }
+        let status =
+            end < fullEnd
+            ? (bolus.stop?.completionStatus ?? CompletionStatus.stoppedOnPump) : CompletionStatus.delivered
+        bolus.ended = Stop(at: end, completionStatus: status)
         activeBolus = nil
         completed.append(bolus)
         let delivered = deliveredMilliunits(bolus, at: end)
-        appendHistory(
-            typeId: BolusCompletedHistoryLog.typeId, at: wallClockAtStart &+ UInt32(end),
+        let at = wallClockAtStart &+ UInt32(end)
+        if bolus.deliveryRecorded {
+            append(typeId: BolusDeliveryHistoryLog.typeId, at: at, body: Self.deliveryBody(bolus, delivered: delivered))
+            append(typeId: IobSnapshotPostBolusHistoryLog.typeId, at: at, body: iobSnapshotBody(bolus))
+        }
+        append(
+            typeId: BolusCompletedHistoryLog.typeId, at: at,
             body: Self.bolusCompletedBody(
-                bolusId: bolus.id, completionStatus: delivered < bolus.requestedMilliunits ? 0 : 3,
-                iob: Float(insulinOnBoardMilliunits) / 1000, delivered: Float(delivered) / 1000,
-                requested: Float(bolus.requestedMilliunits) / 1000))
+                bolusId: bolus.id, completionStatus: status, iob: Float(insulinOnBoardMilliunits) / 1000,
+                delivered: Float(delivered) / 1000, requested: Float(bolus.requestedMilliunits) / 1000))
     }
 
     public func deliveredMilliunits(_ bolus: Bolus, at time: LinkTime? = nil) -> UInt32 {
-        let t = min(time ?? clock.now, bolus.cancelledAt ?? .infinity)
-        let delivered = max(0, t - bolus.startedAt) * deliveryMilliunitsPerSecond
+        let t = min(time ?? clock.now, bolus.stop?.at ?? .infinity)
+        let delivered = max(0, t - bolus.deliversFrom) * deliveryMilliunitsPerSecond
         return min(bolus.requestedMilliunits, UInt32(delivered.rounded(.down)))
+    }
+
+    // MARK: Bolus records
+
+    // The records a t:slim writes for a remote bolus, in the layout and order of the capture of bolus 3
+    // (Captures.swift): at the request the pre-bolus IOB snapshot (206), requested (64, 65, 66), a
+    // permission change (295) and the initiate records (292, 293, 343, 298); when delivery starts,
+    // activated (55) and delivery (280); at the end a second 280, the post-bolus IOB snapshot (207) and
+    // completed (20). The bolus ID, amounts, carbs, BG and times follow the request; a constant byte is the
+    // capture's value and its meaning is unconfirmed, as is every field that bolus left at 0.
+
+    static func requestRecords(_ b: Bolus, at requestTime: UInt32) -> [(Int, [UInt8])] {
+        let iob = Float(b.iobMilliunits) / 1000
+        return [
+            (
+                BolusRequestedMsg1HistoryLog.typeId,
+                le16(b.id) + [3, b.correctionMilliunits > 0 ? 1 : 0] + le16(b.carbs) + le16(b.bg) + float(iob)
+                    + le32(0)
+            ),
+            (
+                BolusRequestedMsg2HistoryLog.typeId,
+                le16(b.id) + [4, 100] + le16(0) + le16(0) + le16(0) + le16(0) + [1, 0, 1, 0]
+            ),
+            (
+                BolusRequestedMsg3HistoryLog.typeId,
+                le16(b.id) + le16(0) + float(Float(b.foodMilliunits) / 1000)
+                    + float(Float(b.correctionMilliunits) / 1000) + float(Float(b.requestedMilliunits) / 1000)
+            ),
+            (BolusPermissionChangeHistoryLog.typeId, le16(b.id) + [0, 1, 1]),
+            (
+                InitiateBolusRequestMsg1HistoryLog.typeId,
+                le32(requestTime) + [0, UInt8(b.typeBitmask & 0xFF)] + le16(b.id) + le32(b.requestedMilliunits)
+                    + le32(b.foodMilliunits)
+            ),
+            (
+                InitiateBolusRequestMsg2HistoryLog.typeId,
+                [0, 0] + le16(b.id) + le32(b.correctionMilliunits) + le32(0) + le16(b.carbs) + le16(b.bg)
+            ),
+            (
+                InitiateBolusRequestMsg3HistoryLog.typeId,
+                [0, 0] + le16(b.id) + le32(b.iobMilliunits) + le32(0) + le32(0)
+            ),
+            (InitiateBolusResponseHistoryLog.typeId, le16(b.id))
+        ]
+    }
+
+    func iobSnapshotBody(_ b: Bolus) -> [UInt8] {
+        let iob = Float(insulinOnBoardMilliunits) / 1000
+        return le16(b.id) + [2, 1] + float(iob) + float(iob) + float(iob)
+    }
+
+    static func activatedBody(_ b: Bolus) -> [UInt8] {
+        le16(b.id) + [1, 0] + float(Float(b.iobMilliunits) / 1000) + float(Float(b.requestedMilliunits) / 1000)
+    }
+
+    /// A delivery record: started (status 1) or, with `delivered`, ended (status 0).
+    static func deliveryBody(_ b: Bolus, delivered: UInt32?) -> [UInt8] {
+        le16(b.id) + [delivered == nil ? 1 : 0, 5, b.source, UInt8(b.id & 0xFF)] + le16(Int(b.requestedMilliunits))
+            + le16(0) + le16(Int(b.correctionMilliunits)) + le16(0) + le16(Int(delivered ?? 0))
     }
 }
 
@@ -470,19 +619,32 @@ public final class ScriptedTransport: LinkTransport {
         case (.currentStatus, MalfunctionStatusRequest.props.opCode):
             return MalfunctionBitmaskStatusResponse(cargo: le64(pump.malfunctionBitmap))
         case (.currentStatus, CurrentBolusStatusRequest.props.opCode):
+            // The capture of bolus 3's layout: status 2 while pending, then 1, the request's time and then the
+            // delivery start's at 5, the request at 9, source 8 and the type bits at 13 and 14.
             var v = [UInt8](repeating: 0, count: 15)
             if let b = pump.activeBolus {
-                v[0] = 1
+                let pending = clock.now < b.deliversFrom
+                v[0] = pending ? 2 : 1
                 v.replaceSubrange(1..<3, with: le16(b.id))
+                v.replaceSubrange(
+                    5..<9, with: le32(pump.wallClockAtStart &+ UInt32(pending ? b.startedAt : b.deliversFrom)))
                 v.replaceSubrange(9..<13, with: le32(b.requestedMilliunits))
+                v[13] = b.source
+                v[14] = UInt8(b.typeBitmask & 0xFF)
             }
             return CurrentBolusStatusResponse(cargo: v)
         case (.currentStatus, LastBolusStatusV2Request.props.opCode):
+            // The capture of bolus 3's layout: the time it ended at 5, the completion status at 13, the
+            // source and type bits at 14 and 15.
             var v = [UInt8](repeating: 0, count: 24)
-            if let b = pump.completed.last {
+            if let b = pump.completed.last, let ended = b.ended {
+                v[0] = 1
                 v.replaceSubrange(1..<3, with: le16(b.id))
-                v.replaceSubrange(5..<9, with: le32(pump.wallClockAtStart &+ UInt32(b.startedAt)))
+                v.replaceSubrange(5..<9, with: le32(pump.wallClockAtStart &+ UInt32(ended.at)))
                 v.replaceSubrange(9..<13, with: le32(pump.deliveredMilliunits(b)))
+                v[13] = UInt8(ended.completionStatus & 0xFF)
+                v[14] = b.source
+                v[15] = UInt8(b.typeBitmask & 0xFF)
                 v.replaceSubrange(20..<24, with: le32(b.requestedMilliunits))
             }
             return LastBolusStatusV2Response(cargo: v)
@@ -518,18 +680,20 @@ public final class ScriptedTransport: LinkTransport {
                 return InitiateBolusResponse(cargo: [1] + le16(id) + [0, 0, 1])
             }
             pump.grantedPermission = nil
-            pump.activeBolus = ScriptedPump.Bolus(
-                id: id, requestedMilliunits: total, startedAt: clock.now, cancelledAt: nil,
-                carbs: readU16(cargo, 17), bg: readU16(cargo, 19), typeBitmask: Int(cargo[8]),
-                foodMilliunits: readU32(cargo, 9), correctionMilliunits: readU32(cargo, 13),
-                iobMilliunits: readU32(cargo, 21))
+            pump.acceptBolus(
+                ScriptedPump.Bolus(
+                    id: id, requestedMilliunits: total, startedAt: clock.now,
+                    deliversFrom: clock.now + pump.pendingSeconds, source: 8, carbs: readU16(cargo, 17),
+                    bg: readU16(cargo, 19), typeBitmask: Int(cargo[8]), foodMilliunits: readU32(cargo, 9),
+                    correctionMilliunits: readU32(cargo, 13), iobMilliunits: readU32(cargo, 21)))
             return InitiateBolusResponse(cargo: [0] + le16(id) + [0, 0, 0])
         case (.control, CancelBolusRequest.props.opCode):
             let id = readU16(cargo, 0)
             guard var b = pump.activeBolus, b.id == id else {
                 return CancelBolusResponse(cargo: [1] + le16(id) + [2, 0])
             }
-            b.cancelledAt = clock.now
+            b.stop = ScriptedPump.Stop(
+                at: clock.now, completionStatus: ScriptedPump.CompletionStatus.cancelledFromPhone)
             pump.activeBolus = b
             pump.settleBolus()
             return CancelBolusResponse(cargo: [0] + le16(id) + [0, 0])

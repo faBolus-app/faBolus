@@ -143,7 +143,7 @@ private let key = RemoteBolusLedger.Key(peerId: "phone", requestId: "phone-1")
         #expect(await session.isUntested(ControlIQIOBRequest()))
         let before = rig.pump.arrivals.count
 
-        // Past the hold window, with the bolus (0.1 U/s) still delivering.
+        // Past the hold window, with the bolus (15 s pending, then 0.025 U/s) still delivering.
         await rig.run(for: 40, step: 1)
         #expect(await session.tracked != nil)
         let whileTracked = rig.pump.arrivals[before...].map {
@@ -157,7 +157,7 @@ private let key = RemoteBolusLedger.Key(peerId: "phone", requestId: "phone-1")
             #expect(!whileTracked.contains(probe))
         }
 
-        await rig.run(for: 15, step: 1)
+        await rig.run(for: rig.pump.deliverySeconds(milliunits: 5000) - 40 + 5, step: 1)
         #expect(await session.tracked == nil)
         #expect(!rig.pump.arrivals(of: ControlIQIOBRequest.self).isEmpty)
     }
