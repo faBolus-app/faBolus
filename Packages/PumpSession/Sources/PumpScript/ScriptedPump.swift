@@ -1,10 +1,12 @@
 import Foundation
+import TandemAuth
 import TandemBLE
 import TandemLink
 import TandemMessages
 
 /// A t:slim X2 and its radio, as CoreBluetooth would report them, for running the real session and link
-/// with no pump. It pairs with the legacy 16-character code, answers the handshake, the status reads the
+/// with no pump. It pairs with the legacy 16-character code, or with J-PAKE on a 6-digit code
+/// (`jpakeCode`), answers the handshake, the status reads the
 /// session makes, the signed bolus writes and the history log, and keeps a bolus engine: a granted
 /// permission, an initiated bolus that waits `pendingSeconds` and then delivers at
 /// `deliveryMilliunitsPerSecond` of clock time, cancel, a stop on the pump, release, and the history
@@ -32,6 +34,11 @@ public final class ScriptedPump {
     public var linked = false
     /// The pump rejects the pairing code.
     public var rejectsPairing = false
+    /// A 6-digit pump, as P2 is: it pairs with J-PAKE on this code. Nil for a legacy pump.
+    public var jpakeCode: String?
+    /// The secret the pump keeps from its last J-PAKE pairing. A reconnect (rounds 3 and 4 only) must
+    /// confirm with it, and any other is refused.
+    public var jpakeSecret: [UInt8]?
 
     /// The pump's wall clock (seconds since 2008, local) at clock time 0, as TimeSinceReset's
     /// `currentTime` reports it and history records are stamped.
@@ -428,7 +435,10 @@ public final class ScriptedTransport: LinkTransport {
     private var pendingConnect = false
     private var ended = false
     private var reassembly: [Characteristic: PacketReassembler] = [:]
-    private var key: [UInt8] { Array(ScriptedPump.code.utf8) }
+    /// The signing key: the legacy code's bytes, or the key the connection's J-PAKE handshake derived.
+    private var key: [UInt8] { sessionKey ?? Array(ScriptedPump.code.utf8) }
+    private var sessionKey: [UInt8]?
+    private var jpake: JpakeExchange?
 
     public init(pump: ScriptedPump) {
         self.pump = pump
@@ -462,7 +472,7 @@ public final class ScriptedTransport: LinkTransport {
         case .cancelConnection:
             pendingConnect = false
             if pump.linked {
-                pump.linked = false
+                endLink()
                 report?(.disconnected(peripheralID: ScriptedPump.peripheralID, nil))
             }
         case .discover(let id) where id == ScriptedPump.peripheralID:
@@ -476,6 +486,13 @@ public final class ScriptedTransport: LinkTransport {
         default:
             break
         }
+    }
+
+    /// The link is gone: the connection's J-PAKE session key and any handshake in progress go with it.
+    private func endLink() {
+        pump.linked = false
+        sessionKey = nil
+        jpake = nil
     }
 
     private func completeConnectIfPossible() {
@@ -501,7 +518,7 @@ public final class ScriptedTransport: LinkTransport {
         pump.poweredOn = on
         if !on {
             pendingConnect = false
-            pump.linked = false
+            endLink()
             report?(.power(.poweredOff))
         } else {
             report?(.power(.poweredOn))
@@ -510,7 +527,7 @@ public final class ScriptedTransport: LinkTransport {
 
     public func drop(code: Int = 7) {
         guard !ended, pump.linked else { return }
-        pump.linked = false
+        endLink()
         report?(
             .disconnected(peripheralID: ScriptedPump.peripheralID, BluetoothError(domain: "CBErrorDomain", code: code)))
     }
@@ -522,7 +539,7 @@ public final class ScriptedTransport: LinkTransport {
         ended = true
         report = nil
         pendingConnect = false
-        pump.linked = false
+        endLink()
     }
 
     /// Sends the qualifying-events bitmap, as the pump does when something changes.
@@ -567,6 +584,9 @@ public final class ScriptedTransport: LinkTransport {
             answer = .normal
         }
         if case .notice(let events) = answer { qualifyingEvents(events) }
+        if characteristic == .authorization, Self.jpakeOpCodes.contains(opCode) {
+            return answerJpake(opCode, cargo, txId: txId, answer: answer)
+        }
         switch answer {
         case .silent:
             return
@@ -597,6 +617,9 @@ public final class ScriptedTransport: LinkTransport {
     private func respond(_ c: Characteristic, _ opCode: UInt8, _ cargo: [UInt8]) -> (any ResponseMessage)? {
         pump.settleBolus()
         switch (c, opCode) {
+        // A 6-digit pump doesn't answer the legacy pairing (unconfirmed: it may answer differently).
+        case (.authorization, _) where pump.jpakeCode != nil:
+            return nil
         case (.authorization, CentralChallengeRequest.props.opCode):
             return CentralChallengeResponse(
                 cargo: [0, 0] + [UInt8](repeating: 7, count: 20) + [UInt8](repeating: 9, count: 8))
@@ -804,18 +827,142 @@ public final class ScriptedTransport: LinkTransport {
         }
     }
 
-    /// An op-77, on the request's characteristic. On CONTROL the pump signs it.
-    private func sendError(_ c: Characteristic, request: UInt8, code: UInt8, txId: UInt8) {
-        let cargo: [UInt8] = c == .control ? [request, code] : [0, code]
-        var frame: [UInt8] = [ErrorResponse.props.opCode, txId, UInt8(cargo.count + (c == .control ? 24 : 0))] + cargo
-        if c == .control {
-            let time = le32(pump.wallClock)
-            let hmac = Packetize.doHmacSha1(frame + time, key: key)
-            frame += time + hmac
+    // MARK: J-PAKE
+
+    /// The pump side of the 6-digit pairing, against TandemKit's client: EC-JPAKE rounds 1a, 1b and 2
+    /// (secp256r1, the code as the shared secret), then the session key (a nonce) and key confirmation
+    /// (HMAC-SHA256 with HKDF(nonce, secret)), whose key then signs every reply. The layout follows the
+    /// client's; what a t:slim checks and answers when a round or the confirmation fails is unconfirmed,
+    /// so this pump answers a failed confirmation with one that can't verify.
+    private final class JpakeExchange {
+        let context: EcJpakeContext?
+        var clientRound1a: [UInt8] = []
+        var pumpRound1b: [UInt8] = []
+        var derivedSecret: [UInt8]?
+        var serverNonce: [UInt8]?
+        init(context: EcJpakeContext?) { self.context = context }
+    }
+
+    private static let jpakeOpCodes: Set<UInt8> = [
+        Jpake1aRequest.props.opCode, Jpake1bRequest.props.opCode, Jpake2Request.props.opCode,
+        Jpake3SessionKeyRequest.props.opCode, Jpake4KeyConfirmationRequest.props.opCode
+    ]
+
+    private func answerJpake(_ opCode: UInt8, _ cargo: [UInt8], txId: UInt8, answer: ScriptedPump.Answer) {
+        switch answer {
+        case .silent:
+            return
+        case .drop(let acted):
+            if acted { _ = jpakeReply(opCode, cargo) }
+            return drop()
+        case .actedWithoutReply:
+            _ = jpakeReply(opCode, cargo)
+        case .error(let code, let drops):
+            sendError(.authorization, request: opCode, code: code, txId: txId)
+            if drops { _ = clock.schedule(after: 0.09) { [weak self] in self?.drop() } }
+        case .cargo, .badCRC, .badSignature, .wrongTxId, .duplicate:
+            preconditionFailure("this fault isn't modelled for a J-PAKE request")
+        case .normal, .notice:
+            guard let (replyOpCode, payload) = jpakeReply(opCode, cargo) else {
+                return sendError(.authorization, request: opCode, code: 6, txId: txId)
+            }
+            sendFrame(.authorization, opCode: replyOpCode, txId: txId, cargo: [0, 0] + payload)
         }
+    }
+
+    /// What the pump does with a J-PAKE request, and its reply's opcode and payload (after the app
+    /// instance ID). Nil when it has nothing to answer with.
+    private func jpakeReply(_ opCode: UInt8, _ cargo: [UInt8]) -> (UInt8, [UInt8])? {
+        // Every request's cargo is the app instance ID (2 bytes), then its payload.
+        let payload = Array(cargo.dropFirst(2))
+        do {
+            switch opCode {
+            case Jpake1aRequest.props.opCode:
+                guard let code = pump.jpakeCode else { return nil }
+                let context = try EcJpakeContext(role: .server, secret: JpakeAuth.pairingCodeToBytes(code))
+                let round1 = try context.writeRoundOne()
+                let half = Self.keyKPLength(round1)
+                let exchange = JpakeExchange(context: context)
+                exchange.clientRound1a = Array(payload.prefix(165))
+                exchange.pumpRound1b = Array(round1[half...])
+                jpake = exchange
+                return (33, Array(round1[..<half]))
+            case Jpake1bRequest.props.opCode:
+                guard let exchange = jpake, let context = exchange.context else { return nil }
+                try context.readRoundOne(exchange.clientRound1a + payload.prefix(165))
+                return (35, exchange.pumpRound1b)
+            case Jpake2Request.props.opCode:
+                guard let exchange = jpake, let context = exchange.context else { return nil }
+                let round2 = try context.writeRoundTwo()
+                try context.readRoundTwo(Array(payload.prefix(165)))
+                exchange.derivedSecret = try context.deriveSecret()
+                return (37, round2)
+            case Jpake3SessionKeyRequest.props.opCode:
+                // A finished full pairing continues its exchange; a reconnect starts here, with the kept
+                // secret, and so does a full pairing that never reached its derived secret.
+                let ongoing = jpake.flatMap { $0.context == nil || $0.derivedSecret != nil ? $0 : nil }
+                let exchange = ongoing ?? JpakeExchange(context: nil)
+                let nonce = Self.randomBytes(8)
+                exchange.serverNonce = nonce
+                jpake = exchange
+                return (39, nonce + [UInt8](repeating: 0, count: 8))
+            case Jpake4KeyConfirmationRequest.props.opCode:
+                guard let exchange = jpake, let serverNonce = exchange.serverNonce else { return nil }
+                jpake = nil
+                let clientNonce = Array(payload.prefix(8))
+                let clientHash = Array(payload.dropFirst(16).prefix(32))
+                let nonce4 = Self.randomBytes(8)
+                let reserved = [UInt8](repeating: 0, count: 8)
+                guard let secret = exchange.derivedSecret ?? pump.jpakeSecret else {
+                    return (41, nonce4 + reserved + [UInt8](repeating: 0, count: 32))
+                }
+                let key = Crypto.hkdf(nonce: serverNonce, keyMaterial: secret)
+                guard Crypto.isValidHmacSha256(mac: clientHash, data: clientNonce, key: key) else {
+                    return (41, nonce4 + reserved + [UInt8](repeating: 0, count: 32))
+                }
+                pump.jpakeSecret = secret
+                sessionKey = key
+                return (41, nonce4 + reserved + Crypto.hmacSha256(data: nonce4, key: key))
+            default:
+                return nil
+            }
+        } catch {
+            jpake = nil
+            return nil
+        }
+    }
+
+    /// The length of the first KeyKP in an EC-JPAKE round: three length-prefixed fields (X, V, r).
+    private static func keyKPLength(_ round: [UInt8]) -> Int {
+        var i = 0
+        for _ in 0..<3 { i += 1 + Int(round[i]) }
+        return i
+    }
+
+    private static func randomBytes(_ n: Int) -> [UInt8] {
+        var g = SystemRandomNumberGenerator()
+        return (0..<n).map { _ in UInt8.random(in: 0...255, using: &g) }
+    }
+
+    /// A frame of `cargo` (with any signed trailer already in it) and its CRC, in 18-byte packets.
+    private func sendFrame(_ c: Characteristic, opCode: UInt8, txId: UInt8, cargo: [UInt8]) {
+        var frame: [UInt8] = [opCode, txId, UInt8(cargo.count)] + cargo
         frame += Bytes.calculateCRC16(frame)
         let chunks = stride(from: 0, to: frame.count, by: 18).map { Array(frame[$0..<min($0 + 18, frame.count)]) }
         for (n, chunk) in chunks.enumerated() { report?(.notified(c, [UInt8(chunks.count - 1 - n), txId] + chunk)) }
+    }
+
+    /// An op-77, on the request's characteristic. On CONTROL the pump signs it.
+    private func sendError(_ c: Characteristic, request: UInt8, code: UInt8, txId: UInt8) {
+        guard c == .control else {
+            return sendFrame(c, opCode: ErrorResponse.props.opCode, txId: txId, cargo: [0, code])
+        }
+        // The signed trailer (pump time and HMAC-SHA1) covers the header, whose length counts it.
+        let cargo: [UInt8] = [request, code]
+        let header: [UInt8] = [ErrorResponse.props.opCode, txId, UInt8(cargo.count + 24)]
+        let time = le32(pump.wallClock)
+        let hmac = Packetize.doHmacSha1(header + cargo + time, key: key)
+        sendFrame(c, opCode: ErrorResponse.props.opCode, txId: txId, cargo: cargo + time + hmac)
     }
 }
 
