@@ -75,6 +75,12 @@ public final class ScriptedPump {
     /// The calculator snapshot lets the CGM reading fill in a correction (byte 37). Which pump states clear
     /// it is unconfirmed.
     public var glucoseAutoFillAllowed = true
+    /// The calculator snapshot's insulin bolused in the last hour (byte 20).
+    public var bolusedLastHourMilliunits: UInt32 = 0
+    /// The calculator snapshot's too-many-boluses flags: the hourly limit (byte 24) and IOB (byte 25).
+    /// What sets them on a t:slim is unconfirmed.
+    public var tooManyBolusesHourlyLimit = false
+    public var tooManyBolusesIOB = false
     public var cgmHardwareInfo = "8KX21P"
     public var basalMilliunitsPerHour: UInt32 = 800
     public var controlIQEnabled = false
@@ -659,6 +665,9 @@ public final class ScriptedTransport: LinkTransport {
             v[13] = 1
             v.replaceSubrange(14..<18, with: le32(pump.carbRatioMilli))
             v.replaceSubrange(18..<20, with: le16(pump.maxBolusMilliunits))
+            v.replaceSubrange(20..<24, with: le32(pump.bolusedLastHourMilliunits))
+            v[24] = pump.tooManyBolusesHourlyLimit ? 1 : 0
+            v[25] = pump.tooManyBolusesIOB ? 1 : 0
             v[37] = pump.glucoseAutoFillAllowed ? 1 : 0
             return BolusCalcDataSnapshotResponse(cargo: v)
         case (.currentStatus, InsulinStatusRequest.props.opCode):

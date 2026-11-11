@@ -175,6 +175,8 @@ public final class BolusFlow {
             entry.answers.doseChanged = .useNew(mgdl: mgdl, units: new)
         case (.doseChanged(let mgdl, let new, let entered), .keepEnteredDose):
             entry.answers.doseChanged = .keepEntered(mgdl: mgdl, enteredUnits: entered, newUnits: new)
+        case (.confirmation(let confirmation, let units), .goOn):
+            entry.answers.confirmed[confirmation.kind] = .init(confirmation, units: units)
         default:
             return false
         }
@@ -184,7 +186,7 @@ public final class BolusFlow {
     }
 
     public enum Answer: Sendable, Equatable {
-        case useLastKnownInputs, includeStaleReading, carbsOnly, useNewDose, keepEnteredDose
+        case useLastKnownInputs, includeStaleReading, carbsOnly, useNewDose, keepEnteredDose, goOn
     }
 
     /// The reviewed dose, sent. The inputs are read from the pump again first, as the review may have
@@ -278,6 +280,8 @@ public final class BolusFlow {
                 "The pump's latest readings make the calculator's dose \(formatUnits(new))\(reading). You entered \(formatUnits(entered)).",
                 [(.useNewDose, "Use \(formatUnits(new))"), (.keepEnteredDose, "Keep \(formatUnits(entered))")]
             )
+        case .confirmation(let confirmation, let units):
+            return (confirmation.title, confirmation.message, [(.goOn, "Deliver \(formatUnits(units))")])
         }
     }
 
@@ -320,11 +324,10 @@ public final class BolusFlow {
     /// A notice's kind, most important first.
     static func rank(_ n: DoseNotice) -> Int {
         switch n {
-        case .moreThanReservoir: return 0
-        case .stacking: return 1
-        case .atPumpMax: return 2
-        case .differsFromCalculator: return 3
-        case .cartridgeStateUnknown: return 4
+        case .stacking: return 0
+        case .atPumpMax: return 1
+        case .differsFromCalculator: return 2
+        case .cartridgeStateUnknown: return 3
         }
     }
 
@@ -332,7 +335,7 @@ public final class BolusFlow {
         switch notice {
         case .cartridgeStateUnknown:
             return "The cartridge state wasn't read. If no cartridge is loaded, the pump refuses the bolus."
-        case .stacking(let d), .atPumpMax(let d), .moreThanReservoir(let d):
+        case .stacking(let d), .atPumpMax(let d):
             return [d.message, d.detail].compactMap { $0 }.joined(separator: " ").nilIfEmpty
         case .differsFromCalculator(let delivered, let suggested):
             return "This is \(formatUnits(delivered)); the calculator suggests \(formatUnits(suggested))."

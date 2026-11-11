@@ -92,7 +92,9 @@ enum PumpReadings {
             let settings = BolusCalculatorSettings(
                 carbRatio: m.carbRatioGramsPerUnit, correctionFactor: m.isf, targetMgdl: m.targetBg,
                 maxBolusUnits: Double(m.maxBolusAmount) / 1000, insulinOnBoardUnits: Double(m.iob) / 1000,
-                glucoseAutoFillAllowed: m.isAutopopAllowed)
+                glucoseAutoFillAllowed: m.isAutopopAllowed, insulinRemainingUnits: Double(m.cartridgeRemainingInsulin),
+                bolusedLastHourUnits: Double(m.maxBolusHourlyTotal) / 1000,
+                tooManyBoluses: .init(hourlyLimit: m.maxBolusEventsExceeded, insulinOnBoard: m.maxIobEventsExceeded))
             state.bolusCalculator = observed(settings)
             return [.bolusCalculator]
 

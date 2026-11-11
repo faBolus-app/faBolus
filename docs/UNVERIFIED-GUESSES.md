@@ -340,3 +340,18 @@ that worked.
 - **Risk:** fails closed. A pump that cleared it in normal use would turn off every CGM correction.
 - **Verify:** on P1 and P2, run the bench's `snapshot` read with a fresh reading, a stale one, and none,
   and note byte 37 with each.
+
+## 27. The calculator snapshot's insulin left, last hour and too-many-boluses bytes
+
+- **The guess:** bytes 7-8 of the calculator snapshot are the insulin left in the cartridge in whole units;
+  bytes 20-23 are the insulin bolused in the last hour in milliunits; bytes 24 and 25 are set when the pump
+  says too many boluses were asked for (the hourly limit and IOB). The layout is pumpX2's. The meanings
+  are how Tandem's apps use them; both recorded snapshots read 120 U left, 2.81 U and 0 U in the last hour,
+  and neither flag set. faBolus asks the user to confirm from them, on the phone and on a remote.
+- **Where:** `Packages/faBolusCore/Sources/faBolusCore/DoseConfirmation.swift` (`confirmations`);
+  `Packages/PumpSession/Sources/PumpSession/PumpReadings.swift`.
+- **Risk:** a wrong reading asks too often or not at all; no confirmation changes or blocks a dose, and
+  the pump's own limits still apply.
+- **Verify:** on P1 and P2 with saline, run the bench's `snapshot` read before and after two boluses a
+  few minutes apart, and note bytes 7-8 against the pump's insulin screen, bytes 20-23 against the
+  boluses given, and bytes 24 and 25 when the pump refuses a bolus for its hourly limit.

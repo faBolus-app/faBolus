@@ -110,13 +110,19 @@ public struct BolusRequestPayload: Sendable, Hashable {
     public var glucoseMgdl: Int?
     /// The user chose, for this attempt, to correct from a stale reading.
     public var includeStaleGlucose: Bool
+    /// The confirmations the user went on from, from an earlier request's refused outcome. Absent is none.
+    public var confirmed: [ConfirmationToken]
 
-    public init(requestId: String, sentAt: Int, amount: Amount, glucoseMgdl: Int?, includeStaleGlucose: Bool) {
+    public init(
+        requestId: String, sentAt: Int, amount: Amount, glucoseMgdl: Int?, includeStaleGlucose: Bool,
+        confirmed: [ConfirmationToken] = []
+    ) {
         self.requestId = requestId
         self.sentAt = sentAt
         self.amount = amount
         self.glucoseMgdl = glucoseMgdl
         self.includeStaleGlucose = includeStaleGlucose
+        self.confirmed = confirmed
     }
 
     var wire: WireValue {
@@ -134,6 +140,7 @@ public struct BolusRequestPayload: Sendable, Hashable {
         }
         w.set("glucoseMgdl", glucoseMgdl)
         w.set("includeStaleGlucose", includeStaleGlucose)
+        if !confirmed.isEmpty { w.set("confirmed", strings: confirmed.map(\.rawValue)) }
         return w.value
     }
 
@@ -151,6 +158,7 @@ public struct BolusRequestPayload: Sendable, Hashable {
         }
         glucoseMgdl = try r.optionalInt("glucoseMgdl", in: glucoseRange)
         includeStaleGlucose = try r.bool("includeStaleGlucose")
+        confirmed = try r.optionalTokenArray("confirmed", as: ConfirmationToken.self)
     }
 }
 
@@ -163,17 +171,21 @@ public struct BolusOutcomePayload: Sendable, Hashable {
     public var deliveredMilliunits: Int?
     /// Why, for a refusal or failure; shown to the user.
     public var message: String?
+    /// For a request not delivered (`failed` or `refused`): what the user may confirm, on the remote, to send
+    /// the dose again as a new request naming them. Absent is none.
+    public var confirm: [ConfirmationToken]
     public var sentAt: Int
 
     public init(
         requestId: String, outcome: OutcomeToken, requestedMilliunits: Int?, deliveredMilliunits: Int?,
-        message: String?, sentAt: Int
+        message: String?, confirm: [ConfirmationToken] = [], sentAt: Int
     ) {
         self.requestId = requestId
         self.outcome = outcome
         self.requestedMilliunits = requestedMilliunits
         self.deliveredMilliunits = deliveredMilliunits
         self.message = message
+        self.confirm = confirm
         self.sentAt = sentAt
     }
 
@@ -184,6 +196,7 @@ public struct BolusOutcomePayload: Sendable, Hashable {
         w.set("requestedMU", requestedMilliunits)
         w.set("deliveredMU", deliveredMilliunits)
         w.set("message", message)
+        if !confirm.isEmpty { w.set("confirm", strings: confirm.map(\.rawValue)) }
         w.set("sentAt", sentAt)
         return w.value
     }
@@ -195,6 +208,11 @@ public struct BolusOutcomePayload: Sendable, Hashable {
         requestedMilliunits = try r.optionalInt("requestedMU", in: milliunitRange)
         deliveredMilliunits = try r.optionalInt("deliveredMU", in: milliunitRange)
         message = try r.optionalString("message", maxLength: WireLimits.maxTextLength)
+        confirm = try r.optionalTokenArray("confirm", as: ConfirmationToken.self)
+        // Only a request that wasn't delivered can be confirmed and sent again.
+        guard confirm.isEmpty || outcome == .failed || outcome == .refused else {
+            throw .outOfRange(field: "payload.confirm")
+        }
         sentAt = try r.int("sentAt", in: epochRange)
     }
 }

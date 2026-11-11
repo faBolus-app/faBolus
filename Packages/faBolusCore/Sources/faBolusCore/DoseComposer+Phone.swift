@@ -67,14 +67,28 @@ public struct PhoneDoseAnswers: Sendable, Equatable {
     public var calculatorOverride: CalculatorOverride?
     public var staleGlucose: StaleGlucose?
     public var doseChanged: DoseChanged?
+    /// A confirmation the user went on from: what it said and the dose it showed. One whose figures have
+    /// moved since (less insulin left, a larger last-hour total) is asked again.
+    public struct Confirmed: Sendable, Equatable {
+        public var confirmation: DoseConfirmation
+        public var units: Double
+        public init(_ confirmation: DoseConfirmation, units: Double) {
+            self.confirmation = confirmation
+            self.units = units
+        }
+    }
+
+    /// The confirmations the user went on from, by kind.
+    public var confirmed: [DoseConfirmation.Kind: Confirmed]
 
     public init(
         calculatorOverride: CalculatorOverride? = nil, staleGlucose: StaleGlucose? = nil,
-        doseChanged: DoseChanged? = nil
+        doseChanged: DoseChanged? = nil, confirmed: [DoseConfirmation.Kind: Confirmed] = [:]
     ) {
         self.calculatorOverride = calculatorOverride
         self.staleGlucose = staleGlucose
         self.doseChanged = doseChanged
+        self.confirmed = confirmed
     }
 }
 
@@ -93,6 +107,8 @@ public enum PhoneDosePrompt: Sendable, Equatable {
     /// The calculator's dose for `mgdl` now differs from the one the screen showed: the reading moved, or
     /// the pump's inputs did. Offer the new dose, the entered one, or cancel.
     case doseChanged(mgdl: Int?, newUnits: Double, enteredUnits: Double)
+    /// Something about the pump to confirm before `units` goes. Go on, or cancel.
+    case confirmation(DoseConfirmation, units: Double)
 }
 
 public enum PhoneDoseDecision: Sendable, Equatable {
@@ -247,6 +263,12 @@ extension DoseComposer {
         _ entry: PhoneDoseEntry, units: Double, calculator: CalculatorBasis?, context: DoseContext
     ) -> PhoneDoseDecision {
         if let refusal = bounds(units, context: context) { return .refused(refusal) }
+        // Asked once the dose is final, so an answer names the dose that goes.
+        if let unconfirmed = confirmations(units: units, context: context).first(where: {
+            entry.answers.confirmed[$0.kind] != .init($0, units: units)
+        }) {
+            return .confirm(.confirmation(unconfirmed, units: units))
+        }
         var notices = pumpNotices(units: units, context: context)
         let correction = calculator?.correction
         if let calculator, let settings = calculator.inputs.settings?.value {

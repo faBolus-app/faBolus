@@ -143,6 +143,19 @@ struct FieldReader {
         return out
     }
 
+    /// Tokens, each once; absent is none.
+    func optionalTokenArray<T: RawRepresentable & Hashable>(_ key: String, as: T.Type) throws(DecodeError) -> [T]
+    where T.RawValue == String {
+        guard has(key) else { return [] }
+        var out: [T] = []
+        for (index, s) in try stringArray(key, maxCount: WireLimits.maxListCount).enumerated() {
+            guard let value = T(rawValue: s) else { throw .unknownToken(field: "\(name(key))[\(index)]", token: s) }
+            guard !out.contains(value) else { throw .outOfRange(field: "\(name(key))[\(index)]") }
+            out.append(value)
+        }
+        return out
+    }
+
     func stringArray(_ key: String, maxCount: Int) throws(DecodeError) -> [String] {
         var out: [String] = []
         for (index, element) in try array(key, maxCount: maxCount).enumerated() {

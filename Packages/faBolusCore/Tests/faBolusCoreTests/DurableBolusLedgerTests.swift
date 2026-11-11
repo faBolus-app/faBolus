@@ -72,6 +72,20 @@ final class DurableBolusLedgerTests {
             try await restarted.begin(Self.request("garmin", "r2"), now: Self.t0.addingTimeInterval(31)) == .proceed)
     }
 
+    /// What the remote may confirm is kept with the refusal, so its resend after a restart is told it again.
+    /// A refusal saved without any reads as none.
+    @Test func aRefusalKeepsWhatToConfirmAcrossARestart() async throws {
+        let url = temporaryURL()
+        let first = DurableBolusLedger(store: RemoteBolusLedgerStore(url: url), now: Self.t0)
+        try await first.recordRemoteRefusal(
+            Self.key("garmin", "r1"), reason: "Confirm.", confirmations: [.lowInsulin, .tooManyBoluses], now: Self.t0)
+        try await first.recordRemoteRefusal(Self.key("garmin", "r2"), reason: "No.", now: Self.t0)
+        let restarted = DurableBolusLedger(store: RemoteBolusLedgerStore(url: url), now: Self.t0.addingTimeInterval(30))
+        let toConfirm = try #require(await restarted.ledger.remoteRefusal(Self.key("garmin", "r1")))
+        #expect(toConfirm.confirmations == [.lowInsulin, .tooManyBoluses])
+        #expect(try #require(await restarted.ledger.remoteRefusal(Self.key("garmin", "r2"))).confirmations == nil)
+    }
+
     /// A refusal that couldn't be saved doesn't block either: it's kept, and goes with the next save.
     @Test func aRefusalThatCouldntBeSavedDoesntBlock() async throws {
         let url = temporaryURL()

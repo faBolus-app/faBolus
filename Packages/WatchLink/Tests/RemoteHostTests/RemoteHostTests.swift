@@ -64,6 +64,44 @@ import faBolusCore
         #expect(rig.transport.outcomes.filter { $0.outcome == .failed }.count == 3)
     }
 
+    /// A dose to confirm: the watch is told what, it isn't announced on the phone as a refusal, and a resend
+    /// or a poll gets the same list. The request the user sends from it carries what they confirmed.
+    @Test func aDoseToConfirmNamesWhatAndTheNewRequestCarriesIt() async {
+        let rig = HostRig()
+        let needed: [DoseConfirmation] = [
+            .tooManyBoluses(.init(hourlyLimit: true, insulinOnBoard: false)),
+            .lowInsulin(doseUnits: 2, remainingUnits: 1)
+        ]
+        await rig.services.set(decision: .refused(.needsConfirmation(needed, units: 2)))
+        await rig.start()
+        await rig.receive(bolus("c1"))
+        let answer = rig.transport.outcomes.last
+        #expect(answer?.outcome == .failed)
+        #expect(answer?.confirm == [.tooManyBoluses, .lowInsulin])
+        #expect(answer?.message == DoseRefusal.needsConfirmation(needed, units: 2).userMessage)
+        #expect(await rig.services.refusals.isEmpty)
+        await rig.receive(bolus("c1"))
+        #expect(await rig.services.composed.count == 1)
+        #expect(rig.transport.outcomes.last?.confirm == [.tooManyBoluses, .lowInsulin])
+        await rig.receive(
+            .poll(
+                .init(
+                    configRevision: nil, awaitingRequestId: "c1", wantsHistory: false, freshGlucose: false,
+                    appVersion: "t")))
+        #expect(rig.transport.outcomes.last?.confirm == [.tooManyBoluses, .lowInsulin])
+
+        await rig.services.set(
+            decision: .deliver(composed("c2")),
+            delivery: .started(.init(peerId: "garmin", requestId: "c2"), .delivering))
+        await rig.receive(
+            .bolus(
+                BolusRequestPayload(
+                    requestId: "c2", sentAt: GoldenFixtures.now - 5, amount: .units(milliunits: 2000),
+                    glucoseMgdl: nil, includeStaleGlucose: false, confirmed: [.lowInsulin, .tooManyBoluses])))
+        #expect(await rig.services.composed.last?.confirmed == [.tooManyBoluses, .lowInsulin])
+        #expect(rig.transport.outcomes.last?.outcome == .delivering)
+    }
+
     @Test func aDeliveryThatCantStartIsAFailure() async {
         let rig = HostRig()
         await rig.services.set(

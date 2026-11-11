@@ -98,7 +98,7 @@ button; the status's `bolus.canBolus` says the same at once.
 ### `bolusOutcome`
 
 `requestId`, `outcome`, `requestedMU`, `deliveredMU` (when the pump has said), `message` (why, for a
-refusal or failure), `sentAt`. `outcome` moves only forward:
+refusal or failure), `confirm` (see below), `sentAt`. `outcome` moves only forward:
 
 ```text
 received ─▶ accepted ─▶ delivering ─▶ delivered / stopped
@@ -119,7 +119,7 @@ arrive. A remote stops waiting once the request would be refused as too old.
 | Kind | Payload |
 |---|---|
 | `poll` | `configRevision` (absent when the remote has none: first launch or wiped storage), `awaiting` (the request it's waiting on), `history`, `freshGlucose`, `appVersion` |
-| `bolus` | `requestId`, `sentAt` (when the user confirmed, by the remote's clock), `mode` (`units` with `mU`, or `carbs` with `carbsG` and `estimateMU`), `glucoseMgdl` (the reading the estimate used), `includeStaleGlucose` |
+| `bolus` | `requestId`, `sentAt` (when the user confirmed, by the remote's clock), `mode` (`units` with `mU`, or `carbs` with `carbsG` and `estimateMU`), `glucoseMgdl` (the reading the estimate used), `includeStaleGlucose`, `confirmed` (absent when none) |
 | `cancel` | `requestId`, `bolusRequestId` (when the remote started the bolus) |
 | `dismiss` | `requestId`, `alertId` |
 
@@ -127,3 +127,21 @@ A bolus request may be sent again with the same `requestId` and `sentAt` until a
 phone answers a repeat from its ledger and never delivers a request twice. It refuses a request sent more
 than two minutes ago. The phone recomputes a `carbs` dose from its own inputs and refuses one that differs
 from `estimateMU` by more than 0.10 U, or that corrects from a reading outside 40–400 mg/dL.
+
+### Confirming on the remote
+
+Before a dose goes, the phone may need the user to confirm something about the pump, as Tandem's apps ask:
+
+| Token | When |
+|---|---|
+| `tooManyBoluses` | the pump says too many boluses were asked for in a short time, so it may not track IOB or its hourly limit |
+| `maxHourlyBolus` | the dose and the last hour's boluses come to more than 1.5 × the pump's max bolus (in whole units) |
+| `lowInsulin` | the dose is more than the insulin left, or under 2 U is left |
+
+A request without them is answered `failed`, with a `message` saying what to confirm and `confirm` naming
+every one this dose needs. The remote shows the message and offers to deliver the dose (the message
+doesn't repeat it); if the user does, it sends
+the same dose as a new request (a new `requestId` and `sentAt`) with `confirmed` naming them. The phone
+composes that request afresh and delivers it only when `confirmed` covers what the dose needs then;
+otherwise it answers with `confirm` again. Each token appears at most once, and `confirm` only on a
+request that wasn't delivered (`failed` or `refused`).
