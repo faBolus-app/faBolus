@@ -53,6 +53,8 @@ private let key = RemoteBolusLedger.Key(peerId: "phone", requestId: "phone-1")
         #expect(PairingSecrets(store: rig.secrets).credentials(for: .jpake) == nil)
         #expect(await rig.session.state.link != .connected)
         #expect(!rig.pump.arrivals(of: Jpake4KeyConfirmationRequest.self).isEmpty)
+        // Reported as the pump refusing the code, so the code isn't tried again.
+        #expect(await rig.events.contains(.linkFailed(.pairingRejected)))
     }
 
     /// The next launch reconnects with only the stored secret (rounds 3 and 4), and its new key signs a
