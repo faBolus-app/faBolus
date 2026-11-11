@@ -44,10 +44,27 @@ import Testing
         #expect(compose(connected, autoCorrection: Date(timeIntervalSince1970: 0)).lastAutoCorrectionAt == nil)
     }
 
+    /// A pump reading the pump flags goes with why, so the watch doses carbs only from it as the phone does;
+    /// one it doesn't flag goes without.
+    @Test func aFlaggedReadingSaysWhy() {
+        var p = connected
+        p.glucose = observed(PumpGlucose(mgdl: 142, trend: .rising), age: 80)
+        p.cgmDisplay = observed(PumpCGMDisplay(state: .noError, checkBG: true), age: 5)
+        #expect(compose(p).glucose?.value.caution == .checkBG)
+        p.cgmDisplay = observed(PumpCGMDisplay(state: .warmingUp, checkBG: false), age: 5)
+        #expect(compose(p).glucose?.value.caution == .sensor)
+        p.cgmDisplay = nil
+        #expect(compose(p).glucose?.value.caution == .notRead)
+        p.cgmDisplay = observed(PumpCGMDisplay(state: .noError, checkBG: false), age: 5)
+        #expect(compose(p).glucose?.value.caution == nil)
+    }
+
     /// Each value keeps the time it was measured; the watch ages it itself.
     @Test func valuesCarryTheirMeasurementTimes() {
         var p = connected
+        // From the backup source, as the arbiter labels a failover reading.
         p.glucose = observed(PumpGlucose(mgdl: 142, trend: .rising), age: 80)
+        p.glucose?.source = .glucoseSource(id: "dexcom-share")
         p.insulinOnBoard = observed(1.25, age: 20)
         p.bolusCalculator = observed(
             BolusCalculatorSettings(carbRatio: 7.5, correctionFactor: 40, targetMgdl: 110, maxBolusUnits: 25), age: 20)

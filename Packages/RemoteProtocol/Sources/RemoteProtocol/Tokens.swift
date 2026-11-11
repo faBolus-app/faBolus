@@ -13,6 +13,21 @@ public enum TrendToken: String, Sendable, Hashable, CaseIterable {
     case flat, up, upUp = "upup", rising = "up45", down, downDown = "downdown", falling = "down45"
 }
 
+/// Why the pump says its CGM reading shouldn't correct a dose by itself: the remote doses carbs only from
+/// it, as the phone does. Absent: it may correct one.
+public enum GlucoseCautionToken: String, Sendable, Hashable, CaseIterable {
+    /// The pump's reading is LOW or HIGH, outside what the CGM measures.
+    case low, high
+    /// The pump shows a sensor state (warming up, replace sensor ...) in place of the number.
+    case sensor
+    /// The CGM says to check BG.
+    case checkBG = "checkbg"
+    /// The pump's calculator doesn't allow its reading to fill in a correction.
+    case autoFillOff = "autofilloff"
+    /// The pump's CGM state hasn't been read, so it can't be checked yet.
+    case notRead = "notread"
+}
+
 public enum SeverityToken: String, Sendable, Hashable, CaseIterable {
     case info, warning, critical
 }

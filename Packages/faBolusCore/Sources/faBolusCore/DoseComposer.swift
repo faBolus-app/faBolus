@@ -170,10 +170,16 @@ public struct DoseRecommendation: Sendable, Equatable {
     public var inputs: CalculatorInputs
     /// The glucose the recommendation was asked for.
     public var glucoseMgdl: Int?
+    /// The carbs it was asked for, grams.
+    public var carbsGrams: Double = 0
 
     /// A number may be shown only when it comes from real pump readings. Before the pump has reported its
     /// settings and IOB there is nothing to size a dose from, so the screen waits instead.
     public var displaysNumericDose: Bool { calculation.map { !$0.sanityFailed } ?? false }
+
+    /// The pump's settings have been read but its calculator can't use them (no correction factor, or a
+    /// target outside 40–400 mg/dL, with a glucose to correct from), so no dose is sized.
+    public var settingsUnusable: Bool { calculation?.sanityFailed == true }
 
     /// The calculator ignores a glucose outside 20–600 mg/dL, so the number above has no correction for
     /// it. A typed one is refused at delivery (`DoseRefusal.invalidGlucose`); the screen says so rather
@@ -189,7 +195,8 @@ extension DoseComposer {
         let carbs = carbsGrams.isFinite ? max(0, carbsGrams) : 0
         let calculation = inputs.calculate(carbsGrams: carbs, glucoseMgdl: glucoseMgdl)
         let units = calculation.map { $0.sanityFailed ? 0 : BolusVolume.roundedDown($0.totalUnits) } ?? 0
-        return DoseRecommendation(units: units, calculation: calculation, inputs: inputs, glucoseMgdl: glucoseMgdl)
+        return DoseRecommendation(
+            units: units, calculation: calculation, inputs: inputs, glucoseMgdl: glucoseMgdl, carbsGrams: carbs)
     }
 }
 
@@ -212,6 +219,11 @@ public struct ComposedDose: Sendable, Equatable {
     /// The correction used a stale reading the user chose to include.
     public let usedIncludedStaleGlucose: Bool
     public let notices: [DoseNotice]
+    /// The carbs' share of the dose when the dose is exactly the calculator's: the dose less the
+    /// calculator's correction, so with it the review shows the split, the correction being the rest of the
+    /// dose (less than nothing when a low or below-target glucose reduced it) and the rounding down in the
+    /// food's share. `nil` otherwise. Shown only.
+    public var calculatorFoodUnits: Double? = nil
 
     public var units: Double { request.totalUnits }
 }
@@ -226,6 +238,8 @@ public enum DoseNotice: Sendable, Equatable {
     case atPumpMax(StackingGuard.Disclosure)
     /// A carb dose more than 0.10 U from the calculator's suggestion. The carbs are still recorded.
     case differsFromCalculator(deliveredUnits: Double, suggestedUnits: Double)
+    /// Why the calculator's dose is what it is: a low glucose, a reduction, or IOB.
+    case calculator(CalculatorMessage)
 }
 
 /// Why a dose was refused. Nothing was recorded or sent.
@@ -377,9 +391,18 @@ extension DoseComposer {
             thresholds: context.freshness, now: context.now, cgmStateReadSince: context.inputsRequestedAt)
     }
 
-    static func includableStaleReading(_ context: DoseContext) -> Observed<PumpGlucose>? {
+    /// A stale reading the user may choose to include: the phone asks about one at Confirm. For the screen,
+    /// a CGM state not read yet doesn't rule one out, as Confirm reads it.
+    public static func mayIncludeStaleReading(_ context: DoseContext) -> Bool {
+        includableStaleReading(context, allowingUnreadCGMState: true) != nil
+    }
+
+    static func includableStaleReading(_ context: DoseContext, allowingUnreadCGMState: Bool = false)
+        -> Observed<PumpGlucose>?
+    {
         // A reading the pump cautions against is never offered, however old.
-        guard glucoseCaution(context) == nil else { return nil }
+        let caution = glucoseCaution(context)
+        guard caution == nil || (allowingUnreadCGMState && caution == .cgmStateNotRead) else { return nil }
         guard let reading = context.pump.glucose, reading.hasValidTime,
             CalculatorGlucose.isValid(mgdl: reading.value.mgdl),
             StaleBolusPrompt.mayOfferInclude(

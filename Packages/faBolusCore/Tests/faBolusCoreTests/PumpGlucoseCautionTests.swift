@@ -41,12 +41,12 @@ import Testing
         let (pump, caution) = Self.cautions[index]
         let context = F.context(pump: pump)
         #expect(
-            DoseComposer.composePhone(F.phone(F.cgmDose()), context: context).prompt
+            DoseComposer.composePhoneCorrecting(F.phone(F.cgmDose()), context: context).prompt
                 == .pumpGlucoseCaution(caution, carbsOnlyUnits: 6))
         // Carbs only, answered for that dose: no correction.
         let answers = PhoneDoseAnswers(staleGlucose: .carbsOnly(units: 6))
         let dose = try #require(
-            DoseComposer.composePhone(F.phone(F.cgmDose(), answers: answers), context: context).dose)
+            DoseComposer.composePhoneCorrecting(F.phone(F.cgmDose(), answers: answers), context: context).dose)
         #expect(dose.units == 6)
         #expect(dose.correctionGlucoseMgdl == nil)
         // The screen doesn't offer the reading either. It needs a CGM state, but not one read for an
@@ -58,13 +58,37 @@ import Testing
         }
     }
 
+    /// When the screen showed no reading (it said why, and carbs only), the carbs-only dose goes with nothing
+    /// to ask, as for a stale reading; a reading the screen corrected from is still asked about, above.
+    @Test(arguments: cautions.indices)
+    func aCautionTheScreenShowedGoesCarbsOnly(index: Int) throws {
+        let context = F.context(pump: Self.cautions[index].0)
+        let dose = try #require(
+            DoseComposer.composePhoneCorrecting(
+                F.phone(F.cgmDose(shown: nil, recommended: 6, entered: 6)), context: context
+            ).dose)
+        #expect(dose.units == 6)
+        #expect(dose.correctionGlucoseMgdl == nil)
+    }
+
+    /// The screen doesn't rule out including a stale reading before the CGM state has arrived: Confirm
+    /// reads it. Any other caution does.
+    @Test func theScreenWaitsForTheCGMStateBeforeRulingOutAStaleReading() {
+        var unread = F.pump(glucose: 180, glucoseAge: 10 * 60)
+        unread.cgmDisplay = nil
+        #expect(DoseComposer.mayIncludeStaleReading(F.context(pump: unread)))
+        var flagged = F.pump(glucose: 180, glucoseAge: 10 * 60)
+        flagged.cgmDisplay = Self.display(checkBG: true)
+        #expect(!DoseComposer.mayIncludeStaleReading(F.context(pump: flagged)))
+    }
+
     /// A typed BG still corrects: the caution is on the CGM reading only.
     @Test(arguments: cautions.indices)
     func aTypedBGStillCorrects(index: Int) throws {
         let context = F.context(pump: Self.cautions[index].0)
         let typed = PhoneDoseEntry.Amount.calculator(
             carbsGrams: 60, glucose: .typed(mgdl: 180), recommendedUnits: 7.25, enteredUnits: 7.25)
-        let dose = try #require(DoseComposer.composePhone(F.phone(typed), context: context).dose)
+        let dose = try #require(DoseComposer.composePhoneCorrecting(F.phone(typed), context: context).dose)
         #expect(dose.units == 7.25)
         #expect(dose.correctionGlucoseMgdl == 180)
     }
@@ -91,7 +115,7 @@ import Testing
         var pump = F.pump(glucose: 180, glucoseAge: 10 * 60)
         pump.cgmDisplay = Self.display(checkBG: true)
         #expect(
-            DoseComposer.composePhone(F.phone(F.cgmDose()), context: F.context(pump: pump)).prompt
+            DoseComposer.composePhoneCorrecting(F.phone(F.cgmDose()), context: F.context(pump: pump)).prompt
                 == .pumpGlucoseCaution(.checkBG, carbsOnlyUnits: 6))
     }
 
@@ -101,7 +125,8 @@ import Testing
     func aReadingThePumpAllowsCorrects(autoFill: Bool?) throws {
         let pump = Self.pump { $0.bolusCalculator?.value.glucoseAutoFillAllowed = autoFill }
         #expect(pump.glucoseCaution(cgmStateReadSince: F.requestedAt) == nil)
-        let dose = try #require(DoseComposer.composePhone(F.phone(F.cgmDose()), context: F.context(pump: pump)).dose)
+        let dose = try #require(
+            DoseComposer.composePhoneCorrecting(F.phone(F.cgmDose()), context: F.context(pump: pump)).dose)
         #expect(dose.units == 7.25)
         #expect(dose.correctionGlucoseMgdl == 180)
     }
@@ -114,7 +139,8 @@ import Testing
         pump.glucose = Observed(
             PumpGlucose(mgdl: 180, trend: nil), measuredAt: at, receivedAt: at, source: .glucoseSource(id: "dexcom"))
         #expect(pump.glucoseCaution() == nil)
-        let dose = try #require(DoseComposer.composePhone(F.phone(F.cgmDose()), context: F.context(pump: pump)).dose)
+        let dose = try #require(
+            DoseComposer.composePhoneCorrecting(F.phone(F.cgmDose()), context: F.context(pump: pump)).dose)
         #expect(dose.correctionGlucoseMgdl == 180)
     }
 }

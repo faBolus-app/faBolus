@@ -57,6 +57,13 @@ public enum GoldenFixtures {
         bolusBlock: .bolusInProgress,
         activeBolus: ActiveBolus(requestedMilliunits: 4000, deliveredMilliunits: 1250, startedAt: now - 30))
 
+    /// The full status, its CGM reading one the pump says not to correct from: the remote doses carbs only.
+    public static let statusGlucoseCaution: StatusPayload = {
+        var s = status
+        s.glucose = Timed(GlucoseReading(mgdl: 142, trend: .rising, backup: false, caution: .checkBG), at: now - 80)
+        return s
+    }()
+
     public static let history = HistoryPayload(
         sentAt: now,
         points: (0..<6).map {
@@ -67,6 +74,7 @@ public enum GoldenFixtures {
         v2("status", .status(status)),
         v2("status-minimal", .status(statusMinimal)),
         v2("status-delivering", .status(statusDelivering)),
+        v2("status-glucose-caution", .status(statusGlucoseCaution)),
         v2("config", .config(config)),
         v2("history", .history(history)),
         v2(
@@ -144,6 +152,14 @@ public enum GoldenFixtures {
                     requestId: "1793534390-13-121520", sentAt: now - 10,
                     amount: .calculator(carbsGrams: 45, estimateMilliunits: 6000), glucoseMgdl: 142,
                     includeStaleGlucose: false, confirmed: [.tooManyBoluses, .lowInsulin]))),
+        // Carbs only: the user declined to correct from the reading named, so the estimate has no correction.
+        v2(
+            "bolus-carbs-no-correction",
+            .bolus(
+                BolusRequestPayload(
+                    requestId: "1793534390-14-121600", sentAt: now - 10,
+                    amount: .calculator(carbsGrams: 45, estimateMilliunits: 6000), glucoseMgdl: 142,
+                    includeStaleGlucose: false, declineCorrection: true))),
         v2("cancel", .cancel(CancelPayload(requestId: "1793534399-11-121000", bolusRequestId: "1793534390-7-118220"))),
         v2("dismiss", .dismiss(DismissPayload(requestId: "1793534395-r3-119001", alertId: "pump.alert.2"))),
         // What the old apps send, so each side can test meeting one.

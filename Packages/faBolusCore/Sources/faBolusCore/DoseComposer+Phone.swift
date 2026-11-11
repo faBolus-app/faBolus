@@ -81,14 +81,30 @@ public struct PhoneDoseAnswers: Sendable, Equatable {
     /// The confirmations the user went on from, by kind.
     public var confirmed: [DoseConfirmation.Kind: Confirmed]
 
+    /// Whether to correct from `mgdl`, at the dose the prompt showed for that choice.
+    public struct Correction: Sendable, Equatable {
+        public var mgdl: Int
+        public var apply: Bool
+        public var units: Double
+        public init(mgdl: Int, apply: Bool, units: Double) {
+            self.mgdl = mgdl
+            self.apply = apply
+            self.units = units
+        }
+    }
+
+    public var correction: Correction?
+
     public init(
         calculatorOverride: CalculatorOverride? = nil, staleGlucose: StaleGlucose? = nil,
-        doseChanged: DoseChanged? = nil, confirmed: [DoseConfirmation.Kind: Confirmed] = [:]
+        doseChanged: DoseChanged? = nil, confirmed: [DoseConfirmation.Kind: Confirmed] = [:],
+        correction: Correction? = nil
     ) {
         self.calculatorOverride = calculatorOverride
         self.staleGlucose = staleGlucose
         self.doseChanged = doseChanged
         self.confirmed = confirmed
+        self.correction = correction
     }
 }
 
@@ -109,6 +125,9 @@ public enum PhoneDosePrompt: Sendable, Equatable {
     case doseChanged(mgdl: Int?, newUnits: Double, enteredUnits: Double)
     /// Something about the pump to confirm before `units` goes. Go on, or cancel.
     case confirmation(DoseConfirmation, units: Double)
+    /// Correct from `mgdl`, above `targetMgdl` (add) or below it (reduce), for `applyUnits`, or bolus for the
+    /// carbs only, `declineUnits`. Asked from 70 mg/dL up when the correction changes the dose.
+    case correction(mgdl: Int, targetMgdl: Int, applyUnits: Double, declineUnits: Double)
 }
 
 public enum PhoneDoseDecision: Sendable, Equatable {
@@ -197,6 +216,29 @@ extension DoseComposer {
             }
         }
 
+        /// Whether to correct from `mgdl`, as Tandem's apps ask: from 70 mg/dL up, when correcting changes the
+        /// dose to another dose and the user hasn't entered one of their own. Under 70 the reduction always applies. `nil`
+        /// when there's nothing to ask; otherwise the question, or the dose the user chose. The question shows
+        /// both doses from the reading and inputs now, so the answer is the dose that goes: there's no second
+        /// question about a dose that moved since the screen. To send the old one, the user cancels and enters
+        /// it as their own.
+        func correctionChoice(_ mgdl: Int) -> PhoneDoseDecision? {
+            guard mgdl >= CalculatorMessage.lowGlucoseMgdl, !differs(entered, recommended),
+                let target = inputs.settings?.value.targetMgdl, let with = units(mgdl), let without = units(nil),
+                abs(with - without) > mismatchSlack,
+                // Both answers must be a dose: with no carbs, or a reduction to nothing, there's no choice.
+                with > 0, without > 0
+            else { return nil }
+            switch entry.answers.correction {
+            case let answer? where answer.mgdl == mgdl && answer.apply && answer.units == with:
+                return finish(with, suggested: with, correction: mgdl)
+            case let answer? where answer.mgdl == mgdl && !answer.apply && answer.units == without:
+                return finish(without, suggested: without, correction: nil)
+            default:
+                return .confirm(.correction(mgdl: mgdl, targetMgdl: target, applyUnits: with, declineUnits: without))
+            }
+        }
+
         /// The entered dose, unless the calculator's dose for `mgdl` has moved from what the screen showed:
         /// then the user chooses. `mustAsk` asks even when it hasn't moved past the limit.
         func checkRecompute(mgdl: Int?, recorded: Int?, mustAsk: Bool) -> PhoneDoseDecision {
@@ -218,7 +260,10 @@ extension DoseComposer {
 
         switch glucose {
         case .none, .typed:
-            return checkRecompute(mgdl: screenGlucose, recorded: screenGlucose, mustAsk: false)
+            if case .typed(let mgdl) = glucose, let choice = correctionChoice(mgdl) { return choice }
+            // A card chosen for a question that's gone is asked about, never sent as entered.
+            return checkRecompute(
+                mgdl: screenGlucose, recorded: screenGlucose, mustAsk: entry.answers.correction != nil)
 
         case .currentReading(let shownMgdl):
             if let reading = glucoseForCorrection(context) {
@@ -226,10 +271,14 @@ extension DoseComposer {
                 guard CalculatorGlucose.isValid(mgdl: reading.mgdl) else {
                     return .refused(.invalidGlucose(mgdl: reading.mgdl))
                 }
+                if let choice = correctionChoice(reading.mgdl) { return choice }
                 // Also ask when the reading itself changed and moved the dose at all, or when the user last
                 // answered a stale-glucose prompt that no longer holds.
                 let moved = units(reading.mgdl).map { abs($0 - recommended) > mismatchSlack } ?? false
-                let mustAsk = (shownMgdl != reading.mgdl && moved) || entry.answers.staleGlucose != nil
+                // And when a card was chosen for a question that's gone: its dose answered that question.
+                let mustAsk =
+                    (shownMgdl != reading.mgdl && moved) || entry.answers.staleGlucose != nil
+                    || entry.answers.correction != nil
                 // The entered dose is recorded with the reading it came from, if that one was usable.
                 let shown = shownMgdl.flatMap { CalculatorGlucose.isValid(mgdl: $0) ? $0 : nil }
                 return checkRecompute(mgdl: reading.mgdl, recorded: shown, mustAsk: mustAsk)
@@ -240,6 +289,11 @@ extension DoseComposer {
             if let caution = glucoseCaution(context) {
                 if case .carbsOnly(let shown) = entry.answers.staleGlucose, shown == carbsOnly {
                     return finish(shown, suggested: shown, correction: nil)
+                }
+                // The screen showed no reading (it said why, and carbs only): nothing to ask, as for a stale
+                // one. A reading the screen corrected from that the pump now flags is still asked about.
+                if shownMgdl == nil {
+                    return checkRecompute(mgdl: nil, recorded: nil, mustAsk: entry.answers.correction != nil)
                 }
                 return .confirm(.pumpGlucoseCaution(caution, carbsOnlyUnits: carbsOnly))
             }
@@ -253,6 +307,13 @@ extension DoseComposer {
                 return finish(shown, suggested: shown, correction: nil)
             default:
                 break
+            }
+            // Nothing to include (no reading, or one too old or outside 20–600) and the screen showed none:
+            // carbs only is all the dose can be, and the screen said so, so there's nothing to ask. The dose
+            // goes as entered, asked about only if the calculator's moved. A reading the screen corrected
+            // from that went stale since is still asked about: the dose changed under the user.
+            if includeUnits == nil, shownMgdl == nil {
+                return checkRecompute(mgdl: nil, recorded: nil, mustAsk: entry.answers.correction != nil)
             }
             return .confirm(
                 .staleGlucose(reading: context.pump.glucose, includeUnits: includeUnits, carbsOnlyUnits: carbsOnly))
@@ -282,18 +343,42 @@ extension DoseComposer {
             if calculator.carbs > 0, calculator.suggested > 0, differs(units, calculator.suggested) {
                 notices.append(.differsFromCalculator(deliveredUnits: units, suggestedUnits: calculator.suggested))
             }
+            // Why the calculator's dose is what it is. Of a dose the user entered or kept instead, only that the
+            // glucose is low: eat carbs and re-test holds whatever the dose, "reduced" doesn't.
+            if let result = calculator.inputs.calculate(carbsGrams: calculator.carbs, glucoseMgdl: correction),
+                let message = CalculatorMessage.of(
+                    result, carbsGrams: calculator.carbs, glucoseMgdl: correction, targetMgdl: settings.targetMgdl,
+                    isfMgdlPerUnit: settings.correctionFactor,
+                    iobUnits: calculator.inputs.calculatorInsulinOnBoardUnits ?? 0)
+            {
+                if !differs(units, calculator.suggested) {
+                    notices.append(.calculator(message))
+                } else if case .lowGlucose = message {
+                    notices.append(.calculator(.lowGlucose(.noCarbs)))
+                }
+            }
         }
         let request = DoseRequest(
             id: entry.id, origin: .phone, shape: .now(units: units), carbsGrams: calculator?.carbs,
             bgMgdl: correction)
+        let carbUnits = calculator.flatMap {
+            $0.inputs.carbPart(of: units, carbsGrams: $0.carbs, glucoseMgdl: correction)
+        }
+        // The carbs' share, for the review's split, only when the dose is the calculator's own: the dose less
+        // the calculator's correction, so the shares add up to the dose with the rounding down in the food's.
+        let foodUnits = calculator.flatMap { c in
+            carbUnits.flatMap { _ in
+                c.inputs.calculate(carbsGrams: c.carbs, glucoseMgdl: correction).map { r in
+                    max(0, units - (r.totalUnits - r.fromCarbs))
+                }
+            }
+        }
         return .deliver(
             ComposedDose(
                 request: request, calculatorIOBUnits: calculator?.inputs.calculatorInsulinOnBoardUnits,
                 correctionGlucoseMgdl: correction,
-                calculatorCarbUnits: calculator.flatMap {
-                    $0.inputs.carbPart(of: units, carbsGrams: $0.carbs, glucoseMgdl: correction)
-                },
+                calculatorCarbUnits: carbUnits,
                 usedIncludedStaleGlucose: calculator?.usedStale ?? false,
-                notices: notices))
+                notices: notices, calculatorFoodUnits: foodUnits))
     }
 }

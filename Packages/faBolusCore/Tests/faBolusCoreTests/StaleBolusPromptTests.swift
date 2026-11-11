@@ -83,4 +83,15 @@ struct StaleBolusPromptTests {
         #expect(included > without)  // (230-110)/40 = +3 U correction is added
         #expect(without == 3.0)  // carbs-only: 30 g / 10 g·U⁻¹
     }
+
+    /// The warning reads as a sentence: the reading "is from" its age, or is said to be timed ahead.
+    @Test func theWarningSaysHowOldTheReadingIs() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        #expect(
+            StaleBolusPrompt.warningMessage(glucoseMgdl: 180, glucoseDate: now.addingTimeInterval(-30 * 60), now: now)
+                .hasPrefix("Your CGM reading (180 mg/dL) is from 30 min ago and was left out"))
+        #expect(
+            StaleBolusPrompt.warningMessage(glucoseMgdl: 180, glucoseDate: now.addingTimeInterval(3600), now: now)
+                .contains("is timed ahead of this phone's clock"))
+    }
 }
