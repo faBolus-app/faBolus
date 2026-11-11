@@ -87,6 +87,9 @@ public enum PhoneDosePrompt: Sendable, Equatable {
     /// There's no fresh CGM reading. Offer to include `reading` when `includeUnits` isn't `nil` (it's stale
     /// but no older than the includable limit), carbs only, or cancel.
     case staleGlucose(reading: Observed<PumpGlucose>?, includeUnits: Double?, carbsOnlyUnits: Double)
+    /// The pump says its CGM reading can't correct this dose by itself. Offer carbs only, or cancel (to
+    /// type a BG).
+    case pumpGlucoseCaution(PumpGlucoseCaution, carbsOnlyUnits: Double)
     /// The calculator's dose for `mgdl` now differs from the one the screen showed: the reading moved, or
     /// the pump's inputs did. Offer the new dose, the entered one, or cancel.
     case doseChanged(mgdl: Int?, newUnits: Double, enteredUnits: Double)
@@ -202,7 +205,7 @@ extension DoseComposer {
             return checkRecompute(mgdl: screenGlucose, recorded: screenGlucose, mustAsk: false)
 
         case .currentReading(let shownMgdl):
-            if let reading = context.pump.glucoseIfFresh(thresholds: context.freshness, now: context.now) {
+            if let reading = glucoseForCorrection(context) {
                 // The pump's own calculator gives no dose for a LOW or HIGH reading.
                 guard GlucosePlausibility.isPlausible(mgdl: reading.mgdl) else {
                     return .refused(.implausibleGlucose(mgdl: reading.mgdl))
@@ -217,6 +220,13 @@ extension DoseComposer {
             }
 
             guard let carbsOnly = units(nil) else { return .refused(.pumpSettingsUnusable) }
+            // The pump says its reading can't correct the dose: carbs only, or cancel and type a BG.
+            if let caution = glucoseCaution(context) {
+                if case .carbsOnly(let shown) = entry.answers.staleGlucose, shown == carbsOnly {
+                    return finish(shown, suggested: shown, correction: nil)
+                }
+                return .confirm(.pumpGlucoseCaution(caution, carbsOnlyUnits: carbsOnly))
+            }
             let includable = includableStaleReading(context)
             let includeUnits = includable.flatMap { units($0.value.mgdl) }
             switch entry.answers.staleGlucose {

@@ -22,10 +22,59 @@ public struct PumpGlucose: Sendable, Hashable, Codable {
     public var mgdl: Int
     /// The trend the source reported, or `nil` when it reported none. Never inferred.
     public var trend: GlucoseTrend?
-    public init(mgdl: Int, trend: GlucoseTrend?) {
+    /// The pump marked the reading LOW or HIGH: the sensor is beyond its range, so the number is only its
+    /// edge, not the glucose. `nil` for a reading in range.
+    public var outOfRange: GlucoseOutOfRange?
+    public init(mgdl: Int, trend: GlucoseTrend?, outOfRange: GlucoseOutOfRange? = nil) {
         self.mgdl = mgdl
         self.trend = trend
+        self.outOfRange = outOfRange
     }
+}
+
+public enum GlucoseOutOfRange: String, Sendable, Hashable, Codable {
+    case low, high
+}
+
+/// The CGM state the pump's home screen shows. Only `noError` shows the reading; the others replace it.
+public enum PumpCGMState: Sendable, Hashable, Codable {
+    case noError
+    case warmingUp, calibrate, calibrationError
+    case replaceSensor, sensorFailed, replaceTransmitter, restartSensor
+    /// The CGM is out of range of the pump.
+    case outOfRange
+    /// No reading to show (the pump's "---").
+    case noReading
+    /// The sensor is below or above the range it can measure.
+    case low, high
+    /// An icon faBolus doesn't know, by its id.
+    case unknown(Int)
+}
+
+/// What the pump's home screen shows for its CGM besides the number.
+public struct PumpCGMDisplay: Sendable, Hashable, Codable {
+    public var state: PumpCGMState
+    /// The trend icon is a Libre Check BG icon: the reading may not be accurate.
+    public var checkBG: Bool
+    public init(state: PumpCGMState, checkBG: Bool) {
+        self.state = state
+        self.checkBG = checkBG
+    }
+}
+
+/// Why the pump says its own CGM reading shouldn't correct a dose by itself. The dose can still be for
+/// carbs only, or correct from a BG the user types.
+public enum PumpGlucoseCaution: Sendable, Hashable {
+    /// The reading is LOW or HIGH.
+    case outOfRange(GlucoseOutOfRange)
+    /// The pump shows a sensor state in place of the number.
+    case sensorState(PumpCGMState)
+    /// A Libre's Check BG icon.
+    case checkBG
+    /// The pump's calculator doesn't allow its reading to fill in a correction.
+    case autoFillOff
+    /// The pump's CGM state wasn't read for this dose, so it can't be checked.
+    case cgmStateNotRead
 }
 
 public struct PumpBattery: Sendable, Hashable, Codable {
@@ -68,16 +117,20 @@ public struct BolusCalculatorSettings: Sendable, Hashable, Codable {
     /// The IOB the calculator reply itself reports, units, when it reported one. The dose subtracts the
     /// separate IOB reading; this one only checks it, because right after a bolus one of the two can lag.
     public var insulinOnBoardUnits: Double?
+    /// Whether the pump lets its CGM reading fill in a correction, when it said. `false` turns off every
+    /// automatic correction from the pump's reading.
+    public var glucoseAutoFillAllowed: Bool?
 
     public init(
         carbRatio: Double, correctionFactor: Int, targetMgdl: Int, maxBolusUnits: Double,
-        insulinOnBoardUnits: Double? = nil
+        insulinOnBoardUnits: Double? = nil, glucoseAutoFillAllowed: Bool? = nil
     ) {
         self.carbRatio = carbRatio
         self.correctionFactor = correctionFactor
         self.targetMgdl = targetMgdl
         self.maxBolusUnits = maxBolusUnits
         self.insulinOnBoardUnits = insulinOnBoardUnits
+        self.glucoseAutoFillAllowed = glucoseAutoFillAllowed
     }
 
     /// A carb ratio, correction factor or target of zero (or less) is impossible, so such a set isn't a
@@ -141,6 +194,8 @@ public struct PumpState: Sendable, Hashable, Codable {
     public var apiVersion: Observed<PumpAPIVersion>?
 
     public var glucose: Observed<PumpGlucose>?
+    /// The pump's CGM state from its home screen, read with the glucose.
+    public var cgmDisplay: Observed<PumpCGMDisplay>?
     /// Insulin on board, units.
     public var insulinOnBoard: Observed<Double>?
     /// Units left in the cartridge. `0` is a real reading: an empty cartridge.
@@ -168,7 +223,7 @@ public struct PumpState: Sendable, Hashable, Codable {
     public enum Reading: String, Sendable, Hashable, Codable, CaseIterable {
         case apiVersion, glucose, insulinOnBoard, reservoirUnits, battery, basalDeliveryState, bolusState
         case lastBolus, bolusCalculator, maxBasalUnitsPerHour, controlIQ, cartridge, cgmSessionActive, alerts
-        case cgmHardwareInfo
+        case cgmHardwareInfo, cgmDisplay
     }
 
     public var capabilities: PumpCapabilities { model.capabilities }
@@ -185,9 +240,35 @@ public struct PumpState: Sendable, Hashable, Codable {
         glucose?.isStale(after: thresholds.glucoseStaleAfter, now: now) ?? false
     }
 
-    /// The glucose reading while it is current, else `nil`. The only form that may fill a correction.
+    /// The glucose reading while it is current, else `nil`.
     public func glucoseIfFresh(thresholds: FreshnessThresholds, now: Date = Date()) -> PumpGlucose? {
         glucose?.valueIfFresh(within: thresholds.glucoseStaleAfter, now: now)
+    }
+
+    /// The current reading when it may correct a dose by itself: fresh, and with no caution from the pump.
+    /// The only form that may fill a correction.
+    public func glucoseForCorrection(
+        thresholds: FreshnessThresholds, now: Date = Date(), cgmStateReadSince: Date? = nil
+    ) -> PumpGlucose? {
+        guard glucoseCaution(cgmStateReadSince: cgmStateReadSince) == nil else { return nil }
+        return glucoseIfFresh(thresholds: thresholds, now: now)
+    }
+
+    /// The pump's own reason its reading shouldn't correct a dose by itself, or `nil`. A reading from
+    /// another glucose source is that source's to judge. `cgmStateReadSince`: the CGM state must have been
+    /// received since then (the start of a dose attempt), else it can't be checked.
+    public func glucoseCaution(cgmStateReadSince: Date? = nil) -> PumpGlucoseCaution? {
+        guard let reading = glucose, reading.source == .pump else { return nil }
+        if let range = reading.value.outOfRange { return .outOfRange(range) }
+        guard let display = cgmDisplay, display.receivedAt >= (cgmStateReadSince ?? .distantPast) else {
+            return .cgmStateNotRead
+        }
+        if display.value.state != .noError { return .sensorState(display.value.state) }
+        if display.value.checkBG { return .checkBG }
+        // The flag comes with the calculator settings: a dose from settings not read for the attempt has
+        // already asked the user to accept the last-known ones, this flag with them.
+        if bolusCalculator?.value.glucoseAutoFillAllowed == false { return .autoFillOff }
+        return nil
     }
 
     /// IOB older than the IOB window isn't used without a prompt.

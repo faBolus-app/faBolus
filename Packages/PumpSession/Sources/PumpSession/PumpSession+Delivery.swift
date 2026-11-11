@@ -186,7 +186,7 @@ extension PumpSession {
         // after permission in the recorded bolus 3.
         if let sizedFrom = iobBeforePermission {
             guard case .reply(let reply) = await send(BolusCalcDataSnapshotRequest(), allowing: .read),
-                let snapshot = reply.message as? BolusCalcDataSnapshotResponse, snapshot.cargo.first == 0
+                let snapshot = reply.message as? BolusCalcDataSnapshotResponse, snapshot.isAck
             else { return await abandon("The pump's active insulin couldn't be read again. Nothing was delivered.") }
             let iob = Double(snapshot.iob) / 1000
             if iob > sizedFrom + BolusVolume.stepUnits + 1e-9 {
@@ -307,7 +307,7 @@ extension PumpSession {
         // what went in, whatever bolus ID it carries.
         if !isUntested(LastBolusStatusV2Request()),
             case .reply(let reply) = await exchange(LastBolusStatusV2Request(), priority: .delivery),
-            let last = reply.message as? LastBolusStatusV2Response, last.status == 1, last.bolusId == bolus.bolusId
+            let last = reply.message as? LastBolusStatusV2Response, last.isValid, last.bolusId == bolus.bolusId
         {
             await settle(bolus.key, .delivered(last.deliveredUnits))
             return

@@ -58,9 +58,12 @@ public final class BolusFlow {
         return v
     }
 
-    /// The CGM reading the suggestion corrects from, when nothing is typed and it's current.
+    /// The CGM reading the suggestion corrects from, when nothing is typed, it's current and the pump
+    /// doesn't caution against it.
     public var currentReading: Int? {
-        guard let g = model.display.glucoseIfFresh(thresholds: model.freshness, now: model.now) else { return nil }
+        guard let g = model.display.glucoseForCorrection(thresholds: model.freshness, now: model.now) else {
+            return nil
+        }
         return g.mgdl
     }
 
@@ -166,7 +169,7 @@ public final class BolusFlow {
             guard let reading else { return false }
             entry.answers.staleGlucose = .include(
                 mgdl: reading.value.mgdl, measuredAt: reading.measuredAt, units: include)
-        case (.staleGlucose(_, _, let carbsOnly), .carbsOnly):
+        case (.staleGlucose(_, _, let carbsOnly), .carbsOnly), (.pumpGlucoseCaution(_, let carbsOnly), .carbsOnly):
             entry.answers.staleGlucose = .carbsOnly(units: carbsOnly)
         case (.doseChanged(let mgdl, let new, _), .useNewDose):
             entry.answers.doseChanged = .useNew(mgdl: mgdl, units: new)
@@ -262,6 +265,12 @@ public final class BolusFlow {
             if let include { choices.append((.includeStaleReading, "Include it (\(formatUnits(include)))")) }
             choices.append((.carbsOnly, "Carbs only (\(formatUnits(carbsOnly)))"))
             return (reading == nil ? "No CGM reading" : "CGM reading is old", message, choices)
+        case .pumpGlucoseCaution(let caution, let carbsOnly):
+            return (
+                "CGM reading can't be used",
+                Self.cautionMessage(caution) + " Bolus for carbs only, or cancel and enter a BG?",
+                [(.carbsOnly, "Carbs only (\(formatUnits(carbsOnly)))")]
+            )
         case .doseChanged(let mgdl, let new, let entered):
             let reading = mgdl.map { " for \(model.settings.glucoseUnit.format(mgdl: $0)) mg/dL" } ?? ""
             return (
@@ -269,6 +278,37 @@ public final class BolusFlow {
                 "The pump's latest readings make the calculator's dose \(formatUnits(new))\(reading). You entered \(formatUnits(entered)).",
                 [(.useNewDose, "Use \(formatUnits(new))"), (.keepEnteredDose, "Keep \(formatUnits(entered))")]
             )
+        }
+    }
+
+    /// Why the pump's CGM reading can't correct the dose, as the pump says it.
+    static func cautionMessage(_ caution: PumpGlucoseCaution) -> String {
+        switch caution {
+        case .outOfRange(.low): return "The CGM reads LOW, below the range it can measure."
+        case .outOfRange(.high): return "The CGM reads HIGH, above the range it can measure."
+        case .checkBG: return "The CGM says to check your BG: its reading may not be accurate."
+        case .autoFillOff: return "The pump doesn't allow its CGM reading in the bolus calculator right now."
+        case .cgmStateNotRead: return "The pump's CGM state couldn't be read for this dose."
+        case .sensorState(let state): return "The pump shows \(cgmStateName(state)) instead of a CGM reading."
+        }
+    }
+
+    /// The pump's CGM state in words.
+    static func cgmStateName(_ state: PumpCGMState) -> String {
+        switch state {
+        case .noError: return "a CGM reading"
+        case .warmingUp: return "the sensor warming up"
+        case .calibrate: return "Calibrate CGM"
+        case .calibrationError: return "a calibration error"
+        case .replaceSensor: return "Replace Sensor"
+        case .sensorFailed: return "Sensor Failed"
+        case .replaceTransmitter: return "Replace Transmitter"
+        case .restartSensor: return "Restart Sensor"
+        case .outOfRange: return "CGM out of range of the pump"
+        case .noReading: return "no reading (---)"
+        case .low: return "LOW"
+        case .high: return "HIGH"
+        case .unknown(let id): return "a CGM state faBolus doesn't know (\(id))"
         }
     }
 

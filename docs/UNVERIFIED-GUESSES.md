@@ -314,3 +314,29 @@ that worked.
 - **Verify:** with a saline cartridge, start a bolus on the pump screen, let it finish, then ask for
   permission from the bench and read the snapshot; and note how far the IOB moves over a few seconds with
   Control-IQ active.
+
+## 25. When a t:slim says its CGM reading isn't one to dose from
+
+- **The guess:** the pump's home screen (HomeScreenMirror) shows a CGM alert icon other than "no error"
+  (255) whenever its reading shouldn't be used, a Libre's Check BG trend icons are 8-13, and an EGV status
+  of 2 or 3 means LOW or HIGH. faBolus lets the pump's reading correct a dose only when the icon read for
+  the attempt is 255, the trend isn't Check BG and the status isn't LOW or HIGH; otherwise the dose is for
+  carbs only, or from a typed BG. No recording shows the icon in any state but no error, or a Libre, and
+  nothing shows which icon a t:slim shows in which sensor state, or what number comes with LOW or HIGH.
+- **Where:** `Packages/faBolusCore/Sources/faBolusCore/PumpState.swift` (`glucoseCaution`),
+  `Packages/PumpSession/Sources/PumpSession/PumpReadings.swift` (the mirror and EGV cases).
+- **Risk:** fails closed for the dose. If a t:slim showed a non-255 icon in normal use, every CGM
+  correction from the pump's reading would stop. The mirror has to be read for each dose: a pump that
+  never answers it gets no CGM correction at all.
+- **Verify:** on P1 and P2, run the bench's `cgm` read through a sensor's warm-up, a normal reading and a
+  sensor error, and note the alert icon, the trend icon and the EGV status with each.
+
+## 26. The calculator snapshot's auto-fill flag (byte 37)
+
+- **The guess:** byte 37 of the calculator snapshot says whether the pump lets its CGM reading fill in a
+  correction. faBolus honours it from a snapshot read for the attempt: off means no automatic correction.
+  Both recorded snapshots have it on, beside a reading; nothing shows what clears it.
+- **Where:** `Packages/faBolusCore/Sources/faBolusCore/PumpState.swift` (`glucoseCaution`).
+- **Risk:** fails closed. A pump that cleared it in normal use would turn off every CGM correction.
+- **Verify:** on P1 and P2, run the bench's `snapshot` read with a fresh reading, a stale one, and none,
+  and note byte 37 with each.

@@ -138,13 +138,13 @@ extension DoseComposer {
                 notices: pumpNotices(units: units, context: context)))
     }
 
-    /// The glucose a remote carb dose corrects from. A fresh reading always wins. A stale one is used
-    /// only when the user asked to include it, it may be included at all, and it is the value the remote
-    /// estimated from. Otherwise there is no correction: carbs only.
+    /// The glucose a remote carb dose corrects from. A fresh reading the pump doesn't caution against
+    /// always wins. A stale one is used only when the user asked to include it, it may be included at all,
+    /// and it is the value the remote estimated from. Otherwise there is no correction: carbs only.
     private static func remoteCorrectionGlucose(_ request: RemoteDoseRequest, context: DoseContext) -> (
         mgdl: Int?, usedStale: Bool
     ) {
-        if let fresh = context.pump.glucoseIfFresh(thresholds: context.freshness, now: context.now) {
+        if let fresh = glucoseForCorrection(context) {
             return (fresh.mgdl, false)
         }
         guard request.includeStaleGlucose, let reading = includableStaleReading(context),

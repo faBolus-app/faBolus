@@ -359,7 +359,20 @@ extension DoseComposer {
     /// The current reading when it is stale but may still be included in a correction: no older than
     /// `FreshnessThresholds.maxIncludableGlucoseAge`, inside 40–400 mg/dL, with a time that can be trusted.
     /// `nil` otherwise, including when the reading is fresh.
+    /// The pump's caution on its reading for this attempt: its CGM state must have been read for it.
+    static func glucoseCaution(_ context: DoseContext) -> PumpGlucoseCaution? {
+        context.pump.glucoseCaution(cgmStateReadSince: context.inputsRequestedAt)
+    }
+
+    /// The current reading when it may correct this dose by itself.
+    static func glucoseForCorrection(_ context: DoseContext) -> PumpGlucose? {
+        context.pump.glucoseForCorrection(
+            thresholds: context.freshness, now: context.now, cgmStateReadSince: context.inputsRequestedAt)
+    }
+
     static func includableStaleReading(_ context: DoseContext) -> Observed<PumpGlucose>? {
+        // A reading the pump cautions against is never offered, however old.
+        guard glucoseCaution(context) == nil else { return nil }
         guard let reading = context.pump.glucose, reading.hasValidTime,
             GlucosePlausibility.isPlausible(mgdl: reading.value.mgdl),
             StaleBolusPrompt.mayOfferInclude(
