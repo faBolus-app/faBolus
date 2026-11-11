@@ -284,3 +284,33 @@ that worked.
 - **Verify:** on P1 and P2, record the qualifying events across a bolus, a cancel, a cartridge change and
   a suspend and resume, and note when bit 19 comes and whether a request sent within 5 s of it is
   answered.
+
+## 23. The first bytes of the calculator snapshot and the last-bolus reply
+
+- **The guess:** a calculator snapshot (op-115) is an answer only when its byte 0 is 0, and a
+  `LastBolusStatusV2` reply describes the bolus only when its byte 0 is 1. Every recorded snapshot has 0
+  there and the recorded last-bolus reply has 1, but no recording shows a pump sending anything else, or
+  when it would.
+- **Where:** `Packages/PumpSession/Sources/PumpSession/PumpReadings.swift` (the op-115 case) and
+  `PumpSession+Delivery.swift` (`settleFinished`, and the snapshot read once permission is held).
+- **Risk:** fails closed. If a pump used another value for a good reply, its snapshot would never count
+  (every calculator dose asks about unconfirmed settings, and every bolus is refused at the re-read after
+  permission), or every bolus would settle from history instead of the last-bolus reply.
+- **Verify:** on P1 and P2, run the bench's `snapshot` and `lastbolus` reads and note byte 0, idle, during
+  a bolus and right after one.
+
+## 24. A bolus the pump gives between a dose's reads and its permission
+
+- **The guess:** a t:slim grants bolus permission when its own bolus (from its screen, or Control-IQ)
+  started and finished after faBolus read the dose's inputs, and the IOB in its calculator snapshot then
+  includes that bolus. faBolus reads the snapshot again once permission is held and abandons the bolus
+  (releasing the permission) when its IOB is more than one step above the IOB the dose was decided
+  against. A recording shows the pump answering the snapshot while permission is held; nothing shows what
+  it reports after its own bolus.
+- **Where:** `Packages/PumpSession/Sources/PumpSession/PumpSession+Delivery.swift` (`runDelivery`).
+- **Risk:** if the pump's IOB lags its own bolus, the re-read misses it and the dose goes ahead sized
+  without it. If the IOB moves by more than a step for another reason in those seconds, a bolus is
+  abandoned with nothing delivered.
+- **Verify:** with a saline cartridge, start a bolus on the pump screen, let it finish, then ask for
+  permission from the bench and read the snapshot; and note how far the IOB moves over a few seconds with
+  Control-IQ active.
