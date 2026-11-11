@@ -266,6 +266,17 @@
             "backup": {
               "type": "boolean"
             },
+            "caution": {
+              "type": "string",
+              "enum": [
+                "low",
+                "high",
+                "sensor",
+                "checkbg",
+                "autofilloff",
+                "notread"
+              ]
+            },
             "at": {
               "type": "integer",
               "minimum": 1577836800,
@@ -1032,6 +1043,9 @@
           "maximum": 1000
         },
         "includeStaleGlucose": {
+          "type": "boolean"
+        },
+        "declineCorrection": {
           "type": "boolean"
         },
         "confirmed": {

@@ -26,10 +26,13 @@ public struct RemoteDoseRequest: Sendable, Equatable {
     public var includeStaleGlucose: Bool
     /// The confirmations the user went on from, on the remote, for this request.
     public var confirmed: Set<DoseConfirmation.Kind>
+    /// The user chose carbs only when the remote asked whether to correct from `glucoseMgdl`.
+    public var declineCorrection: Bool
 
     public init(
         id: String, peerId: String, surface: AccessPolicy.Surface, sentAt: Date?, amount: Amount?,
-        glucoseMgdl: Int? = nil, includeStaleGlucose: Bool = false, confirmed: Set<DoseConfirmation.Kind> = []
+        glucoseMgdl: Int? = nil, includeStaleGlucose: Bool = false, confirmed: Set<DoseConfirmation.Kind> = [],
+        declineCorrection: Bool = false
     ) {
         self.id = id
         self.peerId = peerId
@@ -39,6 +42,7 @@ public struct RemoteDoseRequest: Sendable, Equatable {
         self.glucoseMgdl = glucoseMgdl
         self.includeStaleGlucose = includeStaleGlucose
         self.confirmed = confirmed
+        self.declineCorrection = declineCorrection
     }
 
     public var ledgerKey: RemoteBolusLedger.Key { .init(peerId: peerId, requestId: id) }
@@ -116,6 +120,14 @@ extension DoseComposer {
                 return .refused(.pumpSettingsUnusable)
             }
             if differs(dose, estimate) { return .refused(.doseChanged(estimateUnits: estimate, doseUnits: dose)) }
+            // A correction declined at another reading (or under 70) answered another question: when correcting
+            // from this one changes the dose at all, the remote asks again with the new doses, so a correction
+            // the user said no to is never sent, even within the limit.
+            if request.declineCorrection, correction != nil,
+                let carbsOnly = inputs.units(carbsGrams: carbs, glucoseMgdl: nil), abs(dose - carbsOnly) > mismatchSlack
+            {
+                return .refused(.doseChanged(estimateUnits: estimate, doseUnits: dose))
+            }
             units = dose
             carbsGrams = carbs
             iob = inputs.calculatorInsulinOnBoardUnits
@@ -148,14 +160,23 @@ extension DoseComposer {
     }
 
     /// The glucose a remote carb dose corrects from. A fresh reading the pump doesn't caution against
-    /// always wins. A stale one is used only when the user asked to include it, it may be included at all,
-    /// and it is the value the remote estimated from. Otherwise there is no correction: carbs only.
+    /// wins, unless the user declined to correct from that same reading and it is 70 mg/dL or more. A
+    /// stale one is used only when the user asked to include it, it may be included at all, and it is the
+    /// value the remote estimated from. Otherwise there is no correction: carbs only.
     private static func remoteCorrectionGlucose(_ request: RemoteDoseRequest, context: DoseContext) -> (
         mgdl: Int?, usedStale: Bool
     ) {
         if let fresh = glucoseForCorrection(context) {
+            // Declined, as the phone's own question allows, from 70 mg/dL up; under it the reduction applies.
+            // The answer holds for the reading it was given at, as the phone's does.
+            if request.declineCorrection, request.glucoseMgdl == fresh.mgdl,
+                fresh.mgdl >= CalculatorMessage.lowGlucoseMgdl
+            {
+                return (nil, false)
+            }
             return (fresh.mgdl, false)
         }
+        if request.declineCorrection { return (nil, false) }
         guard request.includeStaleGlucose, let reading = includableStaleReading(context),
             request.glucoseMgdl == reading.value.mgdl
         else { return (nil, false) }

@@ -45,6 +45,95 @@ import faBolusCore
         flow.carbsText = "45"
         flow.entryChanged()
         check("carbs", NavigationStack { BolusEntryView(model: model, initialFlow: flow) })
+        // A typed low: the suggestion is reduced and the screen says to eat carbs.
+        let low = BolusFlow(model: model)
+        low.carbsText = "45"
+        low.glucoseText = "60"
+        low.entryChanged()
+        check("low", NavigationStack { BolusEntryView(model: model, initialFlow: low) })
+        // A typed glucose above target: the screen asks whether to correct, a card for each whole dose.
+        let asked = BolusFlow(model: model)
+        asked.carbsText = "45"
+        asked.glucoseText = "220"
+        asked.entryChanged()
+        check("correction", NavigationStack { BolusEntryView(model: model, initialFlow: asked) })
+        asked.chooseCorrection(apply: true)
+        check("corrected", NavigationStack { BolusEntryView(model: model, initialFlow: asked) })
+        // The glucose moves after the choice: the cards change, the choice clears, the screen says which way.
+        asked.glucoseText = "200"
+        asked.entryChanged()
+        check("correction-changed", NavigationStack { BolusEntryView(model: model, initialFlow: asked) })
+        // A dose typed by hand: no card chosen, and the way back to them.
+        asked.unitsTyped("5")
+        check("own-dose", NavigationStack { BolusEntryView(model: model, initialFlow: asked) })
+        // Below target from 70 up: whether to reduce.
+        let reduce = BolusFlow(model: model)
+        reduce.carbsText = "45"
+        reduce.glucoseText = "90"
+        reduce.entryChanged()
+        check("reduce", NavigationStack { BolusEntryView(model: model, initialFlow: reduce) })
+        // A CGM reading too old to include: the screen says carbs only, and Confirm asks nothing.
+        let staleModel = await SnapshotFixture.model { $0.pump.glucose = (180, 30 * 60) }
+        let stale = BolusFlow(model: staleModel)
+        stale.carbsText = "45"
+        stale.entryChanged()
+        check("carbs-only-stale", NavigationStack { BolusEntryView(model: staleModel, initialFlow: stale) })
+        // A reading the pump flags (a Libre's Check BG icon): the screen says why, and Confirm asks nothing.
+        let flaggedModel = await SnapshotFixture.model { $0.pump.trendIcon = 9 }
+        let flagged = BolusFlow(model: flaggedModel)
+        flagged.carbsText = "45"
+        flagged.entryChanged()
+        check("carbs-only-flagged", NavigationStack { BolusEntryView(model: flaggedModel, initialFlow: flagged) })
+    }
+
+    /// The review of a calculator dose: carbs only, then corrected, as chosen on the screen.
+    @Test func bolusReviewCalculator() async {
+        let model = await SnapshotFixture.model()
+        let flow = BolusFlow(model: model)
+        flow.carbsText = "45"
+        flow.glucoseText = "220"
+        flow.entryChanged()
+        guard let q = flow.correctionQuestion else {
+            Issue.record("expected the correction question")
+            return
+        }
+        let entry = PhoneDoseEntry(
+            id: "snap",
+            amount: .calculator(
+                carbsGrams: 45, glucose: .typed(mgdl: 220), recommendedUnits: q.applyUnits, enteredUnits: q.applyUnits),
+            answers: PhoneDoseAnswers(correction: .init(mgdl: 220, apply: false, units: q.declineUnits)))
+        let dose = DoseComposer.composePhone(
+            entry,
+            context: DoseContext(
+                pump: model.display, access: model.access, bolusBlock: nil, inputsRequestedAt: .distantPast,
+                lastDeliveryAt: nil, remoteSizeLimitUnits: nil, freshness: model.freshness, now: model.now))
+        guard case .deliver(let d) = dose else {
+            Issue.record("expected a dose, got \(dose)")
+            return
+        }
+        // At the sheet's height as the app shows it (half the screen).
+        check(
+            "review-carbs-only",
+            BolusReviewSheet(dose: d, notices: BolusFlow.notices(d)) {
+            } onCancel: {
+            }, height: 470)
+        var corrected = entry
+        corrected.answers.correction = .init(mgdl: 220, apply: true, units: q.applyUnits)
+        guard
+            case .deliver(let c) = DoseComposer.composePhone(
+                corrected,
+                context: DoseContext(
+                    pump: model.display, access: model.access, bolusBlock: nil, inputsRequestedAt: .distantPast,
+                    lastDeliveryAt: nil, remoteSizeLimitUnits: nil, freshness: model.freshness, now: model.now))
+        else {
+            Issue.record("expected the corrected dose")
+            return
+        }
+        check(
+            "review-corrected",
+            BolusReviewSheet(dose: c, notices: BolusFlow.notices(c)) {
+            } onCancel: {
+            }, height: 470)
     }
 
     @Test func bolusReview() async {
@@ -62,7 +151,7 @@ import faBolusCore
                 "review",
                 BolusReviewSheet(dose: d, notices: BolusFlow.notices(d)) {
                 } onCancel: {
-                })
+                }, height: 470)
         }
     }
 

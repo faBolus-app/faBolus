@@ -17,10 +17,13 @@ public struct GlucoseReading: Sendable, Hashable {
     public var trend: TrendToken?
     /// From the backup CGM source rather than the pump.
     public var backup: Bool
-    public init(mgdl: Int, trend: TrendToken?, backup: Bool) {
+    /// Why the pump says this reading shouldn't correct a dose, or `nil` when it may.
+    public var caution: GlucoseCautionToken?
+    public init(mgdl: Int, trend: TrendToken?, backup: Bool, caution: GlucoseCautionToken? = nil) {
         self.mgdl = mgdl
         self.trend = trend
         self.backup = backup
+        self.caution = caution
     }
 }
 
@@ -170,6 +173,7 @@ extension StatusPayload {
                     w.set("mgdl", g.mgdl)
                     w.set("trend", g.trend?.rawValue)
                     w.set("backup", g.backup)
+                    w.set("caution", g.caution?.rawValue)
                 }
             })
         w.set("iob", insulinOnBoardMilliunits.map { timed($0) { v, w in w.set("mU", v) } })
@@ -247,7 +251,8 @@ extension StatusPayload {
             Timed(
                 GlucoseReading(
                     mgdl: try g.int("mgdl", in: glucoseRange), trend: try g.optionalToken("trend", as: TrendToken.self),
-                    backup: try g.bool("backup")), at: try g.int("at", in: epochRange))
+                    backup: try g.bool("backup"), caution: try g.optionalToken("caution", as: GlucoseCautionToken.self)),
+                at: try g.int("at", in: epochRange))
         }
         insulinOnBoardMilliunits = try r.optionalObject("iob").map { o throws(DecodeError) in
             Timed(try o.int("mU", in: milliunitRange), at: try o.int("at", in: epochRange))

@@ -8,6 +8,11 @@ import Testing
 
 @MainActor
 @Suite struct BolusFlowTests {
+    /// Text as read: the unit is kept whole, and on the number's line, by invisible joiners.
+    static func shown(_ text: String) -> String {
+        text.replacingOccurrences(of: "\u{2060}", with: "").replacingOccurrences(of: "\u{00A0}", with: " ")
+    }
+
     func connected() async -> (Phone, AppModel) {
         let phone = Phone()
         let model = await phone.launch()
@@ -36,8 +41,182 @@ import Testing
         switch flow.phase {
         case .review(let fresh): #expect(fresh.units != reviewed.units)
         case .prompt: break
+        // The new reading asks whether to correct: on the screen, with its doses.
+        case .editing: #expect(flow.correctionQuestion?.mgdl == 260)
         default: Issue.record("expected the dose reviewed again, got \(flow.phase)")
         }
+        #expect(model.latestOutcome == nil, "nothing was sent")
+        await model.shutdown()
+    }
+
+    /// Above target the screen asks whether to correct before Confirm: no dose until a card is chosen, and
+    /// the card's dose is the one reviewed. Carbs only sends no correction.
+    @Test func theCorrectionIsChosenOnTheScreen() async {
+        let (phone, model) = await connected()
+        let flow = BolusFlow(model: model)
+        flow.mode = .carbs
+        flow.carbsText = "30"
+        flow.glucoseText = "220"
+        flow.entryChanged()
+        guard let q = flow.correctionQuestion else {
+            Issue.record("expected the question")
+            return
+        }
+        #expect(q.above)
+        #expect(q.applyUnits > q.declineUnits)
+        #expect(flow.unitsText.isEmpty)
+        #expect(flow.unavailableReason == BolusFlow.chooseText)
+        await phone.driving(model) { await flow.confirm() }
+        #expect(flow.phase == .editing, "nothing is composed before a card is chosen")
+        flow.chooseCorrection(apply: false)
+        #expect(flow.units == q.declineUnits)
+        #expect(flow.unavailableReason == nil)
+        await phone.driving(model) { await flow.confirm() }
+        guard case .review(let dose) = flow.phase else {
+            Issue.record("expected the review, got \(flow.phase)")
+            return
+        }
+        #expect(dose.units == q.declineUnits)
+        #expect(dose.correctionGlucoseMgdl == nil)
+        flow.cancel()
+        // Corrected instead: that dose, correcting from the typed glucose.
+        flow.chooseCorrection(apply: true)
+        await phone.driving(model) { await flow.confirm() }
+        guard case .review(let corrected) = flow.phase else {
+            Issue.record("expected the review, got \(flow.phase)")
+            return
+        }
+        #expect(corrected.units == q.applyUnits)
+        #expect(corrected.correctionGlucoseMgdl == 220)
+        flow.cancel()
+        // A glucose the user types themselves clears the choice, with no alert: they made the change.
+        flow.glucoseText = "240"
+        flow.entryEdited()
+        #expect(flow.correction == nil)
+        #expect(flow.correctionChange == nil)
+        #expect(flow.changeAlert == nil)
+        #expect(flow.unitsText.isEmpty)
+        // Editing the dose by hand leaves the cards.
+        flow.unitsTyped("1")
+        #expect(flow.unavailableReason == nil)
+        flow.useCalculatorDose()
+        #expect(flow.unitsText.isEmpty)
+        await model.shutdown()
+    }
+
+    /// The CGM moves after a card was chosen: Confirm doesn't send the old dose, the screen asks again with
+    /// the new doses and says which way the reading went.
+    @Test func aNewReadingAfterChoosingAsksAgain() async {
+        let phone = Phone()
+        phone.mock.pump.glucose = (220, 30)
+        let model = await phone.launch()
+        _ = await phone.until(model) { model.pump.link == .connected }
+        await phone.run(model, for: 12)
+        let flow = BolusFlow(model: model)
+        flow.mode = .carbs
+        flow.carbsText = "30"
+        flow.entryChanged()
+        #expect(flow.correctionQuestion?.mgdl == 220)
+        flow.chooseCorrection(apply: true)
+        let chosen = flow.unitsText
+        phone.mock.pump.glucose = (180, 5)
+        await phone.run(model, for: 30)
+        // No view runs here to clear the units: Confirm still sends nothing from the stale choice.
+        #expect(flow.unitsText == chosen)
+        await phone.driving(model) { await flow.confirm() }
+        #expect(flow.phase == .editing)
+        #expect(flow.correctionQuestion?.mgdl == 180)
+        #expect(flow.correctionChange == .glucose(fromMgdl: 220, toMgdl: 180))
+        // Said in an alert first; once seen, a reminder stays by the cards.
+        #expect(flow.changeAlert == .glucose(fromMgdl: 220, toMgdl: 180))
+        let change = flow.text(for: .glucose(fromMgdl: 220, toMgdl: 180))
+        #expect(Self.shown(change.title) == "BG 220 mg/dL → 180 mg/dL")
+        #expect(change.message.isEmpty)
+        #expect(change.button == "Choose again")
+        flow.acknowledgeChange()
+        #expect(flow.changeAlert == nil)
+        #expect(flow.correctionChange == .glucose(fromMgdl: 220, toMgdl: 180))
+        #expect(flow.unavailableReason == BolusFlow.chooseText)
+        #expect(model.latestOutcome == nil, "nothing was sent")
+        await model.shutdown()
+    }
+
+    /// The reading changes just before Confirm, so only the pump's fresh read at Confirm has it: the screen
+    /// asks again with the doses from that read, never sends the chosen one.
+    @Test func aReadingOnlyConfirmSawAsksAgain() async {
+        let phone = Phone()
+        phone.mock.pump.glucose = (220, 30)
+        let model = await phone.launch()
+        _ = await phone.until(model) { model.pump.link == .connected }
+        await phone.run(model, for: 12)
+        let flow = BolusFlow(model: model)
+        flow.mode = .carbs
+        flow.carbsText = "30"
+        flow.entryChanged()
+        flow.chooseCorrection(apply: true)
+        phone.mock.pump.glucose = (250, 1)
+        await phone.driving(model) { await flow.confirm() }
+        #expect(flow.phase == .editing)
+        #expect(flow.correctionQuestion?.mgdl == 250)
+        #expect(flow.changeAlert == .glucose(fromMgdl: 220, toMgdl: 250))
+        flow.acknowledgeChange()
+        #expect(model.latestOutcome == nil, "nothing was sent")
+        // Chosen again, the new dose is reviewed.
+        let q = flow.correctionQuestion
+        flow.chooseCorrection(apply: true)
+        await phone.driving(model) { await flow.confirm() }
+        guard case .review(let dose) = flow.phase else {
+            Issue.record("expected the review, got \(flow.phase)")
+            return
+        }
+        #expect(dose.units == q?.applyUnits)
+        #expect(dose.correctionGlucoseMgdl == 250)
+        await model.shutdown()
+    }
+
+    /// The CGM drops under 70 after a card was chosen, and only Confirm's fresh read sees it: there's no
+    /// question any more. The card's dose (corrected from the old reading) is never offered to keep; the
+    /// screen says the question went, in an alert, and once seen the dose is the calculator's for now.
+    @Test func aReadingThatEndsTheQuestionSaysSo() async {
+        let phone = Phone()
+        phone.mock.pump.glucose = (220, 30)
+        let model = await phone.launch()
+        _ = await phone.until(model) { model.pump.link == .connected }
+        await phone.run(model, for: 12)
+        let flow = BolusFlow(model: model)
+        flow.mode = .carbs
+        flow.carbsText = "30"
+        flow.entryChanged()
+        flow.chooseCorrection(apply: true)
+        phone.mock.pump.glucose = (60, 1)
+        await phone.driving(model) { await flow.confirm() }
+        #expect(flow.phase == .editing, "no Dose changed prompt offering the old card's dose")
+        #expect(flow.correctionQuestion == nil)
+        #expect(flow.changeAlert == .noQuestion(fromMgdl: 220, toMgdl: 60))
+        // What changed as the title, what it means in a line.
+        let low = flow.text(for: .noQuestion(fromMgdl: 220, toMgdl: 60))
+        #expect(Self.shown(low.title) == "BG 220 mg/dL → 60 mg/dL")
+        #expect(low.message.hasPrefix("Dose reduced to "))
+        #expect(low.warning == "Eat carbs.")
+        #expect(flow.text(for: .noQuestion(fromMgdl: 220, toMgdl: 120)).message.hasPrefix("No correction needed"))
+        #expect(flow.text(for: .noQuestion(fromMgdl: 220, toMgdl: nil)).title == "No current BG")
+        // A reading the calculator can't correct from is never "no correction needed".
+        #expect(flow.text(for: .noQuestion(fromMgdl: 220, toMgdl: 650)).message == "Too high for a carb dose.")
+        let tooLow = flow.text(for: .noQuestion(fromMgdl: 220, toMgdl: 15))
+        #expect(tooLow.message == "Too low for a carb dose.")
+        #expect(tooLow.warning == "Eat carbs.")
+        // Nothing goes before the change is seen.
+        await phone.driving(model) { await flow.confirm() }
+        #expect(flow.phase == .editing)
+        flow.acknowledgeChange()
+        #expect(flow.changeAlert == nil)
+        #expect(flow.correctionChange == nil)
+        await phone.driving(model) { await flow.confirm() }
+        guard case .review(let dose) = flow.phase else {
+            Issue.record("expected the review, got \(flow.phase)")
+            return
+        }
+        #expect(dose.correctionGlucoseMgdl == 60, "the reduction for the low applies")
         #expect(model.latestOutcome == nil, "nothing was sent")
         await model.shutdown()
     }
@@ -53,6 +232,9 @@ import Testing
         #expect(flow.unavailableReason == BolusFlow.invalidGlucoseText)
         await phone.driving(model) { await flow.confirm() }
         #expect(flow.phase == .refused(BolusFlow.invalidGlucoseText))
+        // A number outside what the calculator takes holds the dose too, rather than going on to a refusal.
+        flow.glucoseText = "650"
+        #expect(flow.unavailableReason == BolusFlow.outOfRangeText)
         flow.glucoseText = ""
         #expect(flow.unavailableReason == nil)
         await model.shutdown()
@@ -84,9 +266,9 @@ import Testing
         await model.shutdown()
     }
 
-    /// No current CGM reading on a carb dose: the composer asks, and "carbs only" sends the carbs-only dose
-    /// it offered.
-    @Test func aStaleReadingAsksAndCarbsOnlySendsWhatItOffered() async {
+    /// A CGM reading too old to include on a carb dose: the screen says carbs only, and Confirm goes straight
+    /// to the review with that dose, with nothing to ask (as on the watch).
+    @Test func aReadingTooOldToIncludeGoesCarbsOnly() async {
         let phone = Phone()
         phone.mock.pump.glucose = (180, 30 * 60)
         let model = await phone.launch()
@@ -96,18 +278,10 @@ import Testing
         flow.mode = .carbs
         flow.carbsText = "30"
         flow.entryChanged()
-        #expect(flow.units != nil)
+        #expect(!model.staleReadingIncludable)
+        let carbsOnly = flow.units
+        #expect(carbsOnly != nil)
         await phone.driving(model) { await flow.confirm() }
-        guard case .prompt(.staleGlucose(_, _, let carbsOnly)) = flow.phase else {
-            Issue.record("expected the stale-glucose prompt, got \(flow.phase)")
-            return
-        }
-        // As the dialog does it: the choice, then the dialog closes, which cancels a prompt still showing.
-        flow.choose(.carbsOnly)
-        if case .prompt = flow.phase { flow.cancel() }
-        await phone.driving(model) {
-            while flow.phase == .composing { await Task.yield() }
-        }
         guard case .review(let dose) = flow.phase else {
             Issue.record("expected the review, got \(flow.phase)")
             return

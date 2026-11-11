@@ -112,10 +112,13 @@ public struct BolusRequestPayload: Sendable, Hashable {
     public var includeStaleGlucose: Bool
     /// The confirmations the user went on from, from an earlier request's refused outcome. Absent is none.
     public var confirmed: [ConfirmationToken]
+    /// The user chose carbs only when asked whether to correct from the reading (70 mg/dL or more), which
+    /// `glucoseMgdl` names. Absent is false.
+    public var declineCorrection: Bool
 
     public init(
         requestId: String, sentAt: Int, amount: Amount, glucoseMgdl: Int?, includeStaleGlucose: Bool,
-        confirmed: [ConfirmationToken] = []
+        confirmed: [ConfirmationToken] = [], declineCorrection: Bool = false
     ) {
         self.requestId = requestId
         self.sentAt = sentAt
@@ -123,6 +126,7 @@ public struct BolusRequestPayload: Sendable, Hashable {
         self.glucoseMgdl = glucoseMgdl
         self.includeStaleGlucose = includeStaleGlucose
         self.confirmed = confirmed
+        self.declineCorrection = declineCorrection
     }
 
     var wire: WireValue {
@@ -141,6 +145,7 @@ public struct BolusRequestPayload: Sendable, Hashable {
         w.set("glucoseMgdl", glucoseMgdl)
         w.set("includeStaleGlucose", includeStaleGlucose)
         if !confirmed.isEmpty { w.set("confirmed", strings: confirmed.map(\.rawValue)) }
+        if declineCorrection { w.set("declineCorrection", true) }
         return w.value
     }
 
@@ -159,6 +164,7 @@ public struct BolusRequestPayload: Sendable, Hashable {
         glucoseMgdl = try r.optionalInt("glucoseMgdl", in: glucoseRange)
         includeStaleGlucose = try r.bool("includeStaleGlucose")
         confirmed = try r.optionalTokenArray("confirmed", as: ConfirmationToken.self)
+        declineCorrection = try r.optionalBool("declineCorrection") ?? false
     }
 }
 

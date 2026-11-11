@@ -64,7 +64,7 @@ two clocks needn't agree. A value that hasn't been read, or whose time can't be 
 | `sentAt` | when the phone built it |
 | `configRevision` | the revision of the phone's config; a remote holding another polls for it |
 | `pumpLink` | `disconnected`, `scanning`, `connecting`, `authenticating`, `connected` |
-| `glucose` | `mgdl`, `trend` (`flat`, `up`, `upup`, `up45`, `down`, `downdown`, `down45`; absent when none), `backup` (from the backup CGM), `at` |
+| `glucose` | `mgdl`, `trend` (`flat`, `up`, `upup`, `up45`, `down`, `downdown`, `down45`; absent when none), `backup` (from the backup CGM), `caution` (why the pump says not to correct a dose from it: `low`, `high`, `sensor`, `checkbg`, `autofilloff`, `notread`; absent when it may; the remote then doses carbs only, with no question), `at` |
 | `iob`, `reservoir`, `lastBolus` | `mU`, `at` (`lastBolus.at` is when it was given) |
 | `battery` | `percent`, `charging` (absent when unknown), `at` |
 | `basal` | `suspended`, `mUPerHour` when not suspended, `at` |
@@ -119,7 +119,7 @@ arrive. A remote stops waiting once the request would be refused as too old.
 | Kind | Payload |
 |---|---|
 | `poll` | `configRevision` (absent when the remote has none: first launch or wiped storage), `awaiting` (the request it's waiting on), `history`, `freshGlucose`, `appVersion` |
-| `bolus` | `requestId`, `sentAt` (when the user confirmed, by the remote's clock), `mode` (`units` with `mU`, or `carbs` with `carbsG` and `estimateMU`), `glucoseMgdl` (the reading the estimate used), `includeStaleGlucose`, `confirmed` (absent when none) |
+| `bolus` | `requestId`, `sentAt` (when the user confirmed, by the remote's clock), `mode` (`units` with `mU`, or `carbs` with `carbsG` and `estimateMU`), `glucoseMgdl` (the reading the estimate used, or the one the user declined to correct from), `includeStaleGlucose`, `confirmed` (absent when none), `declineCorrection` (absent is false) |
 | `cancel` | `requestId`, `bolusRequestId` (when the remote started the bolus) |
 | `dismiss` | `requestId`, `alertId` |
 
@@ -127,6 +127,13 @@ A bolus request may be sent again with the same `requestId` and `sentAt` until a
 phone answers a repeat from its ledger and never delivers a request twice. It refuses a request sent more
 than two minutes ago. The phone recomputes a `carbs` dose from its own inputs and refuses one that differs
 from `estimateMU` by more than 0.10 U, or that corrects from a reading outside 20–600 mg/dL.
+
+A remote asks, as the phone does, whether to correct from a reading of 70 mg/dL or more when correcting
+changes the dose ("Add a correction?" above the target, "Reduce the bolus?" below it). If the user chooses
+carbs only, the request carries `declineCorrection` with that reading as `glucoseMgdl`, and the phone
+composes it with no correction. The answer holds for that reading only: if the phone's reading is another
+one, or under 70 mg/dL (where the reduction always applies), the phone corrects from its reading, and if
+that changes the dose at all the request is refused as changed, so the remote asks again.
 
 ### Confirming on the remote
 

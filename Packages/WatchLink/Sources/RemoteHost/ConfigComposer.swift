@@ -98,7 +98,8 @@ extension RemoteDoseRequest {
         self.init(
             id: p.requestId, peerId: peerId, surface: surface,
             sentAt: Date(timeIntervalSince1970: TimeInterval(p.sentAt)), amount: amount, glucoseMgdl: p.glucoseMgdl,
-            includeStaleGlucose: p.includeStaleGlucose, confirmed: Set(p.confirmed.map(DoseConfirmation.Kind.init)))
+            includeStaleGlucose: p.includeStaleGlucose, confirmed: Set(p.confirmed.map(DoseConfirmation.Kind.init)),
+            declineCorrection: p.declineCorrection)
     }
 }
 

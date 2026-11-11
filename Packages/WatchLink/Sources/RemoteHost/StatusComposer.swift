@@ -40,6 +40,19 @@ public struct StatusInputs: Sendable {
 /// age itself; a value whose time can't be trusted isn't sent, rather than sent as current. A value outside
 /// what the message allows isn't sent either: one bad reading must not make every status unreadable.
 public enum StatusComposer {
+    /// The pump's reason its reading shouldn't correct a dose by itself, as the phone's composer checks it:
+    /// the remote then doses carbs only, with no question, as the phone does.
+    static func cautionToken(_ caution: PumpGlucoseCaution) -> GlucoseCautionToken {
+        switch caution {
+        case .outOfRange(.low): return .low
+        case .outOfRange(.high): return .high
+        case .sensorState: return .sensor
+        case .checkBG: return .checkBG
+        case .autoFillOff: return .autoFillOff
+        case .cgmStateNotRead: return .notRead
+        }
+    }
+
     public static func compose(_ inputs: StatusInputs) -> StatusPayload {
         let pump = inputs.pump
         let now = inputs.now
@@ -54,7 +67,8 @@ public enum StatusComposer {
                 Timed(
                     GlucoseReading(
                         mgdl: g.value.mgdl, trend: g.value.trend.flatMap(trendToken),
-                        backup: inputs.glucoseProvenance.isFailover), at: $0)
+                        backup: inputs.glucoseProvenance.isFailover,
+                        caution: pump.glucoseCaution().map(cautionToken)), at: $0)
             }
         }
         let iob = pump.insulinOnBoard.flatMap { o in at(o).flatMap { t in milliunits(o.value).map { Timed($0, at: t) } }

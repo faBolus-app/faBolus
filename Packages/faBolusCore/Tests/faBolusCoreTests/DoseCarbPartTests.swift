@@ -18,7 +18,7 @@ import Testing
     }
 
     @Test func aPhoneCalculatorDoseCarriesItsCarbPart() throws {
-        let dose = try #require(DoseComposer.composePhone(F.phone(F.cgmDose()), context: F.context()).dose)
+        let dose = try #require(DoseComposer.composePhoneCorrecting(F.phone(F.cgmDose()), context: F.context()).dose)
         #expect(dose.calculatorCarbUnits == 6.0)
     }
 
@@ -26,13 +26,13 @@ import Testing
     /// sent as all food.
     @Test func aDoseChangedFromTheCalculatorsHasNoCarbPart() throws {
         let entry = F.phone(F.cgmDose(entered: 6.5))
-        let dose = try #require(DoseComposer.composePhone(entry, context: F.context()).dose)
+        let dose = try #require(DoseComposer.composePhoneCorrecting(entry, context: F.context()).dose)
         #expect(dose.units == 6.5)
         #expect(dose.calculatorCarbUnits == nil)
     }
 
     @Test func aDoseEnteredInUnitsHasNoCarbPart() throws {
-        let dose = try #require(DoseComposer.composePhone(F.phone(.units(2)), context: F.context()).dose)
+        let dose = try #require(DoseComposer.composePhoneCorrecting(F.phone(.units(2)), context: F.context()).dose)
         #expect(dose.calculatorCarbUnits == nil)
         let remote = try #require(
             DoseComposer.composeRemote(F.remote(.units(2)), ledger: .init(), context: F.context()).dose)

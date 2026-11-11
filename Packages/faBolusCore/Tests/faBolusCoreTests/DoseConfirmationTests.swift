@@ -28,11 +28,12 @@ import Testing
         let flags = BolusCalculatorSettings.TooManyBoluses(hourlyLimit: hourly, insulinOnBoard: iob)
         let context = F.context(pump: Self.pump { $0.tooManyBoluses = flags })
         #expect(
-            DoseComposer.composePhone(F.phone(.units(2)), context: context).prompt
+            DoseComposer.composePhoneCorrecting(F.phone(.units(2)), context: context).prompt
                 == .confirmation(.tooManyBoluses(flags), units: 2))
         // Going on delivers the dose as it was.
         let answers = PhoneDoseAnswers(confirmed: [.tooManyBoluses: .init(.tooManyBoluses(flags), units: 2)])
-        let dose = try #require(DoseComposer.composePhone(F.phone(.units(2), answers: answers), context: context).dose)
+        let dose = try #require(
+            DoseComposer.composePhoneCorrecting(F.phone(.units(2), answers: answers), context: context).dose)
         #expect(dose.units == 2)
     }
 
@@ -123,7 +124,7 @@ import Testing
         let context = F.context(pump: pump)
         var answers = PhoneDoseAnswers()
         func compose() -> PhoneDoseDecision {
-            DoseComposer.composePhone(F.phone(.units(3), answers: answers), context: context)
+            DoseComposer.composePhoneCorrecting(F.phone(.units(3), answers: answers), context: context)
         }
         func goOn() {
             guard case .confirmation(let c, let units) = compose().prompt else { return }
@@ -148,14 +149,17 @@ import Testing
         let low = DoseConfirmation.lowInsulin(doseUnits: 5, remainingUnits: 4)
         var answers = PhoneDoseAnswers(confirmed: [.lowInsulin: .init(low, units: 5)])
         #expect(
-            DoseComposer.composePhone(F.phone(.units(5), answers: answers), context: F.context(pump: pump)).dose != nil)
+            DoseComposer.composePhoneCorrecting(F.phone(.units(5), answers: answers), context: F.context(pump: pump))
+                .dose != nil)
         pump.reservoirUnits = F.observed(1, age: 2)
         #expect(
-            DoseComposer.composePhone(F.phone(.units(5), answers: answers), context: F.context(pump: pump)).prompt
+            DoseComposer.composePhoneCorrecting(F.phone(.units(5), answers: answers), context: F.context(pump: pump))
+                .prompt
                 == .confirmation(.lowInsulin(doseUnits: 5, remainingUnits: 1), units: 5))
         answers.confirmed[.lowInsulin] = .init(.lowInsulin(doseUnits: 5, remainingUnits: 1), units: 5)
         #expect(
-            DoseComposer.composePhone(F.phone(.units(5), answers: answers), context: F.context(pump: pump)).dose != nil)
+            DoseComposer.composePhoneCorrecting(F.phone(.units(5), answers: answers), context: F.context(pump: pump))
+                .dose != nil)
     }
 
     /// A resend of a dose just delivered is refused as one, not offered to go on again.
@@ -180,7 +184,7 @@ import Testing
         var pump = F.pump()
         pump.reservoirUnits = F.observed(5, age: 2)
         #expect(
-            DoseComposer.composePhone(F.phone(F.cgmDose()), context: F.context(pump: pump)).prompt
+            DoseComposer.composePhoneCorrecting(F.phone(F.cgmDose()), context: F.context(pump: pump)).prompt
                 == .confirmation(.lowInsulin(doseUnits: 7.25, remainingUnits: 5), units: 7.25))
     }
 

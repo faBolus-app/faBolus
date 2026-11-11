@@ -97,7 +97,7 @@ import Testing
                 compose(F.remote(.units(1)), context: F.context(pump: pump)).refusal
                     == .unavailable(.accessDenied(.capabilityUnavailable)))
             #expect(
-                DoseComposer.composePhone(F.phone(.units(1)), context: F.context(pump: pump)).refusal
+                DoseComposer.composePhoneCorrecting(F.phone(.units(1)), context: F.context(pump: pump)).refusal
                     == .unavailable(.accessDenied(.capabilityUnavailable)))
         }
     }

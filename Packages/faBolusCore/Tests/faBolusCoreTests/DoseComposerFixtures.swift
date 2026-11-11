@@ -104,3 +104,15 @@ extension PhoneDoseDecision {
         return nil
     }
 }
+
+extension DoseComposer {
+    /// The phone's dose as a user who answers "add it" to the correction question: for the tests about
+    /// everything else a CGM dose above target meets. `CorrectionPromptTests` asks the question itself.
+    static func composePhoneCorrecting(_ entry: PhoneDoseEntry, context: DoseContext) -> PhoneDoseDecision {
+        var entry = entry
+        let decision = composePhone(entry, context: context)
+        guard case .confirm(.correction(let mgdl, _, let apply, _)) = decision else { return decision }
+        entry.answers.correction = .init(mgdl: mgdl, apply: true, units: apply)
+        return composePhone(entry, context: context)
+    }
+}

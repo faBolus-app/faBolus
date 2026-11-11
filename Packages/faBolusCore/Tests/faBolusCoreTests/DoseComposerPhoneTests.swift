@@ -9,7 +9,7 @@ import Testing
     typealias Answers = PhoneDoseAnswers
 
     private func compose(_ entry: PhoneDoseEntry, context: DoseContext = F.context()) -> PhoneDoseDecision {
-        DoseComposer.composePhone(entry, context: context)
+        DoseComposer.composePhoneCorrecting(entry, context: context)
     }
 
     private func compose(
@@ -141,14 +141,14 @@ import Testing
         #expect(compose(F.cgmDose(entered: 8), answers: answers, context: F.context(pump: pump)).prompt?.kind == .iob)
     }
 
-    /// An accepted override still goes through the glucose checks.
+    /// An accepted override still goes through the glucose checks: the new reading's dose is asked about.
     @Test func overrideStillChecksTheReading() {
         var pump = F.pump(glucose: 220)
         iobReadEarlier(&pump)
         let answers = Answers(calculatorOverride: .init(kind: .iob, units: 7.25))
         #expect(
-            compose(F.cgmDose(), answers: answers, context: F.context(pump: pump)).prompt
-                == .doseChanged(mgdl: 220, newUnits: 8.25, enteredUnits: 7.25))
+            DoseComposer.composePhone(F.phone(F.cgmDose(), answers: answers), context: F.context(pump: pump)).prompt
+                == .correction(mgdl: 220, targetMgdl: 110, applyUnits: 8.25, declineUnits: 6))
     }
 
     /// The two IOB readings disagreeing makes IOB unverified, which is asked about like a late read.
@@ -225,29 +225,44 @@ import Testing
 
     // MARK: - A fresh CGM read
 
-    /// The reading moved since the screen computed the dose, and the dose moved with it: the user is
-    /// asked which to deliver.
-    @Test func changedReadingPromptsAndTheAnswerIsHonored() throws {
+    /// The reading moved since the screen computed the dose, and the dose moved with it: the correction
+    /// question shows the doses from the new reading, and the answer is the dose that goes, with no second
+    /// question. (It asked "dose changed" after it before, offering the entered dose; to send that, the user
+    /// now cancels and enters it.)
+    @Test func changedReadingAsksWithTheNewDose() throws {
         let context = F.context(pump: F.pump(glucose: 220))
         // 60 g at 220 mg/dL: 6.00 + 2.75 − 0.50 = 8.25 U.
         #expect(
-            compose(F.cgmDose(), context: context).prompt
-                == .doseChanged(mgdl: 220, newUnits: 8.25, enteredUnits: 7.25))
+            DoseComposer.composePhone(F.phone(F.cgmDose()), context: context).prompt
+                == .correction(mgdl: 220, targetMgdl: 110, applyUnits: 8.25, declineUnits: 6))
 
-        let useNew = Answers(doseChanged: .useNew(mgdl: 220, units: 8.25))
-        let dose = try #require(compose(F.cgmDose(), answers: useNew, context: context).dose)
+        let corrected = Answers(correction: .init(mgdl: 220, apply: true, units: 8.25))
+        let dose = try #require(
+            DoseComposer.composePhone(F.phone(F.cgmDose(), answers: corrected), context: context).dose)
         #expect(dose.units == 8.25)
         #expect(dose.correctionGlucoseMgdl == 220)
 
-        let keep = Answers(doseChanged: .keepEntered(mgdl: 220, enteredUnits: 7.25, newUnits: 8.25))
-        let kept = try #require(compose(F.cgmDose(), answers: keep, context: context).dose)
-        #expect(kept.units == 7.25)
-        #expect(kept.correctionGlucoseMgdl == 180)  // the reading the entered dose came from
+        let carbsOnly = Answers(correction: .init(mgdl: 220, apply: false, units: 6))
+        let carbs = try #require(
+            DoseComposer.composePhone(F.phone(F.cgmDose(), answers: carbsOnly), context: context).dose)
+        #expect(carbs.units == 6)
+        #expect(carbs.correctionGlucoseMgdl == nil)
 
-        // An answer about a different reading, or for a different entered dose, is asked again.
-        let other = Answers(doseChanged: .useNew(mgdl: 200, units: 7.75))
-        #expect(compose(F.cgmDose(), answers: other, context: context).prompt != nil)
-        #expect(compose(F.cgmDose(entered: 12), answers: keep, context: context).prompt != nil)
+        // An answer about a different reading, or a different dose, is asked again.
+        let other = Answers(correction: .init(mgdl: 200, apply: true, units: 7.75))
+        #expect(DoseComposer.composePhone(F.phone(F.cgmDose(), answers: other), context: context).prompt != nil)
+        let stale = Answers(correction: .init(mgdl: 220, apply: true, units: 7.25))
+        #expect(DoseComposer.composePhone(F.phone(F.cgmDose(), answers: stale), context: context).prompt != nil)
+
+        // A dose of the user's own isn't asked about the correction; the new reading's dose still is, and
+        // keeping theirs sends it.
+        #expect(
+            compose(F.cgmDose(entered: 7), context: context).prompt
+                == .doseChanged(mgdl: 220, newUnits: 8.25, enteredUnits: 7))
+        let keep = Answers(doseChanged: .keepEntered(mgdl: 220, enteredUnits: 7, newUnits: 8.25))
+        let kept = try #require(compose(F.cgmDose(entered: 7), answers: keep, context: context).dose)
+        #expect(kept.units == 7)
+        #expect(kept.correctionGlucoseMgdl == 180)  // the reading the entered dose came from
     }
 
     /// A typed glucose has no fresh reading to check, but the pump's inputs can still move between the
@@ -265,21 +280,40 @@ import Testing
         #expect(compose(typed, answers: useNew, context: context).dose?.units == 6)
     }
 
-    /// Any change in the reading that moves the dose at all is asked about.
+    /// Any change in the reading that moves the dose at all is asked about, with the new dose.
     @Test func changedReadingThatMovesTheDoseSlightlyPrompts() {
         // 182 mg/dL: 6.00 + 1.80 − 0.50 = 7.30 U.
-        #expect(compose(F.cgmDose(), context: F.context(pump: F.pump(glucose: 182))).prompt != nil)
+        #expect(
+            DoseComposer.composePhone(F.phone(F.cgmDose()), context: F.context(pump: F.pump(glucose: 182))).prompt
+                == .correction(mgdl: 182, targetMgdl: 110, applyUnits: 7.3, declineUnits: 6))
     }
 
-    /// With the same reading, a dose moved by the inputs is asked about only past 0.10 U.
-    @Test func sameReadingWithMovedInputsPromptsOnlyPastTheLimit() {
+    /// With the same reading, inputs that moved the dose: the correction question names the dose from the
+    /// inputs now, and that dose goes, past the 0.10 U limit or within it.
+    @Test func sameReadingWithMovedInputsGivesTheDoseTheQuestionNamed() {
         var pump = F.pump()
         pump.insulinOnBoard = F.observed(0.3, age: 1)  // 7.45 U, 0.20 U from what was shown
         pump.bolusCalculator = F.observed(F.settings(reportedIOB: 0.3), age: 1)
-        #expect(compose(F.cgmDose(), context: F.context(pump: pump)).prompt != nil)
+        #expect(compose(F.cgmDose(), context: F.context(pump: pump)).dose?.units == 7.45)
         pump.insulinOnBoard = F.observed(0.45, age: 1)  // 7.30 U, within the limit
         pump.bolusCalculator = F.observed(F.settings(reportedIOB: 0.45), age: 1)
-        #expect(compose(F.cgmDose(), context: F.context(pump: pump)).dose?.units == 7.25)
+        #expect(compose(F.cgmDose(), context: F.context(pump: pump)).dose?.units == 7.3)
+    }
+
+    /// Where nothing is asked about the correction (under 70 the reduction always applies), a dose moved by
+    /// the inputs is still asked about only past 0.10 U.
+    @Test func withNoCorrectionQuestionMovedInputsPromptOnlyPastTheLimit() {
+        // 60 g at 60 mg/dL: 6.00 − 1.25 − 0.50 = 4.25 U.
+        let amount = F.cgmDose(shown: 60, recommended: 4.25, entered: 4.25)
+        var pump = F.pump(glucose: 60)
+        pump.insulinOnBoard = F.observed(0.3, age: 1)  // 4.45 U, 0.20 U from what was shown
+        pump.bolusCalculator = F.observed(F.settings(reportedIOB: 0.3), age: 1)
+        #expect(
+            compose(amount, context: F.context(pump: pump)).prompt
+                == .doseChanged(mgdl: 60, newUnits: 4.45, enteredUnits: 4.25))
+        pump.insulinOnBoard = F.observed(0.45, age: 1)  // 4.30 U, within the limit
+        pump.bolusCalculator = F.observed(F.settings(reportedIOB: 0.45), age: 1)
+        #expect(compose(amount, context: F.context(pump: pump)).dose?.units == 4.25)
     }
 
     // MARK: - Stale glucose
@@ -338,10 +372,21 @@ import Testing
         #expect(compose(F.cgmDose(), answers: include, context: context).prompt != nil)
     }
 
-    @Test func noReadingOffersCarbsOnly() {
+    /// With no reading to include and none on the screen, the carbs-only dose the screen showed goes with
+    /// nothing to ask, as on the watch: no reading at all, or one too old to include.
+    @Test func noReadingToIncludeGoesCarbsOnly() throws {
+        for pump in [F.pump(glucose: nil), F.pump(glucose: 180, glucoseAge: 30 * 60)] {
+            let dose = try #require(
+                compose(F.cgmDose(shown: nil, recommended: 6, entered: 6), context: F.context(pump: pump)).dose)
+            #expect(dose.units == 6)
+            #expect(dose.correctionGlucoseMgdl == nil)
+        }
+        // A reading still includable is asked about.
         #expect(
-            compose(F.cgmDose(shown: nil), context: F.context(pump: F.pump(glucose: nil))).prompt
-                == .staleGlucose(reading: nil, includeUnits: nil, carbsOnlyUnits: 6))
+            compose(
+                F.cgmDose(shown: nil, recommended: 6, entered: 6),
+                context: F.context(pump: F.pump(glucose: 180, glucoseAge: 10 * 60))
+            ).prompt?.includeUnits == 7.25)
     }
 
     /// The user answered a stale prompt, then a fresh reading arrived: the answer no longer holds, so
@@ -349,8 +394,8 @@ import Testing
     @Test func freshReadingAfterAStaleAnswerAsksAgain() {
         let answers = Answers(staleGlucose: .carbsOnly(units: 6))
         #expect(
-            compose(F.cgmDose(), answers: answers).prompt
-                == .doseChanged(mgdl: 180, newUnits: 7.25, enteredUnits: 7.25))
+            DoseComposer.composePhone(F.phone(F.cgmDose(), answers: answers), context: F.context()).prompt
+                == .correction(mgdl: 180, targetMgdl: 110, applyUnits: 7.25, declineUnits: 6))
     }
 
     // MARK: - Notices never change the dose
@@ -406,7 +451,7 @@ import Testing
 
     /// 10 g at 180 mg/dL comes to 2.25 U.
     private func compose(entered: Double) -> ComposedDose? {
-        DoseComposer.composePhone(
+        DoseComposer.composePhoneCorrecting(
             F.phone(
                 .calculator(carbsGrams: 10, glucose: .typed(mgdl: 180), recommendedUnits: 2.25, enteredUnits: entered)),
             context: F.context()

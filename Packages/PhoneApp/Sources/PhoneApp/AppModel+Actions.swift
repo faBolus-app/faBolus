@@ -14,11 +14,21 @@ extension AppModel {
     /// The calculator's suggestion for the bolus screen, from what's shown now. A dose is composed again
     /// from fresh pump reads on confirm (`composePhoneDose`), and the composer asks if that moved it.
     public func recommendation(carbsGrams: Double, glucoseMgdl: Int?) -> DoseRecommendation {
-        DoseComposer.recommend(
-            carbsGrams: carbsGrams, glucoseMgdl: glucoseMgdl,
-            context: DoseContext(
-                pump: display, access: access, bolusBlock: bolusBlock, inputsRequestedAt: .distantPast,
-                lastDeliveryAt: nil, remoteSizeLimitUnits: nil, freshness: freshness, now: now))
+        DoseComposer.recommend(carbsGrams: carbsGrams, glucoseMgdl: glucoseMgdl, context: screenContext)
+    }
+
+    /// The bolus screen's stale reading may still be included: Confirm asks about it. Otherwise a carb dose
+    /// without a current reading is carbs only, with nothing to ask.
+    public var staleReadingIncludable: Bool { DoseComposer.mayIncludeStaleReading(screenContext) }
+
+    /// Why the pump says its CGM reading shouldn't correct a dose, for the bolus screen: the dose is then
+    /// carbs only, with nothing asked at Confirm (`.cgmStateNotRead` only until the state arrives).
+    public var screenGlucoseCaution: PumpGlucoseCaution? { display.glucoseCaution() }
+
+    private var screenContext: DoseContext {
+        DoseContext(
+            pump: display, access: access, bolusBlock: bolusBlock, inputsRequestedAt: .distantPast,
+            lastDeliveryAt: nil, remoteSizeLimitUnits: nil, freshness: freshness, now: now)
     }
 
     /// Reads the dose inputs fresh from the pump and composes the phone's dose. The screen shows any prompt
