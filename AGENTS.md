@@ -32,10 +32,11 @@ Tandem t:slim X2. Companion map: [`llms.txt`](llms.txt). Branches: [`BRANCHES.md
 ## Quality gates
 
 - `./scripts/check.sh` runs every gate; CI runs the same script, one gate per step, on Xcode 27.2.
-  Each gate fails the build: compiler warnings (Swift 6 language mode), the package tests, the app
-  target's build and snapshot tests, `xcrun swift-format lint --strict`, SwiftLint, ShellCheck,
-  actionlint, markdownlint, and the contract and SBOM checks. Nothing is grandfathered. A suppression is
-  written inline, names the rule and gives a reason.
+  Each gate fails the build: any TandemKit package trait the app would enable, compiler warnings
+  (Swift 6 language mode), the package tests, the app target's build and snapshot tests,
+  `xcrun swift-format lint --strict`, SwiftLint, ShellCheck, actionlint, markdownlint, and the contract
+  and SBOM checks. Nothing is grandfathered. A suppression is written inline, names the rule and gives a
+  reason.
 - `./scripts/format.sh` formats in place. `.swift-format` turns off every rule except
   `DoNotUseSemicolons`, so it reflows layout but never rewrites code. The vendored `ShareClient` is
   never restyled.

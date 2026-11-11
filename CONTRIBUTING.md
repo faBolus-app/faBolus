@@ -23,6 +23,7 @@ only those (`./scripts/check.sh build test`).
 
 | Gate | What fails it |
 | --- | --- |
+| `traits` | Any TandemKit package trait an app build would enable: one a package manifest names on its TandemKit dependency (conditional ones too), a trait a faBolus package declares of its own (through which a conditional trait could turn one on), one SwiftPM's resolved graph enables on TandemKit, a default trait TandemKit declares, or a traits key in `project.yml`, the generated project or a `Package.resolved`. `BenchWrites` adds two signed writes for TandemKit's bench only. The gate first runs each check on small packages that enable the trait, and fails if one passes. |
 | `build` | A compiler warning in any package (Swift 6 language mode, warnings as errors). |
 | `test` | A failing package test. |
 | `app` | The app or widgets failing to build for the simulator, any compiler warning in that build (even one warnings as errors leaves a warning), or an app test failing, the light and dark snapshot of every screen among them. It runs on an "iPhone 17" simulator with iOS 27.2: another device or OS renders differently. |

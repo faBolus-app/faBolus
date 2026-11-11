@@ -30,7 +30,7 @@ write grant (`send(_:allowing:)`) → a signed message, byte-verified against th
 - `ios/`: SwiftUI views, the widget extension, snapshot tests.
 
 ## Commands
-- All gates: `./scripts/check.sh` (or name gates: `build test app format swiftlint shell actions markdown contract`)
+- All gates: `./scripts/check.sh` (or name gates: `traits build test app format swiftlint shell actions markdown contract`)
 - One package: `swift test --package-path Packages/<name>`
 - App project: `./scripts/generate-project.sh`; simulator build: `./scripts/build-sim.sh`
 - Rewrite golden fixtures: `UPDATE_CONTRACT=1 swift test --package-path Packages/RemoteProtocol`
