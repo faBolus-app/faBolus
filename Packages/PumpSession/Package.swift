@@ -35,6 +35,7 @@ let package = Package(
             name: "PumpScript",
             dependencies: [
                 .product(name: "TandemMessages", package: "TandemKit"),
+                .product(name: "TandemAuth", package: "TandemKit"),
                 .product(name: "TandemLink", package: "TandemKit"),
                 .product(name: "TandemBLE", package: "TandemKit")
             ]),
