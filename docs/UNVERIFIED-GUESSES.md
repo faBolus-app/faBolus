@@ -390,8 +390,11 @@ that worked.
 - **The guess:** a t:slim raises each qualifying-event bit when the thing it names changes, so the reads a
   notice brings keep the display current. faBolus reads what each bit names, as t:connect does (limited to
   the reads faBolus already sends), and syncs history after every
-  notice. The bit values are confirmed; which bits a t:slim raises, how often, and whether it raises a bit
-  already set before the phone clears it are not.
+  notice. TandemKit clears the bits when the link becomes ready and after every notice (a clear held back
+  by a signed write goes when the wire frees), as t:connect does. The bit values are confirmed; which bits
+  a t:slim raises, how often, and whether it keeps a bit set, sending no new notice for it, until the phone
+  clears it are not. The scripted pump can behave that way (`holdsNoticesUntilCleared`), so the clears are
+  tested against the worst case.
 - **Where:** `Packages/PumpSession/Sources/PumpSession/PumpSession+Reads.swift` (`NoticeReads`);
   `Packages/PumpSession/Sources/PumpSession/PumpSession.swift` (`qualifyingEvents`).
 - **Risk:** low. The timed reads stay as they are (alerts every 15 s, the rest every 60 s, history every

@@ -20,9 +20,7 @@ private func addGlucoseHistory(_ pump: ScriptedPump, count: Int) {
 @Suite struct HistorySyncTests {
     private func sync(_ rig: Rig) async {
         let session = rig.session
-        let task = Task { await session.syncHistory() }
-        await rig.run(for: 8)
-        await task.value
+        _ = await rig.run(for: 8, upTo: 120) { await session.syncHistory() }
     }
 
     @Test func fetchesTheMissingRecordsAndCreditsThemOnceStored() async {
@@ -81,9 +79,9 @@ private func addGlucoseHistory(_ pump: ScriptedPump, count: Int) {
         let requests = rig.pump.arrivals(of: HistoryLogRequest.self).count
         let page = Task { await session.fetchPage(start: start, count: 20, priority: .history) }
         await rig.run(for: 25)
-        #expect(await page.value?.count == 20)
+        #expect(await rig.value(of: page)??.count == 20)
         #expect(rig.pump.arrivals(of: HistoryLogRequest.self).count == requests + 1)
-        await refresh.value
+        await rig.value(of: refresh)
     }
 
     /// The link drops after the first page. The sync pauses with the first page credited, and the next

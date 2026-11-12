@@ -10,11 +10,9 @@ import Testing
 private let key = RemoteBolusLedger.Key(peerId: "phone", requestId: "phone-1")
 
 @MainActor
-private func deliver(_ rig: Rig, _ dose: ComposedDose, for seconds: Double = 2) async -> DeliveryResult {
+private func deliver(_ rig: Rig, _ dose: ComposedDose, for seconds: Double = 2) async -> DeliveryResult? {
     let session = rig.session
-    let task = Task { await session.deliver(dose) }
-    await rig.run(for: seconds)
-    return await task.value
+    return await rig.run(for: seconds, upTo: seconds + 120) { await session.deliver(dose) }
 }
 
 /// How each way a delivery can end is recorded. Ported from the old app's suite; the changes from it are
@@ -225,7 +223,7 @@ private func deliver(_ rig: Rig, _ dose: ComposedDose, for seconds: Double = 2) 
         let session = rig.session
         let cancel = Task { await session.cancelBolus() }
         await rig.run(for: 62, step: 2)
-        #expect(await cancel.value == .notCancelled)
+        #expect(await rig.value(of: cancel) == .notCancelled)
         #expect(rig.pump.arrivals(of: CancelBolusRequest.self).count == 1)
         await rig.run(for: 5)
         #expect(await rig.ledger.ledger.outcome(key) == .delivered(units: 2.0))
@@ -273,7 +271,7 @@ private func deliver(_ rig: Rig, _ dose: ComposedDose, for seconds: Double = 2) 
         let session = rig.session
         let cancel = Task { await session.cancelBolus() }
         await rig.run(for: 62)
-        #expect(await cancel.value == .unconfirmed)
+        #expect(await rig.value(of: cancel) == .unconfirmed)
         #expect(rig.pump.activeBolus != nil)
         await rig.run(for: max(5, rig.pump.deliverySeconds(milliunits: 2000) - 65 + 5))
         #expect(await rig.ledger.ledger.outcome(key) == .delivered(units: 2.0))
@@ -292,7 +290,7 @@ private func deliver(_ rig: Rig, _ dose: ComposedDose, for seconds: Double = 2) 
         await rig.settle()
         rig.pump.answers[MessageKey(CurrentBolusStatusRequest.self)] = nil
         rig.transport.drop()
-        #expect(await cancel.value == .notConnected)
+        #expect(await rig.value(of: cancel) == .notConnected)
         #expect(rig.pump.arrivals(of: CancelBolusRequest.self).isEmpty)
         await rig.run(for: rig.pump.deliverySeconds(milliunits: 2000) + 25, step: 2)
         #expect(await rig.ledger.ledger.outcome(key) == .delivered(units: 2.0))

@@ -52,7 +52,7 @@ private let key = RemoteBolusLedger.Key(peerId: "phone", requestId: "phone-1")
         let session = rig.session
         let delivery = Task { await session.deliver(composed(1.0)) }
         await rig.run(for: 70, step: 1)
-        _ = await delivery.value
+        _ = await rig.value(of: delivery)
         #expect(!rig.pump.arrivals(of: BolusPermissionRequest.self).isEmpty)
         #expect(rig.pump.arrivals(of: InitiateBolusRequest.self).isEmpty)
         #expect(rig.pump.activeBolus == nil)

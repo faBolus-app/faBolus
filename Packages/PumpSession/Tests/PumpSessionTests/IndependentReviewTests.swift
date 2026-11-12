@@ -57,7 +57,7 @@ private let key = RemoteBolusLedger.Key(peerId: "phone", requestId: "phone-1")
         let session = rig.session
         let cancel = Task { await session.cancelBolus() }
         await rig.run(for: 62, step: 1)
-        #expect(await cancel.value == .cancelled)
+        #expect(await rig.value(of: cancel) == .cancelled)
         #expect(rig.pump.arrivals(of: CancelBolusRequest.self).count == 1)
     }
 
@@ -68,7 +68,7 @@ private let key = RemoteBolusLedger.Key(peerId: "phone", requestId: "phone-1")
         let session = rig.session
         let cancel = Task { await session.cancelBolus() }
         await rig.run(for: 62, step: 1)
-        #expect(await cancel.value == .unconfirmed)
+        #expect(await rig.value(of: cancel) == .unconfirmed)
     }
 }
 
@@ -86,7 +86,7 @@ private let key = RemoteBolusLedger.Key(peerId: "phone", requestId: "phone-1")
         #expect(await session.deliver(composed(0.5, id: "phone-2")) == .notStarted(.blocked(.bolusInProgress)))
         #expect(await session.cancelBolus() == .stoppedBeforeStart)
         await rig.run(for: 62, step: 1)
-        #expect(await first.value == .started(key, .failed(reason: PumpSession.cancelledBeforeStartReason)))
+        #expect(await rig.value(of: first) == .started(key, .failed(reason: PumpSession.cancelledBeforeStartReason)))
         #expect(rig.pump.arrivals(of: InitiateBolusRequest.self).isEmpty)
     }
 }
@@ -138,7 +138,7 @@ private let key = RemoteBolusLedger.Key(peerId: "phone", requestId: "phone-1")
         await rig.start()
         let session = rig.session
         let delivery = Task { await session.deliver(composed(5.0)) }
-        #expect(await delivery.value == .started(key, .delivering))
+        #expect(await rig.value(of: delivery) == .started(key, .delivering))
         #expect(await session.tracked != nil)
         #expect(await session.isUntested(ControlIQIOBRequest()))
         let before = rig.pump.arrivals.count
@@ -167,7 +167,7 @@ private let key = RemoteBolusLedger.Key(peerId: "phone", requestId: "phone-1")
 @Suite struct InitiateDeadlineTests {
     /// The BG entry goes unanswered while `elapsed` passes, as when the app is suspended mid-delivery;
     /// the carb entry is answered at once. Returns the delivery's outcome.
-    private func deliver(after elapsed: Double, rig: Rig) async -> DeliveryResult {
+    private func deliver(after elapsed: Double, rig: Rig) async -> DeliveryResult? {
         await rig.startHeld()
         rig.pump.nextAnswers[MessageKey(RemoteBgEntryRequest.self)] = [.silent]
         let session = rig.session
@@ -175,7 +175,7 @@ private let key = RemoteBolusLedger.Key(peerId: "phone", requestId: "phone-1")
         #expect(await rig.until { rig.pump.arrivals(of: RemoteBgEntryRequest.self).count == 1 })
         // One step: the entry times out inside it, and nothing else moves the clock before the check.
         rig.clock.advance(by: elapsed)
-        return await delivery.value
+        return await rig.value(of: delivery)
     }
 
     @Test func justUnderTwoMinutesAfterConfirmTheBolusStarts() async {

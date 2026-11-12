@@ -2,6 +2,7 @@ import Foundation
 import GlucoseSources
 import PumpScript
 import RemoteProtocol
+import Testing
 import WatchLink
 import WidgetContent
 import faBolusCore
@@ -109,17 +110,56 @@ func addGlucoseHistory(_ pump: ScriptedPump, count: Int) {
 func le16(_ v: Int) -> [UInt8] { [UInt8(v & 0xff), UInt8((v >> 8) & 0xff)] }
 
 extension Phone {
-    /// Runs `work` while the pump's clock moves, as it would in real time.
-    func driving(_ model: AppModel, _ work: @escaping @MainActor () async -> Void) async {
-        let task = Task { @MainActor in await work() }
+    /// Runs `work` while the pump's clock moves, as it would in real time. Records an issue if it hasn't
+    /// returned after 120 s of the pump's clock, rather than waiting on it for good: work stuck on a
+    /// deadline would otherwise hang the suite.
+    func driving(
+        _ model: AppModel, sourceLocation: SourceLocation = #_sourceLocation,
+        _ work: @escaping @MainActor () async -> Void
+    ) async {
         var done = false
         Task { @MainActor in
-            await task.value
+            await work()
             done = true
         }
         for _ in 0..<120 where !done { await run(model, for: 1) }
-        await task.value
+        if !done { Issue.record("didn't return within 120 s of the pump's clock", sourceLocation: sourceLocation) }
     }
+
+    /// `task`'s result once it returns, without moving the clock. Records an issue and returns nil if it
+    /// hasn't within `seconds` of real time, so work waiting on a clock nothing moves fails instead of
+    /// hanging the suite.
+    @discardableResult
+    func value<T: Sendable>(
+        of task: Task<T, Never>, within seconds: Double = 120, sourceLocation: SourceLocation = #_sourceLocation
+    ) async -> T? {
+        let result = Finished<T>()
+        Task { @MainActor in result.value = await task.value }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(seconds))
+        while result.value == nil, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        if result.value == nil {
+            Issue.record(
+                "didn't return within \(seconds) s with the pump's clock stopped", sourceLocation: sourceLocation)
+        }
+        return result.value
+    }
+
+    /// `value(of:)` for a task that can throw: nil if it threw, or hadn't returned in time.
+    @discardableResult
+    func value<T: Sendable>(
+        of task: Task<T, any Error>, within seconds: Double = 120, sourceLocation: SourceLocation = #_sourceLocation
+    ) async -> T? {
+        let plain = Task { try? await task.value }
+        return await value(of: plain, within: seconds, sourceLocation: sourceLocation) ?? nil
+    }
+}
+
+/// What a `Phone.value(of:)` task returned, once it has.
+@MainActor
+private final class Finished<T> {
+    var value: T?
 }
 
 /// A Live Activity that records what it was asked to show. Like ActivityKit, it starts only in the

@@ -156,6 +156,16 @@ public final class ScriptedPump {
     public var raisesNotices = false
     /// The notices sent because of `raisesNotices`, in order.
     public private(set) var noticesSent: [QualifyingEvent] = []
+    /// Keep each notice's bits set until the phone clears them (writes the qualifying-events
+    /// characteristic), and send no notice for a bit that is still set. Off by default: whether a t:slim
+    /// holds its bits until cleared is unconfirmed, though t:connect's clear after authenticating and after
+    /// every notice suggests it might (guess #30).
+    public var holdsNoticesUntilCleared = false
+    /// The bits set and not yet cleared, kept across connections. Set it to start with bits left over from
+    /// an earlier connection.
+    public var heldNotices: QualifyingEvent = []
+    /// How many times the phone has cleared the qualifying events (written zero to the characteristic).
+    public internal(set) var noticeClears = 0
 
     func notice(_ events: QualifyingEvent) {
         guard raisesNotices, let transport else { return }
@@ -564,16 +574,30 @@ public final class ScriptedTransport: LinkTransport {
         endLink()
     }
 
-    /// Sends the qualifying-events bitmap, as the pump does when something changes.
+    /// Sends the qualifying-events bitmap, as the pump does when something changes. With
+    /// `holdsNoticesUntilCleared`, a bit still set from an earlier notice sends nothing, and a notice
+    /// carries every bit set.
     public func qualifyingEvents(_ events: QualifyingEvent) {
-        report?(.notified(.qualifyingEvents, le32(events.rawValue)))
+        guard pump.holdsNoticesUntilCleared else {
+            return report?(.notified(.qualifyingEvents, le32(events.rawValue))) ?? ()
+        }
+        guard !pump.heldNotices.isSuperset(of: events) else { return }
+        pump.heldNotices.formUnion(events)
+        report?(.notified(.qualifyingEvents, le32(pump.heldNotices.rawValue)))
     }
 
     // MARK: Requests
 
     private func receive(_ characteristic: Characteristic, _ packets: [[UInt8]]) {
         guard pump.linked else { return report?(.writeFailed(characteristic, txId: packets.first?[1])) ?? () }
-        guard characteristic != .qualifyingEvents else { return }
+        guard characteristic != .qualifyingEvents else {
+            // t:connect writes zero to clear; anything else isn't counted as a clear.
+            let bytes = packets.joined()
+            guard !bytes.isEmpty, bytes.allSatisfy({ $0 == 0 }) else { return }
+            pump.noticeClears += 1
+            pump.heldNotices = []
+            return
+        }
         var reassembler = reassembly[characteristic] ?? PacketReassembler()
         var frame: [UInt8]?
         for packet in packets { frame = reassembler.ingest(packet) ?? frame }
