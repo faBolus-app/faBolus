@@ -1,16 +1,21 @@
-// Sync the pinned safety banner's real height into --fab-banner-h so the sticky header
-// sits directly below it (the banner wraps to 2+ lines on narrow screens). See extra.css.
+// Sync the safety banner's real height into --fab-banner-h. The banner is the sticky header's first
+// child (overrides/partials/header.html) and wraps to several lines on narrow screens, so the pieces
+// that Material positions from a fixed header height (the drawer, the phone search, the back-to-top
+// button, anchor jumps) read this instead. See extra.css. The header persists across instant
+// navigation, so one observer covers every page.
 (function () {
+  var banner = document.querySelector('.md-header .fab-safety-banner');
+  if (!banner) { return; }
   function sync() {
-    // Measure the sticky announce wrapper (its height == the banner's) so the header stacks below it.
-    var b = document.querySelector('[data-md-component="announce"]') || document.querySelector('.md-banner');
-    if (b) {
-      document.documentElement.style.setProperty('--fab-banner-h', b.offsetHeight + 'px');
-    }
+    document.documentElement.style.setProperty('--fab-banner-h', banner.offsetHeight + 'px');
   }
-  window.addEventListener('load', sync);
-  window.addEventListener('resize', sync);
-  document.addEventListener('DOMContentLoaded', sync);
-  // Re-sync after mkdocs-material instant navigation, just in case.
-  if (typeof document$ !== 'undefined' && document$.subscribe) { document$.subscribe(sync); }
+  sync();
+  // Fires on every height change: window resizes, rotation, and the web font loading and
+  // re-wrapping the text.
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(sync).observe(banner);
+  } else {
+    window.addEventListener('resize', sync);
+    window.addEventListener('load', sync);
+  }
 })();

@@ -76,6 +76,12 @@ None at present.
 |---|---|---|---|
 | Garmin Connect IQ Mobile SDK | 1.8.0 | LicenseRef-Garmin-Proprietary | Binary xcframework; only when the Garmin companion is built |
 
+## Documentation site (fabolus.org, not part of the app)
+
+| Component | Version | License (SPDX) | Source | Usage |
+|---|---|---|---|---|
+| Material for MkDocs `partials/header.html` | mkdocs-material 9.7.7 | MIT | `overrides/partials/header.html` | Copied unchanged except for one line that includes the safety banner (`overrides/partials/safety-banner.html`) as the sticky header's first child |
+
 ## Trademarks
 
 "faBolus" is a trademark of Zev Granowitz (code is MIT; the name is not licensed). Tandem, t:slim X2, Mobi,

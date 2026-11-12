@@ -69,29 +69,46 @@
 
 /* =========================================================================
    Persistent safety banner — stays pinned at the very top while scrolling.
-   The banner (overrides/main.html → block announce) is normally in the flow and
-   scrolls away; make it sticky and push the (also-sticky) header below it. The
-   banner wraps on narrow screens, so its real height is synced into
-   --fab-banner-h by docs/javascripts/banner.js (the value below is the fallback).
+   The banner is the first child of the sticky header (overrides/partials/header.html),
+   so Material's JS counts it in the header's height: both sidebars stick below it,
+   their scroll areas fit the window, and the table of contents tracks the right
+   heading. The banner wraps on narrow screens; docs/javascripts/banner.js syncs its
+   real height into --fab-banner-h for the few places Material positions from a
+   fixed 2.4rem header (the value below is the no-JS fallback).
    ========================================================================= */
-:root { --fab-banner-h: 2.6rem; }
-/* Stick the ANNOUNCE WRAPPER, not the inner .md-banner. The wrapper
-   (`[data-md-component="announce"]`) is the direct body child and a sibling of the header, so it
-   sticks relative to the page like the header does. Making only `.md-banner` sticky pins it within
-   this short wrapper — which itself scrolls away, so the banner appeared non-sticky. */
-[data-md-component="announce"] {
-  position: sticky;
-  top: 0;
-  z-index: 1001;                         /* above the sticky header */
-}
+:root { --fab-banner-h: 4rem; }
 .md-banner {
   background-color: #7a1220;             /* deep red so it clearly reads as a warning */
   color: #fff;
 }
 .md-banner a { color: #fff; text-decoration: underline; }
-.md-header { top: var(--fab-banner-h, 0); }   /* sit directly below the pinned banner */
-/* Keep anchor-link jumps from landing under the pinned banner + header. */
-html { scroll-padding-top: calc(var(--fab-banner-h, 2.6rem) + 3rem); }
+/* Above the header's own layers (the search overlay is 1, the search box 2), so opening search
+   never covers the banner. */
+.fab-safety-banner { position: relative; z-index: 3; }
+
+/* Anchor jumps land below the whole header. Material's own :target margin (3.6rem) assumes a 2.4rem
+   header, so it keeps only its 1.2rem gap and the header height comes from the padding; the
+   padding also keeps keyboard focus from scrolling a link under the header. */
+html { scroll-padding-top: calc(var(--fab-banner-h) + 2.4rem); }
+.md-typeset :target { --md-scroll-margin: 1.2rem; }
+
+/* Back-to-top button: Material puts it 3.2rem from the top, which is under the banner. */
+.md-top { top: calc(var(--fab-banner-h) + 3.2rem); }
+
+/* Below 76.25em the navigation is a drawer and its overlay, both fixed from the top of the window.
+   Start them below the banner so it stays readable, and undimmed, while the drawer is open. */
+@media screen and (max-width: 76.234375em) {
+  .md-sidebar--primary,
+  .md-overlay { top: var(--fab-banner-h); }
+  .md-sidebar--primary { height: calc(100% - var(--fab-banner-h)); }
+  [data-md-toggle="drawer"]:checked ~ .md-overlay { height: calc(100% - var(--fab-banner-h)); }
+}
+/* Below 60em search opens full screen from the top of the window; start it below the banner, or the
+   search field sits under it. */
+@media screen and (max-width: 59.984375em) {
+  .md-search__inner { top: var(--fab-banner-h); }
+  [data-md-toggle="search"]:checked ~ .md-header .md-search__inner { height: calc(100% - var(--fab-banner-h)); }
+}
 
 /* Search box */
 [data-md-color-scheme="default"] .md-search__form {

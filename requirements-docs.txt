@@ -10,4 +10,7 @@
 #
 # Note for whoever bumps this: mkdocs.yml has a fully explicit `nav`, and docs/CNAME ships only because
 # it sits under docs/. Any docs reorganisation must update both or --strict fails.
+#
+# overrides/partials/header.html is a copy of this version's partials/header.html with the safety
+# banner added. Re-copy it from the new version (keeping the banner include) when you bump.
 mkdocs-material==9.7.7
