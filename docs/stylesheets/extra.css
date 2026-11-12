@@ -81,7 +81,7 @@
    banner.js's inline value replaces them. Re-measure if the banner's wording changes. */
 @media screen and (max-width: 63.984375em) { :root { --fab-banner-h: 5rem; } }
 @media screen and (max-width: 42.484375em) { :root { --fab-banner-h: 6.25rem; } }
-@media screen and (max-width: 29.984375em) { :root { --fab-banner-h: 9.5rem; } }
+@media screen and (max-width: 29.984375em) { :root { --fab-banner-h: 7rem; } }
 .md-banner {
   background-color: #7a1220;             /* deep red so it clearly reads as a warning */
   color: #fff;
@@ -90,6 +90,16 @@
 /* The banner's inner box is .md-typeset, so it inherited the body text's 1.72 line height; on a phone
    that made a six-line, 189px banner. Same text size, tighter lines. */
 .fab-safety-banner .md-banner__inner { line-height: 1.45; }
+/* Phones, portrait or landscape: the same wording in smaller type with less padding, so the pinned
+   banner and header leave most of the screen to the page. */
+@media screen and (max-width: 44.984375em), screen and (max-height: 31.25em) {
+  .fab-safety-banner .md-banner__inner {
+    font-size: .68rem;
+    line-height: 1.4;
+    margin: .4rem auto;
+    padding: 0 .6rem;
+  }
+}
 /* Above the header's own layers (the search overlay is 1, the search box 2), so opening search
    never covers the banner. */
 .fab-safety-banner { position: relative; z-index: 3; }
