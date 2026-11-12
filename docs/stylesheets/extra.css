@@ -69,29 +69,64 @@
 
 /* =========================================================================
    Persistent safety banner — stays pinned at the very top while scrolling.
-   The banner (overrides/main.html → block announce) is normally in the flow and
-   scrolls away; make it sticky and push the (also-sticky) header below it. The
-   banner wraps on narrow screens, so its real height is synced into
-   --fab-banner-h by docs/javascripts/banner.js (the value below is the fallback).
+   The banner is the first child of the sticky header (overrides/partials/header.html),
+   so Material's JS counts it in the header's height: both sidebars stick below it,
+   their scroll areas fit the window, and the table of contents tracks the right
+   heading. The banner wraps on narrow screens; docs/javascripts/banner.js syncs its
+   real height into --fab-banner-h for the few places Material positions from a
+   fixed 2.4rem header (the value below is the no-JS fallback).
    ========================================================================= */
-:root { --fab-banner-h: 2.6rem; }
-/* Stick the ANNOUNCE WRAPPER, not the inner .md-banner. The wrapper
-   (`[data-md-component="announce"]`) is the direct body child and a sibling of the header, so it
-   sticks relative to the page like the header does. Making only `.md-banner` sticky pins it within
-   this short wrapper — which itself scrolls away, so the banner appeared non-sticky. */
-[data-md-component="announce"] {
-  position: sticky;
-  top: 0;
-  z-index: 1001;                         /* above the sticky header */
-}
+:root { --fab-banner-h: 4rem; }
+/* No-JS fallbacks by width, each at least the banner's measured height there (320 to 1920px wide);
+   banner.js's inline value replaces them. Re-measure if the banner's wording changes. */
+@media screen and (max-width: 63.984375em) { :root { --fab-banner-h: 5rem; } }
+@media screen and (max-width: 42.484375em) { :root { --fab-banner-h: 6.25rem; } }
+@media screen and (max-width: 29.984375em) { :root { --fab-banner-h: 7rem; } }
 .md-banner {
   background-color: #7a1220;             /* deep red so it clearly reads as a warning */
   color: #fff;
 }
 .md-banner a { color: #fff; text-decoration: underline; }
-.md-header { top: var(--fab-banner-h, 0); }   /* sit directly below the pinned banner */
-/* Keep anchor-link jumps from landing under the pinned banner + header. */
-html { scroll-padding-top: calc(var(--fab-banner-h, 2.6rem) + 3rem); }
+/* The banner's inner box is .md-typeset, so it inherited the body text's 1.72 line height; on a phone
+   that made a six-line, 189px banner. Same text size, tighter lines. */
+.fab-safety-banner .md-banner__inner { line-height: 1.45; }
+/* Phones, portrait or landscape: the same wording in smaller type with less padding, so the pinned
+   banner and header leave most of the screen to the page. */
+@media screen and (max-width: 44.984375em), screen and (max-height: 31.25em) {
+  .fab-safety-banner .md-banner__inner {
+    font-size: .68rem;
+    line-height: 1.4;
+    margin: .4rem auto;
+    padding: 0 .6rem;
+  }
+}
+/* Above the header's own layers (the search overlay is 1, the search box 2), so opening search
+   never covers the banner. */
+.fab-safety-banner { position: relative; z-index: 3; }
+
+/* Anchor jumps land below the whole header. Material's own :target margin (3.6rem) assumes a 2.4rem
+   header, so it keeps only its 1.2rem gap and the header height comes from the padding; the
+   padding also keeps keyboard focus from scrolling a link under the header. */
+html { scroll-padding-top: calc(var(--fab-banner-h) + 2.4rem); }
+.md-typeset :target { --md-scroll-margin: 1.2rem; }
+
+/* Back-to-top button: Material puts it 3.2rem from the top, which is under the banner. */
+.md-top { top: calc(var(--fab-banner-h) + 3.2rem); }
+
+/* Below 76.25em the navigation is a drawer and its overlay, both fixed from the top of the window.
+   Start them below the banner so it stays readable, and undimmed, while the drawer is open. */
+@media screen and (max-width: 76.234375em) {
+  .md-sidebar--primary,
+  .md-overlay { top: var(--fab-banner-h); }
+  .md-sidebar--primary { height: calc(100% - var(--fab-banner-h)); }
+  [data-md-toggle="drawer"]:checked ~ .md-overlay { height: calc(100% - var(--fab-banner-h)); }
+}
+/* Below 60em search opens full screen from the top of the window; start it below the banner, or the
+   search field sits under it. */
+@media screen and (max-width: 59.984375em) {
+  .md-search__inner { top: var(--fab-banner-h); }
+  [data-md-toggle="search"]:checked ~ .md-header .md-search__inner { height: calc(100% - var(--fab-banner-h)); }
+}
 
 /* Search box */
 [data-md-color-scheme="default"] .md-search__form {
@@ -123,6 +158,12 @@ html { scroll-padding-top: calc(var(--fab-banner-h, 2.6rem) + 3rem); }
   border-radius: 8px;
   padding: .28rem .5rem;
   transition: background-color .12s ease, color .12s ease;
+}
+/* In the desktop sidebar, a section with its own index page ("Build it yourself") wraps its link in a
+   container that is also .md-nav__link; without this the padding above applies twice and indents
+   that label. The drawer lays the container out as a full row, so it keeps the padding there. */
+@media screen and (min-width: 76.25em) {
+  .md-nav__link.md-nav__container { padding: 0; }
 }
 .md-nav__item .md-nav__link:hover { background: var(--cx2-bg-soft); color: var(--cx2-ink); }
 .md-nav__link--active,

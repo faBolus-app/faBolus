@@ -3,13 +3,13 @@ name: Docs
 on:
   push:
     branches: [main]
-    paths: [docs/**, mkdocs.yml, requirements-docs.txt, .github/workflows/docs.yml]
+    paths: [docs/**, overrides/**, mkdocs.yml, requirements-docs.txt, .github/workflows/docs.yml]
   # Build (never deploy) on PRs that touch docs, so a broken nav entry or a dead link is caught in
   # review. Without this, `mkdocs build --strict` ran for the first time on `main` — the branch that
   # publishes fabolus.org through the github-pages environment — where a failure is a live problem
   # rather than a red check on a PR.
   pull_request:
-    paths: [docs/**, mkdocs.yml, requirements-docs.txt, .github/workflows/docs.yml]
+    paths: [docs/**, overrides/**, mkdocs.yml, requirements-docs.txt, .github/workflows/docs.yml]
   workflow_dispatch:
 
 permissions:
@@ -35,6 +35,12 @@ jobs:
       # builds it first.
       - run: pip install -r requirements-docs.txt
       - run: mkdocs build --strict
+      # The safety banner lives in a copy of Material's header partial (overrides/partials/). If a
+      # Material bump stops using that partial, the banner would vanish with the build still green.
+      - name: Every page carries the safety banner
+        run: |
+          missing="$(find site -name '*.html' -print0 | xargs -0 grep -L 'fab-safety-banner' || true)"
+          if [ -n "$missing" ]; then echo "Pages without the safety banner:"; echo "$missing"; exit 1; fi
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site

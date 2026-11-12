@@ -11,7 +11,7 @@ copyright: >-
 
 theme:
   name: material
-  custom_dir: overrides   # the safety banner on every page: overrides/main.html (block announce)
+  custom_dir: overrides   # the safety banner on every page, inside the sticky header: overrides/partials/
   language: en
   font:
     text: Inter
@@ -51,7 +51,7 @@ extra_css:
   - stylesheets/extra.css
 
 extra_javascript:
-  - javascripts/banner.js   # keeps the sticky safety banner sized so the header stacks below it
+  - javascripts/banner.js   # syncs the safety banner's height into --fab-banner-h (see extra.css)
 
 markdown_extensions:
   - abbr
