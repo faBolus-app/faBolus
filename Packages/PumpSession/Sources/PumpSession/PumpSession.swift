@@ -651,13 +651,21 @@ public actor PumpSession {
         if events.contains(.pumpCommunicationsSuspended) {
             sendsPausedUntil = now.addingTimeInterval(config.commsSuspendedPause)
         }
-        if !events.intersection([.alert, .alarm, .reminder, .malfunction, .cgmAlert]).isEmpty { due[.alerts] = now }
-        if !events.intersection([.bolusChange, .iobChange, .cgmChange, .remainingInsulin, .battery]).isEmpty {
-            due[.status] = now
+        // Before the link is ready nothing can be read; becoming ready reads everything.
+        guard identity != nil else { return }
+        // What each bit names is read now, as t:connect does, rather than waiting for its timed group.
+        for (read, priority) in NoticeReads.reads(for: events)
+        where !queue.contains(where: { MessageKey($0.message) == MessageKey(read) }) {
+            enqueue([read], priority: isSuspected(read) ? .probe : priority)
         }
-        if !events.intersection([.timeChange, .basalChange, .profileChange, .controlIQInfo]).isEmpty {
-            due[.settings] = now
-        }
+        // t:connect reads a profile change's ProfileStatus, which faBolus doesn't send; the settings
+        // group holds what a profile changes here.
+        if events.contains(.profileChange) { due[.settings] = now }
+        // And a history sync after every notice (t:connect's), one at a time: one asked for during a sync
+        // runs after it. The routine sync stays as the backstop for a missed notice. A sync cut short at
+        // its page limit keeps its pause before continuing, so a run of notices can't make it back to back.
+        if let at = due[.history], at > now, at.timeIntervalSince(now) <= config.historyContinueAfter { return }
+        due[.history] = now
     }
 
     // MARK: - Pairing

@@ -383,3 +383,18 @@ that worked.
 - **Verify:** with saline on P1 and P2, turn carbs off in a profile, run the bench's `snapshot` read and
   note bytes 13 and 14-17, then bolus from the calculator with insulin entered and a typed BG, and note
   what the pump's history records.
+
+## 30. Which bits a t:slim raises, and when
+
+- **The guess:** a t:slim raises each qualifying-event bit when the thing it names changes, so the reads a
+  notice brings keep the display current. faBolus reads what each bit names, as t:connect does (limited to
+  the reads faBolus already sends), and syncs history after every
+  notice. The bit values are confirmed; which bits a t:slim raises, how often, and whether it raises a bit
+  already set before the phone clears it are not.
+- **Where:** `Packages/PumpSession/Sources/PumpSession/PumpSession+Reads.swift` (`NoticeReads`);
+  `Packages/PumpSession/Sources/PumpSession/PumpSession.swift` (`qualifyingEvents`).
+- **Risk:** low. The timed reads stay as they are (alerts every 15 s, the rest every 60 s, history every
+  15 minutes), so a missed notice costs freshness, not a dose; a dose reads its own inputs fresh.
+- **Verify:** on P1 and P2, record the notices across a bolus, a cancel, a suspend and resume, a CGM
+  reading, a cartridge change and a battery change, then lengthen the alert read to 60 s if every alert
+  raised its bit.
