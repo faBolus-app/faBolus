@@ -14,8 +14,15 @@ extension AppModel {
     /// The calculator's suggestion for the bolus screen, from what's shown now. A dose is composed again
     /// from fresh pump reads on confirm (`composePhoneDose`), and the composer asks if that moved it.
     public func recommendation(carbsGrams: Double, glucoseMgdl: Int?) -> DoseRecommendation {
-        DoseComposer.recommend(carbsGrams: carbsGrams, glucoseMgdl: glucoseMgdl, context: screenContext)
+        recommendation(.carbs(grams: carbsGrams), glucoseMgdl: glucoseMgdl)
     }
+
+    public func recommendation(_ food: CalculatorFood, glucoseMgdl: Int?) -> DoseRecommendation {
+        DoseComposer.recommend(food, glucoseMgdl: glucoseMgdl, context: screenContext)
+    }
+
+    /// Carbs are off on the pump, as last read: the bolus screen's food entry is insulin units.
+    public var screenCarbsOff: Bool { display.bolusCalculator?.value.carbsOff == true }
 
     /// The bolus screen's stale reading may still be included: Confirm asks about it. Otherwise a carb dose
     /// without a current reading is carbs only, with nothing to ask.

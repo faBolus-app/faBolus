@@ -84,6 +84,23 @@ import faBolusCore
         flagged.carbsText = "45"
         flagged.entryChanged()
         check("carbs-only-flagged", NavigationStack { BolusEntryView(model: flaggedModel, initialFlow: flagged) })
+        // Carbs off on the pump: the food field takes insulin units, and the glucose still corrects.
+        let carbsOffModel = await SnapshotFixture.model { $0.pump.carbEntryEnabled = false }
+        let carbsOff = BolusFlow(model: carbsOffModel)
+        carbsOff.carbsText = "3"
+        carbsOff.carbsEdited()
+        check("carbs-off", NavigationStack { BolusEntryView(model: carbsOffModel, initialFlow: carbsOff) })
+        // And above target: the question's second card is "No correction", there being no carbs in it.
+        let carbsOffHighModel = await SnapshotFixture.model {
+            $0.pump.carbEntryEnabled = false
+            $0.pump.glucose = (250, 60)
+        }
+        let carbsOffHigh = BolusFlow(model: carbsOffHighModel)
+        carbsOffHigh.carbsText = "3"
+        carbsOffHigh.carbsEdited()
+        check(
+            "carbs-off-question",
+            NavigationStack { BolusEntryView(model: carbsOffHighModel, initialFlow: carbsOffHigh) })
     }
 
     /// The review of a calculator dose: carbs only, then corrected, as chosen on the screen.

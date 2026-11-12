@@ -41,6 +41,15 @@ struct StaleCalcInputPromptTests {
         #expect(msg.contains(CalcInputFreshness.ageLabel(for: stale, now: now)))
     }
 
+    /// With carbs off on the pump its carb ratio isn't used, so the warning doesn't name one.
+    @Test func therapyWarningWithCarbsOffNamesNoCarbRatio() {
+        let stale = now.addingTimeInterval(-20 * 60)
+        let profile = BolusMath.Profile(carbRatioGramsPerUnit: 0, isfMgdlPerUnit: 45, targetBgMgdl: 110, iobUnits: 0)
+        let msg = StaleTherapyPrompt.warningMessage(profile: profile, therapyDate: stale, now: now, carbsOff: true)
+        #expect(msg.contains("last known carbs off, ISF 45"))
+        #expect(!msg.contains("g/U"))
+    }
+
     // MARK: - StaleTherapyPrompt's "target %d mg/dL" literal (mg/dL is the app's only display unit)
 
     @Test func therapyWarningDefaultUnitTextIsUnchanged() {

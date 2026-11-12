@@ -99,6 +99,9 @@ public struct BolusRequestPayload: Sendable, Hashable {
         /// Carbs (zero for a correction only) through the calculator, with the watch's own estimate, which
         /// the phone's recompute must match.
         case calculator(carbsGrams: Int, estimateMilliunits: Int)
+        /// With carbs off on the pump: the food entry is insulin units, through the calculator as carbs are,
+        /// and no carbs go with the bolus.
+        case insulinCalculator(foodMilliunits: Int, estimateMilliunits: Int)
     }
     /// The watch's ID for this request. A resend uses the same ID and gets the same outcome.
     public var requestId: String
@@ -141,6 +144,10 @@ public struct BolusRequestPayload: Sendable, Hashable {
             w.set("mode", BolusModeToken.carbs.rawValue)
             w.set("carbsG", carbs)
             w.set("estimateMU", estimate)
+        case .insulinCalculator(let food, let estimate):
+            w.set("mode", BolusModeToken.carbs.rawValue)
+            w.set("foodMU", food)
+            w.set("estimateMU", estimate)
         }
         w.set("glucoseMgdl", glucoseMgdl)
         w.set("includeStaleGlucose", includeStaleGlucose)
@@ -157,9 +164,18 @@ public struct BolusRequestPayload: Sendable, Hashable {
         case .units:
             amount = .units(milliunits: try r.int("mU", in: milliunitRange))
         case .carbs:
-            amount = .calculator(
-                carbsGrams: try r.int("carbsG", in: 0...WireLimits.maxCarbsGrams),
-                estimateMilliunits: try r.int("estimateMU", in: milliunitRange))
+            // The calculator's food entry is grams (`carbsG`) or, with carbs off, units (`foodMU`): one of
+            // the two, never both.
+            let estimate = try r.int("estimateMU", in: milliunitRange)
+            if let food = try r.optionalInt("foodMU", in: milliunitRange) {
+                guard try r.optionalInt("carbsG", in: 0...WireLimits.maxCarbsGrams) == nil else {
+                    throw .outOfRange(field: "payload.carbsG")
+                }
+                amount = .insulinCalculator(foodMilliunits: food, estimateMilliunits: estimate)
+            } else {
+                amount = .calculator(
+                    carbsGrams: try r.int("carbsG", in: 0...WireLimits.maxCarbsGrams), estimateMilliunits: estimate)
+            }
         }
         glucoseMgdl = try r.optionalInt("glucoseMgdl", in: glucoseRange)
         includeStaleGlucose = try r.bool("includeStaleGlucose")

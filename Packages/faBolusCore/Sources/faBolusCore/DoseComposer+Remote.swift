@@ -5,9 +5,14 @@ public struct RemoteDoseRequest: Sendable, Equatable {
     public enum Amount: Sendable, Equatable {
         /// Units the user dialed on the remote. Delivered as sent; the phone doesn't recompute them.
         case units(Double)
-        /// Carbs (zero for a correction only) through the calculator. The phone recomputes and is
-        /// authoritative; `estimateUnits` is the remote's own result, which the recompute must match.
-        case calculator(carbsGrams: Double, estimateUnits: Double?)
+        /// The food entry (zero for a correction only) through the calculator: carbs, or insulin units with
+        /// carbs off on the pump. The phone recomputes and is authoritative; `estimateUnits` is the
+        /// remote's own result, which the recompute must match.
+        case calculator(food: CalculatorFood, estimateUnits: Double?)
+
+        public static func calculator(carbsGrams: Double, estimateUnits: Double?) -> Amount {
+            .calculator(food: .carbs(grams: carbsGrams), estimateUnits: estimateUnits)
+        }
     }
 
     /// The remote's own request ID, so a resent message is the same request.
@@ -53,7 +58,9 @@ public struct RemoteDoseRequest: Sendable, Equatable {
         guard recorded.ledgerKey == ledgerKey, recorded.bgMgdl == glucoseMgdl else { return false }
         switch amount {
         case .units(let units): return recorded.carbsGrams == nil && recorded.shape == .now(units: units)
-        case .calculator(let carbs, _): return recorded.carbsGrams == carbs
+        case .calculator(.carbs(let grams), _): return recorded.carbsGrams == grams
+        case .calculator(.insulin(let units), _):
+            return recorded.carbsGrams == nil && recorded.foodInsulinUnits == units
         case nil: return false
         }
     }
@@ -99,6 +106,7 @@ extension DoseComposer {
 
         let units: Double
         var carbsGrams: Double?
+        var foodInsulin: Double?
         var iob: Double?
         var carbPart: Double?
         var correction: Int?
@@ -107,16 +115,21 @@ extension DoseComposer {
         case .units(let sent):
             guard sent.isFinite, sent >= 0 else { return .refused(.invalidAmount) }
             units = sent
-        case .calculator(let carbs, let estimate):
-            guard carbs.isFinite, carbs >= 0 else { return .refused(.invalidAmount) }
+        case .calculator(let food, let estimate):
+            guard food.amount.isFinite, food.amount >= 0 else { return .refused(.invalidAmount) }
             guard let estimate, estimate.isFinite else { return .refused(.missingEstimate) }
             let inputs = CalculatorInputs(context: context)
             guard inputs.isVerified else { return .refused(.pumpSettingsNotVerified) }
+            // Carbs turned on or off on the pump since the remote read its settings: its entry means
+            // something else now (grams or units), so it's entered again, never converted.
+            if inputs.takes(food) == false {
+                return .refused(.carbEntryChanged(carbsOff: inputs.settings?.value.carbsOff == true))
+            }
             (correction, usedStale) = remoteCorrectionGlucose(request, context: context)
             if let mgdl = correction, !CalculatorGlucose.isValid(mgdl: mgdl) {
                 return .refused(.invalidGlucose(mgdl: mgdl))
             }
-            guard let dose = inputs.units(carbsGrams: carbs, glucoseMgdl: correction) else {
+            guard let dose = inputs.units(food, glucoseMgdl: correction) else {
                 return .refused(.pumpSettingsUnusable)
             }
             if differs(dose, estimate) { return .refused(.doseChanged(estimateUnits: estimate, doseUnits: dose)) }
@@ -124,14 +137,16 @@ extension DoseComposer {
             // from this one changes the dose at all, the remote asks again with the new doses, so a correction
             // the user said no to is never sent, even within the limit.
             if request.declineCorrection, correction != nil,
-                let carbsOnly = inputs.units(carbsGrams: carbs, glucoseMgdl: nil), abs(dose - carbsOnly) > mismatchSlack
+                let carbsOnly = inputs.units(food, glucoseMgdl: nil), abs(dose - carbsOnly) > mismatchSlack
             {
                 return .refused(.doseChanged(estimateUnits: estimate, doseUnits: dose))
             }
             units = dose
-            carbsGrams = carbs
+            // With carbs off no carb amount goes with the bolus, as in Tandem's apps.
+            carbsGrams = food.isInsulin ? nil : food.carbsGrams
+            foodInsulin = food.isInsulin ? food.amount : nil
             iob = inputs.calculatorInsulinOnBoardUnits
-            carbPart = inputs.carbPart(of: dose, carbsGrams: carbs, glucoseMgdl: correction)
+            carbPart = inputs.carbPart(of: dose, food: food, glucoseMgdl: correction)
         }
 
         if let refusal = bounds(units, context: context) { return .refused(refusal) }
@@ -142,7 +157,7 @@ extension DoseComposer {
 
         let dose = DoseRequest(
             id: request.id, origin: .remote(peerId: request.peerId, sentAt: sentAt), shape: .now(units: units),
-            carbsGrams: carbsGrams, bgMgdl: request.glucoseMgdl)
+            carbsGrams: carbsGrams, bgMgdl: request.glucoseMgdl, foodInsulinUnits: foodInsulin)
         // A remote that missed the outcome and resends under a new ID would otherwise dose twice.
         if ledger.hasRecentlyDeliveredDuplicate(peerId: request.peerId, doseKey: dose.doseKey, now: context.now) {
             return .refused(.recentlyDelivered)

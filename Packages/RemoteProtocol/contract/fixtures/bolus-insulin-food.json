@@ -1,0 +1,13 @@
+{
+  "kind": "bolus",
+  "payload": {
+    "estimateMU": 3800,
+    "foodMU": 3000,
+    "glucoseMgdl": 142,
+    "includeStaleGlucose": false,
+    "mode": "carbs",
+    "requestId": "1793534390-15-121700",
+    "sentAt": 1793534390
+  },
+  "version": 2
+}

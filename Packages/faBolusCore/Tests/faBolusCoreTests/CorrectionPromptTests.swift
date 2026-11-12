@@ -177,7 +177,7 @@ import Testing
         let profile = BolusMath.Profile(carbRatioGramsPerUnit: 10, isfMgdlPerUnit: 40, targetBgMgdl: 110, iobUnits: iob)
         let result = BolusMath.estimate(carbsGrams: carbs > 0 ? carbs : nil, bgMgdl: bg, profile: profile)
         return CalculatorMessage.of(
-            result, carbsGrams: carbs, glucoseMgdl: bg, targetMgdl: 110, isfMgdlPerUnit: 40, iobUnits: iob)
+            result, food: .carbs(grams: carbs), glucoseMgdl: bg, targetMgdl: 110, isfMgdlPerUnit: 40, iobUnits: iob)
     }
 
     @Test func theMessageSaysWhyTheDoseIsWhatItIs() {

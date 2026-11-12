@@ -366,3 +366,20 @@ that worked.
 - **Risk:** fails closed: a pump that refuses the value refuses the bolus, and nothing is delivered.
 - **Verify:** with saline on P1 and P2, bolus from a typed 30 mg/dL and a typed 450 mg/dL, and note
   whether each is accepted and what the pump's history records as the BG.
+
+## 29. Carbs off on the pump (the calculator snapshot's byte 13)
+
+- **The guess:** byte 13 of the calculator snapshot is 0 when the active profile has carbs turned off, as
+  t:connect's parser reads it. faBolus then takes the calculator's food entry as insulin units, as
+  Tandem's apps do, and sends the bolus as a dose with no carbs: no carb amount, no RemoteCarbEntry, and
+  the same food and correction fields as any dose with no carbs (what t:connect puts in them with carbs off
+  wasn't traced). It doesn't need the carb ratio then, since what the pump reports for it with carbs off
+  isn't known.
+- **Where:** `Packages/faBolusCore/Sources/faBolusCore/PumpState.swift` (`carbsOff`, `isUsable`);
+  `Packages/faBolusCore/Sources/faBolusCore/DoseComposer.swift` (`CalculatorFood`);
+  `Packages/PumpSession/Sources/PumpSession/BolusCommands.swift`.
+- **Risk:** low. A dose with no carbs is what faBolus already sends for a correction or a dose in units;
+  an entry typed before carbs were turned on or off is refused, never converted.
+- **Verify:** with saline on P1 and P2, turn carbs off in a profile, run the bench's `snapshot` read and
+  note bytes 13 and 14-17, then bolus from the calculator with insulin entered and a typed BG, and note
+  what the pump's history records.

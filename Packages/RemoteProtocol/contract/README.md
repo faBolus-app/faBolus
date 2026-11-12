@@ -68,7 +68,7 @@ two clocks needn't agree. A value that hasn't been read, or whose time can't be 
 | `iob`, `reservoir`, `lastBolus` | `mU`, `at` (`lastBolus.at` is when it was given) |
 | `battery` | `percent`, `charging` (absent when unknown), `at` |
 | `basal` | `suspended`, `mUPerHour` when not suspended, `at` |
-| `calculator` | `carbRatioMg`, `isf`, `target`, `maxBolusMU`, `at` |
+| `calculator` | `carbRatioMg`, `isf`, `target`, `maxBolusMU`, `carbsOff` (carbs are off on the pump: the food entry is insulin units, and `carbRatioMg` is 0; absent is false), `at` |
 | `controlIQ` | `enabled`, `activity` (`normal`, `sleep`, `exercise`), `at` |
 | `maxBasal` | `mUPerHour`, `at` |
 | `lastAutoCorrection` | `at`: when Control-IQ last gave an automatic correction bolus, from the pump's history; absent when none is known |
@@ -119,7 +119,7 @@ arrive. A remote stops waiting once the request would be refused as too old.
 | Kind | Payload |
 |---|---|
 | `poll` | `configRevision` (absent when the remote has none: first launch or wiped storage), `awaiting` (the request it's waiting on), `history`, `freshGlucose`, `appVersion` |
-| `bolus` | `requestId`, `sentAt` (when the user confirmed, by the remote's clock), `mode` (`units` with `mU`, or `carbs` with `carbsG` and `estimateMU`), `glucoseMgdl` (the reading the estimate used, or the one the user declined to correct from), `includeStaleGlucose`, `confirmed` (absent when none), `declineCorrection` (absent is false) |
+| `bolus` | `requestId`, `sentAt` (when the user confirmed, by the remote's clock), `mode` (`units` with `mU`, or `carbs` with `estimateMU` and either `carbsG` or, with carbs off on the pump, `foodMU`, the insulin for the food), `glucoseMgdl` (the reading the estimate used, or the one the user declined to correct from), `includeStaleGlucose`, `confirmed` (absent when none), `declineCorrection` (absent is false) |
 | `cancel` | `requestId`, `bolusRequestId` (when the remote started the bolus) |
 | `dismiss` | `requestId`, `alertId` |
 
@@ -134,6 +134,11 @@ carbs only, the request carries `declineCorrection` with that reading as `glucos
 composes it with no correction. The answer holds for that reading only: if the phone's reading is another
 one, or under 70 mg/dL (where the reduction always applies), the phone corrects from its reading, and if
 that changes the dose at all the request is refused as changed, so the remote asks again.
+
+With carbs off on the pump (`calculator.carbsOff`), a remote takes the food entry as insulin units, as
+Tandem's apps do, and sends it as `foodMU`; the calculator corrects and asks as with carbs, and no carbs go
+with the bolus. A request whose entry is of the other kind (grams with carbs off, or units with carbs on)
+is refused, so the user enters it again.
 
 ### Confirming on the remote
 

@@ -29,7 +29,7 @@ public enum CalculatorMessage: Sendable, Equatable {
     /// The message for a calculation, as Tandem's app chooses it, or `nil` when there's nothing to say: no
     /// glucose, a correction that only adds, or a reduction that leaves a dose.
     public static func of(
-        _ result: BolusMath.Result, carbsGrams: Double, glucoseMgdl: Int?, targetMgdl: Int, isfMgdlPerUnit: Int,
+        _ result: BolusMath.Result, food: CalculatorFood, glucoseMgdl: Int?, targetMgdl: Int, isfMgdlPerUnit: Int,
         iobUnits: Double
     ) -> CalculatorMessage? {
         guard let bg = glucoseMgdl, !result.sanityFailed else { return nil }
@@ -37,7 +37,7 @@ public enum CalculatorMessage: Sendable, Equatable {
         // The IOB would take the glucose under 70 once it acts.
         let iobMayDropLow = hasIOB && Double(bg) - iobUnits * Double(isfMgdlPerUnit) < Double(lowGlucoseMgdl)
         if bg < lowGlucoseMgdl {
-            if carbsGrams <= 0 { return .lowGlucose(.noCarbs) }
+            if food.amount <= 0 { return .lowGlucose(.noCarbs) }
             return .lowGlucose(result.totalUnits <= 0 ? .noBolus : .reduced)
         }
         if bg < targetMgdl { return result.totalUnits <= 0 ? .reducedToZero(iob: iobMayDropLow) : nil }
@@ -66,7 +66,7 @@ extension DoseRecommendation {
     public var message: CalculatorMessage? {
         guard let calculation, let settings = inputs.settings?.value else { return nil }
         return CalculatorMessage.of(
-            calculation, carbsGrams: carbsGrams, glucoseMgdl: glucoseMgdl, targetMgdl: settings.targetMgdl,
+            calculation, food: food, glucoseMgdl: glucoseMgdl, targetMgdl: settings.targetMgdl,
             isfMgdlPerUnit: settings.correctionFactor, iobUnits: inputs.calculatorInsulinOnBoardUnits ?? 0)
     }
 }

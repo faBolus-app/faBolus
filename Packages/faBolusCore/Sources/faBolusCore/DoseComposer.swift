@@ -133,31 +133,72 @@ public struct CalculatorInputs: Sendable, Equatable {
     }
 
     /// The pump calculator's result for these inputs, or `nil` when either input has never been read.
-    func calculate(carbsGrams: Double, glucoseMgdl: Int?) -> BolusMath.Result? {
+    func calculate(_ food: CalculatorFood, glucoseMgdl: Int?) -> BolusMath.Result? {
         guard let settings = settings?.value, let iob = calculatorInsulinOnBoardUnits else { return nil }
         let profile = BolusMath.Profile(
             carbRatioGramsPerUnit: settings.carbRatio, isfMgdlPerUnit: settings.correctionFactor,
             targetBgMgdl: settings.targetMgdl, iobUnits: iob)
-        return BolusMath.estimate(
-            carbsGrams: carbsGrams > 0 ? carbsGrams : nil, bgMgdl: glucoseMgdl, profile: profile)
+        switch food {
+        case .carbs(let grams):
+            return BolusMath.estimate(carbsGrams: grams > 0 ? grams : nil, bgMgdl: glucoseMgdl, profile: profile)
+        case .insulin(let units):
+            return BolusMath.estimate(foodUnits: units > 0 ? units : nil, bgMgdl: glucoseMgdl, profile: profile)
+        }
     }
 
-    /// The carb part of the calculation for these inputs, capped at `units`, when that calculation rounded
+    /// The food part of the calculation for these inputs, capped at `units`, when that calculation rounded
     /// down to the pump's step is exactly `units`. Otherwise the dose isn't the calculator's, and there's
     /// no part.
-    func carbPart(of units: Double, carbsGrams: Double, glucoseMgdl: Int?) -> Double? {
-        guard carbsGrams > 0, let result = calculate(carbsGrams: carbsGrams, glucoseMgdl: glucoseMgdl),
-            !result.sanityFailed,
+    func carbPart(of units: Double, food: CalculatorFood, glucoseMgdl: Int?) -> Double? {
+        guard food.amount > 0, let result = calculate(food, glucoseMgdl: glucoseMgdl), !result.sanityFailed,
             abs(BolusVolume.roundedDown(result.totalUnits) - units) <= DoseComposer.mismatchSlack
         else { return nil }
         return min(result.fromCarbs, units)
     }
 
     /// The calculated dose rounded down to the pump's step, or `nil` when it can't be sized.
-    func units(carbsGrams: Double, glucoseMgdl: Int?) -> Double? {
-        guard let result = calculate(carbsGrams: carbsGrams, glucoseMgdl: glucoseMgdl), !result.sanityFailed
-        else { return nil }
+    func units(_ food: CalculatorFood, glucoseMgdl: Int?) -> Double? {
+        guard let result = calculate(food, glucoseMgdl: glucoseMgdl), !result.sanityFailed else { return nil }
         return BolusVolume.roundedDown(result.totalUnits)
+    }
+
+    /// Whether the pump's carbs setting, as last read, takes `food` as entered: grams with carbs on, units
+    /// with carbs off. Nothing entered fits either. `nil` when the settings haven't been read.
+    func takes(_ food: CalculatorFood) -> Bool? {
+        guard let settings = settings?.value else { return nil }
+        guard food.amount > 0 else { return true }
+        return food.isInsulin == settings.carbsOff
+    }
+}
+
+/// The calculator's food entry: grams of carbs, or, with carbs off on the pump, insulin units, as Tandem's
+/// apps take it then. Zero is a correction only.
+public enum CalculatorFood: Sendable, Hashable {
+    case carbs(grams: Double)
+    case insulin(units: Double)
+
+    public var amount: Double {
+        switch self {
+        case .carbs(let grams): grams
+        case .insulin(let units): units
+        }
+    }
+
+    /// The carbs that go with the bolus: none with carbs off.
+    public var carbsGrams: Double {
+        if case .carbs(let grams) = self { grams } else { 0 }
+    }
+
+    public var isInsulin: Bool {
+        if case .insulin = self { true } else { false }
+    }
+
+    /// The same entry with a finite, non-negative amount.
+    var sanitized: CalculatorFood {
+        switch self {
+        case .carbs(let grams): .carbs(grams: grams.isFinite ? max(0, grams) : 0)
+        case .insulin(let units): .insulin(units: units.isFinite ? max(0, units) : 0)
+        }
     }
 }
 
@@ -170,12 +211,17 @@ public struct DoseRecommendation: Sendable, Equatable {
     public var inputs: CalculatorInputs
     /// The glucose the recommendation was asked for.
     public var glucoseMgdl: Int?
-    /// The carbs it was asked for, grams.
-    public var carbsGrams: Double = 0
+    /// The food entry it was asked for.
+    public var food: CalculatorFood = .carbs(grams: 0)
+    /// The carbs it was asked for, grams: none with carbs off.
+    public var carbsGrams: Double { food.carbsGrams }
+    /// The pump's carbs setting, as last read, doesn't take this entry (grams with carbs off, or units
+    /// with carbs on), so no dose is sized from it.
+    public var foodNotTaken: Bool { inputs.takes(food) == false }
 
     /// A number may be shown only when it comes from real pump readings. Before the pump has reported its
     /// settings and IOB there is nothing to size a dose from, so the screen waits instead.
-    public var displaysNumericDose: Bool { calculation.map { !$0.sanityFailed } ?? false }
+    public var displaysNumericDose: Bool { !foodNotTaken && calculation.map { !$0.sanityFailed } ?? false }
 
     /// The pump's settings have been read but its calculator can't use them (no correction factor, or a
     /// target outside 40–400 mg/dL, with a glucose to correct from), so no dose is sized.
@@ -191,12 +237,19 @@ extension DoseComposer {
     /// The recommendation for the bolus screen, from the last-known inputs whether or not they are
     /// verified. `inputs` says which are verified; delivery asks again when they aren't.
     public static func recommend(carbsGrams: Double, glucoseMgdl: Int?, context: DoseContext) -> DoseRecommendation {
+        recommend(.carbs(grams: carbsGrams), glucoseMgdl: glucoseMgdl, context: context)
+    }
+
+    public static func recommend(_ food: CalculatorFood, glucoseMgdl: Int?, context: DoseContext)
+        -> DoseRecommendation
+    {
         let inputs = CalculatorInputs(context: context)
-        let carbs = carbsGrams.isFinite ? max(0, carbsGrams) : 0
-        let calculation = inputs.calculate(carbsGrams: carbs, glucoseMgdl: glucoseMgdl)
-        let units = calculation.map { $0.sanityFailed ? 0 : BolusVolume.roundedDown($0.totalUnits) } ?? 0
+        let food = food.sanitized
+        let calculation = inputs.calculate(food, glucoseMgdl: glucoseMgdl)
+        let sized = calculation.map { !$0.sanityFailed } == true && inputs.takes(food) != false
+        let units = sized ? calculation.map { BolusVolume.roundedDown($0.totalUnits) } ?? 0 : 0
         return DoseRecommendation(
-            units: units, calculation: calculation, inputs: inputs, glucoseMgdl: glucoseMgdl, carbsGrams: carbs)
+            units: units, calculation: calculation, inputs: inputs, glucoseMgdl: glucoseMgdl, food: food)
     }
 }
 
@@ -272,6 +325,9 @@ public enum DoseRefusal: Sendable, Equatable {
     case pumpSettingsNotVerified
     /// The pump's calculator rejects its own settings (a target outside 40–400 mg/dL).
     case pumpSettingsUnusable
+    /// Carbs were turned on or off on the pump after the dose was entered, so its food entry (grams or
+    /// units) means something else now. `carbsOff` is the setting now.
+    case carbEntryChanged(carbsOff: Bool)
     /// The phone's recompute differs from the remote's estimate by more than 0.10 U.
     case doseChanged(estimateUnits: Double, doseUnits: Double)
     /// A glucose outside 20–600 mg/dL (`CalculatorGlucose`), typed or from the CGM. A calculated dose is
@@ -314,6 +370,10 @@ public enum DoseRefusal: Sendable, Equatable {
             return "Pump settings not verified yet — open faBolus on the phone to confirm this dose."
         case .pumpSettingsUnusable:
             return "The pump's bolus calculator can't use its current settings. Check the target on the pump."
+        case .carbEntryChanged(let carbsOff):
+            return carbsOff
+                ? "Carbs are now off on the pump. Enter the food insulin in units."
+                : "Carbs are now on on the pump. Enter the carbs in grams."
         case .doseChanged(let estimate, let dose):
             return String(
                 format: "Dose changed since your estimate (%.2f U → %.2f U). Reopen and confirm.", estimate, dose)

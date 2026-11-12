@@ -293,6 +293,74 @@ import Testing
         await model.shutdown()
     }
 
+    /// Carbs off on the pump: the food field takes insulin units, as Tandem's app has it, and the dose goes
+    /// with no carbs.
+    @Test func withCarbsOffTheFoodIsUnits() async {
+        let phone = Phone()
+        phone.mock.pump.carbEntryEnabled = false
+        phone.mock.pump.glucose = nil
+        let model = await phone.launch()
+        _ = await phone.until(model) { model.pump.link == .connected }
+        await phone.run(model, for: 12)
+        let flow = BolusFlow(model: model)
+        flow.mode = .carbs
+        #expect(flow.carbsOff)
+        flow.carbsText = "3"
+        flow.carbsEdited()
+        #expect(flow.food == .insulin(units: 3))
+        #expect(flow.recommendation.units == 3)
+        await phone.driving(model) { await flow.confirm() }
+        guard case .review(let dose) = flow.phase else {
+            Issue.record("expected the review, got \(flow.phase)")
+            return
+        }
+        #expect(dose.units == 3)
+        #expect(dose.request.carbsGrams == nil)
+        #expect(dose.request.foodInsulinUnits == 3)
+        flow.cancel()
+        await model.shutdown()
+    }
+
+    /// With carbs off there are no carbs in the dose, so the dose without the correction is "no correction".
+    @Test func withCarbsOffTheDoseWithoutTheCorrectionIsNoCorrection() {
+        #expect(BolusFlow.cautionLine(.checkBG) == "CGM says check BG: carbs only")
+        #expect(BolusFlow.cautionLine(.checkBG, carbsOff: true) == "CGM says check BG: no correction")
+        #expect(BolusFlow.noCorrectionTitle(true) == "No correction")
+        #expect(BolusFlow.noCorrectionTitle(false) == "Carbs only")
+        let at = Date(timeIntervalSince1970: 1_800_000_000)
+        let stale = StaleBolusPrompt.warningMessage(
+            glucoseMgdl: 180, glucoseDate: at.addingTimeInterval(-600), now: at, carbsOff: true)
+        #expect(stale.contains("bolus with no correction, or cancel?"))
+    }
+
+    /// Carbs turned off on the pump after the carbs were typed: the grams are never taken as units. Confirm
+    /// reads the pump and says to enter the dose again.
+    @Test func carbsTurnedOffAfterTypingAreEnteredAgain() async {
+        let phone = Phone()
+        phone.mock.pump.glucose = nil
+        let model = await phone.launch()
+        _ = await phone.until(model) { model.pump.link == .connected }
+        await phone.run(model, for: 12)
+        let flow = BolusFlow(model: model)
+        flow.mode = .carbs
+        flow.carbsText = "30"
+        flow.carbsEdited()
+        #expect(flow.food == .carbs(grams: 30))
+        phone.mock.pump.carbEntryEnabled = false
+        await phone.driving(model) { await flow.confirm() }
+        #expect(flow.phase == .refused(DoseRefusal.carbEntryChanged(carbsOff: true).userMessage))
+        // The screen now has carbs off too: it holds the button until the food is typed again, as units.
+        #expect(flow.carbsOff)
+        #expect(flow.foodNeedsReentry)
+        flow.dismissResult()
+        #expect(flow.unavailableReason == DoseRefusal.carbEntryChanged(carbsOff: true).userMessage)
+        flow.carbsText = "3"
+        flow.carbsEdited()
+        #expect(!flow.foodNeedsReentry)
+        #expect(flow.food == .insulin(units: 3))
+        await model.shutdown()
+    }
+
     /// The pump flags too many boluses: the screen asks, in the pump's words, and Deliver sends the dose
     /// it showed.
     @Test func aConfirmationIsAskedAndGoingOnReviewsTheDose() async {

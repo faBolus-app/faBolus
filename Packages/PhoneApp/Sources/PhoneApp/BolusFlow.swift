@@ -26,7 +26,11 @@ public final class BolusFlow {
 
     public let model: AppModel
     public var mode: BolusEntryMode
+    /// The food entry: grams of carbs, or insulin units with carbs off on the pump.
     public var carbsText = ""
+    /// Whether `carbsText` was typed as insulin units (carbs off then), so that carbs turned on or off on the
+    /// pump while it's entered never turns grams into units or back: the screen says to enter it again.
+    public private(set) var carbsTextIsInsulin = false
     /// A glucose the user typed; empty corrects from the current CGM reading.
     public var glucoseText = ""
     /// Units to deliver. In carbs mode it follows the suggestion until the user changes it.
@@ -48,6 +52,25 @@ public final class BolusFlow {
     // MARK: Entry
 
     public var carbs: Double? { Self.parseNumber(carbsText) }
+    /// Carbs are off on the pump, as last read: the food field takes insulin units.
+    public var carbsOff: Bool { model.screenCarbsOff }
+    /// What the food field holds, as it was typed.
+    public var food: CalculatorFood {
+        carbsTextIsInsulin ? .insulin(units: carbs ?? 0) : .carbs(grams: carbs ?? 0)
+    }
+    /// The food field was typed before carbs were turned on or off on the pump: no dose is sized from it.
+    public var foodNeedsReentry: Bool { (carbs ?? 0) > 0 && carbsTextIsInsulin != carbsOff }
+
+    /// A dose without the correction, in words: "carbs only", or with carbs off (no carbs in it) "no
+    /// correction".
+    public static func noCorrection(_ carbsOff: Bool) -> String { carbsOff ? "no correction" : "carbs only" }
+    public static func noCorrectionTitle(_ carbsOff: Bool) -> String { carbsOff ? "No correction" : "Carbs only" }
+
+    /// Call when the user edits the food field.
+    public func carbsEdited() {
+        carbsTextIsInsulin = carbsOff
+        entryEdited()
+    }
     public var typedGlucose: Int? { model.settings.glucoseUnit.parse(glucoseText.trimmingCharacters(in: .whitespaces)) }
     /// Something is typed in the glucose field that isn't a glucose: the dose waits for it to be fixed or
     /// cleared, rather than quietly correcting from the CGM instead.
@@ -76,7 +99,7 @@ public final class BolusFlow {
 
     /// The suggestion for what's entered, from what's shown now.
     public var recommendation: DoseRecommendation {
-        model.recommendation(carbsGrams: carbs ?? 0, glucoseMgdl: glucoseForCalculation)
+        model.recommendation(food, glucoseMgdl: glucoseForCalculation)
     }
 
     /// Call when what the suggestion comes from changes (carbs, glucose, a new reading, IOB): the units
@@ -154,7 +177,7 @@ public final class BolusFlow {
             CalculatorGlucose.isValid(mgdl: mgdl)
         else { return nil }
         let with = recommendation
-        let without = model.recommendation(carbsGrams: carbs ?? 0, glucoseMgdl: nil)
+        let without = model.recommendation(food, glucoseMgdl: nil)
         guard with.displaysNumericDose, without.displaysNumericDose,
             let target = with.inputs.settings?.value.targetMgdl,
             with.units > 0, without.units > 0, abs(with.units - without.units) > 1e-9
@@ -253,7 +276,9 @@ public final class BolusFlow {
             let r = recommendation
             let units = r.displaysNumericDose ? r.units : nil
             let dose = units.map { ": \(formatUnits($0))" } ?? ""
-            guard let to else { return ("No current BG", "Carbs only\(dose).", nil, "See the dose") }
+            guard let to else {
+                return ("No current BG", "\(Self.noCorrectionTitle(carbsOff))\(dose).", nil, "See the dose")
+            }
             // Outside 20–600 the calculator can't correct from it, as the watch says it; under 20, still eat.
             guard CalculatorGlucose.isValid(mgdl: to) else {
                 let low = to < CalculatorMessage.lowGlucoseMgdl
@@ -298,6 +323,8 @@ public final class BolusFlow {
         if let blockingReason { return blockingReason }
         // A typed glucose the calculator can't correct from is refused at Confirm: the button waits instead.
         if mode == .carbs, let g = typedGlucose, !CalculatorGlucose.isValid(mgdl: g) { return Self.outOfRangeText }
+        // Carbs turned on or off on the pump since the food was typed: it's entered again, never converted.
+        if mode == .carbs, foodNeedsReentry { return DoseRefusal.carbEntryChanged(carbsOff: carbsOff).userMessage }
         if needsChoice { return Self.chooseText }
         guard let u = units, u > 0 else { return "Enter a dose." }
         return nil
@@ -354,15 +381,13 @@ public final class BolusFlow {
                 return PhoneDoseEntry(
                     id: id,
                     amount: .calculator(
-                        carbsGrams: carbs ?? 0, glucose: glucose, recommendedUnits: c.units,
-                        enteredUnits: c.units),
+                        food: food, glucose: glucose, recommendedUnits: c.units, enteredUnits: c.units),
                     answers: PhoneDoseAnswers(correction: .init(mgdl: q.mgdl, apply: c.apply, units: c.units)))
             }
             return PhoneDoseEntry(
                 id: id,
                 amount: .calculator(
-                    carbsGrams: carbs ?? 0, glucose: glucose, recommendedUnits: recommendation.units,
-                    enteredUnits: units))
+                    food: food, glucose: glucose, recommendedUnits: recommendation.units, enteredUnits: units))
         }
     }
 
@@ -506,7 +531,8 @@ public final class BolusFlow {
                 }
                 parts.append(
                     StaleTherapyPrompt.warningMessage(
-                        profile: profile, therapyDate: inputs.settings?.measuredAt, now: now))
+                        profile: profile, therapyDate: inputs.settings?.measuredAt, now: now,
+                        carbsOff: inputs.settings?.value.carbsOff == true))
             }
             return (
                 "Pump settings not confirmed", parts.joined(separator: "\n\n"),
@@ -515,17 +541,23 @@ public final class BolusFlow {
         case .staleGlucose(let reading, let include, let carbsOnly):
             let message =
                 reading.map {
-                    StaleBolusPrompt.warningMessage(glucoseMgdl: $0.value.mgdl, glucoseDate: $0.measuredAt, now: now)
-                } ?? "There's no CGM reading, so this dose has no correction. Bolus for carbs only, or cancel?"
+                    StaleBolusPrompt.warningMessage(
+                        glucoseMgdl: $0.value.mgdl, glucoseDate: $0.measuredAt, now: now, carbsOff: carbsOff)
+                }
+                ?? (carbsOff
+                    ? "There's no CGM reading, so this dose has no correction. Bolus with no correction, or cancel?"
+                    : "There's no CGM reading, so this dose has no correction. Bolus for carbs only, or cancel?")
             var choices: [(Answer, String)] = []
             if let include { choices.append((.includeStaleReading, "Include it (\(formatUnits(include)))")) }
-            choices.append((.carbsOnly, "Carbs only (\(formatUnits(carbsOnly)))"))
+            choices.append((.carbsOnly, "\(Self.noCorrectionTitle(carbsOff)) (\(formatUnits(carbsOnly)))"))
             return (reading == nil ? "No CGM reading" : "CGM reading is old", message, choices)
         case .pumpGlucoseCaution(let caution, let carbsOnly):
             return (
                 "CGM reading can't be used",
-                Self.cautionMessage(caution) + " Bolus for carbs only, or cancel and enter a BG?",
-                [(.carbsOnly, "Carbs only (\(formatUnits(carbsOnly)))")]
+                Self.cautionMessage(caution)
+                    + (carbsOff ? " Bolus with no correction" : " Bolus for carbs only")
+                    + ", or cancel and enter a BG?",
+                [(.carbsOnly, "\(Self.noCorrectionTitle(carbsOff)) (\(formatUnits(carbsOnly)))")]
             )
         case .doseChanged(let mgdl, let new, let entered):
             let reading = mgdl.map { " for \(model.settings.glucoseUnit.format(mgdl: $0)) mg/dL" } ?? ""
@@ -555,15 +587,16 @@ public final class BolusFlow {
         }
     }
 
-    /// The bolus screen's line for a reading the pump flags: why, and that the dose is carbs only. `nil` for
-    /// a CGM state not read yet, which isn't a reason by itself.
-    public static func cautionLine(_ caution: PumpGlucoseCaution) -> String? {
+    /// The bolus screen's line for a reading the pump flags: why, and that the dose is carbs only (no
+    /// correction, with carbs off). `nil` for a CGM state not read yet, which isn't a reason by itself.
+    public static func cautionLine(_ caution: PumpGlucoseCaution, carbsOff: Bool = false) -> String? {
+        let only = noCorrection(carbsOff)
         switch caution {
-        case .outOfRange(.low): return "CGM below its range: carbs only. Check your BG."
-        case .outOfRange(.high): return "CGM above its range: carbs only. Check your BG."
-        case .checkBG: return "CGM says check BG: carbs only"
-        case .autoFillOff: return "Pump won't use its CGM in the calculator: carbs only"
-        case .sensorState(let state): return "Pump shows \(cgmStateName(state)): carbs only"
+        case .outOfRange(.low): return "CGM below its range: \(only). Check your BG."
+        case .outOfRange(.high): return "CGM above its range: \(only). Check your BG."
+        case .checkBG: return "CGM says check BG: \(only)"
+        case .autoFillOff: return "Pump won't use its CGM in the calculator: \(only)"
+        case .sensorState(let state): return "Pump shows \(cgmStateName(state)): \(only)"
         case .cgmStateNotRead: return nil
         }
     }

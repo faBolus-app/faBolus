@@ -38,7 +38,8 @@ struct BolusEntryView: View {
         Form {
             if takesCarbs {
                 Picker("Mode", selection: $flow.mode) {
-                    Text("Carbs").tag(BolusEntryMode.carbs)
+                    // With carbs off the calculator still corrects from the glucose; its food entry is units.
+                    Text(flow.carbsOff ? "Calculator" : "Carbs").tag(BolusEntryMode.carbs)
                     Text("Units").tag(BolusEntryMode.units)
                 }
                 .pickerStyle(.segmented)
@@ -50,15 +51,26 @@ struct BolusEntryView: View {
                 Section {
                     // Each entry row the same way: its name, then the value with its unit right after it, then
                     // the stepper.
+                    // With carbs off on the pump the field takes the food insulin in units, as Tandem's app
+                    // relabels it.
+                    let insulin = flow.carbsOff
                     HStack(spacing: 6) {
-                        Text("Carbs")
+                        Text(insulin ? "Insulin" : "Carbs")
                         Spacer(minLength: 8)
-                        TextField("0", text: $flow.carbsText).keyboardType(.numberPad)
+                        TextField("0", text: $flow.carbsText).keyboardType(insulin ? .decimalPad : .numberPad)
                             .multilineTextAlignment(.trailing).font(.title3.weight(.semibold))
-                            .frame(maxWidth: 70).focused($focus, equals: .carbs).accessibilityLabel("Carbs, grams")
-                        Text("g").foregroundStyle(.secondary)
-                        Stepper("", value: carbsStep(flow), in: 0...999, step: Double(model.settings.carbIncrement))
-                            .labelsHidden().accessibilityLabel("Carbs").padding(.leading, 6)
+                            .frame(maxWidth: 70).focused($focus, equals: .carbs)
+                            .accessibilityLabel(insulin ? "Food insulin, units" : "Carbs, grams")
+                        Text(insulin ? "U" : "g").foregroundStyle(.secondary)
+                        Stepper(
+                            "", value: carbsStep(flow), in: 0...(insulin ? 100 : 999),
+                            step: insulin ? model.settings.bolusIncrement : Double(model.settings.carbIncrement)
+                        )
+                        .labelsHidden().accessibilityLabel(insulin ? "Food insulin" : "Carbs").padding(.leading, 6)
+                    }
+                    if insulin {
+                        Text("Carbs are off on the pump: enter food insulin.")
+                            .font(.subheadline).foregroundStyle(.secondary)
                     }
                     // The CGM caption on its own line, the row's full width, so it fits with its unit.
                     VStack(alignment: .leading, spacing: 2) {
@@ -83,7 +95,7 @@ struct BolusEntryView: View {
                     }
                 }
                 // The user's own edits: the choice clears without an alert.
-                .onChange(of: flow.carbsText) { _, _ in flow.entryEdited() }
+                .onChange(of: flow.carbsText) { _, _ in flow.carbsEdited() }
                 .onChange(of: flow.glucoseText) { _, _ in flow.entryEdited() }
                 recommendation(flow)
             }
@@ -283,18 +295,20 @@ struct BolusEntryView: View {
         case .current(let mgdl, _, let at):
             // A reading the pump flags isn't used: the screen says why, and Confirm asks nothing.
             if let caution = model.screenGlucoseCaution {
-                if let line = BolusFlow.cautionLine(caution) { return Text(line).foregroundStyle(.orange) }
+                if let line = BolusFlow.cautionLine(caution, carbsOff: flow.carbsOff) {
+                    return Text(line).foregroundStyle(.orange)
+                }
                 return Text("CGM \(display.unit.format(mgdl: mgdl)) mg/dL · checking the CGM's state")
                     .foregroundStyle(.secondary)
             }
             return Text("CGM \(display.unit.format(mgdl: mgdl)) mg/dL · \(display.age(at))").foregroundStyle(.secondary)
         case .stale(let mgdl, _, let at):
             // Too old to include, the dose is carbs only with no question; otherwise Confirm asks.
-            let use = model.staleReadingIncludable ? "not used" : "carbs only"
+            let use = model.staleReadingIncludable ? "not used" : BolusFlow.noCorrection(flow.carbsOff)
             return Text("CGM \(display.unit.format(mgdl: mgdl)) mg/dL from \(display.age(at)): \(use)")
                 .foregroundStyle(.orange)
         case .hidden, .none:
-            return Text("No CGM reading: carbs only").foregroundStyle(.orange)
+            return Text("No CGM reading: \(BolusFlow.noCorrection(flow.carbsOff))").foregroundStyle(.orange)
         }
     }
 
@@ -319,7 +333,7 @@ struct BolusEntryView: View {
                 }
                 if model.settings.showBolusReasoning, let c = r.calculation {
                     DisclosureGroup("Show the calculation", isExpanded: $showReasoning) {
-                        LabeledContent("Carbs", value: formatUnits(c.fromCarbs))
+                        LabeledContent(flow.carbsOff ? "Food" : "Carbs", value: formatUnits(c.fromCarbs))
                         LabeledContent("Correction", value: formatUnits(c.fromBG))
                         LabeledContent("Active insulin", value: "−" + formatUnits(c.fromIOB))
                         if !r.inputs.isVerified {
@@ -328,6 +342,12 @@ struct BolusEntryView: View {
                         }
                     }
                 }
+            } else if flow.foodNeedsReentry {
+                Label(
+                    DoseRefusal.carbEntryChanged(carbsOff: flow.carbsOff).userMessage,
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .font(.callout).foregroundStyle(.orange)
             } else if r.settingsUnusable {
                 Label(
                     "The pump's correction factor or target can't be used, so no dose is calculated. Check them "
@@ -379,7 +399,10 @@ struct BolusEntryView: View {
 
     private func correctionCard(_ flow: BolusFlow, _ q: BolusFlow.CorrectionQuestion, apply: Bool) -> some View {
         let chosen = flow.correction?.apply == apply
-        let label = apply ? (q.above ? "Corrected" : "Reduced") : (q.above ? "Carbs only" : "Not reduced")
+        let label =
+            apply
+            ? (q.above ? "Corrected" : "Reduced")
+            : (q.above ? BolusFlow.noCorrectionTitle(flow.carbsOff) : "Not reduced")
         let units = apply ? q.applyUnits : q.declineUnits
         let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
         return Button {
@@ -408,9 +431,11 @@ struct BolusEntryView: View {
 
     private func carbsStep(_ flow: BolusFlow) -> Binding<Double> {
         Binding(
-            get: { flow.carbs ?? 0 },
+            // An entry of the other kind (typed before carbs were turned on or off) is no start for the new
+            // one: stepping from it would read grams as units.
+            get: { flow.foodNeedsReentry ? 0 : flow.carbs ?? 0 },
             set: {
-                flow.carbsText = String(Int($0))
+                flow.carbsText = flow.carbsOff ? String(format: "%.2f", max(0, $0)) : String(Int($0))
             })
     }
 
@@ -526,9 +551,15 @@ struct BolusReviewSheet: View {
         var rows: [Detail] = []
         let carbs = dose.request.carbsGrams ?? 0
         let food = dose.calculatorFoodUnits
+        // With carbs off, the food part is the insulin entered for it.
+        let foodInsulin = dose.request.foodInsulinUnits ?? 0
+        let hasFood = carbs > 0 || foodInsulin > 0
         if carbs > 0 {
             rows.append(
                 Detail(label: "Food", detail: Text("\(Int(carbs)) g carbs"), units: food.map { formatUnits($0) }))
+        } else if foodInsulin > 0 {
+            rows.append(
+                Detail(label: "Food", detail: Text("insulin entered, carbs off"), units: food.map { formatUnits($0) }))
         }
         let iob = dose.calculatorIOBUnits ?? 0
         if let bg = dose.correctionGlucoseMgdl {
@@ -544,10 +575,10 @@ struct BolusReviewSheet: View {
                 Detail(
                     label: reduced ? "Reduction" : "Correction", detail: Text("for \(reading)\(iobPart)"),
                     units: rest.map { abs($0) < 0.005 ? formatUnits(0) : ($0 < 0 ? "−" : "+") + formatUnits(abs($0)) }))
-        } else if carbs > 0 {
+        } else if hasFood {
             rows.append(Detail(label: "Correction", detail: Text("None"), units: nil))
         }
-        if carbs > 0, food == nil {
+        if hasFood, food == nil {
             rows.append(Detail(label: "Your own dose", detail: Text("not the calculator's"), units: nil))
         }
         return rows

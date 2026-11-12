@@ -50,11 +50,18 @@ public struct CalculatorSettings: Sendable, Hashable {
     public var correctionFactor: Int
     public var targetMgdl: Int
     public var maxBolusMilliunits: Int
-    public init(carbRatioMilligramsPerUnit: Int, correctionFactor: Int, targetMgdl: Int, maxBolusMilliunits: Int) {
+    /// Carbs are off on the pump: the calculator's food entry is insulin units, and the carb ratio isn't
+    /// used (0). Absent is false.
+    public var carbsOff: Bool
+    public init(
+        carbRatioMilligramsPerUnit: Int, correctionFactor: Int, targetMgdl: Int, maxBolusMilliunits: Int,
+        carbsOff: Bool = false
+    ) {
         self.carbRatioMilligramsPerUnit = carbRatioMilligramsPerUnit
         self.correctionFactor = correctionFactor
         self.targetMgdl = targetMgdl
         self.maxBolusMilliunits = maxBolusMilliunits
+        self.carbsOff = carbsOff
     }
 }
 
@@ -208,6 +215,7 @@ extension StatusPayload {
                     w.set("isf", c.correctionFactor)
                     w.set("target", c.targetMgdl)
                     w.set("maxBolusMU", c.maxBolusMilliunits)
+                    if c.carbsOff { w.set("carbsOff", true) }
                 }
             })
         w.set(
@@ -280,7 +288,8 @@ extension StatusPayload {
                     carbRatioMilligramsPerUnit: try o.int("carbRatioMg", in: WireLimits.carbRatioMilligrams),
                     correctionFactor: try o.int("isf", in: WireLimits.calculatorMgdl),
                     targetMgdl: try o.int("target", in: WireLimits.calculatorMgdl),
-                    maxBolusMilliunits: try o.int("maxBolusMU", in: milliunitRange)),
+                    maxBolusMilliunits: try o.int("maxBolusMU", in: milliunitRange),
+                    carbsOff: try o.optionalBool("carbsOff") ?? false),
                 at: try o.int("at", in: epochRange))
         }
         controlIQ = try r.optionalObject("controlIQ").map { o throws(DecodeError) in

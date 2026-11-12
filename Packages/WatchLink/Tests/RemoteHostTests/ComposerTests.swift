@@ -59,6 +59,20 @@ import Testing
         #expect(compose(p).glucose?.value.caution == nil)
     }
 
+    /// Carbs off on the pump: the watch's food entry is units, and the carb ratio, unused, goes as 0.
+    @Test func carbsOffGoesToTheWatch() throws {
+        var p = connected
+        var settings = BolusCalculatorSettings(carbRatio: 10, correctionFactor: 40, targetMgdl: 110, maxBolusUnits: 25)
+        p.bolusCalculator = observed(settings, age: 5)
+        #expect(try #require(compose(p).calculator).value.carbsOff == false)
+        settings.carbEntryEnabled = false
+        settings.carbRatio = .nan
+        p.bolusCalculator = observed(settings, age: 5)
+        let calculator = try #require(compose(p).calculator).value
+        #expect(calculator.carbsOff)
+        #expect(calculator.carbRatioMilligramsPerUnit == 0)
+    }
+
     /// Each value keeps the time it was measured; the watch ages it itself.
     @Test func valuesCarryTheirMeasurementTimes() {
         var p = connected

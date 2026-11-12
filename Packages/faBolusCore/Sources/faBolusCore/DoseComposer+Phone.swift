@@ -16,9 +16,18 @@ public struct PhoneDoseEntry: Sendable, Equatable {
     public enum Amount: Sendable, Equatable {
         /// Units the user dialed. Delivered as entered.
         case units(Double)
-        /// Carbs (zero for a correction only) through the calculator. `recommendedUnits` is what the
-        /// screen suggested; `enteredUnits` is what the user confirmed, which they may have changed.
-        case calculator(carbsGrams: Double, glucose: Glucose, recommendedUnits: Double, enteredUnits: Double)
+        /// The food entry (zero for a correction only) through the calculator: carbs, or insulin units
+        /// with carbs off on the pump. `recommendedUnits` is what the screen suggested; `enteredUnits` is
+        /// what the user confirmed, which they may have changed.
+        case calculator(food: CalculatorFood, glucose: Glucose, recommendedUnits: Double, enteredUnits: Double)
+
+        public static func calculator(
+            carbsGrams: Double, glucose: Glucose, recommendedUnits: Double, enteredUnits: Double
+        ) -> Amount {
+            .calculator(
+                food: .carbs(grams: carbsGrams), glucose: glucose, recommendedUnits: recommendedUnits,
+                enteredUnits: enteredUnits)
+        }
     }
 
     /// A fresh ID for this attempt.
@@ -147,20 +156,21 @@ extension DoseComposer {
         case .units(let units):
             guard units.isFinite, units >= 0 else { return .refused(.invalidAmount) }
             return finishPhone(entry, units: units, calculator: nil, context: context)
-        case .calculator(let carbs, let glucose, let recommended, let entered):
-            guard carbs.isFinite, carbs >= 0, recommended.isFinite, entered.isFinite, entered >= 0 else {
+        case .calculator(let food, let glucose, let recommended, let entered):
+            guard food.amount.isFinite, food.amount >= 0, recommended.isFinite, entered.isFinite, entered >= 0
+            else {
                 return .refused(.invalidAmount)
             }
             // Nothing confirmed means nothing to ask about: no prompt may turn it into a dose.
             guard entered > 0 else { return .refused(.nothingToDeliver) }
             return composeCalculator(
-                entry, carbs: carbs, glucose: glucose, recommended: recommended, entered: entered, context: context)
+                entry, food: food, glucose: glucose, recommended: recommended, entered: entered, context: context)
         }
     }
 
     /// What a calculator dose was built from, for the ledger and the notices.
     private struct CalculatorBasis {
-        let carbs: Double
+        let food: CalculatorFood
         /// The calculator's number for the basis delivered: the screen's recommendation for the entered
         /// dose, or the recompute an answered prompt chose.
         let suggested: Double
@@ -170,7 +180,7 @@ extension DoseComposer {
     }
 
     private static func composeCalculator(
-        _ entry: PhoneDoseEntry, carbs: Double, glucose: PhoneDoseEntry.Glucose, recommended: Double,
+        _ entry: PhoneDoseEntry, food: CalculatorFood, glucose: PhoneDoseEntry.Glucose, recommended: Double,
         entered: Double, context: DoseContext
     ) -> PhoneDoseDecision {
         // A typed glucose outside 20–600 is refused: the calculator drops it, so a typed 15 would size a
@@ -180,8 +190,13 @@ extension DoseComposer {
         }
         let inputs = CalculatorInputs(context: context)
         guard inputs.isAvailable else { return .refused(.pumpSettingsNotRead) }
+        // Carbs turned on or off on the pump since the screen sized the dose: its entry means something else
+        // now (grams or units), so it's entered again, never converted.
+        if inputs.takes(food) == false {
+            return .refused(.carbEntryChanged(carbsOff: inputs.settings?.value.carbsOff == true))
+        }
 
-        func units(_ mgdl: Int?) -> Double? { inputs.units(carbsGrams: carbs, glucoseMgdl: mgdl) }
+        func units(_ mgdl: Int?) -> Double? { inputs.units(food, glucoseMgdl: mgdl) }
         // The glucose the screen computed the entered dose from.
         let screenGlucose: Int? =
             switch glucose {
@@ -193,7 +208,7 @@ extension DoseComposer {
             -> PhoneDoseDecision
         {
             let basis = CalculatorBasis(
-                carbs: carbs, suggested: suggested, inputs: inputs, correction: correction, usedStale: usedStale)
+                food: food, suggested: suggested, inputs: inputs, correction: correction, usedStale: usedStale)
             return finishPhone(entry, units: delivered, calculator: basis, context: context)
         }
 
@@ -340,14 +355,14 @@ extension DoseComposer {
                     ?? context.pump.glucoseIfFresh(thresholds: context.freshness, now: context.now)?.mgdl,
                 targetMgdl: settings.targetMgdl, maxBolusUnits: context.pumpMaxBolusUnits ?? 0)
             if stacking.friction != .none { notices.append(.stacking(stacking)) }
-            if calculator.carbs > 0, calculator.suggested > 0, differs(units, calculator.suggested) {
+            if calculator.food.amount > 0, calculator.suggested > 0, differs(units, calculator.suggested) {
                 notices.append(.differsFromCalculator(deliveredUnits: units, suggestedUnits: calculator.suggested))
             }
             // Why the calculator's dose is what it is. Of a dose the user entered or kept instead, only that the
             // glucose is low: eat carbs and re-test holds whatever the dose, "reduced" doesn't.
-            if let result = calculator.inputs.calculate(carbsGrams: calculator.carbs, glucoseMgdl: correction),
+            if let result = calculator.inputs.calculate(calculator.food, glucoseMgdl: correction),
                 let message = CalculatorMessage.of(
-                    result, carbsGrams: calculator.carbs, glucoseMgdl: correction, targetMgdl: settings.targetMgdl,
+                    result, food: calculator.food, glucoseMgdl: correction, targetMgdl: settings.targetMgdl,
                     isfMgdlPerUnit: settings.correctionFactor,
                     iobUnits: calculator.inputs.calculatorInsulinOnBoardUnits ?? 0)
             {
@@ -359,16 +374,18 @@ extension DoseComposer {
             }
         }
         let request = DoseRequest(
-            id: entry.id, origin: .phone, shape: .now(units: units), carbsGrams: calculator?.carbs,
-            bgMgdl: correction)
+            id: entry.id, origin: .phone, shape: .now(units: units),
+            // With carbs off no carb amount goes with the bolus, as in Tandem's apps.
+            carbsGrams: calculator.flatMap { $0.food.isInsulin ? nil : $0.food.carbsGrams }, bgMgdl: correction,
+            foodInsulinUnits: calculator.flatMap { $0.food.isInsulin ? $0.food.amount : nil })
         let carbUnits = calculator.flatMap {
-            $0.inputs.carbPart(of: units, carbsGrams: $0.carbs, glucoseMgdl: correction)
+            $0.inputs.carbPart(of: units, food: $0.food, glucoseMgdl: correction)
         }
         // The carbs' share, for the review's split, only when the dose is the calculator's own: the dose less
         // the calculator's correction, so the shares add up to the dose with the rounding down in the food's.
         let foodUnits = calculator.flatMap { c in
             carbUnits.flatMap { _ in
-                c.inputs.calculate(carbsGrams: c.carbs, glucoseMgdl: correction).map { r in
+                c.inputs.calculate(c.food, glucoseMgdl: correction).map { r in
                     max(0, units - (r.totalUnits - r.fromCarbs))
                 }
             }
