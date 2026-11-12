@@ -295,7 +295,7 @@ private func addOldHistory(_ pump: ScriptedPump, count: Int = 20) {
         let delivery = Task { await session.deliver(composed(1.0, bg: 180)) }
         #expect(await rig.until { rig.pump.arrivals(of: RemoteBgEntryRequest.self).count == 1 })
         #expect(await session.cancelBolus() == .stoppedBeforeStart)
-        await rig.run(for: 12)
+        await rig.run(for: 62)
         let result = await delivery.value
         #expect(result == .started(key, .failed(reason: PumpSession.cancelledBeforeStartReason)))
         #expect(rig.pump.arrivals(of: InitiateBolusRequest.self).isEmpty)
@@ -311,7 +311,7 @@ private func addOldHistory(_ pump: ScriptedPump, count: Int = 20) {
         let delivery = Task { await session.deliver(composed(1.0)) }
         #expect(await rig.until { rig.pump.arrivals(of: InitiateBolusRequest.self).count == 1 })
         let cancel = Task { await session.cancelBolus() }
-        await rig.run(for: 12)
+        await rig.run(for: 62)
         _ = await delivery.value
         _ = await cancel.value
         let control = rig.pump.arrivals.filter { $0.characteristic == .control }.map(\.opCode)
@@ -491,7 +491,11 @@ private func addOldHistory(_ pump: ScriptedPump, count: Int = 20) {
     /// While the status read goes unanswered mid-bolus, a history search finds the bolus from the records
     /// the pump wrote when it accepted it, and never calls it absent.
     @Test func aBolusWhoseStatusGoesUnansweredIsPresentInHistory() async {
-        let rig = Rig(configure: { $0.unsupportedReads = [] })
+        let rig = Rig(configure: {
+            $0.unsupportedReads = []
+            // Slow enough that the bolus is still going when the pages are read, minutes in.
+            $0.deliveryMilliunitsPerSecond = 5
+        })
         addOldHistory(rig.pump)
         await rig.startHeld()
         let acceptedAt = rig.pump.wallClock
@@ -499,9 +503,10 @@ private func addOldHistory(_ pump: ScriptedPump, count: Int = 20) {
         await rig.run(for: rig.pump.pendingSeconds + 5)
         rig.pump.answers[MessageKey(CurrentBolusStatusRequest.self)] = .silent
         let session = rig.session
-        let search = Task { await session.searchHistory(for: 10650, acceptedAt: acceptedAt) }
-        // The status read first waits out its timeout, then the history pages are read.
-        await rig.run(for: 60)
-        #expect(await search.value == .present)
+        // The bolus's own status reads go first and wait out their 60 s deadlines until it is given up on as
+        // unknown; then the search's status read waits out its own, and the routine status read can take the
+        // wire for two more deadlines before it rests. Only then are the history pages read.
+        let found = await rig.run(upTo: 600) { await session.searchHistory(for: 10650, acceptedAt: acceptedAt) }
+        #expect(found == .present)
     }
 }

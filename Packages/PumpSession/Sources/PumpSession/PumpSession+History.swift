@@ -8,8 +8,8 @@ struct PageCollector {
     let id: UInt64
     let range: ClosedRange<UInt32>
     var records: [UInt32: [UInt8]] = [:]
-    /// The page's clocks start when its request goes out: one waiting in the queue (behind a pause or a
-    /// delivery) hasn't been asked for yet, so it can't have gone quiet.
+    /// The page's clocks start when its request goes out: one waiting in the queue (behind a delivery or a
+    /// request the pump is slow to answer) hasn't been asked for yet, so it can't have gone quiet.
     var sent = false
     var startedAt: Date
     var lastFrameAt: Date

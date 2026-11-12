@@ -155,10 +155,18 @@ time.
 ## 15. The pump session's timings
 
 How often status is read while a bolus delivers (1 s), how long a delivering bolus may go without a
-status answer before its outcome is unknown (60 s), how long it's followed at most (30 min), when a
-history page counts as complete (2.5 s with no frame), and how often an unknown outcome is searched for
-(every 2 minutes, 5 times a connection; every 15 s while the pump still reports it active) are guesses,
-in `PumpSession.Configuration`.
+status answer before its outcome is unknown (90 s, one and a half request deadlines: two unanswered reads
+in a row, never one; a poll on the wire gets its whole deadline, but one held in the queue behind other
+unanswered reads doesn't stretch the 90 s),
+how long it's followed at most (30 min), when a history page counts as complete (2.5 s with no frame),
+and how often an unknown outcome is searched for (every 2 minutes, 5 times a connection; every 15 s while
+the pump still reports it active) are guesses, in `PumpSession.Configuration`. How long the pump has to
+answer a request (60 s, `requestDeadline`) is t:connect's one timer, for every request, reads and a
+bolus's writes alike; how long a t:slim really takes to answer is not measured. One request is on the
+wire at a time, so a cancel queued behind an InitiateBolus the pump doesn't answer waits up to 60 s, and
+the phone says it can be stopped on the pump meanwhile. A routine read the pump leaves unanswered twice in
+a row isn't asked again for one deadline, so a read it never answers can't hold the wire for good and the
+alert reads and history searches still go; that gap is a guess too.
 
 ## 16. Which IOB the pump's calculator reply reports
 
@@ -267,23 +275,16 @@ that worked.
 
 ## 22. The pump's comms-suspended notice (qualifying-event bit 19)
 
-- **The guess:** what the bit means. pumpx2 names it `PUMP_COMMUNICATIONS_SUSPENDED` (524288) and gives it
-  no handler; nothing there says when a pump sets it or how it ends. Qualifying events are one-shot notices
-  the link clears, and no bit says communications resumed. faBolus does what controlX2 does: each notice
-  pauses every send for 5 s from its arrival, then sends go on. A request already sent is left to its
-  answer, and a new connection starts with no pause.
-- **The owner's choice:** the pause holds everything, a cancel and a delivery's steps included, exactly as
-  in controlX2. A cancel asked for during it reaches the pump up to 5 s later.
-- **Where:** `Packages/PumpSession/Sources/PumpSession/PumpSession.swift` (`qualifyingEvents`,
-  `sendsPaused`), `PumpSession.Configuration.commsSuspendedPause`.
-- **Risk:** if the bit means something else, a cancel, a bolus or an alert read waits 5 s for nothing.
-  Each notice restarts the 5 s, so a pump that keeps sending it holds everything, a cancel included, for
-  as long as it does, with no ceiling (controlX2 has none either; the earlier app's unused gate stopped at
-  5 minutes). If the pump stays suspended longer than 5 s, what's sent after the pause may go unanswered,
-  which a delivery treats as unknown.
+- **The guess:** the bit needs no action from the phone. pumpx2 names it `PUMP_COMMUNICATIONS_SUSPENDED`
+  (524288) and gives it no handler, and t:connect only logs it. faBolus pauses nothing on it, as t:connect
+  does. controlX2 pauses every send for 5 s per notice; faBolus did too until the owner chose t:connect's
+  handling.
+- **Where:** `Packages/PumpSession/Sources/PumpSession/PumpSession.swift` (`qualifyingEvents`).
+- **Risk:** if the pump really stops answering while the bit is set, a request sent meanwhile waits for its
+  60 s deadline (guess #15), and an InitiateBolus that times out is an unknown outcome, which blocks new
+  boluses until history settles it. Nothing is sent that a pause would have kept back from the pump.
 - **Verify:** on P1 and P2, record the qualifying events across a bolus, a cancel, a cartridge change and
-  a suspend and resume, and note when bit 19 comes and whether a request sent within 5 s of it is
-  answered.
+  a suspend and resume, and note when bit 19 comes and whether a request sent just after it is answered.
 
 ## 23. The first bytes of the calculator snapshot and the last-bolus reply
 

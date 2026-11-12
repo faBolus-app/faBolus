@@ -129,6 +129,9 @@ public final class ScriptedPump {
         case wrongTxId
         /// The pump acts once, and its reply arrives twice.
         case duplicate
+        /// The pump acts now, and its reply arrives this many seconds later. How long a t:slim takes to
+        /// answer any request is unconfirmed.
+        case late(seconds: Double)
     }
     /// Answers by request, overriding the scripted one each time it arrives.
     public var answers: [MessageKey: Answer] = [:]
@@ -620,6 +623,9 @@ public final class ScriptedTransport: LinkTransport {
         case .cargo(let captured):
             guard let reply = respond(characteristic, opCode, cargo) else { return }
             send(type(of: reply).init(cargo: captured), txId: txId)
+        case .late(let seconds):
+            guard let reply = respond(characteristic, opCode, cargo) else { return }
+            _ = clock.schedule(after: seconds) { [weak self] in self?.send(reply, txId: txId) }
         case .normal, .notice, .badCRC, .badSignature, .wrongTxId, .duplicate:
             // A request the pump doesn't know gets BAD_OPCODE, as a real pump's does.
             guard let reply = respond(characteristic, opCode, cargo) else {
@@ -884,7 +890,7 @@ public final class ScriptedTransport: LinkTransport {
         case .error(let code, let drops):
             sendError(.authorization, request: opCode, code: code, txId: txId)
             if drops { _ = clock.schedule(after: 0.09) { [weak self] in self?.drop() } }
-        case .cargo, .badCRC, .badSignature, .wrongTxId, .duplicate:
+        case .cargo, .badCRC, .badSignature, .wrongTxId, .duplicate, .late:
             preconditionFailure("this fault isn't modelled for a J-PAKE request")
         case .normal, .notice:
             guard let (replyOpCode, payload) = jpakeReply(opCode, cargo) else {
