@@ -3,6 +3,7 @@ import PumpScript
 import TandemBLE
 import TandemLink
 import TandemMessages
+import Testing
 @testable import faBolusCore
 
 @testable import PumpSession
@@ -164,24 +165,65 @@ final class Rig {
         }
     }
 
-    /// Moves time on, as `run` does, until `work` returns or `limit` seconds have passed, and returns its
-    /// result: nil if it hadn't returned by then. For work that waits on deadlines: how much clock it needs
-    /// depends on how many turns the actors get between steps, and a fixed `run` followed by an unbounded
-    /// wait would hang on a loaded machine instead of failing.
+    /// Starts `work` and moves time on, as `run` does, for at least `minimum` seconds and then until `work`
+    /// returns, up to `limit` seconds in all. Returns its result, or records an issue and returns nil if it
+    /// hadn't returned by then.
+    ///
+    /// For work that waits on the clock (a deadline, the hold, a poll): how much clock it needs depends on
+    /// how many turns the actors get between steps, so a fixed `run` followed by an unbounded wait hangs
+    /// the suite on a loaded machine instead of failing. Work that returns within `minimum` sees exactly
+    /// the clock a plain `run(for: minimum)` gives it.
+    @discardableResult
     func run<T: Sendable>(
-        upTo limit: Double, step: Double = 0.5, finishing work: @escaping @Sendable () async -> T
+        for minimum: Double = 0, upTo limit: Double, step: Double = 0.5,
+        sourceLocation: SourceLocation = #_sourceLocation,
+        finishing work: @escaping @Sendable () async -> T
     ) async -> T? {
         let result = Finished<T>()
         Task { @MainActor in result.value = await work() }
         var elapsed = 0.0
-        while result.value == nil, elapsed < limit {
-            let s = min(step, limit - elapsed)
+        while elapsed < minimum || (result.value == nil && elapsed < limit) {
+            let s = min(step, max(minimum, limit) - elapsed)
             clock.advance(by: s)
             elapsed += s
             await session.tick()
             await settle()
         }
+        if result.value == nil {
+            Issue.record(
+                "didn't return within \(max(minimum, limit)) s of the pump's clock", sourceLocation: sourceLocation)
+        }
         return result.value
+    }
+
+    /// `task`'s result once it returns, without moving the clock. Records an issue and returns nil if it
+    /// hasn't within `seconds` of real time (generous, for a loaded machine): a test whose work waits on a clock that nothing moves fails
+    /// where it waited, instead of hanging the suite.
+    @discardableResult
+    func value<T: Sendable>(
+        of task: Task<T, Never>, within seconds: Double = 120, sourceLocation: SourceLocation = #_sourceLocation
+    ) async -> T? {
+        let result = Finished<T>()
+        Task { @MainActor in result.value = await task.value }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(seconds))
+        while result.value == nil, ContinuousClock.now < deadline {
+            await settle()
+            if result.value == nil { try? await Task.sleep(nanoseconds: 1_000_000) }
+        }
+        if result.value == nil {
+            Issue.record(
+                "didn't return within \(seconds) s with the pump's clock stopped", sourceLocation: sourceLocation)
+        }
+        return result.value
+    }
+
+    /// `value(of:)` for a task that can throw: nil if it threw, or hadn't returned in time.
+    @discardableResult
+    func value<T: Sendable>(
+        of task: Task<T, any Error>, within seconds: Double = 120, sourceLocation: SourceLocation = #_sourceLocation
+    ) async -> T? {
+        let plain = Task { try? await task.value }
+        return await value(of: plain, within: seconds, sourceLocation: sourceLocation) ?? nil
     }
 
     /// Waits for `condition`, settling between checks.

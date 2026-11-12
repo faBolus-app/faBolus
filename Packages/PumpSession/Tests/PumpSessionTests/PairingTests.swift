@@ -237,7 +237,7 @@ import Testing
         let session = rig.session
         let dismiss = Task { await session.dismiss(alert) }
         await rig.run(for: 2)
-        #expect(await dismiss.value == .cleared)
+        #expect(await rig.value(of: dismiss) == .cleared)
         let sent = try #require(rig.pump.arrivals(of: DismissNotificationRequest.self).first)
         #expect(Array(sent.cargo.prefix(5)) == [7, 0, 0, 0, 1])
         #expect(await rig.session.state.alerts?.value.isEmpty == true)
@@ -261,7 +261,7 @@ import Testing
         let dismiss = Task { await session.dismiss(alert, waitingForLinkUpTo: 20) }
         await relaunched.start()
         await relaunched.run(for: 12, step: 1)
-        #expect(await dismiss.value == .cleared)
+        #expect(await relaunched.value(of: dismiss) == .cleared)
         #expect(relaunched.pump.arrivals(of: DismissNotificationRequest.self).count == 1)
         await relaunched.stop()
     }
@@ -276,7 +276,7 @@ import Testing
         let asked = clock.date
         let dismiss = Task { (await session.dismiss(alert, waitingForLinkUpTo: 20), clock.date) }
         await rig.run(for: 25, step: 1)
-        let (outcome, answeredAt) = await dismiss.value
+        let (outcome, answeredAt) = try #require(await rig.value(of: dismiss))
         #expect(outcome == .unconfirmed)
         #expect(answeredAt.timeIntervalSince(asked) >= 20, "it waited for the pump first")
         #expect(rig.pump.arrivals(of: DismissNotificationRequest.self).isEmpty)
@@ -332,7 +332,7 @@ import Testing
         let session = rig.session
         let dismiss = Task { await session.dismiss(alert) }
         await rig.run(for: 2)
-        #expect(await dismiss.value == .cleared)
+        #expect(await rig.value(of: dismiss) == .cleared)
         #expect(rig.store.load()?.remoteClearTrials.isEmpty == true)
     }
 
@@ -367,7 +367,7 @@ import Testing
         #expect(await session.remoteClearTrialResult == nil)
         let dismiss = Task { await session.dismiss(alert) }
         await rig.run(for: 2)
-        #expect(await dismiss.value == .notCleared)
+        #expect(await rig.value(of: dismiss) == .notCleared)
         #expect(await session.remoteClearTrialResult == nil)
         await rig.run(for: 30, step: 5)
         #expect(await session.remoteClearTrialResult == .doesNotClear)
@@ -383,7 +383,7 @@ import Testing
         let other = clears.session
         let cleared = Task { await other.dismiss(first) }
         await clears.run(for: 2)
-        #expect(await cleared.value == .cleared)
+        #expect(await rig.value(of: cleared) == .cleared)
         #expect(await other.remoteClearTrialResult == .clears)
         #expect(await other.state.alerts?.value.map(\.remoteClear) == [.available])
     }
@@ -401,7 +401,7 @@ import Testing
         let alert = try #require(await session.state.alerts?.value.first)
         let dismiss = Task { await session.dismiss(alert) }
         await rig.run(for: 2)
-        #expect(await dismiss.value == .notCleared)
+        #expect(await rig.value(of: dismiss) == .notCleared)
         rig.pump.alertBitmap = 0
         await rig.run(for: 30, step: 5)
         #expect(await session.state.alerts?.value.isEmpty == true)
@@ -424,7 +424,7 @@ import Testing
         #expect(await session.state.alerts?.value.isEmpty == true)
         let dismiss = Task { await session.dismiss(alert) }
         await rig.run(for: 2)
-        #expect(await dismiss.value == .cleared)
+        #expect(await rig.value(of: dismiss) == .cleared)
         #expect(await session.remoteClearTrialResult == nil)
         #expect(rig.store.load()?.remoteClearTrials.isEmpty == true)
     }
@@ -441,7 +441,7 @@ import Testing
         let session = first.session
         let dismiss = Task { await session.dismiss(alert) }
         await first.run(for: 2)
-        #expect(await dismiss.value == .cleared)
+        #expect(await first.value(of: dismiss) == .cleared)
         let saved = try #require(first.store.load())
 
         let relaunched = Rig(
@@ -555,7 +555,7 @@ import Testing
         let session = rig.session
         let dismiss = Task { await session.dismiss(alert) }
         await rig.run(for: 2)
-        #expect(await dismiss.value == .unsupported)
+        #expect(await rig.value(of: dismiss) == .unsupported)
     }
 
     /// The pump answers the clear with a non-zero status: refused, and the alert stays shown.
@@ -572,7 +572,7 @@ import Testing
         let session = rig.session
         let dismiss = Task { await session.dismiss(alert) }
         await rig.run(for: 2)
-        #expect(await dismiss.value == .refused)
+        #expect(await rig.value(of: dismiss) == .refused)
         #expect(await rig.session.state.alerts?.value.count == 1)
     }
 
@@ -588,7 +588,7 @@ import Testing
         let session = rig.session
         let dismiss = Task { await session.dismiss(alert) }
         await rig.run(for: 62)
-        #expect(await dismiss.value == .unconfirmed)
+        #expect(await rig.value(of: dismiss) == .unconfirmed)
         #expect(await rig.session.state.alerts?.value.count == 1)
     }
 }

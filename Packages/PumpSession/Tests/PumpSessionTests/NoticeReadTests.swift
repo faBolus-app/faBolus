@@ -3,6 +3,7 @@ import PumpScript
 import TandemLink
 import TandemMessages
 import Testing
+import faBolusCore
 
 @testable import PumpSession
 
@@ -160,5 +161,61 @@ import Testing
         let keys = reads.map { (read, _) in MessageKey(read) }
         #expect(keys == [MessageKey(AlarmStatusRequest.self), MessageKey(CurrentBolusStatusRequest.self)])
         #expect(reads.map(\.1) == [.alerts, .status])
+    }
+}
+
+/// The link clears the qualifying events when it becomes ready and after every notice, against a pump that
+/// keeps each bit set, and sends no new notice for it, until the phone clears it (guess #30).
+@MainActor
+@Suite struct NoticeClearTests {
+    func rig(holding held: QualifyingEvent = []) -> Rig {
+        Rig(configure: {
+            $0.unsupportedReads = []
+            $0.holdsNoticesUntilCleared = true
+            $0.heldNotices = held
+        })
+    }
+
+    /// A bit left set by an earlier connection would hide the next notice of its kind: it is cleared as
+    /// soon as the link is ready, so the next alert's notice arrives and brings its read.
+    @Test func aBitLeftFromAnEarlierConnectionIsClearedOnReady() async {
+        let rig = rig(holding: [.alert])
+        await rig.startHeld()
+        #expect(rig.pump.heldNotices.isEmpty)
+        #expect(rig.pump.noticeClears >= 1)
+        let before = rig.pump.arrivals(of: AlertStatusRequest.self).count
+        rig.transport.qualifyingEvents(.alert)
+        await rig.settle()
+        #expect(rig.pump.arrivals(of: AlertStatusRequest.self).count == before + 1)
+    }
+
+    /// A notice that arrives while a signed write is on the wire isn't cleared then: its clear goes once
+    /// the write's reply frees the wire, so the bolus's own notice doesn't stay set.
+    @Test func aNoticeDuringASignedWriteIsClearedOnceItsReplyArrives() async {
+        let rig = rig()
+        await rig.startHeld()
+        let clears = rig.pump.noticeClears
+        rig.pump.nextAnswers[MessageKey(InitiateBolusRequest.self)] = [.notice(.bolusChange)]
+        let session = rig.session
+        let result = await rig.run(for: 3, upTo: 120) { await session.deliver(composed(1.0)) }
+        #expect(result == .started(RemoteBolusLedger.Key(peerId: "phone", requestId: "phone-1"), .delivering))
+        #expect(rig.pump.heldNotices.isEmpty)
+        #expect(rig.pump.noticeClears > clears)
+    }
+
+    /// While a bit is held the pump sends nothing for it, so a second change of that kind goes unseen
+    /// until a notice for another bit carries it: what the clears guard against.
+    @Test func aHeldBitIsSeenOnlyWithTheNextNotice() async {
+        let rig = rig()
+        await rig.startHeld()
+        rig.pump.heldNotices = [.battery]
+        let before = rig.pump.arrivals(of: CurrentBatteryV2Request.self).count
+        rig.transport.qualifyingEvents(.battery)
+        await rig.settle()
+        #expect(rig.pump.arrivals(of: CurrentBatteryV2Request.self).count == before)
+        rig.transport.qualifyingEvents(.alert)
+        await rig.settle()
+        #expect(rig.pump.arrivals(of: CurrentBatteryV2Request.self).count == before + 1)
+        #expect(rig.pump.heldNotices.isEmpty)
     }
 }

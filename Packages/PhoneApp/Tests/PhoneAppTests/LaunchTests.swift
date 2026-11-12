@@ -44,7 +44,7 @@ import faBolusCore
         await phone.run(first, for: 12)
         let sync = Task { await first.syncHistory() }
         await phone.run(first, for: 10)
-        await sync.value
+        await phone.value(of: sync)
         await phone.settle(first)
         let logbook = first.logbook
         #expect(logbook.map(\.category) == [.couldNotDeliver, .autoCorrection])
@@ -109,7 +109,7 @@ import faBolusCore
         #expect(found.model == .tslimX2)
         let pairing = Task { try await model.pair(found, code: ScriptedPump.code) }
         #expect(await phone.until(model) { model.pump.link == .connected })
-        try? await pairing.value
+        await phone.value(of: pairing)
         #expect(await phone.until(model) { model.pairing?.trustedSerial == phone.mock.pump.serialNumber })
         await model.shutdown()
         let relaunched = await phone.launch(paired: false)

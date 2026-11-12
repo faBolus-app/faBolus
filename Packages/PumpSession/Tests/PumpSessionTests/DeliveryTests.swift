@@ -57,7 +57,7 @@ private func addOldHistory(_ pump: ScriptedPump, count: Int = 20) {
         let session = rig.session
         let sync = Task { await session.syncHistory() }
         await rig.run(for: 6)
-        await sync.value
+        await rig.value(of: sync)
         let batches = await rig.sink.batches
         #expect(batches.flatMap(\.boluses).map(\.units) == [1.0])
         #expect(await rig.session.historyEvents.contains { $0.title == "Bolus delivered" && $0.detail == "1.00 U" })
@@ -132,7 +132,7 @@ private func addOldHistory(_ pump: ScriptedPump, count: Int = 20) {
         let delivery = Task { await session.deliver(composed(1.0)) }
         #expect(await rig.until { rig.pump.arrivals(of: InitiateBolusRequest.self).count == 1 })
         await rig.run(for: 60, step: 1)
-        _ = await delivery.value
+        _ = await rig.value(of: delivery)
         #expect(
             await rig.session.ledger.ledger.outcome(key) == .failed(reason: RemoteBolusLedger.absentFromHistoryReason))
     }
@@ -151,7 +151,7 @@ private func addOldHistory(_ pump: ScriptedPump, count: Int = 20) {
         let delivery = Task { await session.deliver(composed(1.0)) }
         #expect(await rig.until { rig.pump.arrivals(of: InitiateBolusRequest.self).count == 1 })
         await rig.run(for: 60, step: 1)
-        _ = await delivery.value
+        _ = await rig.value(of: delivery)
         #expect(await rig.session.ledger.ledger.outcome(key)?.isUnknown == true)
     }
 
@@ -189,7 +189,7 @@ private func addOldHistory(_ pump: ScriptedPump, count: Int = 20) {
         let session = rig.session
         let delivery = Task { await session.deliver(composed(1.0)) }
         await rig.run(for: 15, step: 1)
-        let result = await delivery.value
+        let result = await rig.value(of: delivery)
         guard case .started(_, .failed) = result else {
             Issue.record("expected failed, got \(result)")
             return
@@ -296,7 +296,7 @@ private func addOldHistory(_ pump: ScriptedPump, count: Int = 20) {
         #expect(await rig.until { rig.pump.arrivals(of: RemoteBgEntryRequest.self).count == 1 })
         #expect(await session.cancelBolus() == .stoppedBeforeStart)
         await rig.run(for: 62)
-        let result = await delivery.value
+        let result = await rig.value(of: delivery)
         #expect(result == .started(key, .failed(reason: PumpSession.cancelledBeforeStartReason)))
         #expect(rig.pump.arrivals(of: InitiateBolusRequest.self).isEmpty)
         #expect(rig.pump.released.count == 1)
@@ -312,8 +312,8 @@ private func addOldHistory(_ pump: ScriptedPump, count: Int = 20) {
         #expect(await rig.until { rig.pump.arrivals(of: InitiateBolusRequest.self).count == 1 })
         let cancel = Task { await session.cancelBolus() }
         await rig.run(for: 62)
-        _ = await delivery.value
-        _ = await cancel.value
+        _ = await rig.value(of: delivery)
+        _ = await rig.value(of: cancel)
         let control = rig.pump.arrivals.filter { $0.characteristic == .control }.map(\.opCode)
         let initiate = control.firstIndex(of: InitiateBolusRequest.props.opCode)
         let cancelled = control.firstIndex(of: CancelBolusRequest.props.opCode)
@@ -363,7 +363,7 @@ private func addOldHistory(_ pump: ScriptedPump, count: Int = 20) {
         #expect(await session.cancelBolus() == .cancelled)
         #expect(rig.pump.arrivals(of: DismissNotificationRequest.self).isEmpty)
         await rig.run(for: 12, step: 1)
-        #expect(await dismiss.value == .cleared)
+        #expect(await rig.value(of: dismiss) == .cleared)
     }
 
     @Test func cancelWithNoBolusSaysSo() async {

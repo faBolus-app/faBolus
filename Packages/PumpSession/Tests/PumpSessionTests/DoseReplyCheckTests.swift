@@ -11,11 +11,9 @@ private let key = RemoteBolusLedger.Key(peerId: "phone", requestId: "phone-1")
 
 /// Delivers with the clock running, as a delivery waits on the link and the pump's timed replies.
 @MainActor
-private func deliver(_ rig: Rig, _ dose: ComposedDose) async -> DeliveryResult {
+private func deliver(_ rig: Rig, _ dose: ComposedDose) async -> DeliveryResult? {
     let session = rig.session
-    let task = Task { await session.deliver(dose) }
-    await rig.run(for: 3)
-    return await task.value
+    return await rig.run(for: 3, upTo: 120) { await session.deliver(dose) }
 }
 
 /// A calculator snapshot with every field the scripted pump sends, and `first` as its first byte.
@@ -171,7 +169,7 @@ private func snapshot(_ pump: ScriptedPump, first: UInt8, iobMilliunits: UInt32?
         let session = rig.session
         let cancel = Task { await session.cancelBolus() }
         await rig.run(for: 5)
-        #expect(await cancel.value == .unconfirmed)
+        #expect(await rig.value(of: cancel) == .unconfirmed)
         #expect(rig.pump.arrivals(of: CancelBolusRequest.self).count == 1)
     }
 }

@@ -249,7 +249,7 @@ import Testing
         let cancel = Task { await session.cancelBolus() }
         await rig.run(for: 0.5)
         #expect(rig.pump.arrivals(of: CancelBolusRequest.self).count == 1)
-        #expect(await cancel.value == .cancelled)
+        #expect(await rig.value(of: cancel) == .cancelled)
     }
 
     /// A notice that arrives while an InitiateBolus is in flight doesn't fail it, and its reply starts the
@@ -263,7 +263,7 @@ import Testing
         let session = rig.session
         let delivery = Task { await session.deliver(composed(1.0)) }
         await rig.run(for: 1)
-        guard case .started(_, .delivering) = await delivery.value else {
+        guard case .started(_, .delivering) = await rig.value(of: delivery) else {
             Issue.record("expected delivering")
             return
         }
@@ -293,7 +293,7 @@ import Testing
         let session = rig.session
         let delivery = Task { await session.deliver(composed(1.0)) }
         await rig.run(for: 16, step: 1)
-        guard case .started(_, .delivering) = await delivery.value else {
+        guard case .started(_, .delivering) = await rig.value(of: delivery) else {
             Issue.record("expected delivering")
             return
         }
@@ -310,7 +310,7 @@ import Testing
         await rig.run(for: 30, step: 1)
         #expect(await rig.session.ledger.ledger.allEntries.last?.outcome.isUnknown != true)
         await rig.run(for: 31, step: 1)
-        guard case .started(_, let outcome) = await delivery.value, outcome.isUnknown else {
+        guard case .started(_, let outcome) = await rig.value(of: delivery), outcome.isUnknown else {
             Issue.record("expected an unknown outcome")
             return
         }
@@ -329,8 +329,8 @@ import Testing
         #expect(rig.pump.arrivals(of: CancelBolusRequest.self).isEmpty)
         await rig.run(for: 10, step: 1)
         #expect(rig.pump.arrivals(of: CancelBolusRequest.self).count == 1)
-        _ = await delivery.value
-        _ = await cancel.value
+        _ = await rig.value(of: delivery)
+        _ = await rig.value(of: cancel)
     }
 
     /// One status reply lost mid-bolus waits out its 60 s and the next read is answered: the bolus is still
@@ -342,7 +342,7 @@ import Testing
         let session = rig.session
         let delivery = Task { await session.deliver(composed(2.0)) }
         await rig.run(for: rig.pump.pendingSeconds + 3, step: 1)
-        _ = await delivery.value
+        _ = await rig.value(of: delivery)
         rig.pump.nextAnswers[MessageKey(CurrentBolusStatusRequest.self)] = [.silent]
         await rig.run(for: rig.pump.deliverySeconds(milliunits: 2000) + 70, step: 1)
         #expect(!(await rig.outcomes(key)).contains { $0.isUnknown })
@@ -357,7 +357,7 @@ import Testing
         let session = rig.session
         let refresh = Task { await session.refreshGlucose() }
         await rig.run(for: 21, step: 1)
-        await refresh.value
+        await rig.value(of: refresh)
         #expect(rig.pump.arrivals(of: HomeScreenMirrorRequest.self).count > 0)
     }
 
@@ -373,7 +373,7 @@ import Testing
         let session = rig.session
         let delivery = Task { await session.deliver(composed(2.0)) }
         await rig.run(for: rig.pump.pendingSeconds + 3, step: 1)
-        _ = await delivery.value
+        _ = await rig.value(of: delivery)
         rig.pump.answers[MessageKey(CurrentBolusStatusRequest.self)] = .silent
         rig.pump.answers[MessageKey(CurrentEGVGuiDataRequest.self)] = .silent
         await rig.run(for: 85, step: 1)
@@ -394,7 +394,7 @@ import Testing
         let session = rig.session
         let delivery = Task { await session.deliver(composed(2.0)) }
         await rig.run(for: rig.pump.pendingSeconds + 3, step: 1)
-        _ = await delivery.value
+        _ = await rig.value(of: delivery)
         rig.pump.nextAnswers[MessageKey(CurrentBolusStatusRequest.self)] = [.silent, .late(seconds: 40)]
         await rig.run(for: 115, step: 1)
         #expect(!(await rig.outcomes(key)).contains { $0.isUnknown })
