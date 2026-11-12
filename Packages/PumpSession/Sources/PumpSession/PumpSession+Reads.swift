@@ -12,8 +12,8 @@ enum ReadGroup: CaseIterable, Hashable {
     case essential
     /// The pump's notifications.
     case alerts
-    /// What changes minute to minute: IOB, glucose and its trend, reservoir, battery, the bolus in
-    /// progress and the cartridge.
+    /// What changes minute to minute: the home screen (glucose trend, Control-IQ state), the insulin
+    /// left, battery and the cartridge.
     case status
     /// What changes rarely: the calculator settings, basal, limits, Control-IQ, the CGM session, and the
     /// pump clock.
@@ -58,6 +58,56 @@ enum ReadGroup: CaseIterable, Hashable {
         case .settings, .cgmHardware: return .settings
         case .history: return .history
         }
+    }
+}
+
+/// The reads a qualifying-event notice brings, bit by bit as t:connect sends them, limited to the reads
+/// faBolus already sends: t:connect also reads ProfileStatus,
+/// LastBG, TempRate, ExtendedBolusStatus, LastBolusStatus and the Basal-IQ and sleep settings, which faBolus
+/// neither reads nor shows. The bit values are confirmed; whether a t:slim raises each bit on every change
+/// is not.
+enum NoticeReads {
+    private static let iob: any TandemMessages.Message = ControlIQIOBRequest()
+    private static let table: [(QualifyingEvent, [any TandemMessages.Message])] = [
+        (.alert, [AlertStatusRequest()]),
+        (.alarm, [AlarmStatusRequest()]),
+        (.reminder, [ReminderStatusRequest()]),
+        (.cgmAlert, [CGMAlertStatusRequest()]),
+        // t:connect has no read for this bit; faBolus reads the malfunctions it shows.
+        (.malfunction, [MalfunctionStatusRequest()]),
+        (
+            .homeScreenChange,
+            [
+                CurrentBasalStatusRequest(), CurrentEGVGuiDataRequest(), HomeScreenMirrorRequest(),
+                ControlIQInfoV2Request()
+            ]
+        ),
+        (.pumpSuspend, [InsulinStatusRequest(), iob]),
+        (.pumpResume, [InsulinStatusRequest(), iob, CurrentEGVGuiDataRequest()]),
+        (.timeChange, [iob, CGMStatusRequest(), TimeSinceResetRequest()]),
+        (.basalChange, [iob, HomeScreenMirrorRequest(), CurrentBasalStatusRequest()]),
+        (.bolusChange, [CurrentBolusStatusRequest()]),
+        (.iobChange, [iob]),
+        (
+            .cgmChange,
+            [CGMStatusRequest(), CurrentEGVGuiDataRequest(), HomeScreenMirrorRequest(), TimeSinceResetRequest()]
+        ),
+        (.battery, [CurrentBatteryV2Request()]),
+        // faBolus also reads the cartridge state, which t:connect doesn't.
+        (.remainingInsulin, [InsulinStatusRequest(), LoadStatusRequest()]),
+        (.controlIQInfo, [iob, ControlIQInfoV2Request()])
+    ]
+    private static let alertBits: QualifyingEvent = [.alert, .alarm, .reminder, .cgmAlert, .malfunction]
+
+    static func reads(for events: QualifyingEvent) -> [(any TandemMessages.Message, PumpSession.Priority)] {
+        var seen: Set<MessageKey> = []
+        var reads: [(any TandemMessages.Message, PumpSession.Priority)] = []
+        for (bit, messages) in table where events.contains(bit) {
+            for message in messages where seen.insert(MessageKey(message)).inserted {
+                reads.append((message, alertBits.contains(bit) ? .alerts : .status))
+            }
+        }
+        return reads
     }
 }
 

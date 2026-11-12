@@ -1,0 +1,164 @@
+import Foundation
+import PumpScript
+import TandemLink
+import TandemMessages
+import Testing
+
+@testable import PumpSession
+
+/// A qualifying-event notice brings the reads its bits name, as t:connect sends them, and a history sync.
+/// The bit values are confirmed; whether a t:slim raises each bit on every change is not.
+@MainActor
+@Suite struct NoticeReadTests {
+    func heldRig() async -> Rig {
+        let rig = Rig(configure: { $0.unsupportedReads = [] })
+        await rig.startHeld()
+        return rig
+    }
+
+    func count(_ rig: Rig, _ type: (some Message).Type) -> Int { rig.pump.arrivals(of: type).count }
+
+    /// Each read arrives once more after the notice, with no timer due.
+    func expectRead(
+        _ events: QualifyingEvent, _ types: [any Message.Type], sourceLocation: SourceLocation = #_sourceLocation
+    ) async {
+        let rig = await heldRig()
+        let before = types.map { rig.pump.arrivals(of: $0).count }
+        rig.transport.qualifyingEvents(events)
+        await rig.settle()
+        for (type, was) in zip(types, before) {
+            #expect(rig.pump.arrivals(of: type).count == was + 1, "\(type)", sourceLocation: sourceLocation)
+        }
+    }
+
+    @Test func aBolusNoticeReadsTheBolusStatus() async {
+        await expectRead(.bolusChange, [CurrentBolusStatusRequest.self])
+    }
+
+    @Test func anIOBNoticeReadsTheIOB() async {
+        await expectRead(.iobChange, [ControlIQIOBRequest.self])
+    }
+
+    @Test func aCGMNoticeReadsTheGlucoseAndThePumpClock() async {
+        await expectRead(
+            .cgmChange,
+            [
+                CGMStatusRequest.self, CurrentEGVGuiDataRequest.self, HomeScreenMirrorRequest.self,
+                TimeSinceResetRequest.self
+            ])
+    }
+
+    @Test func aTimeNoticeReadsThePumpClockAndTheIOB() async {
+        await expectRead(.timeChange, [ControlIQIOBRequest.self, CGMStatusRequest.self, TimeSinceResetRequest.self])
+    }
+
+    @Test func aSuspendOrResumeNoticeReadsTheCartridgeAndTheIOB() async {
+        await expectRead(.pumpSuspend, [InsulinStatusRequest.self, ControlIQIOBRequest.self])
+        await expectRead(
+            .pumpResume, [InsulinStatusRequest.self, ControlIQIOBRequest.self, CurrentEGVGuiDataRequest.self])
+    }
+
+    @Test func aHomeScreenOrBasalNoticeReadsTheBasal() async {
+        await expectRead(
+            .homeScreenChange,
+            [
+                CurrentBasalStatusRequest.self, CurrentEGVGuiDataRequest.self, HomeScreenMirrorRequest.self,
+                ControlIQInfoV2Request.self
+            ])
+        await expectRead(
+            .basalChange, [ControlIQIOBRequest.self, HomeScreenMirrorRequest.self, CurrentBasalStatusRequest.self])
+    }
+
+    @Test func batteryCartridgeAndControlIQNoticesReadWhatTheyName() async {
+        await expectRead(.battery, [CurrentBatteryV2Request.self])
+        await expectRead(.controlIQInfo, [ControlIQIOBRequest.self, ControlIQInfoV2Request.self])
+    }
+
+    /// Each alert bit reads its own list, not all five.
+    @Test func anAlertNoticeReadsOnlyItsOwnList() async {
+        let rig = await heldRig()
+        let alarms = count(rig, AlarmStatusRequest.self)
+        let alerts = count(rig, AlertStatusRequest.self)
+        rig.transport.qualifyingEvents(.alert)
+        await rig.settle()
+        #expect(count(rig, AlertStatusRequest.self) == alerts + 1)
+        #expect(count(rig, AlarmStatusRequest.self) == alarms)
+    }
+
+    /// Several bits that name the same read send it once.
+    @Test func aReadTwoBitsNameGoesOnce() async {
+        let rig = await heldRig()
+        let iob = count(rig, ControlIQIOBRequest.self)
+        rig.transport.qualifyingEvents([.iobChange, .timeChange, .basalChange])
+        await rig.settle()
+        #expect(count(rig, ControlIQIOBRequest.self) == iob + 1)
+    }
+
+    /// A notice for nothing faBolus reads (a BG entry) sends no read but still a history sync.
+    @Test func everyNoticeBringsAHistorySync() async {
+        let rig = await heldRig()
+        let syncs = count(rig, HistoryLogStatusRequest.self)
+        let iob = count(rig, ControlIQIOBRequest.self)
+        rig.transport.qualifyingEvents(.bg)
+        await rig.settle()
+        #expect(count(rig, HistoryLogStatusRequest.self) == syncs + 1)
+        #expect(count(rig, ControlIQIOBRequest.self) == iob)
+    }
+
+    /// Notices during a sync bring one more sync after it, not one each.
+    @Test func noticesDuringASyncBringOneMoreSync() async {
+        let rig = await heldRig()
+        let syncs = count(rig, HistoryLogStatusRequest.self)
+        rig.pump.nextAnswers[MessageKey(HistoryLogStatusRequest.self)] = [.silent]
+        rig.transport.qualifyingEvents(.bolusChange)
+        await rig.settle()
+        #expect(await rig.session.historyBusy)
+        rig.transport.qualifyingEvents(.bolusChange)
+        rig.transport.qualifyingEvents(.iobChange)
+        await rig.run(for: 70, step: 1)
+        #expect(count(rig, HistoryLogStatusRequest.self) == syncs + 2)
+    }
+
+    /// The routine sync stays the backstop: with no notice, the next one is 15 minutes after the last.
+    @Test func withoutANoticeTheRoutineSyncStays() async {
+        let rig = await heldRig()
+        let syncs = count(rig, HistoryLogStatusRequest.self)
+        await rig.run(for: 14 * 60, step: 5)
+        #expect(count(rig, HistoryLogStatusRequest.self) == syncs)
+        await rig.run(for: 2 * 60, step: 5)
+        #expect(count(rig, HistoryLogStatusRequest.self) == syncs + 1)
+    }
+
+    /// A sync cut short at its page limit keeps its pause before the next one, notices or not.
+    @Test func aNoticeDoesntCutAContinuationsPause() async {
+        var config = PumpSession.Configuration()
+        config.historyMaxPages = 1
+        let rig = Rig(
+            configure: { pump in
+                pump.unsupportedReads = []
+                for i in 0..<600 {
+                    let at = pump.wallClockAtStart - 60 - UInt32((599 - i) * 300)
+                    pump.appendHistory(typeId: 256, at: at, body: [UInt8](repeating: 0, count: 6) + le16(100))
+                }
+            }, configuration: config)
+        await rig.startHeld()
+        await rig.run(for: 5, step: 1)
+        #expect(rig.store.load()?.coverage.ranges.count == 1)
+        #expect(rig.pump.firstHeldSequence.map { rig.store.load()?.coverage.ranges.first?.lowerBound != $0 } == true)
+        let syncs = count(rig, HistoryLogStatusRequest.self)
+        rig.transport.qualifyingEvents(.bolusChange)
+        await rig.settle()
+        #expect(count(rig, HistoryLogStatusRequest.self) == syncs)
+    }
+
+    @Test func aCartridgeNoticeReadsTheInsulinLeftAndTheCartridge() async {
+        await expectRead(.remainingInsulin, [InsulinStatusRequest.self, LoadStatusRequest.self])
+    }
+
+    @Test func alertBitsReadAtTheAlertsPriorityAndTheRestAtStatus() {
+        let reads = NoticeReads.reads(for: [.alarm, .bolusChange])
+        let keys = reads.map { (read, _) in MessageKey(read) }
+        #expect(keys == [MessageKey(AlarmStatusRequest.self), MessageKey(CurrentBolusStatusRequest.self)])
+        #expect(reads.map(\.1) == [.alerts, .status])
+    }
+}
