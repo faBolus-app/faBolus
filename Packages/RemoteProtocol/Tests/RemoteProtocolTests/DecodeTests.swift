@@ -65,6 +65,21 @@ import Testing
         #expect(refused(message("bolus", p)))
     }
 
+    /// A calculator request's food entry is grams or, with carbs off, units: one of the two, never both.
+    @Test func aCalculatorRequestHasOneFoodEntry() {
+        var p = payload(of: "bolus-insulin-food")
+        guard case .message(.bolus(let insulin)) = RemoteMessage.receive(message("bolus", p)) else {
+            Issue.record("an insulin food request didn't read")
+            return
+        }
+        #expect(insulin.amount == .insulinCalculator(foodMilliunits: 3000, estimateMilliunits: 3800))
+        p["carbsG"] = .int(30)
+        #expect(refused(message("bolus", p)))
+        p["carbsG"] = nil
+        p["foodMU"] = nil
+        #expect(refused(message("bolus", p)))
+    }
+
     /// The last auto-correction is a time and nothing else: absent reads as none known, and a time out of
     /// range or of the wrong type is refused rather than read as zero.
     @Test func theLastAutoCorrectionIsATimeOnly() {

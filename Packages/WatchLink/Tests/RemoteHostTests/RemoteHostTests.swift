@@ -346,6 +346,14 @@ import faBolusCore
         #expect(r.glucoseMgdl == 142)
         #expect(r.includeStaleGlucose)
         #expect(r.sentAt == Date(timeIntervalSince1970: TimeInterval(GoldenFixtures.now)))
+
+        let insulin = BolusRequestPayload(
+            requestId: "i", sentAt: GoldenFixtures.now,
+            amount: .insulinCalculator(foodMilliunits: 3000, estimateMilliunits: 3800), glucoseMgdl: 142,
+            includeStaleGlucose: false)
+        #expect(
+            RemoteDoseRequest(v2: insulin, peerId: "garmin", surface: .garmin).amount
+                == .calculator(food: .insulin(units: 3), estimateUnits: 3.8))
     }
 }
 

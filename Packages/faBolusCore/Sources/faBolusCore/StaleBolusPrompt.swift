@@ -74,11 +74,15 @@ public enum StaleBolusPrompt {
 
     /// Shared warning lead every surface shows (each renders its own three buttons around it), so the
     /// wording — including that the stale value was DROPPED from the dose — is identical everywhere.
-    public static func warningMessage(glucoseMgdl: Int, glucoseDate: Date, now: Date = Date()) -> String {
+    /// With `carbsOff` (no carbs in the dose) the dose without the correction is said as that.
+    public static func warningMessage(glucoseMgdl: Int, glucoseDate: Date, now: Date = Date(), carbsOff: Bool = false)
+        -> String
+    {
         // "is from 30 min ago"; a reading timed ahead of this phone's clock is said so in words.
         let age = GlucoseFreshness.ageLabel(for: glucoseDate, now: now)
         let when = age == "clock ahead" ? "is timed ahead of this phone's clock" : "is from \(age)"
         return "Your CGM reading (\(glucoseMgdl) mg/dL) \(when) "
-            + "and was left out of this dose. Include it in the correction, bolus for carbs only, or cancel?"
+            + "and was left out of this dose. Include it in the correction, "
+            + (carbsOff ? "bolus with no correction" : "bolus for carbs only") + ", or cancel?"
     }
 }

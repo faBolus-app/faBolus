@@ -53,18 +53,22 @@ public struct DoseRequest: Sendable, Hashable, Codable {
     /// along with its units, so a request ID reused for different inputs is caught.
     public let carbsGrams: Double?
     public let bgMgdl: Int?
+    /// With carbs off on the pump, the insulin entered for the food, units: what a remote's calculator
+    /// request sent in place of carbs, so it identifies the request as carbs do.
+    public let foodInsulinUnits: Double?
 
     /// - Parameter id: a remote's own request ID, or a fresh one for the phone. Required, with no
     ///   default, so a remote request can't silently get a new ID and slip past the at-most-once check.
     public init(
         id: String, origin: Origin, shape: Shape,
-        carbsGrams: Double? = nil, bgMgdl: Int? = nil
+        carbsGrams: Double? = nil, bgMgdl: Int? = nil, foodInsulinUnits: Double? = nil
     ) {
         self.id = id
         self.origin = origin
         self.shape = shape
         self.carbsGrams = carbsGrams
         self.bgMgdl = bgMgdl
+        self.foodInsulinUnits = foodInsulinUnits
     }
 
     public var totalUnits: Double { shape.totalUnits }
@@ -75,12 +79,17 @@ public struct DoseRequest: Sendable, Hashable, Codable {
     /// A fingerprint of everything that defines the dose, so the same request ID with different
     /// parameters is refused rather than replayed, and the same dose resent under a new ID is recognized.
     ///
-    /// A remote's calculator request is defined by what the remote sent, its carbs and glucose: the phone
-    /// computes the units, and its recompute moves once the first bolus has raised IOB. Keyed on the units,
-    /// a resend after that bolus would look like a new dose and be delivered again.
+    /// A remote's calculator request is defined by what the remote sent, its carbs (or, with carbs off, the
+    /// food's insulin) and glucose: the phone computes the units, and its recompute moves once the first
+    /// bolus has raised IOB. Keyed on the units, a resend after that bolus would look like a new dose and be
+    /// delivered again.
     public var doseKey: String {
         switch shape {
         case .now(let units):
+            if case .remote = origin, let food = foodInsulinUnits {
+                return RemoteBolusLedger.doseKey(units: nil, carbsGrams: nil, bgMgdl: bgMgdl)
+                    + String(format: "|f:%.4f", food)
+            }
             if case .remote = origin, carbsGrams != nil {
                 return RemoteBolusLedger.doseKey(units: nil, carbsGrams: carbsGrams, bgMgdl: bgMgdl)
             }

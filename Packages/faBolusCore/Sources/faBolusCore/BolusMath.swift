@@ -64,7 +64,17 @@ public enum BolusMath {
                 carbSanityFail = true  // FailedSanityCheck: invalid carb ratio
             }
         }
+        return combine(fromCarbs: fromCarbs, carbSanityFail: carbSanityFail, bgMgdl: bgMgdl, profile: profile)
+    }
 
+    /// The same calculation with carbs off on the pump: Tandem's apps then take the food entry as insulin
+    /// units, used as the food part with no carb ratio, and the correction and IOB apply as with carbs.
+    public static func estimate(foodUnits: Double?, bgMgdl: Int?, profile: Profile) -> Result {
+        let fromFood = foodUnits.map { $0.isFinite ? dp(max(0, $0)) : 0 } ?? 0
+        return combine(fromCarbs: fromFood, carbSanityFail: false, bgMgdl: bgMgdl, profile: profile)
+    }
+
+    private static func combine(fromCarbs: Double, carbSanityFail: Bool, bgMgdl: Int?, profile: Profile) -> Result {
         // --- addedFromGlucose (getAddedFromGlucose) ---
         var fromBG = 0.0
         var bgSanityFail = false

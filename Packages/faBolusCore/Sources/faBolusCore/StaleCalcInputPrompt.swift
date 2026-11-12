@@ -69,16 +69,19 @@ public enum StaleTherapyPrompt {
     ///   byte-identical to before this parameter was added. `p.isfMgdlPerUnit`/`p.targetBgMgdl` stay
     ///   mg/dL `Int` on `BolusMath.Profile` — only the rendered text changes. Carb ratio is
     ///   unit-agnostic (g/U) and is never touched by this parameter.
+    ///   - carbsOff: carbs are off on the pump, so its carb ratio isn't used and isn't named.
     public static func warningMessage(
-        profile: BolusMath.Profile?, therapyDate: Date?, now: Date = Date(), unit: GlucoseUnit = .mgdl
+        profile: BolusMath.Profile?, therapyDate: Date?, now: Date = Date(), unit: GlucoseUnit = .mgdl,
+        carbsOff: Bool = false
     ) -> String {
         let age = therapyDate.map { CalcInputFreshness.ageLabel(for: $0, now: now) } ?? "of unknown age"
         if let p = profile {
+            let carbs = carbsOff ? "carbs off" : String(format: "carb ratio %.0f g/U", p.carbRatioGramsPerUnit)
             return String(
                 format: "faBolus couldn't confirm this pump's bolus settings are current "
-                    + "(last known carb ratio %.0f g/U, ISF %d, target %d mg/dL, %@). "
+                    + "(last known %@, ISF %d, target %d mg/dL, %@). "
                     + "Use those settings, or cancel.",
-                p.carbRatioGramsPerUnit, p.isfMgdlPerUnit, p.targetBgMgdl, age)
+                carbs, p.isfMgdlPerUnit, p.targetBgMgdl, age)
         }
         return "faBolus couldn't confirm this pump's bolus settings are current (last known settings, \(age)). "
             + "Use them, or cancel."

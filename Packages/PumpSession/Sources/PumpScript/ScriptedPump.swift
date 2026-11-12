@@ -75,6 +75,10 @@ public final class ScriptedPump {
     /// The calculator snapshot lets the CGM reading fill in a correction (byte 37). Which pump states clear
     /// it is unconfirmed.
     public var glucoseAutoFillAllowed = true
+    /// The calculator snapshot's carb entry (byte 13): carbs on for the active profile. The byte is t:connect's
+    /// parser's; what a t:slim reports in the carb ratio with carbs off is unconfirmed (this one keeps its
+    /// ratio).
+    public var carbEntryEnabled = true
     /// The calculator snapshot's insulin bolused in the last hour (byte 20).
     public var bolusedLastHourMilliunits: UInt32 = 0
     /// The calculator snapshot's too-many-boluses flags: the hourly limit (byte 24) and IOB (byte 25).
@@ -662,7 +666,7 @@ public final class ScriptedTransport: LinkTransport {
             v.replaceSubrange(7..<9, with: le16(pump.reservoirUnits))
             v.replaceSubrange(9..<11, with: le16(pump.targetMgdl))
             v.replaceSubrange(11..<13, with: le16(pump.correctionFactor))
-            v[13] = 1
+            v[13] = pump.carbEntryEnabled ? 1 : 0
             v.replaceSubrange(14..<18, with: le32(pump.carbRatioMilli))
             v.replaceSubrange(18..<20, with: le16(pump.maxBolusMilliunits))
             v.replaceSubrange(20..<24, with: le32(pump.bolusedLastHourMilliunits))

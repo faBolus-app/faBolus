@@ -421,6 +421,9 @@
               "minimum": 0,
               "maximum": 1000000
             },
+            "carbsOff": {
+              "type": "boolean"
+            },
             "at": {
               "type": "integer",
               "minimum": 1577836800,
@@ -1032,6 +1035,11 @@
           "minimum": 0,
           "maximum": 999
         },
+        "foodMU": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
         "estimateMU": {
           "type": "integer",
           "minimum": 0,
@@ -1080,8 +1088,19 @@
             }
           },
           "required": [
-            "carbsG",
             "estimateMU"
+          ],
+          "oneOf": [
+            {
+              "required": [
+                "carbsG"
+              ]
+            },
+            {
+              "required": [
+                "foodMU"
+              ]
+            }
           ]
         }
       ]

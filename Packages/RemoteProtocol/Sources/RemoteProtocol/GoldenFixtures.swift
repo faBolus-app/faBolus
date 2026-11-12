@@ -64,6 +64,18 @@ public enum GoldenFixtures {
         return s
     }()
 
+    /// Carbs off on the pump: the calculator's food entry is units, and the carb ratio is sent as 0.
+    public static let statusCarbsOff: StatusPayload = {
+        var s = status
+        s.calculator = s.calculator.map { c in
+            var v = c.value
+            v.carbRatioMilligramsPerUnit = 0
+            v.carbsOff = true
+            return Timed(v, at: c.at)
+        }
+        return s
+    }()
+
     public static let history = HistoryPayload(
         sentAt: now,
         points: (0..<6).map {
@@ -75,6 +87,7 @@ public enum GoldenFixtures {
         v2("status-minimal", .status(statusMinimal)),
         v2("status-delivering", .status(statusDelivering)),
         v2("status-glucose-caution", .status(statusGlucoseCaution)),
+        v2("status-carbs-off", .status(statusCarbsOff)),
         v2("config", .config(config)),
         v2("history", .history(history)),
         v2(
@@ -160,6 +173,14 @@ public enum GoldenFixtures {
                     requestId: "1793534390-14-121600", sentAt: now - 10,
                     amount: .calculator(carbsGrams: 45, estimateMilliunits: 6000), glucoseMgdl: 142,
                     includeStaleGlucose: false, declineCorrection: true))),
+        // Carbs off on the pump: 3 U for the food, through the calculator, with no carbs.
+        v2(
+            "bolus-insulin-food",
+            .bolus(
+                BolusRequestPayload(
+                    requestId: "1793534390-15-121700", sentAt: now - 10,
+                    amount: .insulinCalculator(foodMilliunits: 3000, estimateMilliunits: 3800), glucoseMgdl: 142,
+                    includeStaleGlucose: false))),
         v2("cancel", .cancel(CancelPayload(requestId: "1793534399-11-121000", bolusRequestId: "1793534390-7-118220"))),
         v2("dismiss", .dismiss(DismissPayload(requestId: "1793534395-r3-119001", alertId: "pump.alert.2"))),
         // What the old apps send, so each side can test meeting one.

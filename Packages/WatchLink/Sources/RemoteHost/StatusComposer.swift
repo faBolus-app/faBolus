@@ -92,15 +92,17 @@ public enum StatusComposer {
             return milliunits(o.value.deliveredUnits ?? o.value.programmedUnits).map { Timed($0, at: t) }
         }
         let calculator = pump.bolusCalculator.flatMap { o -> Timed<CalculatorSettings>? in
+            // With carbs off the ratio isn't used, and what the pump reports for it then isn't known: 0.
             guard let t = at(o), o.value.isUsable, let max = milliunits(o.value.maxBolusUnits),
-                let ratio = milliunits(o.value.carbRatio), WireLimits.carbRatioMilligrams.contains(ratio),
+                let ratio = o.value.carbsOff ? 0 : milliunits(o.value.carbRatio),
+                WireLimits.carbRatioMilligrams.contains(ratio),
                 WireLimits.calculatorMgdl.contains(o.value.correctionFactor),
                 WireLimits.calculatorMgdl.contains(o.value.targetMgdl)
             else { return nil }
             return Timed(
                 CalculatorSettings(
                     carbRatioMilligramsPerUnit: ratio, correctionFactor: o.value.correctionFactor,
-                    targetMgdl: o.value.targetMgdl, maxBolusMilliunits: max), at: t)
+                    targetMgdl: o.value.targetMgdl, maxBolusMilliunits: max, carbsOff: o.value.carbsOff), at: t)
         }
         let controlIQ = pump.controlIQ.flatMap { o in
             at(o).map {

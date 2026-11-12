@@ -134,7 +134,10 @@ public struct PumpDisplay: Sendable {
     private var calculator: Observed<BolusCalculatorSettings>? { pump.bolusCalculator }
 
     public var carbRatio: Value {
-        value(calculator, window: freshness.therapyStaleAfter) { String(format: "%.0f g/U", $0.carbRatio) }
+        // With carbs off the pump's ratio isn't used, and what it reports then isn't known.
+        value(calculator, window: freshness.therapyStaleAfter) {
+            $0.carbsOff ? "Carbs off" : String(format: "%.0f g/U", $0.carbRatio)
+        }
     }
 
     public var correctionFactor: Value {

@@ -126,6 +126,12 @@ public struct BolusCalculatorSettings: Sendable, Hashable, Codable {
     public var bolusedLastHourUnits: Double?
     /// The pump's own word that too many boluses were asked for in a short time, when it said.
     public var tooManyBoluses: TooManyBoluses?
+    /// Whether the active profile takes carbs (the reply's carb entry, byte 13), when it said. With carbs
+    /// off, Tandem's apps take the calculator's food entry as insulin units, not grams, and send no carbs.
+    public var carbEntryEnabled: Bool?
+
+    /// Carbs are off on the pump: the calculator's food entry is units, and no carb amount goes.
+    public var carbsOff: Bool { carbEntryEnabled == false }
 
     /// The calculator reply's two too-many-boluses flags. Either set means the pump may stop tracking that
     /// limit if the user goes on.
@@ -144,7 +150,7 @@ public struct BolusCalculatorSettings: Sendable, Hashable, Codable {
     public init(
         carbRatio: Double, correctionFactor: Int, targetMgdl: Int, maxBolusUnits: Double,
         insulinOnBoardUnits: Double? = nil, glucoseAutoFillAllowed: Bool? = nil, insulinRemainingUnits: Double? = nil,
-        bolusedLastHourUnits: Double? = nil, tooManyBoluses: TooManyBoluses? = nil
+        bolusedLastHourUnits: Double? = nil, tooManyBoluses: TooManyBoluses? = nil, carbEntryEnabled: Bool? = nil
     ) {
         self.carbRatio = carbRatio
         self.correctionFactor = correctionFactor
@@ -155,12 +161,14 @@ public struct BolusCalculatorSettings: Sendable, Hashable, Codable {
         self.insulinRemainingUnits = insulinRemainingUnits
         self.bolusedLastHourUnits = bolusedLastHourUnits
         self.tooManyBoluses = tooManyBoluses
+        self.carbEntryEnabled = carbEntryEnabled
     }
 
     /// A carb ratio, correction factor or target of zero (or less) is impossible, so such a set isn't a
-    /// reading the calculator can use.
+    /// reading the calculator can use. With carbs off the calculator never divides by the carb ratio, so
+    /// it isn't needed then (what the pump reports for it with carbs off isn't known).
     public var isUsable: Bool {
-        carbRatio.isFinite && carbRatio > 0 && correctionFactor > 0 && targetMgdl > 0
+        (carbsOff || (carbRatio.isFinite && carbRatio > 0)) && correctionFactor > 0 && targetMgdl > 0
     }
 }
 

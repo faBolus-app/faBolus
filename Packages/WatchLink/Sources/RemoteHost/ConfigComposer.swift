@@ -94,6 +94,8 @@ extension RemoteDoseRequest {
         case .units(let mU): amount = .units(Double(mU) / 1000)
         case .calculator(let carbs, let estimate):
             amount = .calculator(carbsGrams: Double(carbs), estimateUnits: Double(estimate) / 1000)
+        case .insulinCalculator(let food, let estimate):
+            amount = .calculator(food: .insulin(units: Double(food) / 1000), estimateUnits: Double(estimate) / 1000)
         }
         self.init(
             id: p.requestId, peerId: peerId, surface: surface,
