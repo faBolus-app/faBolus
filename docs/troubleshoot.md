@@ -10,12 +10,12 @@ Common problems, by where you hit them. If yours isn't here, see the [FAQ](faq.m
     [Install Homebrew and XcodeGen](build/xcode.md#step-3-install-homebrew-and-xcodegen) again, including
     the **Next steps** commands Homebrew prints, then open a new Terminal window.
 
-??? question "\"Failed to register bundle identifier\" or \"App Group is not available\""
+??? question ""Failed to register bundle identifier" or "App Group is not available""
     The bundle ID is taken: every App ID and App Group is unique across Apple. Set your own
     `APP_BUNDLE_ID` in `LocalConfig.xcconfig` (see [Your details](build/build-app.md#your-details)), make
     the project again with `./scripts/generate-project.sh`, and reopen it.
 
-??? question "\"Signing requires a development team\""
+??? question ""Signing requires a development team""
     No team is set. Put your Team ID in `LocalConfig.xcconfig` and make the project again, or pick your
     team under **Signing & Capabilities** for both **faBolus** and **faBolusWidgets**. If the file still
     has the example's `ABCDE12345`, replace it.
@@ -51,7 +51,7 @@ Common problems, by where you hit them. If yours isn't here, see the [FAQ](faq.m
     Pair Device shows a new code each time. Enter the code the pump shows now, exactly: the 16-character
     code is case-sensitive. Then try again.
 
-??? question "\"Connection unstable\" or the pump keeps disconnecting"
+??? question ""Connection unstable" or the pump keeps disconnecting"
     Keep the phone closer to the pump. **Settings → Pump** says why the link last dropped. If it keeps
     happening, export diagnostics (**Settings → About & help**) and [send them](feedback.md).
 
@@ -67,7 +67,7 @@ Common problems, by where you hit them. If yours isn't here, see the [FAQ](faq.m
     faBolus hasn't read the pump's bolus settings and active insulin yet, or they're too old. Keep the pump
     connected for a moment. You can still enter units.
 
-??? question "Glucose is grey or shows \"—\""
+??? question "Glucose is grey or shows "—""
     The reading is older than your freshness window, so it isn't shown as current. Check the CGM on the
     pump, or set up a [backup CGM](setup/cgm.md).
 
@@ -97,11 +97,11 @@ Common problems, by where you hit them. If yours isn't here, see the [FAQ](faq.m
     The app was built without Garmin's SDK. Add it ([Garmin's SDK](build/build-app.md#garmin-sdk)), make the
     project again and run it on the phone.
 
-??? question "The watch says \"Phone not connected\" or \"No reply from faBolus\""
+??? question "The watch says "Phone not connected" or "No reply from faBolus""
     The phone must be near the watch, with Bluetooth on and Garmin Connect running. Open faBolus on the
     phone. In **Settings → Watch**, check the chosen watch, or choose it again in Garmin Connect.
 
-??? question "Link says \"faBolus not installed on the watch\""
+??? question "Link says "faBolus not installed on the watch""
     The watch app isn't installed, or it was built with a different app ID than the phone expects. Install
     it as in [Garmin watch (build)](build/garmin-build.md). If you used a private beta, make sure the phone
     app was built after `beta-build.sh` set your ID.
