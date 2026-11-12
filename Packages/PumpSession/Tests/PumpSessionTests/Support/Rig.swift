@@ -164,6 +164,26 @@ final class Rig {
         }
     }
 
+    /// Moves time on, as `run` does, until `work` returns or `limit` seconds have passed, and returns its
+    /// result: nil if it hadn't returned by then. For work that waits on deadlines: how much clock it needs
+    /// depends on how many turns the actors get between steps, and a fixed `run` followed by an unbounded
+    /// wait would hang on a loaded machine instead of failing.
+    func run<T: Sendable>(
+        upTo limit: Double, step: Double = 0.5, finishing work: @escaping @Sendable () async -> T
+    ) async -> T? {
+        let result = Finished<T>()
+        Task { @MainActor in result.value = await work() }
+        var elapsed = 0.0
+        while result.value == nil, elapsed < limit {
+            let s = min(step, limit - elapsed)
+            clock.advance(by: s)
+            elapsed += s
+            await session.tick()
+            await settle()
+        }
+        return result.value
+    }
+
     /// Waits for `condition`, settling between checks.
     func until(_ condition: () async -> Bool) async -> Bool {
         for _ in 0..<500 {
@@ -214,4 +234,10 @@ extension RemoteDoseDecision {
         if case .refused(let refusal) = self { return refusal }
         return nil
     }
+}
+
+/// What a `Rig.run(upTo:finishing:)` task returned, once it has.
+@MainActor
+private final class Finished<T> {
+    var value: T?
 }

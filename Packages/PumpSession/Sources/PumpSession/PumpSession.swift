@@ -35,8 +35,10 @@ public actor PumpSession {
         public var settingsInterval: TimeInterval = 10 * 60
         /// How often a delivering bolus's status is read.
         public var deliveryPollInterval: TimeInterval = 1
-        /// A delivering bolus with no successful status read for this long has an unknown outcome.
-        public var deliveryStatusSilence: TimeInterval = 60
+        /// A delivering bolus with no successful status read for this long has an unknown outcome. A lost reply
+        /// is given up on only at its `requestDeadline`, so this lies halfway between one deadline and two: one
+        /// lost reply never makes the outcome unknown, and two in a row do, whatever the deadline.
+        public var deliveryStatusSilence: TimeInterval { requestDeadline * 1.5 }
         /// A bolus still reported active after this long is left to history. Guess: far past any bolus.
         public var deliveryTrackingLimit: TimeInterval = 30 * 60
         /// Routine history sync, and the most pages one sync fetches (255 records each).
@@ -62,9 +64,10 @@ public actor PumpSession {
         public var busyTick: TimeInterval = 0.5
         /// Whether each class of pump acts on a remote clear (`RemoteClearing.knownClasses`; tests set rows).
         public var remoteClearClasses = RemoteClearing.knownClasses
-        /// How long every send waits after the pump reports its communications suspended (controlX2's
-        /// pause; UNVERIFIED-GUESSES #22).
-        public var commsSuspendedPause: TimeInterval = 5
+        /// How long the pump has to answer a request, any request: t:connect's one 60 s timer. One request
+        /// is on the wire at a time, so a cancel queued behind a request the pump doesn't answer waits up to
+        /// this long.
+        public var requestDeadline: TimeInterval = 60
 
         public init() {}
     }
@@ -125,12 +128,13 @@ public actor PumpSession {
     // Timing
     var due: [ReadGroup: Date] = [:]
     var lastGlucoseRead: Date?
+    /// Routine reads the pump has left unanswered since it last answered them, this connection: how many in a
+    /// row, and when the last one was given up on.
+    var unanswered: [MessageKey: (count: Int, at: Date)] = [:]
     var connectedAt: Date?
     /// The link's hold window: until a connection has held this long, it holds back untested commands.
     var holdWindow: TimeInterval = 10
     var onceThisConnection: Set<ReadGroup> = []
-    /// Until when nothing is sent, after the pump reported its communications suspended.
-    var sendsPausedUntil: Date?
 
     // Delivery
     var delivery: DeliveryInProgress?
@@ -359,16 +363,20 @@ public actor PumpSession {
     /// priorities hold at each slot and a delivery's steps can't be interleaved.
     func exchange(
         _ message: any TandemMessages.Message, allowing: OperationRisk = .read, priority: Priority,
-        owner: UUID? = nil, deadline: Double = 10
+        owner: UUID? = nil
     ) async -> RequestResult {
         await withCheckedContinuation { continuation in
-            append(message, allowing: allowing, priority: priority, owner: owner, deadline: deadline, continuation)
+            append(
+                message, allowing: allowing, priority: priority, owner: owner, deadline: config.requestDeadline,
+                continuation)
         }
     }
 
     /// Queues reads nobody waits on, in order.
     func enqueue(_ reads: [any TandemMessages.Message], priority: Priority) {
-        for read in reads { append(read, allowing: .read, priority: priority, owner: nil, deadline: 10, nil) }
+        for read in reads {
+            append(read, allowing: .read, priority: priority, owner: nil, deadline: config.requestDeadline, nil)
+        }
     }
 
     private func append(
@@ -400,7 +408,18 @@ public actor PumpSession {
 
     private func finished(_ job: Job, _ result: RequestResult) {
         sending = false
-        if case .reply(let reply) = result { applyReply(reply.message) }
+        if case .reply(let reply) = result {
+            unanswered[MessageKey(job.message)] = nil
+            applyReply(reply.message)
+        } else if job.continuation == nil, case .unknown(.timedOut) = result {
+            let key = MessageKey(job.message)
+            let misses = (unanswered[key]?.count ?? 0) + 1
+            unanswered[key] = (misses, clock())
+            // A copy queued while this one waited (its group came due meanwhile) rests too.
+            if restingAfterNoAnswer(job.message, now: clock()) {
+                queue.removeAll { $0.continuation == nil && MessageKey($0.message) == key }
+            }
+        }
         job.continuation?.resume(returning: result)
         runQueue()
     }
@@ -415,11 +434,7 @@ public actor PumpSession {
     /// cancel included. While a bolus is being followed no untested read goes out either: a probe's op-77
     /// can drop the link. A delivery's own steps are left to the link: holding one back here would let a
     /// cancel overtake the InitiateBolus it is meant to stop. A tick sends what has come due.
-    ///
-    /// After the pump reports its communications suspended, nothing goes for a few seconds, a cancel
-    /// and a delivery's steps included: the owner's choice, following controlX2, which pauses every send.
     func nextJobIndex() -> Int? {
-        if sendsPaused { return nil }
         let elapsed = connectedAt.map { clock().timeIntervalSince($0) } ?? .infinity
         // A clock stepped backwards counts as held: waiting for it to catch up would stall the queue.
         let held = elapsed >= holdWindow || elapsed < 0
@@ -434,14 +449,6 @@ public actor PumpSession {
             return queue[i].owner == owner || queue[i].priority == .cancel
         }
         return eligible.min { (queue[$0].priority, queue[$0].id) < (queue[$1].priority, queue[$1].id) }
-    }
-
-    /// Within the pause after a comms-suspended notice. A clock stepped backwards ends it: waiting for the
-    /// clock to catch up would stall the queue, a cancel included.
-    var sendsPaused: Bool {
-        guard let until = sendsPausedUntil else { return false }
-        let left = until.timeIntervalSince(clock())
-        return left > 0 && left <= config.commsSuspendedPause
     }
 
     func isSuspected(_ message: any TandemMessages.Message) -> Bool {
@@ -463,6 +470,16 @@ public actor PumpSession {
         let waiting = queue
         queue.removeAll()
         for job in waiting { job.continuation?.resume(returning: .notSent(.connectionLost)) }
+    }
+
+    /// A routine read the pump left unanswered twice in a row isn't asked again for one request deadline. One
+    /// request is on the wire at a time and the essential reads come due every deadline, so without the gap a
+    /// read the pump never answers would hold the wire for good, and nothing below it (the alert reads, the
+    /// history search that settles an unknown bolus) would ever go. One lost reply alone rests nothing: the
+    /// read goes again at its next turn.
+    func restingAfterNoAnswer(_ read: any TandemMessages.Message, now: Date) -> Bool {
+        guard let miss = unanswered[MessageKey(read)], miss.count >= 2 else { return false }
+        return now.timeIntervalSince(miss.at) < config.requestDeadline
     }
 
     func isQueued(_ type: (some TandemMessages.Message).Type) -> Bool {
@@ -570,6 +587,7 @@ public actor PumpSession {
         refreshRemoteClear()
         connectedAt = now
         onceThisConnection = []
+        unanswered = [:]
         reconcileAttempts = 0
         nextReconcileAt = now
         for group in ReadGroup.allCases { due[group] = now }
@@ -636,8 +654,6 @@ public actor PumpSession {
         identityTrusted = false
         connectedAt = nil
         pendingTrial = nil
-        // The pause belongs to the connection that reported it.
-        sendsPausedUntil = nil
         failQueued()
         emit(.disconnected(Self.reason(reason)))
         deliveryLinkDropped()
@@ -646,11 +662,7 @@ public actor PumpSession {
 
     private func qualifyingEvents(_ events: QualifyingEvent) {
         let now = clock()
-        // What the bit means isn't known (pumpx2 only names it). Each notice pauses every send from now,
-        // as controlX2 does; a request already sent is left to its answer.
-        if events.contains(.pumpCommunicationsSuspended) {
-            sendsPausedUntil = now.addingTimeInterval(config.commsSuspendedPause)
-        }
+        // The comms-suspended bit (19) pauses nothing: t:connect only logs it (UNVERIFIED-GUESSES #22).
         // Before the link is ready nothing can be read; becoming ready reads everything.
         guard identity != nil else { return }
         // What each bit names is read now, as t:connect does, rather than waiting for its timed group.

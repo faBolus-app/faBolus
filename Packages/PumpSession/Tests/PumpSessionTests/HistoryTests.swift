@@ -65,24 +65,25 @@ private func addGlucoseHistory(_ pump: ScriptedPump, count: Int) {
         #expect(abs(date.timeIntervalSince(entered)) < 2)
     }
 
-    /// A page asked for during a comms-suspended pause (a sync's next page, a search for a bolus) waits
-    /// for its request to go out before it is judged quiet: its records arrive after the pause, from one
-    /// request.
-    @Test func aPageAskedForDuringAPauseIsCollectedAfterIt() async {
+    /// A page asked for while a slow request is on the wire waits for its own request to go out before it is
+    /// judged quiet: its records arrive after that request is answered, from one page request.
+    @Test func aPageAskedForBehindASlowRequestIsCollectedAfterIt() async {
         let rig = Rig(configure: {
             $0.unsupportedReads = []
             addGlucoseHistory($0, count: 20)
         })
         await rig.startHeld()
-        rig.transport.qualifyingEvents(.pumpCommunicationsSuspended)
-        await rig.settle()
+        rig.pump.nextAnswers[MessageKey(CurrentEGVGuiDataRequest.self)] = [.late(seconds: 20)]
         let session = rig.session
+        let refresh = Task { await session.refreshGlucose() }
+        await rig.settle()
         let start = rig.pump.firstHeldSequence!
         let requests = rig.pump.arrivals(of: HistoryLogRequest.self).count
         let page = Task { await session.fetchPage(start: start, count: 20, priority: .history) }
-        await rig.run(for: 8)
+        await rig.run(for: 25)
         #expect(await page.value?.count == 20)
         #expect(rig.pump.arrivals(of: HistoryLogRequest.self).count == requests + 1)
+        await refresh.value
     }
 
     /// The link drops after the first page. The sync pauses with the first page credited, and the next

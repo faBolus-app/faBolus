@@ -10,6 +10,13 @@ struct DashboardView: View {
     @Bindable var model: AppModel
     @State private var windowHours = 3
     private let windows = [3, 6, 12, 24]
+    /// What the cancel line says at first (the snapshot of a cancel waiting).
+    private let initialCancelMessage: String?
+
+    init(model: AppModel, cancelMessage: String? = nil) {
+        _model = Bindable(wrappedValue: model)
+        initialCancelMessage = cancelMessage
+    }
 
     var body: some View {
         NavigationStack {
@@ -21,7 +28,7 @@ struct DashboardView: View {
                         StatusRingView(
                             display: display, failoverSource: model.failoverSourceName,
                             bolusInProgress: bolusInProgress)
-                        DashboardBanners(model: model)
+                        DashboardBanners(model: model, cancelMessage: initialCancelMessage)
                         StatusPillsView(display: display, order: model.settings.pillsOrder).padding(.horizontal)
                         chart(now: now).padding(.horizontal)
                         if model.settings.showStats {
@@ -78,7 +85,15 @@ struct DashboardBanners: View {
     @Bindable var model: AppModel
     @State private var showPairing = false
     @State private var cancelMessage: String?
+    /// Counts cancel taps, so only the latest tap's answer and timer change the message.
+    @State private var cancelTaps = 0
     @State private var confirmingOnPump = false
+
+    /// - Parameter cancelMessage: what the cancel line says at first (the snapshot of a cancel waiting).
+    init(model: AppModel, cancelMessage: String? = nil) {
+        _model = Bindable(wrappedValue: model)
+        _cancelMessage = State(initialValue: cancelMessage)
+    }
 
     var body: some View {
         VStack(spacing: 10) {
@@ -124,9 +139,23 @@ struct DashboardBanners: View {
             }
             if bolusInProgress {
                 Button(role: .destructive) {
-                    Task { cancelMessage = PumpMessages.text(await model.cancelBolus()) }
+                    cancelTaps += 1
+                    let tap = cancelTaps
+                    cancelMessage = PumpMessages.cancelSent
+                    Task {
+                        let text = PumpMessages.text(await model.cancelBolus())
+                        if tap == cancelTaps { cancelMessage = text }
+                    }
+                    Task {
+                        try? await Task.sleep(for: PumpMessages.cancelSlowAfter)
+                        if tap == cancelTaps, cancelMessage == PumpMessages.cancelSent {
+                            cancelMessage = PumpMessages.cancelSlow
+                        }
+                    }
                 } label: {
-                    Label("Cancel bolus", systemImage: "stop.fill").font(.headline).frame(maxWidth: .infinity)
+                    // While the cancel waits for the pump's answer the button says so; pressing it sends again.
+                    Label(cancelInHand ? "Cancelling…" : "Cancel bolus", systemImage: "stop.fill").font(.headline)
+                        .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent).tint(.red)
             }
@@ -152,6 +181,11 @@ struct DashboardBanners: View {
         if case .inProgress = model.display.bolusState?.value { return true }
         if let o = model.latestOutcome?.outcome, o.isInFlight { return true }
         return false
+    }
+
+    /// A cancel was tapped and the pump hasn't answered it yet.
+    private var cancelInHand: Bool {
+        cancelMessage == PumpMessages.cancelSent || cancelMessage == PumpMessages.cancelSlow
     }
 
     /// An outcome stays up while it's in flight and for two minutes after it settles; an unknown one

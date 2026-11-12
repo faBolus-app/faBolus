@@ -587,7 +587,7 @@ import Testing
         let alert = try #require(await rig.session.state.alerts?.value.first)
         let session = rig.session
         let dismiss = Task { await session.dismiss(alert) }
-        await rig.run(for: 12)
+        await rig.run(for: 62)
         #expect(await dismiss.value == .unconfirmed)
         #expect(await rig.session.state.alerts?.value.count == 1)
     }

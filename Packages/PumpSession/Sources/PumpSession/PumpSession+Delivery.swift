@@ -263,22 +263,40 @@ extension PumpSession {
     // MARK: - Following a delivering bolus
 
     func deliveryTick(now: Date) {
-        guard var bolus = tracked, !bolus.polling else { return }
+        guard var bolus = tracked else { return }
+        // Checked on every tick, not only when a poll ends: a poll can wait behind another silent request
+        // (one is on the wire at a time), and the bolus mustn't stay "delivering" past the silence.
+        if statusWentSilent(bolus, now: now) {
+            tracked = nil
+            Task { await self.settle(bolus.key, .unknown) }
+            return
+        }
+        guard !bolus.polling else { return }
         if bolus.lastPollAt.map({ now.timeIntervalSince($0) < config.deliveryPollInterval }) ?? false { return }
         bolus.lastPollAt = now
         bolus.polling = true
         tracked = bolus
-        Task { await self.pollTrackedBolus() }
+        Task { await self.pollTrackedBolus(bolus.key) }
     }
 
-    private func pollTrackedBolus() async {
+    /// The bolus has gone `deliveryStatusSilence` with no status answer, and the pump can't still answer a
+    /// poll of its own: none is out, or the one out is still waiting in the queue. A poll on the wire gets its
+    /// whole deadline, so a slow answer after one lost reply still counts.
+    private func statusWentSilent(_ bolus: TrackedBolus, now: Date) -> Bool {
+        guard now.timeIntervalSince(bolus.lastStatusAt) > config.deliveryStatusSilence else { return false }
+        return !bolus.polling || queue.contains { $0.priority == .delivery && $0.message is CurrentBolusStatusRequest }
+    }
+
+    private func pollTrackedBolus(_ key: RemoteBolusLedger.Key) async {
         let result = await exchange(CurrentBolusStatusRequest(), priority: .delivery)
-        guard var bolus = tracked else { return }
+        // The bolus may have been given up on while this poll waited; its reply then says nothing about
+        // any bolus followed since.
+        guard var bolus = tracked, bolus.key == key else { return }
         bolus.polling = false
         let now = clock()
         guard case .reply(let reply) = result, let status = reply.message as? CurrentBolusStatusResponse else {
             tracked = bolus
-            if now.timeIntervalSince(bolus.lastStatusAt) > config.deliveryStatusSilence {
+            if statusWentSilent(bolus, now: now) {
                 tracked = nil
                 await settle(bolus.key, .unknown)
             }
@@ -331,8 +349,8 @@ extension PumpSession {
 
     /// Cancels the bolus in progress. Never blocked by any setting or gate: it reaches the pump ahead of
     /// everything else, except an InitiateBolus already queued, which it follows so it can't arrive first.
-    /// Only the pause after the pump reports its communications suspended holds it, as it holds everything
-    /// (the owner's choice, following controlX2).
+    /// One request is on the wire at a time, as in t:connect, so it waits for the request ahead of it to be
+    /// answered, up to `requestDeadline` when the pump is silent.
     public func cancelBolus() async -> CancelResult {
         if var d = delivery, !d.initiateQueued {
             d.cancelRequested = true

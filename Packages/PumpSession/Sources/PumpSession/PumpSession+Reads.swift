@@ -164,8 +164,7 @@ extension PumpSession {
     // MARK: - The tick
 
     var tickInterval: TimeInterval {
-        // While sends are paused too, so they resume when the pause ends, not at the next idle tick.
-        tracked != nil || page != nil || delivery != nil || sendsPausedUntil != nil ? config.busyTick : config.idleTick
+        tracked != nil || page != nil || delivery != nil ? config.busyTick : config.idleTick
     }
 
     /// Does whatever has come due by the clock: routine reads, the reads around the next CGM reading, a
@@ -174,7 +173,6 @@ extension PumpSession {
     /// suspended app catches up on its next one.
     public func tick() {
         let now = clock()
-        if sendsPausedUntil != nil, !sendsPaused { sendsPausedUntil = nil }
         resumeLinkWaiters()
         resumeQueue()
         historyTick(now: now)
@@ -184,9 +182,15 @@ extension PumpSession {
         for group in [ReadGroup.essential, .alerts, .status, .settings, .cgmHardware] where isDue(group, now: now) {
             schedule(group, now: now)
         }
-        if glucoseIsDue(now: now), !isQueued(CurrentEGVGuiDataRequest.self) {
+        if glucoseIsDue(now: now), !isQueued(CurrentEGVGuiDataRequest.self),
+            !restingAfterNoAnswer(CurrentEGVGuiDataRequest(), now: now)
+        {
             lastGlucoseRead = now
-            enqueue([CurrentEGVGuiDataRequest(), HomeScreenMirrorRequest()], priority: .status)
+            let mirror = HomeScreenMirrorRequest()
+            let reads: [any TandemMessages.Message] =
+                isQueued(HomeScreenMirrorRequest.self) || restingAfterNoAnswer(mirror, now: now)
+                ? [CurrentEGVGuiDataRequest()] : [CurrentEGVGuiDataRequest(), mirror]
+            enqueue(reads, priority: .status)
         }
         if isDue(.history, now: now), !historyBusy, onceThisConnection.contains(.settings) {
             due[.history] = now.addingTimeInterval(config.historySyncInterval)
@@ -214,8 +218,13 @@ extension PumpSession {
         case .settings: due[group] = now.addingTimeInterval(config.settingsInterval)
         case .cgmHardware, .history: break
         }
-        // A read already waiting isn't queued twice.
-        for read in group.reads where !queue.contains(where: { MessageKey($0.message) == MessageKey(read) }) {
+        // A read already waiting isn't queued twice, nor one resting after the pump left it unanswered. While a
+        // bolus is followed its own polls read its status every second, so the routine copy would only take a
+        // poll's turn on the wire.
+        for read in group.reads
+        where !queue.contains(where: { MessageKey($0.message) == MessageKey(read) })
+            && !restingAfterNoAnswer(read, now: now) && !(tracked != nil && read is CurrentBolusStatusRequest)
+        {
             // A read this pump's class is suspected of rejecting goes last, after everything else.
             enqueue([read], priority: isSuspected(read) ? .probe : group.priority)
         }

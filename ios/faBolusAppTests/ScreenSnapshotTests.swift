@@ -33,6 +33,13 @@ import faBolusCore
         check("connected", DashboardView(model: model), height: 1700)
     }
 
+    /// A bolus delivering and a cancel the pump hasn't answered after 5 s: the line says to use the pump to
+    /// stop it now.
+    @Test func dashboardCancelling() async {
+        let model = await SnapshotFixture.model { $0.pump.startBolus(id: 12, milliunits: 5000) }
+        check("cancelling", DashboardView(model: model, cancelMessage: PumpMessages.cancelSlow), height: 1700)
+    }
+
     @Test func dashboardWithNoPump() async {
         let model = await SnapshotFixture.model(paired: false)
         check("unpaired", DashboardView(model: model))

@@ -56,7 +56,7 @@ private let key = RemoteBolusLedger.Key(peerId: "phone", requestId: "phone-1")
         rig.pump.answers[MessageKey(CurrentBolusStatusRequest.self)] = .silent
         let session = rig.session
         let cancel = Task { await session.cancelBolus() }
-        await rig.run(for: 12, step: 1)
+        await rig.run(for: 62, step: 1)
         #expect(await cancel.value == .cancelled)
         #expect(rig.pump.arrivals(of: CancelBolusRequest.self).count == 1)
     }
@@ -67,7 +67,7 @@ private let key = RemoteBolusLedger.Key(peerId: "phone", requestId: "phone-1")
         rig.pump.answers[MessageKey(CurrentBolusStatusRequest.self)] = .silent
         let session = rig.session
         let cancel = Task { await session.cancelBolus() }
-        await rig.run(for: 12, step: 1)
+        await rig.run(for: 62, step: 1)
         #expect(await cancel.value == .unconfirmed)
     }
 }
@@ -85,7 +85,7 @@ private let key = RemoteBolusLedger.Key(peerId: "phone", requestId: "phone-1")
         #expect(await rig.until { rig.pump.arrivals(of: RemoteBgEntryRequest.self).count == 1 })
         #expect(await session.deliver(composed(0.5, id: "phone-2")) == .notStarted(.blocked(.bolusInProgress)))
         #expect(await session.cancelBolus() == .stoppedBeforeStart)
-        await rig.run(for: 12, step: 1)
+        await rig.run(for: 62, step: 1)
         #expect(await first.value == .started(key, .failed(reason: PumpSession.cancelledBeforeStartReason)))
         #expect(rig.pump.arrivals(of: InitiateBolusRequest.self).isEmpty)
     }

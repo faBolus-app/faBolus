@@ -225,28 +225,21 @@ import Testing
     }
 }
 
-/// The pump's comms-suspended notice (qualifying-event bit 19). What it means isn't known; each notice
-/// pauses every send for 5 s, as controlX2 does, the cancel included (the owner's choice).
+/// The pump's comms-suspended notice (qualifying-event bit 19) pauses nothing, as in t:connect, which only
+/// logs it. What the bit means on a t:slim is unconfirmed (UNVERIFIED-GUESSES #22).
 @MainActor
-@Suite struct CommsSuspendedPauseTests {
-    /// A read asked for while paused goes once the 5 s are up.
-    @Test func aNoticeHoldsEverySendForFiveSeconds() async {
+@Suite struct CommsSuspendedTests {
+    @Test func aReadAskedForAfterTheNoticeGoesAtOnce() async {
         let rig = Rig(configure: { $0.unsupportedReads = [] })
         await rig.startHeld()
         rig.transport.qualifyingEvents(.pumpCommunicationsSuspended)
         await rig.settle()
-        let before = rig.pump.arrivals.count
-        let session = rig.session
-        let refresh = Task { await session.refreshGlucose() }
-        await rig.run(for: 4.5)
-        #expect(rig.pump.arrivals.count == before)
-        await rig.run(for: 1)
-        await refresh.value
-        #expect(rig.pump.arrivals(of: CurrentEGVGuiDataRequest.self).count > 0)
-        #expect(rig.pump.arrivals.count > before)
+        let before = rig.pump.arrivals(of: CurrentEGVGuiDataRequest.self).count
+        await rig.session.refreshGlucose()
+        #expect(rig.pump.arrivals(of: CurrentEGVGuiDataRequest.self).count == before + 1)
     }
 
-    @Test func aCancelWaitsOutThePauseToo() async {
+    @Test func aCancelAfterTheNoticeGoesAtOnce() async {
         let rig = Rig(configure: { $0.unsupportedReads = [] })
         await rig.startHeld()
         _ = await rig.session.deliver(composed(2.0))
@@ -254,31 +247,13 @@ import Testing
         await rig.settle()
         let session = rig.session
         let cancel = Task { await session.cancelBolus() }
-        await rig.run(for: 4.5)
-        #expect(rig.pump.arrivals(of: CancelBolusRequest.self).isEmpty)
-        await rig.run(for: 1)
-        #expect(await cancel.value == .cancelled)
+        await rig.run(for: 0.5)
         #expect(rig.pump.arrivals(of: CancelBolusRequest.self).count == 1)
+        #expect(await cancel.value == .cancelled)
     }
 
-    @Test func aBolusConfirmedDuringThePauseStartsAfterIt() async {
-        let rig = Rig(configure: { $0.unsupportedReads = [] })
-        await rig.startHeld()
-        rig.transport.qualifyingEvents(.pumpCommunicationsSuspended)
-        await rig.settle()
-        let session = rig.session
-        let delivery = Task { await session.deliver(composed(1.0)) }
-        await rig.run(for: 4.5)
-        #expect(rig.pump.arrivals.filter { $0.characteristic == .control }.isEmpty)
-        await rig.run(for: 2)
-        guard case .started(_, .delivering) = await delivery.value else {
-            Issue.record("expected delivering")
-            return
-        }
-    }
-
-    /// A request already sent is left to its answer: a notice that arrives while an InitiateBolus is in
-    /// flight doesn't fail it, and its reply starts the bolus.
+    /// A notice that arrives while an InitiateBolus is in flight doesn't fail it, and its reply starts the
+    /// bolus.
     @Test func aRequestInFlightKeepsItsAnswer() async {
         let rig = Rig(configure: {
             $0.unsupportedReads = []
@@ -288,8 +263,6 @@ import Testing
         let session = rig.session
         let delivery = Task { await session.deliver(composed(1.0)) }
         await rig.run(for: 1)
-        #expect(await rig.session.sendsPaused)
-        await rig.run(for: 6)
         guard case .started(_, .delivering) = await delivery.value else {
             Issue.record("expected delivering")
             return
@@ -297,60 +270,145 @@ import Testing
         #expect(rig.pump.arrivals(of: InitiateBolusRequest.self).count == 1)
     }
 
-    /// Each notice pauses from when it arrives.
-    @Test func aSecondNoticeRestartsThePause() async {
+    /// Nothing is held, so the session keeps its idle rhythm.
+    @Test func theSessionKeepsItsRhythm() async {
         let rig = Rig(configure: { $0.unsupportedReads = [] })
         await rig.startHeld()
         rig.transport.qualifyingEvents(.pumpCommunicationsSuspended)
         await rig.settle()
-        let before = rig.pump.arrivals.count
-        await rig.run(for: 3)
-        rig.transport.qualifyingEvents(.pumpCommunicationsSuspended)
-        await rig.settle()
+        #expect(await rig.session.tickInterval == PumpSession.Configuration().idleTick)
+    }
+}
+
+/// The pump has 60 s to answer any request, t:connect's one timer. One request is on the wire at a time,
+/// so a request behind one the pump doesn't answer waits for it.
+@MainActor
+@Suite struct RequestDeadlineTests {
+    @Test func anInitiateAnsweredAfterFifteenSecondsStartsTheBolus() async {
+        let rig = Rig(configure: {
+            $0.unsupportedReads = []
+            $0.nextAnswers[MessageKey(InitiateBolusRequest.self)] = [.late(seconds: 15)]
+        })
+        await rig.startHeld()
+        let session = rig.session
+        let delivery = Task { await session.deliver(composed(1.0)) }
+        await rig.run(for: 16, step: 1)
+        guard case .started(_, .delivering) = await delivery.value else {
+            Issue.record("expected delivering")
+            return
+        }
+    }
+
+    @Test func aSilentInitiateIsUnknownOnlyAfterSixtySeconds() async {
+        let rig = Rig(configure: {
+            $0.unsupportedReads = []
+            $0.answers[MessageKey(InitiateBolusRequest.self)] = .silent
+        })
+        await rig.startHeld()
+        let session = rig.session
+        let delivery = Task { await session.deliver(composed(1.0)) }
+        await rig.run(for: 30, step: 1)
+        #expect(await rig.session.ledger.ledger.allEntries.last?.outcome.isUnknown != true)
+        await rig.run(for: 31, step: 1)
+        guard case .started(_, let outcome) = await delivery.value, outcome.isUnknown else {
+            Issue.record("expected an unknown outcome")
+            return
+        }
+    }
+
+    /// A cancel made behind a silent InitiateBolus goes when that request's 60 s are up.
+    @Test func aCancelBehindASilentInitiateGoesAtItsDeadline() async {
+        let rig = Rig(configure: { $0.unsupportedReads = [] })
+        await rig.startHeld()
+        rig.pump.answers[MessageKey(InitiateBolusRequest.self)] = .silent
+        let session = rig.session
+        let delivery = Task { await session.deliver(composed(1.0)) }
+        #expect(await rig.until { rig.pump.arrivals(of: InitiateBolusRequest.self).count == 1 })
+        let cancel = Task { await session.cancelBolus() }
+        await rig.run(for: 55, step: 1)
+        #expect(rig.pump.arrivals(of: CancelBolusRequest.self).isEmpty)
+        await rig.run(for: 10, step: 1)
+        #expect(rig.pump.arrivals(of: CancelBolusRequest.self).count == 1)
+        _ = await delivery.value
+        _ = await cancel.value
+    }
+
+    /// One status reply lost mid-bolus waits out its 60 s and the next read is answered: the bolus is still
+    /// followed and ends delivered, never unknown.
+    @Test func oneLostStatusReplyDoesntMakeTheBolusUnknown() async {
+        let rig = Rig(configure: { $0.unsupportedReads = [] })
+        await rig.startHeld()
+        let key = RemoteBolusLedger.Key(peerId: "phone", requestId: "phone-1")
+        let session = rig.session
+        let delivery = Task { await session.deliver(composed(2.0)) }
+        await rig.run(for: rig.pump.pendingSeconds + 3, step: 1)
+        _ = await delivery.value
+        rig.pump.nextAnswers[MessageKey(CurrentBolusStatusRequest.self)] = [.silent]
+        await rig.run(for: rig.pump.deliverySeconds(milliunits: 2000) + 70, step: 1)
+        #expect(!(await rig.outcomes(key)).contains { $0.isUnknown })
+        #expect(await rig.ledger.ledger.outcome(key) == .delivered(units: 2.0))
+    }
+
+    /// A read the pump answers after 20 s still counts.
+    @Test func aSlowReadStillCounts() async {
+        let rig = Rig(configure: { $0.unsupportedReads = [] })
+        await rig.startHeld()
+        rig.pump.nextAnswers[MessageKey(CurrentEGVGuiDataRequest.self)] = [.late(seconds: 20)]
         let session = rig.session
         let refresh = Task { await session.refreshGlucose() }
-        await rig.run(for: 4.5)
-        #expect(rig.pump.arrivals.count == before)
-        await rig.run(for: 1)
+        await rig.run(for: 21, step: 1)
         await refresh.value
-        #expect(rig.pump.arrivals.count > before)
+        #expect(rig.pump.arrivals(of: HomeScreenMirrorRequest.self).count > 0)
     }
 
-    /// The pause belongs to the connection that reported it: a new one reads at once.
-    @Test func thePauseEndsWithTheConnection() async {
-        let rig = Rig(configure: { $0.unsupportedReads = [] })
+    /// A bolus whose status goes unanswered is unknown within two deadlines, though another read the pump
+    /// leaves unanswered holds the wire ahead of its polls: without the every-tick check it would wait three.
+    @Test func aSilentBolusIsUnknownWithinTwoDeadlines() async {
+        let rig = Rig(configure: {
+            $0.unsupportedReads = []
+            $0.deliveryMilliunitsPerSecond = 5
+        })
         await rig.startHeld()
-        rig.transport.qualifyingEvents(.pumpCommunicationsSuspended)
-        await rig.settle()
-        let before = rig.pump.arrivals(of: ControlIQIOBRequest.self).count
-        rig.transport.drop()
-        await rig.run(for: 3)
-        #expect(await rig.session.state.link == .connected)
-        #expect(rig.pump.arrivals(of: ControlIQIOBRequest.self).count > before)
+        let key = RemoteBolusLedger.Key(peerId: "phone", requestId: "phone-1")
+        let session = rig.session
+        let delivery = Task { await session.deliver(composed(2.0)) }
+        await rig.run(for: rig.pump.pendingSeconds + 3, step: 1)
+        _ = await delivery.value
+        rig.pump.answers[MessageKey(CurrentBolusStatusRequest.self)] = .silent
+        rig.pump.answers[MessageKey(CurrentEGVGuiDataRequest.self)] = .silent
+        await rig.run(for: 85, step: 1)
+        #expect(!(await rig.outcomes(key)).contains { $0.isUnknown })
+        await rig.run(for: 40, step: 1)
+        #expect(await rig.ledger.ledger.outcome(key)?.isUnknown == true)
     }
 
-    /// While paused the session ticks at its busy rhythm, so sends go on when the pause ends rather than at
-    /// the next idle tick; after it, the idle rhythm comes back.
-    @Test func theSessionTicksOftenWhilePaused() async {
-        let rig = Rig(configure: { $0.unsupportedReads = [] })
+    /// After one lost reply, a second poll the pump answers 40 s later still counts: one lost reply never
+    /// makes the bolus unknown, however slow the next answer within its deadline.
+    @Test func aSlowAnswerAfterOneLostReplyStillCounts() async {
+        let rig = Rig(configure: {
+            $0.unsupportedReads = []
+            $0.deliveryMilliunitsPerSecond = 5
+        })
         await rig.startHeld()
-        let config = PumpSession.Configuration()
-        #expect(await rig.session.tickInterval == config.idleTick)
-        rig.transport.qualifyingEvents(.pumpCommunicationsSuspended)
-        await rig.settle()
-        #expect(await rig.session.tickInterval == config.busyTick)
-        await rig.run(for: 6)
-        #expect(await rig.session.tickInterval == config.idleTick)
+        let key = RemoteBolusLedger.Key(peerId: "phone", requestId: "phone-1")
+        let session = rig.session
+        let delivery = Task { await session.deliver(composed(2.0)) }
+        await rig.run(for: rig.pump.pendingSeconds + 3, step: 1)
+        _ = await delivery.value
+        rig.pump.nextAnswers[MessageKey(CurrentBolusStatusRequest.self)] = [.silent, .late(seconds: 40)]
+        await rig.run(for: 115, step: 1)
+        #expect(!(await rig.outcomes(key)).contains { $0.isUnknown })
     }
 
-    /// Any other notice only brings its reads forward.
-    @Test func anotherNoticeDoesntPause() async {
+    /// A routine read the pump never answers leaves room for the others: the alert reads still go.
+    @Test func aReadThePumpNeverAnswersDoesntStopTheOthers() async {
         let rig = Rig(configure: { $0.unsupportedReads = [] })
         await rig.startHeld()
-        let before = rig.pump.arrivals(of: AlertStatusRequest.self).count
-        rig.transport.qualifyingEvents(.alert)
-        await rig.settle()
-        #expect(rig.pump.arrivals(of: AlertStatusRequest.self).count == before + 1)
+        rig.pump.answers[MessageKey(CurrentBolusStatusRequest.self)] = .silent
+        await rig.run(for: 60, step: 1)
+        let alertReads = rig.pump.arrivals(of: AlertStatusRequest.self).count
+        await rig.run(for: 360, step: 1)
+        #expect(rig.pump.arrivals(of: AlertStatusRequest.self).count >= alertReads + 6)
     }
 }
 

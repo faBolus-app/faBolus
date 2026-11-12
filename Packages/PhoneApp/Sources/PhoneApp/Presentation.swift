@@ -103,6 +103,13 @@ public enum PumpMessages {
         }
     }
 
+    /// Shown from the tap until the cancel's answer, which normally comes within a second or two.
+    public static let cancelSent = "Cancelling…"
+    /// Shown once the cancel has waited `cancelSlowAfter` with no answer: the pump answers one request at a
+    /// time, so a cancel can wait up to a minute behind a request the pump hasn't answered.
+    public static let cancelSlow = "No answer from the pump yet. To stop the bolus now, use the pump."
+    public static let cancelSlowAfter: Duration = .seconds(5)
+
     public static func text(_ result: CancelResult) -> String {
         switch result {
         case .cancelled: return "Bolus cancelled."
