@@ -214,7 +214,5 @@ public struct WidgetStore: @unchecked Sendable {
 /// The app's URLs the widgets and Live Activity open.
 public enum DeepLink {
     public static let scheme = "fabolus"
-    /// Opens the bolus screen. Navigation only: nothing is delivered from a widget.
-    public static let bolus = URL(string: "fabolus://bolus")!
     public static let open = URL(string: "fabolus://open")!
 }

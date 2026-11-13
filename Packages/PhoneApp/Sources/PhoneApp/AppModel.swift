@@ -45,6 +45,7 @@ public final class AppModel {
     @ObservationIgnored var lastAppliedFreshness: FreshnessThresholds?
     @ObservationIgnored var lastWidgetReload: (snapshot: WidgetSnapshot, at: Date)?
     @ObservationIgnored var lastLiveActivityUpdate: (content: LiveActivityContent, at: Date)?
+    @ObservationIgnored var liveActivityFlowStorage: LiveActivityFlow?
     /// The freshness change being applied, so changes reach the session and the alerts in order.
     @ObservationIgnored var freshnessTask: Task<Void, Never>?
     @ObservationIgnored var liveGlucose: [GlucoseReading] = []
@@ -285,6 +286,7 @@ public final class AppModel {
             let entry = await ledger.ledger.entry(key)
             latestOutcome = BolusStatus(key: key, outcome: outcome, requestedUnits: entry?.request.totalUnits, at: now)
             bolusBlock = await ledger.block
+            liveActivityFlowStorage?.outcomeChanged(key, outcome)
         case .bolusOutcomesSaved:
             bolusBlock = await ledger.block
         case .pumpFound(let id, let name, let model, let rssi):
@@ -327,6 +329,7 @@ public final class AppModel {
     func handle(_ snapshot: AlertSnapshot) async {
         alertSnapshot = snapshot
         await host?.alertsChanged(snapshot.active)
+        publishSurfaces()
     }
 
     // MARK: Derived state
@@ -378,6 +381,7 @@ public final class AppModel {
             _ = settings.access(capabilities: .unknown)
             _ = settings.remoteBolusLimitUnits
             _ = settings.liveActivityEnabled
+            _ = settings.liveActivityBolusEnabled
             _ = settings.liveActivityLayout
             _ = settings.glucoseUnit
             _ = settings.showGlucoseUnitLabels

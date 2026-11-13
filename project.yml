@@ -45,6 +45,8 @@ targets:
     deploymentTarget: "18.0"
     sources:
       - path: ios/faBolus
+      # The Live Activity's intents: iOS runs them in the app, and the widget extension draws their buttons.
+      - path: ios/Shared
       # >>> GARMIN
       # The Connect IQ adapter compiles in the app, where the SDK is linked (a package can't see it).
       - path: Packages/WatchLink/Sources/GarminTransport/GarminTransport.swift
@@ -126,14 +128,16 @@ targets:
         Release:
           SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) GARMIN
 
-  # Lock Screen and Home Screen widgets and the Live Activity. Read-only: they show what the app published
-  # to the App Group and open the app; none reaches the pump.
+  # Lock Screen and Home Screen widgets and the Live Activity. The widgets are read-only. The Live
+  # Activity's buttons run their intents in the app (ios/Shared), which judges each against its own state
+  # and doses only through the composer; nothing in the extension reaches the pump.
   faBolusWidgets:
     type: app-extension
     platform: iOS
     deploymentTarget: "18.0"
     sources:
       - ios/faBolusWidgets
+      - ios/Shared
     dependencies:
       - package: PhoneApp
         product: WidgetContent
@@ -168,8 +172,13 @@ targets:
     deploymentTarget: "18.0"
     sources:
       - ios/faBolusAppTests
+      # The Live Activity's views, compiled here too so their screens are snapshotted.
+      - path: ios/faBolusWidgets/GlucoseLiveActivity.swift
+      - path: ios/faBolusWidgets/LiveActivityPanelView.swift
+      - path: ios/Shared/LiveActivityIntents.swift
     dependencies:
       - target: faBolus
+      - package: faBolusDesign
       - package: PhoneApp
         product: PhoneApp
       - package: PhoneApp

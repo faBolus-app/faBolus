@@ -43,6 +43,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         center.delegate = self
         center.setNotificationCategories(AlertNotificationCategories.registered())
         let model = model
+        // Before the launch, so a Live Activity tap that launched the app waits for no one. The model
+        // judges each tap from its own state, whatever that is when it arrives.
+        LiveActivityActions.handler = { tap, unlocked in await model.liveActivityTapped(tap, unlocked: unlocked) }
         // `.inactive` during a launch the user opened, `.background` for a relaunch with no view (Bluetooth
         // restoration). The scene's own phase follows and wins.
         let active = application.applicationState != .background

@@ -9,6 +9,9 @@ public struct LiveActivityLayout: Codable, Sendable, Hashable {
         case fullBleed
         /// The glucose number with a row of chips.
         case classic
+        /// One short row: glucose, its age, two fields and the bolus and alert row. The Mac shows the same
+        /// card when its menu-bar pill is clicked.
+        case slim
     }
 
     public var style: Style
@@ -24,15 +27,16 @@ public struct LiveActivityLayout: Codable, Sendable, Hashable {
     public var showXAxisTicks: Bool
     public var showYAxisTicks: Bool
     public var showRangeLines: Bool
-    /// A "Bolus" pill that opens the app's bolus screen. Navigation only: nothing is sent from it.
-    public var showBolusShortcut: Bool
+    /// What the compact view shows beside the glucose: in the Dynamic Island and the Mac's menu bar. `nil`
+    /// is the trend arrow; optional so a layout saved before it existed still reads.
+    public var compact: LiveActivityCompact?
 
     public init(
         style: Style = .fullBleed, fields: [LiveActivityField] = LiveActivityField.defaults,
         topRight: LiveActivityTopRight = .iobDelta, plotRangeHours: Int = 2,
         plotFloorMgdl: Int = GlucosePlotScale.defaultFloor, plotCeilingMgdl: Int = GlucosePlotScale.defaultCeiling,
         showXAxisLine: Bool = false, showYAxisLine: Bool = false, showXAxisTicks: Bool = false,
-        showYAxisTicks: Bool = false, showRangeLines: Bool = false, showBolusShortcut: Bool = false
+        showYAxisTicks: Bool = false, showRangeLines: Bool = false, compact: LiveActivityCompact? = nil
     ) {
         self.style = style
         self.fields = fields
@@ -45,7 +49,7 @@ public struct LiveActivityLayout: Codable, Sendable, Hashable {
         self.showXAxisTicks = showXAxisTicks
         self.showYAxisTicks = showYAxisTicks
         self.showRangeLines = showRangeLines
-        self.showBolusShortcut = showBolusShortcut
+        self.compact = compact
     }
 
     public static let plotRangeOptions = [1, 2, 3, 4, 6]
@@ -53,7 +57,7 @@ public struct LiveActivityLayout: Codable, Sendable, Hashable {
 
 /// A value the Live Activity can show.
 public enum LiveActivityField: String, Codable, Sendable, CaseIterable {
-    case glucose, iob, reservoir, battery, basal, controlIQ, lastAutoCorrection, connection, delta, tir
+    case glucose, iob, reservoir, battery, basal, controlIQ, lastAutoCorrection, connection, delta, tir, lastBolus
 
     public static let defaults: [LiveActivityField] = [.glucose, .iob, .reservoir, .battery]
 
@@ -69,6 +73,21 @@ public enum LiveActivityField: String, Codable, Sendable, CaseIterable {
         case .connection: return "Pump connection (when down)"
         case .delta: return "30-min change"
         case .tir: return "Time in range"
+        case .lastBolus: return "Last bolus"
+        }
+    }
+}
+
+/// What the compact view shows beside the glucose. A Live Activity bolus going or just finished shows
+/// instead, whatever the choice.
+public enum LiveActivityCompact: String, Codable, Sendable, CaseIterable {
+    case arrow, delta, iob
+
+    public var label: String {
+        switch self {
+        case .arrow: return "Trend arrow"
+        case .delta: return "30-min change"
+        case .iob: return "Active insulin"
         }
     }
 }
@@ -97,10 +116,19 @@ public enum LiveActivityTopRight: String, Codable, Sendable, CaseIterable {
 public struct LiveActivityContent: Codable, Sendable, Hashable {
     public var snapshot: WidgetSnapshot
     public var layout: LiveActivityLayout
+    /// The bolus and alert controls; `nil` draws the card alone.
+    public var panel: LiveActivityPanel?
+    /// The pump alerts the card's row shows; `nil` when there are none.
+    public var alerts: LiveActivityAlerts?
 
-    public init(snapshot: WidgetSnapshot, layout: LiveActivityLayout) {
+    public init(
+        snapshot: WidgetSnapshot, layout: LiveActivityLayout, panel: LiveActivityPanel? = nil,
+        alerts: LiveActivityAlerts? = nil
+    ) {
         self.snapshot = snapshot
         self.layout = layout
+        self.panel = panel
+        self.alerts = alerts
     }
 
     /// ActivityKit's limit on one update's encoded content.
@@ -109,11 +137,13 @@ public struct LiveActivityContent: Codable, Sendable, Hashable {
     public static let maxPoints = 36
 
     /// The update for `snapshot`, with the points inside the layout's window, thinned evenly.
-    public static func make(from snapshot: WidgetSnapshot, layout: LiveActivityLayout, now: Date) -> LiveActivityContent
-    {
+    public static func make(
+        from snapshot: WidgetSnapshot, layout: LiveActivityLayout, panel: LiveActivityPanel? = nil,
+        alerts: LiveActivityAlerts? = nil, now: Date
+    ) -> LiveActivityContent {
         var trimmed = snapshot
         trimmed.recent = window(snapshot.recent, hours: layout.plotRangeHours, now: now, cap: maxPoints)
-        return LiveActivityContent(snapshot: trimmed, layout: layout)
+        return LiveActivityContent(snapshot: trimmed, layout: layout, panel: panel, alerts: alerts)
     }
 
     /// When this update stops being current: the first moment any value it shows passes its window, or the
