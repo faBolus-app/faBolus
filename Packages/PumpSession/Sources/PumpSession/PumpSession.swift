@@ -163,7 +163,7 @@ public actor PumpSession {
 
     // History
     var historyBusy = false
-    var historyWaiters: [CheckedContinuation<Void, Never>] = []
+    var historyWaiters: [(sync: Bool, continuation: CheckedContinuation<Void, Never>)] = []
     /// Clears waiting for the pump to be reachable, each until its deadline.
     var linkWaiters: [(deadline: Uptime, continuation: CheckedContinuation<Void, Never>)] = []
     var page: PageCollector?

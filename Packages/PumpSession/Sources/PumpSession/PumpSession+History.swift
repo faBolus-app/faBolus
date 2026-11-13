@@ -36,21 +36,26 @@ enum HistorySearchResult: Equatable {
 extension PumpSession {
     // MARK: - One history operation at a time
 
-    /// Sync and searches share the history stream, so they take turns.
-    func acquireHistory() async {
+    /// Sync and searches share the history stream, so they take turns. Other history jobs go before a
+    /// waiting sync: a sync steps aside for them, and another sync would only start over what it did.
+    func acquireHistory(sync: Bool = false) async {
         guard historyBusy else {
             historyBusy = true
             return
         }
-        await withCheckedContinuation { historyWaiters.append($0) }
+        await withCheckedContinuation { historyWaiters.append((sync, $0)) }
     }
 
+    /// Whether a history job other than a sync is waiting for the stream.
+    var historyJobWaiting: Bool { historyWaiters.contains { !$0.sync } }
+
     func releaseHistory() {
-        if historyWaiters.isEmpty {
+        guard !historyWaiters.isEmpty else {
             historyBusy = false
-        } else {
-            historyWaiters.removeFirst().resume()
+            return
         }
+        let next = historyWaiters.firstIndex { !$0.sync } ?? historyWaiters.startIndex
+        historyWaiters.remove(at: next).continuation.resume()
     }
 
     // MARK: - Pages
@@ -150,17 +155,18 @@ extension PumpSession {
 
     /// Fetches the history records the phone doesn't hold yet, as Mobi does: `historySyncBatch` records a
     /// request, each from the newest record still missing down, until every record of the pump's log has
-    /// been asked for. A gap the pump didn't fill is asked for again by the next sync. A batch is written to the history store before it is credited as held, so records the store didn't
-    /// keep are fetched again next time; a drop leaves the sync paused, and the next one picks up where the
-    /// coverage ends.
+    /// been asked for. A gap the pump didn't fill is asked for again by the next sync. A batch is written
+    /// to the history store before it is credited as held, so records the store didn't keep are fetched
+    /// again next time; a drop leaves the sync paused, and the next one picks up where the coverage ends.
+    /// A sync asked for during another runs after it.
     public func syncHistory() async {
         // Only from the pump the pairing trusts. A new pairing is trusted at the end of `ready()`, after it
         // has emptied the logbook under the history lock, so a sync asked for meanwhile ("Sync history
         // now") can't hold that lock while `ready()` waits on it with the link's events stalled behind it.
         // One that can't run doesn't move the next one back.
         guard state.link.isConnected, identity != nil, identityTrusted else { return }
-        await acquireHistory()
-        // Set once its turn comes: a sync that stepped aside for this one asked for a sync now.
+        await acquireHistory(sync: true)
+        // Set once its turn comes: a sync that stepped aside for another history job asked for one now.
         due[.history] = uptime().addingTimeInterval(config.historySyncInterval)
         await runHistorySync()
         releaseHistory()
@@ -180,7 +186,7 @@ extension PumpSession {
         {
             // Mobi checks its pause between batches: a sync under way stops at the next request. So does one
             // with another history job waiting, such as a search settling a bolus: it continues after it.
-            if historyPausedForBattery() || !historyWaiters.isEmpty {
+            if historyPausedForBattery() || historyJobWaiting {
                 setHistorySync(.paused)
                 due[.history] = uptime()
                 return
