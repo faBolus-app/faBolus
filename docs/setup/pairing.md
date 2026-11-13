@@ -11,7 +11,7 @@ faBolus pairs with your t:slim X2 once, using a code the pump shows. After that 
 <ol class="cx2-steps">
 <li>Keep the pump next to the phone.</li>
 <li>On the pump, go to <strong>Options → Device Settings → Bluetooth Settings</strong>. Turn <strong>Mobile Connection</strong> on if it's off, then tap <strong>Pair Device</strong>. The pump shows a pairing code.</li>
-<li>In faBolus, tap <strong>Connect a pump</strong> (on the first screen, the dashboard, or <strong>Settings → Pump</strong>). faBolus looks for pumps in pairing mode, and yours appears in the list. Select it if it isn't already.</li>
+<li>In faBolus, tap <strong>Connect a pump</strong> (on the first screen, the dashboard, or <strong>Settings → Pump</strong>). faBolus looks for pumps in pairing mode, and yours appears in the list, the nearest first. A pump that isn't close to the phone isn't listed. Select yours if it isn't already.</li>
 <li>Type the code and tap <strong>Pair</strong>.</li>
 </ol>
 

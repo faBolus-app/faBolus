@@ -15,7 +15,7 @@ import Testing
         await rig.session.scanForPairing()
         await rig.settle()
         let found = await rig.events.compactMap { e -> (UUID, String?)? in
-            if case .pumpFound(let id, let name, .tslimX2) = e { return (id, name) }
+            if case .pumpFound(let id, let name, .tslimX2, _) = e { return (id, name) }
             return nil
         }
         let pump = try #require(found.first)
@@ -47,7 +47,7 @@ import Testing
 
         await rig.session.scanForPairing()
         await rig.settle()
-        await rig.run(for: 40, step: 1)
+        await rig.run(for: 130, step: 1)  // the scan gives up after 120 s
         #expect(await rig.session.state.link == .connected)
 
         // Leaving while a pairing is under way abandons it: the stored pairing is the one kept.

@@ -45,7 +45,8 @@ Common problems, by where you hit them. If yours isn't here, see the [FAQ](faq.m
       Connection** on, then **Pair Device**.
     - Make sure faBolus may use Bluetooth: iPhone **Settings → faBolus → Bluetooth**.
     - Disconnect or unpair t:connect: the pump connects to one app at a time.
-    - Wait for **Search again**, then try once more with the phone next to the pump.
+    - Hold the phone next to the pump: faBolus lists only pumps close by.
+    - Wait for **Search again** (after 2 minutes), then try once more.
 
 ??? question "Pairing fails"
     Pair Device shows a new code each time. Enter the code the pump shows now, exactly: the 16-character

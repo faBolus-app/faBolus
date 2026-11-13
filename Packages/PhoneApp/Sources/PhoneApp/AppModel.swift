@@ -78,7 +78,10 @@ public final class AppModel {
     /// The newest bolus outcome this process saw, for the bolus banner.
     public internal(set) var latestOutcome: BolusStatus?
     public internal(set) var lastDismiss: (alert: PumpAlert, outcome: DismissOutcome)?
+    /// The pumps a pairing scan found, strongest signal first (Mobi's order).
     public internal(set) var pumpsFound: [FoundPump] = []
+    /// Each found pump's last reported signal, which orders `pumpsFound`.
+    var pumpSignal: [UUID: Int] = [:]
     public internal(set) var watch: WatchLinkState?
     public internal(set) var freshness: FreshnessThresholds
     public internal(set) var started = false
@@ -284,10 +287,20 @@ public final class AppModel {
             bolusBlock = await ledger.block
         case .bolusOutcomesSaved:
             bolusBlock = await ledger.block
-        case .pumpFound(let id, let name, let model):
+        case .pumpFound(let id, let name, let model, let rssi):
+            // 127 is CoreBluetooth's "unknown": listed, after every pump with a reading.
+            pumpSignal[id] = rssi == 127 ? Int.min : rssi
             if !pumpsFound.contains(where: { $0.peripheralID == id }) {
                 pumpsFound.append(FoundPump(peripheralID: id, name: name, model: model))
             }
+            // Equal signals keep the order they were found in.
+            let signal = pumpSignal
+            let ordered = pumpsFound.enumerated().sorted {
+                let a = signal[$0.element.peripheralID, default: .min]
+                let b = signal[$1.element.peripheralID, default: .min]
+                return a != b ? a > b : $0.offset < $1.offset
+            }.map(\.element)
+            if ordered != pumpsFound { pumpsFound = ordered }
         case .linkFailed(let failure):
             linkFailure = failure
         case .historySync(let state):

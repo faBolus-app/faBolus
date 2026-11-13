@@ -114,6 +114,21 @@ import faBolusCore
         await model.shutdown()
     }
 
+    /// A pairing scan lists the pumps strongest first, as Mobi does, re-ordering as their signals move; a
+    /// pump whose signal is unknown goes last.
+    @Test func foundPumpsAreListedStrongestFirst() async {
+        let phone = Phone()
+        let model = await phone.launch()
+        let far = UUID(), near = UUID(), unknown = UUID()
+        await model.handle(.pumpFound(peripheralID: unknown, name: "tslim X2 1", model: .tslimX2, rssi: 127))
+        await model.handle(.pumpFound(peripheralID: far, name: "tslim X2 2", model: .tslimX2, rssi: -70))
+        await model.handle(.pumpFound(peripheralID: near, name: "tslim X2 3", model: .tslimX2, rssi: -50))
+        #expect(model.pumpsFound.map(\.peripheralID) == [near, far, unknown])
+        await model.handle(.pumpFound(peripheralID: far, name: "tslim X2 2", model: .tslimX2, rssi: -40))
+        #expect(model.pumpsFound.map(\.peripheralID) == [far, near, unknown])
+        await model.shutdown()
+    }
+
     /// Ported from `RootTabSelectionGuardTests`: read-only hides the Bolus tab.
     @Test func readOnlyHidesTheBolusTab() async {
         let phone = Phone()

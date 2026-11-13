@@ -198,7 +198,7 @@ extension PumpSession {
                 ? [CurrentEGVGuiDataRequest()] : [CurrentEGVGuiDataRequest(), mirror]
             enqueue(reads, priority: .status)
         }
-        if isDue(.history, now: now), !historyBusy, onceThisConnection.contains(.settings) {
+        if isDue(.history, now: now), !historyBusy, onceThisConnection.contains(.settings), !historyPausedForBattery() {
             due[.history] = now.addingTimeInterval(config.historySyncInterval)
             Task { await self.syncHistory() }
         }

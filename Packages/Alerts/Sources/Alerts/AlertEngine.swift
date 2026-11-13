@@ -276,8 +276,6 @@ public struct AlertEngine: Sendable {
             // can't be reached.
             linkWentDown(now, grace: 0)
             state.closedAfterFailure = true
-        case .linkFailed(.reconnectGaveUp):
-            linkWentDown(now, grace: 0)
         case .connectionUnstable:
             state.connectionUnstable = true
         case .connectionRestored:

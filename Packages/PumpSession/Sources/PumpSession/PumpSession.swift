@@ -46,6 +46,11 @@ public actor PumpSession {
         public var historyMaxPages = 20
         /// When a sync stopped at its page limit, how soon the next one continues.
         public var historyContinueAfter: TimeInterval = 60
+        /// In the background, history syncs stop once the pump's battery is at this percent or below, and
+        /// start again once it is above `lowBatteryResumeAbove` (Mobi's low-power mode). A sync in the
+        /// foreground, and a search that settles a bolus, still run.
+        public var lowBatteryPauseAt = 20
+        public var lowBatteryResumeAbove = 30
         /// A history page is complete when every record arrived, or when frames stop for this long.
         public var historyPageQuiet: TimeInterval = 2.5
         public var historyPageLimit: TimeInterval = 15
@@ -120,6 +125,10 @@ public actor PumpSession {
     var identityTrusted = false
     var pendingPairing: PendingPairing?
     var retriedRejectedPairing = false
+    /// Whether the app is in the foreground, as last told.
+    var appActive = false
+    /// The pump's battery fell to the pause level and hasn't yet climbed past the resume level.
+    var batteryLow = false
     /// When the last bolus was sent to the pump, and who sent it (its ledger peer ID).
     var lastDelivery: (at: Uptime, peerId: String)?
     /// The phone-clock time the last bolus was sent to the pump, placed by the monotonic time since: a phone
@@ -243,6 +252,7 @@ public actor PumpSession {
     /// the foreground: the link assumes the background until told, because a background relaunch may
     /// never be told.
     public func setAppActive(_ active: Bool) async {
+        appActive = active
         await connection.setAppActive(active)
         // The stored pairing's code rejected once is tried once more on the next foreground: one
         // misread rejection mustn't leave the app with no pump until a relaunch.
@@ -540,8 +550,8 @@ public actor PumpSession {
         switch event {
         case .phase(let phase):
             await phaseChanged(phase)
-        case .discovered(let id, let name, let model, _):
-            emit(.pumpFound(peripheralID: id, name: name, model: Self.model(model)))
+        case .discovered(let id, let name, let model, let rssi):
+            emit(.pumpFound(peripheralID: id, name: name, model: Self.model(model), rssi: rssi))
         case .paired(let credentials):
             await paired(credentials)
         case .ready(let identity):
@@ -595,8 +605,6 @@ public actor PumpSession {
             emit(.linkChanged(link))
         }
         switch phase {
-        case .exhausted:
-            emit(.linkFailed(.reconnectGaveUp))
         case .failed(let failure):
             emit(.linkFailed(Self.failure(failure)))
             // A pairing that failed leaves the pump that was paired before as it was: go back to it. So does
@@ -823,7 +831,7 @@ public actor PumpSession {
 
     static func linkState(_ phase: LinkPhase) -> PumpLinkState {
         switch phase {
-        case .idle, .failed, .exhausted, .waitingForBluetooth, .backingOff: return .disconnected
+        case .idle, .failed, .waitingForBluetooth, .backingOff: return .disconnected
         case .scanning: return .scanning
         case .connecting, .discovering: return .connecting
         case .authenticating, .handshaking: return .authenticating

@@ -77,8 +77,6 @@ public enum PumpMessages {
             return
                 "A different pump answered under this pairing, so faBolus disconnected. Forget the pump and pair again."
         case .pumpNotFound: return "No pump found. Put the pump in pairing mode and keep it close to the phone."
-        case .reconnectGaveUp:
-            return "faBolus stopped trying to reconnect after repeated drops. It tries again when you open the app."
         }
     }
 

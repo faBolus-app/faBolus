@@ -355,7 +355,7 @@ private func addOldHistory(_ pump: ScriptedPump, count: Int = 20) {
         await rig.startHeld()
         // A fresh connection, inside its hold window: the dismiss (untested on P1) waits for the hold.
         rig.transport.drop()
-        await rig.settle()
+        await rig.untilConnected()
         let alert = try #require(await rig.session.state.alerts?.value.first)
         let session = rig.session
         let dismiss = Task { await session.dismiss(alert) }
