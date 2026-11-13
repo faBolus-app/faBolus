@@ -227,6 +227,34 @@ private func addOldHistory(_ pump: ScriptedPump, count: Int = 20) {
         #expect(await rig.session.ledger.block == nil)
     }
 
+    /// The same crash, but the pump's log has restarted since (its newest record is older than one the phone
+    /// holds): the new log reaching back past the acceptance can't show the bolus never started, so it stays
+    /// unknown, across a relaunch too.
+    @Test func aCrashBeforeThePumpsLogRestartedStaysUnknown() async {
+        var saved = RemoteBolusLedger()
+        let request = DoseRequest(id: "phone-1", origin: .phone, shape: .now(units: 1.0))
+        _ = saved.begin(request, now: Date(timeIntervalSince1970: 1_800_000_000))
+        saved.markAccepted(
+            key, bolusId: 10650, pumpKey: "tandem|1693", pumpClock: 512_442_842,
+            now: Date(timeIntervalSince1970: 1_800_000_000))
+        var held = PumpSessionRecord(pairing: Rig.pairing)
+        held.coverage = HistoryCoverage(ranges: [1000...5000])
+        let rig = Rig(
+            ledger: saved, record: held,
+            configure: {
+                $0.unsupportedReads = []
+                addOldHistory($0)
+            })
+        await rig.startHeld()
+        await rig.run(for: 30, step: 1)
+        #expect(await rig.session.ledger.ledger.outcome(key)?.isUnknown == true)
+        #expect(rig.store.load()?.beforeHistoryRestart == [key])
+        // The log was fetched again from the restart, and a later search still leaves the bolus unknown.
+        #expect(rig.store.load()?.coverage.ranges == [rig.pump.firstHeldSequence!...rig.pump.lastSequence!])
+        await rig.run(for: 5 * 60, step: 5)
+        #expect(await rig.session.ledger.ledger.outcome(key)?.isUnknown == true)
+    }
+
     /// The same crash with history that can't settle it: it stays unknown and keeps blocking.
     @Test func aCrashHistoryCantSettleKeepsBlocking() async {
         var saved = RemoteBolusLedger()

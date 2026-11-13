@@ -41,9 +41,12 @@ public actor PumpSession {
         public var deliveryStatusSilence: TimeInterval { requestDeadline * 1.5 }
         /// A bolus still reported active after this long is left to history. Guess: far past any bolus.
         public var deliveryTrackingLimit: TimeInterval = 30 * 60
-        /// Routine history sync, and the most pages one sync fetches (255 records each).
+        /// Routine history sync, and the most pages one sync fetches.
         public var historySyncInterval: TimeInterval = 15 * 60
         public var historyMaxPages = 20
+        /// Records a history page asks for: t:connect asks for at most 250, though the request's count is a
+        /// byte.
+        public var historyPageSize = 250
         /// When a sync stopped at its page limit, how soon the next one continues.
         public var historyContinueAfter: TimeInterval = 60
         /// In the background, history syncs stop once the pump's battery is at this percent or below, and

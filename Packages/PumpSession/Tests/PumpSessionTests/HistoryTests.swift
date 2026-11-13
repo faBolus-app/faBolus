@@ -43,6 +43,71 @@ private func addGlucoseHistory(_ pump: ScriptedPump, count: Int) {
         #expect(rig.pump.arrivals(of: HistoryLogRequest.self).count == pages)
     }
 
+    /// Each request names its page's newest record, as t:connect and Mobi send it, and asks for at most
+    /// 250 records.
+    @Test func eachPageNamesItsNewestRecordAndHoldsAtMost250() async {
+        let rig = Rig(configure: {
+            $0.unsupportedReads = []
+            addGlucoseHistory($0, count: 600)
+        })
+        await rig.startHeld()
+        await sync(rig)
+        let last = rig.pump.lastSequence!
+        let pages = rig.pump.arrivals(of: HistoryLogRequest.self).map { (readStart($0.cargo), Int($0.cargo[4])) }
+        #expect(pages.map(\.0) == [last, last - 250, last - 500])
+        #expect(pages.map(\.1) == [250, 250, 100])
+        #expect(rig.store.load()?.coverage.ranges == [rig.pump.firstHeldSequence!...last])
+    }
+
+    /// A pump whose newest record is older than one the phone holds has restarted its log: what the phone
+    /// holds goes, logbook included, and the pump's log is fetched again.
+    @Test func aPumpWhoseLogRestartedIsFetchedAgain() async {
+        var held = PumpSessionRecord(pairing: Rig.pairing)
+        held.coverage = HistoryCoverage(ranges: [1000...1599])
+        let rig = Rig(
+            record: held,
+            configure: {
+                $0.unsupportedReads = []
+                addGlucoseHistory($0, count: 50)
+            })
+        await rig.startHeld()
+        await sync(rig)
+        #expect(rig.store.load()?.coverage.ranges == [1000...1049])
+        #expect(await rig.sink.clears == 1)
+        #expect(Set(await rig.sink.batches.flatMap(\.sequences)) == Set(1000...1049))
+    }
+
+    /// The boluses marked before a restart survive a save and load; a record saved before the mark existed
+    /// has none.
+    @Test func theRestartMarksSurviveASaveAndLoad() throws {
+        let key = RemoteBolusLedger.Key(peerId: "phone", requestId: "phone-1")
+        let record = PumpSessionRecord(pairing: Rig.pairing, beforeHistoryRestart: [key])
+        let data = try JSONEncoder().encode(record)
+        #expect(try JSONDecoder().decode(PumpSessionRecord.self, from: data) == record)
+        var object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        object["beforeHistoryRestart"] = nil
+        let old = try JSONDecoder().decode(PumpSessionRecord.self, from: JSONSerialization.data(withJSONObject: object))
+        #expect(old.beforeHistoryRestart.isEmpty)
+        #expect(old.pairing == record.pairing)
+    }
+
+    /// A pump that dropped its oldest records hasn't restarted: what the phone holds stays.
+    @Test func aPumpThatDroppedItsOldestRecordsKeepsWhatIsHeld() async {
+        var held = PumpSessionRecord(pairing: Rig.pairing)
+        held.coverage = HistoryCoverage(ranges: [900...1049])
+        let rig = Rig(
+            record: held,
+            configure: {
+                $0.unsupportedReads = []
+                addGlucoseHistory($0, count: 50)
+            })
+        await rig.startHeld()
+        await sync(rig)
+        #expect(rig.store.load()?.coverage.ranges == [900...1049])
+        #expect(await rig.sink.clears == 0)
+        #expect(rig.pump.arrivals(of: HistoryLogRequest.self).isEmpty)
+    }
+
     /// A carb entry in the pump's history becomes carbs in the store. The record's body is pumpx2's
     /// CarbEnteredHistoryLog capture (45 g), stamped five minutes ago.
     @Test func aCarbEntryInHistoryIsStoredAsCarbs() async throws {
@@ -75,9 +140,9 @@ private func addGlucoseHistory(_ pump: ScriptedPump, count: Int) {
         let session = rig.session
         let refresh = Task { await session.refreshGlucose() }
         await rig.settle()
-        let start = rig.pump.firstHeldSequence!
+        let top = rig.pump.lastSequence!
         let requests = rig.pump.arrivals(of: HistoryLogRequest.self).count
-        let page = Task { await session.fetchPage(start: start, count: 20, priority: .history) }
+        let page = Task { await session.fetchPage(top: top, count: 20, priority: .history) }
         await rig.run(for: 25)
         #expect(await rig.value(of: page)??.count == 20)
         #expect(rig.pump.arrivals(of: HistoryLogRequest.self).count == requests + 1)
@@ -101,9 +166,9 @@ private func addGlucoseHistory(_ pump: ScriptedPump, count: Int) {
         #expect(stored.count == 600)
         #expect(Set(stored).count == 600)
         #expect(await rig.events.contains(.historySync(.paused)))
-        // The page fetched before the drop wasn't asked for again.
+        // The page fetched before the drop wasn't asked for again: each request names its page's newest record.
         let starts = pump.arrivals(of: HistoryLogRequest.self).map { readStart($0.cargo) }
-        #expect(starts.filter { $0 == last - 254 }.count == 1)
+        #expect(starts.filter { $0 == last }.count == 1)
     }
 
     /// A sync cut short by its page limit continues within a minute, not at the next routine sync.
@@ -154,7 +219,8 @@ private func addGlucoseHistory(_ pump: ScriptedPump, count: Int) {
         await rig.startHeld()
         await sync(rig)
         let starts = rig.pump.arrivals(of: HistoryLogRequest.self).map { readStart($0.cargo) }
-        #expect(starts == [1400, 1100])
+        // Each request names its window's newest record.
+        #expect(starts == [1499, 1199])
     }
 
     @Test func aRecordDatedInTheFutureIsDroppedNotMovedToNow() {
