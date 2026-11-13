@@ -130,28 +130,6 @@ import faBolusCore
         #expect(count(rig, HistoryLogStatusRequest.self) == syncs + 1)
     }
 
-    /// A sync cut short at its page limit keeps its pause before the next one, notices or not.
-    @Test func aNoticeDoesntCutAContinuationsPause() async {
-        var config = PumpSession.Configuration()
-        config.historyMaxPages = 1
-        let rig = Rig(
-            configure: { pump in
-                pump.unsupportedReads = []
-                for i in 0..<600 {
-                    let at = pump.wallClockAtStart - 60 - UInt32((599 - i) * 300)
-                    pump.appendHistory(typeId: 256, at: at, body: [UInt8](repeating: 0, count: 6) + le16(100))
-                }
-            }, configuration: config)
-        await rig.startHeld()
-        await rig.run(for: 5, step: 1)
-        #expect(rig.store.load()?.coverage.ranges.count == 1)
-        #expect(rig.pump.firstHeldSequence.map { rig.store.load()?.coverage.ranges.first?.lowerBound != $0 } == true)
-        let syncs = count(rig, HistoryLogStatusRequest.self)
-        rig.transport.qualifyingEvents(.bolusChange)
-        await rig.settle()
-        #expect(count(rig, HistoryLogStatusRequest.self) == syncs)
-    }
-
     @Test func aCartridgeNoticeReadsTheInsulinLeftAndTheCartridge() async {
         await expectRead(.remainingInsulin, [InsulinStatusRequest.self, LoadStatusRequest.self])
     }

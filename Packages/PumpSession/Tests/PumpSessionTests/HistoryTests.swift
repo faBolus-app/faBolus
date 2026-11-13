@@ -43,9 +43,9 @@ private func addGlucoseHistory(_ pump: ScriptedPump, count: Int) {
         #expect(rig.pump.arrivals(of: HistoryLogRequest.self).count == pages)
     }
 
-    /// Each request names its page's newest record, as t:connect and Mobi send it, and asks for at most
-    /// 250 records.
-    @Test func eachPageNamesItsNewestRecordAndHoldsAtMost250() async {
+    /// Each request names its batch's newest record, as t:connect and Mobi send it, and asks for 30
+    /// records, as Mobi asks.
+    @Test func eachRequestNamesItsNewestRecordAndAsksForThirty() async {
         let rig = Rig(configure: {
             $0.unsupportedReads = []
             addGlucoseHistory($0, count: 600)
@@ -54,9 +54,92 @@ private func addGlucoseHistory(_ pump: ScriptedPump, count: Int) {
         await sync(rig)
         let last = rig.pump.lastSequence!
         let pages = rig.pump.arrivals(of: HistoryLogRequest.self).map { (readStart($0.cargo), Int($0.cargo[4])) }
-        #expect(pages.map(\.0) == [last, last - 250, last - 500])
-        #expect(pages.map(\.1) == [250, 250, 100])
+        #expect(pages.map(\.0) == Array(stride(from: last, through: last - 570, by: -30)))
+        #expect(pages.allSatisfy { $0.1 == 30 })
         #expect(rig.store.load()?.coverage.ranges == [rig.pump.firstHeldSequence!...last])
+    }
+
+    /// A sync runs until the phone holds the pump's whole log, as Mobi's does: one sync, however many
+    /// requests it takes.
+    @Test func aSyncRunsUntilTheWholeLogIsHeld() async {
+        let rig = Rig(configure: {
+            $0.unsupportedReads = []
+            addGlucoseHistory($0, count: 900)
+        })
+        await rig.startHeld()
+        await sync(rig)
+        let first = rig.pump.firstHeldSequence!, last = rig.pump.lastSequence!
+        #expect(rig.store.load()?.coverage.ranges == [first...last])
+        #expect(rig.pump.arrivals(of: HistoryLogRequest.self).count == 30)
+        #expect(await rig.session.historySync == .idle(lastSynced: rig.store.load()?.lastHistorySync))
+    }
+
+    /// A notice during a sync has the pump's log read again before the next request, so the records the
+    /// sync didn't know of come next, newest first, as Mobi reads its latest status before every batch.
+    @Test func aNoticeDuringASyncFetchesTheNewRecordsNext() async {
+        let rig = Rig(configure: {
+            $0.unsupportedReads = []
+            addGlucoseHistory($0, count: 300)
+            // The sync's first read of the log ends 50 records short, and a notice comes with its first page.
+            let first = $0.firstHeldSequence!, last = $0.lastSequence!
+            $0.nextAnswers[MessageKey(HistoryLogStatusRequest.self)] = [
+                .cargo(le32(250) + le32(first) + le32(last - 50))
+            ]
+            $0.nextAnswers[MessageKey(HistoryLogRequest.self)] = [.notice(.bolusChange)]
+        })
+        await rig.startHeld()
+        let first = rig.pump.firstHeldSequence!, last = rig.pump.lastSequence!
+        let starts = rig.pump.arrivals(of: HistoryLogRequest.self).map { readStart($0.cargo) }
+        #expect(Array(starts.prefix(4)) == [last - 50, last, last - 30, last - 80])
+        #expect(rig.store.load()?.coverage.ranges == [first...last])
+    }
+
+    /// A notice during a sync finds the pump's log restarted: what the phone holds goes, and the restarted
+    /// log is fetched from its newest record down.
+    @Test func aRestartFoundDuringASyncStartsTheLogOver() async {
+        let rig = Rig(configure: {
+            $0.unsupportedReads = []
+            addGlucoseHistory($0, count: 300)
+        })
+        await rig.startHeld()
+        let first = rig.pump.firstHeldSequence!, last = rig.pump.lastSequence!
+        #expect(rig.store.load()?.coverage.ranges == [first...last])
+        // The pump's log now ends 100 records lower: it restarted. A notice comes with the sync's first page.
+        addGlucoseHistory(rig.pump, count: 10)
+        let restartedTop = last - 100
+        rig.pump.nextAnswers[MessageKey(HistoryLogStatusRequest.self)] = [
+            .normal, .cargo(le32(restartedTop - first + 1) + le32(first) + le32(restartedTop))
+        ]
+        rig.pump.nextAnswers[MessageKey(HistoryLogRequest.self)] = [.notice(.bolusChange)]
+        let before = rig.pump.arrivals(of: HistoryLogRequest.self).count
+        await sync(rig)
+        let starts = rig.pump.arrivals(of: HistoryLogRequest.self).dropFirst(before).map { readStart($0.cargo) }
+        #expect(Array(starts.prefix(2)) == [last + 10, restartedTop])
+        #expect(await rig.sink.clears == 1)
+        #expect(rig.store.load()?.coverage.ranges == [first...restartedTop])
+    }
+
+    /// A search waiting for the history stream goes before the sync's next request; the sync continues
+    /// after it.
+    @Test func aSearchWaitingForTheHistoryStreamGoesBeforeTheNextRequest() async {
+        let rig = Rig(configure: { $0.unsupportedReads = [] })
+        await rig.startHeld()
+        addGlucoseHistory(rig.pump, count: 300)
+        // The sync holds the stream while the pump is slow to say how long its log is.
+        rig.pump.nextAnswers[MessageKey(HistoryLogStatusRequest.self)] = [.late(seconds: 2)]
+        let statusReads = rig.pump.arrivals(of: HistoryLogStatusRequest.self).count
+        let session = rig.session
+        let sync = Task { await session.syncHistory() }
+        _ = await rig.until { rig.pump.arrivals(of: HistoryLogStatusRequest.self).count > statusReads }
+        let search = Task { await session.searchHistory(for: 999, acceptedAt: nil) }
+        await rig.run(for: 30, step: 0.5)
+        await rig.value(of: sync)
+        _ = await rig.value(of: search)
+        let counts = rig.pump.arrivals(of: HistoryLogRequest.self).map { Int($0.cargo[4]) }
+        #expect(Array(counts.prefix(3)) == [250, 50, 30])
+        let first = rig.pump.firstHeldSequence!, last = rig.pump.lastSequence!
+        #expect(rig.store.load()?.coverage.ranges == [first...last])
+        #expect(await rig.session.historySync == .idle(lastSynced: rig.store.load()?.lastHistorySync))
     }
 
     /// A pump whose newest record is older than one the phone holds has restarted its log: what the phone
@@ -171,21 +254,6 @@ private func addGlucoseHistory(_ pump: ScriptedPump, count: Int) {
         #expect(starts.filter { $0 == last }.count == 1)
     }
 
-    /// A sync cut short by its page limit continues within a minute, not at the next routine sync.
-    @Test func aSyncCutShortByItsPageLimitContinuesSoon() async {
-        var config = PumpSession.Configuration()
-        config.historyMaxPages = 1
-        let rig = Rig(
-            configure: {
-                $0.unsupportedReads = []
-                addGlucoseHistory($0, count: 600)
-            }, configuration: config)
-        await rig.startHeld()
-        await rig.run(for: 3 * 60, step: 5)
-        let first = rig.pump.firstHeldSequence!, last = rig.pump.lastSequence!
-        #expect(rig.store.load()?.coverage.ranges == [first...last])
-    }
-
     /// A page the history store couldn't keep isn't credited, so it is fetched again.
     @Test func aPageTheStoreCouldntKeepIsFetchedAgain() async {
         let rig = Rig(configure: {
@@ -219,8 +287,8 @@ private func addGlucoseHistory(_ pump: ScriptedPump, count: Int) {
         await rig.startHeld()
         await sync(rig)
         let starts = rig.pump.arrivals(of: HistoryLogRequest.self).map { readStart($0.cargo) }
-        // Each request names its window's newest record.
-        #expect(starts == [1499, 1199])
+        // Each request names its batch's newest record, the newest window first.
+        #expect(starts == [1499, 1469, 1439, 1409, 1199, 1169, 1139, 1109])
     }
 
     @Test func aRecordDatedInTheFutureIsDroppedNotMovedToNow() {
@@ -350,7 +418,8 @@ private func addGlucoseHistory(_ pump: ScriptedPump, count: Int) {
     }
 }
 
-private func readStart(_ cargo: [UInt8]) -> UInt32 {
+/// The newest record a `HistoryLogRequest` names.
+func readStart(_ cargo: [UInt8]) -> UInt32 {
     (0..<4).reduce(0) { $0 | UInt32(cargo[$1]) << (8 * UInt32($1)) }
 }
 

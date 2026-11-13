@@ -55,9 +55,10 @@ private let key = RemoteBolusLedger.Key(peerId: "phone", requestId: "phone-1")
         await rig.startHeld()
         rig.pump.answers[MessageKey(CurrentBolusStatusRequest.self)] = .silent
         let session = rig.session
-        let cancel = Task { await session.cancelBolus() }
-        await rig.run(for: 62, step: 1)
-        #expect(await rig.value(of: cancel) == .cancelled)
+        // The status read waits out its 60 s deadline; a routine read that takes the wire before the cancel
+        // goes out holds it for its own, since requests go one at a time.
+        let cancel = await rig.run(upTo: 130, step: 1) { await session.cancelBolus() }
+        #expect(cancel == .cancelled)
         #expect(rig.pump.arrivals(of: CancelBolusRequest.self).count == 1)
     }
 

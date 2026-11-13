@@ -64,7 +64,7 @@ struct PumpSettingsView: View {
         case .idle(let last):
             return last.map { "Synced \($0.formatted(.relative(presentation: .named)))" } ?? "Not synced yet"
         case .syncing: return "Syncing…"
-        case .paused: return "Paused (link dropped)"
+        case .paused: return "Paused"
         case .error(let message): return message
         }
     }
