@@ -136,7 +136,7 @@ struct StatusWidgetView: View {
                 if let at = g.measuredAt {
                     Text(at, style: .relative).font(.caption2).foregroundStyle(g.stale ? .orange : .secondary)
                 }
-                Sparkline(points: snapshot.recent).frame(height: 34).padding(.top, 2)
+                Sparkline(points: snapshot.recent, stale: g.stale).frame(height: 34).padding(.top, 2)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Divider()

@@ -227,7 +227,32 @@ import faBolusCore
             height: 60)
     }
 
+    /// CarPlay's tile and the Watch's Smart Stack: the curve alone, beside an alert, and under a bolus and
+    /// an alert.
+    /// A high high and a low low on one plot, in every view that draws one: the line stays inside each
+    /// view and keeps its zone colours at both ends.
+    @Test func extremes() {
+        // 340 falling to 45 over 50 minutes, then back up to 170.
+        let mgdl = (0..<24).map { i in i < 10 ? 340 - i * 295 / 9 : 45 + (i - 9) * 125 / 14 }
+        var content = Self.content(.idle(.bolus))
+        content.snapshot.recent = mgdl.enumerated().map { i, v in
+            WidgetSnapshot.Point(t: Self.now.addingTimeInterval(Double(i - 23) * 300), mgdl: v)
+        }
+        content.snapshot.glucose = Observed(
+            PumpGlucose(mgdl: 170, trend: .up), measuredAt: Self.now.addingTimeInterval(-60), receivedAt: Self.now)
+        check("curve", LockScreenView(view: Self.view(content)))
+        content.layout.style = .classic
+        check("chips", LockScreenView(view: Self.view(content)))
+        check("small", SmallActivityView(view: Self.view(content)), width: 170, height: 76)
+        content.layout.style = .fullBleed
+        check("island", GlucoseCurve(view: Self.view(content)).frame(height: 44).padding(.horizontal, 16), height: 60)
+    }
+
     @Test func small() {
+        check("idle", SmallActivityView(view: Self.view(Self.content(.idle(.bolus)))), width: 170, height: 76)
+        let alert = Self.content(
+            .idle(.bolus), alerts: LiveActivityAlerts(topTitle: "Low insulin", topCritical: false, count: 1))
+        check("alert", SmallActivityView(view: Self.view(alert)), width: 170, height: 76)
         let content = Self.content(
             .result(.init(headline: "Delivering…", tone: .working, line: "2.00 U", button: .cancel)),
             alerts: LiveActivityAlerts(topTitle: "Low insulin", topCritical: false, count: 1))

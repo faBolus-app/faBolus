@@ -125,11 +125,17 @@ struct LAView {
     /// A Live Activity bolus's result in a few characters, while it shows.
     var compactStatus: (text: String, icon: String, color: Color)? {
         guard case .result(let r)? = content.panel?.view, let text = r.compact else { return nil }
-        switch r.tone {
-        case .working: return (text, "drop.fill", AppTheme.insulin)
-        case .good: return (text, "checkmark.circle.fill", AppTheme.inRange)
-        case .caution: return (text, "exclamationmark.triangle.fill", AppTheme.high)
-        case .bad: return (text, "xmark.circle.fill", AppTheme.low)
+        let look = Self.look(r.tone)
+        return (text, look.icon, look.color)
+    }
+
+    /// A result's icon and colour for its tone.
+    static func look(_ tone: LiveActivityPanel.Result.Tone) -> (icon: String, color: Color) {
+        switch tone {
+        case .working: ("drop.fill", AppTheme.insulin)
+        case .good: ("checkmark.circle.fill", AppTheme.inRange)
+        case .caution: ("exclamationmark.triangle.fill", AppTheme.high)
+        case .bad: ("xmark.circle.fill", AppTheme.low)
         }
     }
 
@@ -365,7 +371,7 @@ struct LockScreenView: View {
                 }
                 .frame(maxWidth: 190)
             }
-            Sparkline(points: view.snapshot.recent).frame(height: 30)
+            Sparkline(points: view.snapshot.recent, stale: view.stale).frame(height: 30)
             view.idleRow
         }
         .padding(12)
@@ -435,38 +441,35 @@ struct GlucoseCurve: View {
     }
 }
 
-/// The recent glucose as a line over the 70–180 band: the classic card's and the widgets'.
+/// The recent readings as a line coloured by zone, as the Curve card draws them: low, in range, high. A
+/// stale reading's line is grey, never a current colour.
 struct Sparkline: View {
     let points: [WidgetSnapshot.Point]
+    var stale = false
     var floor = GlucoseThresholds.low
     var ceiling = GlucoseThresholds.high
 
     var body: some View {
-        GeometryReader { geo in
+        Canvas { context, size in
+            guard points.count > 1 else {
+                context.draw(
+                    Text("no recent data").font(.caption2).foregroundStyle(.secondary),
+                    at: CGPoint(x: size.width / 2, y: size.height / 2))
+                return
+            }
             let lo = min(points.map(\.mgdl).min() ?? floor, floor)
             let hi = max(points.map(\.mgdl).max() ?? ceiling, ceiling)
             let t0 = points.first?.t.timeIntervalSinceReferenceDate ?? 0
             let span = max(1, (points.last?.t.timeIntervalSinceReferenceDate ?? t0) - t0)
-            let y = { (v: Int) in geo.size.height * (1 - CGFloat(v - lo) / CGFloat(max(hi - lo, 1))) }
-            let x = { (p: WidgetSnapshot.Point) in
-                geo.size.width * CGFloat((p.t.timeIntervalSinceReferenceDate - t0) / span)
+            let point = { (p: WidgetSnapshot.Point) in
+                CGPoint(
+                    x: size.width * CGFloat((p.t.timeIntervalSinceReferenceDate - t0) / span),
+                    y: size.height * (1 - CGFloat(p.mgdl - lo) / CGFloat(max(hi - lo, 1))))
             }
-            ZStack {
-                Rectangle().fill(AppTheme.inRange.opacity(0.12))
-                    .frame(height: max(0, y(GlucoseThresholds.low) - y(GlucoseThresholds.high)))
-                    .position(x: geo.size.width / 2, y: (y(GlucoseThresholds.low) + y(GlucoseThresholds.high)) / 2)
-                if points.count > 1 {
-                    Path { p in
-                        for (i, pt) in points.enumerated() {
-                            let point = CGPoint(x: x(pt), y: y(pt.mgdl))
-                            if i == 0 { p.move(to: point) } else { p.addLine(to: point) }
-                        }
-                    }
-                    .stroke(.primary.opacity(0.8), style: StrokeStyle(lineWidth: 1.5, lineJoin: .round))
-                } else {
-                    Text("no recent data").font(.caption2).foregroundStyle(.secondary).frame(
-                        maxWidth: .infinity, maxHeight: .infinity)
-                }
+            for (a, b) in zip(points, points.dropFirst()) {
+                let segment = Path { $0.addLines([point(a), point(b)]) }
+                let color = stale ? AppTheme.stale : AppTheme.glucoseColor(b.mgdl)
+                context.stroke(segment, with: .color(color), style: StrokeStyle(lineWidth: 2, lineCap: .round))
             }
         }
         .accessibilityHidden(true)

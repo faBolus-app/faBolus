@@ -425,10 +425,17 @@ struct IdleRow: View {
     }
 }
 
-/// CarPlay and the Apple Watch Smart Stack: glucose, an ongoing bolus's headline and the top alert. No
-/// buttons: CarPlay turns them off while driving, and the two can't be told apart.
+/// CarPlay and the Apple Watch Smart Stack: glucose, the recent curve, an ongoing bolus's headline and the
+/// top alert. No buttons: CarPlay turns them off while driving, and the two can't be told apart. The curve
+/// takes what height the lines leave it, and gives way to a bolus's headline and an alert together: there
+/// isn't room for all four, and those two matter more.
 struct SmallActivityView: View {
     let view: LAView
+
+    private var headline: (text: String, color: Color)? {
+        guard case .result(let r)? = view.content.panel?.view else { return nil }
+        return (r.headline, LAView.look(r.tone).color)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -437,8 +444,11 @@ struct SmallActivityView: View {
                 Spacer()
                 view.ageText.font(.caption2).foregroundStyle(view.stale ? .orange : .secondary)
             }
-            if case .result(let r)? = view.content.panel?.view, let status = view.compactStatus {
-                Text(r.headline).font(.caption.weight(.bold)).foregroundStyle(status.color)
+            if view.snapshot.recent.count > 1 && (headline == nil || view.content.alerts == nil) {
+                Sparkline(points: view.snapshot.recent, stale: view.stale).frame(minHeight: 10, maxHeight: .infinity).layoutPriority(-1)
+            }
+            if let headline {
+                Text(headline.text).font(.caption.weight(.bold)).foregroundStyle(headline.color).lineLimit(1)
             }
             if let alerts = view.content.alerts {
                 Label(alerts.topTitle, systemImage: "exclamationmark.triangle.fill").font(.caption2)
