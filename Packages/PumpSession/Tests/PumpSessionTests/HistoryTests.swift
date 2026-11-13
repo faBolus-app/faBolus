@@ -446,6 +446,57 @@ func readStart(_ cargo: [UInt8]) -> UInt32 {
     }
 }
 
+/// The logbook names a bolus that went in short "stopped", with what it asked for, as t:connect does: a
+/// standard bolus when its completion status says it was cut short, an extended one whenever it was short.
+@MainActor @Suite struct HistoryBolusNameTests {
+    private func completed(_ typeId: Int, status: Int, delivered: Float, requested: Float) -> [UInt8] {
+        ScriptedPump.record(
+            typeId: typeId, pumpTime: 1000, sequence: 1,
+            body: ScriptedPump.bolusCompletedBody(
+                bolusId: 7, completionStatus: status, iob: 0, delivered: delivered, requested: requested))
+    }
+
+    private func event(_ record: [UInt8]) -> HistoryEvent? {
+        HistoryProjection.events([record]).first.flatMap { HistoryProjection.event($0, date: Date()) }
+    }
+
+    @Test func aBolusCutShortIsStopped() throws {
+        for status in [0, 1, 2, 4, 6] {
+            let e = try #require(
+                event(completed(BolusCompletedHistoryLog.typeId, status: status, delivered: 0.4, requested: 1)))
+            #expect(e.title == "Bolus stopped", "status \(status)")
+            #expect(e.detail == "0.40 U of 1.00 U")
+        }
+    }
+
+    @Test func aBolusThatWentInIsDelivered() throws {
+        let full = try #require(
+            event(completed(BolusCompletedHistoryLog.typeId, status: 3, delivered: 1, requested: 1)))
+        #expect(full.title == "Bolus delivered")
+        #expect(full.detail == "1.00 U")
+        // Cut short but complete, short by less than a milliunit (decoding noise, as the outcome counts it),
+        // and short but not cut short (a refused request, an unknown status).
+        for (status, delivered) in [(4, Float(1)), (4, 0.9999), (5, 0), (9, 0.4)] {
+            let e = try #require(
+                event(completed(BolusCompletedHistoryLog.typeId, status: status, delivered: delivered, requested: 1)))
+            #expect(e.title == "Bolus delivered", "status \(status)")
+        }
+    }
+
+    @Test func anExtendedBolusThatWentInShortIsStopped() throws {
+        let short = try #require(
+            event(completed(BolexCompletedHistoryLog.typeId, status: 3, delivered: 0.5, requested: 2)))
+        #expect(short.title == "Extended bolus stopped")
+        #expect(short.detail == "0.50 U of 2.00 U")
+        let full = try #require(
+            event(completed(BolexCompletedHistoryLog.typeId, status: 3, delivered: 2, requested: 2)))
+        #expect(full.title == "Extended bolus")
+        let noise = try #require(
+            event(completed(BolexCompletedHistoryLog.typeId, status: 3, delivered: 1.9999, requested: 2)))
+        #expect(noise.title == "Extended bolus")
+    }
+}
+
 /// Mobi's low-power mode: in the background, history syncs stop once the pump's battery is at 20% or
 /// below, and start again above 30%; in the foreground they always run.
 @MainActor

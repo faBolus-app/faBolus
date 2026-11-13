@@ -240,9 +240,12 @@ that worked.
   a cancel from an alarm or an interruption. A bolus whose authoritative delivered amount is below the
   request ends as `BolusOutcome.stopped(delivered:requested:)`, shown as "Bolus stopped" with both
   amounts. The cancel result the phone shows ("Bolus cancelled") comes from the pump's answer to the
-  cancel, not from history.
+  cancel, not from history. The logbook names a bolus "Bolus stopped", with both amounts, by t:connect's
+  rule: a completion status t:connect counts as cut short (0, 1, 2, 4 or 6) and less delivered than
+  requested. Like t:connect, it doesn't name the cause.
 - **Where:** `Packages/faBolusCore/Sources/faBolusCore/BolusOutcome.swift`,
-  `Packages/PumpSession/Sources/PumpSession/PumpSession+Delivery.swift`.
+  `Packages/PumpSession/Sources/PumpSession/PumpSession+Delivery.swift`,
+  `Packages/PumpSession/Sources/PumpSession/HistoryProjection.swift`.
 - **Verify:** cancel a bolus, let one be stopped by an alarm, and let one be cut off by a link drop, and
   compare the completion status in each history record. Name the cause once the values are known.
 
