@@ -99,9 +99,19 @@ final class TestClock: @unchecked Sendable {
     // @unchecked Sendable: guarded by `lock`.
     private let lock = NSLock()
     private var current: Date
+    private var elapsed = 0.0
     init(_ start: Date = Date(timeIntervalSince1970: 1_800_000_000)) { current = start }
     var now: Date { lock.withLock { current } }
-    func advance(_ seconds: TimeInterval) { lock.withLock { current = current.addingTimeInterval(seconds) } }
+    /// The monotonic time, which `set(by:)` doesn't move.
+    var uptime: Double { lock.withLock { elapsed } }
+    func advance(_ seconds: TimeInterval) {
+        lock.withLock {
+            current = current.addingTimeInterval(seconds)
+            elapsed += seconds
+        }
+    }
+    /// The phone's clock set by hand: the wall clock moves, time doesn't pass.
+    func set(by seconds: TimeInterval) { lock.withLock { current = current.addingTimeInterval(seconds) } }
 }
 
 enum Fixtures {
@@ -160,7 +170,8 @@ struct Harness {
     ) async -> Harness {
         let ledger = DurableBolusLedger(store: ledgerStore, now: clock.now)
         let coordinator = AlertCoordinator(
-            store: store, scheduler: scheduler, ledger: ledger, tickInterval: nil, clock: { clock.now })
+            store: store, scheduler: scheduler, ledger: ledger, tickInterval: nil, clock: { clock.now },
+            uptime: { clock.uptime })
         let (stream, continuation) = AsyncStream<PumpEvent>.makeStream()
         await before(coordinator)
         await coordinator.start(events: stream, pumpPaired: pumpPaired)

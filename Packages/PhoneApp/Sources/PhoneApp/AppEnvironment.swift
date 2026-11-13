@@ -5,6 +5,7 @@ import PumpSession
 import TandemBLE
 import WatchLink
 import WidgetContent
+import faBolusCore
 
 /// Everything the app's state is built from. The app passes the real parts (`AppEnvironment.device`); tests
 /// and the debug-only mock pass a scripted pump, files in a temporary folder and fakes.
@@ -36,6 +37,9 @@ public struct AppEnvironment {
     /// The session and alerts run their own timers; tests drive them instead.
     public var runsTimers = true
     public var clock: @Sendable () -> Date = { Date() }
+    /// The pump session's monotonic clock, which times its intervals; the scripted pump's in the mock and
+    /// tests, so it moves with `clock`.
+    public var uptime: @Sendable () -> Double = SessionClock.system.uptime
     /// Turned on by the debug-only mock pump.
     public var isMock = false
 

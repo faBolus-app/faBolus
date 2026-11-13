@@ -119,6 +119,8 @@ public struct DosePreparation: Sendable {
     /// When the refresh was asked for. A reading received before it doesn't count as read for this dose.
     public let inputsRequestedAt: Date
     public let lastDeliveryAt: Date?
+    /// Who sent the last bolus (its ledger peer ID).
+    public let lastDeliveryPeerId: String?
     public let ledger: RemoteBolusLedger
     public let bolusBlock: BolusBlock?
     public let freshness: FreshnessThresholds
@@ -131,7 +133,8 @@ public struct DosePreparation: Sendable {
     ) -> DoseContext {
         DoseContext(
             pump: pump ?? self.pump, access: access, bolusBlock: bolusBlock, inputsRequestedAt: inputsRequestedAt,
-            lastDeliveryAt: lastDeliveryAt, remoteSizeLimitUnits: remoteSizeLimitUnits, freshness: freshness, now: now)
+            lastDeliveryAt: lastDeliveryAt, lastDeliveryPeerId: lastDeliveryPeerId,
+            remoteSizeLimitUnits: remoteSizeLimitUnits, freshness: freshness, now: now)
     }
 }
 
@@ -140,6 +143,7 @@ extension PumpSession {
     /// them with the ledger. A read that fails leaves the older value, which the composer then treats as
     /// not read for this dose.
     public func prepareDose() async -> DosePreparation {
+        followPhoneClock()
         let requestedAt = clock()
         if state.link.isConnected {
             for read: any TandemMessages.Message in [
@@ -150,7 +154,8 @@ extension PumpSession {
             }
         }
         return DosePreparation(
-            pump: state, inputsRequestedAt: requestedAt, lastDeliveryAt: lastDeliveryAt, ledger: await ledger.ledger,
+            pump: state, inputsRequestedAt: requestedAt, lastDeliveryAt: lastDeliveryAt,
+            lastDeliveryPeerId: lastDelivery?.peerId, ledger: await ledger.ledger,
             bolusBlock: await ledger.block, freshness: freshness, now: clock())
     }
 
@@ -172,7 +177,8 @@ extension PumpSession {
     /// search. Cheap when nothing is due, so it runs after every link event as well as on the timer; a
     /// suspended app catches up on its next one.
     public func tick() {
-        let now = clock()
+        followPhoneClock()
+        let now = uptime()
         resumeLinkWaiters()
         resumeQueue()
         historyTick(now: now)
@@ -182,7 +188,7 @@ extension PumpSession {
         for group in [ReadGroup.essential, .alerts, .status, .settings, .cgmHardware] where isDue(group, now: now) {
             schedule(group, now: now)
         }
-        if glucoseIsDue(now: now), !isQueued(CurrentEGVGuiDataRequest.self),
+        if glucoseIsDue(now: clock(), uptime: now), !isQueued(CurrentEGVGuiDataRequest.self),
             !restingAfterNoAnswer(CurrentEGVGuiDataRequest(), now: now)
         {
             lastGlucoseRead = now
@@ -202,7 +208,7 @@ extension PumpSession {
         }
     }
 
-    private func isDue(_ group: ReadGroup, now: Date) -> Bool {
+    private func isDue(_ group: ReadGroup, now: Uptime) -> Bool {
         if group == .cgmHardware {
             return !onceThisConnection.contains(.cgmHardware) && onceThisConnection.contains(.settings)
         }
@@ -210,7 +216,7 @@ extension PumpSession {
         return now >= at
     }
 
-    private func schedule(_ group: ReadGroup, now: Date) {
+    private func schedule(_ group: ReadGroup, now: Uptime) {
         onceThisConnection.insert(group)
         switch group {
         case .alerts: due[group] = now.addingTimeInterval(config.alertInterval)
@@ -233,10 +239,10 @@ extension PumpSession {
     /// The pump's CGM sends a reading every 5 minutes. From 20 s before the next one is expected until it
     /// arrives (or 2.5 minutes after), glucose is read every 10 s, so a new value shows within seconds
     /// instead of up to a minute later.
-    private func glucoseIsDue(now: Date) -> Bool {
+    private func glucoseIsDue(now: Date, uptime: Uptime) -> Bool {
         guard let measured = state.glucose?.measuredAt, state.glucose?.source == .pump else { return false }
         let expected = measured.addingTimeInterval(5 * 60)
         guard now >= expected.addingTimeInterval(-20), now <= expected.addingTimeInterval(150) else { return false }
-        return lastGlucoseRead.map { now.timeIntervalSince($0) >= 10 } ?? true
+        return lastGlucoseRead.map { uptime.timeIntervalSince($0) >= 10 } ?? true
     }
 }

@@ -48,8 +48,8 @@ public enum CancelResult: Sendable, Equatable {
 struct DeliveryInProgress {
     let key: RemoteBolusLedger.Key
     let owner: UUID
-    /// When the user (or remote) confirmed it, by the phone's clock.
-    let startedAt: Date
+    /// When the user (or remote) confirmed it.
+    let startedAt: Uptime
     var bolusId: Int?
     /// InitiateBolus has been handed to the queue: from here a cancel has to go to the pump.
     var initiateQueued = false
@@ -60,9 +60,9 @@ struct DeliveryInProgress {
 struct TrackedBolus {
     let key: RemoteBolusLedger.Key
     let bolusId: Int
-    let startedAt: Date
-    var lastStatusAt: Date
-    var lastPollAt: Date?
+    let startedAt: Uptime
+    var lastStatusAt: Uptime
+    var lastPollAt: Uptime?
     var polling = false
 }
 
@@ -95,7 +95,7 @@ extension PumpSession {
         guard delivery == nil else { return .notStarted(.blocked(.bolusInProgress)) }
         let key = dose.request.ledgerKey
         let owner = UUID()
-        delivery = DeliveryInProgress(key: key, owner: owner, startedAt: clock())
+        delivery = DeliveryInProgress(key: key, owner: owner, startedAt: uptime())
         defer {
             if delivery?.owner == owner {
                 delivery = nil
@@ -228,15 +228,14 @@ extension PumpSession {
 
         // A bolus confirmed long ago (the app was suspended in between) isn't started now: the user may
         // have dosed some other way since. The limit is the remote-request freshness window.
-        if let started = delivery?.startedAt, abs(clock().timeIntervalSince(started)) > RemoteRequestFreshness.maxAgeSec
-        {
+        if let started = delivery?.startedAt, uptime().timeIntervalSince(started) > RemoteRequestFreshness.maxAgeSec {
             return await abandon("Too long passed since the bolus was confirmed, so it wasn't started.")
         }
         // Checking the cancel flag and queuing InitiateBolus happen without a suspension between them, so a
         // cancel either stops it here or is queued after it.
         delivery?.initiateQueued = true
-        let previousDelivery = lastDeliveryAt
-        lastDeliveryAt = clock()
+        let previousDelivery = lastDelivery
+        lastDelivery = (uptime(), key.peerId)
         switch await send(commands.initiate, allowing: .delivery) {
         case .reply(let reply):
             guard let initiate = reply.message as? InitiateBolusResponse, initiate.bolusId == bolusId else {
@@ -247,13 +246,13 @@ extension PumpSession {
                     key, .refused("The pump refused the bolus (status \(initiate.status), \(initiate.statusTypeId))."))
             }
             // Followed from before the move is recorded, so a drop while it is saved still finds it.
-            let now = clock()
+            let now = uptime()
             tracked = TrackedBolus(key: key, bolusId: bolusId, startedAt: now, lastStatusAt: now)
             return await settle(key, .delivering)
         case .pumpError(let error):
             return await settle(key, .refused("The pump refused the bolus (error \(error.errorCodeId))."))
         case .notSent(let reason):
-            lastDeliveryAt = previousDelivery
+            lastDelivery = previousDelivery
             return await abandon("The bolus wasn't sent (\(reason)). Nothing was delivered.")
         case .unknown:
             return await settle(key, .unknown)
@@ -262,7 +261,7 @@ extension PumpSession {
 
     // MARK: - Following a delivering bolus
 
-    func deliveryTick(now: Date) {
+    func deliveryTick(now: Uptime) {
         guard var bolus = tracked else { return }
         // Checked on every tick, not only when a poll ends: a poll can wait behind another silent request
         // (one is on the wire at a time), and the bolus mustn't stay "delivering" past the silence.
@@ -282,7 +281,7 @@ extension PumpSession {
     /// The bolus has gone `deliveryStatusSilence` with no status answer, and the pump can't still answer a
     /// poll of its own: none is out, or the one out is still waiting in the queue. A poll on the wire gets its
     /// whole deadline, so a slow answer after one lost reply still counts.
-    private func statusWentSilent(_ bolus: TrackedBolus, now: Date) -> Bool {
+    private func statusWentSilent(_ bolus: TrackedBolus, now: Uptime) -> Bool {
         guard now.timeIntervalSince(bolus.lastStatusAt) > config.deliveryStatusSilence else { return false }
         return !bolus.polling || queue.contains { $0.priority == .delivery && $0.message is CurrentBolusStatusRequest }
     }
@@ -293,7 +292,7 @@ extension PumpSession {
         // any bolus followed since.
         guard var bolus = tracked, bolus.key == key else { return }
         bolus.polling = false
-        let now = clock()
+        let now = uptime()
         guard case .reply(let reply) = result, let status = reply.message as? CurrentBolusStatusResponse else {
             tracked = bolus
             if statusWentSilent(bolus, now: now) {
@@ -398,8 +397,8 @@ extension PumpSession {
     /// An outcome the ledger couldn't save blocks new boluses until a save succeeds. Saving it again on a
     /// timer lifts the block once storage recovers (a full disk, say), rather than leaving the user stuck
     /// until the app relaunches. This includes an outcome whose save failed at launch.
-    func ledgerSaveTick(now: Date) {
-        guard !savingLedger, now >= nextLedgerSaveAt ?? .distantPast else { return }
+    func ledgerSaveTick(now: Uptime) {
+        guard !savingLedger, nextLedgerSaveAt.map({ now >= $0 }) ?? true else { return }
         nextLedgerSaveAt = now.addingTimeInterval(config.ledgerSaveRetry)
         savingLedger = true
         Task { await self.saveUnsavedOutcomes() }
@@ -455,7 +454,7 @@ extension PumpSession {
         emit(.bolusOutcome(key, outcome))
         // An outcome that just became unknown is searched for soon, not at the next routine sync.
         if outcome.isUnknown {
-            let soon = clock().addingTimeInterval(config.reconcileWhileDelivering)
+            let soon = uptime().addingTimeInterval(config.reconcileWhileDelivering)
             nextReconcileAt = min(nextReconcileAt ?? soon, soon)
         }
         return outcome

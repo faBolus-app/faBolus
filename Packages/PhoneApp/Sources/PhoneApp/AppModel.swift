@@ -114,8 +114,9 @@ public final class AppModel {
         watchTransport = environment.makeWatchTransport()
         freshness = settings.freshness
         let clock = environment.clock
+        let sessionClock = SessionClock(now: clock, uptime: environment.uptime)
         let directory = environment.dataDirectory
-        ledger = Self.makeLedger(directory: directory, now: clock())
+        ledger = Self.makeLedger(directory: directory, clock: sessionClock)
         do {
             historyStore =
                 try environment.historyStoreURL.map { try GlucoseHistoryStore(url: $0) }
@@ -131,18 +132,19 @@ public final class AppModel {
         session = PumpSession(
             connection: connection, ledger: ledger, store: sessionStore, secrets: environment.pairingSecrets,
             historySink: historyStore.map(HistoryStoreSink.init(store:)), freshness: settings.freshness,
-            configuration: environment.sessionConfiguration, clock: clock)
+            configuration: environment.sessionConfiguration, clock: sessionClock)
         let alertDirectory = directory ?? FileManager.default.temporaryDirectory
         alerts = AlertCoordinator(
             store: FileAlertStore(directory: alertDirectory), scheduler: environment.notifications, ledger: ledger,
-            tickInterval: environment.runsTimers ? 30 : nil, clock: clock)
+            tickInterval: environment.runsTimers ? 30 : nil, clock: clock, uptime: environment.uptime)
     }
 
     /// No directory means no durable place to record a bolus, and the ledger blocks every one.
-    private nonisolated static func makeLedger(directory: URL?, now: Date) -> DurableBolusLedger {
-        guard let directory else { return DurableBolusLedger(store: nil, now: now) }
+    private nonisolated static func makeLedger(directory: URL?, clock: SessionClock) -> DurableBolusLedger {
+        guard let directory else { return DurableBolusLedger(store: nil, now: clock.now(), clock: clock) }
         return DurableBolusLedger(
-            store: RemoteBolusLedgerStore(url: directory.appendingPathComponent("bolus-ledger.json")), now: now)
+            store: RemoteBolusLedgerStore(url: directory.appendingPathComponent("bolus-ledger.json")),
+            now: clock.now(), clock: clock)
     }
 
     /// The launch sequence: the session, notifications, the backup source and the watch, before any view

@@ -14,9 +14,9 @@ extension PumpSession {
     ///   judged, and a remote-clear trial recorded, exactly as from the app. Past it, the clear goes the
     ///   same way it would have at once: `.unconfirmed` with no link.
     public func dismiss(_ alert: PumpAlert, waitingForLinkUpTo wait: TimeInterval = 0) async -> DismissOutcome {
-        if wait > 0 { await waitForReachablePump(until: clock().addingTimeInterval(wait)) }
+        if wait > 0 { await waitForReachablePump(until: uptime().addingTimeInterval(wait)) }
         let outcome = await sendDismiss(alert)
-        due[.alerts] = clock()
+        due[.alerts] = uptime()
         emit(.alertDismissed(alert, outcome))
         return outcome
     }
@@ -24,8 +24,8 @@ extension PumpSession {
     /// Connected, identified and its alerts read in this process.
     var pumpReachable: Bool { state.link.isConnected && identity != nil && state.alerts != nil }
 
-    private func waitForReachablePump(until deadline: Date) async {
-        guard !pumpReachable, clock() < deadline else { return }
+    private func waitForReachablePump(until deadline: Uptime) async {
+        guard !pumpReachable, uptime() < deadline else { return }
         await withCheckedContinuation { linkWaiters.append((deadline, $0)) }
     }
 
@@ -33,7 +33,7 @@ extension PumpSession {
     /// session is stopping).
     func resumeLinkWaiters(all: Bool = false) {
         guard !linkWaiters.isEmpty else { return }
-        let now = clock()
+        let now = uptime()
         let release = all || pumpReachable
         let (go, stay) = (
             linkWaiters.filter { release || now >= $0.deadline },
@@ -114,7 +114,7 @@ extension PumpSession {
         }
         if let unit = identity?.unit {
             pendingTrial = PendingRemoteClearTrial(
-                unit: unit, kind: alert.kind, id: alert.id, decideAfter: clock().addingTimeInterval(Self.trialSettle))
+                unit: unit, kind: alert.kind, id: alert.id, decideAfter: uptime().addingTimeInterval(Self.trialSettle))
         }
         return .notCleared
     }
@@ -125,7 +125,7 @@ extension PumpSession {
     /// Decides a pending trial from a read of its kind once the settle has passed. Still showing: this unit
     /// doesn't act on a remote clear. Gone by then may be the pump acting late or the user clearing it on the
     /// pump, so nothing is recorded and the phone may try again.
-    func settleRemoteClearTrial(after message: any TandemMessages.Message, now: Date) {
+    func settleRemoteClearTrial(after message: any TandemMessages.Message, now: Uptime) {
         guard let pending = pendingTrial, now >= pending.decideAfter, Self.statusKind(of: message) == pending.kind
         else { return }
         pendingTrial = nil
@@ -169,5 +169,5 @@ struct PendingRemoteClearTrial: Sendable, Equatable {
     let unit: PumpUnit
     let kind: PumpAlertKind
     let id: Int
-    let decideAfter: Date
+    let decideAfter: Uptime
 }

@@ -96,7 +96,9 @@ public actor PumpSession {
     let store: any PumpSessionPersisting
     let secrets: PairingSecrets
     let historySink: (any PumpHistorySink)?
+    /// The phone's wall clock, for stamps only (`SessionClock`).
     let clock: @Sendable () -> Date
+    private let monotonic: @Sendable () -> Double
     let config: Configuration
 
     // MARK: State
@@ -109,15 +111,23 @@ public actor PumpSession {
     /// A remote-clear trial whose alert was still showing on the read right after the clear, waiting for a
     /// later read to say whether it stayed.
     var pendingTrial: PendingRemoteClearTrial?
-    var anchor: PumpClockAnchor?
+    var clockSteps = ClockStepDetector()
+    /// The pump's clock as last read, and when by `uptime`.
+    var pumpClock: (pumpTime: UInt32, at: Uptime)?
     /// The identity the link reported for the current connection; nil while not ready.
     var identity: TandemLink.PumpIdentity?
     /// The connection's identity checks passed: a t:slim X2 with the trusted serial.
     var identityTrusted = false
     var pendingPairing: PendingPairing?
     var retriedRejectedPairing = false
-    /// The phone-clock time the last bolus was sent to the pump.
-    public internal(set) var lastDeliveryAt: Date?
+    /// When the last bolus was sent to the pump, and who sent it (its ledger peer ID).
+    var lastDelivery: (at: Uptime, peerId: String)?
+    /// The phone-clock time the last bolus was sent to the pump, placed by the monotonic time since: a phone
+    /// clock set since moves it too, so it stays comparable with a remote's stamp, which a watch takes from
+    /// the phone's clock.
+    public var lastDeliveryAt: Date? {
+        lastDelivery.map { clock().addingTimeInterval(-uptime().timeIntervalSince($0.at)) }
+    }
 
     // Send queue
     var queue: [Job] = []
@@ -126,12 +136,12 @@ public actor PumpSession {
     var exclusiveOwner: UUID?
 
     // Timing
-    var due: [ReadGroup: Date] = [:]
-    var lastGlucoseRead: Date?
+    var due: [ReadGroup: Uptime] = [:]
+    var lastGlucoseRead: Uptime?
     /// Routine reads the pump has left unanswered since it last answered them, this connection: how many in a
     /// row, and when the last one was given up on.
-    var unanswered: [MessageKey: (count: Int, at: Date)] = [:]
-    var connectedAt: Date?
+    var unanswered: [MessageKey: (count: Int, at: Uptime)] = [:]
+    var connectedAt: Uptime?
     /// The link's hold window: until a connection has held this long, it holds back untested commands.
     var holdWindow: TimeInterval = 10
     var onceThisConnection: Set<ReadGroup> = []
@@ -144,14 +154,14 @@ public actor PumpSession {
     var historyBusy = false
     var historyWaiters: [CheckedContinuation<Void, Never>] = []
     /// Clears waiting for the pump to be reachable, each until its deadline.
-    var linkWaiters: [(deadline: Date, continuation: CheckedContinuation<Void, Never>)] = []
+    var linkWaiters: [(deadline: Uptime, continuation: CheckedContinuation<Void, Never>)] = []
     var page: PageCollector?
     public internal(set) var historySync: HistorySyncState = .idle(lastSynced: nil)
     public internal(set) var historyEvents: [HistoryEvent] = []
     var reconcileAttempts = 0
     var reconciling = false
-    var nextReconcileAt: Date?
-    var nextLedgerSaveAt: Date?
+    var nextReconcileAt: Uptime?
+    var nextLedgerSaveAt: Uptime?
     var savingLedger = false
     /// The last retry failed too; logged once, not every retry.
     var ledgerSaveFailing = false
@@ -171,11 +181,11 @@ public actor PumpSession {
     /// - Parameters:
     ///   - connection: the app's one link, created at launch with the pump's restore identifier.
     ///   - ledger: the app's one durable ledger.
-    ///   - clock: wall-clock time. Tests pass the scripted clock's.
+    ///   - clock: the wall clock and the monotonic one. Tests pass the scripted clock's.
     public init(
         connection: PumpConnection, ledger: DurableBolusLedger, store: any PumpSessionPersisting,
         secrets: PairingSecrets, historySink: (any PumpHistorySink)?, freshness: FreshnessThresholds = .standard,
-        configuration: Configuration = Configuration(), clock: @escaping @Sendable () -> Date = { Date() }
+        configuration: Configuration = Configuration(), clock: SessionClock = .system
     ) {
         self.connection = connection
         self.ledger = ledger
@@ -184,7 +194,8 @@ public actor PumpSession {
         self.historySink = historySink
         self.freshness = freshness
         self.config = configuration
-        self.clock = clock
+        self.clock = clock.now
+        monotonic = clock.uptime
         record = store.load() ?? PumpSessionRecord()
         if let pairing = record.pairing { state.model = pairing.model }
         historySync = .idle(lastSynced: record.lastHistorySync)
@@ -349,6 +360,32 @@ public actor PumpSession {
         }
     }
 
+    /// Now, on the session's monotonic clock: what every interval and deadline is timed on.
+    func uptime() -> Uptime { Uptime(seconds: monotonic()) }
+
+    /// The phone's clock being set shows as a change in the wall clock less the monotonic one. The readings'
+    /// stamps, which are the phone's clock where the pump gives no time of its own (IOB, the calculator
+    /// settings), move by the same step, so none looks younger than it is after the clock is set back, and a
+    /// reading taken before a dose's refresh still reads as before it. Called before anything is stamped or
+    /// judged; a few seconds' change is the clocks drifting.
+    func followPhoneClock() {
+        guard let step = clockSteps.step(SessionClock(now: clock, uptime: monotonic)) else { return }
+        sessionLog.log("phone clock set by \(step, privacy: .public) s")
+        state.phoneClockSet(by: step)
+        // The readings themselves didn't change, so no alerts-changed event: only their times did.
+        emit(.readingsChanged(Set(PumpState.Reading.allCases), state))
+    }
+
+    /// The pump-clock anchor as of now: the last clock read, placed by the monotonic time since it, before
+    /// the phone's clock now. A phone clock set since the read moves no pump-stamped time, so a reading's age
+    /// stays the pump's own (`now` minus its placed time is the pump's time since it).
+    var anchor: PumpClockAnchor? {
+        guard let pumpClock else { return nil }
+        return PumpClockAnchor(
+            pumpTime: pumpClock.pumpTime,
+            phoneTime: clock().addingTimeInterval(-uptime().timeIntervalSince(pumpClock.at)))
+    }
+
     // MARK: - Persistence
 
     func saveRecord() {
@@ -414,9 +451,9 @@ public actor PumpSession {
         } else if job.continuation == nil, case .unknown(.timedOut) = result {
             let key = MessageKey(job.message)
             let misses = (unanswered[key]?.count ?? 0) + 1
-            unanswered[key] = (misses, clock())
+            unanswered[key] = (misses, uptime())
             // A copy queued while this one waited (its group came due meanwhile) rests too.
-            if restingAfterNoAnswer(job.message, now: clock()) {
+            if restingAfterNoAnswer(job.message, now: uptime()) {
                 queue.removeAll { $0.continuation == nil && MessageKey($0.message) == key }
             }
         }
@@ -435,9 +472,7 @@ public actor PumpSession {
     /// can drop the link. A delivery's own steps are left to the link: holding one back here would let a
     /// cancel overtake the InitiateBolus it is meant to stop. A tick sends what has come due.
     func nextJobIndex() -> Int? {
-        let elapsed = connectedAt.map { clock().timeIntervalSince($0) } ?? .infinity
-        // A clock stepped backwards counts as held: waiting for it to catch up would stall the queue.
-        let held = elapsed >= holdWindow || elapsed < 0
+        let held = connectedAt.map { uptime().timeIntervalSince($0) >= holdWindow } ?? true
         let eligible = queue.indices.filter { i in
             let job = queue[i]
             if job.owner == nil {
@@ -477,7 +512,7 @@ public actor PumpSession {
     /// read the pump never answers would hold the wire for good, and nothing below it (the alert reads, the
     /// history search that settles an unknown bolus) would ever go. One lost reply alone rests nothing: the
     /// read goes again at its next turn.
-    func restingAfterNoAnswer(_ read: any TandemMessages.Message, now: Date) -> Bool {
+    func restingAfterNoAnswer(_ read: any TandemMessages.Message, now: Uptime) -> Bool {
         guard let miss = unanswered[MessageKey(read)], miss.count >= 2 else { return false }
         return now.timeIntervalSince(miss.at) < config.requestDeadline
     }
@@ -489,15 +524,14 @@ public actor PumpSession {
 
     /// Applies any reply that carries pump state, whoever asked for it.
     func applyReply(_ message: any TandemMessages.Message) {
+        followPhoneClock()
         let now = clock()
-        if let time = message as? TimeSinceResetResponse {
-            anchor = PumpClockAnchor(pumpTime: time.currentTime, phoneTime: now)
-        }
-        if message is CurrentEGVGuiDataResponse { lastGlucoseRead = now }
+        if let time = message as? TimeSinceResetResponse { pumpClock = (time.currentTime, uptime()) }
+        if message is CurrentEGVGuiDataResponse { lastGlucoseRead = uptime() }
         let changed = PumpReadings.apply(
             message, to: &state, alerts: &alertLists, context: .init(receivedAt: now, anchor: anchor))
         emitReadings(changed)
-        settleRemoteClearTrial(after: message, now: now)
+        settleRemoteClearTrial(after: message, now: uptime())
     }
 
     // MARK: - Link events
@@ -580,17 +614,19 @@ public actor PumpSession {
     }
 
     private func ready(_ identity: TandemLink.PumpIdentity) async {
+        followPhoneClock()
         let now = clock()
+        let started = uptime()
         // Everything per connection is set before the first suspension, so a tick that runs meanwhile sees
         // this connection, not the last one.
         self.identity = identity
         refreshRemoteClear()
-        connectedAt = now
+        connectedAt = started
         onceThisConnection = []
         unanswered = [:]
         reconcileAttempts = 0
-        nextReconcileAt = now
-        for group in ReadGroup.allCases { due[group] = now }
+        nextReconcileAt = started
+        for group in ReadGroup.allCases { due[group] = started }
         if let pending = pendingPairing {
             pendingPairing = nil
             let paired = PumpSessionRecord(
@@ -635,18 +671,17 @@ public actor PumpSession {
             state.apiVersion = Observed(
                 PumpAPIVersion(major: api.major, minor: api.minor), measuredAt: now, receivedAt: now)
         }
-        anchor = await handshakeAnchor(now: now)
+        pumpClock = await handshakeClock()
         holdWindow = await connection.state.config.holdWindow
         emit(.identified(state.model))
         resumeLinkWaiters()
     }
 
-    /// The anchor from the handshake's TimeSinceReset, which the link read before it was ready.
-    private func handshakeAnchor(now: Date) async -> PumpClockAnchor? {
+    /// The pump clock from the handshake's TimeSinceReset, which the link read before it was ready.
+    private func handshakeClock() async -> (pumpTime: UInt32, at: Uptime)? {
         let (clockReading, linkNow) = await (connection.state.connection?.clock, connection.now)
         guard let clockReading else { return nil }
-        return PumpClockAnchor(
-            pumpTime: clockReading.pumpTime, phoneTime: now.addingTimeInterval(-(linkNow - clockReading.receivedAt)))
+        return (clockReading.pumpTime, uptime().addingTimeInterval(-(linkNow - clockReading.receivedAt)))
     }
 
     private func disconnected(_ reason: DisconnectReason) {
@@ -661,7 +696,7 @@ public actor PumpSession {
     }
 
     private func qualifyingEvents(_ events: QualifyingEvent) {
-        let now = clock()
+        let now = uptime()
         // The comms-suspended bit (19) pauses nothing: t:connect only logs it (UNVERIFIED-GUESSES #22).
         // Before the link is ready nothing can be read; becoming ready reads everything.
         guard identity != nil else { return }
@@ -748,7 +783,7 @@ public actor PumpSession {
         saveRecord()
         state = PumpState()
         alertLists = PumpAlertLists()
-        anchor = nil
+        pumpClock = nil
         await dropLogbook()
         releaseHistory()
         historySync = .idle(lastSynced: nil)

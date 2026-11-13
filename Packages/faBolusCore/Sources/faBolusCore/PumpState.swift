@@ -250,6 +250,39 @@ public struct PumpState: Sendable, Hashable, Codable {
 
     public init() {}
 
+    /// The phone's clock was set by `seconds` (back when negative) since these readings were taken: their
+    /// stamps move with it, so each reading's age stays the time that really passed since it, and one read
+    /// before a dose's refresh still reads as before it.
+    public mutating func phoneClockSet(by seconds: TimeInterval) {
+        func move<T>(_ reading: inout Observed<T>?) {
+            reading?.measuredAt.addTimeInterval(seconds)
+            reading?.receivedAt.addTimeInterval(seconds)
+        }
+        move(&apiVersion)
+        move(&glucose)
+        move(&cgmDisplay)
+        move(&insulinOnBoard)
+        move(&reservoirUnits)
+        move(&battery)
+        move(&basalDeliveryState)
+        move(&bolusState)
+        move(&lastBolus)
+        if let bolus = lastBolus?.value {
+            // Its own times were placed by the pump-clock anchor in the clock before the step.
+            lastBolus?.value = DoseEntry(
+                startDate: bolus.startDate.addingTimeInterval(seconds),
+                endDate: bolus.endDate.addingTimeInterval(seconds), programmedUnits: bolus.programmedUnits,
+                deliveredUnits: bolus.deliveredUnits, syncIdentifier: bolus.syncIdentifier)
+        }
+        move(&bolusCalculator)
+        move(&maxBasalUnitsPerHour)
+        move(&controlIQ)
+        move(&cartridge)
+        move(&cgmSessionActive)
+        move(&alerts)
+        move(&cgmHardwareInfo)
+    }
+
     /// Names one observed value, so an event can say which readings changed without the receiver
     /// comparing states.
     public enum Reading: String, Sendable, Hashable, Codable, CaseIterable {

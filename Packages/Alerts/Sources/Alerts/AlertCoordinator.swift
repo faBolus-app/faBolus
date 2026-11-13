@@ -26,6 +26,10 @@ public actor AlertCoordinator {
     let scheduler: any NotificationScheduling
     let ledger: DurableBolusLedger
     let clock: @Sendable () -> Date
+    /// The app's monotonic clock, when it gave one: with it a phone clock set while the app runs is
+    /// followed (`followPhoneClock`).
+    private let sessionClock: SessionClock?
+    private var clockSteps = ClockStepDetector()
 
     private(set) var engine: AlertEngine
     /// The state file couldn't be read (or there was none): notifications an earlier process scheduled
@@ -58,12 +62,17 @@ public actor AlertCoordinator {
     private var ticker: Task<Void, Never>?
     private var subscribers: [UUID: AsyncStream<AlertSnapshot>.Continuation] = [:]
 
-    /// - Parameter tickInterval: how often `tick` runs while the app runs, so ageing readings and notices
-    ///   coming due are noticed without an event; `nil` leaves it to the caller.
+    /// - Parameters:
+    ///   - tickInterval: how often `tick` runs while the app runs, so ageing readings and notices coming due
+    ///     are noticed without an event; `nil` leaves it to the caller.
+    ///   - uptime: the app's monotonic clock (`SessionClock.uptime`), which shows when the phone's clock is
+    ///     set; without it the wall clock is taken as it is.
     public init(
         store: any AlertPersisting, scheduler: any NotificationScheduling, ledger: DurableBolusLedger,
-        tickInterval: TimeInterval? = 30, clock: @escaping @Sendable () -> Date = { Date() }
+        tickInterval: TimeInterval? = 30, clock: @escaping @Sendable () -> Date = { Date() },
+        uptime: (@Sendable () -> Double)? = nil
     ) {
+        sessionClock = uptime.map { SessionClock(now: clock, uptime: $0) }
         self.store = store
         self.scheduler = scheduler
         self.ledger = ledger
@@ -215,7 +224,8 @@ public actor AlertCoordinator {
     // MARK: - Reading
 
     public var snapshot: AlertSnapshot {
-        AlertSnapshot(
+        followPhoneClock()
+        return AlertSnapshot(
             active: engine.active(now: clock()),
             banners: InAppBanner.current(
                 openBolusResult: engine.hasOpenBolusResult, ledgerUnreadable: engine.state.ledgerUnreadable,
@@ -257,6 +267,7 @@ public actor AlertCoordinator {
     }
 
     private func run(_ input: AlertInput) async {
+        followPhoneClock()
         let before = engine.state
         engine.handle(input, now: clock())
         // Most inputs (a routine reading) change nothing; only a change is written.
@@ -264,6 +275,14 @@ public actor AlertCoordinator {
         publish()
         guard started else { return }
         await drain()
+    }
+
+    /// The phone's clock being set shows as a change in the wall clock less the monotonic one; the engine's
+    /// times move by the same step. A few seconds' change is the clocks drifting.
+    private func followPhoneClock() {
+        guard let sessionClock, let step = clockSteps.step(sessionClock) else { return }
+        engine.phoneClockSet(by: step)
+        save()
     }
 
     private func save() {

@@ -101,7 +101,15 @@ extension DoseComposer {
         guard let sentAt = request.sentAt, !RemoteRequestFreshness.isStale(sentAt: sentAt, now: context.now) else {
             return .refused(.requestTooOld)
         }
-        if let last = context.lastDeliveryAt, last > sentAt { return .refused(.supersededByDelivery) }
+        // Against the remote's stamp, which is its own clock. A bolus from another surface (the phone, another
+        // remote) counts up to the skew its stamp may run ahead, so a watch clock fast by up to that much can't
+        // pass a request composed before that bolus. Its own last bolus it knew of, so it is compared exactly,
+        // and a second dose right after it isn't held back.
+        if let last = context.lastDeliveryAt {
+            let skew =
+                context.lastDeliveryPeerId == request.peerId ? 0 : RemoteRequestFreshness.futureSkewToleranceSec
+            if last > sentAt.addingTimeInterval(-skew) { return .refused(.supersededByDelivery) }
+        }
         if let refusal = availability(surface: request.surface, context: context) { return .refused(refusal) }
 
         let units: Double

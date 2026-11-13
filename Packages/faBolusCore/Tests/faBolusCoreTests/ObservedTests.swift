@@ -114,3 +114,50 @@ struct ObservedTests {
         #expect(back == o)
     }
 }
+
+/// Every reading's stamps move when the phone's clock is set.
+@Suite struct PhoneClockSetTests {
+    fileprivate protocol Stamped {
+        var measuredAt: Date { get }
+        var receivedAt: Date { get }
+    }
+
+    /// Sets every observed reading, so a new one the shift leaves out fails here.
+    @Test func everyReadingMoves() {
+        let at = Date(timeIntervalSince1970: 1_800_000_000)
+        func o<T>(_ v: T) -> Observed<T> { Observed(v, measuredAt: at, receivedAt: at) }
+        var state = PumpState()
+        state.apiVersion = o(PumpAPIVersion(major: 2, minor: 5))
+        state.glucose = o(PumpGlucose(mgdl: 120, trend: nil))
+        state.cgmDisplay = o(PumpCGMDisplay(state: .noError, checkBG: false))
+        state.insulinOnBoard = o(1)
+        state.reservoirUnits = o(100)
+        state.battery = o(PumpBattery(percent: 50, isCharging: nil))
+        state.basalDeliveryState = o(.active(unitsPerHour: 0.8))
+        state.bolusState = o(.noBolus)
+        state.lastBolus = o(DoseEntry(startDate: at, programmedUnits: 1, deliveredUnits: 1))
+        state.bolusCalculator = o(
+            BolusCalculatorSettings(carbRatio: 10, correctionFactor: 40, targetMgdl: 110, maxBolusUnits: 25))
+        state.maxBasalUnitsPerHour = o(3)
+        state.controlIQ = o(ControlIQStatus(isEnabled: true, activity: .normal))
+        state.cartridge = o(CartridgeLoadState(rawValue: 5))
+        state.cgmSessionActive = o(true)
+        state.alerts = o([])
+        state.cgmHardwareInfo = o("8G1234")
+        state.phoneClockSet(by: -240)
+        var readings = 0
+        for child in Mirror(reflecting: state).children where "\(type(of: child.value))".contains("Observed<") {
+            readings += 1
+            let stamped = child.value as? any Stamped
+            #expect(stamped != nil, "\(child.label ?? "?") isn't set")
+            #expect(stamped?.measuredAt == at.addingTimeInterval(-240), "\(child.label ?? "?")")
+            #expect(stamped?.receivedAt == at.addingTimeInterval(-240), "\(child.label ?? "?")")
+        }
+        #expect(readings == PumpState.Reading.allCases.count)
+        // The last bolus's own times, which the pump-clock anchor placed, move too.
+        #expect(state.lastBolus?.value.startDate == at.addingTimeInterval(-240))
+        #expect(state.lastBolus?.value.endDate == at.addingTimeInterval(-240))
+    }
+}
+
+extension Observed: PhoneClockSetTests.Stamped {}

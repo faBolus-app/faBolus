@@ -11,8 +11,8 @@ struct PageCollector {
     /// The page's clocks start when its request goes out: one waiting in the queue (behind a delivery or a
     /// request the pump is slow to answer) hasn't been asked for yet, so it can't have gone quiet.
     var sent = false
-    var startedAt: Date
-    var lastFrameAt: Date
+    var startedAt: Uptime
+    var lastFrameAt: Uptime
     let continuation: CheckedContinuation<[[UInt8]]?, Never>
 
     var isComplete: Bool { records.count == range.count }
@@ -63,7 +63,7 @@ extension PumpSession {
         let id = nextJobID
         nextJobID += 1
         return await withCheckedContinuation { continuation in
-            let now = clock()
+            let now = uptime()
             page = PageCollector(
                 id: id, range: start...(start &+ UInt32(count) &- 1), startedAt: now, lastFrameAt: now,
                 continuation: continuation)
@@ -87,14 +87,14 @@ extension PumpSession {
             let seq = UInt32(record[6]) | UInt32(record[7]) << 8 | UInt32(record[8]) << 16 | UInt32(record[9]) << 24
             if collector.range.contains(seq) { collector.records[seq] = record }
         }
-        collector.lastFrameAt = clock()
+        collector.lastFrameAt = uptime()
         page = collector
         if collector.isComplete { finishPage(collector.records.keys.sorted().compactMap { collector.records[$0] }) }
     }
 
     func pageRequestSent() {
         guard var collector = page, !collector.sent else { return }
-        let now = clock()
+        let now = uptime()
         collector.sent = true
         collector.startedAt = now
         collector.lastFrameAt = now
@@ -107,13 +107,11 @@ extension PumpSession {
         collector.continuation.resume(returning: records)
     }
 
-    func historyTick(now: Date) {
+    func historyTick(now: Uptime) {
         guard let collector = page, collector.sent else { return }
         let quiet = now.timeIntervalSince(collector.lastFrameAt)
         let open = now.timeIntervalSince(collector.startedAt)
-        // A clock stepped backwards ends the page too, rather than holding the history lock until it
-        // catches up.
-        if quiet >= config.historyPageQuiet || open >= config.historyPageLimit || quiet < 0 || open < 0 {
+        if quiet >= config.historyPageQuiet || open >= config.historyPageLimit {
             finishPage(collector.records.keys.sorted().compactMap { collector.records[$0] })
         }
     }
@@ -141,7 +139,7 @@ extension PumpSession {
         // now") can't hold that lock while `ready()` waits on it with the link's events stalled behind it.
         // One that can't run doesn't move the next one back.
         guard state.link.isConnected, identity != nil, identityTrusted else { return }
-        due[.history] = clock().addingTimeInterval(config.historySyncInterval)
+        due[.history] = uptime().addingTimeInterval(config.historySyncInterval)
         await acquireHistory()
         await runHistorySync()
         releaseHistory()
@@ -197,7 +195,7 @@ extension PumpSession {
                 top = start - 1
             }
             // The page limit cut this sync short: the rest follows soon rather than at the next routine sync.
-            due[.history] = clock().addingTimeInterval(config.historyContinueAfter)
+            due[.history] = uptime().addingTimeInterval(config.historyContinueAfter)
             break
         }
         finishSync()
@@ -209,7 +207,7 @@ extension PumpSession {
         saveRecord()
         setHistorySync(.idle(lastSynced: now))
         // New history may settle an unknown outcome.
-        nextReconcileAt = now
+        nextReconcileAt = uptime()
     }
 
     // MARK: - Logbook
@@ -285,12 +283,12 @@ extension PumpSession {
         guard await !ledger.ledger.unknownOutcomes.isEmpty else { return }
         // A bolus the pump is still delivering is looked at again soon, and doesn't use up a try.
         if stillDelivering {
-            nextReconcileAt = clock().addingTimeInterval(config.reconcileWhileDelivering)
+            nextReconcileAt = uptime().addingTimeInterval(config.reconcileWhileDelivering)
             return
         }
         reconcileAttempts += 1
         if reconcileAttempts < config.reconcileAttemptsPerConnection {
-            nextReconcileAt = clock().addingTimeInterval(config.reconcileInterval)
+            nextReconcileAt = uptime().addingTimeInterval(config.reconcileInterval)
         }
     }
 
