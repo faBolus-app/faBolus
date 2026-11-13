@@ -5,6 +5,9 @@ import SwiftUI
 
 struct AboutSettingsView: View {
     @Bindable var model: AppModel
+    /// The version and build shown; the snapshot test sets them, so its image doesn't change with each build.
+    var version = AppModel.appVersion
+    var build = AppRevision.commit
     @State private var export: DiagnosticsExport?
 
     var body: some View {
@@ -13,8 +16,8 @@ struct AboutSettingsView: View {
                 Link(destination: URL(string: "https://fabolus.org")!) {
                     Label("Help & documentation", systemImage: "questionmark.circle")
                 }
-                LabeledContent("Version", value: AppModel.appVersion)
-                LabeledContent("Build", value: AppRevision.commit)
+                LabeledContent("Version", value: version)
+                LabeledContent("Build", value: build)
             }
             Section {
                 Button {

@@ -59,19 +59,33 @@ struct DashboardView: View {
         VStack(spacing: 6) {
             GlucoseChartView(
                 readings: model.glucoseHistory, iob: model.iobHistory, boluses: model.bolusMarkers,
-                windowHours: windowHours,
+                deliveryChanges: model.deliveryChanges, windowHours: windowHours,
                 showGlucose: settings.showGlucoseAxis, showIOB: settings.showIOBAxis,
-                showBolusBars: settings.showBolusBars,
+                showBolusBars: settings.showBolusBars, showBasal: settings.showBasal,
                 floor: settings.glucosePlotFloor, ceiling: settings.glucosePlotCeiling, unit: settings.glucoseUnit,
                 showUnitLabel: settings.showGlucoseUnitLabels, now: now)
             Picker("Window", selection: $windowHours) {
                 ForEach(windows, id: \.self) { Text("\($0)h").tag($0) }
             }
             .pickerStyle(.segmented)
-            HStack(spacing: 16) {
-                Toggle("Glucose", isOn: $settings.showGlucoseAxis)
-                Toggle("IOB", isOn: $settings.showIOBAxis)
-                Toggle("Bolus", isOn: $settings.showBolusBars)
+            // One row when the four fit, two at large text sizes.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 16) {
+                    Toggle("Glucose", isOn: $settings.showGlucoseAxis)
+                    Toggle("IOB", isOn: $settings.showIOBAxis)
+                    Toggle("Bolus", isOn: $settings.showBolusBars)
+                    Toggle("Basal", isOn: $settings.showBasal)
+                }
+                VStack(spacing: 8) {
+                    HStack(spacing: 16) {
+                        Toggle("Glucose", isOn: $settings.showGlucoseAxis)
+                        Toggle("IOB", isOn: $settings.showIOBAxis)
+                    }
+                    HStack(spacing: 16) {
+                        Toggle("Bolus", isOn: $settings.showBolusBars)
+                        Toggle("Basal", isOn: $settings.showBasal)
+                    }
+                }
             }
             .font(.caption).toggleStyle(.button).controlSize(.small)
         }

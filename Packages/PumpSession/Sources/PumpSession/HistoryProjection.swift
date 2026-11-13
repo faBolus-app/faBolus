@@ -9,6 +9,8 @@ public struct PumpHistoryBatch: Sendable {
     public var glucose: [GlucoseReading] = []
     public var boluses: [BolusMarker] = []
     public var carbs: [CarbEntry] = []
+    /// Basal rate changes, suspends and resumes, for the chart's basal line.
+    public var deliveryChanges: [DeliveryChange] = []
     /// Newest first.
     public var events: [HistoryEvent] = []
     /// The sequence numbers the batch holds: every record but those dropped for a time in the future.
@@ -19,7 +21,9 @@ public struct PumpHistoryBatch: Sendable {
         public let grams: Double
     }
 
-    public var isEmpty: Bool { glucose.isEmpty && boluses.isEmpty && carbs.isEmpty && events.isEmpty }
+    public var isEmpty: Bool {
+        glucose.isEmpty && boluses.isEmpty && carbs.isEmpty && deliveryChanges.isEmpty && events.isEmpty
+    }
 }
 
 /// The history store, or anything else that keeps pump history. A failed write throws, so the session
@@ -29,7 +33,8 @@ public protocol PumpHistorySink: Sendable {
     /// The logbook's events recorded so far, newest first, so a relaunch shows them without fetching the
     /// pump's history again (the session doesn't re-read what it already holds).
     func loadEvents(limit: Int) async -> [HistoryEvent]
-    /// Forget the logbook's events, when the pump they came from is forgotten.
+    /// Forget the logbook's events and the chart's basal changes, when the pump they came from is forgotten
+    /// or its log restarts.
     func clearEvents() async
 }
 
@@ -74,6 +79,13 @@ enum HistoryProjection {
                 batch.boluses.append(BolusMarker(date: d, units: Double(m.insulinDelivered)))
             case let m as CarbEnteredHistoryLog where m.carbs > 0:
                 batch.carbs.append(.init(date: d, grams: Double(m.carbs)))
+            case let m as BasalRateChangeHistoryLog:
+                batch.deliveryChanges.append(
+                    DeliveryChange(date: d, kind: .basalRate, unitsPerHour: Double(m.commandBasalRate)))
+            case is PumpingSuspendedHistoryLog:
+                batch.deliveryChanges.append(DeliveryChange(date: d, kind: .suspended))
+            case is PumpingResumedHistoryLog:
+                batch.deliveryChanges.append(DeliveryChange(date: d, kind: .resumed))
             default:
                 break
             }

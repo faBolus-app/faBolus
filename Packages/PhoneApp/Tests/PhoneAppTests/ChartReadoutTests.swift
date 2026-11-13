@@ -48,4 +48,28 @@ import faBolusCore
         let r = ChartReadout(at: t0, glucose: [], iob: [], boluses: [])
         #expect(r.spoken(unit: .mgdl).contains("glucose no reading"))
     }
+
+    /// With the basal lane shown, the readout gives the rate at the touched time, or that pumping was
+    /// suspended, or no value before the first known rate; without it, no basal at all.
+    @Test func theBasalRateAtTheTouchedTime() {
+        let chart = BasalChart(
+            changes: [
+                DeliveryChange(date: t0.addingTimeInterval(600), kind: .basalRate, unitsPerHour: 0.8),
+                DeliveryChange(date: t0.addingTimeInterval(1800), kind: .suspended),
+                DeliveryChange(date: t0.addingTimeInterval(2400), kind: .resumed)
+            ], from: t0, to: t0.addingTimeInterval(3600))
+        func basal(_ s: TimeInterval) -> ChartReadout.Basal? {
+            ChartReadout(at: t0.addingTimeInterval(s), glucose: [], iob: [], boluses: [], basal: chart).basal
+        }
+        #expect(basal(300) == .unknown)
+        #expect(basal(900) == .rate(0.8))
+        #expect(basal(2000) == .suspended)
+        #expect(basal(3000) == .rate(0.8))
+        // The window's right edge, now, is the last step's end and still reads its rate.
+        #expect(basal(3600) == .rate(0.8))
+        let r = ChartReadout(at: t0.addingTimeInterval(900), glucose: [], iob: [], boluses: [], basal: chart)
+        #expect(r.spoken(unit: .mgdl).hasSuffix("basal 0.80 units an hour"))
+        #expect(ChartReadout(at: t0, glucose: [], iob: [], boluses: []).basal == nil)
+        #expect(!ChartReadout(at: t0, glucose: [], iob: [], boluses: []).spoken(unit: .mgdl).contains("basal"))
+    }
 }
