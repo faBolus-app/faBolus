@@ -2,7 +2,7 @@ import Foundation
 import SwiftData
 import faBolusCore
 
-/// faBolus's persistent history store: the pump's glucose, boluses, carbs and logbook, and the backup CGM's
+/// faBolus's persistent history store: the pump's glucose, boluses, carbs, basal changes and logbook, and the backup CGM's
 /// readings, read back for the chart and time-in-range. On-device only.
 ///
 /// Merge rule (multi-source): de-duplicate readings in the same 5-min slot, keeping the **higher source
@@ -27,7 +27,8 @@ public final class GlucoseHistoryStore {
 
     private init(_ config: ModelConfiguration, onDisk: Bool) throws {
         container = try ModelContainer(
-            for: StoredGlucose.self, StoredBolus.self, StoredCarb.self, StoredHistoryEvent.self,
+            for: StoredGlucose.self, StoredBolus.self, StoredCarb.self, StoredDeliveryChange.self,
+            StoredHistoryEvent.self,
             configurations: config)
         if onDisk { Self.pinFileProtection(storeURL: config.url) }
     }
@@ -91,7 +92,7 @@ public final class GlucoseHistoryStore {
     }
 
     /// Pump history in one save that throws when it fails, so the caller can keep the records and try
-    /// again. A bolus or carb entry already held from `sourceID` with the same amount within 2 seconds is
+    /// again. A bolus, carb entry or delivery change already held from `sourceID` with the same amount within 2 seconds is
     /// skipped, so writing the same records twice (a retried sync, whose times move by the pump clock
     /// anchor's sub-second drift) doesn't count it twice; glucose needs no such check, because a query
     /// keeps one reading per 5-minute slot.
@@ -103,11 +104,12 @@ public final class GlucoseHistoryStore {
     ///   deleted in the same save. All are kept when `nil`.
     public func ingestPumpHistory(
         glucose: [GlucoseReading], boluses: [BolusMarker], carbs: [(date: Date, grams: Double)],
-        events: [HistoryEvent] = [], eventLimit: Int? = nil, sourceID: String, glucosePriority: Int,
+        deliveryChanges: [DeliveryChange] = [], events: [HistoryEvent] = [], eventLimit: Int? = nil, sourceID: String,
+        glucosePriority: Int,
         recordedAt: Date = Date()
     ) throws {
         let slack: TimeInterval = 2
-        let dates = boluses.map(\.date) + carbs.map(\.date)
+        let dates = boluses.map(\.date) + carbs.map(\.date) + deliveryChanges.map(\.date)
         let lo = (dates.min() ?? .distantFuture).addingTimeInterval(-slack)
         let hi = (dates.max() ?? .distantPast).addingTimeInterval(slack)
         let heldBoluses = try context.fetch(
@@ -118,6 +120,10 @@ public final class GlucoseHistoryStore {
             FetchDescriptor<StoredCarb>(
                 predicate: #Predicate { $0.sourceID == sourceID && $0.date >= lo && $0.date <= hi })
         ).map { (date: $0.date, amount: $0.grams) }
+        let heldChanges = try context.fetch(
+            FetchDescriptor<StoredDeliveryChange>(
+                predicate: #Predicate { $0.sourceID == sourceID && $0.date >= lo && $0.date <= hi })
+        )
         func isHeld(_ held: [(date: Date, amount: Double)], _ date: Date, _ amount: Double) -> Bool {
             held.contains { abs($0.date.timeIntervalSince(date)) <= slack && abs($0.amount - amount) < 0.0005 }
         }
@@ -131,6 +137,16 @@ public final class GlucoseHistoryStore {
         }
         for c in carbs where !isHeld(heldCarbs, c.date, c.grams) {
             context.insert(StoredCarb(date: c.date, grams: c.grams, sourceID: sourceID, recordedAt: recordedAt))
+        }
+        for d in deliveryChanges
+        where !isHeld(
+            heldChanges.filter { $0.kind == d.kind.rawValue }.map { (date: $0.date, amount: $0.unitsPerHour) },
+            d.date, d.unitsPerHour)
+        {
+            context.insert(
+                StoredDeliveryChange(
+                    date: d.date, kind: d.kind.rawValue, unitsPerHour: d.unitsPerHour, sourceID: sourceID,
+                    recordedAt: recordedAt))
         }
         if !events.isEmpty {
             let sequences = events.map { Int($0.id) }
@@ -217,6 +233,53 @@ public final class GlucoseHistoryStore {
         return ((try? context.fetch(desc)) ?? []).map { (date: $0.date, grams: $0.grams) }
     }
 
+    /// How far before a window a rate or a suspension in effect at its start is looked for. An older one
+    /// isn't drawn: the records since may not have been fetched yet, and a gap is unknown, not that rate.
+    public static let deliveryCarryIn: TimeInterval = 24 * 3600
+
+    /// The delivery changes in `range`, oldest first, and the rate and the suspend or resume in effect at
+    /// its start (from up to `deliveryCarryIn` before it), so the chart draws a rate or a suspension already
+    /// under way from the window's edge.
+    public func deliveryChanges(in range: ClosedRange<Date>) -> [DeliveryChange] {
+        let lo = range.lowerBound, hi = range.upperBound
+        let inRange = fetchChanges(FetchDescriptor(predicate: #Predicate { $0.date >= lo && $0.date <= hi }))
+        let carried = inEffect(at: lo).filter { $0.date >= lo.addingTimeInterval(-Self.deliveryCarryIn) }
+        return (carried.compactMap(Self.change) + inRange.compactMap(Self.change)).sorted { $0.date < $1.date }
+    }
+
+    /// Removes the delivery changes from `sourceID`, as when the pump they came from is forgotten or its
+    /// log restarts.
+    public func clearDeliveryChanges(sourceID: String) throws {
+        try context.delete(model: StoredDeliveryChange.self, where: #Predicate { $0.sourceID == sourceID })
+        try context.save()
+    }
+
+    /// The newest basal rate change and the newest suspend or resume before `date`.
+    private func inEffect(at date: Date) -> [StoredDeliveryChange] {
+        let basal = DeliveryChange.Kind.basalRate.rawValue
+        func newest(_ predicate: Predicate<StoredDeliveryChange>) -> StoredDeliveryChange? {
+            var desc = FetchDescriptor(predicate: predicate, sortBy: [SortDescriptor(\.date, order: .reverse)])
+            desc.fetchLimit = 1
+            return fetchChanges(desc).first
+        }
+        return [
+            newest(#Predicate { $0.date < date && $0.kind == basal }),
+            newest(#Predicate { $0.date < date && $0.kind != basal })
+        ].compactMap { $0 }
+    }
+
+    private func fetchChanges(_ desc: FetchDescriptor<StoredDeliveryChange>) -> [StoredDeliveryChange] {
+        var desc = desc
+        if desc.sortBy.isEmpty { desc.sortBy = [SortDescriptor(\.date)] }
+        return (try? context.fetch(desc)) ?? []
+    }
+
+    private static func change(_ s: StoredDeliveryChange) -> DeliveryChange? {
+        DeliveryChange.Kind(rawValue: s.kind).map {
+            DeliveryChange(date: s.date, kind: $0, unitsPerHour: s.unitsPerHour)
+        }
+    }
+
     /// Time-in-range / GMI / CV over the window, using faBolusCore's stats on the merged readings.
     public func statistics(in range: ClosedRange<Date>) -> GlucoseStatistics {
         GlucoseStatistics(readings: glucose(in: range))
@@ -228,11 +291,17 @@ public final class GlucoseHistoryStore {
         (try? context.fetchCount(FetchDescriptor<StoredGlucose>())) ?? 0
     }
 
-    /// Optional advanced auto-delete: drop glucose older than `date`.
+    /// Optional advanced auto-delete: drop glucose older than `date`. The basal rate and the suspend or
+    /// resume in effect at `date` are kept, so a rate that hasn't changed since is still drawn.
     public func deleteGlucose(olderThan date: Date) {
         try? context.delete(model: StoredGlucose.self, where: #Predicate { $0.date < date })
         try? context.delete(model: StoredBolus.self, where: #Predicate { $0.date < date })
         try? context.delete(model: StoredCarb.self, where: #Predicate { $0.date < date })
+        let kept = Set(inEffect(at: date).map(\.persistentModelID))
+        for change in fetchChanges(FetchDescriptor(predicate: #Predicate { $0.date < date }))
+        where !kept.contains(change.persistentModelID) {
+            context.delete(change)
+        }
         try? context.save()
     }
 
@@ -241,6 +310,7 @@ public final class GlucoseHistoryStore {
         try? context.delete(model: StoredGlucose.self)
         try? context.delete(model: StoredBolus.self)
         try? context.delete(model: StoredCarb.self)
+        try? context.delete(model: StoredDeliveryChange.self)
         try? context.delete(model: StoredHistoryEvent.self)
         try? context.save()
     }

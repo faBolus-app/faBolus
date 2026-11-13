@@ -18,7 +18,8 @@ public struct HistoryStoreSink: PumpHistorySink {
         try await MainActor.run {
             try store.ingestPumpHistory(
                 glucose: batch.glucose, boluses: batch.boluses,
-                carbs: batch.carbs.map { (date: $0.date, grams: $0.grams) }, events: batch.events,
+                carbs: batch.carbs.map { (date: $0.date, grams: $0.grams) }, deliveryChanges: batch.deliveryChanges,
+                events: batch.events,
                 eventLimit: PumpSession.logbookLimit, sourceID: Self.sourceID, glucosePriority: Self.glucosePriority)
         }
     }
@@ -35,10 +36,14 @@ public struct HistoryStoreSink: PumpHistorySink {
     }
 
     /// A failed delete is logged and left: the events stay until the next forget or a clear of the store.
+    /// The basal changes go too, so another pump's (or a restarted log's) rate isn't drawn as this one's.
     public func clearEvents() async {
         let store = self.store
         await MainActor.run {
-            do { try store.clearHistoryEvents(sourceID: Self.sourceID) } catch {
+            do {
+                try store.clearHistoryEvents(sourceID: Self.sourceID)
+                try store.clearDeliveryChanges(sourceID: Self.sourceID)
+            } catch {
                 sessionLog.error("logbook not cleared: \(String(describing: error), privacy: .public)")
             }
         }

@@ -37,6 +37,8 @@ public final class AppSettings {
     public var showGlucoseAxis: Bool { didSet { set(showGlucoseAxis, .showGlucoseAxis) } }
     public var showIOBAxis: Bool { didSet { set(showIOBAxis, .showIOBAxis) } }
     public var showBolusBars: Bool { didSet { set(showBolusBars, .showBolusBars) } }
+    /// The basal line and suspended spans on the chart.
+    public var showBasal: Bool { didSet { set(showBasal, .showBasal) } }
     /// The glucose chart's bounds, on the phone and (unless the watch override is set) the watch.
     public var glucosePlotFloor: Int { didSet { set(glucosePlotFloor, .glucosePlotFloor) } }
     public var glucosePlotCeiling: Int { didSet { set(glucosePlotCeiling, .glucosePlotCeiling) } }
@@ -126,6 +128,7 @@ public final class AppSettings {
         showGlucoseAxis = value(.showGlucoseAxis) ?? true
         showIOBAxis = value(.showIOBAxis) ?? true
         showBolusBars = value(.showBolusBars) ?? true
+        showBasal = value(.showBasal) ?? true
         let plot = GlucosePlotScale.resolve(
             storedFloor: value(.glucosePlotFloor), storedCeiling: value(.glucosePlotCeiling))
         glucosePlotFloor = plot.floor
@@ -201,7 +204,8 @@ public final class AppSettings {
     public enum Key: String, CaseIterable, Sendable {
         case defaultBolusMode, bolusIncrement, carbIncrement, showBolusReasoning
         case glucoseUnit = "glucoseDisplayUnit"
-        case showGlucoseUnitLabels, showGlucoseAxis, showIOBAxis, showBolusBars, glucosePlotFloor, glucosePlotCeiling
+        case showGlucoseUnitLabels, showGlucoseAxis, showIOBAxis, showBolusBars, showBasal, glucosePlotFloor
+        case glucosePlotCeiling
         case watchPlotFloor = "glucosePlotFloorSmall"
         case watchPlotCeiling = "glucosePlotCeilingSmall"
         case showStats, detailsOrder, pillsOrder

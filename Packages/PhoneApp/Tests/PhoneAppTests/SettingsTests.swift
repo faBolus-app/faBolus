@@ -73,6 +73,7 @@ import faBolusCore
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let s = AppSettings(defaults: defaults)
+        #expect(s.showBasal)
         s.bolusIncrement = 0.5
         s.carbIncrement = 10
         s.defaultBolusMode = .units
@@ -85,6 +86,7 @@ import faBolusCore
         s.complicationNames = true
         s.watchPlotFloor = 50
         s.watchPlotCeiling = 250
+        s.showBasal = false
         var layout = LiveActivityLayout()
         layout.style = .classic
         layout.fields = [.glucose, .lastAutoCorrection]
@@ -103,6 +105,7 @@ import faBolusCore
         #expect(r.detailsOrder == ["autoCorrection", "iob"])
         #expect(r.complicationNames)
         #expect(r.watchPlotFloor == 50 && r.watchPlotCeiling == 250)
+        #expect(!r.showBasal)
         #expect(r.liveActivityLayout == layout)
         r.remoteBolusLimitUnits = nil
         #expect(AppSettings(defaults: defaults).remoteBolusLimitUnits == nil)
