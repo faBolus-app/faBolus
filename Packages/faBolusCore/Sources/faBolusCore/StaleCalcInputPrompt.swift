@@ -62,17 +62,9 @@ public enum StaleTherapyPrompt {
     /// profile is available (so the user sees exactly what the dose will be sized from); a compact fallback
     /// when only the fact of staleness is known.
     ///
-    /// - Parameter unit: the ACTIVE DISPLAY unit for the ISF/target figures.
-    ///   `StaleCalcInputPrompt` is a `faBolusCore` type and must stay app-independent — it cannot read the
-    ///   app's settings — so the caller passes the unit through. Defaults to
-    ///   `.mgdl` so every pre-existing call site (and this method's own mg/dL-mode wording) is
-    ///   byte-identical to before this parameter was added. `p.isfMgdlPerUnit`/`p.targetBgMgdl` stay
-    ///   mg/dL `Int` on `BolusMath.Profile` — only the rendered text changes. Carb ratio is
-    ///   unit-agnostic (g/U) and is never touched by this parameter.
-    ///   - carbsOff: carbs are off on the pump, so its carb ratio isn't used and isn't named.
+    /// - Parameter carbsOff: carbs are off on the pump, so its carb ratio isn't used and isn't named.
     public static func warningMessage(
-        profile: BolusMath.Profile?, therapyDate: Date?, now: Date = Date(), unit: GlucoseUnit = .mgdl,
-        carbsOff: Bool = false
+        profile: BolusMath.Profile?, therapyDate: Date?, now: Date = Date(), carbsOff: Bool = false
     ) -> String {
         let age = therapyDate.map { CalcInputFreshness.ageLabel(for: $0, now: now) } ?? "of unknown age"
         if let p = profile {

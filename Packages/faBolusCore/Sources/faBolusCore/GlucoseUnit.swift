@@ -26,5 +26,5 @@ public enum GlucoseUnit: String, Codable, Sendable, CaseIterable {
 
     /// Threshold label for the four `GlucoseThresholds` TIR constants — the plain mg/dL integer.
     /// `GlucoseThresholds` itself is never touched.
-    public static func thresholdLabel(_ mgdl: Int, unit: GlucoseUnit) -> String { "\(mgdl)" }
+    public static func thresholdLabel(_ mgdl: Int) -> String { "\(mgdl)" }
 }
