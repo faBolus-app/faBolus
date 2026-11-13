@@ -142,6 +142,60 @@ private func addGlucoseHistory(_ pump: ScriptedPump, count: Int) {
         #expect(await rig.session.historySync == .idle(lastSynced: rig.store.load()?.lastHistorySync))
     }
 
+    /// A sync asked for during another ("Sync history now") waits for it rather than making it step aside:
+    /// the first one fetches every batch, and the second only reads the log's bounds.
+    @Test func aSyncAskedForDuringAnotherRunsAfterIt() async {
+        let rig = Rig(configure: { $0.unsupportedReads = [] })
+        await rig.startHeld()
+        addGlucoseHistory(rig.pump, count: 300)
+        rig.pump.nextAnswers[MessageKey(HistoryLogStatusRequest.self)] = [.late(seconds: 2)]
+        let session = rig.session
+        let before = rig.pump.arrivals.count
+        let first = Task { await session.syncHistory() }
+        #expect(
+            await rig.until {
+                rig.pump.arrivals.dropFirst(before).contains { $0.opCode == HistoryLogStatusRequest.props.opCode }
+            })
+        let second = Task { await session.syncHistory() }
+        await rig.run(for: 30, step: 0.5)
+        await rig.value(of: first)
+        await rig.value(of: second)
+        let history: Set<UInt8> = [HistoryLogStatusRequest.props.opCode, HistoryLogRequest.props.opCode]
+        let order = rig.pump.arrivals.dropFirst(before).map(\.opCode).filter(history.contains)
+        let status = HistoryLogStatusRequest.props.opCode, page = HistoryLogRequest.props.opCode
+        #expect(order == [status] + Array(repeating: page, count: 10) + [status])
+    }
+
+    /// A search goes before a sync that was already waiting: the sync under way steps aside for the search,
+    /// not for the waiting sync, which would only step aside in turn.
+    @Test func aSearchGoesBeforeASyncAlreadyWaiting() async {
+        let rig = Rig(configure: { $0.unsupportedReads = [] })
+        await rig.startHeld()
+        addGlucoseHistory(rig.pump, count: 300)
+        rig.pump.nextAnswers[MessageKey(HistoryLogStatusRequest.self)] = [.late(seconds: 2)]
+        let session = rig.session
+        let before = rig.pump.arrivals.count
+        let first = Task { await session.syncHistory() }
+        #expect(
+            await rig.until {
+                rig.pump.arrivals.dropFirst(before).contains { $0.opCode == HistoryLogStatusRequest.props.opCode }
+            })
+        let second = Task { await session.syncHistory() }
+        #expect(await rig.until { await session.historyWaiters.count == 1 })
+        let search = Task { await session.searchHistory(for: 999, acceptedAt: nil) }
+        #expect(await rig.until { await session.historyWaiters.count == 2 })
+        await rig.run(for: 30, step: 0.5)
+        await rig.value(of: first)
+        await rig.value(of: second)
+        _ = await rig.value(of: search)
+        let status = HistoryLogStatusRequest.props.opCode, page = HistoryLogRequest.props.opCode
+        let order = rig.pump.arrivals.dropFirst(before).map(\.opCode).filter { $0 == status || $0 == page }
+        // The first sync's status read, then the search's status read and two pages, then the waiting sync.
+        #expect(Array(order.prefix(5)) == [status, status, page, page, status])
+        let oldest = rig.pump.firstHeldSequence!, newest = rig.pump.lastSequence!
+        #expect(rig.store.load()?.coverage.ranges == [oldest...newest])
+    }
+
     /// A pump whose newest record is older than one the phone holds has restarted its log: what the phone
     /// holds goes, logbook included, and the pump's log is fetched again.
     @Test func aPumpWhoseLogRestartedIsFetchedAgain() async {
