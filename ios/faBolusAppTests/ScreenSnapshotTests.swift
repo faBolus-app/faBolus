@@ -1,4 +1,5 @@
 import PhoneApp
+import PumpScript
 import SnapshotTesting
 import SwiftUI
 import Testing
@@ -185,7 +186,18 @@ import faBolusCore
     }
 
     @Test func logbook() async {
-        let model = await SnapshotFixture.model()
+        // A bolus that went in and one stopped from the phone (completed records, type 20).
+        let model = await SnapshotFixture.model { mock in
+            let pump = mock.pump
+            _ = pump.appendHistory(
+                typeId: 20, at: pump.wallClockAtStart - 2700,
+                body: ScriptedPump.bolusCompletedBody(
+                    bolusId: 41, completionStatus: 3, iob: 2, delivered: 2, requested: 2))
+            _ = pump.appendHistory(
+                typeId: 20, at: pump.wallClockAtStart - 1500,
+                body: ScriptedPump.bolusCompletedBody(
+                    bolusId: 42, completionStatus: 4, iob: 2.2, delivered: 0.4, requested: 1.5))
+        }
         check("events", LogbookView(model: model))
     }
 
