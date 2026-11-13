@@ -8,6 +8,21 @@ experimental and demonstration use.
 
 ## [Unreleased]
 
+### Added
+
+- Bolus from the Live Activity, off until allowed in Settings → Live Activity: the watch's steps (the
+  amount with − and +, the calculator's questions, a review, 1 → 2 → 3, the pump's confirmations, the
+  result with Cancel), checked by the phone as a remote's request. iOS asks for an unlock first. Works on
+  the Lock Screen, in the Dynamic Island and from the Mac's menu bar; CarPlay and the Apple Watch show it
+  without buttons.
+- The Live Activity shows the open pump alerts and clears one on the pump where the watch could, cancels a
+  bolus from any source, cycles its chart span, and has a Last bolus field, a Slim style, and a choice of
+  what the Dynamic Island and the Mac's menu bar show beside the glucose.
+
+### Removed
+
+- The Live Activity's Bolus button that only opened the app.
+
 ## [0.4.0] — 2026-11-01
 
 A new app, rebuilt from the ground up. It keeps the earlier app's bundle ID but none of its data. The

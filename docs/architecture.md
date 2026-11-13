@@ -19,8 +19,9 @@ flowchart LR
 - **The watch is a remote.** It shows what the phone sends it and asks the phone to bolus, cancel or
   clear an alert. The phone checks every request before anything reaches the pump. Garmin's own
   Garmin Connect app carries the messages between the watch and the phone.
-- **Widgets and the Live Activity only show.** They display what the app last published, with its age,
-  and open the app when tapped. None of them can bolus.
+- **Widgets only show.** They display what the app last published, with its age, and open the app when
+  tapped. **The Live Activity is a remote** too, when allowed: its buttons ask the phone to bolus, cancel
+  or clear an alert, and the phone checks every request as it checks the watch's.
 
 ## Where glucose comes from
 

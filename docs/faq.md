@@ -43,7 +43,9 @@
     The Garmin Venu 3S, the one watch the app is built and tested for.
 
 ??? question "Can a widget or the Live Activity bolus?"
-    No. They show glucose and status. The Live Activity's bolus button only opens the app.
+    The widgets can't: they show glucose and status. The Live Activity can, once you allow it in
+    **Settings → Live Activity**, with the watch's steps: the amount, a review, then 1, 2, 3. See
+    [Widgets and Live Activity](remotes/iphone-widgets.md#bolusing-from-the-live-activity).
 
 ??? question "Can I bolus by carbs?"
     Yes, on the phone and the watch. The suggestion uses your pump's carb ratio, correction factor,
