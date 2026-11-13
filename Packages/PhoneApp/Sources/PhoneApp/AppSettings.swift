@@ -100,6 +100,11 @@ public final class AppSettings {
     // MARK: Live Activity
 
     public var liveActivityEnabled: Bool { didSet { set(liveActivityEnabled, .liveActivityEnabled) } }
+    /// The Live Activity may bolus. Off by default, as the watch's is; the remote size limit and both
+    /// read-only switches apply to it.
+    public var liveActivityBolusEnabled: Bool {
+        didSet { set(liveActivityBolusEnabled, .liveActivityBolusEnabled) }
+    }
     public var liveActivityLayout: LiveActivityLayout {
         didSet { set(try? JSONEncoder().encode(liveActivityLayout), .liveActivityLayout) }
     }
@@ -174,6 +179,7 @@ public final class AppSettings {
         complicationNames = value(.complicationNames) ?? false
 
         liveActivityEnabled = value(.liveActivityEnabled) ?? false
+        liveActivityBolusEnabled = value(.liveActivityBolusEnabled) ?? false
         liveActivityLayout =
             (value(.liveActivityLayout) as Data?).flatMap {
                 try? JSONDecoder().decode(LiveActivityLayout.self, from: $0)
@@ -214,7 +220,7 @@ public final class AppSettings {
         case watchDetailsOrder, watchChartRanges
         case complicationSlots = "garminComplicationSlots"
         case complicationNames = "garminComplicationNames"
-        case liveActivityEnabled, liveActivityLayout
+        case liveActivityEnabled, liveActivityLayout, liveActivityBolusEnabled
         case hasCompletedOnboarding, notificationDisclosureShown
     }
 

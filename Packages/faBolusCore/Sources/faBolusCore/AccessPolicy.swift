@@ -14,6 +14,11 @@ public enum AccessPolicy {
     public enum Surface: String, CaseIterable, Sendable {
         case phoneUI  // this phone
         case garmin  // paired remote governed by remotesReadOnly
+        /// The Live Activity's buttons. They run in the app's process, but they are reached from the Lock
+        /// Screen and from the devices iOS mirrors the Live Activity to, away from the app's own screens and
+        /// prompts, so they are a remote: read-only with the remotes, behind their own opt-in, under the
+        /// remote size limit.
+        case liveActivity
 
         /// Local surfaces are subject to `phoneReadOnly`.
         public var isLocal: Bool { self == .phoneUI }
@@ -33,6 +38,9 @@ public enum AccessPolicy {
         // affected; the host passes the real default-OFF settings). Only consulted for `.deliverBolus`
         // from `.garmin`.
         public var garminBolusEnabled: Bool
+        /// Bolusing from the Live Activity, off by default like the watch's. Only consulted for a delivery
+        /// from `.liveActivity`.
+        public var liveActivityBolusEnabled: Bool
 
         public init(
             phoneReadOnly: Bool, remotesReadOnly: Bool,
@@ -41,12 +49,15 @@ public enum AccessPolicy {
             // bolus enable must NOT silently arm Garmin bolusing. The one production call site
             // (AppModel) always passes the real persisted value; this default only guards a future
             // second call site.
-            garminBolusEnabled: Bool = false
+            garminBolusEnabled: Bool = false,
+            // The same for the Live Activity.
+            liveActivityBolusEnabled: Bool = false
         ) {
             self.phoneReadOnly = phoneReadOnly
             self.remotesReadOnly = remotesReadOnly
             self.capabilities = capabilities
             self.garminBolusEnabled = garminBolusEnabled
+            self.liveActivityBolusEnabled = liveActivityBolusEnabled
         }
     }
 
@@ -88,10 +99,13 @@ public enum AccessPolicy {
     ) -> AccessDecision {
         // Read-only. `.alwaysAllowed` actions (cancel bolus, dismiss alert) are never read-only-blocked:
         // cancelling is a safety stop that must stay available, and clearing an alert is low-risk.
-        // Every other action: local ⇒ phoneReadOnly, remote ⇒ remotesReadOnly.
+        // Every other action: local ⇒ phoneReadOnly, remote ⇒ remotesReadOnly, the Live Activity ⇒ both.
         if action.gate != .alwaysAllowed {
             if surface.isLocal && context.phoneReadOnly { return .deny(.phoneReadOnly) }
             if surface.isRemote && context.remotesReadOnly { return .deny(.remotesReadOnly) }
+            // The Live Activity is a remote drawn on this phone's own Lock Screen: the phone's read-only
+            // stops it too, so neither switch can be undone by the other.
+            if surface == .liveActivity && context.phoneReadOnly { return .deny(.phoneReadOnly) }
         }
 
         // Per-surface remote bolus authorization. Bolusing from Garmin is an explicit, default-OFF
@@ -105,6 +119,7 @@ public enum AccessPolicy {
         // evaluator exists to prevent.
         if action == .deliverBolus || action == .deliverExtendedBolus {
             if surface == .garmin && !context.garminBolusEnabled { return .deny(.remoteBolusDisabled) }
+            if surface == .liveActivity && !context.liveActivityBolusEnabled { return .deny(.remoteBolusDisabled) }
         }
 
         // Pump capability, enforced at the funnel and not only in the UI: only a model that can take a
