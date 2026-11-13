@@ -42,10 +42,10 @@ struct GlucoseUnitTests {
     // MARK: - thresholdLabel
 
     @Test func thresholdLabelMgdlIsPlainInteger() {
-        #expect(GlucoseUnit.thresholdLabel(GlucoseThresholds.veryLow, unit: .mgdl) == "54")
-        #expect(GlucoseUnit.thresholdLabel(GlucoseThresholds.low, unit: .mgdl) == "70")
-        #expect(GlucoseUnit.thresholdLabel(GlucoseThresholds.high, unit: .mgdl) == "180")
-        #expect(GlucoseUnit.thresholdLabel(GlucoseThresholds.veryHigh, unit: .mgdl) == "250")
+        #expect(GlucoseUnit.thresholdLabel(GlucoseThresholds.veryLow) == "54")
+        #expect(GlucoseUnit.thresholdLabel(GlucoseThresholds.low) == "70")
+        #expect(GlucoseUnit.thresholdLabel(GlucoseThresholds.high) == "180")
+        #expect(GlucoseUnit.thresholdLabel(GlucoseThresholds.veryHigh) == "250")
     }
 
     // MARK: - wireToken

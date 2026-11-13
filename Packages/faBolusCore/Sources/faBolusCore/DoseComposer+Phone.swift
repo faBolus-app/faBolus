@@ -254,7 +254,7 @@ extension DoseComposer {
             }
         }
 
-        /// The entered dose, unless the calculator's dose for `mgdl` has moved from what the screen showed:
+        /// The entered dose, unless the calculator's dose for `mgdl` differs from what the screen showed:
         /// then the user chooses. `mustAsk` asks even when it hasn't moved past the limit.
         func checkRecompute(mgdl: Int?, recorded: Int?, mustAsk: Bool) -> PhoneDoseDecision {
             guard let new = units(mgdl) else { return .refused(.pumpSettingsUnusable) }
