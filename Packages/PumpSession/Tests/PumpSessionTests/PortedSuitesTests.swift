@@ -509,9 +509,10 @@ private func deliver(_ rig: Rig, _ dose: ComposedDose, for seconds: Double = 2) 
     private func readiness(after loadState: Int?) -> CartridgeReadiness {
         var state = PumpState()
         var alerts = PumpAlertLists()
+        var basal = PumpBasalParts()
         if let loadState {
             _ = PumpReadings.apply(
-                LoadStatusResponse(cargo: [0, UInt8(loadState), 0]), to: &state, alerts: &alerts,
+                LoadStatusResponse(cargo: [0, UInt8(loadState), 0]), to: &state, alerts: &alerts, basal: &basal,
                 context: .init(receivedAt: Date(), anchor: nil))
         }
         return state.cartridgeReadiness

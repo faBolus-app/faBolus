@@ -95,14 +95,29 @@ public struct PumpDisplay: Sendable {
     public var basal: Value {
         value(pump.basalDeliveryState, window: freshness.pumpStatusStaleAfter) {
             switch $0 {
-            case .suspended: return "Suspended"
-            case .active(let rate): return String(format: "%.2f U/hr", rate)
+            case .suspended, .basalIQSuspended: return "Suspended"
+            case .active(let rate), .tempRate(let rate, _): return String(format: "%.2f U/hr", rate)
             }
         }
     }
 
     public var isSuspended: Bool {
         pump.basalDeliveryState?.valueIfFresh(within: freshness.pumpStatusStaleAfter, now: now) == .suspended
+    }
+
+    /// Basal-IQ has stopped basal for a predicted low; boluses still go.
+    public var isBasalIQSuspended: Bool {
+        pump.basalDeliveryState?.valueIfFresh(within: freshness.pumpStatusStaleAfter, now: now) == .basalIQSuspended
+    }
+
+    /// A temp rate set on the pump, named for the basal's label with its percent once read ("Temp rate
+    /// 150%"), or nil when the pump shows none.
+    public var tempRate: String? {
+        guard
+            case .tempRate(_, let percent) = pump.basalDeliveryState?.valueIfFresh(
+                within: freshness.pumpStatusStaleAfter, now: now)
+        else { return nil }
+        return percent.map { "Temp rate \($0)%" } ?? "Temp rate"
     }
 
     public var controlIQ: ControlIQStatus? {

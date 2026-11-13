@@ -94,6 +94,16 @@ import Testing
         #expect(s.sentAt == GoldenFixtures.now)
     }
 
+    /// The watch's protocol has no temp rate or Basal-IQ suspension: each goes as the rate delivered, and
+    /// Basal-IQ's never as suspended, which would say a bolus can't go.
+    @Test func aTempRateOrBasalIQSuspensionGoesAsTheRateDelivered() {
+        var p = connected
+        p.basalDeliveryState = observed(.tempRate(unitsPerHour: 1.2, percent: 150), age: 40)
+        #expect(compose(p).basal == Timed(.active(milliunitsPerHour: 1200), at: GoldenFixtures.now - 40))
+        p.basalDeliveryState = observed(.basalIQSuspended, age: 40)
+        #expect(compose(p).basal == Timed(.active(milliunitsPerHour: 0), at: GoldenFixtures.now - 40))
+    }
+
     /// The pump's max basal goes as milliunits per hour with the time it was read: the golden status's
     /// `maxBasal`, which the watch's tests read. None reported goes as nothing.
     @Test func theMaxBasalGoesAsTheGoldenStatusCarriesIt() {

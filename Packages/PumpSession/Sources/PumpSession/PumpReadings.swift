@@ -29,6 +29,58 @@ public struct PumpClockAnchor: Sendable, Equatable {
     }
 }
 
+/// What the basal state is decided from, each part kept from its own read: the rate CurrentBasalStatus
+/// reports, the home screen's basal icon, and the percent TempRate reports. Deciding from all of them lets
+/// the reads answer in any order, as t:connect's dashboard does: a rate read while the pump is suspended
+/// doesn't end the suspension, and the rate is there again when the icon says delivery is back.
+struct PumpBasalParts: Sendable, Equatable {
+    var rate: Observed<Double>?
+    /// `nil` inside for an icon id TandemKit doesn't name.
+    var icon: Observed<HomeScreenMirrorResponse.BasalStatusIcon?>?
+    /// The running temp rate's percent, `nil` inside when TempRate says none is running. Dropped when the
+    /// icon stops showing a temp rate, so the next one's percent is read again.
+    var tempPercent: Observed<Int?>?
+
+    /// The state, dated by the oldest read it rests on. A suspension, Basal-IQ's and a zero temp rate rest
+    /// on the icon alone: no basal is delivered, whatever rate was last read.
+    var state: Observed<BasalDeliveryState>? {
+        let byIcon: BasalDeliveryState? =
+            switch icon?.value {
+            case .suspend: .suspended
+            case .basalIQSuspend: .basalIQSuspended
+            // t:connect reads no percent for a zero temp rate: it is 0 % by its name.
+            case .zeroTempRate: .tempRate(unitsPerHour: 0, percent: 0)
+            default: nil
+            }
+        if let icon, let byIcon { return Observed(byIcon, measuredAt: icon.measuredAt, receivedAt: icon.receivedAt) }
+        guard let rate else { return nil }
+        let value: BasalDeliveryState =
+            icon?.value == .tempRate
+            ? .tempRate(unitsPerHour: rate.value, percent: tempPercent?.value ?? nil)
+            : .active(unitsPerHour: rate.value)
+        var dated = Observed(value, measuredAt: rate.measuredAt, receivedAt: rate.receivedAt)
+        if let icon, icon.measuredAt < rate.measuredAt {
+            dated.measuredAt = icon.measuredAt
+            dated.receivedAt = icon.receivedAt
+        }
+        return dated
+    }
+
+    /// The icon shows a temp rate whose percent hasn't been read.
+    var needsTempPercent: Bool { icon?.value == .tempRate && tempPercent == nil }
+
+    /// Moves the parts' times with the phone's clock, as `PumpState.phoneClockSet(by:)` moves the state's.
+    mutating func phoneClockSet(by seconds: TimeInterval) {
+        func move<T>(_ reading: inout Observed<T>?) {
+            reading?.measuredAt.addTimeInterval(seconds)
+            reading?.receivedAt.addTimeInterval(seconds)
+        }
+        move(&rate)
+        move(&icon)
+        move(&tempPercent)
+    }
+}
+
 /// The pump's open notifications, kept by kind: each status read replaces only its own kind.
 struct PumpAlertLists: Sendable, Equatable {
     var byKind: [PumpAlertKind: [PumpAlert]] = [:]
@@ -71,10 +123,10 @@ enum PumpReadings {
         let anchor: PumpClockAnchor?
     }
 
-    /// Applies `message` to `state` (and `alerts`), returning the readings that changed.
+    /// Applies `message` to `state` (and `alerts` and `basal`), returning the readings that changed.
     static func apply(
         _ message: any TandemMessages.Message, to state: inout PumpState, alerts: inout PumpAlertLists,
-        context: Context
+        basal: inout PumpBasalParts, context: Context
     ) -> Set<PumpState.Reading> {
         let at = context.receivedAt
         func observed<T: Sendable>(_ value: T, measuredAt: Date? = nil) -> Observed<T> {
@@ -134,14 +186,27 @@ enum PumpReadings {
             // The CGM state is kept with or without a reading: it says why there's no number, and whether
             // the number there is may correct a dose.
             state.cgmDisplay = observed(PumpCGMDisplay(state: cgmState(m), checkBG: m.isCheckBG))
+            // The basal icon says whether delivery is suspended or a temp rate runs, as t:connect's dashboard
+            // takes it.
+            if m.basalStatusIcon != .tempRate { basal.tempPercent = nil }
+            basal.icon = observed(m.basalStatusIcon)
+            state.basalDeliveryState = basal.state
             // The pump's own trend icon is the trend. "No arrow" is a real answer: no trend, not flat.
-            guard var glucose = state.glucose else { return [.cgmDisplay] }
+            guard var glucose = state.glucose else { return [.cgmDisplay, .basalDeliveryState] }
             glucose.value.trend = GlucoseTrend(rawValue: m.cgmTrendArrow)
             state.glucose = glucose
-            return [.glucose, .cgmDisplay]
+            return [.glucose, .cgmDisplay, .basalDeliveryState]
 
         case let m as CurrentBasalStatusResponse:
-            state.basalDeliveryState = observed(.active(unitsPerHour: m.currentBasalUnitsPerHour))
+            basal.rate = observed(m.currentBasalUnitsPerHour)
+            state.basalDeliveryState = basal.state
+            return [.basalDeliveryState]
+
+        case let m as TempRateResponse:
+            // Read when the icon shows a temp rate; a reply after the icon stopped showing one is too late.
+            guard basal.icon?.value == .tempRate else { return [] }
+            basal.tempPercent = observed(m.active ? m.percentage : nil)
+            state.basalDeliveryState = basal.state
             return [.basalDeliveryState]
 
         case let m as BasalLimitSettingsResponse:

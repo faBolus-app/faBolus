@@ -150,7 +150,9 @@ struct LAView {
         case .basal:
             switch snapshot.basalIfFresh(asOf: now) {
             case .suspended: return Chip(icon: "pause.circle.fill", value: "Suspended")
+            case .basalIQSuspended: return Chip(icon: "pause.circle", value: "Basal-IQ")
             case .active(let rate): return Chip(icon: "waveform.path.ecg", value: String(format: "%.2f U/h", rate))
+            case .tempRate(let rate, _): return Chip(icon: "timer", value: String(format: "%.2f U/h", rate))
             case nil: return Chip(icon: "waveform.path.ecg", value: "—")
             }
         case .controlIQ:

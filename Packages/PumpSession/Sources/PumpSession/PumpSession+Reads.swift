@@ -62,10 +62,9 @@ enum ReadGroup: CaseIterable, Hashable {
 }
 
 /// The reads a qualifying-event notice brings, bit by bit as t:connect sends them, limited to the reads
-/// faBolus already sends: t:connect also reads ProfileStatus,
-/// LastBG, TempRate, ExtendedBolusStatus, LastBolusStatus and the Basal-IQ and sleep settings, which faBolus
-/// neither reads nor shows. The bit values are confirmed; whether a t:slim raises each bit on every change
-/// is not.
+/// faBolus already sends: t:connect also reads ProfileStatus, LastBG, ExtendedBolusStatus, LastBolusStatus
+/// and the Basal-IQ and sleep settings, which faBolus neither reads nor shows. The bit values are confirmed;
+/// whether a t:slim raises each bit on every change is not.
 enum NoticeReads {
     private static let iob: any TandemMessages.Message = ControlIQIOBRequest()
     private static let table: [(QualifyingEvent, [any TandemMessages.Message])] = [
@@ -85,7 +84,7 @@ enum NoticeReads {
         (.pumpSuspend, [InsulinStatusRequest(), iob]),
         (.pumpResume, [InsulinStatusRequest(), iob, CurrentEGVGuiDataRequest()]),
         (.timeChange, [iob, CGMStatusRequest(), TimeSinceResetRequest()]),
-        (.basalChange, [iob, HomeScreenMirrorRequest(), CurrentBasalStatusRequest()]),
+        (.basalChange, [iob, HomeScreenMirrorRequest(), CurrentBasalStatusRequest(), TempRateRequest()]),
         (.bolusChange, [CurrentBolusStatusRequest()]),
         (.iobChange, [iob]),
         (
