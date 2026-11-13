@@ -10,8 +10,9 @@ public enum HistorySyncState: Sendable, Hashable {
     /// A gap-fetch is actively paging. Shown only for a long-running sync; a fast routine check
     /// settles back to `.idle` unnoticed.
     case syncing
-    /// The link dropped mid-sync — benign and resumable. The persisted coverage map credits only
-    /// what was actually fetched. Not styled as an error.
+    /// The sync stopped part way, and continues by itself: the link dropped, the pump's battery is low
+    /// in the background, or another history job (a search settling a bolus) went first. The persisted
+    /// coverage map credits only what was actually fetched. Not styled as an error.
     case paused
     /// A genuine unexpected failure (e.g. an unparseable history-log frame) — the only case styled red.
     case error(String)

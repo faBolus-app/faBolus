@@ -424,16 +424,18 @@ that worked.
   down, newest first. t:connect and Mobi both send it that way. In t:connect's capture every request names
   the pump's newest record and the pump streams down from it, but that capture can't tell this reading from
   one where the start is the oldest record and the pump stops at its newest; no t:slim has been asked for a
-  page below its newest record. Pages hold at most 250 records, as t:connect asks. When the pump's newest
-  record is older than one the phone holds, faBolus takes the log as restarted, as Mobi does: it drops what
-  it holds and the logbook, and fetches the log again. The boluses unknown then are from before the
+  page below its newest record. A sync asks for 30 records a request, from the newest record still missing
+  down, until the phone holds the whole log, as Mobi does; a search that settles a bolus asks for pages of
+  at most 250, as t:connect asks. When the pump's newest record is older than one the phone holds,
+  faBolus takes the log as restarted, as Mobi does: it drops what it holds and the logbook, and fetches the
+  log again. The boluses unknown then are from before the
   restart, and the new log can't show they never started, so history never settles them as absent: they
   stay unknown until the pump confirms them. No t:slim has been seen restarting its log.
 - **Known limit:** a restarted log that has grown past the newest record the phone holds before the next
   sync isn't noticed (Mobi's check has the same gap): what the phone holds then hides the new records with
   the same numbers, and an unknown bolus from before the restart could be settled as absent.
 - **Where:** `Packages/PumpSession/Sources/PumpSession/PumpSession+History.swift` (`fetchPage`,
-  `runHistorySync`); `historyPageSize` in `PumpSession.Configuration`.
+  `runHistorySync`); `historySyncBatch` and `historyPageSize` in `PumpSession.Configuration`.
 - **Risk:** fails closed. If the start were the oldest record, each page would overlap what was asked in
   one record: a sync would credit almost nothing and an unknown bolus would stay unknown, never settled
   wrongly.

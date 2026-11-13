@@ -41,14 +41,13 @@ public actor PumpSession {
         public var deliveryStatusSilence: TimeInterval { requestDeadline * 1.5 }
         /// A bolus still reported active after this long is left to history. Guess: far past any bolus.
         public var deliveryTrackingLimit: TimeInterval = 30 * 60
-        /// Routine history sync, and the most pages one sync fetches.
+        /// Routine history sync. A sync runs until the phone holds the pump's whole log, as Mobi's does.
         public var historySyncInterval: TimeInterval = 15 * 60
-        public var historyMaxPages = 20
-        /// Records a history page asks for: t:connect asks for at most 250, though the request's count is a
-        /// byte.
+        /// Records each sync request asks for, as Mobi asks.
+        public var historySyncBatch = 30
+        /// Records each page of a search that settles a bolus asks for: t:connect asks for at most 250,
+        /// though the request's count is a byte.
         public var historyPageSize = 250
-        /// When a sync stopped at its page limit, how soon the next one continues.
-        public var historyContinueAfter: TimeInterval = 60
         /// In the background, history syncs stop once the pump's battery is at this percent or below, and
         /// start again once it is above `lowBatteryResumeAbove` (Mobi's low-power mode). A sync in the
         /// foreground, and a search that settles a bolus, still run.
@@ -719,10 +718,9 @@ public actor PumpSession {
         // t:connect reads a profile change's ProfileStatus, which faBolus doesn't send; the settings
         // group holds what a profile changes here.
         if events.contains(.profileChange) { due[.settings] = now }
-        // And a history sync after every notice (t:connect's), one at a time: one asked for during a sync
-        // runs after it. The routine sync stays as the backstop for a missed notice. A sync cut short at
-        // its page limit keeps its pause before continuing, so a run of notices can't make it back to back.
-        if let at = due[.history], at > now, at.timeIntervalSince(now) <= config.historyContinueAfter { return }
+        // And a history sync after every notice (t:connect's), one at a time: a sync under way reads the
+        // pump's log again before its next request, and one asked for after its last request runs after it.
+        // The routine sync stays as the backstop for a missed notice.
         due[.history] = now
     }
 

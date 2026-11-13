@@ -148,18 +148,20 @@ extension PumpSession {
 
     // MARK: - Sync
 
-    /// Fetches the history records the phone doesn't hold yet, newest window first, each window from its
-    /// newest record down, at most `historyMaxPages` pages a sync. A page is written to the history store
-    /// before it is credited as held, so records the store didn't keep are fetched again next time; a drop
-    /// leaves the sync paused, and the next one picks up where the coverage ends.
+    /// Fetches the history records the phone doesn't hold yet, as Mobi does: `historySyncBatch` records a
+    /// request, each from the newest record still missing down, until every record of the pump's log has
+    /// been asked for. A gap the pump didn't fill is asked for again by the next sync. A batch is written to the history store before it is credited as held, so records the store didn't
+    /// keep are fetched again next time; a drop leaves the sync paused, and the next one picks up where the
+    /// coverage ends.
     public func syncHistory() async {
         // Only from the pump the pairing trusts. A new pairing is trusted at the end of `ready()`, after it
         // has emptied the logbook under the history lock, so a sync asked for meanwhile ("Sync history
         // now") can't hold that lock while `ready()` waits on it with the link's events stalled behind it.
         // One that can't run doesn't move the next one back.
         guard state.link.isConnected, identity != nil, identityTrusted else { return }
-        due[.history] = uptime().addingTimeInterval(config.historySyncInterval)
         await acquireHistory()
+        // Set once its turn comes: a sync that stepped aside for this one asked for a sync now.
+        due[.history] = uptime().addingTimeInterval(config.historySyncInterval)
         await runHistorySync()
         releaseHistory()
     }
@@ -168,69 +170,74 @@ extension PumpSession {
         // The pump may have gone, or changed, while the sync waited for its turn.
         guard state.link.isConnected, identity != nil, identityTrusted else { return }
         setHistorySync(.syncing)
+        guard var status = await readHistoryStatus()?.status else { return }
+        if anchor == nil { _ = await exchange(TimeSinceResetRequest(), priority: .history) }
+        // What this sync has asked for, held or not: a record the pump didn't send, or one dated in the
+        // future, is asked for again by the next sync, not over and over by this one.
+        var asked = record.coverage
+        while status.numEntries > 0, status.lastSequenceNum >= status.firstSequenceNum,
+            let window = asked.missing(first: status.firstSequenceNum, last: status.lastSequenceNum).last
+        {
+            // Mobi checks its pause between batches: a sync under way stops at the next request. So does one
+            // with another history job waiting, such as a search settling a bolus: it continues after it.
+            if historyPausedForBattery() || !historyWaiters.isEmpty {
+                setHistorySync(.paused)
+                due[.history] = uptime()
+                return
+            }
+            let top = window.upperBound
+            let count = Int(min(pageCount(config.historySyncBatch), UInt64(top - window.lowerBound) + 1))
+            let start = top - UInt32(count - 1)
+            guard let records = await fetchPage(top: top, count: count, priority: .history) else {
+                setHistorySync(state.link.isConnected ? .error("The pump's history couldn't be read.") : .paused)
+                return
+            }
+            // A request answered with no record at all: the rest of its window is left to the next sync, so
+            // a pump that isn't sending this part of its log costs one quiet wait, not one a batch.
+            asked = asked.inserting(records.isEmpty ? window : start...top)
+            if records.isEmpty { continue }
+            guard let anchor else {
+                setHistorySync(.error("The pump's clock couldn't be read."))
+                return
+            }
+            let batch = HistoryProjection.batch(records, anchor: anchor, now: clock())
+            if let historySink, !batch.isEmpty {
+                do { try await historySink.record(batch) } catch {
+                    setHistorySync(.error("History couldn't be saved on this phone."))
+                    return
+                }
+            }
+            addEvents(batch.events)
+            record.coverage = runs(of: batch.sequences, in: start...top).reduce(record.coverage) { $0.inserting($1) }
+            saveRecord()
+            // A notice asked for a sync: the pump's log is read again, so records it added come next, newest
+            // first, as Mobi reads its latest status before every batch.
+            if let at = due[.history], at <= uptime() {
+                due[.history] = uptime().addingTimeInterval(config.historySyncInterval)
+                guard let next = await readHistoryStatus() else { return }
+                if next.restarted { asked = record.coverage }
+                status = next.status
+            }
+        }
+        finishSync()
+    }
+
+    /// Reads the pump's log bounds. When the log restarted, what the phone holds names records the pump no
+    /// longer has, so it goes, and the log is fetched again, as Mobi does.
+    private func readHistoryStatus() async -> (status: HistoryLogStatusResponse, restarted: Bool)? {
         guard case .reply(let reply) = await exchange(HistoryLogStatusRequest(), priority: .history),
             let status = reply.message as? HistoryLogStatusResponse
         else {
             setHistorySync(state.link.isConnected ? .error("The pump's history couldn't be read.") : .paused)
-            return
+            return nil
         }
-        if anchor == nil { _ = await exchange(TimeSinceResetRequest(), priority: .history) }
-        guard status.numEntries > 0, status.lastSequenceNum >= status.firstSequenceNum else {
-            finishSync()
-            return
-        }
-        // What the phone holds names records the pump no longer has, so it goes, and the log is fetched
-        // again, as Mobi does.
-        if await historyRestarted(status) {
-            record.coverage = HistoryCoverage()
-            saveRecord()
-            await dropLogbook()
-        }
-        var pages = 0
-        windows: for window in record.coverage.missing(first: status.firstSequenceNum, last: status.lastSequenceNum)
-            .reversed()
-        {
-            var top = window.upperBound
-            while pages < config.historyMaxPages {
-                // Mobi checks its pause between batches: a sync under way stops at the next page.
-                if historyPausedForBattery() {
-                    setHistorySync(.paused)
-                    due[.history] = uptime()
-                    return
-                }
-                let count = Int(min(historyPageSize, UInt64(top - window.lowerBound) + 1))
-                let start = top - UInt32(count - 1)
-                guard let records = await fetchPage(top: top, count: count, priority: .history) else {
-                    setHistorySync(state.link.isConnected ? .error("The pump's history couldn't be read.") : .paused)
-                    return
-                }
-                pages += 1
-                guard let anchor else {
-                    setHistorySync(.error("The pump's clock couldn't be read."))
-                    return
-                }
-                let batch = HistoryProjection.batch(records, anchor: anchor, now: clock())
-                if let historySink, !batch.isEmpty {
-                    do { try await historySink.record(batch) } catch {
-                        setHistorySync(.error("History couldn't be saved on this phone."))
-                        return
-                    }
-                }
-                addEvents(batch.events)
-                // Held from the page's top down to the first missing record.
-                guard batch.sequences.contains(top) else { continue windows }
-                var lowest = top
-                while lowest > start, batch.sequences.contains(lowest - 1) { lowest -= 1 }
-                record.coverage = record.coverage.inserting(lowest...top)
-                saveRecord()
-                guard lowest == start, start > window.lowerBound else { continue windows }
-                top = start - 1
-            }
-            // The page limit cut this sync short: the rest follows soon rather than at the next routine sync.
-            due[.history] = uptime().addingTimeInterval(config.historyContinueAfter)
-            break
-        }
-        finishSync()
+        guard status.numEntries > 0, status.lastSequenceNum >= status.firstSequenceNum,
+            await historyRestarted(status)
+        else { return (status, false) }
+        record.coverage = HistoryCoverage()
+        saveRecord()
+        await dropLogbook()
+        return (status, true)
     }
 
     /// Whether the pump's log restarted: its newest record is older than one the phone holds. The unknown
@@ -248,8 +255,24 @@ extension PumpSession {
         return true
     }
 
-    /// Records a history page asks for, within the request's one-byte count.
-    var historyPageSize: UInt64 { UInt64(min(max(config.historyPageSize, 1), 255)) }
+    /// The runs of consecutive sequence numbers in `range` that `sequences` holds.
+    private func runs(of sequences: Set<UInt32>, in range: ClosedRange<UInt32>) -> [ClosedRange<UInt32>] {
+        var runs: [ClosedRange<UInt32>] = []
+        var runStart: UInt32?
+        for seq in range {
+            if sequences.contains(seq) {
+                if runStart == nil { runStart = seq }
+            } else if let first = runStart {
+                runs.append(first...(seq - 1))
+                runStart = nil
+            }
+        }
+        if let first = runStart { runs.append(first...range.upperBound) }
+        return runs
+    }
+
+    /// Records a history request asks for, within its one-byte count.
+    func pageCount(_ configured: Int) -> UInt64 { UInt64(min(max(configured, 1), 255)) }
 
     private func finishSync() {
         let now = clock()
@@ -379,7 +402,7 @@ extension PumpSession {
         var clockChanged = false
         var top = status.lastSequenceNum
         for _ in 0..<config.reconcileMaxPages {
-            let count = Int(min(historyPageSize, UInt64(top - status.firstSequenceNum) + 1))
+            let count = Int(min(pageCount(config.historyPageSize), UInt64(top - status.firstSequenceNum) + 1))
             let start = top - UInt32(count - 1)
             guard let records = await fetchPage(top: top, count: count, priority: .reconcile) else {
                 return mentioned ? .present : .inconclusive

@@ -61,8 +61,9 @@ private func addOldHistory(_ pump: ScriptedPump, count: Int = 20) {
         let batches = await rig.sink.batches
         #expect(batches.flatMap(\.boluses).map(\.units) == [1.0])
         #expect(await rig.session.historyEvents.contains { $0.title == "Bolus delivered" && $0.detail == "1.00 U" })
-        // 4632-4639 weren't captured: only the run held from the newest record down is credited.
-        #expect(rig.store.load()?.coverage.ranges == [4640...4642])
+        // 4632-4639 weren't captured: the records either side are credited, and the gap is asked for again
+        // by the next sync.
+        #expect(rig.store.load()?.coverage.ranges == [4620...4631, 4640...4642])
     }
 
     /// The pump refuses permission (P1 has no cartridge): refused, nothing that delivers is sent, and new

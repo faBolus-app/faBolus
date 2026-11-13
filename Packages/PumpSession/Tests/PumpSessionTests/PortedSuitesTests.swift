@@ -415,8 +415,15 @@ private func deliver(_ rig: Rig, _ dose: ComposedDose, for seconds: Double = 2) 
             }
         }
         let config = PumpSession.Configuration()
-        let searchPages = rig.pump.arrivals(of: HistoryLogRequest.self).count
-        #expect(searchPages <= config.reconcileMaxPages + config.historyMaxPages)
+        // A search page asks for more records than a sync request. None reaches back further than the
+        // search's page limit from the newest record.
+        let searchPages = rig.pump.arrivals(of: HistoryLogRequest.self).filter {
+            Int($0.cargo[4]) > config.historySyncBatch
+        }
+        let oldest = searchPages.map { readStart($0.cargo) - UInt32($0.cargo[4]) + 1 }
+        let reach = UInt32(config.reconcileMaxPages * config.historyPageSize)
+        #expect(!searchPages.isEmpty)
+        #expect(oldest.allSatisfy { $0 > rig.pump.lastSequence! - reach })
         #expect(await rig.ledger.ledger.outcome(key)?.isUnknown == true)
     }
 
