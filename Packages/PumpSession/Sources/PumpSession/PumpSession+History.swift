@@ -121,6 +121,22 @@ extension PumpSession {
         if case .syncing = historySync { setHistorySync(.paused) }
     }
 
+    /// Whether background history syncs are paused for the pump's battery. The sync stays due, so it runs
+    /// as soon as the app is in the foreground or the battery recovers.
+    /// A reading too old to show (or none) pauses nothing: a sync costs battery, never safety.
+    func historyPausedForBattery() -> Bool {
+        guard let percent = state.batteryIfFresh(thresholds: freshness, now: clock())?.percent else {
+            batteryLow = false
+            return false
+        }
+        if percent <= config.lowBatteryPauseAt {
+            batteryLow = true
+        } else if percent > config.lowBatteryResumeAbove {
+            batteryLow = false
+        }
+        return batteryLow && !appActive
+    }
+
     func setHistorySync(_ next: HistorySyncState) {
         guard next != historySync else { return }
         historySync = next
@@ -166,6 +182,12 @@ extension PumpSession {
         {
             var top = window.upperBound
             while pages < config.historyMaxPages {
+                // Mobi checks its pause between batches: a sync under way stops at the next page.
+                if historyPausedForBattery() {
+                    setHistorySync(.paused)
+                    due[.history] = uptime()
+                    return
+                }
                 let count = Int(min(UInt64(255), UInt64(top - window.lowerBound) + 1))
                 let start = top - UInt32(count - 1)
                 guard let records = await fetchPage(start: start, count: count, priority: .history) else {

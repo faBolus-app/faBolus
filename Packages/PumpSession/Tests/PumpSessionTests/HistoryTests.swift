@@ -216,7 +216,7 @@ private func addGlucoseHistory(_ pump: ScriptedPump, count: Int) {
         await rig.session.scanForPairing()
         await rig.settle()
         let found = await rig.events.compactMap { e -> (UUID, String?)? in
-            if case .pumpFound(let id, let name, .tslimX2) = e { return (id, name) }
+            if case .pumpFound(let id, let name, .tslimX2, _) = e { return (id, name) }
             return nil
         }
         let pump = try #require(found.first)
@@ -308,5 +308,56 @@ private func readStart(_ cargo: [UInt8]) -> UInt32 {
         let event = try #require(HistoryProjection.event(activated(UInt32(unnamed)), date: Date()))
         #expect(event.title == "Alert")
         #expect(event.detail == "id \(unnamed)")
+    }
+}
+
+/// Mobi's low-power mode: in the background, history syncs stop once the pump's battery is at 20% or
+/// below, and start again above 30%; in the foreground they always run.
+@MainActor
+@Suite struct LowBatteryHistoryTests {
+    private func rig(battery: Int) -> Rig {
+        Rig(configure: {
+            $0.unsupportedReads = []
+            $0.batteryPercent = battery
+            addGlucoseHistory($0, count: 300)
+        })
+    }
+
+    @Test func aLowBatteryStopsTheBackgroundSyncUntilTheForeground() async {
+        let rig = rig(battery: 20)
+        await rig.session.setAppActive(false)
+        await rig.startHeld()
+        await rig.run(for: 20 * 60, step: 30)
+        // The connection's first sync may ask for the log's status before the battery is read; it stops
+        // before any page.
+        #expect(rig.pump.arrivals(of: HistoryLogRequest.self).isEmpty)
+        #expect(rig.store.load()?.coverage.ranges.isEmpty ?? true)
+        await rig.session.setAppActive(true)
+        await rig.run(for: 30, step: 1)
+        let first = rig.pump.firstHeldSequence!, last = rig.pump.lastSequence!
+        #expect(rig.store.load()?.coverage.ranges == [first...last])
+    }
+
+    @Test func theBackgroundSyncResumesOnlyAboveThirtyPercent() async {
+        let rig = rig(battery: 15)
+        await rig.session.setAppActive(false)
+        await rig.startHeld()
+        await rig.run(for: 60, step: 5)
+        rig.pump.batteryPercent = 30
+        await rig.run(for: 20 * 60, step: 30)
+        #expect(rig.pump.arrivals(of: HistoryLogRequest.self).isEmpty, "30% isn't above 30%")
+        rig.pump.batteryPercent = 31
+        await rig.run(for: 20 * 60, step: 30)
+        let first = rig.pump.firstHeldSequence!, last = rig.pump.lastSequence!
+        #expect(rig.store.load()?.coverage.ranges == [first...last])
+    }
+
+    @Test func aBatteryAboveTheLevelSyncsInTheBackground() async {
+        let rig = rig(battery: 21)
+        await rig.session.setAppActive(false)
+        await rig.startHeld()
+        await rig.run(for: 60, step: 5)
+        let first = rig.pump.firstHeldSequence!, last = rig.pump.lastSequence!
+        #expect(rig.store.load()?.coverage.ranges == [first...last])
     }
 }

@@ -402,3 +402,18 @@ that worked.
 - **Verify:** on P1 and P2, record the notices across a bolus, a cancel, a suspend and resume, a CGM
   reading, a cartridge change and a battery change, then lengthen the alert read to 60 s if every alert
   raised its bit.
+
+## 31. The reconnect cooldown on iOS, and whether a t:slim says it is in pairing mode
+
+- **The guess:** t:connect's reconnect waits are for Android's error codes: 3 s after a link-layer timeout,
+  10 s after a generic or framework error, 1 s otherwise, doubled per failure in a row up to 30 s.
+  TandemKit maps them to CoreBluetooth's nearest: 3 s after a supervision timeout (`CBError` 6), 10 s after
+  a connect that failed, 1 s otherwise. It counts failures since the link last held, where t:connect counts
+  since the last connect. The pairing scan's 120 s timer stops early only when the strongest pump
+  advertises that it is accepting connections, which a Mobi does; nothing shows a t:slim X2 advertises
+  that state, so for a t:slim the timer runs until a pump is picked.
+- **Where:** TandemKit's `LinkConfiguration` (`cooldown`, `cooldownAfterTimeout`,
+  `cooldownAfterFailedConnect`, `pairingScanTimeout`) and `PumpRegistrationState`.
+- **Risk:** low. Reconnecting never stops; a wrong base only makes a reconnect a few seconds early or late.
+- **Verify:** at the range edge, record the drops' errors and how long each connection lasted (BAT-009's
+  bench), and on P1 and P2 log the manufacturer data a pump in pairing mode advertises.

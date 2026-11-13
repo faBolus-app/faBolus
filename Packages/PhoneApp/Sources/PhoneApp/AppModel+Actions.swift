@@ -113,6 +113,7 @@ extension AppModel {
 extension AppModel {
     public func scanForPumps() async {
         pumpsFound = []
+        pumpSignal = [:]
         linkFailure = nil
         await session.scanForPairing()
     }
@@ -134,6 +135,7 @@ extension AppModel {
         pairing = nil
         logbook = []
         pumpsFound = []
+        pumpSignal = [:]
         linkFailure = nil
         lastDisconnect = nil
         connectionUnstable = false

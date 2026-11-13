@@ -73,10 +73,17 @@ public struct AppEnvironment {
     ) -> AppEnvironment {
         let group = WidgetStore.appGroupID
         let directory = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group)
+        #if canImport(UIKit)
+        let backgroundTime: (any LinkBackgroundTime)? = PumpBackgroundTime()
+        #else
+        let backgroundTime: (any LinkBackgroundTime)? = nil
+        #endif
         return AppEnvironment(
             appGroupID: group, dataDirectory: directory, settingsDefaults: .standard,
             wipe: FirstLaunchWipe(appGroupID: group, appGroupDirectory: directory),
-            makeConnection: { PumpConnection(restoreIdentifier: AppModel.pumpRestoreIdentifier) },
+            makeConnection: {
+                PumpConnection(restoreIdentifier: AppModel.pumpRestoreIdentifier, backgroundTime: backgroundTime)
+            },
             pairingSecrets: PairingSecrets(), notifications: UserNotificationScheduler(),
             glucoseSources: GlucoseSourceRegistry(), watchTransport: nil, widgetStore: WidgetStore(),
             reloadWidgets: reloadWidgets, liveActivity: liveActivity

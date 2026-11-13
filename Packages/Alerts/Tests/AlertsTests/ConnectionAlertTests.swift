@@ -73,7 +73,6 @@ import faBolusCore
         await h.send(.disconnected(.linkLost(code: nil)))
         h.clock.advance(5 * m)
         await h.send(.disconnected(.linkLost(code: nil)))
-        await h.send(.linkFailed(.reconnectGaveUp))
         #expect(await h.scheduler.adds.count == 2, "posted once, not again")
         #expect(
             await h.scheduler.held[DisconnectEscalation.firstNoticeId]?.fireDate == droppedAt.addingTimeInterval(15 * m)

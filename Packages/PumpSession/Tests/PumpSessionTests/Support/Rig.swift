@@ -130,10 +130,23 @@ final class Rig {
     }
 
     /// `start`, then 11 s so the connection has held: the link sends untested commands (InitiateBolus on
-    /// P1 is one) only after the hold.
+    /// P1 is one) only after the hold. A read the pump drops the link for at the hold (P1's unsupported
+    /// reads) costs a cooldown and a reconnect, which this waits out.
     func startHeld() async {
         await start()
         await run(for: 11, step: 1)
+        await untilConnected()
+    }
+
+    /// Moves time on in 0.5 s steps until the link is connected again, for up to `limit` seconds: a drop
+    /// waits its cooldown before the link reconnects.
+    func untilConnected(limit: Double = 5) async {
+        await settle()
+        var elapsed = 0.0
+        while await session.state.link != .connected, elapsed < limit {
+            await run(for: 0.5)
+            elapsed += 0.5
+        }
     }
 
     /// Lets the session and the link finish what they're doing: link events handled, the queue drained.

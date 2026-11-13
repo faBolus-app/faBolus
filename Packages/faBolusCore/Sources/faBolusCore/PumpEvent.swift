@@ -15,8 +15,8 @@ public enum PumpDisconnectReason: Sendable, Hashable, Codable {
     case afterUnsupportedRequest(opcode: Int)
 }
 
-/// Why the link stopped trying to reach the pump on its own. Each needs the user, except
-/// `reconnectGaveUp`, which tries again the next time the app comes to the foreground.
+/// Why the link stopped trying to reach the pump on its own. Each needs the user: dropping alone never
+/// stops reconnecting.
 public enum PumpLinkFailure: Sendable, Hashable, Codable {
     /// The pump rejected the pairing code.
     case pairingRejected
@@ -26,8 +26,6 @@ public enum PumpLinkFailure: Sendable, Hashable, Codable {
     case identityMismatch
     /// A pairing scan found no pump in time.
     case pumpNotFound
-    /// Reconnecting kept failing before the link held, and the link stopped trying.
-    case reconnectGaveUp
 }
 
 /// The typed event stream `PumpSession` emits. Consumers react to events rather than diffing state:
@@ -54,8 +52,9 @@ public enum PumpEvent: Sendable, Hashable {
     case bolusOutcome(RemoteBolusLedger.Key, BolusOutcome)
     /// Outcomes the ledger couldn't save before are saved now, so they no longer block a new bolus.
     case bolusOutcomesSaved
-    /// A pairing scan found a pump. `model` is from its advertised name.
-    case pumpFound(peripheralID: UUID, name: String?, model: PumpModel)
+    /// A pairing scan found a pump, or its signal moved. `model` is from its advertised name; `rssi` is in
+    /// dBm (127 when unknown).
+    case pumpFound(peripheralID: UUID, name: String?, model: PumpModel, rssi: Int)
     /// The link stopped trying on its own.
     case linkFailed(PumpLinkFailure)
     /// Pump history sync moved.
