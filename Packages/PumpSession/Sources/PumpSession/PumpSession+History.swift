@@ -55,21 +55,24 @@ extension PumpSession {
 
     // MARK: - Pages
 
-    /// Asks for `count` records from `start` and collects the stream frames that answer it. Returns the
+    /// Asks for the `count` records up to `top` and collects the stream frames that answer it. Returns the
     /// records in sequence order when every one arrived, or what arrived once frames stopped for
     /// `historyPageQuiet`; nil when the request wasn't answered or the link dropped.
-    func fetchPage(start: UInt32, count: Int, priority: Priority) async -> [[UInt8]]? {
-        precondition((1...255).contains(count))
+    ///
+    /// The request names the page's newest record, and the pump streams from it down, newest first: what
+    /// t:connect and Mobi send, and what the pump answered in t:connect's capture.
+    func fetchPage(top: UInt32, count: Int, priority: Priority) async -> [[UInt8]]? {
+        precondition((1...255).contains(count) && UInt64(count) <= UInt64(top) + 1)
         let id = nextJobID
         nextJobID += 1
         return await withCheckedContinuation { continuation in
             let now = uptime()
             page = PageCollector(
-                id: id, range: start...(start &+ UInt32(count) &- 1), startedAt: now, lastFrameAt: now,
+                id: id, range: (top - UInt32(count - 1))...top, startedAt: now, lastFrameAt: now,
                 continuation: continuation)
             Task {
                 let result = await self.exchange(
-                    HistoryLogRequest(startLog: start, numberOfLogs: count), priority: priority)
+                    HistoryLogRequest(startLog: top, numberOfLogs: count), priority: priority)
                 self.pageRequestAnswered(id, result)
             }
         }
@@ -176,6 +179,13 @@ extension PumpSession {
             finishSync()
             return
         }
+        // What the phone holds names records the pump no longer has, so it goes, and the log is fetched
+        // again, as Mobi does.
+        if await historyRestarted(status) {
+            record.coverage = HistoryCoverage()
+            saveRecord()
+            await dropLogbook()
+        }
         var pages = 0
         windows: for window in record.coverage.missing(first: status.firstSequenceNum, last: status.lastSequenceNum)
             .reversed()
@@ -188,9 +198,9 @@ extension PumpSession {
                     due[.history] = uptime()
                     return
                 }
-                let count = Int(min(UInt64(255), UInt64(top - window.lowerBound) + 1))
+                let count = Int(min(historyPageSize, UInt64(top - window.lowerBound) + 1))
                 let start = top - UInt32(count - 1)
-                guard let records = await fetchPage(start: start, count: count, priority: .history) else {
+                guard let records = await fetchPage(top: top, count: count, priority: .history) else {
                     setHistorySync(state.link.isConnected ? .error("The pump's history couldn't be read.") : .paused)
                     return
                 }
@@ -222,6 +232,24 @@ extension PumpSession {
         }
         finishSync()
     }
+
+    /// Whether the pump's log restarted: its newest record is older than one the phone holds. The unknown
+    /// boluses then are from before the restart, and the new log can't show they never started, so they
+    /// are marked to stay unknown until the pump confirms them.
+    func historyRestarted(_ status: HistoryLogStatusResponse) async -> Bool {
+        guard let heldTop = record.coverage.ranges.last?.upperBound, status.lastSequenceNum < heldTop else {
+            return false
+        }
+        let newest = status.lastSequenceNum
+        sessionLog.notice("history restarted at \(newest, privacy: .public), held \(heldTop, privacy: .public)")
+        // Every unknown bolus now is from before the restart, those from an earlier one included.
+        record.beforeHistoryRestart = Set(await ledger.ledger.unknownOutcomes.map(\.key))
+        saveRecord()
+        return true
+    }
+
+    /// Records a history page asks for, within the request's one-byte count.
+    var historyPageSize: UInt64 { UInt64(min(max(config.historyPageSize, 1), 255)) }
 
     private func finishSync() {
         let now = clock()
@@ -284,6 +312,12 @@ extension PumpSession {
         reconciling = true
         defer { reconciling = false }
         let entries = await ledger.ledger.unknownOutcomes
+        // A bolus no longer unknown (confirmed on the pump) needs no mark.
+        let marked = record.beforeHistoryRestart.intersection(entries.map(\.key))
+        if marked != record.beforeHistoryRestart {
+            record.beforeHistoryRestart = marked
+            saveRecord()
+        }
         var stillDelivering = false
         for entry in entries {
             guard let bolusId = entry.bolusId,
@@ -295,6 +329,8 @@ extension PumpSession {
                 if record.requestedUnits > 0, abs(record.requestedUnits - entry.request.totalUnits) > 0.01 { continue }
                 await settle(entry.key, .deliveredFromHistory(record.deliveredUnits, pumpKey: pumpKey))
             case .absent:
+                // The pump's log restarted after this bolus: the new log can't show it never started.
+                guard !record.beforeHistoryRestart.contains(entry.key) else { break }
                 await settle(entry.key, .absentFromHistory(pumpKey: pumpKey))
             case .delivering:
                 stillDelivering = true
@@ -337,13 +373,15 @@ extension PumpSession {
             let status = reply.message as? HistoryLogStatusResponse, status.numEntries > 0,
             status.lastSequenceNum >= status.firstSequenceNum
         else { return .inconclusive }
+        // A restart found here, before a sync sees it, still marks the boluses from before it.
+        _ = await historyRestarted(status)
         var mentioned = false
         var clockChanged = false
         var top = status.lastSequenceNum
         for _ in 0..<config.reconcileMaxPages {
-            let count = Int(min(UInt64(255), UInt64(top - status.firstSequenceNum) + 1))
+            let count = Int(min(historyPageSize, UInt64(top - status.firstSequenceNum) + 1))
             let start = top - UInt32(count - 1)
-            guard let records = await fetchPage(start: start, count: count, priority: .reconcile) else {
+            guard let records = await fetchPage(top: top, count: count, priority: .reconcile) else {
                 return mentioned ? .present : .inconclusive
             }
             if let completed = HistoryProjection.completedBoluses(records).last(where: { $0.bolusId == bolusId }) {

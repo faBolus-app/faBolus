@@ -63,22 +63,29 @@ public struct PumpSessionRecord: Sendable, Equatable, Codable {
     /// a unit not here is unknown. Per unit and firmware, like the support matrix, so a firmware update starts
     /// over. Used only while `RemoteClearing.knownClasses` has no answer for the unit's class.
     public var remoteClearTrials: [PumpUnit: RemoteClearEvidence]
+    /// The unknown boluses from before the pump's history log restarted. The new log can't show they never
+    /// started, so history never settles them as absent: they stay unknown until the pump confirms them.
+    public var beforeHistoryRestart: Set<RemoteBolusLedger.Key>
 
     public init(
         pairing: StoredPairing? = nil, support: SupportMatrix = SupportMatrix(),
         coverage: HistoryCoverage = HistoryCoverage(), lastHistorySync: Date? = nil,
-        remoteClearTrials: [PumpUnit: RemoteClearEvidence] = [:]
+        remoteClearTrials: [PumpUnit: RemoteClearEvidence] = [:], beforeHistoryRestart: Set<RemoteBolusLedger.Key> = []
     ) {
         self.pairing = pairing
         self.support = support
         self.coverage = coverage
         self.lastHistorySync = lastHistorySync
         self.remoteClearTrials = remoteClearTrials
+        self.beforeHistoryRestart = beforeHistoryRestart
     }
 
-    private enum CodingKeys: String, CodingKey { case pairing, support, coverage, lastHistorySync, remoteClearTrials }
+    private enum CodingKeys: String, CodingKey {
+        case pairing, support, coverage, lastHistorySync, remoteClearTrials, beforeHistoryRestart
+    }
 
-    /// A record saved before `remoteClearTrials` existed reads as unknown for every unit.
+    /// A record saved before `remoteClearTrials` existed reads as unknown for every unit, and one saved
+    /// before `beforeHistoryRestart` as no restart seen.
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         pairing = try c.decodeIfPresent(StoredPairing.self, forKey: .pairing)
@@ -87,6 +94,8 @@ public struct PumpSessionRecord: Sendable, Equatable, Codable {
         lastHistorySync = try c.decodeIfPresent(Date.self, forKey: .lastHistorySync)
         remoteClearTrials =
             try c.decodeIfPresent([PumpUnit: RemoteClearEvidence].self, forKey: .remoteClearTrials) ?? [:]
+        beforeHistoryRestart =
+            try c.decodeIfPresent(Set<RemoteBolusLedger.Key>.self, forKey: .beforeHistoryRestart) ?? []
     }
 }
 

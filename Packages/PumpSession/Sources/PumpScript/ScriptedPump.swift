@@ -242,8 +242,8 @@ public final class ScriptedPump {
 
     public var firstSequence: UInt32 = 1000
     public private(set) var historyRecords: [[UInt8]] = []
-    /// Records per stream frame.
-    public var recordsPerFrame = 9
+    /// Records per stream frame: t:connect's capture never shows more than 3.
+    public var recordsPerFrame = 3
 
     // MARK: What arrived
 
@@ -842,11 +842,15 @@ public final class ScriptedTransport: LinkTransport {
         }
     }
 
+    /// The request names the newest record wanted: the pump streams from it down, newest first, as in
+    /// t:connect's capture.
     private func streamHistory(start: UInt32, count: Int) {
-        let records = pump.historyRecords.filter {
-            let seq = readU32($0, 6)
-            return seq >= start && seq < start &+ UInt32(count)
-        }
+        let lowest = Int64(start) - Int64(count) + 1
+        let records = Array(
+            pump.historyRecords.filter {
+                let seq = Int64(readU32($0, 6))
+                return seq <= Int64(start) && seq >= lowest
+            }.reversed())
         var i = 0
         while i < records.count {
             let chunk = Array(records[i..<min(i + pump.recordsPerFrame, records.count)])
