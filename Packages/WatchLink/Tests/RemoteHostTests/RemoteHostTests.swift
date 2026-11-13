@@ -575,19 +575,22 @@ import faBolusCore
 @MainActor
 @Suite struct RemoteHostReviewTests {
     /// A cancel while the bolus is still being composed has no session bolus to stop; the host stops it
-    /// before the hand-off, and doesn't announce it as a refusal.
+    /// before the hand-off, and doesn't announce it as a refusal. The compose is slow enough that the cancel
+    /// reaches it on a loaded machine, and the test waits for the answer rather than a fixed time.
     @Test func aCancelDuringComposeStopsTheBolus() async {
         let rig = HostRig()
         await rig.services.set(
             decision: .deliver(composed("b1")),
             delivery: .started(.init(peerId: "garmin", requestId: "b1"), .delivering),
-            delay: .milliseconds(80))
+            delay: .milliseconds(500))
         await rig.start()
         rig.transport.handler?(.received(bolus("b1").wire))
         await rig.settle()
         await rig.receive(fixture: "cancel")
-        try? await Task.sleep(for: .milliseconds(200))
-        await rig.settle()
+        for _ in 0..<300 where !rig.transport.outcomes.contains(where: { $0.outcome == .failed }) {
+            try? await Task.sleep(for: .milliseconds(10))
+            await rig.settle()
+        }
         #expect(await rig.services.delivered.isEmpty)
         #expect(await rig.services.cancels == 1)
         #expect(rig.transport.outcomes.last?.outcome == .failed)
