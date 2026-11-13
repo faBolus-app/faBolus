@@ -145,6 +145,9 @@ public actor PumpSession {
     var sending = false
     var nextJobID: UInt64 = 1
     var exclusiveOwner: UUID?
+    /// Cancels under way: while there is one, only a cancel's requests, a delivery's own steps and a
+    /// followed bolus's status reads go.
+    var cancelsUnderWay = 0
 
     // Timing
     var due: [ReadGroup: Uptime] = [:]
@@ -160,6 +163,8 @@ public actor PumpSession {
     // Delivery
     var delivery: DeliveryInProgress?
     var tracked: TrackedBolus?
+    /// The bolus the latest bolus status reported requesting or delivering, and when that reply arrived.
+    var activeBolusSeen: (bolusId: Int, at: Uptime)?
 
     // History
     var historyBusy = false
@@ -482,7 +487,8 @@ public actor PumpSession {
     /// command waits for it here rather than in the link, where it would hold up everything behind it, a
     /// cancel included. While a bolus is being followed no untested read goes out either: a probe's op-77
     /// can drop the link. A delivery's own steps are left to the link: holding one back here would let a
-    /// cancel overtake the InitiateBolus it is meant to stop. A tick sends what has come due.
+    /// cancel overtake the InitiateBolus it is meant to stop. While a cancel is under way no routine read
+    /// goes, so none can take the wire between its requests. A tick sends what has come due.
     func nextJobIndex() -> Int? {
         let held = connectedAt.map { uptime().timeIntervalSince($0) >= holdWindow } ?? true
         let eligible = queue.indices.filter { i in
@@ -492,10 +498,19 @@ public actor PumpSession {
                 // A cancel and a bolus's own status reads are never held back.
                 if !held || tracked != nil, job.priority > .delivery, isUntested(job.message) { return false }
             }
+            // A bolus's own status reads still go: holding them could make its outcome unknown.
+            if cancelsUnderWay > 0, job.owner == nil, job.priority > .delivery { return false }
             guard let owner = exclusiveOwner else { return true }
             return queue[i].owner == owner || queue[i].priority == .cancel
         }
         return eligible.min { (queue[$0].priority, queue[$0].id) < (queue[$1].priority, queue[$1].id) }
+    }
+
+    /// The bolus this connection's latest bolus status reported requesting or delivering. One reported on an
+    /// earlier connection may have ended since.
+    var activeBolusThisConnection: Int? {
+        guard let seen = activeBolusSeen, let connectedAt, seen.at >= connectedAt else { return nil }
+        return seen.bolusId
     }
 
     func isSuspected(_ message: any TandemMessages.Message) -> Bool {
@@ -539,6 +554,9 @@ public actor PumpSession {
         followPhoneClock()
         let now = clock()
         if let time = message as? TimeSinceResetResponse { pumpClock = (time.currentTime, uptime()) }
+        if let status = message as? CurrentBolusStatusResponse {
+            activeBolusSeen = status.isActive && status.bolusId > 0 ? (status.bolusId, uptime()) : nil
+        }
         if message is CurrentEGVGuiDataResponse { lastGlucoseRead = uptime() }
         let changed = PumpReadings.apply(
             message, to: &state, alerts: &alertLists, context: .init(receivedAt: now, anchor: anchor))
