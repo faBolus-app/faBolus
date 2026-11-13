@@ -46,20 +46,85 @@ private let key = RemoteBolusLedger.Key(peerId: "phone", requestId: "phone-1")
         var saved = RemoteBolusLedger()
         _ = saved.begin(DoseRequest(id: "phone-1", origin: .phone, shape: .now(units: 5)))
         saved.markAccepted(key, bolusId: 10650, pumpKey: "tandem|1693")
-        let rig = Rig(
-            ledger: saved,
-            configure: {
-                $0.unsupportedReads = []
-                $0.startBolus(id: 10650, milliunits: 5000)
-            })
+        let rig = Rig(ledger: saved, configure: { $0.unsupportedReads = [] })
         await rig.startHeld()
+        // The bolus starts once the pump has stopped answering, so no status this connection names it.
         rig.pump.answers[MessageKey(CurrentBolusStatusRequest.self)] = .silent
+        rig.pump.startBolus(id: 10650, milliunits: 5000)
         let session = rig.session
-        // The status read waits out its 60 s deadline; a routine read that takes the wire before the cancel
-        // goes out holds it for its own, since requests go one at a time.
+        // The status read waits out its 60 s deadline, and a routine read on the wire before it its own.
         let cancel = await rig.run(upTo: 130, step: 1) { await session.cancelBolus() }
         #expect(cancel == .cancelled)
         #expect(rig.pump.arrivals(of: CancelBolusRequest.self).count == 1)
+    }
+
+    /// Like Mobi, a cancel goes by the bolus this connection's bolus status reported active, without asking
+    /// the pump first.
+    @Test func aCancelGoesByTheBolusTheStatusReported() async {
+        let rig = Rig(configure: {
+            $0.unsupportedReads = []
+            $0.startBolus(id: 10650, milliunits: 5000)
+        })
+        await rig.startHeld()
+        let reads = rig.pump.arrivals(of: CurrentBolusStatusRequest.self).count
+        rig.pump.answers[MessageKey(CurrentBolusStatusRequest.self)] = .silent
+        let session = rig.session
+        let cancel = await rig.run(upTo: 10, step: 0.5) { await session.cancelBolus() }
+        #expect(cancel == .cancelled)
+        #expect(rig.pump.arrivals(of: CancelBolusRequest.self).map { Bytes.readShort($0.cargo, 0) } == [10650])
+        // The status is silent, so a cancel that asked first would wait out its 60 s deadline and miss the
+        // 10 s above. At most a routine read that was on the wire already arrives.
+        #expect(rig.pump.arrivals(of: CurrentBolusStatusRequest.self).count <= reads + 1)
+    }
+
+    /// A bolus an earlier connection's status reported may have ended since: the cancel asks the pump.
+    @Test func aBolusReportedBeforeADropIsAskedAboutAgain() async {
+        let rig = Rig(configure: {
+            $0.unsupportedReads = []
+            $0.startBolus(id: 10650, milliunits: 5000)
+        })
+        await rig.startHeld()
+        rig.pump.answers[MessageKey(CurrentBolusStatusRequest.self)] = .silent
+        rig.transport.drop()
+        await rig.untilConnected()
+        await rig.run(for: 11, step: 1)
+        let reads = rig.pump.arrivals(of: CurrentBolusStatusRequest.self).count
+        let session = rig.session
+        let cancel = await rig.run(upTo: 200, step: 1) { await session.cancelBolus() }
+        #expect(rig.pump.arrivals(of: CurrentBolusStatusRequest.self).count > reads)
+        // Nothing recorded and no answer: the user is told to check the pump.
+        #expect(cancel == .unconfirmed)
+        #expect(rig.pump.arrivals(of: CancelBolusRequest.self).isEmpty)
+    }
+
+    /// The cancel goes as soon as its status read has failed: a routine read queued meanwhile waits for it.
+    /// Requests go one at a time, so a silent routine read that took the wire first would hold the cancel for
+    /// that read's own deadline too.
+    @Test func theFallbackCancelGoesRightAfterItsFailedStatusRead() async {
+        var saved = RemoteBolusLedger()
+        _ = saved.begin(DoseRequest(id: "phone-1", origin: .phone, shape: .now(units: 5)))
+        saved.markAccepted(key, bolusId: 10650, pumpKey: "tandem|1693")
+        let rig = Rig(ledger: saved, configure: { $0.unsupportedReads = [] })
+        await rig.startHeld()
+        // The bolus starts once the pump has stopped answering, so no status this connection names it.
+        rig.pump.answers[MessageKey(CurrentBolusStatusRequest.self)] = .silent
+        rig.pump.startBolus(id: 10650, milliunits: 5000)
+        rig.pump.answers[MessageKey(ControlIQIOBRequest.self)] = .silent
+        let session = rig.session
+        let reads = rig.pump.arrivals(of: CurrentBolusStatusRequest.self).count
+        let cancel = Task { await session.cancelBolus() }
+        _ = await rig.until { rig.pump.arrivals(of: CurrentBolusStatusRequest.self).count > reads }
+        // An essential read comes due while the cancel's status read waits for its answer, and the pump
+        // leaves it unanswered too.
+        await session.enqueue([ControlIQIOBRequest()], priority: .essential)
+        var waited = 0.0
+        while rig.pump.arrivals(of: CancelBolusRequest.self).isEmpty, waited < 200 {
+            await rig.run(for: 1, step: 1)
+            waited += 1
+        }
+        // The status read's 60 s deadline, then the cancel.
+        #expect(waited <= 62, "the cancel went \(waited) s after its status read")
+        #expect(await rig.value(of: cancel) == .cancelled)
     }
 
     @Test func aFailedStatusReadWithNothingRecordedIsUnconfirmed() async {
