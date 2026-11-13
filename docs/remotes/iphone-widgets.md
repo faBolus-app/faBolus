@@ -60,7 +60,8 @@ The steps are the watch's:
    unknown. An unknown outcome blocks new boluses until it's settled, as everywhere else.
 
 **Cancel** shows on the card whenever the pump has a bolus going, from any source, and needs no unlock.
-CarPlay and the Apple Watch show the Live Activity without buttons.
+The Dynamic Island shows where a bolus stands, with Cancel; the steps themselves are on the Lock Screen
+card and the Mac's. CarPlay and the Apple Watch show the Live Activity without buttons.
 
 ### Pump alerts
 

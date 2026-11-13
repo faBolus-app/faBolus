@@ -48,14 +48,67 @@ struct PanelScreenView: View {
     let glucose: LAView
 
     var body: some View {
-        switch panel.view {
-        case .idle: EmptyView()
-        case .entry(let e): EntryScreen(screen: panel.screen, entry: e, glucose: glucose)
-        case .question(let q): QuestionScreen(screen: panel.screen, question: q)
-        case .review(let r): ReviewScreen(screen: panel.screen, review: r, now: glucose.ticking ? nil : glucose.now)
-        case .confirm(let c): ConfirmScreen(screen: panel.screen, confirm: c)
-        case .result(let r): ResultScreen(screen: panel.screen, result: r)
-        case .alert(let a): AlertScreen(screen: panel.screen, alert: a)
+        Group {
+            switch panel.view {
+            case .idle: EmptyView()
+            case .entry(let e): EntryScreen(screen: panel.screen, entry: e, glucose: glucose)
+            case .question(let q): QuestionScreen(screen: panel.screen, question: q)
+            case .review(let r):
+                ReviewScreen(screen: panel.screen, review: r, now: glucose.ticking ? nil : glucose.now)
+            case .confirm(let c): ConfirmScreen(screen: panel.screen, confirm: c)
+            case .result(let r): ResultScreen(screen: panel.screen, result: r)
+            case .alert(let a): AlertScreen(screen: panel.screen, alert: a)
+            }
+        }
+        // From a tap until the app's answer arrives (slower from the Mac), the screen shows as pending, so a
+        // tap that seems to do nothing isn't repeated.
+        .invalidatableContent()
+    }
+}
+
+/// The Dynamic Island's expanded bottom is too short for the bolus screens, so it shows where the bolus
+/// stands in one row: a result with its Cancel or Done, an alert with ✕, or that the bolus is open on the
+/// Lock Screen card, which the Mac shows too.
+struct IslandPanelView: View {
+    let panel: LiveActivityPanel
+
+    var body: some View {
+        HStack(spacing: 8) {
+            switch panel.view {
+            case .result(let r):
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(r.headline).font(.subheadline.weight(.bold)).foregroundStyle(color(r.tone))
+                    if let line = r.line { Text(line).font(.caption).lineLimit(1) }
+                }
+                Spacer()
+                switch r.button {
+                case .cancel:
+                    PanelButton(screen: panel.screen, action: .cancelBolus) {
+                        Pill(text: "Cancel", color: AppTheme.low)
+                    }
+                case .cancelling: Pill(text: "Cancelling", color: AppTheme.low, enabled: false)
+                case .done: PanelButton(screen: panel.screen, action: .close) { Pill(text: "Done") }
+                }
+            case .alert(let a):
+                Label(a.title, systemImage: "exclamationmark.triangle.fill").font(.subheadline.weight(.semibold))
+                    .foregroundStyle(a.critical ? AppTheme.low : AppTheme.high).lineLimit(1)
+                Spacer()
+                CloseButton(screen: panel.screen)
+            default:
+                Text("Bolus open on the Lock Screen").font(.subheadline).foregroundStyle(.secondary)
+                Spacer()
+                CloseButton(screen: panel.screen)
+            }
+        }
+        .invalidatableContent()
+    }
+
+    private func color(_ tone: LiveActivityPanel.Result.Tone) -> Color {
+        switch tone {
+        case .working: AppTheme.insulin
+        case .good: AppTheme.inRange
+        case .caution: AppTheme.high
+        case .bad: AppTheme.low
         }
     }
 }
@@ -368,6 +421,7 @@ struct IdleRow: View {
                 Pill(text: "Cancelling", color: AppTheme.low, enabled: false)
             }
         }
+        .invalidatableContent()
     }
 }
 

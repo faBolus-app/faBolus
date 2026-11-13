@@ -146,7 +146,7 @@ public enum StatusComposer {
             case .alert, .urgent: intent = .alert
             }
             // The watch clears only what's `.available`: a pump not yet known is the phone's to try.
-            let dismissable = alert.pumpAlert.map { $0.remoteClear == .available && !$0.isMalfunction } ?? false
+            let dismissable = alert.pumpAlert?.remoteClearOffered ?? false
             return AlertItem(
                 id: wireId(alert.identifier),
                 title: truncated(alert.title, WireLimits.maxTitleLength),

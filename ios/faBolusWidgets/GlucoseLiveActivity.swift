@@ -22,7 +22,7 @@ struct GlucoseLiveActivity: Widget {
                 DynamicIslandExpandedRegion(.leading) {
                     VStack(alignment: .leading, spacing: 6) {
                         v.ageText.font(.caption2).foregroundStyle(v.stale ? .orange : .secondary)
-                        if let chip = v.chips.first { ChipView(chip: chip) }
+                        if let chip = v.chips().first { ChipView(chip: chip) }
                     }
                 }
                 DynamicIslandExpandedRegion(.trailing) {
@@ -30,13 +30,13 @@ struct GlucoseLiveActivity: Widget {
                         if let corner = v.topRight {
                             Text(corner).font(.system(size: 15, weight: .bold, design: .rounded))
                         }
-                        if let chip = v.chips.dropFirst().first { ChipView(chip: chip) }
+                        if let chip = v.chips().dropFirst().first { ChipView(chip: chip) }
                     }
                 }
                 DynamicIslandExpandedRegion(.center) { v.glucose(size: 34) }
                 DynamicIslandExpandedRegion(.bottom) {
                     if let panel = v.activePanel {
-                        PanelScreenView(panel: panel, glucose: v)
+                        IslandPanelView(panel: panel)
                     } else {
                         VStack(spacing: 6) {
                             GlucoseCurve(view: v).frame(height: 44)
@@ -137,7 +137,7 @@ struct LAView {
     var compactChoice: String {
         switch content.layout.compact ?? .arrow {
         case .arrow:
-            return arrow.isEmpty ? (chips.first?.value ?? "") : arrow
+            return arrow.isEmpty ? (chips().first?.value ?? "") : arrow
         case .delta:
             guard !stale, let d = LiveActivityMetrics.delta(snapshot.recent, now: now) else { return "" }
             return "\(d > 0 ? "+" : d < 0 ? "−" : "±")\(snapshot.unit.format(mgdl: abs(d)))"
@@ -213,9 +213,13 @@ struct LAView {
         }
     }
 
-    /// The chosen fields besides glucose and what the corner already shows. A value past its window shows
-    /// "—"; the connection field appears only while the pump is down.
-    var chips: [Chip] {
+    /// The chosen fields besides glucose and, beside a corner, what the corner already shows. A value past its
+    /// window shows "—"; the connection field appears only while the pump is down.
+    /// - Parameter besideCorner: the view draws the corner (the Curve card, the Dynamic Island); the Chips
+    ///   and Slim cards don't, so they leave nothing out.
+    func chips(besideCorner: Bool = true) -> [Chip] {
+        let shown = content.layout.fields.filter { $0 != .glucose }
+        guard besideCorner else { return shown.compactMap(chip) }
         let corner: Set<LiveActivityField> =
             switch content.layout.topRight {
             case .iobDelta: [.iob, .delta]
@@ -226,9 +230,7 @@ struct LAView {
             case .reservoir: [.reservoir]
             case .none: []
             }
-        // The slim style has no corner, so it leaves nothing out.
-        let inCorner = content.layout.style == .slim ? [] : corner
-        return content.layout.fields.filter { $0 != .glucose && !inCorner.contains($0) }.compactMap(chip)
+        return shown.filter { !corner.contains($0) }.compactMap(chip)
     }
 
     private func chip(_ field: LiveActivityField) -> Chip? {
@@ -323,7 +325,7 @@ struct LockScreenView: View {
                 Spacer()
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 10) {
-                        ForEach(view.chips, id: \.self) { ChipView(chip: $0) }
+                        ForEach(view.chips(), id: \.self) { ChipView(chip: $0) }
                         Spacer()
                     }
                     view.idleRow
@@ -341,7 +343,7 @@ struct LockScreenView: View {
                 view.glucose(size: 28)
                 view.ageText.font(.caption2).foregroundStyle(view.stale ? .orange : .secondary)
                 Spacer()
-                ForEach(view.chips.prefix(2), id: \.self) { ChipView(chip: $0) }
+                ForEach(view.chips(besideCorner: false).prefix(2), id: \.self) { ChipView(chip: $0) }
             }
             view.idleRow
         }
@@ -357,8 +359,9 @@ struct LockScreenView: View {
                     view.ageText.font(.caption2).foregroundStyle(view.stale ? .orange : .secondary)
                 }
                 Spacer()
+                // Two rows at most, so the bottom row still fits in the Lock Screen's 160 points.
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 6) {
-                    ForEach(view.chips, id: \.self) { ChipView(chip: $0) }
+                    ForEach(view.chips(besideCorner: false).prefix(4), id: \.self) { ChipView(chip: $0) }
                 }
                 .frame(maxWidth: 190)
             }

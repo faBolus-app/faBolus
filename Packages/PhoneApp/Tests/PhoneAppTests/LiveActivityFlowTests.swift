@@ -373,6 +373,48 @@ import faBolusCore
         await r.model.shutdown()
     }
 
+    /// An alert cleared somewhere else while its screen is open takes the Live Activity back to the card,
+    /// whose Bolus then works.
+    @Test func anAlertClearedElsewhereLeavesAWorkingCard() async throws {
+        let r = await rig { $0.alertBitmap = 1 << 7 }
+        _ = await r.phone.until(r.model) { r.flow.alertSummary != nil }
+        await r.tap(.showAlerts)
+        guard case .alert = r.view else {
+            Issue.record("expected the alert, got \(r.view)")
+            return
+        }
+        let alert = try #require(r.model.pump.alerts?.value.first)
+        await r.phone.driving(r.model) { _ = await r.model.dismiss(alert) }
+        _ = await r.phone.until(r.model) { r.flow.alertSummary == nil }
+        #expect(r.view == .idle(.bolus))
+        await r.tap(.startBolus)
+        guard case .entry = r.view else {
+            Issue.record("expected the entry, got \(r.view)")
+            return
+        }
+        await r.model.shutdown()
+    }
+
+    /// Carbs only to a stale reading sends no glucose: the reading had no part in the dose.
+    @Test func carbsOnlyToAStaleReadingNamesNoGlucose() async {
+        let r = await rig { $0.glucose = (220, 9 * 60) }
+        await r.tap(.startBolus)
+        if case .entry(let e) = r.view, e.mode != .carbs { await r.tap(.switchMode) }
+        for _ in 0..<3 { await r.tap(.adjust(up: true, coarse: true)) }
+        await r.tap(.review)
+        guard case .question(let q) = r.view else {
+            Issue.record("expected the question, got \(r.view)")
+            return
+        }
+        await r.tap(.answer(yes: false))
+        await r.confirm()
+        #expect(await r.phone.until(r.model) { await r.entries().count == 1 })
+        let sent = await r.entries().first
+        #expect(sent.map { formatUnits($0.request.totalUnits) } == q.noUnits)
+        #expect(sent?.request.bgMgdl == nil)
+        await r.model.shutdown()
+    }
+
     /// A Live Activity update with a long alert and a busy screen still fits ActivityKit's limit.
     @Test func theContentFitsWithTheControls() throws {
         var layout = LiveActivityLayout()

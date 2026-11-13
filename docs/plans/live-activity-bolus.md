@@ -180,6 +180,12 @@ From `AlertSnapshot.active`, as the watch gets them: most severe first, red for 
   Allow Access When Locked → Live Activities) hides Live Activities on the locked Lock Screen; whether the
   Mac still shows them then is to be checked on a device.
 
+## The Dynamic Island
+
+Its expanded bottom is too short for the bolus screens. While one is open it shows where the bolus stands
+in one row: a result with its Cancel or Done, an alert's title, or "Bolus open on the Lock Screen" with ✕.
+The bolus itself is chosen and confirmed on the Lock Screen card, or the Mac's.
+
 ## Notifications
 
 The Live Activity never alerts by itself: its updates carry no alert configuration, so a pump alert sounds

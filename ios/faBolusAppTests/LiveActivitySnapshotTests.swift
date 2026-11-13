@@ -203,6 +203,30 @@ import faBolusCore
         check("delivered", pill(delivered), width: 180, height: 32)
     }
 
+    /// The Chips style with every field: two rows of chips at most, so the bottom row still fits.
+    @Test func chips() {
+        var content = Self.content(
+            .idle(.bolus), alerts: LiveActivityAlerts(topTitle: "Low insulin", topCritical: false, count: 1))
+        content.layout.style = .classic
+        content.layout.fields = LiveActivityField.allCases
+        check("idle", LockScreenView(view: Self.view(content)))
+    }
+
+    /// The Dynamic Island's expanded bottom: where the bolus stands, in one row.
+    @Test func island() {
+        func island(_ screen: LiveActivityPanel.Screen) -> some View {
+            IslandPanelView(panel: LiveActivityPanel(screen: "snap-1", view: screen)).padding(.horizontal, 16)
+        }
+        check(
+            "delivering",
+            island(.result(.init(headline: "Delivering…", tone: .working, line: "2.00 U", button: .cancel))),
+            height: 60)
+        check(
+            "review",
+            island(.review(.init(units: "3.00 U", taps: 1, expiresAt: Self.now.addingTimeInterval(60)))),
+            height: 60)
+    }
+
     @Test func small() {
         let content = Self.content(
             .result(.init(headline: "Delivering…", tone: .working, line: "2.00 U", button: .cancel)),

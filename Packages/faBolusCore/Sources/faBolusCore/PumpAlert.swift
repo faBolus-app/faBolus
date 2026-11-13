@@ -94,6 +94,10 @@ public struct PumpAlert: Identifiable, Sendable, Hashable, Codable {
 
     public var isMalfunction: Bool { malfunctionCode != nil }
 
+    /// A remote (the watch, the Live Activity) offers to clear it: the session found the pump clears it
+    /// remotely, and it isn't a malfunction. A pump not yet known is the phone's to try first.
+    public var remoteClearOffered: Bool { remoteClear == .available && !isMalfunction }
+
     /// Severity follows the pump's own classification: alarms and malfunctions stop or threaten
     /// delivery, so they are critical; reminders are informational.
     public var severity: AlertSeverity {

@@ -113,6 +113,9 @@ final class LiveActivityFlow {
     /// Unique to this run of the app.
     private let runToken = String(UUID().uuidString.prefix(6))
     private var cancelling: (since: Date, answered: Bool)?
+    /// A cancel tapped while one was with the session: it runs again once that one returns, because the
+    /// first may have found nothing to stop before a delivery started (as the watch host does).
+    private var cancelAgain = false
     /// A cancel tapped while the dose was still being composed: it's never handed to the session.
     private var cancelledBeforeStart = false
     private var clearNote: (alertId: String, note: String)?
@@ -190,14 +193,16 @@ final class LiveActivityFlow {
         case (.question(let q), .answer(let yes)):
             let dose = yes ? q.yesUnits : q.noUnits
             var review = Review(
-                entry: q.entry, units: dose, split: nil, glucoseMgdl: q.mgdl, question: q, shownAt: model.now)
+                entry: q.entry, units: dose, split: split(q.entry, units: dose, glucoseMgdl: yes ? q.mgdl : nil),
+                glucoseMgdl: q.mgdl, question: q, shownAt: model.now)
             switch q.kind {
             case .correction:
+                // The reading goes with the answer: the composer applies "no" only to this same reading.
                 review.declineCorrection = !yes
-                review.split = split(q.entry, units: dose, glucoseMgdl: yes ? q.mgdl : nil)
             case .staleReading:
                 review.includeStaleGlucose = yes
-                review.split = split(q.entry, units: dose, glucoseMgdl: yes ? q.mgdl : nil)
+                // Carbs only names no glucose: the stale reading had no part in the dose.
+                if !yes { review.glucoseMgdl = nil }
             }
             state = .review(review)
         case (.question(let q), .back):
@@ -389,13 +394,14 @@ final class LiveActivityFlow {
         }
     }
 
-    func canReview(_ entry: Entry) -> Bool {
+    /// - Parameter preview: the entry's preview when the caller already has it.
+    func canReview(_ entry: Entry, preview known: Preview? = nil) -> Bool {
         guard availability == nil else { return false }
         switch entry.mode {
         case .units:
             return entry.value >= Int((BolusVolume.minimumUnits * 1000).rounded())
         case .carbs:
-            let p = preview(entry)
+            let p = known ?? preview(entry)
             if p.question != nil { return true }
             guard let units = p.units, units >= BolusVolume.minimumUnits else { return false }
             return doseLimitMilliunits.map { units * 1000 <= Double($0) + 1e-6 } ?? true
@@ -483,16 +489,24 @@ final class LiveActivityFlow {
     /// Never gated. Tried again while the pump gives no definite answer, as the watch host does.
     private func cancelBolus() async {
         if case .result(let r) = state, case .sending = r.stage { cancelledBeforeStart = true }
-        guard cancelling == nil || cancelling?.answered == true else { return }
+        guard cancelling == nil || cancelling?.answered == true else {
+            cancelAgain = true
+            return
+        }
         cancelling = (model.now, false)
         model.publishSurfaces()
         var retries = 3
-        var result = await model.cancelBolus()
-        while result == .unconfirmed || result == .notConnected, retries > 0 {
-            retries -= 1
-            try? await Task.sleep(for: .seconds(2))
+        var result: CancelResult
+        repeat {
+            cancelAgain = false
             result = await model.cancelBolus()
-        }
+            // No definite answer, or no pump to ask: a bolus may still be going in, so it's asked again.
+            while result == .unconfirmed || result == .notConnected, retries > 0 {
+                retries -= 1
+                try? await Task.sleep(for: .seconds(2))
+                result = await model.cancelBolus()
+            }
+        } while cancelAgain
         cancelling = result == .unconfirmed || result == .notConnected ? (cancelling?.since ?? model.now, true) : nil
     }
 
@@ -515,7 +529,7 @@ final class LiveActivityFlow {
     /// What the watch offers to clear: the session says the pump can clear it remotely, and it isn't a
     /// malfunction.
     static func canClear(_ alert: ActiveAlert) -> Bool {
-        alert.pumpAlert.map { $0.remoteClear == .available && !$0.isMalfunction } ?? false
+        alert.pumpAlert?.remoteClearOffered ?? false
     }
 
     private func clearAlert(at index: Int) async {
@@ -593,7 +607,12 @@ final class LiveActivityFlow {
             return .result(resultView(r, now: now))
         case .alert(let index):
             let list = alerts
-            guard list.indices.contains(index) else { return .idle(idleButton) }
+            guard list.indices.contains(index) else {
+                // It went (cleared elsewhere): back to the card, whose buttons then work.
+                clearNote = nil
+                state = .idle
+                return .idle(idleButton)
+            }
             let alert = list[index]
             return .alert(
                 LiveActivityPanel.AlertCard(
@@ -626,7 +645,7 @@ final class LiveActivityFlow {
         let blocked = availability.map(Self.shortText)
         return LiveActivityPanel.Entry(
             mode: mode, value: value, canDecrease: entry.value > 0, canIncrease: entry.value < dialMax(entry),
-            preview: text, message: blocked ?? preview?.message, canReview: canReview(entry))
+            preview: text, message: blocked ?? preview?.message, canReview: canReview(entry, preview: preview))
     }
 
     private func questionView(_ q: Question) -> LiveActivityPanel.Question {
