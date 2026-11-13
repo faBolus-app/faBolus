@@ -90,17 +90,24 @@ public struct LedgerNotSaved: Error, Sendable, Equatable {
 /// - any later outcome that can't be saved stays in memory and blocks new boluses until a save
 ///   succeeds, because a restart would otherwise forget it.
 public actor DurableBolusLedger {
-    public private(set) var ledger: RemoteBolusLedger
+    private var stored: RemoteBolusLedger
     private let store: (any RemoteBolusLedgerPersisting)?
     private var ledgerUnreadable: Bool
     private var outcomeNotSaved = false
+    /// The app's clocks, when it gave them: then a phone clock set while the app runs moves the
+    /// recent-delivery stamps with it (`followClock`).
+    private let clock: SessionClock?
+    private var clockSteps = ClockStepDetector()
 
     /// Loads the ledger and turns anything left in flight by a previous process into its restart
     /// outcome (`RemoteBolusLedger.recoverAfterRestart`), saving that before any new request.
-    public init(store: sending (any RemoteBolusLedgerPersisting)?, now: Date = Date()) {
+    ///
+    /// - Parameter clock: the app's clocks. Without them the ledger takes each call's `now` as it is.
+    public init(store: sending (any RemoteBolusLedgerPersisting)?, now: Date = Date(), clock: SessionClock? = nil) {
+        self.clock = clock
         guard let store else {
             self.store = nil
-            ledger = RemoteBolusLedger()
+            stored = RemoteBolusLedger()
             ledgerUnreadable = false
             return
         }
@@ -111,8 +118,31 @@ public actor DurableBolusLedger {
             do { try store.save(ledger) } catch { outcomeNotSaved = true }
         }
         self.store = store
-        self.ledger = ledger
+        stored = ledger
         ledgerUnreadable = loaded.failedClosed
+    }
+
+    /// The ledger as it stands, its stamps moved for any phone clock set since the last look.
+    public var ledger: RemoteBolusLedger {
+        followClock()
+        return stored
+    }
+
+    /// The time to stamp a change with: the ledger's own wall clock, read together with its look for a
+    /// phone clock set, so a stamp the caller took just before the clock was set can't land unmoved among
+    /// stamps that were moved. Without the app's clocks, the caller's time.
+    private func stamp(_ given: Date) -> Date {
+        followClock()
+        return clock?.now() ?? given
+    }
+
+    /// The phone's clock being set (by hand, or a large network correction) shows as a change in the wall
+    /// clock less the monotonic one. The recent-delivery stamps are moved by the same step, so a clock set
+    /// forward between a delivery and a resend of the same dose under a new ID can't age the delivery out of
+    /// the duplicate window. A few seconds' change is the clocks drifting, and moves nothing.
+    private func followClock() {
+        guard let clock, let step = clockSteps.step(clock) else { return }
+        stored.phoneClockSet(by: step)
     }
 
     /// Why a new bolus can't start now, or `nil` when one may.
@@ -120,7 +150,7 @@ public actor DurableBolusLedger {
         if store == nil { return .noDurableStore }
         if ledgerUnreadable { return .ledgerUnreadable }
         if outcomeNotSaved { return .outcomeNotSaved }
-        return ledger.block
+        return stored.block
     }
 
     /// Record a new request. Only `.proceed` lets the caller go ahead, and it is returned only after the
@@ -133,12 +163,13 @@ public actor DurableBolusLedger {
     ) throws -> RemoteBolusLedger.Decision {
         // A repeat of a recorded request is answered from its own entry, so a remote always gets its
         // outcome back, even while storage problems block new requests.
-        if !ledger.hasExistingEntry(request.ledgerKey), let block { return .blocked(block) }
-        var next = ledger
+        let now = stamp(now)
+        if !stored.hasExistingEntry(request.ledgerKey), let block { return .blocked(block) }
+        var next = stored
         let decision = next.begin(request, usedIncludedStaleBG: usedIncludedStaleBG, now: now)
         guard decision == .proceed else { return decision }
         try save(next, blocksOnFailure: false)
-        ledger = next
+        stored = next
         return decision
     }
 
@@ -152,52 +183,53 @@ public actor DurableBolusLedger {
         _ key: RemoteBolusLedger.Key, bolusId: Int, pumpKey: String? = nil, pumpClock: UInt32? = nil,
         now: Date = Date()
     ) throws -> Bool {
-        var next = ledger
+        let now = stamp(now)
+        var next = stored
         guard next.markAccepted(key, bolusId: bolusId, pumpKey: pumpKey, pumpClock: pumpClock, now: now) else {
             return false
         }
         try save(next, blocksOnFailure: false)
-        ledger = next
+        stored = next
         return true
     }
 
     @discardableResult
     public func markDelivering(_ key: RemoteBolusLedger.Key, now: Date = Date()) throws -> Bool {
-        try apply { $0.markDelivering(key, now: now) }
+        try apply({ $0.markDelivering(key, now: $1) }, at: now)
     }
 
     @discardableResult
     public func markUnknown(_ key: RemoteBolusLedger.Key, now: Date = Date()) throws -> Bool {
-        try apply { $0.markUnknown(key, now: now) }
+        try apply({ $0.markUnknown(key, now: $1) }, at: now)
     }
 
     @discardableResult
     public func markDelivered(_ key: RemoteBolusLedger.Key, units: Double, now: Date = Date()) throws -> Bool {
-        try apply { $0.markDelivered(key, units: units, now: now) }
+        try apply({ $0.markDelivered(key, units: units, now: $1) }, at: now)
     }
 
     @discardableResult
     public func markRefused(_ key: RemoteBolusLedger.Key, reason: String, now: Date = Date()) throws -> Bool {
-        try apply { $0.markRefused(key, reason: reason, now: now) }
+        try apply({ $0.markRefused(key, reason: reason, now: $1) }, at: now)
     }
 
     @discardableResult
     public func markFailed(_ key: RemoteBolusLedger.Key, reason: String, now: Date = Date()) throws -> Bool {
-        try apply { $0.markFailed(key, reason: reason, now: now) }
+        try apply({ $0.markFailed(key, reason: reason, now: $1) }, at: now)
     }
 
     @discardableResult
     public func markDeliveredFromHistory(
         _ key: RemoteBolusLedger.Key, units: Double, historyPumpKey: String, now: Date = Date()
     ) throws -> Bool {
-        try apply { $0.markDeliveredFromHistory(key, units: units, historyPumpKey: historyPumpKey, now: now) }
+        try apply({ $0.markDeliveredFromHistory(key, units: units, historyPumpKey: historyPumpKey, now: $1) }, at: now)
     }
 
     @discardableResult
     public func markAbsentFromHistory(
         _ key: RemoteBolusLedger.Key, historyPumpKey: String, now: Date = Date()
     ) throws -> Bool {
-        try apply { $0.markAbsentFromHistory(key, historyPumpKey: historyPumpKey, now: now) }
+        try apply({ $0.markAbsentFromHistory(key, historyPumpKey: historyPumpKey, now: $1) }, at: now)
     }
 
     /// Record a remote request refused before any entry, so its resend gets the same refusal after a
@@ -209,23 +241,25 @@ public actor DurableBolusLedger {
     public func recordRemoteRefusal(
         _ key: RemoteBolusLedger.Key, reason: String, confirmations: [DoseConfirmation.Kind] = [], now: Date = Date()
     ) throws -> Bool {
-        guard ledger.recordRemoteRefusal(key, reason: reason, confirmations: confirmations, now: now) else {
+        let now = stamp(now)
+        guard stored.recordRemoteRefusal(key, reason: reason, confirmations: confirmations, now: now) else {
             return false
         }
-        try save(ledger, blocksOnFailure: false)
+        try save(stored, blocksOnFailure: false)
         return true
     }
 
     /// The user checked the pump and confirms one unknown outcome.
     @discardableResult
     public func confirmOnPump(_ key: RemoteBolusLedger.Key, now: Date = Date()) throws -> Bool {
-        try apply { $0.confirmOnPump(key, now: now) }
+        try apply({ $0.confirmOnPump(key, now: $1) }, at: now)
     }
 
     /// The user checked the pump and confirms every unknown outcome, including any an unreadable ledger
     /// may have hidden. Writes the ledger fresh, so an unreadable file is replaced. Never called
     /// automatically.
     public func confirmAllOnPump(now: Date = Date()) throws {
+        let now = stamp(now)
         // An unreadable file may have been a passing failure (a launch before the first unlock). Read it
         // again before writing, so a ledger that is readable now isn't replaced by an empty one.
         if ledgerUnreadable, let store {
@@ -233,12 +267,12 @@ public actor DurableBolusLedger {
             if !reloaded.failedClosed {
                 var recovered = reloaded.ledger
                 recovered.recoverAfterRestart(now: now)
-                ledger = recovered
+                stored = recovered
             }
         }
-        var next = ledger
+        var next = stored
         for entry in next.unresolved { next.confirmOnPump(entry.key, now: now) }
-        ledger = next
+        stored = next
         try save(next)
         ledgerUnreadable = false
     }
@@ -249,13 +283,14 @@ public actor DurableBolusLedger {
     public var hasUnsavedOutcome: Bool { outcomeNotSaved && !ledgerUnreadable && store != nil }
 
     /// Try again to save an outcome that couldn't be saved. Lifts `.outcomeNotSaved` on success.
-    public func retrySave() throws { try save(ledger) }
+    public func retrySave() throws { try save(stored) }
 
     /// Apply a transition that has already happened at the pump. It's kept in memory even if the save
     /// fails, because it's the truth; the failed save blocks new boluses instead.
-    private func apply(_ transition: (inout RemoteBolusLedger) -> Bool) throws -> Bool {
-        guard transition(&ledger) else { return false }
-        try save(ledger)
+    private func apply(_ transition: (inout RemoteBolusLedger, Date) -> Bool, at now: Date) throws -> Bool {
+        let now = stamp(now)
+        guard transition(&stored, now) else { return false }
+        try save(stored)
         return true
     }
 

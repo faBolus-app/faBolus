@@ -30,6 +30,31 @@ import faBolusCore
         #expect(await h.coordinator.snapshot.active.map(\.identifier) == [DisconnectEscalation.firstNoticeId])
     }
 
+    /// The phone's clock set forward an hour while the pump is down brings no notice forward: the first still
+    /// comes 15 minutes after the drop, by the time that really passed.
+    @Test func aClockSetForwardBringsNoNoticeForward() async {
+        let h = await Harness.launch()
+        await h.send(.disconnected(.linkLost(code: 7)))
+        let posted = await h.scheduler.adds.count
+        h.clock.set(by: 60 * m)
+        h.clock.advance(m)
+        await h.send(.disconnected(.linkLost(code: 7)))
+        #expect(await h.scheduler.adds.count == posted, "nothing posted again")
+        #expect(await h.coordinator.snapshot.active.isEmpty)
+        h.clock.advance(14 * m)
+        await h.coordinator.tick()
+        #expect(await h.coordinator.snapshot.active.map(\.identifier) == [DisconnectEscalation.firstNoticeId])
+    }
+
+    /// What the watch is shown follows the clock too, before anything else runs.
+    @Test func aSnapshotRightAfterTheClockIsSetShowsNothingEarly() async {
+        let h = await Harness.launch()
+        await h.send(.disconnected(.linkLost(code: 7)))
+        _ = await h.coordinator.snapshot
+        h.clock.set(by: 60 * m)
+        #expect(await h.coordinator.snapshot.active.isEmpty)
+    }
+
     @Test func reconnectingWithdrawsEveryDisconnectNotice() async {
         let h = await Harness.launch()
         await h.send(.disconnected(.linkLost(code: nil)))

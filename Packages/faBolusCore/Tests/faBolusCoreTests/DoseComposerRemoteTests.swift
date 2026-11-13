@@ -118,26 +118,34 @@ import Testing
         #expect(compose(F.remote(.units(1), sentAt: F.now.addingTimeInterval(29))).dose != nil)
     }
 
-    /// A request composed before the last bolus was sent was built on the state before it.
+    /// A request composed before the last bolus was sent was built on the state before it. Its stamp is the
+    /// remote's clock, which may run up to 30 s fast (`futureSkewToleranceSec`), so a delivery from another
+    /// surface up to 30 s before the stamp may still be after the request was made.
     @Test func requestComposedBeforeTheLastDeliveryIsRefused() {
         let sentAt = F.now.addingTimeInterval(-10)
-        #expect(
-            compose(
-                F.remote(.units(1), sentAt: sentAt), context: F.context(lastDeliveryAt: sentAt.addingTimeInterval(1))
-            )
-            .refusal == .supersededByDelivery)
-        #expect(
-            compose(
-                F.remote(.units(1), sentAt: sentAt), context: F.context(lastDeliveryAt: sentAt.addingTimeInterval(-1))
-            )
-            .dose != nil)
+        func compose(deliveredAt offset: TimeInterval, by peer: String = "phone") -> RemoteDoseDecision {
+            self.compose(
+                F.remote(.units(1), sentAt: sentAt),
+                context: F.context(lastDeliveryAt: sentAt.addingTimeInterval(offset), lastDeliveryPeerId: peer))
+        }
+        #expect(compose(deliveredAt: 1).refusal == .supersededByDelivery)
+        #expect(compose(deliveredAt: -29).refusal == .supersededByDelivery)
+        #expect(compose(deliveredAt: -31).dose != nil)
+        // The remote's own last bolus it knew of: compared exactly, so a second dose right after it goes.
+        #expect(compose(deliveredAt: 1, by: "garmin").refusal == .supersededByDelivery)
+        #expect(compose(deliveredAt: -1, by: "garmin").dose != nil)
     }
 
-    /// A delivery at the very moment the request was sent doesn't supersede it; one a moment later does.
+    /// A delivery exactly the skew before the stamp doesn't supersede the request; one a moment later does.
     @Test func supersessionIsStrictlyLater() {
         let sentAt = F.now.addingTimeInterval(-10)
+        let edge = sentAt.addingTimeInterval(-RemoteRequestFreshness.futureSkewToleranceSec)
+        #expect(compose(F.remote(.units(1), sentAt: sentAt), context: F.context(lastDeliveryAt: edge)).dose != nil)
         #expect(
-            compose(F.remote(.units(1), sentAt: sentAt), context: F.context(lastDeliveryAt: sentAt)).dose != nil)
+            compose(
+                F.remote(.units(1), sentAt: sentAt), context: F.context(lastDeliveryAt: edge.addingTimeInterval(0.001))
+            )
+            .refusal == .supersededByDelivery)
     }
 
     // MARK: - The pump and the ledger

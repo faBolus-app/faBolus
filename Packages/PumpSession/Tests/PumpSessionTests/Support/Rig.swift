@@ -107,13 +107,14 @@ final class Rig {
         connection = PumpConnection(transport: transport, clock: clock)
         self.ledgerStore = ledgerStore ?? MemoryLedgerStore(saved)
         let clock = self.clock
-        ledger = DurableBolusLedger(store: self.ledgerStore, now: clock.date)
+        let sessionClock = SessionClock(now: { clock.date }, uptime: { clock.elapsed })
+        ledger = DurableBolusLedger(store: self.ledgerStore, now: clock.date, clock: sessionClock)
         store = MemoryPumpSessionStore(record ?? (paired ? PumpSessionRecord(pairing: Self.pairing) : nil))
         let pairingSecrets = PairingSecrets(store: secrets)
         if paired { try? pairingSecrets.store(.legacy(code: ScriptedPump.code)) }
         session = PumpSession(
             connection: connection, ledger: ledger, store: store, secrets: pairingSecrets, historySink: historySink,
-            configuration: configuration, clock: { clock.date })
+            configuration: configuration, clock: sessionClock)
     }
 
     /// Bluetooth on, the app in the foreground, the session started: with a stored pairing the link comes

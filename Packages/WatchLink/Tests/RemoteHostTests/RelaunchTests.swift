@@ -180,14 +180,16 @@ final class RelaunchingPhone {
         let transport = ScriptedTransport(pump: pump)
         let connection = PumpConnection(transport: transport, clock: clock)
         let life = ProcessLife()
-        let ledger = DurableBolusLedger(store: ProcessLedgerStore(disk: disk, life: life), now: clock.date)
+        let sessionClock = SessionClock(now: { clock.date }, uptime: { clock.elapsed })
+        let ledger = DurableBolusLedger(
+            store: ProcessLedgerStore(disk: disk, life: life), now: clock.date, clock: sessionClock)
         let session = PumpSession(
             connection: connection, ledger: ledger, store: ProcessSessionStore(disk: disk, life: life),
             secrets: PairingSecrets(store: secrets),
-            historySink: nil, clock: { clock.date })
+            historySink: nil, clock: sessionClock)
         let alerts = AlertCoordinator(
             store: FileAlertStore(directory: alertDirectory), scheduler: SilentNotifications(), ledger: ledger,
-            tickInterval: nil, clock: { clock.date })
+            tickInterval: nil, clock: { clock.date }, uptime: { clock.elapsed })
         let watch = Transport()
         let link = WatchLink(transport: watch, clock: TestClock(), jitter: { 0 })
         let services = SessionRemoteServices(

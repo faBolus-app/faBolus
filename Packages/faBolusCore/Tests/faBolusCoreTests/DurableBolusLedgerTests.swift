@@ -387,4 +387,95 @@ final class DurableBolusLedgerTests {
         #expect(try await ledger.markDelivering(Self.key("phone", "p1")) == false)
         #expect(await ledger.block == .bolusInProgress)
     }
+
+    // MARK: - The phone's clock set
+
+    /// A wall clock that can be set apart from the monotonic one, as a user setting the phone's time does.
+    private final class SettableClock: @unchecked Sendable {
+        // @unchecked Sendable: guarded by `lock`.
+        private let lock = NSLock()
+        private var wall = DurableBolusLedgerTests.t0
+        private var up = 0.0
+        var now: Date { lock.withLock { wall } }
+        var clock: SessionClock { SessionClock(now: { self.now }, uptime: { self.lock.withLock { self.up } }) }
+        func pass(_ seconds: TimeInterval) {
+            lock.withLock {
+                wall.addTimeInterval(seconds)
+                up += seconds
+            }
+        }
+        func set(by seconds: TimeInterval) { lock.withLock { wall.addTimeInterval(seconds) } }
+    }
+
+    private static func deliver(_ id: String, on ledger: DurableBolusLedger, at now: Date) async throws {
+        let k = key("garmin", id)
+        _ = try await ledger.begin(request("garmin", id), now: now)
+        try await ledger.markAccepted(k, bolusId: 7, now: now)
+        try await ledger.markDelivering(k, now: now)
+        try await ledger.markDelivered(k, units: 2, now: now)
+    }
+
+    /// The phone's clock set forward 100 s between a delivery and a resend of the same dose under a new ID 30 s
+    /// later: the delivery is 30 s old, inside the duplicate window, not 130 s.
+    @Test func aClockSetForwardDoesntAgeADeliveryOutOfTheDuplicateWindow() async throws {
+        let time = SettableClock()
+        let ledger = DurableBolusLedger(store: RemoteBolusLedgerStore(url: temporaryURL()), clock: time.clock)
+        try await Self.deliver("watch-1", on: ledger, at: time.now)
+        time.set(by: 100)
+        time.pass(30)
+        let doseKey = Self.request("garmin", "watch-2").doseKey
+        #expect(await ledger.ledger.hasRecentlyDeliveredDuplicate(peerId: "garmin", doseKey: doseKey, now: time.now))
+        // Set back instead, the window still ends when it should: 121 s after the delivery.
+        let back = SettableClock()
+        let other = DurableBolusLedger(store: RemoteBolusLedgerStore(url: temporaryURL()), clock: back.clock)
+        try await Self.deliver("watch-1", on: other, at: back.now)
+        back.set(by: -100)
+        back.pass(RemoteBolusLedger.recentDuplicateWindowSec + 1)
+        #expect(
+            !(await other.ledger.hasRecentlyDeliveredDuplicate(peerId: "garmin", doseKey: doseKey, now: back.now)))
+    }
+
+    /// A few seconds' drift between the clocks moves nothing: the window is the wall clock's.
+    @Test func driftUnderTheToleranceMovesNoStamp() async throws {
+        let time = SettableClock()
+        let ledger = DurableBolusLedger(store: RemoteBolusLedgerStore(url: temporaryURL()), clock: time.clock)
+        try await Self.deliver("watch-1", on: ledger, at: time.now)
+        time.set(by: 4)
+        time.pass(RemoteBolusLedger.recentDuplicateWindowSec - 3)
+        let doseKey = Self.request("garmin", "watch-2").doseKey
+        #expect(
+            !(await ledger.ledger.hasRecentlyDeliveredDuplicate(peerId: "garmin", doseKey: doseKey, now: time.now)))
+    }
+
+    /// A time the caller read just before the phone's clock was set doesn't land unmoved: the ledger stamps
+    /// with its own clock.
+    @Test func aStampTakenJustBeforeTheClockIsSetLandsInTheNewClock() async throws {
+        let time = SettableClock()
+        let ledger = DurableBolusLedger(store: RemoteBolusLedgerStore(url: temporaryURL()), clock: time.clock)
+        let k = Self.key("garmin", "watch-1")
+        _ = try await ledger.begin(Self.request("garmin", "watch-1"), now: time.now)
+        try await ledger.markAccepted(k, bolusId: 7, now: time.now)
+        try await ledger.markDelivering(k, now: time.now)
+        let before = time.now
+        time.set(by: 100)
+        try await ledger.markDelivered(k, units: 2, now: before)
+        time.pass(30)
+        let doseKey = Self.request("garmin", "watch-2").doseKey
+        #expect(await ledger.ledger.hasRecentlyDeliveredDuplicate(peerId: "garmin", doseKey: doseKey, now: time.now))
+    }
+
+    /// A refusal is kept for its 10 minutes of real time: a clock set forward past them doesn't let it go.
+    @Test func aClockSetForwardKeepsARecentRefusal() async throws {
+        let time = SettableClock()
+        let ledger = DurableBolusLedger(store: RemoteBolusLedgerStore(url: temporaryURL()), clock: time.clock)
+        let first = Self.key("garmin", "watch-0")
+        try await ledger.recordRemoteRefusal(first, reason: "No.", now: time.now)
+        time.set(by: RemoteBolusLedger.remoteRefusalKeepSec + 60)
+        time.pass(30)
+        // Past the cap, the oldest goes only once it is older than the keep window.
+        for i in 1...RemoteBolusLedger.remoteRefusalCap {
+            try await ledger.recordRemoteRefusal(Self.key("garmin", "watch-\(i)"), reason: "No.", now: time.now)
+        }
+        #expect(await ledger.ledger.remoteRefusal(first) != nil)
+    }
 }

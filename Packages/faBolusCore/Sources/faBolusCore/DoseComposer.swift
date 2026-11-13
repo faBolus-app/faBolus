@@ -37,6 +37,8 @@ public struct DoseContext: Sendable {
     /// When the most recent bolus from any surface was sent to the pump, by this phone's clock. A remote
     /// request composed before it was built on the state before that bolus.
     public var lastDeliveryAt: Date?
+    /// Who sent that bolus (its ledger peer ID): a remote's own last bolus is one it knew of.
+    public var lastDeliveryPeerId: String?
     /// The user's optional remote bolus size limit, units. Off when `nil`; a value that isn't a positive
     /// number refuses every remote dose. Never applied to the phone.
     public var remoteSizeLimitUnits: Double?
@@ -47,14 +49,15 @@ public struct DoseContext: Sendable {
 
     public init(
         pump: PumpState, access: AccessPolicy.AccessContext, bolusBlock: BolusBlock?,
-        inputsRequestedAt: Date, lastDeliveryAt: Date?, remoteSizeLimitUnits: Double?,
-        freshness: FreshnessThresholds, now: Date
+        inputsRequestedAt: Date, lastDeliveryAt: Date?, lastDeliveryPeerId: String? = nil,
+        remoteSizeLimitUnits: Double?, freshness: FreshnessThresholds, now: Date
     ) {
         self.pump = pump
         self.access = access
         self.bolusBlock = bolusBlock
         self.inputsRequestedAt = inputsRequestedAt
         self.lastDeliveryAt = lastDeliveryAt
+        self.lastDeliveryPeerId = lastDeliveryPeerId
         self.remoteSizeLimitUnits = remoteSizeLimitUnits
         self.freshness = freshness
         self.now = now
@@ -355,7 +358,7 @@ public enum DoseRefusal: Sendable, Equatable {
         case .blocked(let block): return block.userMessage
         case .requestTooOld: return RemoteRequestFreshness.rejectionMessage
         case .supersededByDelivery:
-            return "A bolus was delivered after this request was created — reopen the remote and try again."
+            return "A bolus was just delivered — reopen the remote and try again."
         case .recentlyDelivered:
             return "A matching bolus was just delivered — if you meant to dose again, wait a moment and resend."
         case .notARemote: return "This request didn't come from a paired remote."

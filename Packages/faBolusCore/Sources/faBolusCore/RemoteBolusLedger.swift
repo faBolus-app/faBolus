@@ -123,7 +123,7 @@ public struct RemoteBolusLedger: Sendable, Codable {
         /// What the remote may confirm to send the dose again; `nil` (as in a refusal saved before there
         /// were any) is none.
         public let confirmations: [DoseConfirmation.Kind]?
-        public let refusedAt: Date
+        public internal(set) var refusedAt: Date
     }
 
     private var remoteRefusals: [Key: RemoteRefusal] = [:]
@@ -390,6 +390,14 @@ public struct RemoteBolusLedger: Sendable, Codable {
     }
 
     private func recencyKey(_ peerId: String, _ doseKey: String) -> String { peerId + "\u{1F}" + doseKey }
+
+    /// The phone's clock was set by `seconds` (back when negative): the recent-delivery and refusal stamps
+    /// move with it, so the duplicate window and how long a refusal is kept stay the time that really passed
+    /// (`DurableBolusLedger`).
+    mutating func phoneClockSet(by seconds: TimeInterval) {
+        for key in recentDeliveries.keys { recentDeliveries[key]?.addTimeInterval(seconds) }
+        for key in remoteRefusals.keys { remoteRefusals[key]?.refusedAt.addTimeInterval(seconds) }
+    }
 
     /// A stable fingerprint of the dose parameters. Rounded so float formatting can't make two equal
     /// doses differ.

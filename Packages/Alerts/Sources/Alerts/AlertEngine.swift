@@ -158,6 +158,23 @@ public struct AlertEngine: Sendable {
         self.policy = policy
     }
 
+    /// The phone's clock was set by `seconds` (back when negative) while the app ran. The link-down time and
+    /// every held fire date move with it, so a disconnect notice still comes the time it should after the
+    /// drop, by the real time that passed. The OS was given each fire date as an interval from when it was
+    /// posted, so the notifications it holds already fire at those real times.
+    public mutating func phoneClockSet(by seconds: TimeInterval) {
+        func move(_ request: inout AlertRequest) { request.fireDate?.addTimeInterval(seconds) }
+        state.linkDownSince?.addTimeInterval(seconds)
+        for id in state.posted.keys { move(&state.posted[id]!) }
+        for id in state.refused.keys { move(&state.refused[id]!) }
+        for i in state.outbox.indices {
+            if case .post(var request) = state.outbox[i].effect {
+                move(&request)
+                state.outbox[i].effect = .post(request)
+            }
+        }
+    }
+
     // MARK: - Inputs
 
     /// Apply `input` at `now`. Returns the effects it added to the outbox, in the order to perform them.

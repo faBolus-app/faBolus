@@ -68,6 +68,7 @@ public final class MockPump {
             liveActivity: liveActivity)
         env.runsTimers = runsTimers
         env.clock = { clock.date }
+        env.uptime = { clock.elapsed }
         env.isMock = true
         return env
     }
