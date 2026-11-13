@@ -67,7 +67,11 @@ import faBolusCore
                 ControlIQInfoV2Request.self
             ])
         await expectRead(
-            .basalChange, [ControlIQIOBRequest.self, HomeScreenMirrorRequest.self, CurrentBasalStatusRequest.self])
+            .basalChange,
+            [
+                ControlIQIOBRequest.self, HomeScreenMirrorRequest.self, CurrentBasalStatusRequest.self,
+                TempRateRequest.self
+            ])
     }
 
     @Test func batteryCartridgeAndControlIQNoticesReadWhatTheyName() async {

@@ -38,10 +38,15 @@ struct StatusPillsView: View {
             cgm
         case .basal:
             let v = display.basal
+            let temp = display.tempRate
+            // Basal-IQ's suspension isn't red: it stops basal only, and a bolus still goes.
+            let basalIQ = display.isBasalIQSuspended
             Pill(
-                icon: display.isSuspended ? "pause.circle.fill" : "waveform.path.ecg",
+                icon: display.isSuspended
+                    ? "pause.circle.fill" : basalIQ ? "pause.circle" : temp != nil ? "timer" : "waveform.path.ecg",
                 tint: display.isSuspended ? AppTheme.low : (v.isKnown ? AppTheme.basal : .gray), value: v.text,
-                label: display.isSuspended ? "Delivery" : "Basal", stale: v.isStale)
+                label: display.isSuspended ? "Delivery" : basalIQ ? "Basal-IQ" : temp ?? "Basal",
+                stale: v.isStale)
         case .controlIQ:
             let v = display.controlIQText
             Pill(

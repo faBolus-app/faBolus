@@ -87,6 +87,11 @@ public final class ScriptedPump {
     public var tooManyBolusesIOB = false
     public var cgmHardwareInfo = "8KX21P"
     public var basalMilliunitsPerHour: UInt32 = 800
+    /// The home-screen basal icon id (byte 5): 0 basal, 2 temp rate, 3 zero temp rate, 4 suspended. The ids
+    /// are pumpX2's; which a t:slim shows when is unconfirmed.
+    public var basalIcon = 0
+    /// The running temp rate's percent as TempRate reports it, or nil for none.
+    public var tempRatePercent: Int?
     public var controlIQEnabled = false
     public var alertBitmap: UInt64 = 0 { didSet { if alertBitmap != oldValue { notice(.alert) } } }
     public var alarmBitmap: UInt64 = 0 { didSet { if alarmBitmap != oldValue { notice(.alarm) } } }
@@ -720,10 +725,16 @@ public final class ScriptedTransport: LinkTransport {
             var v = [UInt8](repeating: 0, count: 9)
             v[0] = UInt8(pump.trendIcon)
             v[1] = UInt8(pump.cgmAlertIcon)
+            v[5] = UInt8(pump.basalIcon)
             return HomeScreenMirrorResponse(cargo: v)
         case (.currentStatus, CurrentBasalStatusRequest.props.opCode):
             return CurrentBasalStatusResponse(
                 cargo: le32(pump.basalMilliunitsPerHour) + le32(pump.basalMilliunitsPerHour) + [0])
+        case (.currentStatus, TempRateRequest.props.opCode):
+            let percent = pump.tempRatePercent
+            return TempRateResponse(
+                cargo: [percent == nil ? 0 : 1, UInt8(percent ?? 0)] + le32(percent == nil ? 0 : pump.wallClock)
+                    + le32(percent == nil ? 0 : 30 * 60))
         case (.currentStatus, BasalLimitSettingsRequest.props.opCode):
             return BasalLimitSettingsResponse(cargo: le32(3000) + le32(3000))
         case (.currentStatus, ControlIQInfoV2Request.props.opCode):

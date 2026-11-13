@@ -74,7 +74,9 @@ import Testing
 @Suite struct ReadingMappingTests {
     private func apply(_ message: any TandemMessages.Message, to state: inout PumpState) {
         var alerts = PumpAlertLists()
-        _ = PumpReadings.apply(message, to: &state, alerts: &alerts, context: .init(receivedAt: Date(), anchor: nil))
+        var basal = PumpBasalParts()
+        _ = PumpReadings.apply(
+            message, to: &state, alerts: &alerts, basal: &basal, context: .init(receivedAt: Date(), anchor: nil))
     }
 
     /// pumpx2 names only status 1 as charging.
@@ -111,11 +113,12 @@ import Testing
     @Test func anInvalidOrUnavailableReadingIsNotTaken() {
         var state = PumpState()
         var alerts = PumpAlertLists()
+        var basal = PumpBasalParts()
         let anchor = PumpClockAnchor(pumpTime: 500_000_000, phoneTime: Date())
         for status: UInt8 in [0, 4] {
             _ = PumpReadings.apply(
                 CurrentEGVGuiDataResponse(cargo: le32(500_000_000) + le16(120) + [status, 0]), to: &state,
-                alerts: &alerts, context: .init(receivedAt: Date(), anchor: anchor))
+                alerts: &alerts, basal: &basal, context: .init(receivedAt: Date(), anchor: anchor))
             #expect(state.glucose == nil)
         }
     }

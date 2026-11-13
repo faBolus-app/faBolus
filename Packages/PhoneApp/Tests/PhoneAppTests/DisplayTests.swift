@@ -42,6 +42,24 @@ import faBolusCore
         #expect(d.basal.text == "0.00 U/hr")
     }
 
+    /// A temp rate shows the rate delivered, and names itself with its percent once read; a suspension
+    /// shows as suspended, with no temp rate; Basal-IQ's suspension shows as suspended but isn't the pump's.
+    @Test func aTempRateIsNamedWithItsPercentAndASuspensionShows() {
+        let temp = display { $0.basalDeliveryState = at(.tempRate(unitsPerHour: 1.2, percent: 150), age: 10) }
+        #expect(temp.basal.text == "1.20 U/hr" && temp.tempRate == "Temp rate 150%" && !temp.isSuspended)
+        let unread = display { $0.basalDeliveryState = at(.tempRate(unitsPerHour: 1.2, percent: nil), age: 10) }
+        #expect(unread.tempRate == "Temp rate")
+        let suspended = display { $0.basalDeliveryState = at(.suspended, age: 10) }
+        #expect(suspended.basal.text == "Suspended" && suspended.isSuspended && suspended.tempRate == nil)
+        let active = display { $0.basalDeliveryState = at(.active(unitsPerHour: 0.8), age: 10) }
+        #expect(active.tempRate == nil && !active.isBasalIQSuspended)
+        let basalIQ = display { $0.basalDeliveryState = at(.basalIQSuspended, age: 10) }
+        #expect(basalIQ.basal.text == "Suspended" && basalIQ.isBasalIQSuspended && !basalIQ.isSuspended)
+        // Past the pump-status window nothing is named.
+        let old = display { $0.basalDeliveryState = at(.tempRate(unitsPerHour: 1.2, percent: 150), age: 3600) }
+        #expect(old.tempRate == nil && old.basal.isStale)
+    }
+
     @Test func eachValueAgesOnItsOwnWindow() {
         // 10 minutes: past IOB's 5, inside the pump-status window's 15.
         let d = display {
