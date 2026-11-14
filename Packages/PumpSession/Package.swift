@@ -19,7 +19,7 @@ let package = Package(
         .package(path: "../faBolusCore"),
         .package(path: "../HistoryStore"),
         .package(
-            url: "https://github.com/faBolus-app/TandemKit.git", exact: "0.10.0")
+            url: "https://github.com/faBolus-app/TandemKit.git", exact: "0.11.0")
     ],
     targets: [
         .target(

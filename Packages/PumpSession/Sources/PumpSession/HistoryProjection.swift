@@ -148,6 +148,19 @@ enum HistoryProjection {
     /// request the pump refused (5) and a value it doesn't know count as delivered.
     static let abortedCompletionStatuses: Set<Int> = [0, 1, 2, 4, 6]
 
+    /// A stopped bolus's entry, named by why it stopped, from the completion status's names in Tandem's
+    /// apps (guess #19).
+    static func stoppedTitle(_ status: BolusCompletedHistoryLog.CompletionStatus?) -> String {
+        switch status {
+        case .userAborted: return "Bolus stopped on the pump"
+        case .terminatedByAlarm: return "Bolus stopped by an alarm"
+        case .terminatedByMalfunction: return "Bolus stopped by a malfunction"
+        case .abortedViaWirelessLink: return "Bolus cancelled from a phone"
+        case .abortedForPredictedLow: return "Bolus stopped for a predicted low"
+        case .completed, .rejectedViaWirelessLink, nil: return "Bolus stopped"
+        }
+    }
+
     /// The logbook's entry for a record, or `nil` for records it doesn't show (CGM samples, which the
     /// chart shows, and types with nothing to say).
     static func event(_ e: any HistoryLogEvent, date: Date) -> HistoryEvent? {
@@ -181,7 +194,7 @@ enum HistoryProjection {
         where Self.abortedCompletionStatuses.contains(m.completionStatusId)
             && short(m.insulinDelivered, of: m.insulinRequested):
             return HistoryEvent(
-                id: seq, date: date, category: .bolus, title: "Bolus stopped",
+                id: seq, date: date, category: .bolus, title: Self.stoppedTitle(m.completionStatus),
                 detail: stopped(m.insulinDelivered, of: m.insulinRequested))
         case let m as BolusCompletedHistoryLog:
             return HistoryEvent(

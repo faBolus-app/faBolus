@@ -147,6 +147,8 @@ struct ObservedTests {
         state.statusIcons = o(PumpStatusIcons(bolus: .bolus))
         state.insulinActionTimeLeft = o(3600)
         state.cgmSessionTimes = o(PumpCGMSessionTimes(sensorStarted: at, lastCalibration: at))
+        state.insulinLowThresholdUnits = o(20)
+        state.insulinPlus = o(false)
         state.phoneClockSet(by: -240)
         var readings = 0
         for child in Mirror(reflecting: state).children where "\(type(of: child.value))".contains("Observed<") {

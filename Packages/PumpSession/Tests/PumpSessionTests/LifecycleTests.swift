@@ -79,9 +79,9 @@ import Testing
             message, to: &state, alerts: &alerts, basal: &basal, context: .init(receivedAt: Date(), anchor: nil))
     }
 
-    /// pumpx2 names only status 1 as charging.
-    @Test func onlyChargingStatusOneIsCharging() {
-        for (status, charging) in [(0, false), (1, true), (2, false), (255, false)] {
+    /// Any status but 0 is on the charger, as Mobi reads the byte.
+    @Test func anyChargingStatusButZeroIsCharging() {
+        for (status, charging) in [(0, false), (1, true), (2, true), (255, true)] {
             var state = PumpState()
             apply(
                 CurrentBatteryV2Response(cargo: [78, 78, UInt8(status)] + [UInt8](repeating: 0, count: 8)), to: &state)
