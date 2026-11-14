@@ -151,6 +151,7 @@ struct DisplaySettingsView: View {
                 Toggle("Show glucose", isOn: $settings.showGlucoseAxis)
                 Toggle("Show insulin (IOB) line", isOn: $settings.showIOBAxis)
                 Toggle("Show bolus bars", isOn: $settings.showBolusBars)
+                Toggle("Show basal and suspensions", isOn: $settings.showBasal)
                 Picker("Plot ceiling", selection: $settings.glucosePlotCeiling) {
                     ForEach(GlucosePlotScale.ceilingOptions, id: \.self) {
                         Text(GlucosePlotScale.boundLabel($0, unit: settings.glucoseUnit)).tag($0)

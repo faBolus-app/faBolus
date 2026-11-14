@@ -1,4 +1,5 @@
 import PhoneApp
+import PumpScript
 import SnapshotTesting
 import SwiftUI
 import Testing
@@ -44,8 +45,87 @@ import faBolusCore
     }
 
     @Test func dashboard() async {
-        let model = await SnapshotFixture.model()
+        // Basal at 1.1 U/h from before the window, 0.8 U/h (the pump's current rate) from 100 minutes ago,
+        // and a 25-minute suspension.
+        let model = await SnapshotFixture.model { mock in
+            let pump = mock.pump, at = pump.wallClockAtStart
+            func rate(_ u: Float) -> [UInt8] {
+                (0..<4).map { UInt8((u.bitPattern >> (8 * UInt32($0))) & 0xFF) } + [UInt8](repeating: 0, count: 12)
+            }
+            _ = pump.appendHistory(typeId: 3, at: at - 4 * 3600, body: rate(1.1))
+            _ = pump.appendHistory(typeId: 3, at: at - 6000, body: rate(0.8))
+            _ = pump.appendHistory(typeId: 11, at: at - 4200, body: [])
+            _ = pump.appendHistory(typeId: 12, at: at - 2700, body: [])
+            // Two delivered boluses, so the bars are drawn against the basal lane.
+            for (id, ago, units) in [(41, 8400, Float(3)), (42, 1800, 1.5)] {
+                _ = pump.appendHistory(
+                    typeId: 20, at: at - UInt32(ago),
+                    body: ScriptedPump.bolusCompletedBody(
+                        bolusId: id, completionStatus: 3, iob: units, delivered: units, requested: units))
+            }
+        }
         check("connected", DashboardView(model: model), height: 1700)
+    }
+
+    /// The chart with everything it draws at once: glucose, boluses, an IOB curve that decays after each,
+    /// basal changes and a suspension, so the lanes and scales are seen together.
+    @Test func chartWithEverything() {
+        let now = SnapshotFixture.origin
+        func ago(_ minutes: Double) -> Date { now.addingTimeInterval(-minutes * 60) }
+        let readings = (0..<36).map { i in
+            GlucoseReading(date: ago(Double(175 - i * 5)), mgdl: 120 + Int(55 * sin(Double(i) / 6)))
+        }
+        let boluses = [BolusMarker(date: ago(140), units: 3), BolusMarker(date: ago(30), units: 1.5)]
+        // Each bolus's insulin on board falls off over about three hours.
+        let iob = stride(from: 180.0, through: 0, by: -5).map { m in
+            let left = boluses.reduce(0.0) { sum, b in
+                let since = b.date.distance(to: ago(m)) / 3600
+                return since < 0 ? sum : sum + b.units * max(0, 1 - since / 3)
+            }
+            return IOBSample(date: ago(m), iob: left)
+        }
+        let changes = [
+            DeliveryChange(date: ago(240), kind: .basalRate, unitsPerHour: 1.1),
+            DeliveryChange(date: ago(100), kind: .basalRate, unitsPerHour: 0.8),
+            DeliveryChange(date: ago(70), kind: .suspended),
+            DeliveryChange(date: ago(45), kind: .resumed)
+        ]
+        // A rate that starts low and peaks later: the lane's scale label is at the peak's height, not the
+        // rate at the left edge.
+        let rising = [
+            DeliveryChange(date: ago(240), kind: .basalRate, unitsPerHour: 0.4),
+            DeliveryChange(date: ago(90), kind: .basalRate, unitsPerHour: 1.5),
+            DeliveryChange(date: ago(40), kind: .basalRate, unitsPerHour: 0.9)
+        ]
+        for (name, deliveryChanges, showBasal) in [
+            ("everything", changes, true), ("basal-off", changes, false), ("rising", rising, true)
+        ] {
+            check(
+                name,
+                GlucoseChartView(
+                    readings: readings, iob: iob, boluses: boluses, deliveryChanges: deliveryChanges,
+                    showBasal: showBasal, now: now
+                )
+                .padding().frame(width: 390, height: 260), height: 260)
+        }
+    }
+
+    /// The chart's press-and-drag readout, with the basal rate and with pumping suspended.
+    @Test func chartReadout() {
+        let t0 = SnapshotFixture.origin
+        let chart = BasalChart(
+            changes: [
+                DeliveryChange(date: t0, kind: .basalRate, unitsPerHour: 0.8),
+                DeliveryChange(date: t0.addingTimeInterval(1800), kind: .suspended)
+            ], from: t0, to: t0.addingTimeInterval(3600))
+        let glucose = [GlucoseReading(date: t0.addingTimeInterval(600), mgdl: 128)]
+        for (name, at) in [("rate", 600.0), ("suspended", 2400.0)] {
+            let readout = ChartReadout(
+                at: t0.addingTimeInterval(at), glucose: glucose,
+                iob: [IOBSample(date: t0.addingTimeInterval(600), iob: 1.2)],
+                boluses: [], basal: chart)
+            check(name, ReadoutCard(readout: readout, unit: .mgdl).padding().frame(maxWidth: .infinity), height: 260)
+        }
     }
 
     /// A bolus delivering and a cancel the pump hasn't answered after 5 s: the line says to use the pump to
@@ -200,7 +280,18 @@ import faBolusCore
     }
 
     @Test func logbook() async {
-        let model = await SnapshotFixture.model()
+        // A bolus that went in and one stopped from the phone (completed records, type 20).
+        let model = await SnapshotFixture.model { mock in
+            let pump = mock.pump
+            _ = pump.appendHistory(
+                typeId: 20, at: pump.wallClockAtStart - 2700,
+                body: ScriptedPump.bolusCompletedBody(
+                    bolusId: 41, completionStatus: 3, iob: 2, delivered: 2, requested: 2))
+            _ = pump.appendHistory(
+                typeId: 20, at: pump.wallClockAtStart - 1500,
+                body: ScriptedPump.bolusCompletedBody(
+                    bolusId: 42, completionStatus: 4, iob: 2.2, delivered: 0.4, requested: 1.5))
+        }
         check("events", LogbookView(model: model))
     }
 
@@ -215,7 +306,8 @@ import faBolusCore
         check("display", NavigationStack { DisplaySettingsView(settings: model.settings) })
         check("watch", NavigationStack { RemotesSettingsView(model: model) }, height: 1500)
         check("safety", NavigationStack { SafetySettingsView(settings: model.settings) })
-        check("about", NavigationStack { AboutSettingsView(model: model) })
+        // A fixed version and build: the real ones change with every build.
+        check("about", NavigationStack { AboutSettingsView(model: model, version: "1.2.3 (45)", build: "0123456789+") })
         check("privacy", NavigationStack { PrivacyDataView(model: model) })
     }
 

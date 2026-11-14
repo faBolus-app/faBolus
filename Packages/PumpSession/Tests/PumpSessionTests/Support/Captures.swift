@@ -60,7 +60,7 @@ enum CapturedBolus3 {
     static let iob: [UInt8] = [
         0xe8, 0x03, 0x00, 0x00, 0x50, 0x46, 0x00, 0x00, 0xe8, 0x03, 0x00, 0x00, 0xe8, 0x03, 0x00, 0x00, 0x01
     ]
-    /// History stream frames 1883, 1884, 1888, 1916 and 1965 (streams 42-44): requested, activated,
+    /// History stream frames 1883, 1884, 1888, 1916 and 1965 (streams 42 to 44): requested, activated,
     /// delivering, completed. Sequence numbers 4620-4631 and 4640-4642; 4632-4639 weren't captured.
     static let historyFrames: [[UInt8]] = [
         [

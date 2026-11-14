@@ -348,8 +348,13 @@ extension PumpSession {
 
     /// Cancels the bolus in progress. Never blocked by any setting or gate: it reaches the pump ahead of
     /// everything else, except an InitiateBolus already queued, which it follows so it can't arrive first.
-    /// One request is on the wire at a time, as in t:connect, so it waits for the request ahead of it to be
-    /// answered, up to `requestDeadline` when the pump is silent.
+    /// One request is on the wire at a time, so it waits for the request ahead of it to be answered, up to
+    /// `requestDeadline` when the pump is silent; from then until the cancel ends, no routine read goes (a
+    /// delivery's own steps and a followed bolus's status reads still do).
+    ///
+    /// Like Mobi, it cancels by the bolus it already knows: the one it is following or delivering, or else
+    /// the one this connection's latest bolus status reported active. Only with none of those does it ask
+    /// the pump first.
     public func cancelBolus() async -> CancelResult {
         if var d = delivery, !d.initiateQueued {
             d.cancelRequested = true
@@ -357,9 +362,16 @@ extension PumpSession {
             return .stoppedBeforeStart
         }
         guard state.link.isConnected else { return .notConnected }
+        // Between the cancel's own requests the wire stays free for it: a routine read that went out in
+        // between could hold the cancel for that read's whole deadline.
+        cancelsUnderWay += 1
+        defer {
+            cancelsUnderWay -= 1
+            resumeQueue()
+        }
         let owner = delivery?.owner
         let priority: Priority = owner == nil ? .cancel : .delivery
-        var bolusId = tracked?.bolusId ?? delivery?.bolusId
+        var bolusId = tracked?.bolusId ?? delivery?.bolusId ?? activeBolusThisConnection
         if bolusId == nil {
             // Ask the pump which bolus it is delivering. "No bolus" is said only on its answer; if it can't
             // be asked, the newest bolus that may still be delivering is cancelled by its recorded ID.

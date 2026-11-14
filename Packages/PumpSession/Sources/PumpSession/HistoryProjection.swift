@@ -9,6 +9,8 @@ public struct PumpHistoryBatch: Sendable {
     public var glucose: [GlucoseReading] = []
     public var boluses: [BolusMarker] = []
     public var carbs: [CarbEntry] = []
+    /// Basal rate changes, suspends and resumes, for the chart's basal line.
+    public var deliveryChanges: [DeliveryChange] = []
     /// Newest first.
     public var events: [HistoryEvent] = []
     /// The sequence numbers the batch holds: every record but those dropped for a time in the future.
@@ -19,7 +21,9 @@ public struct PumpHistoryBatch: Sendable {
         public let grams: Double
     }
 
-    public var isEmpty: Bool { glucose.isEmpty && boluses.isEmpty && carbs.isEmpty && events.isEmpty }
+    public var isEmpty: Bool {
+        glucose.isEmpty && boluses.isEmpty && carbs.isEmpty && deliveryChanges.isEmpty && events.isEmpty
+    }
 }
 
 /// The history store, or anything else that keeps pump history. A failed write throws, so the session
@@ -29,7 +33,8 @@ public protocol PumpHistorySink: Sendable {
     /// The logbook's events recorded so far, newest first, so a relaunch shows them without fetching the
     /// pump's history again (the session doesn't re-read what it already holds).
     func loadEvents(limit: Int) async -> [HistoryEvent]
-    /// Forget the logbook's events, when the pump they came from is forgotten.
+    /// Forget the logbook's events and the chart's basal changes, when the pump they came from is forgotten
+    /// or its log restarts.
     func clearEvents() async
 }
 
@@ -74,6 +79,13 @@ enum HistoryProjection {
                 batch.boluses.append(BolusMarker(date: d, units: Double(m.insulinDelivered)))
             case let m as CarbEnteredHistoryLog where m.carbs > 0:
                 batch.carbs.append(.init(date: d, grams: Double(m.carbs)))
+            case let m as BasalRateChangeHistoryLog:
+                batch.deliveryChanges.append(
+                    DeliveryChange(date: d, kind: .basalRate, unitsPerHour: Double(m.commandBasalRate)))
+            case is PumpingSuspendedHistoryLog:
+                batch.deliveryChanges.append(DeliveryChange(date: d, kind: .suspended))
+            case is PumpingResumedHistoryLog:
+                batch.deliveryChanges.append(DeliveryChange(date: d, kind: .resumed))
             default:
                 break
             }
@@ -131,6 +143,11 @@ enum HistoryProjection {
         e is TimeChangedHistoryLog || e is DateChangeHistoryLog
     }
 
+    /// The completion statuses t:connect counts as a bolus cut short: stopped on the pump (0), by an
+    /// alarm (1) or a malfunction (2), from the phone (4), or for a predicted low (6). Delivered (3), a
+    /// request the pump refused (5) and a value it doesn't know count as delivered.
+    static let abortedCompletionStatuses: Set<Int> = [0, 1, 2, 4, 6]
+
     /// The logbook's entry for a record, or `nil` for records it doesn't show (CGM samples, which the
     /// chart shows, and types with nothing to say).
     static func event(_ e: any HistoryLogEvent, date: Date) -> HistoryEvent? {
@@ -145,12 +162,36 @@ enum HistoryProjection {
             let copy = PumpAlertCopyOverlay.resolve(kind: .alert, id: id, decodedTitle: "Alert", decodedDetail: nil)
             return copy.detail.isEmpty ? ("Alert", "id \(id)") : copy
         }
+        // A bolus that went in short is "stopped", with what it asked for, as t:connect shows it: a
+        // standard bolus when its status says it was cut short, an extended one whenever it went in short.
+        // Short by the outcome's own rule, so the logbook and the bolus's outcome agree.
+        func short(_ delivered: Float, of requested: Float) -> Bool {
+            if case .stopped = BolusOutcome.settled(
+                deliveredUnits: Double(delivered), requestedUnits: Double(requested))
+            {
+                return true
+            }
+            return false
+        }
+        func stopped(_ delivered: Float, of requested: Float) -> String {
+            "\(formatUnits(Double(delivered))) of \(formatUnits(Double(requested)))"
+        }
         switch e {
+        case let m as BolusCompletedHistoryLog
+        where Self.abortedCompletionStatuses.contains(m.completionStatusId)
+            && short(m.insulinDelivered, of: m.insulinRequested):
+            return HistoryEvent(
+                id: seq, date: date, category: .bolus, title: "Bolus stopped",
+                detail: stopped(m.insulinDelivered, of: m.insulinRequested))
         case let m as BolusCompletedHistoryLog:
             return HistoryEvent(
                 id: seq, date: date, category: .bolus, title: "Bolus delivered", detail: u(m.insulinDelivered))
         case let m as BolusDeliveryHistoryLog where m.bolusSource == 7:
             return HistoryEvent(id: seq, date: date, category: .autoCorrection, title: "Control-IQ auto-corrected")
+        case let m as BolexCompletedHistoryLog where short(m.insulinDelivered, of: m.insulinRequested):
+            return HistoryEvent(
+                id: seq, date: date, category: .bolus, title: "Extended bolus stopped",
+                detail: stopped(m.insulinDelivered, of: m.insulinRequested))
         case let m as BolexCompletedHistoryLog:
             return HistoryEvent(
                 id: seq, date: date, category: .bolus, title: "Extended bolus", detail: u(m.insulinDelivered))

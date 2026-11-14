@@ -46,6 +46,23 @@ import SwiftData
     }
 }
 
+/// A basal rate change, a suspend or a resume from pump history, for the chart's basal line.
+@Model public final class StoredDeliveryChange {
+    public var date: Date
+    /// `DeliveryChange.Kind`'s raw value.
+    public var kind: String
+    public var unitsPerHour: Double
+    public var sourceID: String
+    public var recordedAt: Date
+    public init(date: Date, kind: String, unitsPerHour: Double, sourceID: String, recordedAt: Date) {
+        self.date = date
+        self.kind = kind
+        self.unitsPerHour = unitsPerHour
+        self.sourceID = sourceID
+        self.recordedAt = recordedAt
+    }
+}
+
 /// One logbook entry from pump history, kept so the logbook comes back after a relaunch: history the
 /// phone already holds isn't fetched from the pump again.
 @Model public final class StoredHistoryEvent {

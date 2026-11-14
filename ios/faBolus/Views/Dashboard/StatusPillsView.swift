@@ -40,7 +40,7 @@ struct StatusPillsView: View {
             let v = display.basal
             Pill(
                 icon: display.isSuspended ? "pause.circle.fill" : "waveform.path.ecg",
-                tint: display.isSuspended ? AppTheme.low : (v.isKnown ? AppTheme.insulin : .gray), value: v.text,
+                tint: display.isSuspended ? AppTheme.low : (v.isKnown ? AppTheme.basal : .gray), value: v.text,
                 label: display.isSuspended ? "Delivery" : "Basal", stale: v.isStale)
         case .controlIQ:
             let v = display.controlIQText

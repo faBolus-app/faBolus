@@ -74,6 +74,8 @@ public final class AppModel {
     /// The chart's glucose over the last day, oldest first: pump history, live readings and the backup's.
     public internal(set) var glucoseHistory: [GlucoseReading] = []
     public internal(set) var bolusMarkers: [BolusMarker] = []
+    /// The pump's basal rate changes, suspends and resumes over the chart's day, for its basal line.
+    public internal(set) var deliveryChanges: [DeliveryChange] = []
     public internal(set) var iobHistory: [IOBSample] = []
     public internal(set) var bolusBlock: BolusBlock?
     /// The newest bolus outcome this process saw, for the bolus banner.
@@ -342,13 +344,14 @@ public final class AppModel {
         glucoseProvenance = provenance
     }
 
-    /// Glucose and boluses from the history store for the chart's day, merged with what arrived live.
+    /// Glucose, boluses and basal changes from the history store for the chart's day, merged with what arrived live.
     func reloadHistory() {
         guard let historyStore else { return }
         let range =
             now.addingTimeInterval(-Self.chartSpan)...now.addingTimeInterval(GlucoseFreshness.futureSkewTolerance)
         storedGlucose = historyStore.glucose(in: range)
         bolusMarkers = historyStore.boluses(in: range)
+        deliveryChanges = historyStore.deliveryChanges(in: range)
         mergeChart()
     }
 

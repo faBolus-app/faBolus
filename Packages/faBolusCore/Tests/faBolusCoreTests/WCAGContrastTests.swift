@@ -84,4 +84,15 @@ struct WCAGContrastTests {
             #expect(WCAGContrast.contrastVsBlack(red: c.r, green: c.g, blue: c.b) >= min3)
         }
     }
+
+    /// The basal teal (`AppTheme.basal`) reads as text on both backgrounds about as well as the insulin
+    /// indigo it sits beside: its label and readout value are the same small text.
+    @Test func theBasalTealHasTheInsulinIndigosContrast() {
+        let basal = (r: 0.0, g: 0.52, b: 0.60), insulin = (r: 0.36, g: 0.42, b: 0.90)
+        let onWhite = WCAGContrast.contrastVsWhite(red: basal.r, green: basal.g, blue: basal.b)
+        let onBlack = WCAGContrast.contrastVsBlack(red: basal.r, green: basal.g, blue: basal.b)
+        #expect(onWhite >= 4.3 && onBlack >= 4.5, "white \(onWhite), black \(onBlack)")
+        let insulinOnWhite = WCAGContrast.contrastVsWhite(red: insulin.r, green: insulin.g, blue: insulin.b)
+        #expect(abs(onWhite - insulinOnWhite) < 0.3, "basal \(onWhite), insulin \(insulinOnWhite)")
+    }
 }

@@ -30,6 +30,9 @@ public enum AppTheme {
     public static let veryHigh = Color(red: 0.80, green: 0.35, blue: 0.05)  // burnt orange / rust
 
     public static let insulin = Color(red: 0.36, green: 0.42, blue: 0.90)  // indigo
+    /// The basal rate: a teal apart from the indigo of boluses and IOB, so the chart's basal lane and the
+    /// insulin drawn above it aren't read as one series. Its contrast is pinned in `WCAGContrastTests`.
+    public static let basal = Color(red: 0.0, green: 0.52, blue: 0.60)  // teal
     public static let carbs = Color(red: 0.95, green: 0.62, blue: 0.20)  // carb orange
     public static let disconnected = Color.gray
     public static let stale = Color.gray  // de-emphasized old reading

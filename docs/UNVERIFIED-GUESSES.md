@@ -240,9 +240,12 @@ that worked.
   a cancel from an alarm or an interruption. A bolus whose authoritative delivered amount is below the
   request ends as `BolusOutcome.stopped(delivered:requested:)`, shown as "Bolus stopped" with both
   amounts. The cancel result the phone shows ("Bolus cancelled") comes from the pump's answer to the
-  cancel, not from history.
+  cancel, not from history. The logbook names a bolus "Bolus stopped", with both amounts, by t:connect's
+  rule: a completion status t:connect counts as cut short (0, 1, 2, 4 or 6) and less delivered than
+  requested. Like t:connect, it doesn't name the cause.
 - **Where:** `Packages/faBolusCore/Sources/faBolusCore/BolusOutcome.swift`,
-  `Packages/PumpSession/Sources/PumpSession/PumpSession+Delivery.swift`.
+  `Packages/PumpSession/Sources/PumpSession/PumpSession+Delivery.swift`,
+  `Packages/PumpSession/Sources/PumpSession/HistoryProjection.swift`.
 - **Verify:** cancel a bolus, let one be stopped by an alarm, and let one be cut off by a link drop, and
   compare the completion status in each history record. Name the cause once the values are known.
 
@@ -441,3 +444,17 @@ that worked.
   wrongly.
 - **Verify:** the bench runbook's `history` step on P1 and P2 (`start=last-20 count=5` should come back
   `top`), and `history cap` for 250 and 255.
+
+## 33. The chart's basal line comes from Basal Rate Change records
+
+- **The guess:** the chart draws the basal rate from the pump's Basal Rate Change records (type 3, the
+  commanded rate in U/h), and its suspended spans from Pumping Suspended and Pumping Resumed (types 11 and
+  12). t:connect draws its line from the Basal Delivery records (type 279) instead, whose rate fields
+  TandemKit reads as integers in an unconfirmed unit. Whether a t:slim writes a Basal Rate Change for every
+  Control-IQ and temp-rate change, and not only for profile changes, isn't known.
+- **Where:** `Packages/PumpSession/Sources/PumpSession/HistoryProjection.swift` (`batch`),
+  `Packages/faBolusCore/Sources/faBolusCore/BasalChart.swift`.
+- **Risk:** display only. A rate change with no record leaves the line at the last recorded rate; nothing
+  a dose uses reads it.
+- **Verify:** with Control-IQ on, compare the pump's own basal graph over a few hours with the types 3 and
+  279 records for the same time, and switch to 279 if 3 misses changes.
