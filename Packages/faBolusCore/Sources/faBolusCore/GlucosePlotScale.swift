@@ -49,13 +49,12 @@ public enum GlucosePlotScale {
         return options.min(by: { abs($0 - value) < abs($1 - value) }) ?? def
     }
 
-    /// Plot-layer clamp only: a reading above `ceiling` pins to `ceiling`; below `floor` pins to
-    /// `floor`; an in-range value is returned unchanged. The stored reading itself is never mutated —
-    /// callers apply this only to the value handed to the plotting layer, never as a dose input.
-    public static func clamp(_ mgdl: Int, floor: Int, ceiling: Int) -> Int {
-        if mgdl > ceiling { return ceiling }
-        if mgdl < floor { return floor }
-        return mgdl
+    /// Whether a reading falls on the plot, bounds included. One rule for every plot: a reading off the
+    /// plot isn't drawn (a chart of points leaves it out; a line runs off the plot's edge and back), never
+    /// pinned to the edge, where it would read as a reading at the edge. Display only: the reading itself
+    /// is never changed.
+    public static func isOnChart(_ mgdl: Int, floor: Int, ceiling: Int) -> Bool {
+        mgdl >= floor && mgdl <= ceiling
     }
 
     /// Maps a secondary-axis unit value (e.g. IOB units) linearly into the glucose domain:

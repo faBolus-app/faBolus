@@ -169,6 +169,8 @@ import faBolusCore
         #expect(after.pumpStatusStaleMinutes == 30)
         #expect(await model.session.freshness == model.settings.freshness)
         #expect(WidgetStore(defaults: phone.settings).load()?.freshness == model.settings.freshness)
+        // The widgets draw in the phone's plot range too.
+        #expect(WidgetStore(defaults: phone.settings).load()?.plotBounds.ceiling == 400)
         await model.shutdown()
     }
 

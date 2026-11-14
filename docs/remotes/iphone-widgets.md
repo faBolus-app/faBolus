@@ -33,7 +33,7 @@ Turn it on in **Settings → Live Activity**. It starts the next time you open t
 - **Style**: **Curve** (a full-width glucose curve, with a value of your choice in the top right),
   **Chips** (the number with a grid of values), or **Slim** (one short row). The Mac shows the same card
   when you click its menu-bar pill.
-- **Chart span**: 1 to 6 hours. The card's chart button cycles it too.
+- **Chart span**: 3, 6 or 8 hours. The card's chart button cycles it too.
 - **Beside the glucose**: what the Dynamic Island and the Mac's menu-bar pill show next to the glucose:
   the trend arrow, the 30-minute change or active insulin. A ⚠ shows while a pump alert is open, and a
   bolus from the Live Activity shows its progress there instead.

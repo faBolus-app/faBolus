@@ -186,6 +186,24 @@ import faBolusCore
         await r.model.shutdown()
     }
 
+    /// The chart's span button steps through the spans and round again, with no unlock, and each tap redraws
+    /// the Live Activity at the new span, in the phone's plot range.
+    @Test func theSpanButtonCyclesTheChart() async {
+        let r = await rig(bolusing: false)
+        r.model.settings.glucosePlotCeiling = 350
+        await r.phone.settle(r.model)
+        var spans: [Int] = []
+        for _ in LiveActivityLayout.plotRangeOptions {
+            await r.tap(.cycleSpan, unlocked: false)
+            await r.phone.settle(r.model)
+            spans.append(r.model.settings.liveActivityLayout.plotRangeHours)
+            #expect(r.activity.shown.last?.content.layout.plotRangeHours == spans.last)
+        }
+        #expect(spans == [6, 8, 3])
+        #expect(r.activity.shown.last?.content.snapshot.plotBounds.ceiling == 350)
+        await r.model.shutdown()
+    }
+
     /// The dial stops at the remote size limit, as the watch's does.
     @Test func theDialStopsAtTheRemoteLimit() async {
         let r = await rig()
@@ -418,11 +436,12 @@ import faBolusCore
     /// A Live Activity update with a long alert and a busy screen still fits ActivityKit's limit.
     @Test func theContentFitsWithTheControls() throws {
         var layout = LiveActivityLayout()
-        layout.plotRangeHours = 6
+        layout.plotRangeHours = 8
         layout.fields = LiveActivityField.allCases
         let now = Date(timeIntervalSince1970: 1_800_000_000)
-        let points = (0..<288).map { WidgetSnapshot.Point(t: now.addingTimeInterval(Double(-$0 * 75)), mgdl: 100 + $0) }
-        let snapshot = WidgetSnapshot(connected: true, publishedAt: now, recent: points.reversed())
+        let points = (0..<576).map { WidgetSnapshot.Point(t: now.addingTimeInterval(Double(-$0 * 75)), mgdl: 100 + $0) }
+        let snapshot = WidgetSnapshot(
+            connected: true, publishedAt: now, recent: points.reversed(), plotFloorMgdl: 50, plotCeilingMgdl: 400)
         let long = String(repeating: "x", count: 180)
         let panel = LiveActivityPanel(
             screen: "abcdef-123",
@@ -440,6 +459,56 @@ import faBolusCore
 
     /// A layout saved before the compact choice and the bolus controls existed still reads, keeping the
     /// user's choices: the old Bolus pill's key is dropped and the compact view is the trend arrow.
+    /// A long span is thinned to the cap, but the newest 35 minutes stay whole, so the 30-minute change is
+    /// worked out from the real reading 30 minutes back.
+    @Test func aLongSpanKeepsTheLastHalfHourWhole() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let points = (0..<96).reversed().map {
+            WidgetSnapshot.Point(t: now.addingTimeInterval(Double(-$0 * 300)), mgdl: 100 + (95 - $0))
+        }
+        var layout = LiveActivityLayout()
+        layout.plotRangeHours = 8
+        let content = LiveActivityContent.make(
+            from: WidgetSnapshot(connected: true, publishedAt: now, recent: points), layout: layout, now: now)
+        let kept = content.snapshot.recent
+        #expect(kept.count == LiveActivityContent.maxPoints)
+        #expect(kept.map(\.t) == kept.map(\.t).sorted())
+        #expect(kept.first == points.first && kept.last == points.last)
+        #expect(Array(kept.suffix(8)) == Array(points.suffix(8)))
+        #expect(LiveActivityMetrics.delta(kept, now: now) == LiveActivityMetrics.delta(points, now: now))
+    }
+
+    /// Readings every minute: still within the cap, with the reading 30 minutes back kept, so the change
+    /// matches the one worked out from every reading.
+    @Test func denseReadingsStillFitAndKeepTheChange() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let points = (0..<480).reversed().map {
+            WidgetSnapshot.Point(t: now.addingTimeInterval(Double(-$0 * 60)), mgdl: 100 + (479 - $0) % 97)
+        }
+        var layout = LiveActivityLayout()
+        layout.plotRangeHours = 8
+        let kept = LiveActivityContent.make(
+            from: WidgetSnapshot(connected: true, publishedAt: now, recent: points), layout: layout, now: now
+        ).snapshot.recent
+        #expect(kept.count <= LiveActivityContent.maxPoints)
+        #expect(kept.map(\.t) == kept.map(\.t).sorted())
+        #expect(kept.last == points.last)
+        #expect(LiveActivityMetrics.delta(kept, now: now) == LiveActivityMetrics.delta(points, now: now))
+    }
+
+    /// A span saved before the current options becomes the nearest of them.
+    @Test func anOldSpanBecomesTheNearestOption() throws {
+        let suite = "span-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        for (old, now) in [(1, 3), (2, 3), (4, 3), (6, 6), (12, 8), (24, 8)] {
+            var layout = LiveActivityLayout()
+            layout.plotRangeHours = old
+            defaults.set(try JSONEncoder().encode(layout), forKey: AppSettings.Key.liveActivityLayout.rawValue)
+            #expect(AppSettings(defaults: defaults).liveActivityLayout.plotRangeHours == now, "\(old) h")
+        }
+    }
+
     @Test func anOlderSavedLayoutStillReads() throws {
         let saved = Data(
             #"{"style":"classic","fields":["glucose","iob"],"topRight":"iob","plotRangeHours":3,"plotFloorMgdl":40,"plotCeilingMgdl":300,"showXAxisLine":true,"showYAxisLine":false,"showXAxisTicks":false,"showYAxisTicks":false,"showRangeLines":true,"showBolusShortcut":true}"#

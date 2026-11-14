@@ -3,7 +3,7 @@ import Foundation
 @testable import faBolusCore
 
 /// Covers `GlucosePlotScale`'s defaults (always floor<ceiling), its discrete preset sets, the
-/// symmetric clamp, the scaleUnits/recoverUnits round trip, and boundLabel().
+/// on-chart rule, the scaleUnits/recoverUnits round trip, and boundLabel().
 struct GlucosePlotScaleTests {
 
     // MARK: - Option sets + defaults
@@ -42,18 +42,18 @@ struct GlucosePlotScaleTests {
         }
     }
 
-    // MARK: - clamp() — symmetric
+    // MARK: - isOnChart() — symmetric, bounds included
 
-    @Test func clampPinsAboveCeilingToCeiling() {
-        #expect(GlucosePlotScale.clamp(400, floor: 40, ceiling: 300) == 300)
+    @Test func aReadingAboveTheCeilingIsOffTheChart() {
+        #expect(!GlucosePlotScale.isOnChart(301, floor: 40, ceiling: 300))
     }
 
-    @Test func clampPinsBelowFloorToFloor() {
-        #expect(GlucosePlotScale.clamp(30, floor: 40, ceiling: 300) == 40)
+    @Test func aReadingBelowTheFloorIsOffTheChart() {
+        #expect(!GlucosePlotScale.isOnChart(39, floor: 40, ceiling: 300))
     }
 
-    @Test func clampLeavesInRangeValueUnchanged() {
-        #expect(GlucosePlotScale.clamp(120, floor: 40, ceiling: 300) == 120)
+    @Test func theBoundsAndBetweenAreOnTheChart() {
+        for v in [40, 120, 300] { #expect(GlucosePlotScale.isOnChart(v, floor: 40, ceiling: 300)) }
     }
 
     // MARK: - scaleUnits / recoverUnits round trip

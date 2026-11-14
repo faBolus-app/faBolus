@@ -47,11 +47,9 @@ struct GlucoseChartView: View {
                     yStart: .value("Low", GlucoseThresholds.low), yEnd: .value("High", GlucoseThresholds.high)
                 )
                 .foregroundStyle(AppTheme.inRange.opacity(0.12))
-                ForEach(visible) { r in
-                    PointMark(
-                        x: .value("Time", r.date),
-                        y: .value("Glucose", GlucosePlotScale.clamp(r.mgdl, floor: floor, ceiling: ceiling))
-                    )
+                // A reading off the plot isn't drawn, never pinned to its edge.
+                ForEach(visible.filter { GlucosePlotScale.isOnChart($0.mgdl, floor: floor, ceiling: ceiling) }) { r in
+                    PointMark(x: .value("Time", r.date), y: .value("Glucose", r.mgdl))
                     .foregroundStyle(AppTheme.glucoseColor(r.mgdl)).symbolSize(24)
                 }
             }

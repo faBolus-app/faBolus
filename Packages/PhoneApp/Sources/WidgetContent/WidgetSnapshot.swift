@@ -35,6 +35,9 @@ public struct WidgetSnapshot: Codable, Sendable, Hashable {
     public var freshness: FreshnessThresholds
     public var unit: GlucoseUnit
     public var showUnitLabel: Bool
+    /// The phone's plot range, which every plot draws in; `nil` from a snapshot written before it was sent.
+    public var plotFloorMgdl: Int?
+    public var plotCeilingMgdl: Int?
 
     public init(
         glucose: Observed<PumpGlucose>? = nil, glucoseSourceName: String? = nil,
@@ -42,7 +45,8 @@ public struct WidgetSnapshot: Codable, Sendable, Hashable {
         battery: Observed<PumpBattery>? = nil, basal: Observed<BasalDeliveryState>? = nil,
         controlIQ: Observed<ControlIQStatus>? = nil, lastBolus: Observed<Double>? = nil,
         lastAutoCorrection: Date? = nil, connected: Bool = false, publishedAt: Date, recent: [Point] = [],
-        freshness: FreshnessThresholds = .standard, unit: GlucoseUnit = .mgdl, showUnitLabel: Bool = false
+        freshness: FreshnessThresholds = .standard, unit: GlucoseUnit = .mgdl, showUnitLabel: Bool = false,
+        plotFloorMgdl: Int? = nil, plotCeilingMgdl: Int? = nil
     ) {
         self.glucose = glucose
         self.glucoseSourceName = glucoseSourceName
@@ -59,6 +63,13 @@ public struct WidgetSnapshot: Codable, Sendable, Hashable {
         self.freshness = freshness
         self.unit = unit
         self.showUnitLabel = showUnitLabel
+        self.plotFloorMgdl = plotFloorMgdl
+        self.plotCeilingMgdl = plotCeilingMgdl
+    }
+
+    /// The plot range to draw in, made safe; the defaults when the snapshot has none.
+    public var plotBounds: (floor: Int, ceiling: Int) {
+        GlucosePlotScale.resolve(storedFloor: plotFloorMgdl, storedCeiling: plotCeilingMgdl)
     }
 
     // MARK: Glucose

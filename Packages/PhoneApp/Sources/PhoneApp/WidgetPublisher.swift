@@ -19,7 +19,8 @@ public enum WidgetPublisher {
             lastBolus: display.lastBolus.map { $0.map { $0.deliveredUnits ?? $0.programmedUnits } },
             lastAutoCorrection: lastAutoCorrection,
             connected: display.link.isConnected, publishedAt: now, recent: Array(recent), freshness: freshness,
-            unit: settings.glucoseUnit, showUnitLabel: settings.showGlucoseUnitLabels)
+            unit: settings.glucoseUnit, showUnitLabel: settings.showGlucoseUnitLabels,
+            plotFloorMgdl: settings.glucosePlotFloor, plotCeilingMgdl: settings.glucosePlotCeiling)
     }
 
     /// The readings of the last `hours`, oldest first.

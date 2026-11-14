@@ -180,11 +180,14 @@ public final class AppSettings {
 
         liveActivityEnabled = value(.liveActivityEnabled) ?? false
         liveActivityBolusEnabled = value(.liveActivityBolusEnabled) ?? false
-        liveActivityLayout =
+        var layout =
             (value(.liveActivityLayout) as Data?).flatMap {
                 try? JSONDecoder().decode(LiveActivityLayout.self, from: $0)
             }
             ?? LiveActivityLayout()
+        // A span from before the current options becomes the nearest of them.
+        layout.plotRangeHours = LiveActivityLayout.plotRange(layout.plotRangeHours)
+        liveActivityLayout = layout
 
         hasCompletedOnboarding = value(.hasCompletedOnboarding) ?? false
         notificationDisclosureShown = value(.notificationDisclosureShown) ?? false

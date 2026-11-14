@@ -232,11 +232,11 @@ import faBolusCore
     /// A high high and a low low on one plot, in every view that draws one: the line stays inside each
     /// view and keeps its zone colours at both ends.
     @Test func extremes() {
-        // 340 falling to 45 over 50 minutes, then back up to 170.
-        let mgdl = (0..<24).map { i in i < 10 ? 340 - i * 295 / 9 : 45 + (i - 9) * 125 / 14 }
+        // Over the card's 3 hours: 340 falling to 45 over 70 minutes, then back up to 170.
+        let mgdl = (0..<36).map { i in i < 15 ? 340 - i * 295 / 14 : 45 + (i - 14) * 125 / 21 }
         var content = Self.content(.idle(.bolus))
         content.snapshot.recent = mgdl.enumerated().map { i, v in
-            WidgetSnapshot.Point(t: Self.now.addingTimeInterval(Double(i - 23) * 300), mgdl: v)
+            WidgetSnapshot.Point(t: Self.now.addingTimeInterval(Double(i - 35) * 300), mgdl: v)
         }
         content.snapshot.glucose = Observed(
             PumpGlucose(mgdl: 170, trend: .up), measuredAt: Self.now.addingTimeInterval(-60), receivedAt: Self.now)
@@ -246,6 +246,12 @@ import faBolusCore
         check("small", SmallActivityView(view: Self.view(content)), width: 170, height: 76)
         content.layout.style = .fullBleed
         check("island", GlucoseCurve(view: Self.view(content)).frame(height: 44).padding(.horizontal, 16), height: 60)
+        // A low along the bottom, under the chips, fading behind them as the high does behind the glucose.
+        content.snapshot.recent = (0..<36).map { i in
+            WidgetSnapshot.Point(
+                t: Self.now.addingTimeInterval(Double(i - 35) * 300), mgdl: i < 18 ? 48 + i % 3 * 4 : 60 + (i - 18) * 6)
+        }
+        check("curve-low", LockScreenView(view: Self.view(content)))
     }
 
     @Test func small() {

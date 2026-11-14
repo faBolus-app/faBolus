@@ -445,7 +445,11 @@ struct SmallActivityView: View {
                 view.ageText.font(.caption2).foregroundStyle(view.stale ? .orange : .secondary)
             }
             if view.snapshot.recent.count > 1 && (headline == nil || view.content.alerts == nil) {
-                Sparkline(points: view.snapshot.recent, stale: view.stale).frame(minHeight: 10, maxHeight: .infinity).layoutPriority(-1)
+                Sparkline(
+                    points: view.snapshot.recent, stale: view.stale, floor: view.snapshot.plotBounds.floor,
+                    ceiling: view.snapshot.plotBounds.ceiling
+                )
+                .frame(minHeight: 10, maxHeight: .infinity).layoutPriority(-1)
             }
             if let headline {
                 Text(headline.text).font(.caption.weight(.bold)).foregroundStyle(headline.color).lineLimit(1)

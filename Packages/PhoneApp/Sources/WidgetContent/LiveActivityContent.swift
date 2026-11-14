@@ -20,8 +20,6 @@ public struct LiveActivityLayout: Codable, Sendable, Hashable {
     public var topRight: LiveActivityTopRight
     /// How many hours the curve spans.
     public var plotRangeHours: Int
-    public var plotFloorMgdl: Int
-    public var plotCeilingMgdl: Int
     public var showXAxisLine: Bool
     public var showYAxisLine: Bool
     public var showXAxisTicks: Bool
@@ -33,8 +31,7 @@ public struct LiveActivityLayout: Codable, Sendable, Hashable {
 
     public init(
         style: Style = .fullBleed, fields: [LiveActivityField] = LiveActivityField.defaults,
-        topRight: LiveActivityTopRight = .iobDelta, plotRangeHours: Int = 2,
-        plotFloorMgdl: Int = GlucosePlotScale.defaultFloor, plotCeilingMgdl: Int = GlucosePlotScale.defaultCeiling,
+        topRight: LiveActivityTopRight = .iobDelta, plotRangeHours: Int = 3,
         showXAxisLine: Bool = false, showYAxisLine: Bool = false, showXAxisTicks: Bool = false,
         showYAxisTicks: Bool = false, showRangeLines: Bool = false, compact: LiveActivityCompact? = nil
     ) {
@@ -42,8 +39,6 @@ public struct LiveActivityLayout: Codable, Sendable, Hashable {
         self.fields = fields
         self.topRight = topRight
         self.plotRangeHours = plotRangeHours
-        self.plotFloorMgdl = plotFloorMgdl
-        self.plotCeilingMgdl = plotCeilingMgdl
         self.showXAxisLine = showXAxisLine
         self.showYAxisLine = showYAxisLine
         self.showXAxisTicks = showXAxisTicks
@@ -52,7 +47,12 @@ public struct LiveActivityLayout: Codable, Sendable, Hashable {
         self.compact = compact
     }
 
-    public static let plotRangeOptions = [1, 2, 3, 4, 6]
+    public static let plotRangeOptions = [3, 6, 8]
+
+    /// A span from before these options, made one of them: the nearest, the shorter on a tie.
+    public static func plotRange(_ hours: Int) -> Int {
+        plotRangeOptions.min { abs($0 - hours) < abs($1 - hours) } ?? plotRangeOptions[0]
+    }
 }
 
 /// A value the Live Activity can show.
@@ -161,13 +161,33 @@ public struct LiveActivityContent: Codable, Sendable, Hashable {
         return (snapshot.decayCrossings(asOf: now) + [publisherStale]).min()
     }
 
+    /// The readings the 30-minute change is worked out from, kept whole however long the span.
+    static let wholeRecent: TimeInterval = 35 * 60
+
+    /// The points in the window, at most `cap`, oldest first: the newest `wholeRecent` whole (thinned only
+    /// when readings come more often than every few minutes, always keeping the one 30 minutes before the
+    /// newest), and the older ones thinned evenly into the room left.
     static func window(_ points: [WidgetSnapshot.Point], hours: Int, now: Date, cap: Int) -> [WidgetSnapshot.Point] {
         let start = now.addingTimeInterval(-Double(max(hours, 1)) * 3600)
         let windowed = points.filter { $0.t >= start && $0.t <= now }
         guard windowed.count > cap, cap > 1 else { return windowed }
-        let last = windowed.count - 1
-        let step = Double(last) / Double(cap - 1)
-        return (0..<cap).map { windowed[min(last, Int((Double($0) * step).rounded()))] }
+        let cut = now.addingTimeInterval(-wholeRecent)
+        var recent = windowed.filter { $0.t >= cut }
+        if recent.count > cap / 2, let newest = recent.last {
+            let target = newest.t.addingTimeInterval(-30 * 60)
+            let back = recent.min { abs($0.t.timeIntervalSince(target)) < abs($1.t.timeIntervalSince(target)) }
+            recent = Set(evenly(recent, cap / 2 - 1) + [back].compactMap { $0 }).sorted { $0.t < $1.t }
+        }
+        return evenly(windowed.filter { $0.t < cut }, cap - recent.count) + recent
+    }
+
+    /// `n` of `points` evenly spread, the first and last among them; all of them when there are no more.
+    static func evenly(_ points: [WidgetSnapshot.Point], _ n: Int) -> [WidgetSnapshot.Point] {
+        guard points.count > n else { return points }
+        guard n > 1 else { return n == 1 ? [points[points.count - 1]] : [] }
+        let last = points.count - 1
+        let step = Double(last) / Double(n - 1)
+        return (0..<n).map { points[min(last, Int((Double($0) * step).rounded()))] }
     }
 }
 

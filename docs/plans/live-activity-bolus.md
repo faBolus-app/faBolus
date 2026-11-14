@@ -157,7 +157,7 @@ From `AlertSnapshot.active`, as the watch gets them: most severe first, red for 
 
 - **Last bolus** becomes a Live Activity field, which the watch's details show.
 - **Alerts count** shows on the idle row.
-- **Chart span** cycles 1 → 2 → 3 → 4 → 6 h from a small chart-icon button on the card's bottom row, as
+- **Chart span** cycles 3 → 6 → 8 h from a small chart-icon button on the card's bottom row, as
   the watch's chart cycles its ranges. The Slim style has no chart, so no button.
 - The rest is already there (glucose colours and staleness, IOB, reservoir, battery, basal, Control-IQ,
   last auto-correction, connection, the curve), or is the lock screen's own (the clock). The calculator

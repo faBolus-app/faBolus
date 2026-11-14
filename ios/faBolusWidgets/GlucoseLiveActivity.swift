@@ -317,25 +317,45 @@ struct LockScreenView: View {
 
     private var fullBleed: some View {
         ZStack(alignment: .topLeading) {
-            // Above the bottom row, when there is one, so the curve doesn't run under its buttons.
-            GlucoseCurve(view: view).padding(.top, 30).padding(.bottom, view.content.panel == nil ? 0 : 30)
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 0) {
-                    view.glucose(size: 34)
-                    view.ageText.font(.caption2).foregroundStyle(view.stale ? .orange : .secondary)
+                    view.glucose(size: 34).overCurve()
+                    view.ageText.font(.caption2).foregroundStyle(view.stale ? .orange : .secondary).overCurve()
                 }
                 Spacer()
-                if let corner = view.topRight { Text(corner).font(.system(size: 15, weight: .bold, design: .rounded)) }
+                if let corner = view.topRight {
+                    Text(corner).font(.system(size: 15, weight: .bold, design: .rounded)).overCurve()
+                }
             }
             VStack {
                 Spacer()
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 10) {
-                        ForEach(view.chips(), id: \.self) { ChipView(chip: $0) }
+                        ForEach(view.chips(), id: \.self) { ChipView(chip: $0).overCurve() }
                         Spacer()
                     }
                     view.idleRow
                 }
+            }
+        }
+        .backgroundPreferenceValue(TextOverCurve.self) { frames in
+            GeometryReader { geo in
+                // Above the bottom row, when there is one, so the curve doesn't run under its buttons.
+                GlucoseCurve(view: view).padding(.top, 30).padding(.bottom, view.content.panel == nil ? 0 : 30)
+                    .mask {
+                        // The curve fades where it runs behind text, so a high or a low never crosses it yet
+                        // still shows: a soft-edged, three-quarter hole just around each piece of text.
+                        ZStack(alignment: .topLeading) {
+                            Rectangle()
+                            ForEach(frames.indices, id: \.self) { i in
+                                let r = geo[frames[i]].insetBy(dx: -3, dy: -3)
+                                RoundedRectangle(cornerRadius: 6).frame(width: r.width, height: r.height)
+                                    .position(x: r.midX, y: r.midY)
+                            }
+                            .opacity(0.75).blur(radius: 4).blendMode(.destinationOut)
+                        }
+                        .compositingGroup()
+                    }
             }
         }
         .padding(12)
@@ -371,7 +391,11 @@ struct LockScreenView: View {
                 }
                 .frame(maxWidth: 190)
             }
-            Sparkline(points: view.snapshot.recent, stale: view.stale).frame(height: 30)
+            Sparkline(
+                points: view.snapshot.recent, stale: view.stale, floor: view.snapshot.plotBounds.floor,
+                ceiling: view.snapshot.plotBounds.ceiling
+            )
+            .frame(height: 30)
             view.idleRow
         }
         .padding(12)
@@ -387,15 +411,18 @@ struct GlucoseCurve: View {
         let layout = view.content.layout
         let points = view.snapshot.recent
         Canvas { context, size in
-            let floor = Double(layout.plotFloorMgdl)
-            let ceiling = Double(max(layout.plotCeilingMgdl, layout.plotFloorMgdl + 1))
+            // A reading off the plot isn't drawn: the line runs off the edge and back, never pinned to it.
+            context.clip(to: Path(CGRect(origin: .zero, size: size)))
+            let bounds = view.snapshot.plotBounds
+            let floor = Double(bounds.floor)
+            let ceiling = Double(bounds.ceiling)
             let end = view.now
             let start = end.addingTimeInterval(-Double(max(layout.plotRangeHours, 1)) * 3600)
             func x(_ t: Date) -> CGFloat {
                 size.width * CGFloat(t.timeIntervalSince(start) / end.timeIntervalSince(start))
             }
             func y(_ mgdl: Double) -> CGFloat {
-                size.height * CGFloat(1 - (min(max(mgdl, floor), ceiling) - floor) / (ceiling - floor))
+                size.height * CGFloat(1 - (mgdl - floor) / (ceiling - floor))
             }
             if layout.showRangeLines {
                 for v in [GlucoseThresholds.low, GlucoseThresholds.high] {
@@ -442,12 +469,13 @@ struct GlucoseCurve: View {
 }
 
 /// The recent readings as a line coloured by zone, as the Curve card draws them: low, in range, high. A
-/// stale reading's line is grey, never a current colour.
+/// stale reading's line is grey, never a current colour. Drawn in the phone's plot range: a reading off it
+/// isn't drawn, and the line runs off the edge and back (`GlucosePlotScale.isOnChart`).
 struct Sparkline: View {
     let points: [WidgetSnapshot.Point]
     var stale = false
-    var floor = GlucoseThresholds.low
-    var ceiling = GlucoseThresholds.high
+    let floor: Int
+    let ceiling: Int
 
     var body: some View {
         Canvas { context, size in
@@ -457,14 +485,15 @@ struct Sparkline: View {
                     at: CGPoint(x: size.width / 2, y: size.height / 2))
                 return
             }
-            let lo = min(points.map(\.mgdl).min() ?? floor, floor)
-            let hi = max(points.map(\.mgdl).max() ?? ceiling, ceiling)
+            context.clip(to: Path(CGRect(origin: .zero, size: size)))
+            let lo = floor
+            let hi = max(ceiling, floor + 1)
             let t0 = points.first?.t.timeIntervalSinceReferenceDate ?? 0
             let span = max(1, (points.last?.t.timeIntervalSinceReferenceDate ?? t0) - t0)
             let point = { (p: WidgetSnapshot.Point) in
                 CGPoint(
                     x: size.width * CGFloat((p.t.timeIntervalSinceReferenceDate - t0) / span),
-                    y: size.height * (1 - CGFloat(p.mgdl - lo) / CGFloat(max(hi - lo, 1))))
+                    y: size.height * (1 - CGFloat(p.mgdl - lo) / CGFloat(hi - lo)))
             }
             for (a, b) in zip(points, points.dropFirst()) {
                 let segment = Path { $0.addLines([point(a), point(b)]) }
@@ -473,6 +502,21 @@ struct Sparkline: View {
             }
         }
         .accessibilityHidden(true)
+    }
+}
+
+/// Where each piece of text over the Curve card's curve sits, so the curve can fade behind it.
+private struct TextOverCurve: PreferenceKey {
+    static let defaultValue: [Anchor<CGRect>] = []
+    static func reduce(value: inout [Anchor<CGRect>], nextValue: () -> [Anchor<CGRect>]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
+extension View {
+    /// Marks text the Curve card's curve fades behind.
+    fileprivate func overCurve() -> some View {
+        anchorPreference(key: TextOverCurve.self, value: .bounds) { [$0] }
     }
 }
 

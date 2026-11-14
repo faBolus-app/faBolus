@@ -19,6 +19,18 @@ experimental and demonstration use.
   bolus from any source, cycles its chart span, and has a Last bolus field, a Slim style, and a choice of
   what the Dynamic Island and the Mac's menu bar show beside the glucose.
 
+- CarPlay and the Apple Watch's Smart Stack show the recent curve under the glucose.
+
+### Changed
+
+- Every glucose plot (the dashboard chart, the widgets, the Live Activity and the watch) draws in the plot
+  range from Settings, and leaves out a reading above its ceiling or below its floor instead of drawing it
+  on the edge. The Live Activity and the widgets used a fixed range before.
+- The widgets' and Live Activity's small charts colour the line by zone, without the green band, and the
+  Live Activity's curve fades behind the glucose and the corner text.
+- The Chips style shows every chosen field; it hid the ones the Curve style's corner shows.
+- The Live Activity's chart spans are 3, 6 and 8 hours (were 1 to 6); a saved span becomes the nearest.
+
 ### Removed
 
 - The Live Activity's Bolus button that only opened the app.
