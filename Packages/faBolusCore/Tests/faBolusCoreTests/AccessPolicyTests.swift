@@ -28,7 +28,33 @@ import Testing
             capabilities: Self.everyDose,
             // "Fully permissive" must set this explicitly now that the init default is
             // fail-closed (false); openCtx asserts a Garmin deliver is ALLOWED.
-            garminBolusEnabled: true)
+            garminBolusEnabled: true, liveActivityBolusEnabled: true)
+    }
+
+    /// The Live Activity is a remote with its own opt-in: off by default, closed by either read-only switch,
+    /// and not opened by the watch's opt-in. Cancel and dismiss stay open.
+    @Test func theLiveActivityIsARemoteWithItsOwnOptIn() {
+        #expect(S.liveActivity.isRemote)
+        let watchOnly = P.AccessContext(
+            phoneReadOnly: false, remotesReadOnly: false, capabilities: Self.everyDose, garminBolusEnabled: true)
+        #expect(P.evaluate(.deliverBolus, surface: .liveActivity, context: watchOnly).reason == .remoteBolusDisabled)
+        #expect(
+            P.evaluate(.deliverExtendedBolus, surface: .liveActivity, context: watchOnly).reason
+                == .remoteBolusDisabled)
+        #expect(P.evaluate(.cancelBolus, surface: .liveActivity, context: watchOnly).allowed)
+        #expect(P.evaluate(.dismissNotification, surface: .liveActivity, context: watchOnly).allowed)
+        let liveActivityOnly = P.AccessContext(
+            phoneReadOnly: false, remotesReadOnly: false, capabilities: Self.everyDose,
+            liveActivityBolusEnabled: true)
+        #expect(P.evaluate(.deliverBolus, surface: .liveActivity, context: liveActivityOnly).allowed)
+        #expect(P.evaluate(.deliverBolus, surface: .garmin, context: liveActivityOnly).reason == .remoteBolusDisabled)
+        var readOnly = openCtx()
+        readOnly.remotesReadOnly = true
+        #expect(P.evaluate(.deliverBolus, surface: .liveActivity, context: readOnly).reason == .remotesReadOnly)
+        var phoneReadOnly = openCtx()
+        phoneReadOnly.phoneReadOnly = true
+        #expect(P.evaluate(.deliverBolus, surface: .liveActivity, context: phoneReadOnly).reason == .phoneReadOnly)
+        #expect(P.evaluate(.deliverBolus, surface: .garmin, context: phoneReadOnly).allowed)
     }
 
     /// An otherwise-permissive host still refuses a Garmin `deliverBolus` when that surface's bolus

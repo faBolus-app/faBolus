@@ -82,6 +82,7 @@ import faBolusCore
         s.pumpStatusStaleMinutes = 30
         s.remoteBolusLimitUnits = 5
         s.garminBolusEnabled = true
+        s.liveActivityBolusEnabled = true
         s.detailsOrder = ["autoCorrection", "iob"]
         s.complicationNames = true
         s.watchPlotFloor = 50
@@ -102,6 +103,8 @@ import faBolusCore
         #expect(r.freshness.therapyStaleAfter == FreshnessThresholds.standard.therapyStaleAfter)
         #expect(r.remoteBolusLimitUnits == 5)
         #expect(r.garminBolusEnabled)
+        #expect(r.liveActivityBolusEnabled)
+        #expect(r.access(capabilities: .tslimX2).liveActivityBolusEnabled)
         #expect(r.detailsOrder == ["autoCorrection", "iob"])
         #expect(r.complicationNames)
         #expect(r.watchPlotFloor == 50 && r.watchPlotCeiling == 250)
@@ -112,7 +115,7 @@ import faBolusCore
     }
 
     /// The defaults a new install starts with: remotes can't bolus, no remote limit, complication names
-    /// off, no auto-correction row, no Live Activity.
+    /// off, no auto-correction row, no Live Activity and no bolus from it.
     @Test func aNewInstallStartsWithTheSafeDefaults() throws {
         let suite = "settings-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
@@ -124,6 +127,7 @@ import faBolusCore
         #expect(!s.complicationNames)
         #expect(!s.detailsOrder.contains("autoCorrection"))
         #expect(!s.liveActivityEnabled)
+        #expect(!s.liveActivityBolusEnabled)
         #expect(s.freshness == FreshnessThresholds.standard)
         #expect(s.bolusIncrement == 0.05)
     }
@@ -168,6 +172,8 @@ import faBolusCore
         #expect(after.pumpStatusStaleMinutes == 30)
         #expect(await model.session.freshness == model.settings.freshness)
         #expect(WidgetStore(defaults: phone.settings).load()?.freshness == model.settings.freshness)
+        // The widgets draw in the phone's plot range too.
+        #expect(WidgetStore(defaults: phone.settings).load()?.plotBounds.ceiling == 400)
         await model.shutdown()
     }
 

@@ -53,7 +53,8 @@ result can't be turned off. See [Alerts and notifications](../operate/alerts.md#
 ## Display & chart {#display-chart}
 
 - **Chart:** show glucose, the active insulin (IOB) line and bolus bars; the plot's ceiling and floor; and
-  unit labels.
+  unit labels. Every plot (the chart, the widgets and the Live Activity) draws in this range, and a reading
+  outside it isn't drawn: a dot is left out and a line runs off the edge, never pinned to it.
 - **Statistics card:** time in range, average, GMI and variability over the last day. Off by default.
 - **Details rows** and **Dashboard pills:** choose which appear and in what order. Drag to reorder, swipe
   to hide, tap a hidden one to add it back. The **Last auto-correction** row appears once the pump's

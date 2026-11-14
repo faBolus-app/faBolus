@@ -78,7 +78,10 @@ import faBolusCore
         var layout = LiveActivityLayout()
         layout.plotRangeHours = 6
         layout.fields = LiveActivityField.allCases
-        let content = LiveActivityContent.make(from: Self.snapshot(points: 288), layout: layout, now: Self.now)
+        var snapshot = Self.snapshot(points: 288)
+        snapshot.plotFloorMgdl = 50
+        snapshot.plotCeilingMgdl = 400
+        let content = LiveActivityContent.make(from: snapshot, layout: layout, now: Self.now)
         #expect(content.snapshot.recent.count == LiveActivityContent.maxPoints)
         #expect(content.snapshot.recent.allSatisfy { $0.t >= Self.now.addingTimeInterval(-6 * 3600) })
         let size = try JSONEncoder().encode(content).count

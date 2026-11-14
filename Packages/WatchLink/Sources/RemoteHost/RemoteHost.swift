@@ -420,7 +420,7 @@ public actor RemoteHost {
         if let alert = alerts.first(where: { StatusComposer.wireId($0.identifier) == p.alertId }) {
             // A remote clears only what the session says can be cleared remotely; the first try on a pump
             // not yet known is the phone's, never a remote's.
-            if let pump = alert.pumpAlert, pump.remoteClear == .available, !pump.isMalfunction {
+            if let pump = alert.pumpAlert, pump.remoteClearOffered {
                 switch await services.dismiss(pump) {
                 case .cleared: result = .cleared
                 case .refused: result = .refused
@@ -498,9 +498,10 @@ public actor RemoteHost {
     /// For tests: how long a cancel waits before it's tried again.
     func setCancelRetryDelay(_ delay: Duration) { cancelRetryDelay = delay }
 
-    static let cancelledMessage = "Cancelled before it started. Nothing was delivered."
+    public static let cancelledMessage = "Cancelled before it started. Nothing was delivered."
 
-    static func message(_ refusal: DeliveryRefusal) -> String {
+    /// The session's refusal in the words a remote shows.
+    public static func message(_ refusal: DeliveryRefusal) -> String {
         switch refusal {
         case .notConnected: return "Pump not connected."
         case .pumpNotTrusted: return "The connected pump isn't the paired t:slim X2."

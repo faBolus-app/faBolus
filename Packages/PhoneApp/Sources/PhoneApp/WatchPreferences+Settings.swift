@@ -27,7 +27,7 @@ extension AppSettings {
     public func access(capabilities: PumpCapabilities) -> AccessPolicy.AccessContext {
         AccessPolicy.AccessContext(
             phoneReadOnly: phoneReadOnly, remotesReadOnly: remotesReadOnly, capabilities: capabilities,
-            garminBolusEnabled: garminBolusEnabled)
+            garminBolusEnabled: garminBolusEnabled, liveActivityBolusEnabled: liveActivityBolusEnabled)
     }
 
     /// What the watch host needs from the settings.

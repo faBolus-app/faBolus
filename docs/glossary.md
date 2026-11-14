@@ -30,8 +30,8 @@ Plain-language definitions of the terms used in faBolus and these docs.
   pump history settles it or you confirm on the pump.
 - **Stopped**: a bolus that delivered less than asked, for example because it was cancelled.
 - **Read-only**: a switch that stops the phone, or the watch, from bolusing. Cancel still works.
-- **Remote**: something that shows status and asks the phone to act: the Garmin watch. The widgets and
-  Live Activity only show.
+- **Remote**: something that shows status and asks the phone to act: the Garmin watch, and the Live
+  Activity's buttons. The widgets only show.
 
 ## Developer
 

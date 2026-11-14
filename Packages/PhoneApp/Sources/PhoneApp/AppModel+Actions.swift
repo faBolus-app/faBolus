@@ -52,6 +52,21 @@ extension AppModel {
                 remoteSizeLimitUnits: nil))
     }
 
+    /// Reads the dose inputs fresh from the pump and composes a Live Activity dose as the remote it is: the
+    /// remote rules, the remote size limit, and the confirmations as a refusal the Live Activity asks about.
+    /// A `.deliver` dose goes to `deliver`, as the phone's does.
+    func composeLiveActivityDose(_ request: RemoteDoseRequest) async -> RemoteDoseDecision {
+        let preparation = await session.prepareDose()
+        let (merged, _, _) = GlucoseArbiter.merge(
+            pumpState: preparation.pump, pumpHistory: [], source: backup, thresholds: preparation.freshness,
+            now: preparation.now)
+        return DoseComposer.composeRemote(
+            request, ledger: preparation.ledger,
+            context: preparation.context(
+                pump: merged, access: settings.access(capabilities: preparation.pump.capabilities),
+                remoteSizeLimitUnits: settings.remoteBolusLimitUnits))
+    }
+
     public func deliver(_ dose: ComposedDose) async -> DeliveryResult {
         let result = await session.deliver(dose)
         bolusBlock = await ledger.block
@@ -333,7 +348,9 @@ extension AppModel {
             let layout = settings.liveActivityLayout
             var plotted = snapshot
             plotted.recent = WidgetPublisher.points(glucoseHistory, hours: layout.plotRangeHours, now: now)
-            let content = LiveActivityContent.make(from: plotted, layout: layout, now: now)
+            let flow = liveActivityFlow
+            let content = LiveActivityContent.make(
+                from: plotted, layout: layout, panel: flow.panel, alerts: flow.alertSummary, now: now)
             // Started whenever none is showing (iOS allows it only in the foreground); otherwise updated
             // on the widgets' rule, so routine pump reads don't flood ActivityKit with identical updates.
             guard
@@ -347,6 +364,24 @@ extension AppModel {
             liveActivity.end()
             lastLiveActivityUpdate = nil
         }
+    }
+}
+
+// MARK: - Live Activity buttons
+
+extension AppModel {
+    /// The Live Activity's screens, made on first use.
+    var liveActivityFlow: LiveActivityFlow {
+        if let flow = liveActivityFlowStorage { return flow }
+        let flow = LiveActivityFlow(model: self)
+        liveActivityFlowStorage = flow
+        return flow
+    }
+
+    /// A Live Activity button's tap, from its intent. Returns once its step is done.
+    /// - Parameter unlocked: it came through the intent that needs an unlocked device.
+    public func liveActivityTapped(_ tap: LiveActivityTap, unlocked: Bool) async {
+        await liveActivityFlow.handle(tap, unlocked: unlocked)
     }
 }
 

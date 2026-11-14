@@ -29,6 +29,21 @@ import faBolusCore
         }
     }
 
+    /// The dashboard chart with a 40–250 plot, highs above 250 and lows below 40: a reading off the plot is
+    /// left out, never drawn on its edge.
+    @Test func chartOffThePlot() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let mgdl = (0..<36).map { i in i < 12 ? 320 - i * 20 : i < 22 ? 90 - (i - 12) * 6 : 36 + (i - 22) * 10 }
+        let readings = mgdl.enumerated().map { i, v in
+            GlucoseReading(date: now.addingTimeInterval(Double(i - 35) * 300), mgdl: v)
+        }
+        let chart = GlucoseChartView(
+            readings: readings, windowHours: 3, showIOB: false, showBolusBars: false, floor: 40, ceiling: 250, now: now
+        )
+        .padding()
+        check("offThePlot", chart, height: 220)
+    }
+
     @Test func dashboard() async {
         // Basal at 1.1 U/h from before the window, 0.8 U/h (the pump's current rate) from 100 minutes ago,
         // and a 25-minute suspension.

@@ -19,7 +19,8 @@ public enum WidgetPublisher {
             lastBolus: display.lastBolus.map { $0.map { $0.deliveredUnits ?? $0.programmedUnits } },
             lastAutoCorrection: lastAutoCorrection,
             connected: display.link.isConnected, publishedAt: now, recent: Array(recent), freshness: freshness,
-            unit: settings.glucoseUnit, showUnitLabel: settings.showGlucoseUnitLabels)
+            unit: settings.glucoseUnit, showUnitLabel: settings.showGlucoseUnitLabels,
+            plotFloorMgdl: settings.glucosePlotFloor, plotCeilingMgdl: settings.glucosePlotCeiling)
     }
 
     /// The readings of the last `hours`, oldest first.
@@ -42,11 +43,14 @@ public enum WidgetPublisher {
         return elapsed >= 60 && snapshot.drawn != last.snapshot.drawn
     }
 
-    /// The Live Activity is updated on the same rule, and at once when its layout changes.
+    /// The Live Activity is updated on the same rule, and at once when its layout, its controls or its
+    /// alerts change: a tap's answer can't wait a minute.
     public static func needsLiveActivityUpdate(
         _ content: LiveActivityContent, last: (content: LiveActivityContent, at: Date)?, now: Date
     ) -> Bool {
-        guard let last, last.content.layout == content.layout else { return true }
+        guard let last, last.content.layout == content.layout, last.content.panel == content.panel,
+            last.content.alerts == content.alerts
+        else { return true }
         return needsReload(content.snapshot, last: (last.content.snapshot, last.at), now: now)
     }
 }
