@@ -16,6 +16,7 @@ import Testing
         settings.carbRatio = 0
         settings.carbEntryEnabled = false
         pump.bolusCalculator = F.observed(settings, age: 2)
+        pump.cgm = pump.glucose
         return pump
     }
 
@@ -115,6 +116,7 @@ import Testing
         var settings = try #require(pump.bolusCalculator?.value)
         settings.insulinOnBoardUnits = 4.75
         pump.bolusCalculator = F.observed(settings, age: 1)
+        pump.cgm = pump.glucose
         // 3 U at 180 with 4.75 U on board: the correction is gone, 3.00 U.
         let resend = F.remote(.calculator(food: .insulin(units: 3), estimateUnits: 3), id: "watch-2")
         let context = F.context(pump: pump)

@@ -193,11 +193,31 @@ public struct BolusCalculatorSettings: Sendable, Hashable, Codable {
         public var isSet: Bool { hourlyLimit || insulinOnBoard }
     }
 
+    /// The pump's own CGM reading the reply carries for its calculator (bytes 1-2), when the reply says it
+    /// is valid and its time (byte 26) could be placed. `nil` otherwise, and then the pump's CGM corrects
+    /// nothing.
+    public var reading: Reading?
+
+    /// A calculator reading: its value, when the pump took it, and whether it is the sensor's LOW or HIGH.
+    public struct Reading: Sendable, Hashable, Codable {
+        public var mgdl: Int
+        public var measuredAt: Date
+        public var outOfRange: GlucoseOutOfRange?
+
+        public init(mgdl: Int, measuredAt: Date, outOfRange: GlucoseOutOfRange? = nil) {
+            self.mgdl = mgdl
+            self.measuredAt = measuredAt
+            self.outOfRange = outOfRange
+        }
+    }
+
     public init(
         carbRatio: Double, correctionFactor: Int, targetMgdl: Int, maxBolusUnits: Double,
         insulinOnBoardUnits: Double? = nil, glucoseAutoFillAllowed: Bool? = nil, insulinRemainingUnits: Double? = nil,
-        bolusedLastHourUnits: Double? = nil, tooManyBoluses: TooManyBoluses? = nil, carbEntryEnabled: Bool? = nil
+        bolusedLastHourUnits: Double? = nil, tooManyBoluses: TooManyBoluses? = nil, carbEntryEnabled: Bool? = nil,
+        reading: Reading? = nil
     ) {
+        self.reading = reading
         self.carbRatio = carbRatio
         self.correctionFactor = correctionFactor
         self.targetMgdl = targetMgdl
@@ -332,6 +352,8 @@ public struct PumpState: Sendable, Hashable, Codable {
                 deliveredUnits: bolus.deliveredUnits, syncIdentifier: bolus.syncIdentifier)
         }
         move(&bolusCalculator)
+        // The calculator's reading time was placed by the anchor too, and a correction is aged from it.
+        bolusCalculator?.value.reading?.measuredAt.addTimeInterval(seconds)
         move(&maxBasalUnitsPerHour)
         move(&controlIQ)
         move(&cartridge)
@@ -379,20 +401,32 @@ public struct PumpState: Sendable, Hashable, Codable {
         glucose?.valueIfFresh(within: thresholds.glucoseStaleAfter, now: now)
     }
 
-    /// The current reading when it may correct a dose by itself: fresh, and with no caution from the pump.
+    /// The reading a correction is computed from. The pump's own is the one its calculator reply carries,
+    /// aged from that reply's reading time, as t:connect's calculator takes it, not the latest CGM reading;
+    /// with none there, the pump's CGM corrects nothing. A reading from another glucose source stays that
+    /// source's.
+    public var correctionReading: Observed<PumpGlucose>? {
+        if let glucose, glucose.source != .pump { return glucose }
+        guard let calculator = bolusCalculator, let reading = calculator.value.reading else { return nil }
+        return Observed(
+            PumpGlucose(mgdl: reading.mgdl, trend: glucose?.value.trend, outOfRange: reading.outOfRange),
+            measuredAt: reading.measuredAt, receivedAt: calculator.receivedAt, source: calculator.source)
+    }
+
+    /// The correction reading when it may correct a dose by itself: fresh, and with no caution from the pump.
     /// The only form that may fill a correction.
     public func glucoseForCorrection(
         thresholds: FreshnessThresholds, now: Date = Date(), cgmStateReadSince: Date? = nil
     ) -> PumpGlucose? {
         guard glucoseCaution(cgmStateReadSince: cgmStateReadSince) == nil else { return nil }
-        return glucoseIfFresh(thresholds: thresholds, now: now)
+        return correctionReading?.valueIfFresh(within: thresholds.glucoseStaleAfter, now: now)
     }
 
     /// The pump's own reason its reading shouldn't correct a dose by itself, or `nil`. A reading from
     /// another glucose source is that source's to judge. `cgmStateReadSince`: the CGM state must have been
     /// received since then (the start of a dose attempt), else it can't be checked.
     public func glucoseCaution(cgmStateReadSince: Date? = nil) -> PumpGlucoseCaution? {
-        guard let reading = glucose, reading.source == .pump else { return nil }
+        guard let reading = correctionReading ?? glucose, reading.source == .pump else { return nil }
         if let range = reading.value.outOfRange { return .outOfRange(range) }
         guard let display = cgmDisplay, display.receivedAt >= (cgmStateReadSince ?? .distantPast) else {
             return .cgmStateNotRead

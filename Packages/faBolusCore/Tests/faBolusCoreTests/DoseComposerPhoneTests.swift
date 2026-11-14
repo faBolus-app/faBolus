@@ -27,6 +27,7 @@ import Testing
     private func settingsReadEarlier(_ pump: inout PumpState) {
         let before = F.requestedAt.addingTimeInterval(-1)
         pump.bolusCalculator = Observed(F.settings, measuredAt: before, receivedAt: before)
+        pump.cgm = pump.glucose
     }
 
     // MARK: - Units and limits
@@ -157,6 +158,7 @@ import Testing
         pump.bolusCalculator = F.observed(
             F.settings(target: 110, reportedIOB: 1.5),
             age: 2)
+        pump.cgm = pump.glucose
         #expect(compose(F.cgmDose(), context: F.context(pump: pump)).prompt?.kind == .iob)
     }
 
@@ -186,6 +188,7 @@ import Testing
         pump.bolusCalculator = F.observed(
             F.settings(target: 110, reportedIOB: 1.5),
             age: 2)
+        pump.cgm = pump.glucose
         let amount = PhoneDoseEntry.Amount.calculator(
             carbsGrams: 60, glucose: .typed(mgdl: 180), recommendedUnits: 6.25, enteredUnits: 6.25)
         let answers = Answers(calculatorOverride: .init(kind: .iob, units: 6.25))
@@ -271,6 +274,7 @@ import Testing
         var pump = F.pump()
         pump.insulinOnBoard = F.observed(3.0, age: 1)
         pump.bolusCalculator = F.observed(F.settings(reportedIOB: 3.0), age: 1)
+        pump.cgm = pump.glucose
         let context = F.context(pump: pump)
         let typed = PhoneDoseEntry.Amount.calculator(
             carbsGrams: 60, glucose: .typed(mgdl: 180), recommendedUnits: 7.25, enteredUnits: 7.25)
@@ -294,9 +298,11 @@ import Testing
         var pump = F.pump()
         pump.insulinOnBoard = F.observed(0.3, age: 1)  // 7.45 U, 0.20 U from what was shown
         pump.bolusCalculator = F.observed(F.settings(reportedIOB: 0.3), age: 1)
+        pump.cgm = pump.glucose
         #expect(compose(F.cgmDose(), context: F.context(pump: pump)).dose?.units == 7.45)
         pump.insulinOnBoard = F.observed(0.45, age: 1)  // 7.30 U, within the limit
         pump.bolusCalculator = F.observed(F.settings(reportedIOB: 0.45), age: 1)
+        pump.cgm = pump.glucose
         #expect(compose(F.cgmDose(), context: F.context(pump: pump)).dose?.units == 7.3)
     }
 
@@ -308,11 +314,13 @@ import Testing
         var pump = F.pump(glucose: 60)
         pump.insulinOnBoard = F.observed(0.3, age: 1)  // 4.45 U, 0.20 U from what was shown
         pump.bolusCalculator = F.observed(F.settings(reportedIOB: 0.3), age: 1)
+        pump.cgm = pump.glucose
         #expect(
             compose(amount, context: F.context(pump: pump)).prompt
                 == .doseChanged(mgdl: 60, newUnits: 4.45, enteredUnits: 4.25))
         pump.insulinOnBoard = F.observed(0.45, age: 1)  // 4.30 U, within the limit
         pump.bolusCalculator = F.observed(F.settings(reportedIOB: 0.45), age: 1)
+        pump.cgm = pump.glucose
         #expect(compose(amount, context: F.context(pump: pump)).dose?.units == 4.25)
     }
 
@@ -321,7 +329,7 @@ import Testing
     @Test func staleReadingPromptsAndIncludeUsesIt() throws {
         let pump = F.pump(glucose: 180, glucoseAge: 10 * 60)
         let context = F.context(pump: pump)
-        let reading = try #require(pump.glucose)
+        let reading = try #require(pump.correctionReading)
         #expect(
             compose(F.cgmDose(), context: context).prompt
                 == .staleGlucose(reading: reading, includeUnits: 7.25, carbsOnlyUnits: 6))
@@ -363,7 +371,7 @@ import Testing
     /// A reading older than 15 minutes is never offered, and an earlier "include" for it is asked again.
     @Test func readingPastTheIncludableLimitIsNotOffered() throws {
         let pump = F.pump(glucose: 180, glucoseAge: 30 * 60)
-        let reading = try #require(pump.glucose)
+        let reading = try #require(pump.correctionReading)
         let context = F.context(pump: pump)
         #expect(
             compose(F.cgmDose(), context: context).prompt

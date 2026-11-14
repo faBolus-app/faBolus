@@ -270,6 +270,7 @@ import Testing
         var pump = F.pump()
         pump.insulinOnBoard = F.observed(7.75, age: 1)
         pump.bolusCalculator = F.observed(F.settings(reportedIOB: 7.75), age: 1)
+        pump.cgm = pump.glucose
         // 60 g at 180 with 7.75 U on board: the correction is gone, 6.00 U.
         let resend = F.remote(F.carbs(60, estimate: 6), id: "watch-2")
         #expect(compose(resend, ledger: ledger, context: F.context(pump: pump)).refusal == .recentlyDelivered)
@@ -315,6 +316,7 @@ import Testing
                 pump.insulinOnBoard = Observed(0.5, measuredAt: before, receivedAt: before)
             } else {
                 pump.bolusCalculator = Observed(F.settings, measuredAt: before, receivedAt: before)
+                pump.cgm = pump.glucose
             }
             #expect(
                 compose(F.remote(F.carbs(60, estimate: 7.25)), context: F.context(pump: pump)).refusal
@@ -336,6 +338,7 @@ import Testing
     @Test func iobWithoutTheCrossCheckIsRefused() {
         var pump = F.pump()
         pump.bolusCalculator = F.observed(F.settings(reportedIOB: nil), age: 2)
+        pump.cgm = pump.glucose
         #expect(
             compose(F.remote(F.carbs(60, estimate: 7.25)), context: F.context(pump: pump)).refusal
                 == .pumpSettingsNotVerified)
@@ -360,6 +363,7 @@ import Testing
         var pump = F.pump()
         pump.bolusCalculator = F.observed(
             F.settings(target: 30), age: 2)
+        pump.cgm = pump.glucose
         #expect(
             compose(F.remote(F.carbs(60, estimate: 0)), context: F.context(pump: pump)).refusal
                 == .pumpSettingsUnusable)
@@ -462,6 +466,7 @@ import Testing
         pump.bolusCalculator = F.observed(
             F.settings(target: 110, reportedIOB: 1.5),
             age: 2)
+        pump.cgm = pump.glucose
         #expect(
             compose(F.remote(F.carbs(60, estimate: 7.25)), context: F.context(pump: pump)).refusal
                 == .pumpSettingsNotVerified)
@@ -469,6 +474,7 @@ import Testing
         pump.bolusCalculator = F.observed(
             F.settings(target: 110, reportedIOB: 0.55),
             age: 2)
+        pump.cgm = pump.glucose
         #expect(compose(F.remote(F.carbs(60, estimate: 7.25)), context: F.context(pump: pump)).dose?.units == 7.25)
     }
 }
