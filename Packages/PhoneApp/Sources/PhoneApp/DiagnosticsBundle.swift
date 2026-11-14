@@ -84,7 +84,8 @@ struct DiagnosticsBundle {
                 "Received \(w.received) (v1 \(w.receivedLegacy), other version \(w.receivedOtherVersion), "
                     + "malformed \(w.receivedMalformed), unexpected \(w.receivedUnexpected)), dropped \(w.dropped)")
             out.append(
-                "Re-registrations \(w.reregistrations), probes \(w.probes), late completions \(w.lateCompletions)")
+                "Re-registrations \(w.reregistrations), probes \(w.probes), late completions \(w.lateCompletions) "
+                    + "(delivered \(w.lateDeliveries)), stalled sends awaiting completion \(watch.stalled.count)")
             if let f = w.lastFailure { out.append("Last failure: \(f)") }
             out.append("Transitions, newest last:")
             for tr in w.transitions {

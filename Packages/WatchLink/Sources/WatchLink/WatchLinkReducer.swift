@@ -46,6 +46,7 @@ public enum WatchLinkReducer {
                 min(f.lastProgressAt + configuration.noProgressTimeout, f.startedAt + configuration.hardCeiling))
         }
         if let until = state.backoffUntil { deadlines.append(until) }
+        if let until = state.stalledHoldUntil { deadlines.append(until) }
         if let at = probeTime(state, configuration: configuration) { deadlines.append(at) }
         return deadlines.min()
     }
@@ -122,6 +123,7 @@ private struct Step {
             stall(&state)
         }
         if let until = state.backoffUntil, now >= until { state.backoffUntil = nil }
+        if let until = state.stalledHoldUntil, now >= until { state.stalledHoldUntil = nil }
         if state.probeOutstanding, let at = state.nextProbeAt, now >= at {
             // The transport never answered the probe. Count it; the next one is due now.
             state.probeOutstanding = false
@@ -197,6 +199,7 @@ private struct Step {
         state.stallStreak = 0
         guard let f = state.inFlight, f.send == send else {
             state.telemetry.lateCompletions += 1
+            lateCompletion(send: send, result, &state)
             return
         }
         state.inFlight = nil
@@ -285,6 +288,23 @@ private struct Step {
         }
     }
 
+    /// A completion for a send the watchdog gave up on. It's no longer with the SDK, so the wait for it
+    /// ends; if it got there and its content is still the newest, it isn't sent again. A failure was
+    /// already counted when it stalled.
+    private mutating func lateCompletion(send: Int, _ result: WatchSendResult, _ state: inout WatchLinkState) {
+        guard let i = state.stalled.firstIndex(where: { $0.send == send }) else { return }
+        let s = state.stalled.remove(at: i)
+        if let until = state.stalled.last?.holdUntil, until > now {
+            state.stalledHoldUntil = until
+        } else {
+            state.stalledHoldUntil = nil
+        }
+        guard result == .delivered else { return }
+        state.telemetry.lateDeliveries += 1
+        state.telemetry.lastDeliveredAt = now
+        if state.due[s.item]?.version == s.version, state.inFlight?.item != s.item { remove(s.item, &state) }
+    }
+
     // MARK: Readiness
 
     /// A message from the watch shows it's connected and the app is on it.
@@ -300,6 +320,9 @@ private struct Step {
         reason = "ready"
         state.backoffUntil = nil
         state.backoffLevel = 0
+        // A new connection or registration: a send stalled on the last one doesn't hold this one up. It's
+        // still kept, so a late answer that it got there settles it.
+        state.stalledHoldUntil = nil
         if state.config != nil { setDue(.config, &state) }
         if state.status != nil { setDue(.status, &state) }
     }
@@ -334,7 +357,9 @@ private struct Step {
     // MARK: Sending
 
     mutating func pump(_ state: inout WatchLinkState) {
-        guard state.isReady, state.inFlight == nil, state.backoffUntil == nil else { return }
+        guard state.isReady, state.inFlight == nil, state.backoffUntil == nil, state.stalledHoldUntil == nil else {
+            return
+        }
         for item in WatchLinkReducer.order(state) {
             guard let pending = state.due[item] else { continue }
             guard let wire = wire(for: item, pending, state) else {
@@ -378,6 +403,12 @@ private struct Step {
         state.inFlight = nil
         state.telemetry.stalls += 1
         state.telemetry.lastFailure = "no completion"
+        let holdUntil = f.lastProgressAt + configuration.stalledSendHold
+        state.stalled.append(.init(send: f.send, item: f.item, version: f.version, holdUntil: holdUntil))
+        if state.stalled.count > configuration.maxStalledKept {
+            state.stalled.removeFirst(state.stalled.count - configuration.maxStalledKept)
+        }
+        state.stalledHoldUntil = holdUntil > now ? holdUntil : nil
         countAttempt(f, &state)
         state.stallStreak += 1
         reason = "send stalled"
@@ -474,6 +505,8 @@ private struct Step {
         state.backoffUntil = nil
         state.backoffLevel = 0
         state.stallStreak = 0
+        state.stalled = []
+        state.stalledHoldUntil = nil
         state.probeOutstanding = false
         state.nextProbeAt = nil
         state.probeRequested = false

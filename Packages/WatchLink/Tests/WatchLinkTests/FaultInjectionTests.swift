@@ -105,6 +105,9 @@ import Testing
 
     /// No completion at all: the watchdog gives up after the no-progress window and the message is
     /// retried after a backoff.
+    /// A send with no completion is a stall. The SDK may still hold it, so the next send waits for its
+    /// completion, up to `stalledSendHold`, rather than queue behind it: sending on top of a transfer
+    /// still in the SDK is what turned slow sends into a pile of them.
     @Test func aLostCompletionIsAStall() {
         var h = Harness.ready()
         h.send(.setStatus(Fixture.status()))
@@ -113,6 +116,11 @@ import Testing
         #expect(h.state.telemetry.stalls == 1)
         #expect(h.state.phase == .backingOff)
         h.advance(2)
+        #expect(h.inFlight == nil)
+        // Until the stalled send is `stalledSendHold` old.
+        h.advance(h.configuration.stalledSendHold - 10 - 0.5)
+        #expect(h.inFlight == nil)
+        h.advance(1)
         #expect(h.state.phase == .awaitingReply)
     }
 
@@ -130,22 +138,85 @@ import Testing
         h.send(.sendProgress(send: send))
         h.advance(7)
         #expect(h.state.telemetry.stalls == 1)
-        #expect(h.inFlight != send)
+        // Cut off while still moving, it's still with the SDK: the next send waits for it.
+        #expect(h.inFlight == nil)
+        // The last progress was 7 s before the stall.
+        #expect(h.state.stalledHoldUntil == h.now - 7 + h.configuration.stalledSendHold)
     }
 
-    /// A completion that arrives after the watchdog gave up is counted, breaks the run of stalls, and
-    /// changes nothing else.
-    @Test func aLateCompletionIsCountedAndHarmless() {
+    /// A completion that arrives after the watchdog gave up is counted, breaks the run of stalls and ends
+    /// the wait for it. One that says delivered settles the message, so it isn't sent again.
+    @Test func aLateCompletionIsCountedAndSettlesTheMessage() {
         var h = Harness.ready()
         h.send(.setStatus(Fixture.status()))
         let first = h.inFlight ?? -1
         h.advance(8)
         h.advance(2)
-        let second = h.inFlight
         h.send(.sendCompleted(send: first, .delivered))
         #expect(h.state.telemetry.lateCompletions == 1)
+        #expect(h.state.telemetry.lateDeliveries == 1)
         #expect(h.state.stallStreak == 0)
-        #expect(h.inFlight == second)
+        #expect(h.inFlight == nil)
+        #expect(h.state.queued.isEmpty)
+        #expect(h.state.phase == .reachable)
+        h.advance(120)
+        #expect(h.transmittedKinds == ["status"])
+    }
+
+    /// A late failure ends the wait too, and the message goes again.
+    @Test func aLateFailureEndsTheWaitAndTheMessageGoesAgain() {
+        var h = Harness.ready()
+        h.send(.setStatus(Fixture.status()))
+        let first = h.inFlight ?? -1
+        h.advance(10)
+        h.send(.sendCompleted(send: first, .transientFailure("timeout")))
+        #expect(h.state.telemetry.lateDeliveries == 0)
+        h.advance(1)
+        #expect(h.transmittedKinds == ["status", "status"])
+    }
+
+    /// A late delivery of content since replaced settles nothing: the newer content still goes.
+    @Test func aLateDeliveryOfOlderContentLeavesTheNewer() {
+        var h = Harness.ready()
+        h.send(.setStatus(Fixture.status()))
+        let first = h.inFlight ?? -1
+        h.advance(8)
+        h.send(.setStatus(Fixture.status(GoldenFixtures.now + 60)))
+        h.send(.sendCompleted(send: first, .delivered))
+        h.advance(3)
+        #expect(h.transmittedKinds == ["status", "status"])
+    }
+
+    /// A send stalled on a connection that has since dropped doesn't hold up the next one: the reconnected
+    /// watch gets the config and status at once.
+    @Test func aReconnectDoesntWaitForASendStalledBeforeIt() {
+        var h = Harness.ready()
+        h.send(.setStatus(Fixture.status()))
+        h.advance(8)
+        #expect(h.state.stalledHoldUntil != nil)
+        h.send(.deviceStatus(.notConnected))
+        h.advance(1)
+        h.send(.deviceStatus(.connected))
+        h.send(.characteristicsDiscovered)
+        #expect(h.state.stalledHoldUntil == nil)
+        h.deliverAll()
+        #expect(h.transmittedKinds == ["status", "config", "status"])
+    }
+
+    /// Stalled sends the SDK never answers don't pile up: at most one goes per `stalledSendHold`, and the
+    /// ones kept for a late answer are capped.
+    @Test func unansweredSendsGoAtMostOncePerHold() {
+        var h = Harness.ready()
+        // So the hold, not a rebuilt registration waiting on its probe, is what spaces the sends.
+        h.configuration.stallsBeforeReregister = .max
+        let before = h.state.telemetry.transmits
+        for i in 0..<20 {
+            h.send(.setStatus(Fixture.status(GoldenFixtures.now + i)))
+            h.advance(30)
+        }
+        let span = 20 * 30.0
+        #expect(Double(h.state.telemetry.transmits - before) <= span / h.configuration.stalledSendHold + 1)
+        #expect(h.state.stalled.count <= h.configuration.maxStalledKept)
     }
 
     /// Three stalls in a row rebuild the registration, at most once per interval, and the rebuilt one has

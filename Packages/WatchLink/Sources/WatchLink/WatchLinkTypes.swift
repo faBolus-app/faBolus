@@ -104,6 +104,13 @@ public struct WatchLinkConfiguration: Sendable {
     /// Stalls in a row (no completion at all) before the registration is rebuilt.
     public var stallsBeforeReregister = 3
     public var minReregisterInterval: LinkSeconds = 30
+    /// A stalled send counts as still with the SDK for this long after its last sign of life (the hand-over
+    /// or its last progress), and the next send waits for it: one handed over on top of it would queue
+    /// behind it, so each stall would add to the pile. One stranded by a suspension is past this when the
+    /// app resumes, and holds nothing.
+    public var stalledSendHold: LinkSeconds = 40
+    /// Stalled sends kept for their late completion, newest last.
+    public var maxStalledKept = 8
     /// Waits between probes while the watch is connected but not shown ready; the last repeats.
     public var probeIntervals: [LinkSeconds] = [20, 60]
     public var maxQueuedResults = 16
@@ -129,6 +136,8 @@ public struct WatchLinkTelemetry: Sendable, Hashable {
     /// Completions that arrived after their send was given up on: the transport was slower than the
     /// watchdog, not dead.
     public var lateCompletions = 0
+    /// Late completions that said delivered: the message got there after all and isn't sent again.
+    public var lateDeliveries = 0
     public var reregistrations = 0
     public var probes = 0
     /// Messages dropped after `maxAttempts`, or pushed out of a full queue.

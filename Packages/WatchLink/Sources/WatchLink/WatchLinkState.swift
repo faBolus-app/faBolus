@@ -25,6 +25,15 @@ public struct WatchLinkState: Sendable {
         public var lastProgressAt: LinkSeconds
     }
 
+    /// A send the watchdog gave up on, kept for its late completion.
+    public struct Stalled: Sendable, Hashable {
+        public var send: Int
+        public var item: OutboxItem
+        public var version: Int
+        /// Until when it may still be with the SDK.
+        public var holdUntil: LinkSeconds
+    }
+
     struct Pending: Sendable {
         var message: RemoteMessage?
         var legacy: WireValue?
@@ -63,6 +72,10 @@ public struct WatchLinkState: Sendable {
     var backoffLevel = 0
     var stallStreak = 0
     var lastReregisterAt: LinkSeconds?
+    /// Sends given up on whose completion hasn't come, oldest first.
+    public internal(set) var stalled: [Stalled] = []
+    /// The next send waits until then, for the newest stalled one's completion.
+    public internal(set) var stalledHoldUntil: LinkSeconds?
 
     var probe = 0
     var probeOutstanding = false
@@ -93,7 +106,7 @@ public struct WatchLinkState: Sendable {
             next = .unreachable
         } else if inFlight != nil {
             next = .awaitingReply
-        } else if backoffUntil != nil {
+        } else if backoffUntil != nil || stalledHoldUntil != nil {
             next = .backingOff
         } else {
             next = .reachable

@@ -167,6 +167,8 @@ import Testing
         #expect(h.state.telemetry.dropped == 1)
         h.effects = []
         h.send(.received(Fixture.poll(revision: Fixture.config.revision)))
+        // The last try stalled; the next send waits for it.
+        for _ in 0..<Int(h.configuration.stalledSendHold) where h.inFlight == nil { h.advance(1) }
         h.deliverAll()
         #expect(h.transmittedKinds == ["config", "status"])
     }
