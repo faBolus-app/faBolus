@@ -26,10 +26,13 @@ import Testing
         link.submit(.setConfig(Fixture.config))
         connect(transport)
         #expect(transport.kinds == ["config"])
-        // The completion never comes: the watchdog fires on the clock, then the backoff, then a resend.
+        // The completion never comes: the watchdog fires on the clock, then the wait for the stalled send,
+        // then a resend.
         clock.advance(8)
         #expect(link.state.phase == .backingOff)
         clock.advance(2)
+        #expect(transport.kinds == ["config"])
+        clock.advance(WatchLinkConfiguration().stalledSendHold - 10)
         #expect(transport.kinds == ["config", "config"])
         transport.emit(.sendCompleted(send: transport.sent.last!.send, .delivered))
         #expect(link.state.phase == .reachable)
