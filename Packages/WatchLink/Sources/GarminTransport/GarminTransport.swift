@@ -44,7 +44,10 @@ public final class GarminTransport: NSObject, WatchTransport {
     public func handleOpenURL(_ url: URL) {
         let devices = ConnectIQ.sharedInstance().parseDeviceSelectionResponse(from: url) as? [IQDevice]
         guard let first = devices?.first else { return }
-        defaults.set([first.uuid.uuidString, first.modelName ?? "", first.friendlyName ?? ""], forKey: Self.deviceKey)
+        // The part number too: the device Garmin Connect returned has one, and the SDK may use it.
+        defaults.set(
+            [first.uuid.uuidString, first.modelName ?? "", first.friendlyName ?? "", first.partNumber ?? ""],
+            forKey: Self.deviceKey)
         // Another watch: nothing the link knows or queued for the last one applies to it.
         if device?.uuid != first.uuid {
             unregister()
@@ -65,13 +68,18 @@ public final class GarminTransport: NSObject, WatchTransport {
     public var deviceName: String? { device?.friendlyName ?? device?.modelName }
 
     private func restoreDevice() {
-        guard let parts = defaults.array(forKey: Self.deviceKey) as? [String], parts.count == 3,
+        // Three parts were saved before the part number was.
+        guard let parts = defaults.array(forKey: Self.deviceKey) as? [String], parts.count == 3 || parts.count == 4,
             let uuid = UUID(uuidString: parts[0])
         else {
             handler?(.paired(false))
             return
         }
-        device = IQDevice(id: uuid, modelName: parts[1], friendlyName: parts[2])
+        if parts.count == 4, !parts[3].isEmpty {
+            device = IQDevice(id: uuid, modelName: parts[1], friendlyName: parts[2], partNumber: parts[3])
+        } else {
+            device = IQDevice(id: uuid, modelName: parts[1], friendlyName: parts[2])
+        }
         register()
     }
 

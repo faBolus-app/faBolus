@@ -159,17 +159,7 @@ struct RemotesSettingsView: View {
         return "The watch can bolus."
     }
 
-    private var linkText: String {
-        guard let w = model.watch else { return "—" }
-        switch w.phase {
-        case .notPaired: return "No watch chosen"
-        case .appNotInstalled: return "faBolus not installed on the watch"
-        case .unreachable: return "Not connected"
-        case .reachable: return "Connected"
-        case .awaitingReply: return "Sending"
-        case .backingOff: return "Retrying"
-        }
-    }
+    private var linkText: String { model.watch?.settingsText ?? "—" }
 
     private var bolusBinding: Binding<Bool> {
         Binding(
