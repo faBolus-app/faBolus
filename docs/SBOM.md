@@ -41,7 +41,7 @@ Format per row: component · version/revision · SPDX license · source · how f
 
 | Component | Version | License (SPDX) | Source | Usage |
 |---|---|---|---|---|
-| TandemKit | 0.11.0, `exact:` (`Packages/PumpSession` and `Packages/PhoneApp` `Package.swift`) | MIT | github.com/faBolus-app/TandemKit | Tandem BLE protocol / auth / messages |
+| TandemKit | 0.12.0, `exact:` (`Packages/PumpSession` and `Packages/PhoneApp` `Package.swift`) | MIT | github.com/faBolus-app/TandemKit | Tandem BLE protocol / auth / messages |
 
 TandemKit in turn vendors (see its own `NOTICE`):
 
