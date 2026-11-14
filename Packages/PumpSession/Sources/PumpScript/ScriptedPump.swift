@@ -102,6 +102,8 @@ public final class ScriptedPump {
     /// The IOB reply's model (byte 16: 0 Mudaliar, 1 Swan) and time left of insulin action (byte 4).
     public var iobType = 0
     public var insulinTimeLeftSeconds: UInt32 = 0
+    /// CGM status B's grace period time left (byte 14, with the grace flag at 19), or nil for no grace period.
+    public var graceSecondsLeft: UInt32?
     /// The CGM status reply's sensor start and last calibration, pump time, 0 for unset.
     public var cgmSensorStartedAt: UInt32 = 0
     public var cgmLastCalibrationAt: UInt32 = 0
@@ -782,6 +784,15 @@ public final class ScriptedTransport: LinkTransport {
             return AlertStatusResponse(cargo: le64(pump.alertBitmap))
         case (.currentStatus, AlarmStatusRequest.props.opCode):
             return AlarmStatusResponse(cargo: le64(pump.alarmBitmap))
+        case (.currentStatus, CgmStatusV2Request.props.opCode):
+            // CGM status B: an active session, and a grace period with its time left when one is set.
+            var v = [UInt8](repeating: 0, count: 20)
+            v[0] = 1
+            if let left = pump.graceSecondsLeft {
+                v.replaceSubrange(14..<18, with: le32(left))
+                v[19] = 1
+            }
+            return CgmStatusV2Response(cargo: v)
         case (.currentStatus, CGMAlertStatusRequest.props.opCode):
             return CGMAlertStatusResponse(cargo: le64(pump.cgmAlertBitmap))
         case (.currentStatus, ReminderStatusRequest.props.opCode):
@@ -860,6 +871,8 @@ public final class ScriptedTransport: LinkTransport {
             pump.grantedPermission = nil
             pump.released.append(id)
             return BolusPermissionReleaseResponse(cargo: [0])
+        case (.control, UserInteractionRequest.props.opCode):
+            return UserInteractionResponse(cargo: [0])
         case (.control, RemoteBgEntryRequest.props.opCode):
             return RemoteBgEntryResponse(cargo: [0])
         case (.control, RemoteCarbEntryRequest.props.opCode):

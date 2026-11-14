@@ -70,6 +70,9 @@ public enum PumpMessages {
     public static func text(_ failure: PumpLinkFailure) -> String {
         switch failure {
         case .pairingRejected: return "The pump rejected the pairing code. Pair again with a new code from the pump."
+        case .pairingDropped:
+            return
+                "The pump closed the connection while pairing. The code may be wrong: pair again with a new code from the pump."
         case .unsupportedModel(let model):
             return model == .mobi
                 ? "This is a Mobi, which faBolus doesn't connect to yet." : "faBolus can't connect to this pump."

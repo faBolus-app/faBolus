@@ -126,6 +126,8 @@ public actor PumpSession {
     var identity: TandemLink.PumpIdentity?
     /// The connection's identity checks passed: a t:slim X2 with the trusted serial.
     var identityTrusted = false
+    /// The grace-period read was asked for the alert 32 now raised.
+    var graceReadAsked = false
     var pendingPairing: PendingPairing?
     var retriedRejectedPairing = false
     /// Whether the app is in the foreground, as last told.
@@ -572,7 +574,23 @@ public actor PumpSession {
             let read = TempRateRequest()
             enqueue([read], priority: isSuspected(read) ? .probe : .status)
         }
+        readGracePeriodIfRaised(after: message)
         settleRemoteClearTrial(after: message, now: uptime())
+    }
+
+    /// When CGM alert 32 (the G7 grace period ending) is raised, t:connect reads the CGM status for the time
+    /// left: form C at API 4.1 or later, else B. TandemKit has no form C, so above 4.1 the alert keeps its
+    /// own text. Once per raising.
+    private func readGracePeriodIfRaised(after message: any TandemMessages.Message) {
+        guard let m = message as? CGMAlertStatusResponse else { return }
+        guard m.notifications.contains(where: { $0.id == PumpAlertLists.graceEndingAlertId }) else {
+            graceReadAsked = false
+            return
+        }
+        guard !graceReadAsked, let api = identity?.apiVersion, api < ApiVersion(major: 4, minor: 1) else { return }
+        graceReadAsked = true
+        let read = CgmStatusV2Request()
+        if !isQueued(CgmStatusV2Request.self) { enqueue([read], priority: isSuspected(read) ? .probe : .status) }
     }
 
     // MARK: - Link events
@@ -806,6 +824,7 @@ public actor PumpSession {
         state = PumpState()
         state.model = model
         alertLists = PumpAlertLists()
+        graceReadAsked = false
         basalParts = PumpBasalParts()
         await connection.connect(
             to: PumpTarget(peripheralID: peripheralID, model: .tslim, credentials: credentials),
@@ -828,6 +847,7 @@ public actor PumpSession {
         saveRecord()
         state = PumpState()
         alertLists = PumpAlertLists()
+        graceReadAsked = false
         basalParts = PumpBasalParts()
         pumpClock = nil
         await dropLogbook()
@@ -896,6 +916,7 @@ public actor PumpSession {
         case .unsupportedModel(let model): return .unsupportedModel(Self.model(model))
         case .identityMismatch: return .identityMismatch
         case .pumpNotFound: return .pumpNotFound
+        case .pairingDropped: return .pairingDropped
         }
     }
 

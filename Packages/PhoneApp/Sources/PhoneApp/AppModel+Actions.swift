@@ -79,6 +79,9 @@ extension AppModel {
     /// Never gated (R10).
     public func cancelBolus() async -> CancelResult { await session.cancelBolus() }
 
+    /// The phone's bolus screen opened: the session tells the pump the user is interacting, as t:connect does.
+    public func bolusScreenOpened() async { await session.bolusScreenOpened() }
+
     /// The user checked the pump: every unknown outcome stops blocking. They stay unknown, and history can
     /// still settle them (R11).
     public func confirmUnknownOutcomesOnPump() async {
