@@ -381,6 +381,18 @@ extension AppModel {
         return flow
     }
 
+    /// Turns the Live Activity on or off from Shortcuts: the settings screen's own switch, so the screen,
+    /// the model and the Live Activity follow it as they follow the switch. It touches only the setting and
+    /// the Live Activity, never the pump, and leaves the Live Activity's bolus switch as it is.
+    public func setLiveActivityEnabled(_ on: Bool) {
+        settings.liveActivityEnabled = on
+        // Applied now, not on the settings observer's next turn: a shortcut that runs in the background
+        // gets the end to ActivityKit before iOS suspends the app. The observer's later pass finds nothing
+        // left to do. During a launch (a shortcut that launched the app) nothing is loaded yet to show:
+        // the launch's own last step applies the setting.
+        if launched { publishSurfaces() }
+    }
+
     /// A Live Activity button's tap, from its intent. Returns once its step is done.
     /// - Parameter unlocked: it came through the intent that needs an unlocked device.
     public func liveActivityTapped(_ tap: LiveActivityTap, unlocked: Bool) async {
