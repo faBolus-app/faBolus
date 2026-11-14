@@ -82,7 +82,7 @@ struct RemotesSettingsView: View {
                 }
                 NavigationLink {
                     CustomizeListView(
-                        title: "Watch details", allIDs: DetailsField.watchIDs,
+                        title: "Watch details", allIDs: DetailsField.allIDs,
                         label: { DetailsField(rawValue: $0)?.label ?? $0 },
                         order: $settings.watchDetailsOrder, footer: "Rows of the watch's Details screen.")
                 } label: {

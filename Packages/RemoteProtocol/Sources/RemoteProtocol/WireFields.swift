@@ -30,6 +30,8 @@ public enum WireLimits {
     public static let epochs = 1_577_836_800...2_147_483_647
     public static let milliunits = 0...maxMilliunits
     public static let glucose = 0...maxGlucose
+    /// A temp rate's percent of the profile's rate: a t:slim sets 0 to 250.
+    public static let tempPercent = 0...250
     /// Correction factor and target, mg/dL.
     public static let calculatorMgdl = 0...1000
     /// Carb ratio, milligrams per unit.

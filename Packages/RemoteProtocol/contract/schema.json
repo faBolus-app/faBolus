@@ -387,6 +387,17 @@
               "type": "integer",
               "minimum": 1577836800,
               "maximum": 2147483647
+            },
+            "tempRate": {
+              "type": "boolean"
+            },
+            "tempPercent": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 250
+            },
+            "basalIQ": {
+              "type": "boolean"
             }
           }
         },
@@ -470,6 +481,30 @@
               "type": "integer",
               "minimum": 0,
               "maximum": 1000000
+            },
+            "at": {
+              "type": "integer",
+              "minimum": 1577836800,
+              "maximum": 2147483647
+            }
+          }
+        },
+        "cgmSession": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "at"
+          ],
+          "properties": {
+            "startedAt": {
+              "type": "integer",
+              "minimum": 1577836800,
+              "maximum": 2147483647
+            },
+            "lastCalibrationAt": {
+              "type": "integer",
+              "minimum": 1577836800,
+              "maximum": 2147483647
             },
             "at": {
               "type": "integer",
@@ -706,7 +741,9 @@
               "target",
               "maxBolus",
               "maxBasal",
-              "autoCorrection"
+              "autoCorrection",
+              "sensorStarted",
+              "lastCalibration"
             ]
           },
           "maxItems": 32,

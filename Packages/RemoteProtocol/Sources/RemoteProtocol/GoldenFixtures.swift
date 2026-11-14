@@ -64,6 +64,24 @@ public enum GoldenFixtures {
         return s
     }()
 
+    /// A pump-set temp rate of 150 %, with the CGM session's start and last calibration.
+    public static let statusTempRate: StatusPayload = {
+        var s = status
+        s.basal = Timed(.tempRate(milliunitsPerHour: 1275, percent: 150), at: now - 40)
+        s.cgmSession = Timed(
+            CGMSessionTimes(startedAt: now - 3 * 86400, lastCalibrationAt: now - 5 * 3600), at: now - 40)
+        return s
+    }()
+
+    /// Basal-IQ has stopped basal for a predicted low; the temp rate's percent not read yet elsewhere, and a
+    /// session with no calibration.
+    public static let statusBasalIQ: StatusPayload = {
+        var s = status
+        s.basal = Timed(.basalIQSuspended, at: now - 40)
+        s.cgmSession = Timed(CGMSessionTimes(startedAt: now - 86400, lastCalibrationAt: nil), at: now - 40)
+        return s
+    }()
+
     /// Carbs off on the pump: the calculator's food entry is units, and the carb ratio is sent as 0.
     public static let statusCarbsOff: StatusPayload = {
         var s = status
@@ -88,6 +106,8 @@ public enum GoldenFixtures {
         v2("status-delivering", .status(statusDelivering)),
         v2("status-glucose-caution", .status(statusGlucoseCaution)),
         v2("status-carbs-off", .status(statusCarbsOff)),
+        v2("status-temp-rate", .status(statusTempRate)),
+        v2("status-basal-iq", .status(statusBasalIQ)),
         v2("config", .config(config)),
         v2("history", .history(history)),
         v2(
