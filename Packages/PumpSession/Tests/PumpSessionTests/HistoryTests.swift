@@ -514,11 +514,16 @@ func readStart(_ cargo: [UInt8]) -> UInt32 {
         HistoryProjection.events([record]).first.flatMap { HistoryProjection.event($0, date: Date()) }
     }
 
-    @Test func aBolusCutShortIsStopped() throws {
-        for status in [0, 1, 2, 4, 6] {
+    /// A bolus cut short is named by why it stopped (the completion status's names in Tandem's apps).
+    @Test func aBolusCutShortIsStoppedAndSaysWhy() throws {
+        let titles = [
+            0: "Bolus stopped on the pump", 1: "Bolus stopped by an alarm", 2: "Bolus stopped by a malfunction",
+            4: "Bolus cancelled from a phone", 6: "Bolus stopped for a predicted low"
+        ]
+        for (status, title) in titles {
             let e = try #require(
                 event(completed(BolusCompletedHistoryLog.typeId, status: status, delivered: 0.4, requested: 1)))
-            #expect(e.title == "Bolus stopped", "status \(status)")
+            #expect(e.title == title, "status \(status)")
             #expect(e.detail == "0.40 U of 1.00 U")
         }
     }

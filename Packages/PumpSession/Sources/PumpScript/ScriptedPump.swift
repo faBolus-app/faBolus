@@ -93,6 +93,9 @@ public final class ScriptedPump {
     /// The home-screen status icons (bytes 2 and 3) and bolus icon (byte 4), with pumpX2's ids: status 0 is 0,
     /// 1 transmitter, 4 transmitter out of range; status 1 is 0, 1 blood drop; bolus is 0 bolus, 1 auto-bolus,
     /// 200 hidden. Which a t:slim shows when is unconfirmed.
+    /// InsulinStatus's low-insulin level (byte 3), units, and the home screen's "+" (mirror byte 7).
+    public var insulinLowThreshold = 20
+    public var insulinPlusIcon = false
     public var statusIcon0 = 200
     public var statusIcon1 = 200
     public var bolusIcon = 200
@@ -724,7 +727,7 @@ public final class ScriptedTransport: LinkTransport {
             v[37] = pump.glucoseAutoFillAllowed ? 1 : 0
             return BolusCalcDataSnapshotResponse(cargo: v)
         case (.currentStatus, InsulinStatusRequest.props.opCode):
-            return InsulinStatusResponse(cargo: le16(pump.reservoirUnits) + [0, 20])
+            return InsulinStatusResponse(cargo: le16(pump.reservoirUnits) + [0, UInt8(pump.insulinLowThreshold)])
         case (.currentStatus, CurrentBatteryV2Request.props.opCode):
             var v = [UInt8](repeating: 0, count: 11)
             v[0] = UInt8(pump.batteryPercent)
@@ -743,6 +746,7 @@ public final class ScriptedTransport: LinkTransport {
             v[3] = UInt8(pump.statusIcon1)
             v[4] = UInt8(pump.bolusIcon)
             v[5] = UInt8(pump.basalIcon)
+            v[7] = pump.insulinPlusIcon ? 1 : 0
             return HomeScreenMirrorResponse(cargo: v)
         case (.currentStatus, CurrentBasalStatusRequest.props.opCode):
             return CurrentBasalStatusResponse(

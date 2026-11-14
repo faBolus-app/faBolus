@@ -300,6 +300,10 @@ public struct PumpState: Sendable, Hashable, Codable {
     public var insulinActionTimeLeft: Observed<TimeInterval>?
     /// When the CGM sensor started and was last calibrated. Display only.
     public var cgmSessionTimes: Observed<PumpCGMSessionTimes>?
+    /// The cartridge level below which t:connect marks it low, units. Display only.
+    public var insulinLowThresholdUnits: Observed<Double>?
+    /// The pump's home screen shows a "+" before the cartridge's units. Display only.
+    public var insulinPlus: Observed<Bool>?
 
     public init() {}
 
@@ -337,6 +341,8 @@ public struct PumpState: Sendable, Hashable, Codable {
         move(&statusIcons)
         move(&insulinActionTimeLeft)
         move(&cgmSessionTimes)
+        move(&insulinLowThresholdUnits)
+        move(&insulinPlus)
         // Like the last bolus's, these times were placed by the pump-clock anchor in the clock before the step.
         if let times = cgmSessionTimes?.value {
             cgmSessionTimes?.value = PumpCGMSessionTimes(
@@ -351,6 +357,7 @@ public struct PumpState: Sendable, Hashable, Codable {
         case apiVersion, glucose, insulinOnBoard, reservoirUnits, battery, basalDeliveryState, bolusState
         case lastBolus, bolusCalculator, maxBasalUnitsPerHour, controlIQ, cartridge, cgmSessionActive, alerts
         case cgmHardwareInfo, cgmDisplay, statusIcons, insulinActionTimeLeft, cgmSessionTimes
+        case insulinLowThresholdUnits, insulinPlus
     }
 
     public var capabilities: PumpCapabilities { model.capabilities }

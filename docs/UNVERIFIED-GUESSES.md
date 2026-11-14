@@ -114,15 +114,15 @@ record of the bolus.
 
 ## 12. The battery's charging bit
 
-- **The guess:** `CurrentBatteryV2Response.chargingStatus` (op-145, byte 2) equal to 1 means the pump is
-  charging, as pumpx2's `isCharging()` reads it. pumpx2's own notes say the bytes after the headline
-  reading often read 0 on a real pump, and nobody has seen it read 1 on a pump on its charger. Any other
-  value counts as not charging, never inferred from a rising percentage.
+- **The guess:** `CurrentBatteryV2Response.chargingStatus` (op-145, byte 2) other than 0 means the pump is
+  on its charger, as Mobi reads the byte; pumpx2's `isCharging()` takes only 1, and t:connect doesn't read
+  it. pumpx2's own notes say the bytes after the headline reading often read 0 on a real pump, and nobody
+  has seen the byte on a pump on its charger. Charging is never inferred from a rising percentage.
 - **Where:** `Packages/PumpSession/Sources/PumpSession/PumpReadings.swift` (op-145),
   `PumpBattery.isCharging`, `Packages/faBolusDesign/Sources/faBolusDesign/BatteryChargingPresentation.swift`,
   the status message's `battery.charging`, and the watch's Details row.
 - **Risk:** display only; a wrong or missing charging mark, never a dose input.
-- **Verify:** with the pump on its charger, op-145 reads 1; off the charger, not 1. On P1 and P2.
+- **Verify:** with the pump on its charger, op-145 byte 2 isn't 0; off the charger, it is. On P1 and P2.
 
 ## 13. A bolus is absent from history only when no record shows the pump started it
 
@@ -234,20 +234,22 @@ that worked.
   The status format and the watch don't change, and `aClassKnownToClearIsAvailableWithNothingRecorded`
   and `aClassKnownNotToClearIsUnavailableAndNothingIsSent` keep passing.
 
-## 19. A bolus that ends short is "stopped", not "cancelled"
+## 19. A bolus that ends short is "stopped", and why
 
-- **The guess avoided:** pumpx2 doesn't name `BolusCompleted`'s completion status, so faBolus can't tell
-  a cancel from an alarm or an interruption. A bolus whose authoritative delivered amount is below the
+- **The guess:** pumpx2 doesn't name `BolusCompleted`'s completion status, so the outcome can't tell a
+  cancel from an alarm or an interruption. A bolus whose authoritative delivered amount is below the
   request ends as `BolusOutcome.stopped(delivered:requested:)`, shown as "Bolus stopped" with both
   amounts. The cancel result the phone shows ("Bolus cancelled") comes from the pump's answer to the
-  cancel, not from history. The logbook names a bolus "Bolus stopped", with both amounts, by t:connect's
+  cancel, not from history. The logbook shows a bolus as stopped, with both amounts, by t:connect's
   rule: a completion status t:connect counts as cut short (0, 1, 2, 4 or 6) and less delivered than
-  requested. Like t:connect, it doesn't name the cause.
+  requested. It names the cause from the status, with the names Tandem's apps give its values: 0 stopped
+  on the pump, 1 by an alarm, 2 by a malfunction, 4 cancelled from a phone, 6 for a predicted low. Which
+  status a t:slim records for each is unverified.
 - **Where:** `Packages/faBolusCore/Sources/faBolusCore/BolusOutcome.swift`,
   `Packages/PumpSession/Sources/PumpSession/PumpSession+Delivery.swift`,
   `Packages/PumpSession/Sources/PumpSession/HistoryProjection.swift`.
 - **Verify:** cancel a bolus, let one be stopped by an alarm, and let one be cut off by a link drop, and
-  compare the completion status in each history record. Name the cause once the values are known.
+  compare the completion status in each history record with the name the logbook gives it.
 
 ## 20. The pump's CGM hardware string is the G6 transmitter ID
 
@@ -486,6 +488,8 @@ that worked.
     three icons at the same bytes, with the same values.
   - The IOB reply's byte 4 is the time left of insulin action. faBolus shows it only when byte 16 says the
     Mudaliar model (0), as t:connect does.
+  - The mirror's byte 7 is the "+" t:connect shows before the cartridge's units, and InsulinStatus's byte 3
+    the level below which it marks the cartridge low (both pumpX2's offsets).
   - CGMStatus (op 81) carries the last calibration (bytes 1 to 4) and the sensor start (5 to 8) in pump time,
     with 0 for unset. faBolus shows them while a session runs. With no CGM type read, a Libre's or a G7's
     last calibration is taken to be 0, so its row is left out; t:connect leaves it out for a Libre by type.

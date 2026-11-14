@@ -26,8 +26,8 @@ struct StatusPillsView: View {
         case .reservoir:
             let v = display.reservoir
             Pill(
-                icon: "cross.vial.fill", tint: v.isKnown ? .teal : .gray, value: v.text, label: "Reservoir",
-                stale: v.isStale)
+                icon: "cross.vial.fill", tint: display.reservoirIsLow ? AppTheme.low : (v.isKnown ? .teal : .gray),
+                value: v.text, label: display.reservoirIsLow ? "Reservoir · low" : "Reservoir", stale: v.isStale)
         case .battery:
             let b = BatteryChargingPresentation.make(
                 percent: display.battery?.percent, charging: display.battery?.isCharging == true)

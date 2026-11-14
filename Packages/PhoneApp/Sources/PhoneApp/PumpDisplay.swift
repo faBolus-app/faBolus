@@ -85,8 +85,20 @@ public struct PumpDisplay: Sendable {
         value(pump.insulinOnBoard, window: freshness.insulinOnBoardStaleAfter) { formatUnits($0) }
     }
 
+    /// The cartridge's units, with the "+" the pump's home screen shows before them.
     public var reservoir: Value {
-        value(pump.reservoirUnits, window: freshness.pumpStatusStaleAfter) { String(format: "%.0f U", $0) }
+        let plus = pump.insulinPlus?.valueIfFresh(within: freshness.pumpStatusStaleAfter, now: now) == true
+        return value(pump.reservoirUnits, window: freshness.pumpStatusStaleAfter) {
+            (plus ? "+" : "") + String(format: "%.0f U", $0)
+        }
+    }
+
+    /// The cartridge is below the pump's low-insulin level, as t:connect marks it.
+    public var reservoirIsLow: Bool {
+        guard let units = pump.reservoirUnits?.valueIfFresh(within: freshness.pumpStatusStaleAfter, now: now),
+            let low = pump.insulinLowThresholdUnits?.valueIfFresh(within: freshness.pumpStatusStaleAfter, now: now)
+        else { return false }
+        return units < low
     }
 
     public var battery: PumpBattery? { pump.battery?.valueIfFresh(within: freshness.pumpStatusStaleAfter, now: now) }

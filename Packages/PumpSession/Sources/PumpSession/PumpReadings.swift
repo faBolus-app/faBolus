@@ -156,11 +156,13 @@ enum PumpReadings {
 
         case let m as InsulinStatusResponse:
             state.reservoirUnits = observed(Double(m.currentInsulinAmount))
-            return [.reservoirUnits]
+            // Byte 3, the level t:connect marks the cartridge low below.
+            state.insulinLowThresholdUnits = observed(Double(m.insulinLowAmount))
+            return [.reservoirUnits, .insulinLowThresholdUnits]
 
         case let m as CurrentBatteryV2Response:
-            // pumpx2 names only status 1 as charging; any other value is not.
-            state.battery = observed(PumpBattery(percent: m.batteryPercent, isCharging: m.chargingStatus == 1))
+            // Any value but 0 is on the charger, as Mobi reads the byte (t:connect doesn't read it).
+            state.battery = observed(PumpBattery(percent: m.batteryPercent, isCharging: m.chargingStatus != 0))
             return [.battery]
 
         case let m as CurrentBatteryV1Response:
@@ -195,11 +197,14 @@ enum PumpReadings {
             basal.icon = observed(m.basalStatusIcon)
             state.basalDeliveryState = basal.state
             state.statusIcons = observed(statusIcons(m))
+            // The "+" t:connect shows before the cartridge's units.
+            state.insulinPlus = observed(m.remainingInsulinPlusIcon)
+            let read: Set<PumpState.Reading> = [.cgmDisplay, .basalDeliveryState, .statusIcons, .insulinPlus]
             // The pump's own trend icon is the trend. "No arrow" is a real answer: no trend, not flat.
-            guard var glucose = state.glucose else { return [.cgmDisplay, .basalDeliveryState, .statusIcons] }
+            guard var glucose = state.glucose else { return read }
             glucose.value.trend = GlucoseTrend(rawValue: m.cgmTrendArrow)
             state.glucose = glucose
-            return [.glucose, .cgmDisplay, .basalDeliveryState, .statusIcons]
+            return read.union([.glucose])
 
         case let m as CurrentBasalStatusResponse:
             basal.rate = observed(m.currentBasalUnitsPerHour)

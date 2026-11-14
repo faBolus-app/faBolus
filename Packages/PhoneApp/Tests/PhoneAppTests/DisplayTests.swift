@@ -86,6 +86,33 @@ import faBolusCore
         #expect(old.insulinActionLeft == nil)
     }
 
+    /// The cartridge shows the pump's "+", and is marked low below the pump's low-insulin level.
+    @Test func theCartridgeShowsItsPlusAndItsLowMark() {
+        let plus = display {
+            $0.reservoirUnits = at(200, age: 10)
+            $0.insulinPlus = at(true, age: 10)
+            $0.insulinLowThresholdUnits = at(20, age: 10)
+        }
+        #expect(plus.reservoir.text == "+200 U" && !plus.reservoirIsLow)
+        let low = display {
+            $0.reservoirUnits = at(15, age: 10)
+            $0.insulinPlus = at(false, age: 10)
+            $0.insulinLowThresholdUnits = at(20, age: 10)
+        }
+        #expect(low.reservoir.text == "15 U" && low.reservoirIsLow)
+        let atLevel = display {
+            $0.reservoirUnits = at(20, age: 10)
+            $0.insulinLowThresholdUnits = at(20, age: 10)
+        }
+        #expect(!atLevel.reservoirIsLow)
+        // An old level marks nothing.
+        let old = display {
+            $0.reservoirUnits = at(15, age: 10)
+            $0.insulinLowThresholdUnits = at(20, age: 3600)
+        }
+        #expect(!old.reservoirIsLow)
+    }
+
     @Test func thePumpsBolusAndCGMIconsAreNamed() {
         let auto = display { $0.statusIcons = at(PumpStatusIcons(bolus: .autoBolus, calibrationDue: true), age: 10) }
         #expect(auto.bolusMark == "Auto-bolus running" && auto.cgmMark == "Calibrate")
