@@ -26,6 +26,8 @@ public enum PumpLinkFailure: Sendable, Hashable, Codable {
     case identityMismatch
     /// A pairing scan found no pump in time.
     case pumpNotFound
+    /// The pump closed the link twice while pairing: the code may be wrong.
+    case pairingDropped
 }
 
 /// The typed event stream `PumpSession` emits. Consumers react to events rather than diffing state:

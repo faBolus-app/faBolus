@@ -544,3 +544,38 @@ that worked.
   unknown outcome blocks the next bolus until history or the user settles it.
 - **Verify:** on P2 (API 4.0), one form C read after a delivered bolus and one after a cancelled one,
   against the pump's history.
+
+## 39. CGM status B's grace period time left
+
+- **The guess:** after CGM alert 32 (the G7 grace period ending soon), CGM status B (190 → 191) carries the
+  time left at bytes 14 to 17 and the grace flag at byte 19, as pumpX2 lays it out and Mobi reads it.
+  t:connect reads B for it below API 4.1 (form C at 4.1 or later, which TandemKit doesn't have), and says
+  about 2 hours from 2101 to 7500 s left and about 30 minutes from 1 to 2100 s; faBolus puts that in alert
+  32's detail. Whether the time left is the session's or the grace period's own is unshown; the windows
+  don't depend on it.
+- **Where:** `Packages/PumpSession/Sources/PumpSession/PumpSession.swift` (`readGracePeriodIfRaised`),
+  `Packages/PumpSession/Sources/PumpSession/PumpReadings.swift` (`PumpAlertLists.graceDetail`).
+- **Risk:** display only. A wrong byte would say the wrong time left, or none.
+- **Verify:** on P2 with a G7, let a session run into its grace period and compare B with the pump's screen.
+
+## 40. UserInteraction on P2
+
+- **The guess:** a t:slim at API 3.0 or later accepts UserInteraction (op 0x84), as t:connect sends it when
+  the bolus screen opens (the owner chose t:connect's table over a bench run, 2026-11-13). P1, at 2.5, refused
+  it with op-77 and a link drop, which fits the table. faBolus sends it only at 3.0 or later, when the
+  phone's bolus screen opens.
+- **Where:** `PumpSession.bolusScreenOpened()` in
+  `Packages/PumpSession/Sources/PumpSession/PumpSession+Reads.swift`.
+- **Risk:** a signed write that changes no delivery. A pump that refuses it may drop the link when the bolus
+  screen opens; the support matrix then records it and stops sending it to that pump.
+- **Verify:** on P2, open the bolus screen and watch for the 0x85 reply.
+
+## 41. A first J-PAKE pairing the pump drops is a wrong code
+
+- **The guess:** a t:slim answers a wrong 6-digit code by dropping the link during authentication, as Mobi
+  reads it. A first J-PAKE pairing whose link drops there twice in a row ends as "the code may be wrong"
+  (one drop is retried, for the radio). A resume from the stored secret keeps the reconnect rule.
+- **Where:** TandemKit's `LinkReducer.dropped` (`LinkFailure.pairingDropped`), and
+  `PumpLinkFailure.pairingDropped` in faBolus.
+- **Risk:** pairing only. A pump that drops for another reason twice would be told its code may be wrong.
+- **Verify:** on P2, enter a wrong code and record what the pump does.

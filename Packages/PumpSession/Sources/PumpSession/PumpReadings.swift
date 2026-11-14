@@ -88,12 +88,44 @@ struct PumpAlertLists: Sendable, Equatable {
     /// What's known about clearing on this pump, from which each alert's `remoteClear` is decided.
     var classClears: RemoteClearEvidence?
     var unitClears: RemoteClearEvidence?
+    /// When the G7 grace period ends, from the CGM status read when CGM alert 32 was raised, and the time of
+    /// the latest alert reply, from which the time left is counted.
+    var graceEndsAt: Date?
+    var asOf: Date?
+
+    /// The grace period's time left at the latest alert reply, seconds.
+    var graceSecondsLeft: Int? {
+        guard let graceEndsAt, let asOf else { return nil }
+        return Int(graceEndsAt.timeIntervalSince(asOf).rounded(.down))
+    }
+
+    /// CGM alert 32, the grace period ending soon.
+    static let graceEndingAlertId = 32
 
     var merged: [PumpAlert] {
         (PumpAlertKind.allCases.flatMap { byKind[$0] ?? [] } + malfunctions).map {
             var alert = $0
+            if alert.kind == .cgmAlert, alert.id == Self.graceEndingAlertId,
+                let detail = Self.graceDetail(secondsLeft: graceSecondsLeft)
+            {
+                alert = PumpAlert(
+                    id: alert.id, kind: alert.kind, title: alert.title, detail: detail,
+                    isDismissable: alert.isDismissable, malfunctionCode: alert.malfunctionCode,
+                    escalation: alert.escalation)
+            }
             alert.remoteClear = RemoteClearing.decide(alert, classAnswer: classClears, unitAnswer: unitClears)
             return alert
+        }
+    }
+
+    /// The grace period's time left in t:connect's two steps: about 2 hours from 35 minutes 1 second to
+    /// 2 hours 5 minutes, about 30 minutes below that. Outside both, `nil`, and the alert keeps its own
+    /// text (t:connect then shows nothing).
+    static func graceDetail(secondsLeft: Int?) -> String? {
+        switch secondsLeft {
+        case (2101...7500)?: return "About 2 hours of the sensor's grace period are left."
+        case (1...2100)?: return "About 30 minutes of the sensor's grace period are left."
+        default: return nil
         }
     }
 
@@ -295,7 +327,21 @@ enum PumpReadings {
         case let m as AlarmStatusResponse:
             return setAlerts(.alarm, m.notifications, state: &state, alerts: &alerts, at: at)
         case let m as CGMAlertStatusResponse:
+            // A grace period's time left is read for this raising of alert 32: it goes when the alert does.
+            if !m.notifications.contains(where: { $0.id == PumpAlertLists.graceEndingAlertId }) {
+                alerts.graceEndsAt = nil
+            }
             return setAlerts(.cgmAlert, m.notifications, state: &state, alerts: &alerts, at: at)
+
+        case let m as CgmStatusV2Response:
+            // Read when alert 32 is raised, for the grace period's time left (byte 14, with the grace flag at
+            // 19); a reply outside a grace period says nothing about it.
+            alerts.graceEndsAt =
+                m.gracePeriod ? at.addingTimeInterval(TimeInterval(m.sessionTimeRemainingSeconds)) : nil
+            alerts.asOf = at
+            let before = state.alerts?.value
+            state.alerts = Observed(alerts.merged, measuredAt: at, receivedAt: at)
+            return before == state.alerts?.value ? [] : [.alerts]
         case let m as ReminderStatusResponse:
             return setAlerts(.reminder, m.notifications, state: &state, alerts: &alerts, at: at)
         case let m as MalfunctionBitmaskStatusResponse:
@@ -370,6 +416,7 @@ enum PumpReadings {
     ) -> Set<PumpState.Reading> {
         let before = alerts.merged
         alerts.byKind[kind] = notifications.map(PumpAlertLists.alert)
+        alerts.asOf = at
         state.alerts = Observed(alerts.merged, measuredAt: at, receivedAt: at)
         return before == alerts.merged ? [] : [.alerts]
     }

@@ -25,6 +25,8 @@ struct BolusEntryView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             guard flow == nil else { return }
+            // Once per opening of the screen, as t:connect sends it on the bolus tab's tap.
+            Task { await model.bolusScreenOpened() }
             let made = initialFlow ?? BolusFlow(model: model)
             // A paired pump that takes no carbs has no mode picker, so the screen is in units for it.
             if !takesCarbs { made.mode = .units }
