@@ -84,11 +84,12 @@ public enum StatusComposer {
             guard let t = at(o) else { return nil }
             switch o.value {
             case .suspended: return Timed(.suspended, at: t)
-            // The watch's protocol has no temp rate or Basal-IQ suspension: it shows the rate delivered. A
-            // Basal-IQ suspension isn't sent as suspended, which says a bolus can't go.
-            case .active(let rate), .tempRate(let rate, _):
-                return milliunits(rate).map { Timed(.active(milliunitsPerHour: $0), at: t) }
-            case .basalIQSuspended: return Timed(.active(milliunitsPerHour: 0), at: t)
+            case .active(let rate): return milliunits(rate).map { Timed(.active(milliunitsPerHour: $0), at: t) }
+            case .tempRate(let rate, let percent):
+                let wirePercent = percent.flatMap { WireLimits.tempPercent.contains($0) ? $0 : nil }
+                return milliunits(rate).map { Timed(.tempRate(milliunitsPerHour: $0, percent: wirePercent), at: t) }
+            // Not sent as suspended, which says a bolus can't go: Basal-IQ stops basal only.
+            case .basalIQSuspended: return Timed(.basalIQSuspended, at: t)
             }
         }
         let lastBolus = pump.lastBolus.flatMap { o -> Timed<Int>? in
@@ -116,6 +117,14 @@ public enum StatusComposer {
         let maxBasal = pump.maxBasalUnitsPerHour.flatMap { o in
             at(o).flatMap { t in milliunits(o.value).map { Timed($0, at: t) } }
         }
+        // The session's times only while the pump says a session runs, as the phone's Details card shows them.
+        let cgmSession = pump.cgmSessionTimes.flatMap { o -> Timed<CGMSessionTimes>? in
+            guard pump.cgmSessionActive?.value == true, let t = at(o) else { return nil }
+            return Timed(
+                CGMSessionTimes(
+                    startedAt: o.value.sensorStarted.flatMap(epoch),
+                    lastCalibrationAt: o.value.lastCalibration.flatMap(epoch)), at: t)
+        }
         var active: ActiveBolus?
         if case .inProgress(let entry)? = pump.bolusState?.value, let requested = milliunits(entry.programmedUnits),
             let started = epoch(entry.startDate)
@@ -133,7 +142,7 @@ public enum StatusComposer {
             sentAt: wireEpoch(now), configRevision: inputs.configRevision, pumpLink: linkToken(pump.link),
             glucose: glucose, insulinOnBoardMilliunits: iob, reservoirMilliunits: reservoir, battery: battery,
             basal: basal, lastBolusMilliunits: lastBolus, calculator: calculator, controlIQ: controlIQ,
-            maxBasalMilliunitsPerHour: maxBasal, lastAutoCorrectionAt: autoCorrection,
+            maxBasalMilliunitsPerHour: maxBasal, cgmSession: cgmSession, lastAutoCorrectionAt: autoCorrection,
             bolusBlock: refusal.map(blockToken), activeBolus: active,
             alerts: alertItems(inputs.alerts),
             remoteLimitMilliunits: inputs.remoteSizeLimitUnits.flatMap(milliunits))

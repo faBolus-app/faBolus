@@ -172,7 +172,7 @@ public final class AppSettings {
         let screen: String? = value(.watchDefaultScreen)
         watchDefaultScreen = screen.flatMap { screens.contains($0) ? $0 : nil } ?? screens[0]
         watchDetailsOrder = Self.restoreOrder(
-            value(.watchDetailsOrder), allowed: DetailsField.watchIDs, fallback: watch.detailsOrder)
+            value(.watchDetailsOrder), allowed: DetailsField.allIDs, fallback: watch.detailsOrder)
         let ranges = (value(.watchChartRanges) as [Int]?)?.filter { Self.watchChartRangeOptions.contains($0) }
         watchChartRanges = (ranges?.isEmpty ?? true) ? watch.watchChartRanges : Array(Set(ranges!)).sorted()
         complicationSlots = Array(
@@ -245,9 +245,6 @@ public enum DetailsField: String, CaseIterable, Sendable {
     case sensorStarted, lastCalibration
 
     public static var allIDs: [String] { allCases.map(\.rawValue) }
-    /// The rows the watch can show: the phone's, less the CGM session times, which the watch protocol
-    /// doesn't carry.
-    public static var watchIDs: [String] { allIDs.filter { $0 != "sensorStarted" && $0 != "lastCalibration" } }
     public static let defaultIDs = [
         "iob", "reservoir", "battery", "cgm", "sensorStarted", "lastCalibration", "lastBolus", "carbRatio", "isf",
         "target", "maxBolus"

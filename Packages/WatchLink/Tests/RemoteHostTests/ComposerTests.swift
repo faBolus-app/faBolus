@@ -94,14 +94,33 @@ import Testing
         #expect(s.sentAt == GoldenFixtures.now)
     }
 
-    /// The watch's protocol has no temp rate or Basal-IQ suspension: each goes as the rate delivered, and
-    /// Basal-IQ's never as suspended, which would say a bolus can't go.
-    @Test func aTempRateOrBasalIQSuspensionGoesAsTheRateDelivered() {
+    /// A temp rate goes with its percent once read, and Basal-IQ's suspension as its own reading, never as
+    /// suspended, which would say a bolus can't go.
+    @Test func aTempRateAndABasalIQSuspensionGoAsThemselves() {
         var p = connected
         p.basalDeliveryState = observed(.tempRate(unitsPerHour: 1.2, percent: 150), age: 40)
-        #expect(compose(p).basal == Timed(.active(milliunitsPerHour: 1200), at: GoldenFixtures.now - 40))
+        #expect(
+            compose(p).basal == Timed(.tempRate(milliunitsPerHour: 1200, percent: 150), at: GoldenFixtures.now - 40))
+        p.basalDeliveryState = observed(.tempRate(unitsPerHour: 1.2, percent: nil), age: 40)
+        #expect(
+            compose(p).basal == Timed(.tempRate(milliunitsPerHour: 1200, percent: nil), at: GoldenFixtures.now - 40))
         p.basalDeliveryState = observed(.basalIQSuspended, age: 40)
-        #expect(compose(p).basal == Timed(.active(milliunitsPerHour: 0), at: GoldenFixtures.now - 40))
+        #expect(compose(p).basal == Timed(.basalIQSuspended, at: GoldenFixtures.now - 40))
+    }
+
+    /// The CGM session's times go while a session runs, each as nothing when unset.
+    @Test func theSessionTimesGoWhileASessionRuns() {
+        var p = connected
+        let started = Date(timeIntervalSince1970: TimeInterval(GoldenFixtures.now - 86400))
+        p.cgmSessionTimes = observed(PumpCGMSessionTimes(sensorStarted: started, lastCalibration: nil), age: 40)
+        p.cgmSessionActive = observed(true, age: 40)
+        #expect(
+            compose(p).cgmSession
+                == Timed(
+                    CGMSessionTimes(startedAt: GoldenFixtures.now - 86400, lastCalibrationAt: nil),
+                    at: GoldenFixtures.now - 40))
+        p.cgmSessionActive = observed(false, age: 40)
+        #expect(compose(p).cgmSession == nil)
     }
 
     /// The pump's max basal goes as milliunits per hour with the time it was read: the golden status's

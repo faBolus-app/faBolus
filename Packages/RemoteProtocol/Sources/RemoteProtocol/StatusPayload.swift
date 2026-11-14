@@ -39,7 +39,25 @@ public struct BatteryReading: Sendable, Hashable {
 
 public enum BasalReading: Sendable, Hashable {
     case active(milliunitsPerHour: Int)
+    /// A temp rate set on the pump: the rate delivered, and its percent of the profile's rate once read. On
+    /// the wire, `active` with `tempRate` (and `tempPercent`).
+    case tempRate(milliunitsPerHour: Int, percent: Int?)
     case suspended
+    /// Basal-IQ has stopped basal for a predicted low; a bolus still goes. On the wire, `active` at 0 with
+    /// `basalIQ`, so a remote that doesn't know it shows no basal and doesn't take it as suspended.
+    case basalIQSuspended
+}
+
+/// When the CGM sensor started and was last calibrated, as epoch seconds, while a session runs. Either is
+/// absent when the pump reports it unset.
+public struct CGMSessionTimes: Sendable, Hashable {
+    public var startedAt: Int?
+    public var lastCalibrationAt: Int?
+
+    public init(startedAt: Int?, lastCalibrationAt: Int?) {
+        self.startedAt = startedAt
+        self.lastCalibrationAt = lastCalibrationAt
+    }
 }
 
 /// The pump calculator's settings for its active profile and time segment.
@@ -127,6 +145,8 @@ public struct StatusPayload: Sendable, Hashable {
     public var calculator: Timed<CalculatorSettings>?
     public var controlIQ: Timed<ControlIQReading>?
     public var maxBasalMilliunitsPerHour: Timed<Int>?
+    /// The CGM session's times, while one runs.
+    public var cgmSession: Timed<CGMSessionTimes>?
     /// When Control-IQ last gave an automatic correction bolus, from the pump's history: on the wire, an
     /// object holding only `at`. Absent when none is known.
     public var lastAutoCorrectionAt: Int?
@@ -143,7 +163,8 @@ public struct StatusPayload: Sendable, Hashable {
         battery: Timed<BatteryReading>? = nil, basal: Timed<BasalReading>? = nil,
         lastBolusMilliunits: Timed<Int>? = nil, calculator: Timed<CalculatorSettings>? = nil,
         controlIQ: Timed<ControlIQReading>? = nil, maxBasalMilliunitsPerHour: Timed<Int>? = nil,
-        lastAutoCorrectionAt: Int? = nil, bolusBlock: BolusBlockToken?, activeBolus: ActiveBolus? = nil,
+        cgmSession: Timed<CGMSessionTimes>? = nil, lastAutoCorrectionAt: Int? = nil, bolusBlock: BolusBlockToken?,
+        activeBolus: ActiveBolus? = nil,
         alerts: [AlertItem] = [],
         remoteLimitMilliunits: Int? = nil
     ) {
@@ -159,6 +180,7 @@ public struct StatusPayload: Sendable, Hashable {
         self.calculator = calculator
         self.controlIQ = controlIQ
         self.maxBasalMilliunitsPerHour = maxBasalMilliunitsPerHour
+        self.cgmSession = cgmSession
         self.lastAutoCorrectionAt = lastAutoCorrectionAt
         self.bolusBlock = bolusBlock
         self.activeBolus = activeBolus
@@ -201,8 +223,17 @@ extension StatusPayload {
                     case .active(let rate):
                         w.set("suspended", false)
                         w.set("mUPerHour", rate)
+                    case .tempRate(let rate, let percent):
+                        w.set("suspended", false)
+                        w.set("mUPerHour", rate)
+                        w.set("tempRate", true)
+                        w.set("tempPercent", percent)
                     case .suspended:
                         w.set("suspended", true)
+                    case .basalIQSuspended:
+                        w.set("suspended", false)
+                        w.set("mUPerHour", 0)
+                        w.set("basalIQ", true)
                     }
                 }
             })
@@ -227,6 +258,14 @@ extension StatusPayload {
                 }
             })
         w.set("maxBasal", maxBasalMilliunitsPerHour.map { timed($0) { v, w in w.set("mUPerHour", v) } })
+        w.set(
+            "cgmSession",
+            cgmSession.map {
+                timed($0) { c, w in
+                    w.set("startedAt", c.startedAt)
+                    w.set("lastCalibrationAt", c.lastCalibrationAt)
+                }
+            })
         w.set(
             "lastAutoCorrection",
             lastAutoCorrectionAt.map {
@@ -274,9 +313,20 @@ extension StatusPayload {
                 at: try o.int("at", in: epochRange))
         }
         basal = try r.optionalObject("basal").map { o throws(DecodeError) in
-            let reading: BasalReading =
-                try o.bool("suspended")
-                ? .suspended : .active(milliunitsPerHour: try o.int("mUPerHour", in: milliunitRange))
+            let reading: BasalReading
+            if try o.bool("suspended") {
+                reading = .suspended
+            } else {
+                let rate = try o.int("mUPerHour", in: milliunitRange)
+                if try o.optionalBool("basalIQ") == true {
+                    reading = .basalIQSuspended
+                } else if try o.optionalBool("tempRate") == true {
+                    reading = .tempRate(
+                        milliunitsPerHour: rate, percent: try o.optionalInt("tempPercent", in: WireLimits.tempPercent))
+                } else {
+                    reading = .active(milliunitsPerHour: rate)
+                }
+            }
             return Timed(reading, at: try o.int("at", in: epochRange))
         }
         lastBolusMilliunits = try r.optionalObject("lastBolus").map { o throws(DecodeError) in
@@ -300,6 +350,13 @@ extension StatusPayload {
         }
         maxBasalMilliunitsPerHour = try r.optionalObject("maxBasal").map { o throws(DecodeError) in
             Timed(try o.int("mUPerHour", in: milliunitRange), at: try o.int("at", in: epochRange))
+        }
+        cgmSession = try r.optionalObject("cgmSession").map { o throws(DecodeError) in
+            Timed(
+                CGMSessionTimes(
+                    startedAt: try o.optionalInt("startedAt", in: epochRange),
+                    lastCalibrationAt: try o.optionalInt("lastCalibrationAt", in: epochRange)),
+                at: try o.int("at", in: epochRange))
         }
         lastAutoCorrectionAt = try r.optionalObject("lastAutoCorrection").map { o throws(DecodeError) in
             try o.int("at", in: epochRange)

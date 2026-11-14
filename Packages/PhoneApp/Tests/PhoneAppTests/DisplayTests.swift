@@ -118,7 +118,6 @@ import faBolusCore
             $0.cgmSessionTimes = at(PumpCGMSessionTimes(sensorStarted: now, lastCalibration: nil), age: 10)
         }
         #expect(uncalibrated.detail(.sensorStarted) == "just now" && uncalibrated.detail(.lastCalibration) == nil)
-        #expect(!DetailsField.watchIDs.contains("sensorStarted") && DetailsField.watchIDs.contains("iob"))
     }
 
     @Test func eachValueAgesOnItsOwnWindow() {

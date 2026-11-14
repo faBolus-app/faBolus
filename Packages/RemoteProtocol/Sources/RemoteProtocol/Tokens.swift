@@ -94,6 +94,8 @@ public enum DetailToken: String, Sendable, Hashable, CaseIterable {
     case iob, reservoir, battery, cgm, lastBolus, carbRatio, isf, target, maxBolus, maxBasal
     /// When Control-IQ last auto-corrected; the row is left out while none is known.
     case autoCorrection
+    /// When the CGM sensor started and was last calibrated; each row is left out while its time is unknown.
+    case sensorStarted, lastCalibration
 }
 
 /// What the watch can put in its three assignable complications.
