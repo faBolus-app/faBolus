@@ -127,7 +127,7 @@ struct GlucoseChartView: View {
                 // A reading off the plot isn't drawn, never pinned to its edge.
                 ForEach(visible.filter { GlucosePlotScale.isOnChart($0.mgdl, floor: floor, ceiling: ceiling) }) { r in
                     PointMark(x: .value("Time", r.date), y: .value("Glucose", r.mgdl))
-                    .foregroundStyle(AppTheme.glucoseColor(r.mgdl)).symbolSize(24)
+                        .foregroundStyle(AppTheme.glucoseColor(r.mgdl)).symbolSize(24)
                 }
             }
             if showBolusBars {
