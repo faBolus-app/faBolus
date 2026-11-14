@@ -103,6 +103,46 @@ public enum BasalDeliveryState: Sendable, Hashable, Codable {
     public var isSuspended: Bool { self == .suspended }
 }
 
+/// The status icons the pump's home screen shows beside the CGM and the bolus. Display only: nothing here
+/// is a dose input, and the icons' meanings in each pump state are unverified.
+public struct PumpStatusIcons: Sendable, Hashable, Codable {
+    /// The bolus icon, when it shows a bolus running.
+    public var bolus: Bolus?
+    /// The transmitter icon, when it shows one.
+    public var transmitter: Transmitter?
+    /// The blood-drop icon: the CGM wants a calibration.
+    public var calibrationDue: Bool
+
+    public enum Bolus: String, Sendable, Hashable, Codable {
+        /// A bolus is running.
+        case bolus
+        /// A Control-IQ automatic bolus is running.
+        case autoBolus
+    }
+
+    public enum Transmitter: String, Sendable, Hashable, Codable {
+        case inRange, outOfRange
+    }
+
+    public init(bolus: Bolus? = nil, transmitter: Transmitter? = nil, calibrationDue: Bool = false) {
+        self.bolus = bolus
+        self.transmitter = transmitter
+        self.calibrationDue = calibrationDue
+    }
+}
+
+/// When the CGM sensor started and was last calibrated, as the pump reports them, placed in phone time.
+/// `nil` for a time the pump reports as unset or that couldn't be placed.
+public struct PumpCGMSessionTimes: Sendable, Hashable, Codable {
+    public var sensorStarted: Date?
+    public var lastCalibration: Date?
+
+    public init(sensorStarted: Date?, lastCalibration: Date?) {
+        self.sensorStarted = sensorStarted
+        self.lastCalibration = lastCalibration
+    }
+}
+
 /// The bolus the pump says it is delivering.
 public enum PumpBolusState: Sendable, Hashable, Codable {
     case noBolus
@@ -253,6 +293,13 @@ public struct PumpState: Sendable, Hashable, Codable {
     /// The CGM hardware string the pump reports (op-96). With a Dexcom G6 it is expected to be the
     /// transmitter ID, which is unverified; it is passed on as the pump's string, never as a confirmed ID.
     public var cgmHardwareInfo: Observed<String>?
+    /// The pump's home-screen status icons. Display only.
+    public var statusIcons: Observed<PumpStatusIcons>?
+    /// The time left of insulin action, seconds, from the IOB reply, only when the pump's IOB model is
+    /// Mudaliar (Control-IQ off), as t:connect shows it. Display only.
+    public var insulinActionTimeLeft: Observed<TimeInterval>?
+    /// When the CGM sensor started and was last calibrated. Display only.
+    public var cgmSessionTimes: Observed<PumpCGMSessionTimes>?
 
     public init() {}
 
@@ -287,6 +334,15 @@ public struct PumpState: Sendable, Hashable, Codable {
         move(&cgmSessionActive)
         move(&alerts)
         move(&cgmHardwareInfo)
+        move(&statusIcons)
+        move(&insulinActionTimeLeft)
+        move(&cgmSessionTimes)
+        // Like the last bolus's, these times were placed by the pump-clock anchor in the clock before the step.
+        if let times = cgmSessionTimes?.value {
+            cgmSessionTimes?.value = PumpCGMSessionTimes(
+                sensorStarted: times.sensorStarted?.addingTimeInterval(seconds),
+                lastCalibration: times.lastCalibration?.addingTimeInterval(seconds))
+        }
     }
 
     /// Names one observed value, so an event can say which readings changed without the receiver
@@ -294,7 +350,7 @@ public struct PumpState: Sendable, Hashable, Codable {
     public enum Reading: String, Sendable, Hashable, Codable, CaseIterable {
         case apiVersion, glucose, insulinOnBoard, reservoirUnits, battery, basalDeliveryState, bolusState
         case lastBolus, bolusCalculator, maxBasalUnitsPerHour, controlIQ, cartridge, cgmSessionActive, alerts
-        case cgmHardwareInfo, cgmDisplay
+        case cgmHardwareInfo, cgmDisplay, statusIcons, insulinActionTimeLeft, cgmSessionTimes
     }
 
     public var capabilities: PumpCapabilities { model.capabilities }

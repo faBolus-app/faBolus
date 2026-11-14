@@ -144,6 +144,9 @@ struct ObservedTests {
         state.cgmSessionActive = o(true)
         state.alerts = o([])
         state.cgmHardwareInfo = o("8G1234")
+        state.statusIcons = o(PumpStatusIcons(bolus: .bolus))
+        state.insulinActionTimeLeft = o(3600)
+        state.cgmSessionTimes = o(PumpCGMSessionTimes(sensorStarted: at, lastCalibration: at))
         state.phoneClockSet(by: -240)
         var readings = 0
         for child in Mirror(reflecting: state).children where "\(type(of: child.value))".contains("Observed<") {
@@ -157,6 +160,8 @@ struct ObservedTests {
         // The last bolus's own times, which the pump-clock anchor placed, move too.
         #expect(state.lastBolus?.value.startDate == at.addingTimeInterval(-240))
         #expect(state.lastBolus?.value.endDate == at.addingTimeInterval(-240))
+        #expect(state.cgmSessionTimes?.value.sensorStarted == at.addingTimeInterval(-240))
+        #expect(state.cgmSessionTimes?.value.lastCalibration == at.addingTimeInterval(-240))
     }
 }
 

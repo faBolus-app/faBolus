@@ -60,6 +60,67 @@ import faBolusCore
         #expect(old.tempRate == nil && old.basal.isStale)
     }
 
+    /// The time left of insulin action shows beside a current IOB, aged from its reading.
+    @Test func theTimeLeftOfInsulinShowsBesideACurrentIOB() {
+        let d = display {
+            $0.insulinOnBoard = at(1.5, age: 60)
+            $0.insulinActionTimeLeft = at(5400, age: 60)
+        }
+        #expect(d.insulinActionLeft == "1 h 29 m left")
+        #expect(d.detail(.iob) == "1.50 U · 1 h 29 m left")
+        let short = display {
+            $0.insulinOnBoard = at(0.2, age: 0)
+            $0.insulinActionTimeLeft = at(1500, age: 0)
+        }
+        #expect(short.insulinActionLeft == "25 m left")
+        // Run out, or with no current IOB, nothing shows.
+        let out = display {
+            $0.insulinOnBoard = at(0, age: 0)
+            $0.insulinActionTimeLeft = at(0, age: 0)
+        }
+        #expect(out.insulinActionLeft == nil && out.detail(.iob) == "0.00 U")
+        let old = display {
+            $0.insulinOnBoard = at(1.5, age: 600)
+            $0.insulinActionTimeLeft = at(5400, age: 600)
+        }
+        #expect(old.insulinActionLeft == nil)
+    }
+
+    @Test func thePumpsBolusAndCGMIconsAreNamed() {
+        let auto = display { $0.statusIcons = at(PumpStatusIcons(bolus: .autoBolus, calibrationDue: true), age: 10) }
+        #expect(auto.bolusMark == "Auto-bolus running" && auto.cgmMark == "Calibrate")
+        let oor = display {
+            $0.statusIcons = at(PumpStatusIcons(bolus: .bolus, transmitter: .outOfRange, calibrationDue: true), age: 10)
+        }
+        #expect(oor.bolusMark == "Bolus running" && oor.cgmMark == "Transmitter out of range")
+        let none = display { $0.statusIcons = at(PumpStatusIcons(transmitter: .inRange), age: 10) }
+        #expect(none.bolusMark == nil && none.cgmMark == nil)
+        let old = display { $0.statusIcons = at(PumpStatusIcons(bolus: .bolus), age: 3600) }
+        #expect(old.bolusMark == nil)
+    }
+
+    /// The session's times show while a session runs, and each row is left out while its time is unknown.
+    @Test func theSensorTimesShowWhileASessionRuns() {
+        let times = PumpCGMSessionTimes(
+            sensorStarted: now.addingTimeInterval(-3 * 86400), lastCalibration: now.addingTimeInterval(-5 * 3600))
+        let running = display {
+            $0.cgmSessionActive = at(true, age: 10)
+            $0.cgmSessionTimes = at(times, age: 10)
+        }
+        #expect(running.detail(.sensorStarted) == "3 d ago" && running.detail(.lastCalibration) == "5 h ago")
+        let stopped = display {
+            $0.cgmSessionActive = at(false, age: 10)
+            $0.cgmSessionTimes = at(times, age: 10)
+        }
+        #expect(stopped.detail(.sensorStarted) == nil && stopped.detail(.lastCalibration) == nil)
+        let uncalibrated = display {
+            $0.cgmSessionActive = at(true, age: 10)
+            $0.cgmSessionTimes = at(PumpCGMSessionTimes(sensorStarted: now, lastCalibration: nil), age: 10)
+        }
+        #expect(uncalibrated.detail(.sensorStarted) == "just now" && uncalibrated.detail(.lastCalibration) == nil)
+        #expect(!DetailsField.watchIDs.contains("sensorStarted") && DetailsField.watchIDs.contains("iob"))
+    }
+
     @Test func eachValueAgesOnItsOwnWindow() {
         // 10 minutes: past IOB's 5, inside the pump-status window's 15.
         let d = display {

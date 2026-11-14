@@ -135,7 +135,10 @@ enum PumpReadings {
         switch message {
         case let m as ControlIQIOBResponse:
             state.insulinOnBoard = observed(Double(displayedIOB(m)) / 1000)
-            return [.insulinOnBoard]
+            // t:connect shows the time left only for the Mudaliar model; for any other the reply's time
+            // isn't the pump's.
+            state.insulinActionTimeLeft = m.iobType == 0 ? observed(TimeInterval(m.timeRemainingSeconds)) : nil
+            return [.insulinOnBoard, .insulinActionTimeLeft]
 
         case let m as BolusCalcDataSnapshotResponse:
             // The first byte is 0 when the pump acknowledges the request. Any other snapshot is no reading:
@@ -191,11 +194,12 @@ enum PumpReadings {
             if m.basalStatusIcon != .tempRate { basal.tempPercent = nil }
             basal.icon = observed(m.basalStatusIcon)
             state.basalDeliveryState = basal.state
+            state.statusIcons = observed(statusIcons(m))
             // The pump's own trend icon is the trend. "No arrow" is a real answer: no trend, not flat.
-            guard var glucose = state.glucose else { return [.cgmDisplay, .basalDeliveryState] }
+            guard var glucose = state.glucose else { return [.cgmDisplay, .basalDeliveryState, .statusIcons] }
             glucose.value.trend = GlucoseTrend(rawValue: m.cgmTrendArrow)
             state.glucose = glucose
-            return [.glucose, .cgmDisplay, .basalDeliveryState]
+            return [.glucose, .cgmDisplay, .basalDeliveryState, .statusIcons]
 
         case let m as CurrentBasalStatusResponse:
             basal.rate = observed(m.currentBasalUnitsPerHour)
@@ -225,7 +229,16 @@ enum PumpReadings {
 
         case let m as CGMStatusResponse:
             state.cgmSessionActive = observed(m.sessionActive)
-            return [.cgmSessionActive]
+            // A time of 0 is unset. Without an anchor a time can't be placed, and is left out rather than
+            // guessed.
+            func place(_ pumpTime: Int) -> Date? {
+                guard pumpTime > 0, let anchor = context.anchor else { return nil }
+                return anchor.date(forPumpTime: UInt32(truncatingIfNeeded: pumpTime))
+            }
+            state.cgmSessionTimes = observed(
+                PumpCGMSessionTimes(
+                    sensorStarted: place(m.sensorStartedTimestamp), lastCalibration: place(m.lastCalibrationTimestamp)))
+            return [.cgmSessionActive, .cgmSessionTimes]
 
         case let m as CGMHardwareInfoResponse:
             let info = m.hardwareInfoString.trimmingCharacters(in: .whitespacesAndNewlines.union(.controlCharacters))
@@ -278,6 +291,25 @@ enum PumpReadings {
     /// type 0, Swan 6-hour for type 1, and the larger of the two for a type it doesn't know, so an
     /// unknown model never subtracts less insulin than either implies.
     /// The pump's CGM alert icon as the state it shows.
+    /// The mirror's bolus and status icons, as t:connect's dashboard draws them: the bolus icon shows a
+    /// bolus or an automatic bolus running, the first status icon the transmitter, the second a
+    /// calibration due. Any other id (a lock, hidden, unknown) shows nothing.
+    static func statusIcons(_ m: HomeScreenMirrorResponse) -> PumpStatusIcons {
+        let bolus: PumpStatusIcons.Bolus? =
+            switch m.bolusStatusIcon {
+            case .bolus: .bolus
+            case .autoBolus: .autoBolus
+            default: nil
+            }
+        let transmitter: PumpStatusIcons.Transmitter? =
+            switch m.statusIcon0 {
+            case .cgmTransmitter: .inRange
+            case .cgmTransmitterOutOfRange: .outOfRange
+            default: nil
+            }
+        return PumpStatusIcons(bolus: bolus, transmitter: transmitter, calibrationDue: m.statusIcon1 == .bloodDrop)
+    }
+
     static func cgmState(_ m: HomeScreenMirrorResponse) -> PumpCGMState {
         guard let icon = m.cgmAlertIcon else { return .unknown(m.cgmAlertIconId) }
         if icon.isStartup { return .warmingUp }
