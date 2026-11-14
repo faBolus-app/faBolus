@@ -67,7 +67,7 @@ public enum GoldenFixtures {
     /// A pump-set temp rate of 150 %, with the CGM session's start and last calibration.
     public static let statusTempRate: StatusPayload = {
         var s = status
-        s.basal = Timed(.tempRate(milliunitsPerHour: 1275, percent: 150), at: now - 40)
+        s.basal = Timed(.tempRate(milliunitsPerHour: 1200, percent: 150), at: now - 40)
         s.cgmSession = Timed(
             CGMSessionTimes(startedAt: now - 3 * 86400, lastCalibrationAt: now - 5 * 3600), at: now - 40)
         return s

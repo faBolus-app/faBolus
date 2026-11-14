@@ -21,7 +21,7 @@
     ],
     "basal": {
       "at": 1793534360,
-      "mUPerHour": 1275,
+      "mUPerHour": 1200,
       "suspended": false,
       "tempPercent": 150,
       "tempRate": true
