@@ -54,6 +54,15 @@ struct DeliveryInProgress {
     /// InitiateBolus has been handed to the queue: from here a cancel has to go to the pump.
     var initiateQueued = false
     var cancelRequested = false
+    /// The pump raised bit 31 (bolus permission revoked) after granting this delivery's permission.
+    var permissionRevoked = false
+
+    /// Why the delivery stops before InitiateBolus, if it does.
+    var stopReason: String? {
+        if cancelRequested { return PumpSession.cancelledBeforeStartReason }
+        if permissionRevoked { return PumpSession.permissionRevokedReason }
+        return nil
+    }
 }
 
 /// A bolus the pump accepted, followed until the pump reports it done.
@@ -68,6 +77,7 @@ struct TrackedBolus {
 
 extension PumpSession {
     static let cancelledBeforeStartReason = "Cancelled before the bolus was sent to the pump."
+    static let permissionRevokedReason = "The pump took back the bolus permission, so nothing was delivered."
 
     static func iobRoseReason(from before: Double, to now: Double) -> String {
         let f = { (u: Double) in String(format: "%.2f", u) }
@@ -178,7 +188,7 @@ extension PumpSession {
             _ = await send(release)
             return await settle(key, .failed(reason))
         }
-        if delivery?.cancelRequested == true { return await abandon(Self.cancelledBeforeStartReason) }
+        if let reason = delivery?.stopReason { return await abandon(reason) }
 
         // The dose was sized from an IOB read before permission was asked. A bolus the pump started in
         // between, from its own screen or by Control-IQ, isn't in it. So the calculator snapshot, which
@@ -221,10 +231,10 @@ extension PumpSession {
             commands.bgEntry as (any TandemMessages.Message)?, commands.carbEntry
         ]
         .compactMap { $0 }
-        for entry in entries where delivery?.cancelRequested != true {
+        for entry in entries where delivery?.stopReason == nil {
             _ = await send(entry)
         }
-        if delivery?.cancelRequested == true { return await abandon(Self.cancelledBeforeStartReason) }
+        if let reason = delivery?.stopReason { return await abandon(reason) }
 
         // A bolus confirmed long ago (the app was suspended in between) isn't started now: the user may
         // have dosed some other way since. The limit is the remote-request freshness window.
@@ -319,14 +329,8 @@ extension PumpSession {
     /// available (one pump answers it with op-77) or names a different bolus. With neither, the outcome
     /// is unknown and history settles it later.
     private func settleFinished(_ bolus: TrackedBolus) async {
-        // An untested read here would be a probe, and its op-77 can drop the link: history settles it. A
-        // reply is used only when its first byte marks it valid (1); any other value says nothing about
-        // what went in, whatever bolus ID it carries.
-        if !isUntested(LastBolusStatusV2Request()),
-            case .reply(let reply) = await exchange(LastBolusStatusV2Request(), priority: .delivery),
-            let last = reply.message as? LastBolusStatusV2Response, last.isValid, last.bolusId == bolus.bolusId
-        {
-            await settle(bolus.key, .delivered(last.deliveredUnits))
+        if let delivered = await lastBolusDelivered(bolus.bolusId) {
+            await settle(bolus.key, .delivered(delivered))
             return
         }
         if case .completed(let record) = await searchHistory(for: bolus.bolusId, acceptedAt: nil) {
@@ -334,6 +338,32 @@ extension PumpSession {
             return
         }
         await settle(bolus.key, .unknown)
+    }
+
+    /// The units the pump's last-bolus record says went in for `bolusId`, in the form t:connect asks a t:slim
+    /// for: C at API 3.1 or later, B from 2.2 (A, which it asks when the version is unknown, faBolus doesn't
+    /// send: history settles it). `nil` when the record doesn't settle it.
+    private func lastBolusDelivered(_ bolusId: Int) async -> Double? {
+        guard let api = identity?.apiVersion else { return nil }
+        if api >= .v3_1 {
+            // Sent by t:connect's table, not bench evidence; a pump that refused it before is asked as a probe.
+            // Only a finished record naming this bolus: one still stopping may not have its final amount, and
+            // status 0 is no record at all.
+            let read = LastBolusStatusV3Request()
+            guard case .reply(let reply) = await exchange(read, priority: isSuspected(read) ? .probe : .delivery),
+                let last = reply.message as? LastBolusStatusV3Response, last.standardBolusStatus == .finished,
+                last.standardBolusId == bolusId
+            else { return nil }
+            return Double(last.standardBolusDeliveredVolume) / 1000
+        }
+        // An untested B read here would be a probe, and its op-77 can drop the link: history settles it. A
+        // reply is used only when its first byte marks it valid (1); any other value says nothing about what
+        // went in, whatever bolus ID it carries.
+        guard !isUntested(LastBolusStatusV2Request()),
+            case .reply(let reply) = await exchange(LastBolusStatusV2Request(), priority: .delivery),
+            let last = reply.message as? LastBolusStatusV2Response, last.isValid, last.bolusId == bolusId
+        else { return nil }
+        return last.deliveredUnits
     }
 
     /// The link dropped: a bolus being followed can no longer be, and its outcome is unknown until

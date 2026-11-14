@@ -144,13 +144,30 @@ enum PumpReadings {
             // The first byte is 0 when the pump acknowledges the request. Any other snapshot is no reading:
             // the last one stays, and the dose path sees the settings as not read for this attempt.
             guard m.isAck else { return [] }
+            // The calculator's own reading, timed by the reply's reading time (byte 26, guess #36): only a
+            // reading the reply marks valid, at a time the anchor can place. An unknown age must never look
+            // current, so without either it is no reading.
+            let reading: BolusCalculatorSettings.Reading? = {
+                guard isValidReading(status: m.readingStatusId, mgdl: m.glucoseReading), m.readingTimestamp > 0,
+                    let anchor = context.anchor
+                else { return nil }
+                let outOfRange: GlucoseOutOfRange? =
+                    switch EGVStatus(rawValue: m.readingStatusId) {
+                    case .low: .low
+                    case .high: .high
+                    default: nil
+                    }
+                return .init(
+                    mgdl: m.glucoseReading, measuredAt: anchor.date(forPumpTime: m.readingTimestamp),
+                    outOfRange: outOfRange)
+            }()
             let settings = BolusCalculatorSettings(
                 carbRatio: m.carbRatioGramsPerUnit, correctionFactor: m.isf, targetMgdl: m.targetBg,
                 maxBolusUnits: Double(m.maxBolusAmount) / 1000, insulinOnBoardUnits: Double(m.iob) / 1000,
                 glucoseAutoFillAllowed: m.isAutopopAllowed, insulinRemainingUnits: Double(m.cartridgeRemainingInsulin),
                 bolusedLastHourUnits: Double(m.maxBolusHourlyTotal) / 1000,
                 tooManyBoluses: .init(hourlyLimit: m.maxBolusEventsExceeded, insulinOnBoard: m.maxIobEventsExceeded),
-                carbEntryEnabled: m.carbEntryEnabled)
+                carbEntryEnabled: m.carbEntryEnabled, reading: reading)
             state.bolusCalculator = observed(settings)
             return [.bolusCalculator]
 

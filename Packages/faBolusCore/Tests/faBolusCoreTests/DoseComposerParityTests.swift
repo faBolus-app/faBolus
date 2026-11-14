@@ -40,6 +40,7 @@ import Testing
             checked += 1
             var pump = F.pump(glucose: row.bg)
             pump.bolusCalculator = F.observed(settings, age: 1)
+            pump.cgm = pump.glucose
             pump.insulinOnBoard = F.observed(row.iob, age: 1)
             let expected = BolusVolume.roundedDown(row.u)
             let request = F.remote(
@@ -90,6 +91,7 @@ import Testing
     @Test func staleButRealInputsDisplayUnverified() {
         var pump = F.pump()
         pump.bolusCalculator = F.observed(F.settings, age: 3600)
+        pump.cgm = pump.glucose
         let rec = DoseComposer.recommend(carbsGrams: 60, glucoseMgdl: 180, context: F.context(pump: pump))
         #expect(rec.displaysNumericDose)
         #expect(!rec.inputs.settingsVerified)
@@ -114,6 +116,7 @@ import Testing
         pump.bolusCalculator = F.observed(
             F.settings(target: 110, reportedIOB: 1.5),
             age: 2)
+        pump.cgm = pump.glucose
         let rec = DoseComposer.recommend(carbsGrams: 60, glucoseMgdl: 180, context: F.context(pump: pump))
         #expect(rec.inputs.insulinOnBoardReadingsDisagree)
         #expect(!rec.inputs.insulinOnBoardVerified)

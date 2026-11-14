@@ -500,3 +500,47 @@ that worked.
 - **Verify:** on P1 and P2, read the mirror with a bolus running, with a calibration due and with the
   transmitter out of range; read ControlIQIOB on P1 (Control-IQ off) after a bolus and compare the time left
   with the pump's IOB screen; read CGMStatus during a G6 session and compare with the pump's CGM info screen.
+
+## 36. The calculator snapshot's reading time and status
+
+- **The guess:** BolusCalcDataSnapshot's bytes 26 to 29 are when the pump took the reading at bytes 1 and 2
+  (pump time), bytes 30 to 33 the same moment as seconds since the pump's reset, and byte 34 the reading's
+  status, with CurrentEGVGuiData's ids. pumpX2 leaves bytes 26 to 36 undecoded; Mobi reads them so. In
+  pumpX2's two recorded t:slim snapshots, taken 20 minutes apart, both clocks move by exactly 1200 s and
+  the status is 1.
+- **Where:** `Packages/PumpSession/Sources/PumpSession/PumpReadings.swift` (the snapshot case),
+  `BolusCalculatorSettings.reading` and `PumpState.correctionReading` in
+  `Packages/faBolusCore/Sources/faBolusCore/PumpState.swift`.
+- **Risk:** dose path. The pump's CGM corrects a dose only from this reading, aged from byte 26, as
+  t:connect's calculator takes it. A wrong offset fails closed: a time that can't be placed, or a status
+  that isn't valid, leaves no reading, and the dose is carbs only or corrects from a typed BG. A wrong time
+  that still looks recent would let an old reading correct.
+- **Verify:** the read-only snapshot check on P1 and P2 (BENCH-RUNBOOK): bytes 26 and 30 move with the
+  clock between samples and match the time of the CurrentEGVGuiData reading with the same value; byte 34
+  follows the reading's status.
+
+## 37. Bit 31 is the pump revoking a granted bolus permission
+
+- **The guess:** qualifying-event bit 31 (pumpX2's `BOLUS_PERMISSION_REVOKED`) means the pump took back
+  the bolus permission it granted. A delivery that has its permission and hasn't queued InitiateBolus then
+  stops, releases the permission and sends nothing more. faBolus doesn't read the reason
+  (BolusPermissionChangeReason), which t:connect decides to read in native code: it waits for the bench.
+- **Where:** `Packages/PumpSession/Sources/PumpSession/PumpSession.swift` (`qualifyingEvents`),
+  `Packages/PumpSession/Sources/PumpSession/PumpSession+Delivery.swift` (`DeliveryInProgress.stopReason`).
+- **Risk:** fails closed: a stop before InitiateBolus delivers nothing. Without it, the pump would refuse
+  the InitiateBolus of a revoked permission.
+- **Verify:** on P2, let a granted permission lapse or be taken by the pump's own bolus screen, and see
+  whether bit 31 arrives.
+
+## 38. LastBolusStatus C on a t:slim
+
+- **The guess:** a t:slim at API 3.1 or later answers LastBolusStatus C (0xBA), as t:connect asks it for
+  that form, with pumpX2's 53-byte layout: the standard bolus's status at byte 1 (0 no record, 3 stopping,
+  4 finished), its id at 2, and the units delivered at 10. A finished bolus is settled from it only when
+  the status is 4 and the id is the bolus's; a stopping record may not have its final amount, so it is left
+  to history, as is a refusal.
+- **Where:** `Packages/PumpSession/Sources/PumpSession/PumpSession+Delivery.swift` (`lastBolusDelivered`).
+- **Risk:** dose path, fails closed: a record that doesn't settle the bolus leaves it to history, and an
+  unknown outcome blocks the next bolus until history or the user settles it.
+- **Verify:** on P2 (API 4.0), one form C read after a delivered bolus and one after a cancelled one,
+  against the pump's history.

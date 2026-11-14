@@ -713,7 +713,14 @@ public final class ScriptedTransport: LinkTransport {
             return ControlIQIOBResponse(cargo: v)
         case (.currentStatus, BolusCalcDataSnapshotRequest.props.opCode):
             var v = [UInt8](repeating: 0, count: 46)
-            v.replaceSubrange(1..<3, with: le16(pump.correctionFactor))
+            // The calculator's reading (bytes 1-2), its time by the pump clock (26) and since boot (30), and its
+            // status (34): the current CGM reading, as the pump would have it.
+            if let g = pump.glucose {
+                v.replaceSubrange(1..<3, with: le16(g.mgdl))
+                v.replaceSubrange(26..<30, with: le32(UInt32(max(0, Double(pump.wallClock) - g.ageSeconds))))
+                v.replaceSubrange(30..<34, with: le32(UInt32(max(0, Double(pump.uptime) - g.ageSeconds))))
+                v[34] = pump.egvStatus
+            }
             v.replaceSubrange(3..<7, with: le32(pump.calculatorInsulinOnBoardMilliunits))
             v.replaceSubrange(7..<9, with: le16(pump.reservoirUnits))
             v.replaceSubrange(9..<11, with: le16(pump.targetMgdl))
@@ -811,6 +818,27 @@ public final class ScriptedTransport: LinkTransport {
                 v.replaceSubrange(20..<24, with: le32(b.requestedMilliunits))
             }
             return LastBolusStatusV2Response(cargo: v)
+        case (.currentStatus, LastBolusStatusV3Request.props.opCode):
+            // The standard bolus's half of form C: finished (4) once the last bolus ended, else no record (0).
+            var v = [UInt8](repeating: 0, count: 53)
+            if let b = pump.completed.last, let ended = b.ended {
+                v[0] = 1
+                v[1] = 4
+                v.replaceSubrange(2..<4, with: le16(b.id))
+                v.replaceSubrange(6..<10, with: le32(pump.wallClockAtStart &+ UInt32(ended.at)))
+                v.replaceSubrange(10..<14, with: le32(pump.deliveredMilliunits(b)))
+                // End reason: completed (3), an alarm (1) or a malfunction (2), else stopped by the user (0).
+                v[14] =
+                    switch ended.completionStatus {
+                    case ScriptedPump.CompletionStatus.delivered: 3
+                    case ScriptedPump.CompletionStatus.alarm: 1
+                    case ScriptedPump.CompletionStatus.malfunction: 2
+                    default: 0
+                    }
+                v[15] = b.source
+                v.replaceSubrange(17..<21, with: le32(b.requestedMilliunits))
+            }
+            return LastBolusStatusV3Response(cargo: v)
         case (.currentStatus, HistoryLogStatusRequest.props.opCode):
             let count = UInt32(pump.historyRecords.count)
             return HistoryLogStatusResponse(

@@ -331,7 +331,8 @@ extension DoseComposer {
                 return checkRecompute(mgdl: nil, recorded: nil, mustAsk: entry.answers.correction != nil)
             }
             return .confirm(
-                .staleGlucose(reading: context.pump.glucose, includeUnits: includeUnits, carbsOnlyUnits: carbsOnly))
+                .staleGlucose(
+                    reading: context.pump.correctionReading, includeUnits: includeUnits, carbsOnlyUnits: carbsOnly))
         }
     }
 

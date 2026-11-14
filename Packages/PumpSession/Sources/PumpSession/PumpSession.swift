@@ -737,6 +737,12 @@ public actor PumpSession {
     private func qualifyingEvents(_ events: QualifyingEvent) {
         let now = uptime()
         // The comms-suspended bit (19) pauses nothing: t:connect only logs it (UNVERIFIED-GUESSES #22).
+        // Bit 31 says the pump revoked the bolus permission: a delivery it granted that hasn't queued
+        // InitiateBolus stops there, sending nothing more (guess #37).
+        if events.contains(.bolusPermissionRevoked), var d = delivery, d.bolusId != nil, !d.initiateQueued {
+            d.permissionRevoked = true
+            delivery = d
+        }
         // Before the link is ready nothing can be read; becoming ready reads everything.
         guard identity != nil else { return }
         // What each bit names is read now, as t:connect does, rather than waiting for its timed group.

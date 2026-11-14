@@ -14,6 +14,7 @@ import Testing
         var settings = F.settings
         change(&settings)
         pump.bolusCalculator = F.observed(settings, age: 2)
+        pump.cgm = pump.glucose
         return pump
     }
 
@@ -109,6 +110,7 @@ import Testing
         // Neither is current: the pump's own check is the only one.
         pump.reservoirUnits = F.observed(1, age: 10 * 60)
         pump.bolusCalculator = F.observed(pump.bolusCalculator!.value, age: 10 * 60)
+        pump.cgm = pump.glucose
         #expect(Self.needed(5, pump).isEmpty)
     }
 

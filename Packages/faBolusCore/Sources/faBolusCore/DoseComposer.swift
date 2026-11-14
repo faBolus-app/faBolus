@@ -466,7 +466,7 @@ extension DoseComposer {
         // A reading the pump cautions against is never offered, however old.
         let caution = glucoseCaution(context)
         guard caution == nil || (allowingUnreadCGMState && caution == .cgmStateNotRead) else { return nil }
-        guard let reading = context.pump.glucose, reading.hasValidTime,
+        guard let reading = context.pump.correctionReading, reading.hasValidTime,
             CalculatorGlucose.isValid(mgdl: reading.value.mgdl),
             StaleBolusPrompt.mayOfferInclude(
                 glucoseMgdl: reading.value.mgdl, glucoseDate: reading.measuredAt, thresholds: context.freshness,

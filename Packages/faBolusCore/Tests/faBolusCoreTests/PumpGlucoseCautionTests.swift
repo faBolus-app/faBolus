@@ -24,8 +24,8 @@ import Testing
     }
 
     static let cautions: [(PumpState, PumpGlucoseCaution)] = [
-        (pump { $0.glucose?.value.outOfRange = .low }, .outOfRange(.low)),
-        (pump { $0.glucose?.value.outOfRange = .high }, .outOfRange(.high)),
+        (pump { $0.cgm?.value.outOfRange = .low }, .outOfRange(.low)),
+        (pump { $0.cgm?.value.outOfRange = .high }, .outOfRange(.high)),
         (pump { $0.cgmDisplay = display(state: .noReading) }, .sensorState(.noReading)),
         (pump { $0.cgmDisplay = display(state: .warmingUp) }, .sensorState(.warmingUp)),
         (pump { $0.cgmDisplay = display(state: .unknown(9)) }, .sensorState(.unknown(9))),
