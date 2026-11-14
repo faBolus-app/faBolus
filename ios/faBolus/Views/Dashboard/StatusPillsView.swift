@@ -21,8 +21,8 @@ struct StatusPillsView: View {
         case .iob:
             let v = display.insulinOnBoard
             Pill(
-                icon: "drop.fill", tint: v.isKnown ? AppTheme.insulin : .gray, value: v.text, label: "Active insulin",
-                stale: v.isStale)
+                icon: "drop.fill", tint: v.isKnown ? AppTheme.insulin : .gray, value: v.text,
+                label: display.insulinActionLeft.map { "IOB · \($0)" } ?? "Active insulin", stale: v.isStale)
         case .reservoir:
             let v = display.reservoir
             Pill(
@@ -54,7 +54,9 @@ struct StatusPillsView: View {
                 value: v.text,
                 label: "Control-IQ", stale: v.isStale)
         case .lastBolus:
-            Pill(icon: "drop.triangle.fill", tint: AppTheme.insulin, value: display.lastBolus.text, label: "Last bolus")
+            Pill(
+                icon: "drop.triangle.fill", tint: AppTheme.insulin, value: display.lastBolus.text,
+                label: display.bolusMark ?? "Last bolus")
         case .carbRatio:
             let v = display.carbRatio
             Pill(
@@ -88,17 +90,18 @@ struct StatusPillsView: View {
         switch display.glucose {
         case .current(_, _, let at):
             Pill(
-                icon: "sensor.tag.radiowaves.forward.fill", tint: AppTheme.inRange, value: display.age(at), label: "CGM"
-            )
+                icon: "sensor.tag.radiowaves.forward.fill", tint: AppTheme.inRange, value: display.age(at),
+                label: display.cgmMark ?? "CGM")
         case .stale(_, _, let at):
             Pill(
-                icon: "sensor.tag.radiowaves.forward.fill", tint: AppTheme.low, value: display.age(at), label: "CGM",
-                stale: true)
+                icon: "sensor.tag.radiowaves.forward.fill", tint: AppTheme.low, value: display.age(at),
+                label: display.cgmMark ?? "CGM", stale: true)
         case .hidden, .none:
             let active = display.cgmSessionActive == true
             Pill(
                 icon: active ? "sensor.tag.radiowaves.forward.fill" : "sensor.tag.radiowaves.forward",
-                tint: active ? AppTheme.inRange : .gray, value: active ? "OK" : PumpDisplay.unknown, label: "CGM")
+                tint: active ? AppTheme.inRange : .gray, value: active ? "OK" : PumpDisplay.unknown,
+                label: display.cgmMark ?? "CGM")
         }
     }
 }

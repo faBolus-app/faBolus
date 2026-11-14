@@ -140,6 +140,50 @@ public struct PumpDisplay: Sendable {
         pump.cgmSessionActive?.valueIfFresh(within: freshness.pumpStatusStaleAfter, now: now)
     }
 
+    /// The time left of insulin action ("1 h 30 m left"), when the pump reports it (the Mudaliar IOB model
+    /// only) and the IOB beside it is current; aged from the reading, and nil once it has run out.
+    public var insulinActionLeft: String? {
+        guard let left = pump.insulinActionTimeLeft, insulinOnBoard.isKnown, !insulinOnBoard.isStale,
+            let value = left.valueIfFresh(within: freshness.insulinOnBoardStaleAfter, now: now),
+            let age = left.age(now: now)
+        else { return nil }
+        let minutes = Int((value - age) / 60)
+        guard minutes > 0 else { return nil }
+        return minutes < 60 ? "\(minutes) m left" : "\(minutes / 60) h \(minutes % 60) m left"
+    }
+
+    private var statusIcons: PumpStatusIcons? {
+        pump.statusIcons?.valueIfFresh(within: freshness.pumpStatusStaleAfter, now: now)
+    }
+
+    /// The pump's home screen shows a bolus or an automatic bolus running.
+    public var bolusMark: String? {
+        switch statusIcons?.bolus {
+        case .bolus: return "Bolus running"
+        case .autoBolus: return "Auto-bolus running"
+        case nil: return nil
+        }
+    }
+
+    /// The pump's home screen shows the transmitter out of range or a calibration due.
+    public var cgmMark: String? {
+        guard let icons = statusIcons else { return nil }
+        if icons.transmitter == .outOfRange { return "Transmitter out of range" }
+        return icons.calibrationDue ? "Calibrate" : nil
+    }
+
+    /// The CGM session's times, while the pump says a session is running, as t:connect shows them.
+    private var cgmSessionTimes: PumpCGMSessionTimes? {
+        guard cgmSessionActive == true else { return nil }
+        return pump.cgmSessionTimes?.valueIfFresh(within: freshness.pumpStatusStaleAfter, now: now)
+    }
+
+    /// When the sensor started ("3 d ago"), or nil to leave the row out.
+    public var sensorStarted: String? { cgmSessionTimes?.sensorStarted.map { age($0) } }
+
+    /// When the CGM was last calibrated ("5 h ago"), or nil to leave the row out.
+    public var lastCalibration: String? { cgmSessionTimes?.lastCalibration.map { age($0) } }
+
     public var lastBolus: Value {
         guard let b = pump.lastBolus else { return .unknown }
         let units = b.value.deliveredUnits ?? b.value.programmedUnits
@@ -181,7 +225,7 @@ public struct PumpDisplay: Sendable {
     /// A Details row's value, or `nil` to leave the row out.
     public func detail(_ field: DetailsField) -> String? {
         switch field {
-        case .iob: return insulinOnBoard.text
+        case .iob: return insulinOnBoard.text + (insulinActionLeft.map { " · \($0)" } ?? "")
         case .reservoir: return reservoir.text
         case .battery:
             guard let battery else { return Self.unknown }
@@ -193,6 +237,8 @@ public struct PumpDisplay: Sendable {
         case .target: return target.text
         case .maxBolus: return maxBolus.text
         case .autoCorrection: return autoCorrection
+        case .sensorStarted: return sensorStarted
+        case .lastCalibration: return lastCalibration
         }
     }
 }

@@ -476,3 +476,23 @@ that worked.
 - **Verify:** on P1 and P2, suspend the pump and read the mirror and CurrentBasalStatus, resume and read
   them again; then set a 150 % temp rate and read the mirror and TempRate. On a Basal-IQ pump, read the
   mirror during a predicted-low suspension.
+
+## 35. The home screen's status and bolus icons, IOB time left, and the CGM session's times
+
+- **The guess:**
+  - Bytes 2, 3 and 4 of the pump's home screen (HomeScreenMirror) are its first status icon (1 the transmitter,
+    4 the transmitter out of range), its second (1 a calibration's blood drop) and its bolus icon (0 a bolus
+    running, 1 a Control-IQ automatic bolus running), with pumpX2's ids and offsets. Mobi reads the same
+    three icons at the same bytes, with the same values.
+  - The IOB reply's byte 4 is the time left of insulin action. faBolus shows it only when byte 16 says the
+    Mudaliar model (0), as t:connect does.
+  - CGMStatus (op 81) carries the last calibration (bytes 1 to 4) and the sensor start (5 to 8) in pump time,
+    with 0 for unset. faBolus shows them while a session runs. With no CGM type read, a Libre's or a G7's
+    last calibration is taken to be 0, so its row is left out; t:connect leaves it out for a Libre by type.
+- **Where:** `Packages/PumpSession/Sources/PumpSession/PumpReadings.swift` (the mirror, ControlIQIOB and
+  CGMStatus cases, `statusIcons`), `Packages/PhoneApp/Sources/PhoneApp/PumpDisplay.swift`.
+- **Risk:** display only: no dose reads any of them. A wrong byte would show a mark, a time left or a time
+  that isn't the pump's, or miss one.
+- **Verify:** on P1 and P2, read the mirror with a bolus running, with a calibration due and with the
+  transmitter out of range; read ControlIQIOB on P1 (Control-IQ off) after a bolus and compare the time left
+  with the pump's IOB screen; read CGMStatus during a G6 session and compare with the pump's CGM info screen.

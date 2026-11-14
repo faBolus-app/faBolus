@@ -148,6 +148,22 @@ import faBolusCore
         check("states", pills.padding(), height: 400)
     }
 
+    /// The pills with the pump's marks: the time left of insulin, an automatic bolus running and a
+    /// calibration due.
+    @Test func markedPills() {
+        let now = SnapshotFixture.origin
+        func at<V>(_ v: V) -> Observed<V> { Observed(v, measuredAt: now, receivedAt: now) }
+        var pump = PumpState()
+        pump.insulinOnBoard = at(1.5)
+        pump.insulinActionTimeLeft = at(5400)
+        pump.statusIcons = at(PumpStatusIcons(bolus: .autoBolus, transmitter: .inRange, calibrationDue: true))
+        pump.cgmSessionActive = at(true)
+        pump.lastBolus = at(DoseEntry(startDate: now.addingTimeInterval(-600), programmedUnits: 2, deliveredUnits: 2))
+        let display = PumpDisplay(
+            pump: pump, freshness: .standard, unit: .mgdl, showUnitLabels: false, lastAutoCorrection: nil, now: now)
+        check("marks", StatusPillsView(display: display, order: ["iob", "lastBolus", "cgm"]).padding(), height: 200)
+    }
+
     /// A bolus delivering and a cancel the pump hasn't answered after 5 s: the line says to use the pump to
     /// stop it now.
     @Test func dashboardCancelling() async {

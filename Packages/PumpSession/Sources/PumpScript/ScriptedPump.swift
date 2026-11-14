@@ -90,6 +90,18 @@ public final class ScriptedPump {
     /// The home-screen basal icon id (byte 5): 0 basal, 2 temp rate, 3 zero temp rate, 4 suspended. The ids
     /// are pumpX2's; which a t:slim shows when is unconfirmed.
     public var basalIcon = 0
+    /// The home-screen status icons (bytes 2 and 3) and bolus icon (byte 4), with pumpX2's ids: status 0 is 0,
+    /// 1 transmitter, 4 transmitter out of range; status 1 is 0, 1 blood drop; bolus is 0 bolus, 1 auto-bolus,
+    /// 200 hidden. Which a t:slim shows when is unconfirmed.
+    public var statusIcon0 = 200
+    public var statusIcon1 = 200
+    public var bolusIcon = 200
+    /// The IOB reply's model (byte 16: 0 Mudaliar, 1 Swan) and time left of insulin action (byte 4).
+    public var iobType = 0
+    public var insulinTimeLeftSeconds: UInt32 = 0
+    /// The CGM status reply's sensor start and last calibration, pump time, 0 for unset.
+    public var cgmSensorStartedAt: UInt32 = 0
+    public var cgmLastCalibrationAt: UInt32 = 0
     /// The running temp rate's percent as TempRate reports it, or nil for none.
     public var tempRatePercent: Int?
     public var controlIQEnabled = false
@@ -692,7 +704,9 @@ public final class ScriptedTransport: LinkTransport {
         case (.currentStatus, ControlIQIOBRequest.props.opCode):
             var v = [UInt8](repeating: 0, count: 17)
             v.replaceSubrange(0..<4, with: le32(pump.insulinOnBoardMilliunits))
+            v.replaceSubrange(4..<8, with: le32(pump.insulinTimeLeftSeconds))
             v.replaceSubrange(12..<16, with: le32(pump.insulinOnBoardMilliunits))
+            v[16] = UInt8(pump.iobType)
             return ControlIQIOBResponse(cargo: v)
         case (.currentStatus, BolusCalcDataSnapshotRequest.props.opCode):
             var v = [UInt8](repeating: 0, count: 46)
@@ -725,6 +739,9 @@ public final class ScriptedTransport: LinkTransport {
             var v = [UInt8](repeating: 0, count: 9)
             v[0] = UInt8(pump.trendIcon)
             v[1] = UInt8(pump.cgmAlertIcon)
+            v[2] = UInt8(pump.statusIcon0)
+            v[3] = UInt8(pump.statusIcon1)
+            v[4] = UInt8(pump.bolusIcon)
             v[5] = UInt8(pump.basalIcon)
             return HomeScreenMirrorResponse(cargo: v)
         case (.currentStatus, CurrentBasalStatusRequest.props.opCode):
@@ -746,7 +763,8 @@ public final class ScriptedTransport: LinkTransport {
             v += [UInt8](repeating: 0, count: 17 - v.count)
             return CGMHardwareInfoResponse(cargo: v)
         case (.currentStatus, CGMStatusRequest.props.opCode):
-            return CGMStatusResponse(cargo: [1] + [UInt8](repeating: 0, count: 9))
+            return CGMStatusResponse(
+                cargo: [1] + le32(pump.cgmLastCalibrationAt) + le32(pump.cgmSensorStartedAt) + [0])
         case (.currentStatus, LoadStatusRequest.props.opCode):
             return LoadStatusResponse(cargo: [0, pump.cartridgeLoaded ? 6 : 0, 0])
         case (.currentStatus, AlertStatusRequest.props.opCode):
