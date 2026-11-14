@@ -64,6 +64,62 @@ import faBolusCore
         await model.shutdown()
     }
 
+    /// A shortcut turns the Live Activity on and off through the settings screen's own switch: the setting
+    /// is saved, the Live Activity starts and ends at once, the bolus switch keeps its value and the pump is
+    /// sent nothing.
+    @Test func aShortcutTurnsTheLiveActivityOnAndOffThroughItsSetting() async {
+        let phone = Phone()
+        let activity = RecordingLiveActivity()
+        let model = await phone.launch(liveActivity: activity)
+        _ = await phone.until(model) { model.pump.link == .connected }
+        model.settings.liveActivityBolusEnabled = true
+        await phone.settle(model)
+
+        model.setLiveActivityEnabled(true)
+        #expect(activity.isRunning)
+        #expect(activity.shown.last?.appActive == true)
+        #expect(AppSettings(defaults: phone.settings).liveActivityEnabled)
+        await phone.settle(model)
+        #expect(activity.isRunning)
+
+        model.setLiveActivityEnabled(false)
+        #expect(!activity.isRunning)
+        #expect(!AppSettings(defaults: phone.settings).liveActivityEnabled)
+        await phone.settle(model)
+        #expect(!activity.isRunning)
+
+        #expect(model.settings.liveActivityBolusEnabled)
+        #expect(phone.mock.pump.grantedPermission == nil)
+        #expect(phone.mock.pump.released.isEmpty)
+        #expect(phone.mock.pump.activeBolus == nil)
+        #expect(phone.mock.pump.completed.isEmpty)
+        await model.shutdown()
+    }
+
+    /// A shortcut run with the app in the background: iOS starts a Live Activity only in the foreground,
+    /// so turning it on saves the setting and the Live Activity starts at the next foreground. Turning it
+    /// off ends it in the background.
+    @Test func aBackgroundShortcutStartsTheLiveActivityAtTheNextForeground() async {
+        let phone = Phone()
+        let activity = RecordingLiveActivity()
+        let model = await phone.launch(appActive: false, liveActivity: activity)
+        _ = await phone.until(model) { model.pump.link == .connected }
+
+        model.setLiveActivityEnabled(true)
+        await phone.settle(model)
+        #expect(model.settings.liveActivityEnabled)
+        #expect(!activity.isRunning)
+
+        await model.sceneChanged(active: true)
+        #expect(activity.isRunning)
+
+        await model.sceneChanged(active: false)
+        model.setLiveActivityEnabled(false)
+        #expect(!activity.isRunning)
+        #expect(!model.settings.liveActivityEnabled)
+        await model.shutdown()
+    }
+
     /// A notification's Clear on a launch whose pump can't be reached in time: the alert's notification
     /// comes back saying to clear it on the pump. One that clears doesn't.
     @Test func aNotificationClearThatCantReachThePumpSaysSo() async throws {
