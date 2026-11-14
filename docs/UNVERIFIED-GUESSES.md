@@ -458,3 +458,21 @@ that worked.
   a dose uses reads it.
 - **Verify:** with Control-IQ on, compare the pump's own basal graph over a few hours with the types 3 and
   279 records for the same time, and switch to 279 if 3 misses changes.
+
+## 34. The home screen's basal icon and a temp rate's percent
+
+- **The guess:** byte 5 of the pump's home screen (HomeScreenMirror) is its basal icon, with pumpX2's ids:
+  4 while delivery is suspended, 5 while Basal-IQ has stopped basal for a predicted low, 2 while a temp rate
+  runs and 3 for a zero temp rate. TempRate (op 43)
+  says in byte 0 whether a temp rate runs and in byte 1 its percent. faBolus shows the basal as suspended,
+  or as a temp rate with its percent, from them, as t:connect's dashboard does. P1 answered TempRate on the
+  bench, but no recording has a suspension or a temp rate running.
+- **Where:** `Packages/PumpSession/Sources/PumpSession/PumpReadings.swift` (`PumpBasalParts`, and the
+  mirror, CurrentBasalStatus and TempRate cases), `Packages/PumpSession/Sources/PumpSession/PumpSession.swift`
+  (the TempRate read).
+- **Risk:** display only: nothing a dose uses reads the basal state, and the pump itself refuses a bolus
+  while suspended. A wrong byte would show a suspension or a temp rate that isn't there, or miss one. A
+  Basal-IQ suspension is shown apart from the pump's, as t:connect shows it, since a bolus still goes.
+- **Verify:** on P1 and P2, suspend the pump and read the mirror and CurrentBasalStatus, resume and read
+  them again; then set a 150 % temp rate and read the mirror and TempRate. On a Basal-IQ pump, read the
+  mirror during a predicted-low suspension.

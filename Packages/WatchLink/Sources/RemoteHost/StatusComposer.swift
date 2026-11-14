@@ -84,7 +84,11 @@ public enum StatusComposer {
             guard let t = at(o) else { return nil }
             switch o.value {
             case .suspended: return Timed(.suspended, at: t)
-            case .active(let rate): return milliunits(rate).map { Timed(.active(milliunitsPerHour: $0), at: t) }
+            // The watch's protocol has no temp rate or Basal-IQ suspension: it shows the rate delivered. A
+            // Basal-IQ suspension isn't sent as suspended, which says a bolus can't go.
+            case .active(let rate), .tempRate(let rate, _):
+                return milliunits(rate).map { Timed(.active(milliunitsPerHour: $0), at: t) }
+            case .basalIQSuspended: return Timed(.active(milliunitsPerHour: 0), at: t)
             }
         }
         let lastBolus = pump.lastBolus.flatMap { o -> Timed<Int>? in

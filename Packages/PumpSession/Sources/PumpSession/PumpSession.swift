@@ -115,6 +115,7 @@ public actor PumpSession {
     public internal(set) var freshness: FreshnessThresholds
     var record: PumpSessionRecord
     var alertLists = PumpAlertLists()
+    var basalParts = PumpBasalParts()
     /// A remote-clear trial whose alert was still showing on the read right after the clear, waiting for a
     /// later read to say whether it stayed.
     var pendingTrial: PendingRemoteClearTrial?
@@ -389,6 +390,7 @@ public actor PumpSession {
         guard let step = clockSteps.step(SessionClock(now: clock, uptime: monotonic)) else { return }
         sessionLog.log("phone clock set by \(step, privacy: .public) s")
         state.phoneClockSet(by: step)
+        basalParts.phoneClockSet(by: step)
         // The readings themselves didn't change, so no alerts-changed event: only their times did.
         emit(.readingsChanged(Set(PumpState.Reading.allCases), state))
     }
@@ -559,8 +561,17 @@ public actor PumpSession {
         }
         if message is CurrentEGVGuiDataResponse { lastGlucoseRead = uptime() }
         let changed = PumpReadings.apply(
-            message, to: &state, alerts: &alertLists, context: .init(receivedAt: now, anchor: anchor))
+            message, to: &state, alerts: &alertLists, basal: &basalParts,
+            context: .init(receivedAt: now, anchor: anchor))
         emitReadings(changed)
+        // t:connect reads TempRate when the home screen shows a temp rate: its percent is shown with it. Only
+        // after a mirror: a TempRate the pump refuses would otherwise go again after every other reply.
+        if message is HomeScreenMirrorResponse, basalParts.needsTempPercent, !isQueued(TempRateRequest.self),
+            !restingAfterNoAnswer(TempRateRequest(), now: uptime())
+        {
+            let read = TempRateRequest()
+            enqueue([read], priority: isSuspected(read) ? .probe : .status)
+        }
         settleRemoteClearTrial(after: message, now: uptime())
     }
 
@@ -789,6 +800,7 @@ public actor PumpSession {
         state = PumpState()
         state.model = model
         alertLists = PumpAlertLists()
+        basalParts = PumpBasalParts()
         await connection.connect(
             to: PumpTarget(peripheralID: peripheralID, model: .tslim, credentials: credentials),
             support: SupportMatrix())
@@ -810,6 +822,7 @@ public actor PumpSession {
         saveRecord()
         state = PumpState()
         alertLists = PumpAlertLists()
+        basalParts = PumpBasalParts()
         pumpClock = nil
         await dropLogbook()
         releaseHistory()

@@ -128,6 +128,26 @@ import faBolusCore
         }
     }
 
+    /// The basal pill for a temp rate with its percent, one whose percent isn't read yet, a zero temp rate,
+    /// a suspended pump, and Basal-IQ's suspension.
+    @Test func basalPill() {
+        let now = SnapshotFixture.origin
+        let states: [BasalDeliveryState] = [
+            .tempRate(unitsPerHour: 1.2, percent: 150), .tempRate(unitsPerHour: 0.8, percent: nil),
+            .tempRate(unitsPerHour: 0, percent: 0), .suspended, .basalIQSuspended
+        ]
+        let displays = states.map { basal in
+            var pump = PumpState()
+            pump.basalDeliveryState = Observed(basal, measuredAt: now, receivedAt: now)
+            return PumpDisplay(
+                pump: pump, freshness: .standard, unit: .mgdl, showUnitLabels: false, lastAutoCorrection: nil, now: now)
+        }
+        let pills = VStack(spacing: 10) {
+            ForEach(displays.indices, id: \.self) { StatusPillsView(display: displays[$0], order: ["basal"]) }
+        }
+        check("states", pills.padding(), height: 400)
+    }
+
     /// A bolus delivering and a cancel the pump hasn't answered after 5 s: the line says to use the pump to
     /// stop it now.
     @Test func dashboardCancelling() async {

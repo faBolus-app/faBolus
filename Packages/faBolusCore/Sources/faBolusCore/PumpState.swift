@@ -89,10 +89,16 @@ public struct PumpBattery: Sendable, Hashable, Codable {
 
 /// What basal delivery the pump reports.
 public enum BasalDeliveryState: Sendable, Hashable, Codable {
-    /// Delivering at this rate, whatever set it (profile, temp rate or Control-IQ).
+    /// Delivering at this rate, from the profile or Control-IQ, or from a temp rate the pump's home screen
+    /// hasn't shown.
     case active(unitsPerHour: Double)
+    /// A temp rate set on the pump: the rate delivered now, and the temp rate's percent of the profile's
+    /// rate, or `nil` until it is read.
+    case tempRate(unitsPerHour: Double, percent: Int?)
     /// Insulin delivery is suspended.
     case suspended
+    /// Basal-IQ has stopped basal for a predicted low. Unlike `suspended`, the pump still delivers a bolus.
+    case basalIQSuspended
 
     public var isSuspended: Bool { self == .suspended }
 }
