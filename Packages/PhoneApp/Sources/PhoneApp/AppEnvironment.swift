@@ -111,8 +111,11 @@ public protocol LiveActivityHosting: AnyObject {
     /// the foreground; an update works in the background too.
     func show(_ content: LiveActivityContent, staleDate: Date?, appActive: Bool)
     func end()
+    /// Waits for the last update sent to reach ActivityKit.
+    func flush() async
 }
 
 extension LiveActivityHosting {
     public var anyListed: Bool { isRunning }
+    public func flush() async {}
 }

@@ -114,14 +114,14 @@ import faBolusCore
     }
 
     /// A tap out of order starts the count again; a tap from an older screen, or one the app never drew
-    /// (a relaunch), does nothing; a step that needs an unlocked device does nothing from the other intent.
+    /// (a relaunch), does nothing; 1 → 2 → 3 does nothing from the intent that runs on a locked device.
     @Test func tapsThatDontFitSendNothing() async {
         let r = await rig()
-        await r.tap(.startBolus, unlocked: false)
-        #expect(r.view == .idle(.bolus), "the bolus needs an unlocked device")
         let card = r.panel.screen
         await r.units(500)
         await r.tap(.review)
+        await r.tap(.tap(1), unlocked: false)
+        if case .review(let review) = r.view { #expect(review.taps == 0, "1 → 2 → 3 needs an unlocked device") }
         await r.tap(.tap(2))
         if case .review(let review) = r.view { #expect(review.taps == 0) }
         await r.tap(.tap(1))
@@ -756,5 +756,46 @@ import faBolusCore
         #expect(LiveActivityTap(encoded: "nonsense") == nil)
         #expect(LiveActivityAction.cancelBolus.needsUnlock == false)
         #expect(LiveActivityAction.tap(3).needsUnlock)
+    }
+
+    /// Only what sends insulin or changes the pump needs an unlocked device; choosing the dose doesn't, so a
+    /// locked phone doesn't ask for Face ID at every − and +.
+    @Test func onlyTheConfirmAndPumpChangesNeedAnUnlock() {
+        let gated: [LiveActivityAction] = [.tap(1), .tap(2), .tap(3), .goOn, .clearAlert]
+        let open: [LiveActivityAction] = [
+            .startBolus, .switchMode, .adjust(up: true, coarse: false), .review, .answer(yes: true), .back, .close,
+            .cancelBolus, .showAlerts, .nextAlert, .cycleSpan
+        ]
+        #expect(gated.allSatisfy { $0.needsUnlock })
+        #expect(!open.contains { $0.needsUnlock })
+    }
+
+    /// − and + and the mode switch keep the screen: a second tap before iOS redraws the card still counts.
+    @Test func aSecondStepBeforeTheRedrawStillCounts() async {
+        let r = await rig()
+        await r.tap(.startBolus)
+        let drawn = r.panel.screen
+        await r.tap(.adjust(up: true, coarse: true), on: drawn, unlocked: false)
+        guard case .entry(let once) = r.view else {
+            Issue.record("not on the entry screen")
+            return
+        }
+        await r.tap(.adjust(up: true, coarse: true), on: drawn, unlocked: false)
+        guard case .entry(let twice) = r.view else {
+            Issue.record("not on the entry screen")
+            return
+        }
+        #expect(twice.value != once.value, "the second tap, from the screen drawn before the first, counted")
+        #expect(r.panel.screen == drawn)
+    }
+
+    /// Every tap reaches ActivityKit, one from an old screen too, so iOS's pending look always clears.
+    @Test func everyTapChangesWhatIsSent() async {
+        let r = await rig()
+        await r.tap(.startBolus)
+        let before = r.panel
+        await r.model.liveActivityTapped(LiveActivityTap(screen: "old-0", action: .review), unlocked: false)
+        #expect(r.panel.view == before.view)
+        #expect(r.panel != before)
     }
 }

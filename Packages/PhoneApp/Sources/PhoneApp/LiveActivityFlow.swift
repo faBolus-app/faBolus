@@ -4,6 +4,7 @@ import PumpSession
 import RemoteHost
 import WidgetContent
 import faBolusCore
+import os
 
 /// The Live Activity's bolus and alert screens, in the app: the watch's bolus flow (the amount with − and
 /// +, the calculator's questions, a review, the 1 → 2 → 3 confirm, the phone's confirmations, the result
@@ -105,11 +106,14 @@ final class LiveActivityFlow {
         var settledAt: Date?
     }
 
+    static let log = Logger(subsystem: "com.fabolus.app", category: "LiveActivity")
+
     unowned let model: AppModel
     private(set) var state: State = .idle {
         didSet { screenNumber += 1 }
     }
     private var screenNumber = 0
+    private var answeredTaps = 0
     /// Unique to this run of the app.
     private let runToken = String(UUID().uuidString.prefix(6))
     /// A cancel with the session (`answered` false), or one it answered without a definite stop (`answered`
@@ -135,7 +139,13 @@ final class LiveActivityFlow {
     /// One tap from the Live Activity, once its step is done (through to the session's answer for a send).
     /// - Parameter unlocked: it came through the intent that needs an unlocked device.
     func handle(_ tap: LiveActivityTap, unlocked: Bool) async {
-        defer { model.publishSurfaces() }
+        defer {
+            answeredTaps += 1
+            Self.log.info(
+                "tap \(String(describing: tap.action), privacy: .public) from \(tap.screen, privacy: .public), screen now \(self.screenID, privacy: .public)"
+            )
+            model.publishSurfaces()
+        }
         // Cancel stops insulin: honoured from any screen, even one out of date.
         if tap.action == .cancelBolus {
             await cancelBolus()
@@ -183,11 +193,13 @@ final class LiveActivityFlow {
             entry.mode = entry.mode == .units ? .carbs : .units
             entry.foodIsInsulin = model.screenCarbsOff
             entry.value = 0
-            state = .entry(entry)
+            // The same screen: a second tap before iOS redraws still counts. Choosing the dose sends nothing,
+            // and the review shows the dose before 1 → 2 → 3.
+            replaceKeepingScreen(.entry(entry))
         case (.entry(var entry), .adjust(let up, let coarse)):
             let step = coarse ? coarseStep(entry) : fineStep(entry)
             entry.value = min(max(0, entry.value + (up ? step : -step)), dialMax(entry))
-            state = .entry(entry)
+            replaceKeepingScreen(.entry(entry))
         case (.entry(let entry), .review):
             startReview(entry)
         case (.entry, .back), (.entry, .close):
@@ -610,7 +622,7 @@ final class LiveActivityFlow {
     var panel: LiveActivityPanel {
         endAnsweredCancelIfNothingIsGoing()
         let view = view
-        return LiveActivityPanel(screen: screenID, view: view)
+        return LiveActivityPanel(screen: screenID, view: view, answeredTaps: answeredTaps)
     }
 
     var alertSummary: LiveActivityAlerts? {
