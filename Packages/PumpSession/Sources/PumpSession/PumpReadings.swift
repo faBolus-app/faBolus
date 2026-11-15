@@ -176,7 +176,7 @@ enum PumpReadings {
             // The first byte is 0 when the pump acknowledges the request. Any other snapshot is no reading:
             // the last one stays, and the dose path sees the settings as not read for this attempt.
             guard m.isAck else { return [] }
-            // The calculator's own reading, timed by the reply's reading time (byte 26, guess #36): only a
+            // The calculator's own reading, timed by the reply's reading time (byte 26): only a
             // reading the reply marks valid, at a time the anchor can place. An unknown age must never look
             // current, so without either it is no reading.
             let reading: BolusCalculatorSettings.Reading? = {

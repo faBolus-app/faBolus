@@ -756,7 +756,7 @@ public actor PumpSession {
         let now = uptime()
         // The comms-suspended bit (19) pauses nothing: t:connect only logs it (UNVERIFIED-GUESSES #22).
         // Bit 31 says the pump revoked the bolus permission: a delivery it granted that hasn't queued
-        // InitiateBolus stops there, sending nothing more (guess #37).
+        // InitiateBolus stops there, sending nothing more.
         if events.contains(.bolusPermissionRevoked), var d = delivery, d.bolusId != nil, !d.initiateQueued {
             d.permissionRevoked = true
             delivery = d
