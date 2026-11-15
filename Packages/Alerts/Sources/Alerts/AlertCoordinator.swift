@@ -32,9 +32,19 @@ public actor AlertCoordinator {
     private var clockSteps = ClockStepDetector()
 
     private(set) var engine: AlertEngine
-    /// The state file couldn't be read (or there was none): notifications an earlier process scheduled
-    /// aren't known, so the fixed identifiers are withdrawn once at start.
+    /// There was no state file, or it was corrupt: what an earlier process posted isn't known, so every
+    /// notification the app has is withdrawn once at start, the per-request and pump-alert ones included.
     private var startedFresh: Bool
+    /// The state file exists but couldn't be read yet (a launch before the first unlock). Nothing is
+    /// withdrawn for it and nothing is written over it; it is read again on each input, and once it reads
+    /// it is adopted, with the inputs this process has had applied to it again at their own times.
+    private var stateDeferred: Bool
+    private var deferredInputs: [AlertEngine.HeldInput] = []
+    /// The most inputs held while the state can't be read. Inputs whose effect is only their latest value
+    /// are kept once each, so only a long run of distinct pump events reaches this; past it the oldest go.
+    static let deferredInputsCap = 256
+    /// How many inputs are held for the saved state now.
+    var heldInputCount: Int { deferredInputs.count }
     /// Nothing is handed to the OS before `start`: inputs that come earlier are applied and owed, and
     /// `start` performs them after its own clean-up, so the clean-up can't remove one of them.
     private var started = false
@@ -78,9 +88,20 @@ public actor AlertCoordinator {
         self.ledger = ledger
         self.tickInterval = tickInterval
         self.clock = clock
-        let state = store.loadState()
-        startedFresh = state == nil
-        engine = AlertEngine(state: state ?? AlertEngine.State(), policy: store.loadPolicy() ?? AlertPolicy())
+        var state = AlertEngine.State()
+        switch store.loadStateOutcome() {
+        case .loaded(let loaded):
+            state = loaded
+            startedFresh = false
+            stateDeferred = false
+        case .none:
+            startedFresh = true
+            stateDeferred = false
+        case .notYetReadable:
+            startedFresh = false
+            stateDeferred = true
+        }
+        engine = AlertEngine(state: state, policy: store.loadPolicy() ?? AlertPolicy())
     }
 
     /// Start following `events` (the session's `events()` stream, asked for before the session starts).
@@ -92,7 +113,9 @@ public actor AlertCoordinator {
         guard !started, !starting else { return }
         starting = true
         if startedFresh {
-            await scheduler.remove(identifiers: Self.fixedIdentifiers)
+            // Only this pipeline posts, so everything held is from an earlier process; what is still true
+            // is posted again by the launch run below.
+            await scheduler.removeAll()
         }
         permission = await scheduler.permission()
         // Only now may effects reach the OS: an input that arrived during the clean-up above is owed, and
@@ -133,6 +156,8 @@ public actor AlertCoordinator {
         await scheduler.removeAll()
         engine = AlertEngine()
         startedFresh = false
+        stateDeferred = false
+        deferredInputs = []
         save()
         do { try store.savePolicy(engine.policy) } catch {
             alertsLog.error("alert policy not saved: \(String(describing: error), privacy: .public)")
@@ -256,7 +281,7 @@ public actor AlertCoordinator {
         let now = clock()
         let urgentLow = UrgentLowAlarm.isActive(pumpState: pumpState, source: backup, thresholds: thresholds, now: now)
         // Lost when the newest reading from any source is stale; no reading at all is "no data".
-        let newest = [pumpState.glucose?.measuredAt, backup?.latest?.date].compactMap { $0 }.max()
+        let newest = [pumpState.glucose?.measuredAt, backup?.latest?.agedFrom].compactMap { $0 }.max()
         let cgmLost = newest.map { GlucoseFreshness.isStale($0, thresholds: thresholds, now: now) } ?? false
         await run(.glucose(urgentLow: urgentLow, cgmLost: cgmLost))
         return true
@@ -267,7 +292,9 @@ public actor AlertCoordinator {
     }
 
     private func run(_ input: AlertInput) async {
+        await adoptSavedStateIfReadable()
         followPhoneClock()
+        if stateDeferred { hold(input, at: clock()) }
         let before = engine.state
         engine.handle(input, now: clock())
         // Most inputs (a routine reading) change nothing; only a change is written.
@@ -282,10 +309,82 @@ public actor AlertCoordinator {
     private func followPhoneClock() {
         guard let sessionClock, let step = clockSteps.step(sessionClock) else { return }
         engine.phoneClockSet(by: step)
+        for i in deferredInputs.indices { deferredInputs[i].at.addTimeInterval(step) }
         save()
     }
 
+    /// Keeps an input for the saved state, once it can be read. A tick changes nothing to replay. An input
+    /// whose effect is only its latest value replaces the one before it; the list is capped past that.
+    private func hold(_ input: AlertInput, at: Date) {
+        if case .tick = input { return }
+        if let kind = Self.latestOnlyKind(input) {
+            deferredInputs.removeAll { Self.latestOnlyKind($0.input) == kind }
+        }
+        deferredInputs.append(AlertEngine.HeldInput(input: input, at: at))
+        if deferredInputs.count > Self.deferredInputsCap {
+            let dropped = deferredInputs.count - Self.deferredInputsCap
+            deferredInputs.removeFirst(dropped)
+            alertsLog.error("alert state still unreadable: \(dropped) oldest held input(s) dropped")
+        }
+    }
+
+    /// Inputs the engine takes as the whole current value (it keeps no history of them): only the latest
+    /// one matters for the replay.
+    private static func latestOnlyKind(_ input: AlertInput) -> String? {
+        switch input {
+        case .glucose: "glucose"
+        case .ledger: "ledger"
+        case .policy: "policy"
+        case .notificationsAllowed: "notificationsAllowed"
+        case .pump(.alertsChanged): "pumpAlerts"
+        case .launched, .unpaired, .pump, .remoteBolusRefused, .pumpClearFailed, .tick: nil
+        }
+    }
+
+    /// Adopts a saved state that couldn't be read at launch, once it can be (`AlertEngine.adopting`).
+    /// Done once: the held inputs are taken and the flag cleared before the only suspension that can follow,
+    /// and the read of the ledger before them is checked again after it, so a run that came in meanwhile
+    /// (unlock brings pump, glucose and ledger inputs together) never adopts a second copy over the first.
+    private func adoptSavedStateIfReadable() async {
+        guard stateDeferred else { return }
+        let outcome = store.loadStateOutcome()
+        if case .notYetReadable = outcome { return }
+        let ledger = await ledgerView()
+        guard stateDeferred else { return }
+        let held = deferredInputs
+        stateDeferred = false
+        deferredInputs = []
+        let now = clock()
+        switch outcome {
+        case .notYetReadable:
+            return
+        case .loaded(let saved):
+            engine = AlertEngine.adopting(
+                saved: saved, policy: store.loadPolicy() ?? engine.policy, held: held, over: engine, ledger: ledger,
+                now: now)
+            save()
+        case .none:
+            // It turned out to be lost (corrupt) after all, so what the earlier process posted isn't known:
+            // everything held is withdrawn, as on a fresh start, and what this process's inputs call for is
+            // posted again. Before `start`, its own clean-up does the withdrawing.
+            engine = AlertEngine.rebuilt(policy: engine.policy, held: held, over: engine, ledger: ledger, now: now)
+            guard started else {
+                startedFresh = true
+                save()
+                return
+            }
+            save()
+            await scheduler.removeAll()
+            // Whatever was posted before the removal is gone: the next run posts all that still holds.
+            engine.forgetPosted()
+            engine.handle(.tick, now: clock())
+            save()
+        }
+    }
+
     private func save() {
+        // A state that couldn't be read yet is never written over: once readable, it is adopted.
+        guard !stateDeferred else { return }
         do { try store.saveState(engine.state) } catch {
             // Still perform the effects: an alert that isn't posted is worse than one that might be posted
             // again after a crash.
@@ -327,11 +426,4 @@ public actor AlertCoordinator {
         lastPublished = current
         for continuation in subscribers.values { continuation.yield(current) }
     }
-
-    /// The identifiers that don't depend on a request or a pump bit.
-    static let fixedIdentifiers: [String] =
-        DisconnectEscalation.allIds + [
-            AlertEngine.connectionUnstableId, UrgentLowAlarm.dedupeKey, AlertEngine.cgmDataLossId,
-            RemoteBolusLedger.unreadableLedgerReconciliationDedupeKey
-        ]
 }

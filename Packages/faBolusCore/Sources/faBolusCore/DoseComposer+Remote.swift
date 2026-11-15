@@ -170,6 +170,10 @@ extension DoseComposer {
         if ledger.hasRecentlyDeliveredDuplicate(peerId: request.peerId, doseKey: dose.doseKey, now: context.now) {
             return .refused(.recentlyDelivered)
         }
+        // A remote's answer names only a confirmation's kind, so it can't tell "over the max hourly bolus" from
+        // "the limits can't be checked": with a calculator reply too old to check them, the dose is refused
+        // for the phone, where the whole confirmation is compared, and never asked here.
+        if bolusLimitsUncheckable(context) { return .refused(.pumpSettingsNotVerified) }
         // After the duplicate check, so a resend of a dose just delivered isn't offered to go on again.
         let needed = confirmations(units: units, context: context)
         if needed.contains(where: { !request.confirmed.contains($0.kind) }) {
@@ -179,7 +183,7 @@ extension DoseComposer {
             ComposedDose(
                 request: dose, calculatorIOBUnits: iob, correctionGlucoseMgdl: correction,
                 calculatorCarbUnits: carbPart, usedIncludedStaleGlucose: usedStale,
-                notices: pumpNotices(units: units, context: context)))
+                notices: pumpNotices(units: units, context: context), preparedIOBUnits: preparedIOB(context)))
     }
 
     /// The glucose a remote carb dose corrects from. A fresh reading the pump doesn't caution against

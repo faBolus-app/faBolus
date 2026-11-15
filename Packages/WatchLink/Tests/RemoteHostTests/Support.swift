@@ -55,7 +55,16 @@ actor FakeServices: RemoteHostServices {
         return (next.state, .pump)
     }
     func bolusBlock() async -> BolusBlock? { block }
-    func ledgerEntry(_ key: RemoteBolusLedger.Key) async -> RemoteBolusLedger.Entry? { entries[key] }
+    /// Lookups that find no entry before the set ones show, as when another copy records it meanwhile.
+    var entryHiddenLookups = 0
+    func set(entryHiddenLookups: Int) { self.entryHiddenLookups = entryHiddenLookups }
+    func ledgerEntry(_ key: RemoteBolusLedger.Key) async -> RemoteBolusLedger.Entry? {
+        guard entryHiddenLookups == 0 else {
+            entryHiddenLookups -= 1
+            return nil
+        }
+        return entries[key]
+    }
     func compose(
         _ request: RemoteDoseRequest, access: AccessPolicy.AccessContext, remoteSizeLimitUnits: Double?
     ) async -> RemoteDoseDecision {
@@ -86,8 +95,12 @@ actor FakeServices: RemoteHostServices {
     func set(autoCorrection: Date?) { self.autoCorrection = autoCorrection }
     func lastAutoCorrection() async -> Date? { autoCorrection }
     func remoteBolusRefused(requestId: String, reason: String) async { refusals.append(requestId) }
+    /// How long a refusal lookup takes, so a request can arrive while one is under way.
+    var refusalLookupDelay: Duration = .zero
+    func set(refusalLookupDelay: Duration) { self.refusalLookupDelay = refusalLookupDelay }
     func ledgerRefusal(_ key: RemoteBolusLedger.Key) async -> RemoteBolusLedger.RemoteRefusal? {
-        await refusalLedger.ledger.remoteRefusal(key)
+        if refusalLookupDelay != .zero { try? await Task.sleep(for: refusalLookupDelay) }
+        return await refusalLedger.ledger.remoteRefusal(key)
     }
     func recordRefusal(_ key: RemoteBolusLedger.Key, reason: String, confirmations: [DoseConfirmation.Kind]) async {
         _ = try? await refusalLedger.recordRemoteRefusal(
@@ -221,4 +234,12 @@ func composed(_ id: String, units: Double = 2) -> ComposedDose {
             id: id, origin: .remote(peerId: "garmin", sentAt: HostRig.now), shape: .now(units: units), carbsGrams: nil,
             bgMgdl: nil), calculatorIOBUnits: nil, correctionGlucoseMgdl: nil, calculatorCarbUnits: nil,
         usedIncludedStaleGlucose: false, notices: [])
+}
+
+/// A version 2 bolus request whose payload can't be read (a fractional milliunit count), naming `id`.
+func damagedBolus(_ id: String) -> WireValue {
+    .object([
+        "version": .int(2), "kind": .string("bolus"),
+        "payload": .object(["requestId": .string(id), "mode": .string("units"), "mU": .double(2.5)])
+    ])
 }

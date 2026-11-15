@@ -253,16 +253,128 @@ import Testing
         }
         #expect(dose.units == 1.5)
         await phone.driving(model) { await flow.deliver() }
-        guard case .done(.started) = flow.phase else {
-            Issue.record("expected a started delivery, got \(flow.phase)")
-            return
-        }
+        // Started: the screen is back to editing, so it can be used again; the banner follows the dose.
+        #expect(flow.phase == .editing)
         #expect(
             await phone.until(model) {
                 if case .delivered(let u) = model.latestOutcome?.outcome { return u == 1.5 }
                 return false
             })
         #expect(flow.unitsText.isEmpty, "the screen is cleared for the next dose")
+        await model.shutdown()
+    }
+
+    /// After a started dose the screen takes the next one: the started review is gone (Deliver again sends
+    /// nothing), and the next dose is confirmed, reviewed and delivered as its own bolus.
+    @Test func theScreenTakesTheNextDoseAfterOneStarts() async {
+        let (phone, model) = await connected()
+        let flow = BolusFlow(model: model)
+        flow.mode = .units
+        flow.unitsTyped("1")
+        await phone.driving(model) { await flow.confirm() }
+        guard case .review = flow.phase else {
+            Issue.record("expected the review, got \(flow.phase)")
+            return
+        }
+        await phone.driving(model) { await flow.deliver() }
+        #expect(flow.phase == .editing)
+        await phone.driving(model) { await flow.deliver() }
+        _ = await phone.until(model) {
+            phone.mock.pump.completed.count == 1 && model.latestOutcome?.outcome.isFinal == true
+        }
+        #expect(phone.mock.pump.completed.count == 1, "the started review isn't sent again")
+        flow.unitsTyped("0.5")
+        #expect(flow.unavailableReason == nil)
+        await phone.driving(model) { await flow.confirm() }
+        guard case .review(let next) = flow.phase else {
+            Issue.record("expected the next dose's review, got \(flow.phase)")
+            return
+        }
+        #expect(next.units == 0.5)
+        await phone.driving(model) { await flow.deliver() }
+        #expect(await phone.until(model) { phone.mock.pump.completed.count == 2 })
+        #expect(phone.mock.pump.completed.map(\.requestedMilliunits) == [1000, 500])
+        await model.shutdown()
+    }
+
+    /// A started dose the pump refuses delivered nothing: the screen holds the result to be acknowledged,
+    /// says so, and keeps the entry to try again.
+    @Test func aStartedDoseThePumpRefusesIsShownAndTheEntryKept() async {
+        let (phone, model) = await connected()
+        let flow = BolusFlow(model: model)
+        flow.mode = .units
+        flow.unitsTyped("1")
+        await phone.driving(model) { await flow.confirm() }
+        guard case .review = flow.phase else {
+            Issue.record("expected the review, got \(flow.phase)")
+            return
+        }
+        phone.mock.pump.cartridgeLoaded = false
+        await phone.driving(model) { await flow.deliver() }
+        guard case .done(let result) = flow.phase, case .started(_, let outcome) = result, !outcome.isInFlight
+        else {
+            Issue.record("expected a final outcome held for acknowledgement, got \(flow.phase)")
+            return
+        }
+        #expect(phone.mock.pump.completed.isEmpty)
+        #expect(BolusFlow.resultText(result)?.contains("not delivered") == true)
+        #expect(flow.unitsText == "1", "nothing went in: the entry stays to try again")
+        flow.dismissResult()
+        #expect(flow.phase == .editing)
+        await model.shutdown()
+    }
+
+    /// Every result held for acknowledgement says what happened; only a dose still in flight has no text
+    /// (the banner shows it).
+    @Test func everyHeldResultHasText() {
+        let key = RemoteBolusLedger.Key(peerId: "phone", requestId: "x")
+        let finals: [BolusOutcome] = [
+            .delivered(units: 1), .stopped(delivered: 0.4, requested: 1), .refused(reason: "No cartridge."),
+            .failed(reason: "Nothing was delivered."), .unknown(since: Date(timeIntervalSince1970: 0))
+        ]
+        for outcome in finals {
+            #expect(BolusFlow.resultText(.started(key, outcome)) != nil, "\(outcome)")
+            #expect(BolusFlow.resultText(.alreadyRecorded(outcome)) != nil, "\(outcome)")
+        }
+        #expect(BolusFlow.resultText(.started(key, .unknown(since: .distantPast)))?.contains("unknown") == true)
+        let failed = BolusFlow.resultText(.started(key, .failed(reason: "Nothing was delivered.")))
+        #expect(failed?.contains("Nothing") == true)
+        for inFlight: BolusOutcome in [.requested, .accepted, .delivering] {
+            #expect(BolusFlow.resultText(.started(key, inFlight)) == nil)
+        }
+    }
+
+    /// After a dose the cleared screen doesn't fill a correction by itself (the view calls `entryChanged`
+    /// when it clears the carbs, and again as IOB moves); it fills again once carbs are typed.
+    @Test func noCorrectionFillsItselfAfterADose() async {
+        let phone = Phone()
+        phone.mock.pump.glucose = (250, 30)
+        let model = await phone.launch()
+        _ = await phone.until(model) { model.pump.link == .connected }
+        await phone.run(model, for: 12)
+        let flow = BolusFlow(model: model)
+        flow.mode = .carbs
+        flow.carbsText = "20"
+        flow.entryChanged()
+        if flow.correctionQuestion != nil { flow.chooseCorrection(apply: true) }
+        await phone.driving(model) { await flow.confirm() }
+        if case .prompt = flow.phase { flow.choose(.useNewDose) }
+        await phone.driving(model) {
+            while flow.phase == .composing { await Task.yield() }
+        }
+        guard case .review = flow.phase else {
+            Issue.record("expected the review, got \(flow.phase)")
+            return
+        }
+        await phone.driving(model) { await flow.deliver() }
+        #expect(flow.phase == .editing)
+        flow.carbsEdited()
+        flow.entryChanged()
+        #expect(flow.unitsText.isEmpty, "no correction appears by itself")
+        #expect(flow.unavailableReason != nil)
+        flow.carbsText = "10"
+        flow.carbsEdited()
+        #expect(flow.units != nil || flow.correctionQuestion != nil, "typing carbs fills it again")
         await model.shutdown()
     }
 

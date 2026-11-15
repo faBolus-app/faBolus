@@ -410,6 +410,33 @@ final class RemoteBolusLedgerTests: XCTestCase {
         XCTAssertFalse(l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: doseKey(2.0), now: t0 + 2))
     }
 
+    /// A request given up after the pump's permission and before InitiateBolus went (bit 31, cancelled
+    /// before start, a clock read that failed, too long, not sent): nothing went in, so the same dose asked
+    /// again isn't refused as recently delivered.
+    func testADoseAbandonedBeforeInitiateBolusIsNotFlagged() {
+        var l = RemoteBolusLedger()
+        _ = l.begin(request("peerA", "req1", 2.0))
+        l.markAccepted(key("peerA", "req1"), bolusId: 55)
+        l.markFailed(key("peerA", "req1"), reason: "The pump took back the bolus permission", now: t0)
+        XCTAssertFalse(l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: doseKey(2.0), now: t0 + 2))
+    }
+
+    /// The pump answered InitiateBolus with a refusal, or history found no record of an unknown bolus:
+    /// InitiateBolus went out, so the dose stays flagged.
+    func testAFinalOutcomeAfterInitiateBolusStaysFlagged() {
+        var l = RemoteBolusLedger()
+        _ = l.begin(request("peerA", "req1", 2.0))
+        l.markAccepted(key("peerA", "req1"), bolusId: 55)
+        l.markRefused(key("peerA", "req1"), reason: "the pump refused the bolus", now: t0)
+        XCTAssertTrue(l.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: doseKey(2.0), now: t0 + 2))
+        var h = RemoteBolusLedger()
+        _ = h.begin(request("peerA", "req2", 3.0))
+        h.markAccepted(key("peerA", "req2"), bolusId: 56, pumpKey: "pump")
+        h.markUnknown(key("peerA", "req2"), now: t0)
+        h.markAbsentFromHistory(key("peerA", "req2"), historyPumpKey: "pump", now: t0 + 1)
+        XCTAssertTrue(h.hasRecentlyDeliveredDuplicate(peerId: "peerA", doseKey: doseKey(3.0), now: t0 + 2))
+    }
+
     /// A 0 U outcome that DID reach the pump is still ambiguous — the pump may have delivered before the
     /// stop landed — so it stays flagged.
     func testZeroUnitStopAfterPumpWriteStillFlagged() {

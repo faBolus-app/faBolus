@@ -90,16 +90,19 @@ public enum GlucoseArbiter {
     ) -> (PumpState, [GlucoseReading], GlucoseProvenance) {
         let pumpFresh = pumpState.glucoseIfFresh(thresholds: thresholds, now: now) != nil
         guard !pumpFresh, let source, let sample = source.latest,
-            !GlucoseFreshness.isStale(sample.date, thresholds: thresholds, now: now)
+            !sample.isStale(thresholds: thresholds, now: now)
         else {
             // Pump is fresh, or there is no usable failover — publish pump data unchanged.
             return (pumpState, pumpHistory, .pump)
         }
         var state = pumpState
-        // A source that reports no trend yields no arrow, not a flat one.
+        // A source that reports no trend yields no arrow, not a flat one. The value is received when the
+        // sample first arrived: stamped at this merge, a reading dated ahead of the phone's clock would
+        // count as just received on every merge and stay current too long. With no arrival time it is
+        // never received before it was measured, so it ages from its measurement time.
         state.glucose = Observed(
-            PumpGlucose(mgdl: sample.mgdl, trend: sample.trend), measuredAt: sample.date, receivedAt: now,
-            source: .glucoseSource(id: sample.sourceID))
+            PumpGlucose(mgdl: sample.mgdl, trend: sample.trend), measuredAt: sample.date,
+            receivedAt: sample.receivedAt ?? max(sample.date, now), source: .glucoseSource(id: sample.sourceID))
         let reason: GlucoseProvenance.Reason = (pumpState.glucose == nil) ? .pumpMissing : .pumpStale
         return (
             state, mergeHistory(pump: pumpHistory, source: source.history),

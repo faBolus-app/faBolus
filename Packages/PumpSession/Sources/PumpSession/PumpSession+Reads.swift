@@ -143,7 +143,7 @@ extension PumpSession {
     /// not read for this dose.
     public func prepareDose() async -> DosePreparation {
         followPhoneClock()
-        let requestedAt = clock()
+        let askedAt = uptime()
         if state.link.isConnected {
             for read: any TandemMessages.Message in [
                 BolusCalcDataSnapshotRequest(), ControlIQIOBRequest(), CurrentEGVGuiDataRequest(),
@@ -152,6 +152,11 @@ extension PumpSession {
                 _ = await exchange(read, priority: .doseInputs)
             }
         }
+        // When the reads were asked for, on the phone's clock as it reads now: the reads can wait minutes, and
+        // a phone clock set meanwhile moves the readings' stamps, so this moves with them. A reading from
+        // before the ask then never counts as read for this dose, whichever way the clock was set.
+        followPhoneClock()
+        let requestedAt = clock().addingTimeInterval(-uptime().timeIntervalSince(askedAt))
         return DosePreparation(
             pump: state, inputsRequestedAt: requestedAt, lastDeliveryAt: lastDeliveryAt,
             lastDeliveryPeerId: lastDelivery?.peerId, ledger: await ledger.ledger,
@@ -160,10 +165,13 @@ extension PumpSession {
 
     /// The phone's bolus screen opened. t:connect then sends UserInteraction at API 3.0 or later, which
     /// resets the pump's inactivity timer. A signed write that changes no delivery, sent behind any dose
-    /// step and waited on by nothing.
+    /// step and waited on by nothing. Not sent while this pump's class is suspected of rejecting it: a
+    /// rejection can draw op-77 and drop the link just as a dose's input reads are about to go.
     public func bolusScreenOpened() async {
         guard state.link.isConnected, identityTrusted, let api = identity?.apiVersion, api >= .v3 else { return }
-        _ = await exchange(UserInteractionRequest(), allowing: .settings, priority: .user)
+        let write = UserInteractionRequest()
+        guard !isSuspected(write) else { return }
+        _ = await exchange(write, allowing: .settings, priority: .user)
     }
 
     /// Reads the pump's CGM glucose now, ahead of the routine schedule.
@@ -205,12 +213,18 @@ extension PumpSession {
                 ? [CurrentEGVGuiDataRequest()] : [CurrentEGVGuiDataRequest(), mirror]
             enqueue(reads, priority: .status)
         }
-        if isDue(.history, now: now), !historyBusy, onceThisConnection.contains(.settings), !historyPausedForBattery() {
+        // Only from the pump the pairing trusts: until `ready()` has decided that, a sync or a search would
+        // return at once, and taking its turn here would push it back a whole interval.
+        guard identityTrusted, onceThisConnection.contains(.settings) else { return }
+        if isDue(.history, now: now), !historyBusy, !historyPausedForBattery() {
             due[.history] = now.addingTimeInterval(config.historySyncInterval)
             Task { await self.syncHistory() }
         }
-        if let at = nextReconcileAt, now >= at, onceThisConnection.contains(.settings) {
+        // Left in place while a search runs, so one asked for meanwhile (a bolus that just became unknown)
+        // runs as soon as it ends. `reconciling` is set here, before any suspension.
+        if let at = nextReconcileAt, now >= at, !reconciling {
             nextReconcileAt = nil
+            reconciling = true
             Task { await self.reconcileUnknownOutcomes() }
         }
     }

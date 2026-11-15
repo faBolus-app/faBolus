@@ -273,9 +273,41 @@ final class DurableBolusLedgerTests {
         #expect(try await ledger.begin(Self.request("phone", "p1")) == .proceed)
     }
 
-    /// A file that couldn't be read at launch but can be now (a launch before the first unlock) is read
-    /// again before confirming, so its records aren't replaced by an empty ledger.
-    @Test func confirmingAllReadsAFileThatHasBecomeReadable() async throws {
+    /// A file that couldn't be read at launch (a launch before the first unlock) is adopted as soon as the
+    /// block is read again once it can be, as a launch would adopt it: its unknown outcome blocks, its
+    /// finished request replays, and nothing written meanwhile replaced it.
+    @Test func aFileThatBecomesReadableIsAdoptedWhenTheBlockIsRead() async throws {
+        let url = temporaryURL()
+        let first = DurableBolusLedger(store: RemoteBolusLedgerStore(url: url))
+        _ = try await first.begin(Self.request("garmin", "done"))
+        try await first.markAccepted(Self.key("garmin", "done"), bolusId: 1)
+        try await first.markDelivered(Self.key("garmin", "done"), units: 2)
+        _ = try await first.begin(Self.request("garmin", "lost"))
+        try await first.markAccepted(Self.key("garmin", "lost"), bolusId: 2, now: Self.t0)
+        let saved = try Data(contentsOf: url)
+        try Data("unreadable for now".utf8).write(to: url)
+        let time = SettableClock()
+        let relaunched = DurableBolusLedger(store: RemoteBolusLedgerStore(url: url), clock: time.clock)
+        #expect(await relaunched.block == .ledgerUnreadable)
+        // Nothing this process does while it can't be read writes over it; the refusal is kept in memory.
+        await #expect(throws: LedgerNotSaved.self) {
+            try await relaunched.recordRemoteRefusal(Self.key("garmin", "late"), reason: "too old")
+        }
+        #expect(try Data(contentsOf: url) == Data("unreadable for now".utf8))
+        try saved.write(to: url)  // readable again
+        // Tried again at most every few seconds, not on every read.
+        #expect(await relaunched.block == .ledgerUnreadable)
+        time.pass(DurableBolusLedger.unreadableRetryInterval)
+
+        #expect(await relaunched.block == .unknownOutcome(since: Self.t0))
+        #expect(try await relaunched.begin(Self.request("garmin", "done")) == .replay(.delivered(units: 2)))
+        #expect(await relaunched.ledger.remoteRefusal(Self.key("garmin", "late")) != nil)
+        #expect(await relaunched.ledger.entry(Self.key("garmin", "lost"))?.confirmedOnPumpAt == nil)
+    }
+
+    /// "Confirm all" pressed while the file couldn't be read, once it can be, adopts it and confirms nothing
+    /// in it: the user hadn't seen those outcomes. They block, to be seen and confirmed with a second tap.
+    @Test func confirmingAllAdoptsAFileThatHasBecomeReadableWithoutConfirmingIt() async throws {
         let url = temporaryURL()
         let first = DurableBolusLedger(store: RemoteBolusLedgerStore(url: url))
         _ = try await first.begin(Self.request("garmin", "done"))
@@ -286,16 +318,17 @@ final class DurableBolusLedgerTests {
         let saved = try Data(contentsOf: url)
         try Data("unreadable for now".utf8).write(to: url)
         let relaunched = DurableBolusLedger(store: RemoteBolusLedgerStore(url: url))
-        #expect(await relaunched.block == .ledgerUnreadable)
-        try saved.write(to: url)  // readable again
+        try saved.write(to: url)
 
         try await relaunched.confirmAllOnPump()
-        #expect(await relaunched.block == nil)
-        // The finished request still replays instead of delivering again.
-        #expect(try await relaunched.begin(Self.request("garmin", "done")) == .replay(.delivered(units: 2)))
         let lost = await relaunched.ledger.entry(Self.key("garmin", "lost"))
         #expect(lost?.outcome == .unknown(since: Self.t0))
-        #expect(lost?.confirmedOnPumpAt != nil)
+        #expect(lost?.confirmedOnPumpAt == nil)
+        #expect(await relaunched.block == .unknownOutcome(since: Self.t0))
+        #expect(try await relaunched.begin(Self.request("garmin", "done")) == .replay(.delivered(units: 2)))
+        // The second tap, with the outcome on screen, confirms it.
+        try await relaunched.confirmAllOnPump()
+        #expect(await relaunched.block == nil)
     }
 
     @Test func anEmptyLedgerFileIsUnreadableNotEmpty() async throws {

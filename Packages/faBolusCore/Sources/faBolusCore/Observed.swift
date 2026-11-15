@@ -46,11 +46,16 @@ public struct Observed<Value: Sendable>: Sendable {
             && measuredAt.timeIntervalSince(receivedAt) <= Self.futureSkewTolerance
     }
 
+    /// The time the value is aged from: its measurement, or its arrival when the measuring clock put it
+    /// later (within the skew `hasValidTime` allows). A value can't have been measured after it arrived, so
+    /// a fast clock never buys a reading more time as current.
+    var agedFrom: Date { min(measuredAt, receivedAt) }
+
     /// How old the value is at `now`, or `nil` when its time can't be trusted (see `hasValidTime`, and
     /// a measurement dated in the future of `now` beyond clock skew). Never negative.
     public func age(now: Date = Date()) -> TimeInterval? {
         guard hasValidTime, now.timeIntervalSince1970.isFinite else { return nil }
-        let elapsed = now.timeIntervalSince(measuredAt)
+        let elapsed = now.timeIntervalSince(agedFrom)
         guard elapsed >= -Self.futureSkewTolerance else { return nil }
         return max(0, elapsed)
     }
@@ -59,7 +64,7 @@ public struct Observed<Value: Sendable>: Sendable {
     /// an untrustworthy time is stale, never current.
     public func isStale(after window: TimeInterval, now: Date = Date()) -> Bool {
         guard hasValidTime, now.timeIntervalSince1970.isFinite else { return true }
-        return CalcInputFreshness.isStale(measuredAt, staleAfter: window, now: now)
+        return CalcInputFreshness.isStale(agedFrom, staleAfter: window, now: now)
     }
 
     /// The value while it is no older than `window`, else `nil`. The gate is the value's age, never its

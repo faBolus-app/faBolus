@@ -86,16 +86,40 @@ public struct GlucoseSample: Sendable, Equatable {
     /// value, and the Test-flow UI (which reads `source.latest` directly, bypassing the arbiter) cannot
     /// render garbage as a Test "success". `GlucoseReading` (shared with the pump's own ungated history)
     /// is deliberately not gated — only `GlucoseSample`, the failover-only type.
-    public init?(mgdl: Int, date: Date, trend: GlucoseTrend? = nil, sourceID: String) {
+    public init?(mgdl: Int, date: Date, trend: GlucoseTrend? = nil, sourceID: String, receivedAt: Date? = nil) {
         guard GlucosePlausibility.isPlausible(mgdl: mgdl) else { return nil }
         self.mgdl = mgdl
         self.date = date
         self.trend = trend
         self.sourceID = sourceID
+        self.receivedAt = receivedAt
     }
+
+    /// When the phone first received this reading, by the phone's clock, or `nil` when that isn't known.
+    /// A sensor or server clock ahead of the phone's dates a reading later than it really is; the arrival
+    /// time caps that, so such a reading can't stay current past the window.
+    public private(set) var receivedAt: Date?
+
+    /// The time the reading is aged from: its measurement, or its arrival when that came first. Arrival
+    /// can only make a reading older, never fresher; with no arrival time it is the measurement time.
+    public var agedFrom: Date { min(date, receivedAt ?? date) }
+
+    /// The same reading, received at `time`, or earlier when it already holds an earlier arrival.
+    public func received(at time: Date) -> GlucoseSample {
+        var copy = self
+        copy.receivedAt = min(time, receivedAt ?? time)
+        return copy
+    }
+
     public var reading: GlucoseReading { GlucoseReading(date: date, mgdl: mgdl) }
     public func isStale(thresholds: FreshnessThresholds, now: Date = Date()) -> Bool {
-        GlucoseFreshness.isStale(date, thresholds: thresholds, now: now)
+        GlucoseFreshness.isStale(agedFrom, thresholds: thresholds, now: now)
+    }
+
+    /// Two samples are the same reading when what was measured, when and by which source match. When it
+    /// arrived is bookkeeping for its age, not part of the reading.
+    public static func == (lhs: GlucoseSample, rhs: GlucoseSample) -> Bool {
+        lhs.mgdl == rhs.mgdl && lhs.date == rhs.date && lhs.trend == rhs.trend && lhs.sourceID == rhs.sourceID
     }
 }
 

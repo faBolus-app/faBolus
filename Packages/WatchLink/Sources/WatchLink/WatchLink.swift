@@ -149,7 +149,11 @@ public final class SystemWatchLinkClock: WatchLinkClock {
 
     public init() {}
 
-    public var now: LinkSeconds { Double(DispatchTime.now().uptimeNanoseconds) / 1e9 }
+    /// Keeps counting while the device sleeps (as `ContinuousClock` does), unlike uptime: a send stranded
+    /// when the phone went to sleep has to be past its watchdog and hold when the app is woken in the
+    /// background for a watch bolus, or the bolus's answers wait behind it and the window can end with
+    /// nothing sent.
+    public var now: LinkSeconds { Double(clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW)) / 1e9 }
 
     /// Held to the times a message can carry, as a status's own `sentAt` is.
     public var epoch: Int? {

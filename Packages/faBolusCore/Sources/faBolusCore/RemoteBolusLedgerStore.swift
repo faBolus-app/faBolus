@@ -84,7 +84,9 @@ public struct LedgerNotSaved: Error, Sendable, Equatable {
 /// An actor, so a phone request and a watch request arriving together are decided one after the
 /// other and only one proceeds. Its storage rules all fail closed:
 /// - with no store, every new bolus is blocked;
-/// - a ledger file that can't be read blocks every new bolus until the user confirms on the pump;
+/// - a ledger file that can't be read blocks every new bolus. It is read again each time the ledger or
+///   its block is asked for, and adopted once it reads (a launch before the first unlock can't read it);
+///   nothing but the user confirming on the pump writes over it;
 /// - a request that can't be saved is dropped and the caller is told, before anything is sent;
 /// - an acceptance that can't be saved is undone, so the caller doesn't send InitiateBolus;
 /// - any later outcome that can't be saved stays in memory and blocks new boluses until a save
@@ -124,6 +126,7 @@ public actor DurableBolusLedger {
 
     /// The ledger as it stands, its stamps moved for any phone clock set since the last look.
     public var ledger: RemoteBolusLedger {
+        retryUnreadable()
         followClock()
         return stored
     }
@@ -148,6 +151,7 @@ public actor DurableBolusLedger {
     /// Why a new bolus can't start now, or `nil` when one may.
     public var block: BolusBlock? {
         if store == nil { return .noDurableStore }
+        retryUnreadable()
         if ledgerUnreadable { return .ledgerUnreadable }
         if outcomeNotSaved { return .outcomeNotSaved }
         return stored.block
@@ -162,7 +166,9 @@ public actor DurableBolusLedger {
         _ request: DoseRequest, usedIncludedStaleBG: Bool = false, now: Date = Date()
     ) throws -> RemoteBolusLedger.Decision {
         // A repeat of a recorded request is answered from its own entry, so a remote always gets its
-        // outcome back, even while storage problems block new requests.
+        // outcome back, even while storage problems block new requests. A file unreadable until now is
+        // adopted first, so its entries answer.
+        retryUnreadable()
         let now = stamp(now)
         if !stored.hasExistingEntry(request.ledgerKey), let block { return .blocked(block) }
         var next = stored
@@ -255,25 +261,55 @@ public actor DurableBolusLedger {
         try apply({ $0.confirmOnPump(key, now: $1) }, at: now)
     }
 
-    /// The user checked the pump and confirms every unknown outcome, including any an unreadable ledger
-    /// may have hidden. Writes the ledger fresh, so an unreadable file is replaced. Never called
+    /// How often a read of the ledger or its block tries an unreadable file again. An explicit
+    /// `reloadIfUnreadable()` always tries.
+    static let unreadableRetryInterval: TimeInterval = 5
+    private var lastUnreadableRetry: Double?
+
+    /// `reloadIfUnreadable()`, at most once every `unreadableRetryInterval`: the ledger and its block are
+    /// read on every tick, cancel and search, and a file that can't be read is opened from disk each try.
+    private func retryUnreadable() {
+        guard ledgerUnreadable else { return }
+        let now = clock?.uptime() ?? ProcessInfo.processInfo.systemUptime
+        if let last = lastUnreadableRetry, now >= last, now - last < Self.unreadableRetryInterval { return }
+        lastUnreadableRetry = now
+        reloadIfUnreadable()
+    }
+
+    /// Reads again a ledger file that couldn't be read, and adopts it as a launch would
+    /// (`RemoteBolusLedger.recoverAfterRestart`). A file can be unreadable only for a while: one protected
+    /// until the first unlock can't be read by a launch before it. The refusals this process recorded
+    /// meanwhile are kept. Returns whether a file was adopted.
+    @discardableResult
+    public func reloadIfUnreadable() -> Bool {
+        guard ledgerUnreadable, let store else { return false }
+        let loaded = store.loadOutcome()
+        guard !loaded.failedClosed else { return false }
+        // This process's refusals are moved for a phone clock set so far; the file's stamps are its own.
+        followClock()
+        var adopted = loaded.ledger
+        adopted.keepRefusals(from: stored)
+        let recovered = adopted.recoverAfterRestart(now: clock?.now() ?? Date())
+        stored = adopted
+        ledgerUnreadable = false
+        if recovered {
+            do { try store.save(adopted) } catch { outcomeNotSaved = true }
+        }
+        return true
+    }
+
+    /// The user checked the pump and confirms every unknown outcome they were shown. While the file can't
+    /// be read, that is the unreadable ledger itself: it is replaced by a fresh one. A file that reads now
+    /// is adopted instead, and nothing in it is confirmed in this call: its unknown outcomes weren't shown
+    /// when the user confirmed, so they block again, for the user to see and confirm. Never called
     /// automatically.
     public func confirmAllOnPump(now: Date = Date()) throws {
+        if reloadIfUnreadable() { return }
         let now = stamp(now)
-        // An unreadable file may have been a passing failure (a launch before the first unlock). Read it
-        // again before writing, so a ledger that is readable now isn't replaced by an empty one.
-        if ledgerUnreadable, let store {
-            let reloaded = store.loadOutcome()
-            if !reloaded.failedClosed {
-                var recovered = reloaded.ledger
-                recovered.recoverAfterRestart(now: now)
-                stored = recovered
-            }
-        }
         var next = stored
         for entry in next.unresolved { next.confirmOnPump(entry.key, now: now) }
         stored = next
-        try save(next)
+        try save(next, replacingUnreadable: true)
         ledgerUnreadable = false
     }
 
@@ -296,8 +332,15 @@ public actor DurableBolusLedger {
 
     /// - Parameter blocksOnFailure: whether a failure leaves new boluses blocked. Not for a request or
     ///   an acceptance whose failed save is undone in memory: then nothing unsaved remains.
-    private func save(_ ledger: RemoteBolusLedger, blocksOnFailure: Bool = true) throws {
+    /// - Parameter replacingUnreadable: only the user's confirm may write over a file that couldn't be read:
+    ///   anything else would replace the outcomes it may hold with what this process has.
+    private func save(
+        _ ledger: RemoteBolusLedger, blocksOnFailure: Bool = true, replacingUnreadable: Bool = false
+    ) throws {
         guard let store else { throw LedgerNotSaved(underlying: "No durable store") }
+        guard !ledgerUnreadable || replacingUnreadable else {
+            throw LedgerNotSaved(underlying: "The saved ledger couldn't be read")
+        }
         do {
             try store.save(ledger)
             outcomeNotSaved = false

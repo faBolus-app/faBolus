@@ -35,6 +35,62 @@ experimental and demonstration use.
 
 - The Live Activity's Bolus button that only opened the app.
 
+### Fixed
+
+#### Phone app
+
+- After a bolus from the phone, the bolus screen is ready for the next one and no longer fills in a
+  correction on its own; a result that needs attention stays until you tap OK.
+- On the Live Activity, Cancel can be tapped again after a cancel the pump didn't confirm, and the next
+  bolus shows Cancel instead of a stuck "Cancelling".
+- The Live Activity no longer stays on "Delivering…" after a short bolus has finished.
+- With the app suspended, the Lock Screen marks active insulin, reservoir and the pump link stale on time,
+  even when glucose was already stale.
+- One CGM reading dated in the future no longer hides the readings after it.
+- A backup CGM paused after repeated restarts starts again once the pause ends, and CGM settings shows
+  until when it's paused.
+- After a launch before the first unlock, boluses are unblocked as soon as you unlock the phone.
+- A lost alert-state file no longer leaves old notifications showing, and one that can't be read yet is
+  never overwritten.
+- Notifications posted before the first unlock aren't posted again once the phone is unlocked, and a
+  pump disconnect from before the unlock is announced on time, not late.
+- A backup CGM no longer starts twice when the app opens just as its pause ends.
+- Tapping Cancel on the Live Activity again while a cancel is still going joins that cancel instead of
+  starting a second one.
+
+#### Pump
+
+- A safety ledger that couldn't be read at launch is read again once it can be, and "I checked the pump"
+  no longer confirms outcomes in it you never saw.
+- A history record from before a bolus was accepted no longer settles it.
+- Cancelling no longer says a bolus "may have finished" when the pump refused a cancel for a bolus that
+  had already ended.
+- A dose stopped before it was sent no longer makes the same dose look like a duplicate.
+- A bolus started on the pump between Review and Deliver stops the dose even if a read came in between.
+- A bolus you confirmed on the pump is no longer searched for in history after every connection.
+- A link that drops and comes back no longer re-reads settings and history each time.
+- The G7 grace time left stays right after the phone's clock is set, and is asked for again after a drop.
+- A dose is recorded with the reading it was corrected from.
+- A dose on old settings asks before going on, because the max hourly bolus can't be checked.
+- A reading dated ahead of the phone's clock, from the pump or a backup CGM, no longer stays current
+  longer than it should: it ages from when it arrived if that was earlier.
+
+#### Watch link
+
+- A watch bolus whose request id was already on record now shows what happened to that dose, never "Not
+  delivered" for one that went in.
+- A damaged copy of a watch bolus request no longer reports "Not delivered" while a good copy of the same
+  request is delivered; a good copy that arrives while the damaged one is being answered is delivered
+  once, instead of being turned away.
+- A watch bolus whose request id was used before and whose record can't be read now shows "Outcome
+  unknown" with what to check, instead of waiting until the watch gives up.
+- After the phone relaunches, a watch waiting on a bolus gets its outcome at once instead of showing it
+  pending while the pump is read.
+- Bolus answers no longer wait behind a send stuck from before the phone slept, or from an earlier watch
+  connection.
+- The watch offers a correction only from the reading the phone will correct from; otherwise it shows
+  "Checking CGM state" and doses carbs only.
+
 ## [0.4.0] — 2026-11-01
 
 A new app, rebuilt from the ground up. It keeps the earlier app's bundle ID but none of its data. The

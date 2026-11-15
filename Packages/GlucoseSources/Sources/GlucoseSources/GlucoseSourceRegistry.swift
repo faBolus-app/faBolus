@@ -128,6 +128,15 @@ public struct GlucoseSourceRegistry: Sendable {
         settings.set(true, .cleanShutdown)
     }
 
+    /// The selected source's hold has ended while the app kept running: clears it as the next launch's
+    /// decision would (the tally starts over), and returns whether the source should start now. `false`
+    /// while held, or when nothing was held.
+    public func endHoldIfOver(now: Date = Date()) -> Bool {
+        guard selectedID != nil, let until = recoveryState.disabledUntil, now >= until else { return false }
+        settings.set(try? JSONEncoder().encode(GlucoseSourceRecoveryState()), .recoveryState)
+        return true
+    }
+
     /// Non-`nil` while the selected source is held off after repeated unclean starts.
     public var disabledUntil: Date? { recoveryState.disabledUntil }
 

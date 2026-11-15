@@ -2,6 +2,40 @@ import Foundation
 import GlucoseSources
 import faBolusCore
 
+#if canImport(UIKit)
+import UIKit
+#endif
+
+// MARK: - Protected data
+
+extension AppModel {
+    /// A launch before the first unlock can't read the bolus ledger or the alert state, which are protected
+    /// until then. Once the phone is unlocked they're read again, so the ledger's unknown outcomes block, and
+    /// its block lifts, without waiting for the next dose or event to ask.
+    func watchProtectedData() {
+        #if canImport(UIKit)
+        tasks.append(
+            Task { [weak self] in
+                let name = UIApplication.protectedDataDidBecomeAvailableNotification
+                for await _ in NotificationCenter.default.notifications(named: name) {
+                    await self?.protectedDataBecameAvailable()
+                }
+            })
+        #endif
+    }
+
+    /// The device was unlocked: the ledger and the alert state are read again (each adopts a file it
+    /// couldn't read before), and the bolus block shown follows.
+    func protectedDataBecameAvailable() async {
+        // Asked for now, not left to the ledger's own spaced retries: the unlock is when it can read.
+        await ledger.reloadIfUnreadable()
+        bolusBlock = await ledger.block
+        await alerts.ledgerChanged()
+        recompute()
+        publishSurfaces()
+    }
+}
+
 // MARK: - Low Power Mode
 
 extension AppModel {

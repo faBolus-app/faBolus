@@ -62,6 +62,10 @@ public actor PumpSession {
         public var reconcileMargin: UInt32 = 10 * 60
         public var reconcileInterval: TimeInterval = 2 * 60
         public var reconcileAttemptsPerConnection = 5
+        /// A sync with a request the pump answered with no record isn't counted as synced: it's run again
+        /// after this long, at most this many times in a row, then left to the routine interval.
+        public var historyEmptyRetryAfter: TimeInterval = 60
+        public var historyEmptyRetries = 3
         /// How soon an unknown bolus the pump still reports active is looked at again.
         public var reconcileWhileDelivering: TimeInterval = 15
         /// How often a bolus outcome that couldn't be saved is saved again (the old app's interval).
@@ -126,8 +130,17 @@ public actor PumpSession {
     var identity: TandemLink.PumpIdentity?
     /// The connection's identity checks passed: a t:slim X2 with the trusted serial.
     var identityTrusted = false
-    /// The grace-period read was asked for the alert 32 now raised.
+    /// The grace-period read was asked for the alert 32 now raised. Cleared when the alert goes, when the
+    /// link drops, and when the read's first try goes unanswered, so a lost read is asked again.
     var graceReadAsked = false
+    /// The alert kinds read on this connection: a clear waiting for the pump is judged against these, never
+    /// against a list kept from an earlier connection.
+    var alertKindsReadThisConnection: Set<PumpAlertKind> = []
+    /// The pump the last connection was to, and when its settings and CGM hardware were last asked for:
+    /// a reconnect to the same pump soon after doesn't read them again (`ready()`).
+    var lastConnectedUnit: PumpUnit?
+    /// When the pump last answered each request, kept across connections.
+    var answeredAt: [MessageKey: Uptime] = [:]
     var pendingPairing: PendingPairing?
     var retriedRejectedPairing = false
     /// Whether the app is in the foreground, as last told.
@@ -173,11 +186,18 @@ public actor PumpSession {
     var historyBusy = false
     var historyWaiters: [(sync: Bool, continuation: CheckedContinuation<Void, Never>)] = []
     /// Clears waiting for the pump to be reachable, each until its deadline.
-    var linkWaiters: [(deadline: Uptime, continuation: CheckedContinuation<Void, Never>)] = []
+    typealias LinkWaiter = (kind: PumpAlertKind, deadline: Uptime, continuation: CheckedContinuation<Void, Never>)
+    var linkWaiters: [LinkWaiter] = []
     var page: PageCollector?
     public internal(set) var historySync: HistorySyncState = .idle(lastSynced: nil)
     public internal(set) var historyEvents: [HistoryEvent] = []
     var reconcileAttempts = 0
+    /// Syncs in a row that a request answered with no record kept from finishing.
+    var emptySyncRetries = 0
+    /// The CGM reading the calculator snapshot was last read again for (`readSnapshotForNewReading`).
+    var snapshotReadForReading: Date?
+    /// The last sync left a window the pump answered with no record: it didn't fetch everything it asked for.
+    var lastSyncShort = false
     var reconciling = false
     var nextReconcileAt: Uptime?
     var nextLedgerSaveAt: Uptime?
@@ -393,8 +413,55 @@ public actor PumpSession {
         sessionLog.log("phone clock set by \(step, privacy: .public) s")
         state.phoneClockSet(by: step)
         basalParts.phoneClockSet(by: step)
+        alertLists.phoneClockSet(by: step)
+        snapshotReadForReading?.addTimeInterval(step)
         // The readings themselves didn't change, so no alerts-changed event: only their times did.
         emit(.readingsChanged(Set(PumpState.Reading.allCases), state))
+    }
+
+    /// Makes each read group due on a new connection, except what a reconnect to the same pump read
+    /// recently: the settings and the CGM hardware string when the pump answered each of them within
+    /// `settingsInterval`, and history when a sync finished within `historySyncInterval`. A link flapping at
+    /// the edge of range then doesn't read them all again each time. What a dose rests on (the essential
+    /// reads) and the alerts and status are read at once on every connection, and a dose reads its inputs
+    /// fresh whatever was read before.
+    func keepRecentReads(across identity: TandemLink.PumpIdentity, at started: Uptime) {
+        let sameUnit = pendingPairing == nil && identity.unit != nil && identity.unit == lastConnectedUnit
+        lastConnectedUnit = identity.unit
+        func answeredRecently(_ group: ReadGroup) -> Bool {
+            group.reads.allSatisfy { read in
+                if isUnsupported(read) { return true }
+                guard let at = answeredAt[MessageKey(read)] else { return false }
+                return started.timeIntervalSince(at) < config.settingsInterval
+            }
+        }
+        let settingsNotDue = due[.settings].map { $0 > started } ?? false
+        for group in ReadGroup.allCases {
+            switch group {
+            case .settings where sameUnit && answeredRecently(.settings) && settingsNotDue:
+                onceThisConnection.insert(.settings)
+            case .cgmHardware where sameUnit && answeredRecently(.cgmHardware):
+                onceThisConnection.insert(.cgmHardware)
+            case .history where sameUnit && historySyncedRecently(now: clock()) && due[.history] != nil:
+                break
+            default:
+                due[group] = started
+            }
+        }
+    }
+
+    /// The last sync finished within `historySyncInterval` and nothing since left it short.
+    private func historySyncedRecently(now: Date) -> Bool {
+        guard let last = record.lastHistorySync, last <= now, now.timeIntervalSince(last) < config.historySyncInterval
+        else { return false }
+        return !lastSyncShort && historySync == .idle(lastSynced: last)
+    }
+
+    func isUnsupported(_ message: any TandemMessages.Message) -> Bool {
+        guard let identity else { return false }
+        return record.support.entry(
+            for: MessageKey(message), unit: identity.unit, model: identity.model, apiVersion: identity.apiVersion
+        ).status == .unsupported
     }
 
     /// The pump-clock anchor as of now: the last clock read, placed by the monotonic time since it, before
@@ -468,11 +535,15 @@ public actor PumpSession {
         sending = false
         if case .reply(let reply) = result {
             unanswered[MessageKey(job.message)] = nil
+            answeredAt[MessageKey(job.message)] = uptime()
             applyReply(reply.message)
         } else if job.continuation == nil, case .unknown(.timedOut) = result {
             let key = MessageKey(job.message)
             let misses = (unanswered[key]?.count ?? 0) + 1
             unanswered[key] = (misses, uptime())
+            // A grace-period read lost once is asked again at the next CGM alert reply; one the pump leaves
+            // unanswered twice waits for the alert to be raised again, or for the next connection.
+            if job.message is CgmStatusV2Request, misses < 2 { graceReadAsked = false }
             // A copy queued while this one waited (its group came due meanwhile) rests too.
             if restingAfterNoAnswer(job.message, now: uptime()) {
                 queue.removeAll { $0.continuation == nil && MessageKey($0.message) == key }
@@ -575,7 +646,37 @@ public actor PumpSession {
             enqueue([read], priority: isSuspected(read) ? .probe : .status)
         }
         readGracePeriodIfRaised(after: message)
+        if message is CurrentEGVGuiDataResponse, changed.contains(.glucose) { readSnapshotForNewReading() }
         settleRemoteClearTrial(after: message, now: uptime())
+        if let kind = Self.statusKind(of: message) {
+            alertKindsReadThisConnection.insert(kind)
+            resumeLinkWaiters()
+        }
+    }
+
+    /// A CGM read brought a reading newer than the one the calculator snapshot carries: the snapshot is read
+    /// right after it, once per reading, so the two agree within seconds. The correction a remote is offered,
+    /// and the dose the composer checks, come from the snapshot's reading; read only every minute, it would
+    /// lag each new reading by up to that long. A repeat of the same reading, a snapshot already as new, a
+    /// read already waiting or resting after the pump left it unanswered, and a bolus being delivered or
+    /// followed (its dose already read the snapshot) ask nothing.
+    static let snapshotReadingSlack: TimeInterval = 30
+
+    private func readSnapshotForNewReading() {
+        guard let glucose = state.glucose, glucose.source == .pump else { return }
+        // Newer by more than a few seconds than the reading the snapshot carries and than the one it was last
+        // read again for: both replies stamp one reading with its own time, and a CGM sends a new one only
+        // every 5 minutes.
+        let known = [state.bolusCalculator?.value.reading?.measuredAt, snapshotReadForReading].compactMap { $0 }
+        guard known.allSatisfy({ glucose.measuredAt.timeIntervalSince($0) > Self.snapshotReadingSlack }) else {
+            return
+        }
+        snapshotReadForReading = glucose.measuredAt
+        let read = BolusCalcDataSnapshotRequest()
+        guard tracked == nil, delivery == nil, !isQueued(BolusCalcDataSnapshotRequest.self),
+            !restingAfterNoAnswer(read, now: uptime())
+        else { return }
+        enqueue([read], priority: isSuspected(read) ? .probe : .status)
     }
 
     /// When CGM alert 32 (the G7 grace period ending) is raised, t:connect reads the CGM status for the time
@@ -587,9 +688,11 @@ public actor PumpSession {
             graceReadAsked = false
             return
         }
-        guard !graceReadAsked, let api = identity?.apiVersion, api < ApiVersion(major: 4, minor: 1) else { return }
-        graceReadAsked = true
         let read = CgmStatusV2Request()
+        guard !graceReadAsked, let api = identity?.apiVersion, api < ApiVersion(major: 4, minor: 1),
+            !restingAfterNoAnswer(read, now: uptime())
+        else { return }
+        graceReadAsked = true
         if !isQueued(CgmStatusV2Request.self) { enqueue([read], priority: isSuspected(read) ? .probe : .status) }
     }
 
@@ -680,10 +783,12 @@ public actor PumpSession {
         refreshRemoteClear()
         connectedAt = started
         onceThisConnection = []
+        alertKindsReadThisConnection = []
         unanswered = [:]
+        emptySyncRetries = 0
         reconcileAttempts = 0
         nextReconcileAt = started
-        for group in ReadGroup.allCases { due[group] = started }
+        keepRecentReads(across: identity, at: started)
         if let pending = pendingPairing {
             pendingPairing = nil
             let paired = PumpSessionRecord(
@@ -746,6 +851,8 @@ public actor PumpSession {
         identityTrusted = false
         connectedAt = nil
         pendingTrial = nil
+        graceReadAsked = false
+        alertKindsReadThisConnection = []
         failQueued()
         emit(.disconnected(Self.reason(reason)))
         deliveryLinkDropped()
@@ -764,8 +871,13 @@ public actor PumpSession {
         // Before the link is ready nothing can be read; becoming ready reads everything.
         guard identity != nil else { return }
         // What each bit names is read now, as t:connect does, rather than waiting for its timed group.
+        // The same filters as the timed reads: not one already waiting, not one resting after the pump left
+        // it unanswered (each would hold the wire a whole deadline ahead of a cancel or a dose step), and no
+        // routine bolus status while a bolus is followed, whose own polls read it every second.
         for (read, priority) in NoticeReads.reads(for: events)
-        where !queue.contains(where: { MessageKey($0.message) == MessageKey(read) }) {
+        where !queue.contains(where: { MessageKey($0.message) == MessageKey(read) })
+            && !restingAfterNoAnswer(read, now: now) && !(tracked != nil && read is CurrentBolusStatusRequest)
+        {
             enqueue([read], priority: isSuspected(read) ? .probe : priority)
         }
         // t:connect reads a profile change's ProfileStatus, which faBolus doesn't send; the settings

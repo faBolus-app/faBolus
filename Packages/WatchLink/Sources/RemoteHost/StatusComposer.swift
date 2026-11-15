@@ -53,6 +53,23 @@ public enum StatusComposer {
         }
     }
 
+    /// Readings this close together are one sensor reading: the pump's CGM status and its calculator reply
+    /// place the same pump time through anchors that may differ by a moment. Sensor readings are minutes
+    /// apart.
+    static let sameReadingTolerance: TimeInterval = 5
+
+    /// The caution sent with `shown`, the reading the watch shows and corrects from unless a caution comes
+    /// with it. The phone corrects only from `PumpState.correctionReading` (the pump's own is the one its
+    /// calculator reply carries), and the pump's caution describes that one. When the reading shown isn't
+    /// it, or there is none, the watch is told the reading can't be checked yet, so it offers carbs only as
+    /// the phone would compose, never a correction from a reading the phone won't correct from.
+    static func caution(for shown: Observed<PumpGlucose>, _ pump: PumpState) -> GlucoseCautionToken? {
+        guard let correction = pump.correctionReading, correction.value.mgdl == shown.value.mgdl,
+            abs(correction.measuredAt.timeIntervalSince(shown.measuredAt)) <= sameReadingTolerance
+        else { return .notRead }
+        return pump.glucoseCaution().map(cautionToken)
+    }
+
     public static func compose(_ inputs: StatusInputs) -> StatusPayload {
         let pump = inputs.pump
         let now = inputs.now
@@ -67,8 +84,7 @@ public enum StatusComposer {
                 Timed(
                     GlucoseReading(
                         mgdl: g.value.mgdl, trend: g.value.trend.flatMap(trendToken),
-                        backup: inputs.glucoseProvenance.isFailover,
-                        caution: pump.glucoseCaution().map(cautionToken)), at: $0)
+                        backup: inputs.glucoseProvenance.isFailover, caution: caution(for: g, pump)), at: $0)
             }
         }
         let iob = pump.insulinOnBoard.flatMap { o in at(o).flatMap { t in milliunits(o.value).map { Timed($0, at: t) } }

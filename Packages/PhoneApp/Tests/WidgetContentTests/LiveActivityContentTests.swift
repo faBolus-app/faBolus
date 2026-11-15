@@ -64,12 +64,18 @@ import faBolusCore
         #expect(quiet.staleDate(now: Self.now) == Self.now.addingTimeInterval(WidgetSnapshot.publisherStaleAfter))
     }
 
-    /// Content built from an already-stale reading is stale from the start.
-    @Test func aStaleReadingIsStaleAtOnce() throws {
+    /// Content built from an already-stale reading draws the reading stale from the start, and its stale
+    /// date is still the next value to age out (here IOB), so that one isn't shown current past its window.
+    @Test func aStaleReadingIsStaleAtOnceAndTheOtherValuesStillAgeOut() throws {
         let content = LiveActivityContent.make(
-            from: Self.snapshot(age: 900), layout: LiveActivityLayout(), now: Self.now)
+            from: Self.snapshot(age: 900, iobAge: 30), layout: LiveActivityLayout(), now: Self.now)
+        guard case .stale = content.snapshot.glucosePresentation(asOf: Self.now) else {
+            Issue.record("an old reading must read stale at once")
+            return
+        }
         let staleDate = try #require(content.staleDate(now: Self.now))
-        #expect(staleDate <= Self.now)
+        #expect(staleDate == Self.now.addingTimeInterval(-30 + 300))
+        #expect(content.snapshot.insulinOnBoardIfFresh(asOf: staleDate.addingTimeInterval(1)) == nil)
     }
 
     /// The update keeps only the layout's window of points, thinned to the cap, and stays under ActivityKit's

@@ -270,7 +270,10 @@ extension DoseComposer {
             if mustAsk || differs(new, recommended) {
                 return .confirm(.doseChanged(mgdl: mgdl, newUnits: new, enteredUnits: entered))
             }
-            return finish(entered, suggested: recommended, correction: recorded)
+            // The calculator gives the same dose for `mgdl`, so that is the glucose it corrects from, and the
+            // one recorded and sent with it: a reading that moved a little since the screen without changing
+            // the dose isn't recorded as the screen's. A screen that corrected from nothing records nothing.
+            return finish(entered, suggested: recommended, correction: recorded == nil ? nil : mgdl)
         }
 
         switch glucose {
@@ -397,6 +400,6 @@ extension DoseComposer {
                 correctionGlucoseMgdl: correction,
                 calculatorCarbUnits: carbUnits,
                 usedIncludedStaleGlucose: calculator?.usedStale ?? false,
-                notices: notices, calculatorFoodUnits: foodUnits))
+                notices: notices, calculatorFoodUnits: foodUnits, preparedIOBUnits: preparedIOB(context)))
     }
 }

@@ -49,6 +49,11 @@ import Testing
     @Test func aFlaggedReadingSaysWhy() {
         var p = connected
         p.glucose = observed(PumpGlucose(mgdl: 142, trend: .rising), age: 80)
+        // The calculator carries the same reading, so the pump's caution is about the one sent.
+        p.bolusCalculator = observed(
+            BolusCalculatorSettings(
+                carbRatio: 10, correctionFactor: 40, targetMgdl: 110, maxBolusUnits: 25,
+                reading: .init(mgdl: 142, measuredAt: Self.now.addingTimeInterval(-80))), age: 5)
         p.cgmDisplay = observed(PumpCGMDisplay(state: .noError, checkBG: true), age: 5)
         #expect(compose(p).glucose?.value.caution == .checkBG)
         p.cgmDisplay = observed(PumpCGMDisplay(state: .warmingUp, checkBG: false), age: 5)
@@ -56,6 +61,41 @@ import Testing
         p.cgmDisplay = nil
         #expect(compose(p).glucose?.value.caution == .notRead)
         p.cgmDisplay = observed(PumpCGMDisplay(state: .noError, checkBG: false), age: 5)
+        #expect(compose(p).glucose?.value.caution == nil)
+    }
+
+    /// The phone corrects from the reading its calculator reply carries. When the reading sent is another
+    /// one (a newer CGM reading the calculator hasn't caught up with), or the reply carries none, the watch
+    /// is told it can't be checked, so it offers carbs only, as the phone composes it, never a correction
+    /// from a reading the phone won't correct from. Once the calculator carries the reading sent, the
+    /// pump's own word on it goes.
+    @Test func aReadingTheCalculatorDoesntCarryCorrectsNothingOnTheWatch() {
+        var p = connected
+        p.cgmDisplay = observed(PumpCGMDisplay(state: .noError, checkBG: false), age: 5)
+        p.glucose = observed(PumpGlucose(mgdl: 180, trend: .rising), age: 20)
+        func calculator(_ reading: BolusCalculatorSettings.Reading?) -> Observed<BolusCalculatorSettings> {
+            observed(
+                BolusCalculatorSettings(
+                    carbRatio: 10, correctionFactor: 40, targetMgdl: 110, maxBolusUnits: 25, reading: reading), age: 5)
+        }
+        // An older reading in the calculator.
+        p.bolusCalculator = calculator(.init(mgdl: 150, measuredAt: Self.now.addingTimeInterval(-320)))
+        #expect(compose(p).glucose?.value.mgdl == 180)
+        #expect(compose(p).glucose?.value.caution == .notRead)
+        // The same value at another reading's time.
+        p.bolusCalculator = calculator(.init(mgdl: 180, measuredAt: Self.now.addingTimeInterval(-320)))
+        #expect(compose(p).glucose?.value.caution == .notRead)
+        // No reading in the calculator, or no calculator.
+        p.bolusCalculator = calculator(nil)
+        #expect(compose(p).glucose?.value.caution == .notRead)
+        p.bolusCalculator = nil
+        #expect(compose(p).glucose?.value.caution == .notRead)
+        // The same reading, placed a moment apart.
+        p.bolusCalculator = calculator(.init(mgdl: 180, measuredAt: Self.now.addingTimeInterval(-21)))
+        #expect(compose(p).glucose?.value.caution == nil)
+        // A backup source's reading is the one the phone corrects from, and the pump doesn't judge it.
+        p.glucose?.source = .glucoseSource(id: "dexcom-share")
+        p.bolusCalculator = nil
         #expect(compose(p).glucose?.value.caution == nil)
     }
 

@@ -76,6 +76,16 @@ struct ObservedTests {
         #expect(!o.isStale(after: window, now: now))
     }
 
+    /// A reading stamped 4 minutes ahead by a fast clock is aged from when it arrived: 7 minutes later it
+    /// is 7 minutes old and past the 6-minute window, not 3 minutes old and current.
+    @Test func aFastClockDoesntKeepAReadingCurrentLonger() {
+        let o = Observed(120, measuredAt: now + 4 * 60, receivedAt: now)
+        #expect(o.hasValidTime)
+        #expect(isAbout(o.age(now: now + 7 * 60), 7 * 60))
+        #expect(o.isStale(after: window, now: now + 7 * 60))
+        #expect(!o.isStale(after: window, now: now + 5 * 60))
+    }
+
     @Test func nonFiniteTimesAreStale() {
         let nan = Date(timeIntervalSince1970: .nan)
         let past = Date(timeIntervalSince1970: -.infinity)

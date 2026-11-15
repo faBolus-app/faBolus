@@ -9,6 +9,11 @@ public enum DoseConfirmation: Sendable, Equatable {
     case tooManyBoluses(BolusCalculatorSettings.TooManyBoluses)
     /// This dose and the last hour's boluses come to more than the max hourly bolus.
     case maxHourlyBolus(doseUnits: Double, lastHourUnits: Double, limitUnits: Double)
+    /// The pump's count of the last hour's boluses, and its too-many-boluses flags, are from a calculator
+    /// reply too old to say what they are now, so neither can be checked. Asked only on the phone, whose
+    /// answer names the whole confirmation: it shares the max hourly bolus's kind, which is all a remote's
+    /// answer names, so a remote dose in this state is refused instead (`composeRemote`).
+    case bolusLimitsNotChecked(doseUnits: Double, limitUnits: Double?)
     /// The dose is more than the insulin left in the cartridge, or under 2 U is left. The pump stops the
     /// bolus when the cartridge runs out.
     case lowInsulin(doseUnits: Double, remainingUnits: Double)
@@ -21,7 +26,7 @@ public enum DoseConfirmation: Sendable, Equatable {
     public var kind: Kind {
         switch self {
         case .tooManyBoluses: .tooManyBoluses
-        case .maxHourlyBolus: .maxHourlyBolus
+        case .maxHourlyBolus, .bolusLimitsNotChecked: .maxHourlyBolus
         case .lowInsulin: .lowInsulin
         }
     }
@@ -34,7 +39,7 @@ public enum DoseConfirmation: Sendable, Equatable {
     public var title: String {
         switch self {
         case .tooManyBoluses: "Too many boluses"
-        case .maxHourlyBolus: "Max hourly bolus"
+        case .maxHourlyBolus, .bolusLimitsNotChecked: "Max hourly bolus"
         case .lowInsulin: "Low insulin"
         }
     }
@@ -53,6 +58,10 @@ public enum DoseConfirmation: Sendable, Equatable {
         case .maxHourlyBolus(let dose, let lastHour, let limit):
             return "This bolus and the last hour's (\(Self.units(lastHour))) come to \(Self.units(dose + lastHour)), "
                 + "over the max hourly bolus of \(Self.units(limit))."
+        case .bolusLimitsNotChecked(_, let limit):
+            let max = limit.map { " of \(Self.units($0))" } ?? ""
+            return "The pump's count of the last hour's boluses is out of date, so whether this bolus goes over the "
+                + "max hourly bolus\(max), or the pump says too many boluses were asked for, can't be checked."
         case .lowInsulin(let dose, let remaining):
             let left =
                 dose > remaining
@@ -75,6 +84,8 @@ public enum DoseConfirmation: Sendable, Equatable {
             return "Too many boluses: the pump may not track \(what)."
         case .maxHourlyBolus(let dose, let lastHour, let limit):
             return String(format: "Over the max hourly bolus (%.2f of %.2f U).", dose + lastHour, limit)
+        case .bolusLimitsNotChecked:
+            return "The max hourly bolus can't be checked: the pump's count is out of date."
         case .lowInsulin(_, let remaining):
             return "Low insulin: \(Self.units(remaining)) left."
         }
@@ -87,15 +98,23 @@ extension DoseComposer {
     /// What the user confirms before `units` goes, in the order they are asked. From the calculator reply the
     /// dose was sized from and the freshest cartridge reading; a value the pump hasn't reported asks nothing,
     /// and the pump's own checks still apply.
+    ///
+    /// The too-many-boluses flags and the last hour's total change with every bolus, so they're taken only
+    /// from a reply no older than the IOB window. From an older one (a dose on the last-known settings) they
+    /// can't be checked, and the user is asked to go on knowing that, never let through unasked.
     static func confirmations(units: Double, context: DoseContext) -> [DoseConfirmation] {
         var needed: [DoseConfirmation] = []
         let settings = context.pump.bolusCalculator?.value
-        if let flags = settings?.tooManyBoluses, flags.isSet { needed.append(.tooManyBoluses(flags)) }
         // Tandem's app takes the max bolus in whole units here.
-        if let lastHour = settings?.bolusedLastHourUnits, lastHour.isFinite, let max = context.pumpMaxBolusUnits {
-            let limit = max.rounded(.down) * DoseConfirmation.maxHourlyBolusMultiple
-            if units + lastHour > limit + mismatchSlack {
-                needed.append(.maxHourlyBolus(doseUnits: units, lastHourUnits: lastHour, limitUnits: limit))
+        let limit = context.pumpMaxBolusUnits.map { $0.rounded(.down) * DoseConfirmation.maxHourlyBolusMultiple }
+        if bolusLimitsUncheckable(context) {
+            needed.append(.bolusLimitsNotChecked(doseUnits: units, limitUnits: limit))
+        } else {
+            if let flags = settings?.tooManyBoluses, flags.isSet { needed.append(.tooManyBoluses(flags)) }
+            if let lastHour = settings?.bolusedLastHourUnits, lastHour.isFinite, let limit {
+                if units + lastHour > limit + mismatchSlack {
+                    needed.append(.maxHourlyBolus(doseUnits: units, lastHourUnits: lastHour, limitUnits: limit))
+                }
             }
         }
         if let remaining = insulinRemaining(context),
@@ -104,6 +123,15 @@ extension DoseComposer {
             needed.append(.lowInsulin(doseUnits: units, remainingUnits: remaining))
         }
         return needed
+    }
+
+    /// The calculator reply reports the too-many-boluses flags or the last hour's total, and is older than the
+    /// IOB window, so they can't be checked now.
+    static func bolusLimitsUncheckable(_ context: DoseContext) -> Bool {
+        guard let reply = context.pump.bolusCalculator,
+            reply.value.tooManyBoluses != nil || reply.value.bolusedLastHourUnits != nil
+        else { return false }
+        return reply.isStale(after: context.freshness.insulinOnBoardStaleAfter, now: context.now)
     }
 
     /// The insulin left: the lower of the calculator reply's and the insulin reading's, each while no older

@@ -66,6 +66,10 @@ public struct PumpSessionRecord: Sendable, Equatable, Codable {
     /// The unknown boluses from before the pump's history log restarted. The new log can't show they never
     /// started, so history never settles them as absent: they stay unknown until the pump confirms them.
     public var beforeHistoryRestart: Set<RemoteBolusLedger.Key>
+    /// Unknown outcomes the user confirmed on the pump that have had their one history search. Such an
+    /// outcome no longer blocks, so it isn't searched for after every connection: once only, in case its
+    /// record was read by a sync before its outcome was unknown, then only sync pages settle it.
+    public var searchedAfterConfirm: Set<RemoteBolusLedger.Key> = []
 
     public init(
         pairing: StoredPairing? = nil, support: SupportMatrix = SupportMatrix(),
@@ -82,10 +86,11 @@ public struct PumpSessionRecord: Sendable, Equatable, Codable {
 
     private enum CodingKeys: String, CodingKey {
         case pairing, support, coverage, lastHistorySync, remoteClearTrials, beforeHistoryRestart
+        case searchedAfterConfirm
     }
 
     /// A record saved before `remoteClearTrials` existed reads as unknown for every unit, and one saved
-    /// before `beforeHistoryRestart` as no restart seen.
+    /// before `beforeHistoryRestart` as no restart seen, and one before `searchedAfterConfirm` as none searched.
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         pairing = try c.decodeIfPresent(StoredPairing.self, forKey: .pairing)
@@ -96,6 +101,8 @@ public struct PumpSessionRecord: Sendable, Equatable, Codable {
             try c.decodeIfPresent([PumpUnit: RemoteClearEvidence].self, forKey: .remoteClearTrials) ?? [:]
         beforeHistoryRestart =
             try c.decodeIfPresent(Set<RemoteBolusLedger.Key>.self, forKey: .beforeHistoryRestart) ?? []
+        searchedAfterConfirm =
+            try c.decodeIfPresent(Set<RemoteBolusLedger.Key>.self, forKey: .searchedAfterConfirm) ?? []
     }
 }
 

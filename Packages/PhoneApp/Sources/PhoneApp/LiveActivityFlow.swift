@@ -112,6 +112,9 @@ final class LiveActivityFlow {
     private var screenNumber = 0
     /// Unique to this run of the app.
     private let runToken = String(UUID().uuidString.prefix(6))
+    /// A cancel with the session (`answered` false), or one it answered without a definite stop (`answered`
+    /// true: the pump didn't confirm it, or wasn't there to ask). Only the first holds the button: an answered
+    /// one leaves Cancel tappable, with a note to use the pump, and ends with the bolus.
     private var cancelling: (since: Date, answered: Bool)?
     /// A cancel tapped while one was with the session: it runs again once that one returns, because the
     /// first may have found nothing to stop before a delivery started (as the watch host does).
@@ -426,7 +429,7 @@ final class LiveActivityFlow {
 
     private func send(_ review: Review) async {
         cancelledBeforeStart = false
-        cancelling = nil
+        endAnsweredCancel()
         state = .result(Result(stage: .sending, units: review.units, key: nil, settledAt: nil))
         model.publishSurfaces()
         let amount: RemoteDoseRequest.Amount =
@@ -444,7 +447,7 @@ final class LiveActivityFlow {
         case .refused(let refusal):
             notSent("Not delivered", refusal.userMessage, units: review.units)
         case .alreadyRecorded(let outcome):
-            show(outcome, key: request.ledgerKey, units: review.units)
+            await showCurrent(outcome, key: request.ledgerKey, units: review.units)
         case .deliver(let dose):
             // Checked with no wait before the hand-off: a cancel is either seen here or reaches the delivery.
             if cancelledBeforeStart {
@@ -453,9 +456,9 @@ final class LiveActivityFlow {
             }
             switch await model.deliver(dose) {
             case .started(let key, let outcome):
-                show(outcome, key: key, units: dose.units)
+                await showCurrent(outcome, key: key, units: dose.units)
             case .alreadyRecorded(let outcome):
-                show(outcome, key: dose.request.ledgerKey, units: dose.units)
+                await showCurrent(outcome, key: dose.request.ledgerKey, units: dose.units)
             case .notStarted(let refusal):
                 notSent("Not delivered", RemoteHost.message(refusal), units: dose.units)
             }
@@ -468,20 +471,40 @@ final class LiveActivityFlow {
     }
 
     private func show(_ outcome: BolusOutcome, key: RemoteBolusLedger.Key, units: Double) {
+        if outcome.isFinal || outcome.isUnknown { endAnsweredCancel() }
         state = .result(
             Result(
                 stage: .outcome(outcome), units: units, key: key,
                 settledAt: outcome.isFinal || outcome.isUnknown ? model.now : nil))
     }
 
+    /// The session's answer for the dose, then the ledger's outcome for it now. Until the result has its
+    /// key, `outcomeChanged` can't match the dose's events, so the outcome the session returned may be older
+    /// than one already recorded (a short bolus that finished meanwhile would read "Delivering…" for good).
+    /// The ledger read is taken only while no event has moved the result since: one that has is newer.
+    func showCurrent(_ returned: BolusOutcome, key: RemoteBolusLedger.Key, units: Double) async {
+        show(returned, key: key, units: units)
+        guard let current = await model.ledger.ledger.outcome(key), current != returned,
+            case .result(let r) = state, r.key == key, case .outcome(let shown) = r.stage, shown == returned
+        else { return }
+        outcomeChanged(key, current)
+    }
+
     /// A bolus outcome from the session. One for the dose this screen shows moves its result; the screen
-    /// keeps its ID so its buttons still count.
+    /// keeps its ID so its buttons still count. Any bolus ending ends a cancel left without a definite
+    /// answer, whichever screen shows: it belonged to that bolus.
     func outcomeChanged(_ key: RemoteBolusLedger.Key, _ outcome: BolusOutcome) {
+        if outcome.isFinal || outcome.isUnknown { endAnsweredCancel() }
         guard case .result(var r) = state, r.key == key else { return }
         r.stage = .outcome(outcome)
         if outcome.isFinal || outcome.isUnknown { r.settledAt = model.now }
-        if outcome.isFinal || outcome.isUnknown { cancelling = nil }
         replaceKeepingScreen(.result(r))
+    }
+
+    /// Ends a cancel the session has answered. One still with the session is left to its loop, which ends
+    /// it itself: cleared here, a tap meanwhile would start a second cancel loop beside it.
+    private func endAnsweredCancel() {
+        if cancelling?.answered == true { cancelling = nil }
     }
 
     // MARK: Cancel
@@ -567,6 +590,7 @@ final class LiveActivityFlow {
 
     /// Built before the ID is read: building it may end a screen whose time is up.
     var panel: LiveActivityPanel {
+        endAnsweredCancelIfNothingIsGoing()
         let view = view
         return LiveActivityPanel(screen: screenID, view: view)
     }
@@ -623,8 +647,26 @@ final class LiveActivityFlow {
         }
     }
 
+    /// A cancel left without a definite answer ends once no bolus is going (one from the pump's own screen
+    /// has no outcome event), so the next bolus offers Cancel. Not while this screen's own dose is still
+    /// being sent or starting: the pump may not report it yet.
+    private func endAnsweredCancelIfNothingIsGoing() {
+        guard cancelling?.answered == true, !bolusGoing else { return }
+        if case .result(let r) = state {
+            switch r.stage {
+            case .sending: return
+            case .outcome(let outcome) where outcome.isInFlight: return
+            case .outcome, .notSent: break
+            }
+        }
+        cancelling = nil
+    }
+
+    /// Cancel, unless one is with the session now. A cancel that didn't stop it leaves Cancel to tap again.
+    private var cancelButtonHeld: Bool { cancelling.map { !$0.answered } ?? false }
+
     private var idleButton: LiveActivityPanel.IdleButton {
-        if bolusGoing { return cancelling == nil ? .cancel : .cancelling }
+        if bolusGoing { return cancelButtonHeld ? .cancelling : .cancel }
         let access = model.access
         guard access.liveActivityBolusEnabled, !access.remotesReadOnly, !access.phoneReadOnly else { return .none }
         if let refusal = availability { return .unavailable(Self.shortText(refusal)) }
@@ -673,7 +715,7 @@ final class LiveActivityFlow {
                 c.answered || now.timeIntervalSince(c.since) >= Self.cancelSlowAfter
                     ? "No answer yet. To stop it now, use the pump." : nil
             }
-        let cancelButton: LiveActivityPanel.Result.Button = cancelling == nil ? .cancel : .cancelling
+        let cancelButton: LiveActivityPanel.Result.Button = cancelButtonHeld ? .cancelling : .cancel
         let units = r.units.map { formatUnits($0) } ?? ""
         switch r.stage {
         case .sending:

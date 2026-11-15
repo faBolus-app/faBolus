@@ -206,6 +206,7 @@ public final class AppModel {
         }
         trackSettings()
         watchLowPowerMode()
+        watchProtectedData()
         publishSurfaces(appActive: sceneActive ?? appActive)
     }
 

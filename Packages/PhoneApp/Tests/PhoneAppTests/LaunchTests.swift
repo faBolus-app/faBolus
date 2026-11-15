@@ -29,6 +29,21 @@ import faBolusCore
         await model.shutdown()
     }
 
+    /// A launch that can't read the bolus ledger (as before the first unlock) blocks boluses; once the
+    /// device is unlocked and the file reads, the block shown lifts with no dose or event to ask.
+    @Test func anUnreadableLedgerIsReadAgainOnUnlock() async throws {
+        let phone = Phone()
+        // A file that exists but can't be read, as a protected one before the first unlock.
+        let url = phone.directory.appendingPathComponent("bolus-ledger.json")
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        let model = await phone.launch()
+        #expect(model.bolusBlock == .ledgerUnreadable)
+        try FileManager.default.removeItem(at: url)
+        await model.protectedDataBecameAvailable()
+        #expect(model.bolusBlock != .ledgerUnreadable)
+        await model.shutdown()
+    }
+
     /// The logbook is saved with pump history and comes back at the next launch before any sync, and the
     /// watch's last auto-correction with it. Forgetting the pump clears it, then and after a relaunch.
     @Test func theLogbookSurvivesARelaunch() async {

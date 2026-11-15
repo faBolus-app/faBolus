@@ -280,8 +280,27 @@ public struct ComposedDose: Sendable, Equatable {
     /// dose (less than nothing when a low or below-target glucose reduced it) and the rounding down in the
     /// food's share. `nil` otherwise. Shown only.
     public var calculatorFoodUnits: Double? = nil
+    /// The active insulin the pump reported when the dose was prepared: the larger of the IOB reading and
+    /// the calculator reply's IOB, each while inside the IOB window. The session compares the IOB it reads
+    /// once it holds the bolus permission with this, and with `calculatorIOBUnits`, so a bolus the pump
+    /// started meanwhile (from its own screen) stops this one. Read at preparation, not at delivery: a read
+    /// landing in between would already include that bolus. `nil` when neither was current, or for a dose
+    /// not built by the composer.
+    public var preparedIOBUnits: Double? = nil
 
     public var units: Double { request.totalUnits }
+}
+
+extension DoseComposer {
+    /// `ComposedDose.preparedIOBUnits` from the context the dose was composed in.
+    static func preparedIOB(_ context: DoseContext) -> Double? {
+        let window = context.freshness.insulinOnBoardStaleAfter
+        let iob = context.pump.insulinOnBoard.flatMap { $0.valueIfFresh(within: window, now: context.now) }
+        let calculator = context.pump.bolusCalculator.flatMap {
+            $0.valueIfFresh(within: window, now: context.now)?.insulinOnBoardUnits
+        }
+        return [iob, calculator].compactMap { $0 }.filter(\.isFinite).max()
+    }
 }
 
 /// Something the user should see before delivering. A notice never changes or blocks the dose.
