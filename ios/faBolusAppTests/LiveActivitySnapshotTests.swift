@@ -230,7 +230,7 @@ import faBolusCore
     /// CarPlay's tile and the Watch's Smart Stack: the curve alone, beside an alert, and under a bolus and
     /// an alert.
     /// A high high and a low low on one plot, in every view that draws one: the line stays inside each
-    /// view and keeps its zone colours at both ends.
+    /// view and keeps its zone colours at both ends, and the line to a reading past the plot is dotted along its edge.
     @Test func extremes() {
         // Over the card's 3 hours: 340 falling to 45 over 70 minutes, then back up to 170.
         let mgdl = (0..<36).map { i in i < 15 ? 340 - i * 295 / 14 : 45 + (i - 14) * 125 / 21 }

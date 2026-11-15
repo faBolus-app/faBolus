@@ -413,18 +413,15 @@ struct GlucoseCurve: View {
         let layout = view.content.layout
         let points = view.snapshot.recent
         Canvas { context, size in
-            // A reading off the plot isn't drawn: the line runs off the edge and back, never pinned to it.
             context.clip(to: Path(CGRect(origin: .zero, size: size)))
             let bounds = view.snapshot.plotBounds
-            let floor = Double(bounds.floor)
-            let ceiling = Double(bounds.ceiling)
             let end = view.now
             let start = end.addingTimeInterval(-Double(max(layout.plotRangeHours, 1)) * 3600)
             func x(_ t: Date) -> CGFloat {
                 size.width * CGFloat(t.timeIntervalSince(start) / end.timeIntervalSince(start))
             }
             func y(_ mgdl: Double) -> CGFloat {
-                size.height * CGFloat(1 - (mgdl - floor) / (ceiling - floor))
+                GlucoseLine.y(mgdl, height: size.height, floor: bounds.floor, ceiling: bounds.ceiling, lineWidth: 2.5)
             }
             if layout.showRangeLines {
                 for v in [GlucoseThresholds.low, GlucoseThresholds.high] {
@@ -436,8 +433,9 @@ struct GlucoseCurve: View {
                 }
             }
             if layout.showXAxisLine {
+                let base = y(Double(bounds.floor))
                 context.stroke(
-                    Path { $0.addLines([CGPoint(x: 0, y: size.height), CGPoint(x: size.width, y: size.height)]) },
+                    Path { $0.addLines([CGPoint(x: 0, y: base), CGPoint(x: size.width, y: base)]) },
                     with: .color(.secondary))
             }
             if layout.showYAxisLine {
@@ -446,8 +444,9 @@ struct GlucoseCurve: View {
             if layout.showXAxisTicks {
                 for h in 0...max(layout.plotRangeHours, 1) {
                     let tx = x(start.addingTimeInterval(Double(h) * 3600))
+                    let base = y(Double(bounds.floor))
                     context.stroke(
-                        Path { $0.addLines([CGPoint(x: tx, y: size.height - 4), CGPoint(x: tx, y: size.height)]) },
+                        Path { $0.addLines([CGPoint(x: tx, y: base - 4), CGPoint(x: tx, y: base)]) },
                         with: .color(.secondary))
                 }
             }
@@ -458,21 +457,16 @@ struct GlucoseCurve: View {
                         with: .color(.secondary))
                 }
             }
-            for (a, b) in zip(points, points.dropFirst()) {
-                var segment = Path()
-                segment.move(to: CGPoint(x: x(a.t), y: y(Double(a.mgdl))))
-                segment.addLine(to: CGPoint(x: x(b.t), y: y(Double(b.mgdl))))
-                let color = view.stale ? AppTheme.stale : AppTheme.glucoseColor(b.mgdl)
-                context.stroke(segment, with: .color(color), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-            }
+            GlucoseLine.draw(
+                points, in: context, size: size, floor: bounds.floor, ceiling: bounds.ceiling, stale: view.stale,
+                lineWidth: 2.5, x: x)
         }
         .accessibilityHidden(true)
     }
 }
 
 /// The recent readings as a line coloured by zone, as the Curve card draws them: low, in range, high. A
-/// stale reading's line is grey, never a current colour. Drawn in the phone's plot range: a reading off it
-/// isn't drawn, and the line runs off the edge and back (`GlucosePlotScale.isOnChart`).
+/// stale reading's line is grey, never a current colour. Drawn in the phone's plot range (`GlucoseLine`).
 struct Sparkline: View {
     let points: [WidgetSnapshot.Point]
     var stale = false
@@ -488,22 +482,66 @@ struct Sparkline: View {
                 return
             }
             context.clip(to: Path(CGRect(origin: .zero, size: size)))
-            let lo = floor
-            let hi = max(ceiling, floor + 1)
             let t0 = points.first?.t.timeIntervalSinceReferenceDate ?? 0
             let span = max(1, (points.last?.t.timeIntervalSinceReferenceDate ?? t0) - t0)
-            let point = { (p: WidgetSnapshot.Point) in
-                CGPoint(
-                    x: size.width * CGFloat((p.t.timeIntervalSinceReferenceDate - t0) / span),
-                    y: size.height * (1 - CGFloat(p.mgdl - lo) / CGFloat(hi - lo)))
-            }
-            for (a, b) in zip(points, points.dropFirst()) {
-                let segment = Path { $0.addLines([point(a), point(b)]) }
-                let color = stale ? AppTheme.stale : AppTheme.glucoseColor(b.mgdl)
-                context.stroke(segment, with: .color(color), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+            GlucoseLine.draw(
+                points, in: context, size: size, floor: floor, ceiling: ceiling, stale: stale, lineWidth: 2
+            ) { t in
+                size.width * CGFloat((t.timeIntervalSinceReferenceDate - t0) / span)
             }
         }
         .accessibilityHidden(true)
+    }
+}
+
+/// The small charts' glucose line, each segment in the zone colour of the reading it ends at, or grey when
+/// stale. A reading past the plot's ceiling or floor is drawn at that edge, at its own time
+/// (`GlucosePlotScale.placement`), and any segment that reaches such a reading is dotted rather than solid,
+/// so the line along the edge never reads as readings at the edge.
+enum GlucoseLine {
+    private struct Vertex {
+        let point: CGPoint
+        let isCapped: Bool
+        let color: Color
+    }
+
+    /// The height of a value on the plot. The ceiling and floor sit half a line inside the view, so a line
+    /// along either edge isn't cut in half by the view's clip.
+    static func y(_ mgdl: Double, height: CGFloat, floor: Int, ceiling: Int, lineWidth: CGFloat) -> CGFloat {
+        let inset = min(lineWidth / 2, height / 4)
+        let fraction = (mgdl - Double(floor)) / Double(max(ceiling - floor, 1))
+        return inset + (height - 2 * inset) * CGFloat(1 - fraction)
+    }
+
+    static func draw(
+        _ points: [WidgetSnapshot.Point], in context: GraphicsContext, size: CGSize, floor: Int, ceiling: Int,
+        stale: Bool, lineWidth: CGFloat, x: (Date) -> CGFloat
+    ) {
+        let vertices = points.map { p in
+            let at = GlucosePlotScale.placement(p.mgdl, floor: floor, ceiling: ceiling)
+            let y = y(Double(at.mgdl), height: size.height, floor: floor, ceiling: ceiling, lineWidth: lineWidth)
+            return Vertex(
+                point: CGPoint(x: x(p.t), y: y), isCapped: at.isCapped,
+                color: stale ? AppTheme.stale : AppTheme.glucoseColor(p.mgdl))
+        }
+        // Round dots a little more than a line's width apart. Each segment is stroked on its own (it has its own
+        // colour), so the dots' phase carries over from one to the next to keep them evenly spaced.
+        let gap = lineWidth * 2
+        var phase: CGFloat = 0
+        for (a, b) in zip(vertices, vertices.dropFirst()) {
+            let segment = Path { $0.addLines([a.point, b.point]) }
+            guard a.isCapped || b.isCapped else {
+                context.stroke(
+                    segment, with: .color(b.color), style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                phase = 0
+                continue
+            }
+            context.stroke(
+                segment, with: .color(b.color),
+                style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, dash: [0, gap], dashPhase: phase))
+            let length = hypot(b.point.x - a.point.x, b.point.y - a.point.y)
+            phase = (phase + length).truncatingRemainder(dividingBy: gap)
+        }
     }
 }
 

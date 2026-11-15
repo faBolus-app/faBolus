@@ -30,7 +30,7 @@ import faBolusCore
     }
 
     /// The dashboard chart with a 40–250 plot, highs above 250 and lows below 40: a reading off the plot is
-    /// left out, never drawn on its edge.
+    /// drawn on its edge as a hollow ring, unlike the filled dot of a reading at the edge.
     @Test func chartOffThePlot() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let mgdl = (0..<36).map { i in i < 12 ? 320 - i * 20 : i < 22 ? 90 - (i - 12) * 6 : 36 + (i - 22) * 10 }

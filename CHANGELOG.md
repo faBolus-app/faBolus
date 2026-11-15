@@ -24,8 +24,10 @@ experimental and demonstration use.
 ### Changed
 
 - Every glucose plot (the dashboard chart, the widgets, the Live Activity and the watch) draws in the plot
-  range from Settings, and leaves out a reading above its ceiling or below its floor instead of drawing it
-  on the edge. The Live Activity and the widgets used a fixed range before.
+  range from Settings. A reading above its ceiling or below its floor is drawn at that edge, so it can't
+  pass for a reading at the edge: a hollow ring on the chart and the watch, and a dotted line on the
+  widgets and the Live Activity. The chart's readout says its own value. The Live Activity and the
+  widgets used a fixed range before.
 - The widgets' and Live Activity's small charts colour the line by zone, without the green band, and the
   Live Activity's curve fades behind the glucose and the corner text.
 - The Chips style shows every chosen field; it hid the ones the Curve style's corner shows.

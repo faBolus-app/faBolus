@@ -124,10 +124,18 @@ struct GlucoseChartView: View {
                     yStart: .value("Low", GlucoseThresholds.low), yEnd: .value("High", GlucoseThresholds.high)
                 )
                 .foregroundStyle(AppTheme.inRange.opacity(0.12))
-                // A reading off the plot isn't drawn, never pinned to its edge.
-                ForEach(visible.filter { GlucosePlotScale.isOnChart($0.mgdl, floor: floor, ceiling: ceiling) }) { r in
-                    PointMark(x: .value("Time", r.date), y: .value("Glucose", r.mgdl))
-                        .foregroundStyle(AppTheme.glucoseColor(r.mgdl)).symbolSize(24)
+                // A reading past the plot's edge is drawn at it as a hollow ring, so it never reads as a reading
+                // at the edge. The readout and VoiceOver read `visible`, so they say its own value.
+                ForEach(visible) { r in
+                    let at = GlucosePlotScale.placement(r.mgdl, floor: floor, ceiling: ceiling)
+                    let color = AppTheme.glucoseColor(r.mgdl)
+                    if at.isCapped {
+                        PointMark(x: .value("Time", r.date), y: .value("Glucose", at.mgdl))
+                            .symbol { Circle().strokeBorder(color, lineWidth: 1.5).frame(width: 7, height: 7) }
+                    } else {
+                        PointMark(x: .value("Time", r.date), y: .value("Glucose", at.mgdl))
+                            .foregroundStyle(color).symbolSize(24)
+                    }
                 }
             }
             if showBolusBars {
