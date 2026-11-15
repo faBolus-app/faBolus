@@ -298,6 +298,52 @@ final class DurableBolusLedgerTests {
         #expect(lost?.confirmedOnPumpAt != nil)
     }
 
+    /// A watch request refused, or a watch cancel, while the file can't be read records a refusal. Saving it
+    /// would write the empty ledger held in the file's place, and the next launch would read that cleanly:
+    /// the unknown outcome the file held would no longer block.
+    @Test func aRefusalWhileTheFileIsUnreadableLeavesTheFileAlone() async throws {
+        let url = temporaryURL()
+        let first = DurableBolusLedger(store: RemoteBolusLedgerStore(url: url))
+        _ = try await first.begin(Self.request("garmin", "lost"))
+        try await first.markAccepted(Self.key("garmin", "lost"), bolusId: 2, now: Self.t0)
+        let saved = try Data(contentsOf: url)
+        try Data("unreadable for now".utf8).write(to: url)
+
+        let relaunched = DurableBolusLedger(store: RemoteBolusLedgerStore(url: url))
+        #expect(await relaunched.block == .ledgerUnreadable)
+        await #expect(throws: LedgerNotSaved.self) {
+            try await relaunched.recordRemoteRefusal(Self.key("garmin", "next"), reason: "Delivery is locked.")
+        }
+        await #expect(throws: LedgerNotSaved.self) { try await relaunched.retrySave() }
+        #expect(try Data(contentsOf: url) == Data("unreadable for now".utf8))
+        // Still refused in this process, though it wasn't saved.
+        #expect(await relaunched.ledger.remoteRefusal(Self.key("garmin", "next")) != nil)
+
+        try saved.write(to: url)  // readable again, at the next launch
+        let next = DurableBolusLedger(store: RemoteBolusLedgerStore(url: url))
+        #expect(await next.block == .unknownOutcome(since: Self.t0))
+        #expect(await next.ledger.entry(Self.key("garmin", "lost"))?.outcome == .unknown(since: Self.t0))
+    }
+
+    /// Confirming reads the file again; a refusal made meanwhile, held only in memory, is kept, so a late
+    /// copy of that request is refused rather than tried.
+    @Test func confirmingAllKeepsARefusalMadeWhileTheFileWasUnreadable() async throws {
+        let url = temporaryURL()
+        let first = DurableBolusLedger(store: RemoteBolusLedgerStore(url: url))
+        _ = try await first.begin(Self.request("garmin", "lost"))
+        try await first.markAccepted(Self.key("garmin", "lost"), bolusId: 2, now: Self.t0)
+        let saved = try Data(contentsOf: url)
+        try Data("unreadable for now".utf8).write(to: url)
+        let relaunched = DurableBolusLedger(store: RemoteBolusLedgerStore(url: url))
+        _ = try? await relaunched.recordRemoteRefusal(Self.key("garmin", "next"), reason: "Delivery is locked.")
+        try saved.write(to: url)
+
+        try await relaunched.confirmAllOnPump()
+        #expect(await relaunched.ledger.remoteRefusal(Self.key("garmin", "next"))?.reason == "Delivery is locked.")
+        let reread = RemoteBolusLedgerStore(url: url).loadOutcome().ledger
+        #expect(reread.remoteRefusal(Self.key("garmin", "next")) != nil, "and it was saved with the confirmation")
+    }
+
     @Test func anEmptyLedgerFileIsUnreadableNotEmpty() async throws {
         let url = temporaryURL()
         try Data().write(to: url)

@@ -207,6 +207,17 @@ public struct RemoteBolusLedger: Sendable, Codable {
     /// The refusal recorded for `key`, if it was refused before any entry.
     public func remoteRefusal(_ key: Key) -> RemoteRefusal? { remoteRefusals[key] }
 
+    /// Adds `other`'s refusals that this ledger doesn't hold, at their own times: a ledger read again from
+    /// its file keeps the refusals made meanwhile in memory, so a late copy of a refused request is still
+    /// refused rather than tried.
+    public mutating func keepRemoteRefusals(from other: RemoteBolusLedger) {
+        for key in other.refusalOrder {
+            guard let refusal = other.remoteRefusals[key] else { continue }
+            recordRemoteRefusal(
+                key, reason: refusal.reason, confirmations: refusal.confirmations ?? [], now: refusal.refusedAt)
+        }
+    }
+
     // MARK: - Transitions
     //
     // Each returns whether it applied. A move `BolusOutcome.canMove(to:)` doesn't allow is ignored, so a
