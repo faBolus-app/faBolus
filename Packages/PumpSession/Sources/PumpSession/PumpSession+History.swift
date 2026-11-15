@@ -181,6 +181,8 @@ extension PumpSession {
         // What this sync has asked for, held or not: a record the pump didn't send, or one dated in the
         // future, is asked for again by the next sync, not over and over by this one.
         var asked = record.coverage
+        // A request answered with no record at all: the sync doesn't count as done.
+        var unanswered = false
         while status.numEntries > 0, status.lastSequenceNum >= status.firstSequenceNum,
             let window = asked.missing(first: status.firstSequenceNum, last: status.lastSequenceNum).last
         {
@@ -198,10 +200,14 @@ extension PumpSession {
                 setHistorySync(state.link.isConnected ? .error("The pump's history couldn't be read.") : .paused)
                 return
             }
-            // A request answered with no record at all: the rest of its window is left to the next sync, so
-            // a pump that isn't sending this part of its log costs one quiet wait, not one a batch.
+            // A request answered with no record at all: the rest of its window is left to a later sync, so a
+            // pump that isn't sending this part of its log costs one quiet wait, not one a batch. It stays
+            // missing, and this sync doesn't end as synced.
             asked = asked.inserting(records.isEmpty ? window : start...top)
-            if records.isEmpty { continue }
+            if records.isEmpty {
+                unanswered = true
+                continue
+            }
             guard let anchor else {
                 setHistorySync(.error("The pump's clock couldn't be read."))
                 return
@@ -214,6 +220,7 @@ extension PumpSession {
                 }
             }
             addEvents(batch.events)
+            await settleUnknownOutcomes(from: batch.completedBoluses)
             record.coverage = runs(of: batch.sequences, in: start...top).reduce(record.coverage) { $0.inserting($1) }
             saveRecord()
             // A notice asked for a sync: the pump's log is read again, so records it added come next, newest
@@ -225,6 +232,20 @@ extension PumpSession {
                 status = next.status
             }
         }
+        // A window the pump answered with no record is asked again soon, a few times; the sync doesn't count
+        // as done meanwhile, so the last one's time stands. After that the sync finishes with the window
+        // still missing (it was never credited as held, so the next routine sync asks for it again), and the
+        // search for unknown outcomes that follows a sync still runs. The retries are spent once a connection
+        // until a sync gets an answer to every request: a part of the log the pump never sends costs each
+        // routine sync one quiet wait, not four syncs. An empty answer never shows a bolus absent: only a
+        // search that received every record can.
+        if unanswered, emptySyncRetries < config.historyEmptyRetries {
+            emptySyncRetries += 1
+            setHistorySync(.idle(lastSynced: record.lastHistorySync))
+            due[.history] = uptime().addingTimeInterval(config.historyEmptyRetryAfter)
+            return
+        }
+        if !unanswered { emptySyncRetries = 0 }
         finishSync()
     }
 
@@ -286,7 +307,7 @@ extension PumpSession {
         saveRecord()
         setHistorySync(.idle(lastSynced: now))
         // New history may settle an unknown outcome.
-        nextReconcileAt = uptime()
+        scheduleReconcile(at: uptime())
     }
 
     // MARK: - Logbook
@@ -332,31 +353,46 @@ extension PumpSession {
     // MARK: - Settling unknown outcomes
 
     /// Settles each unknown outcome the paired pump's history can speak for: delivered with the amount
-    /// history records, or failed when history shows the bolus never started. Anything less leaves it
-    /// unknown, and it is tried again a few times a connection.
+    /// history records, or failed when history shows the bolus never started. The completed boluses the
+    /// phone already holds (`PumpHistorySink.completedBoluses`) are looked at first, which costs the pump
+    /// nothing. Then the pump's log is searched, a few times a connection and at most
+    /// `reconcileSearchesPerEntry` times for one bolus across launches: an outcome confirmed on the pump no
+    /// longer blocks, and searching for it after every connection would only drain the pump's battery.
+    /// Anything still unknown after that waits for a sync page that holds its record, or for the user.
+    ///
+    /// The tick sets `reconciling` before any suspension, and leaves a try asked for meanwhile in place, so
+    /// it runs once this ends.
     func reconcileUnknownOutcomes() async {
-        guard !reconciling, state.link.isConnected, identityTrusted, let pumpKey = record.pairing?.pumpKey else {
-            return
-        }
-        reconciling = true
         defer { reconciling = false }
-        let entries = await ledger.ledger.unknownOutcomes
-        // A bolus no longer unknown (confirmed on the pump) needs no mark.
-        let marked = record.beforeHistoryRestart.intersection(entries.map(\.key))
-        if marked != record.beforeHistoryRestart {
+        guard state.link.isConnected, identityTrusted, let pumpKey = record.pairing?.pumpKey else { return }
+        let unknown = await ledger.ledger.unknownOutcomes
+        // A bolus no longer unknown needs no mark, and no count.
+        let keys = Set(unknown.map(\.key))
+        let marked = record.beforeHistoryRestart.intersection(keys)
+        let searches = record.historySearches.filter { keys.contains($0.key) }
+        if marked != record.beforeHistoryRestart || searches != record.historySearches {
             record.beforeHistoryRestart = marked
+            record.historySearches = searches
             saveRecord()
         }
+        guard !unknown.isEmpty else { return }
+        if let held = await historySink?.completedBoluses(), !held.isEmpty {
+            await settleUnknownOutcomes(from: held)
+        }
         var stillDelivering = false
-        for entry in entries {
-            guard let bolusId = entry.bolusId,
-                RemoteBolusLedger.comparePumpKey(entry.pumpKey, to: pumpKey) != .mismatch
-            else { continue }
-            switch await searchHistory(for: bolusId, acceptedAt: entry.pumpClockAtAcceptance) {
-            case .completed(let record):
-                // A record whose own requested amount isn't this request's is a different bolus.
-                if record.requestedUnits > 0, abs(record.requestedUnits - entry.request.totalUnits) > 0.01 { continue }
-                await settle(entry.key, .deliveredFromHistory(record.deliveredUnits, pumpKey: pumpKey))
+        for entry in await searchable(pumpKey: pumpKey) {
+            guard let bolusId = entry.bolusId else { continue }
+            let result = await searchHistory(
+                for: bolusId, acceptedAt: entry.pumpClockAtAcceptance, notBefore: earliestRecordTime(for: entry))
+            // A search counts once it ran on a link that held to its end, and the bolus wasn't still going.
+            if result != .delivering, state.link.isConnected {
+                record.historySearches[entry.key, default: 0] += 1
+                saveRecord()
+            }
+            switch result {
+            case .completed(let found):
+                guard names(found, entry) else { continue }
+                await settle(entry.key, .deliveredFromHistory(found.deliveredUnits, pumpKey: pumpKey))
             case .absent:
                 // The pump's log restarted after this bolus: the new log can't show it never started.
                 guard !record.beforeHistoryRestart.contains(entry.key) else { break }
@@ -367,16 +403,77 @@ extension PumpSession {
                 break
             }
         }
-        guard await !ledger.ledger.unknownOutcomes.isEmpty else { return }
+        guard await !searchable(pumpKey: pumpKey).isEmpty else { return }
         // A bolus the pump is still delivering is looked at again soon, and doesn't use up a try.
         if stillDelivering {
-            nextReconcileAt = uptime().addingTimeInterval(config.reconcileWhileDelivering)
+            scheduleReconcile(at: uptime().addingTimeInterval(config.reconcileWhileDelivering))
             return
         }
         reconcileAttempts += 1
         if reconcileAttempts < config.reconcileAttemptsPerConnection {
-            nextReconcileAt = uptime().addingTimeInterval(config.reconcileInterval)
+            scheduleReconcile(at: uptime().addingTimeInterval(config.reconcileInterval))
         }
+    }
+
+    /// The unknown outcomes the pump's log may still be searched for: with a bolus ID from this pump, a
+    /// time its record can't be older than (without one no record settles it, so a search would only cost
+    /// the pump), and searched fewer than `reconcileSearchesPerEntry` times.
+    private func searchable(pumpKey: String) async -> [RemoteBolusLedger.Entry] {
+        await ledger.ledger.unknownOutcomes.filter {
+            $0.bolusId != nil && RemoteBolusLedger.comparePumpKey($0.pumpKey, to: pumpKey) != .mismatch
+                && earliestRecordTime(for: $0) != nil
+                && record.historySearches[$0.key, default: 0] < config.reconcileSearchesPerEntry
+        }
+    }
+
+    /// Asks for a try at `time`, unless one is already asked for sooner.
+    func scheduleReconcile(at time: Uptime) {
+        nextReconcileAt = nextReconcileAt.map { min($0, time) } ?? time
+    }
+
+    /// Settles, as delivered, each unknown outcome a completed bolus in `completed` names, with a search's
+    /// checks (`names`), confirmed on the pump or not: records the phone reads or holds anyway cost the pump
+    /// nothing more.
+    func settleUnknownOutcomes(from completed: [HistoryBolus]) async {
+        guard !completed.isEmpty, let pumpKey = record.pairing?.pumpKey else { return }
+        for entry in await ledger.ledger.unknownOutcomes {
+            guard let bolusId = entry.bolusId,
+                RemoteBolusLedger.comparePumpKey(entry.pumpKey, to: pumpKey) != .mismatch,
+                let found = completed.filter({ $0.bolusId == bolusId && names($0, entry) }).max(by: {
+                    $0.pumpTime < $1.pumpTime
+                })
+            else { continue }
+            await settle(entry.key, .deliveredFromHistory(found.deliveredUnits, pumpKey: pumpKey))
+        }
+    }
+
+    /// Whether `found` is `entry`'s bolus: written after the bolus could have been accepted
+    /// (`earliestRecordTime`), in the log the bolus was recorded in (not one restarted since), and with the
+    /// request's amount when the record states one. A bolus ID and amount alone may be an older bolus's.
+    func names(_ found: HistoryBolus, _ entry: RemoteBolusLedger.Entry) -> Bool {
+        guard !record.beforeHistoryRestart.contains(entry.key), let earliest = earliestRecordTime(for: entry),
+            found.pumpTime >= earliest
+        else { return false }
+        return !(found.requestedUnits > 0 && abs(found.requestedUnits - entry.request.totalUnits) > 0.01)
+    }
+
+    /// The earliest pump time a record of `entry`'s bolus can carry: its acceptance on the pump's clock, less
+    /// `reconcileMargin`. With no pump clock at acceptance, by the clock anchor: from when its outcome became
+    /// unknown less the longest a bolus is followed, or from its last move, each less the margin. `nil` when
+    /// neither can be worked out: then no record settles it, and only the user can (UNVERIFIED-GUESSES #42).
+    func earliestRecordTime(for entry: RemoteBolusLedger.Entry) -> UInt32? {
+        if let accepted = entry.pumpClockAtAcceptance {
+            return accepted > config.reconcileMargin ? accepted - config.reconcileMargin : 0
+        }
+        guard let anchor else { return nil }
+        let margin = TimeInterval(config.reconcileMargin)
+        let from: Date =
+            if case .unknown(let since) = entry.outcome {
+                since.addingTimeInterval(-(config.deliveryTrackingLimit + margin))
+            } else {
+                entry.updatedAt.addingTimeInterval(-margin)
+            }
+        return anchor.pumpTime(at: from)
     }
 
     /// Looks for `bolusId` in history, newest first, at most `reconcileMaxPages` pages back.
@@ -384,14 +481,16 @@ extension PumpSession {
     /// - Parameter acceptedAt: the pump's clock when it granted the bolus's permission. Only with it can
     ///   the search show the bolus absent: by reaching records older than it (less a margin) with no record
     ///   naming the bolus.
-    func searchHistory(for bolusId: Int, acceptedAt: UInt32?) async -> HistorySearchResult {
+    /// - Parameter notBefore: the earliest pump time a record of this bolus can carry. A completed record
+    ///   older than it is another bolus that had the same ID, and isn't taken for this one.
+    func searchHistory(for bolusId: Int, acceptedAt: UInt32?, notBefore: UInt32? = nil) async -> HistorySearchResult {
         await acquireHistory()
-        let result = await runSearch(for: bolusId, acceptedAt: acceptedAt)
+        let result = await runSearch(for: bolusId, acceptedAt: acceptedAt, notBefore: notBefore)
         releaseHistory()
         return result
     }
 
-    private func runSearch(for bolusId: Int, acceptedAt: UInt32?) async -> HistorySearchResult {
+    private func runSearch(for bolusId: Int, acceptedAt: UInt32?, notBefore: UInt32?) async -> HistorySearchResult {
         guard state.link.isConnected else { return .inconclusive }
         if case .reply(let reply) = await exchange(CurrentBolusStatusRequest(), priority: .reconcile),
             let status = reply.message as? CurrentBolusStatusResponse, status.isActive, status.bolusId == bolusId
@@ -406,6 +505,8 @@ extension PumpSession {
         _ = await historyRestarted(status)
         var mentioned = false
         var clockChanged = false
+        // Records the search went past without receiving: with any, it can never show the bolus absent.
+        var gap = false
         var top = status.lastSequenceNum
         for _ in 0..<config.reconcileMaxPages {
             let count = Int(min(pageCount(config.historyPageSize), UInt64(top - status.firstSequenceNum) + 1))
@@ -413,18 +514,39 @@ extension PumpSession {
             guard let records = await fetchPage(top: top, count: count, priority: .reconcile) else {
                 return mentioned ? .present : .inconclusive
             }
-            if let completed = HistoryProjection.completedBoluses(records).last(where: { $0.bolusId == bolusId }) {
+            if let completed = HistoryProjection.completedBoluses(records).last(where: {
+                $0.bolusId == bolusId && $0.pumpTime >= (notBefore ?? 0)
+            }) {
                 return .completed(completed)
             }
             let events = HistoryProjection.events(records)
             if events.contains(where: { HistoryProjection.bolusId(of: $0) == bolusId }) { mentioned = true }
             if events.contains(where: HistoryProjection.isClockChange) { clockChanged = true }
-            guard records.count == count else { return mentioned ? .present : .inconclusive }
-            if let acceptedAt, let oldest = events.map(\.pumpTimeSec).min(),
-                UInt64(oldest) + UInt64(config.reconcileMargin) < UInt64(acceptedAt)
-            {
-                if mentioned { return .present }
-                return clockChanged ? .inconclusive : .absent
+            // A page answered with nothing: the pump isn't sending this part of its log now.
+            if records.isEmpty { return mentioned ? .present : .inconclusive }
+            if records.count < count {
+                // A page cut short: the next one asks from the newest record that didn't arrive, so nothing the
+                // search goes past is missing. When even the page's top didn't arrive, only that record is gone
+                // past, and the search can no longer show the bolus absent.
+                let held = Set(events.map(\.sequenceNum))
+                guard let missing = stride(from: top, through: start, by: -1).first(where: { !held.contains($0) })
+                else { break }
+                if missing == top {
+                    gap = true
+                    guard top > status.firstSequenceNum else { break }
+                    top -= 1
+                } else {
+                    top = missing
+                }
+                continue
+            }
+            if let oldest = events.map(\.pumpTimeSec).min() {
+                if let acceptedAt, UInt64(oldest) + UInt64(config.reconcileMargin) < UInt64(acceptedAt) {
+                    if mentioned { return .present }
+                    return clockChanged || gap ? .inconclusive : .absent
+                }
+                // Past the oldest time a record of this bolus can carry: nothing further back is its record.
+                if let notBefore, oldest < notBefore { return mentioned ? .present : .inconclusive }
             }
             guard start > status.firstSequenceNum else { break }
             top = start - 1

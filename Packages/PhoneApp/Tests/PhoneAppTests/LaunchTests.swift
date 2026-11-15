@@ -29,6 +29,54 @@ import faBolusCore
         await model.shutdown()
     }
 
+    /// A bolus record that can't be read at launch (a launch before the first unlock) blocks with its own
+    /// banner. Once it reads, coming to the foreground adopts it: its unknown bolus blocks and shows the
+    /// unknown-outcome banner instead, and "I checked the pump" there confirms only what was shown.
+    @Test func aRecordThatBecomesReadableIsAdoptedAndShown() async throws {
+        let phone = Phone()
+        let url = phone.directory.appendingPathComponent("bolus-ledger.json")
+        let request = DoseRequest(id: "lost", origin: .phone, shape: .now(units: 1))
+        do {
+            let earlier = DurableBolusLedger(store: RemoteBolusLedgerStore(url: url))
+            _ = try await earlier.begin(request)
+            try await earlier.markAccepted(request.ledgerKey, bolusId: 9, pumpKey: "tandem|1693")
+        }
+        let saved = try Data(contentsOf: url)
+        try Data("unreadable for now".utf8).write(to: url)
+        let model = await phone.launch()
+        #expect(model.bolusBlock == .ledgerUnreadable)
+        #expect(await phone.until(model) { model.alertSnapshot?.banners.contains(.bolusRecordUnreadable) == true })
+
+        try saved.write(to: url)
+        await phone.run(model, for: 10)
+        await model.sceneChanged(active: true)
+        await phone.settle(model)
+        guard case .unknownOutcome = model.bolusBlock else {
+            Issue.record("expected the adopted record's unknown outcome, got \(String(describing: model.bolusBlock))")
+            return
+        }
+        #expect(model.alertSnapshot?.banners.contains(.bolusRecordUnreadable) == false)
+        #expect(model.alertSnapshot?.banners.contains(.unknownBolusOutcome) == true)
+        await model.confirmUnknownOutcomesOnPump([])
+        #expect(model.bolusBlock != nil)
+        await model.confirmUnknownOutcomesOnPump(await model.unresolvedOutcomes().map(\.key))
+        #expect(model.bolusBlock == nil)
+        await model.shutdown()
+    }
+
+    /// A record that stays unreadable is replaced by the unreadable banner's own "I checked the pump".
+    @Test func confirmingAnUnreadableRecordLetsBolusingGoOn() async throws {
+        let phone = Phone()
+        try Data("unreadable for good".utf8).write(to: phone.directory.appendingPathComponent("bolus-ledger.json"))
+        let model = await phone.launch()
+        #expect(model.bolusBlock == .ledgerUnreadable)
+        await model.confirmUnreadableRecordOnPump()
+        #expect(model.bolusBlock == nil)
+        await phone.settle(model)
+        #expect(model.alertSnapshot?.banners.contains(.bolusRecordUnreadable) == false)
+        await model.shutdown()
+    }
+
     /// The logbook is saved with pump history and comes back at the next launch before any sync, and the
     /// watch's last auto-correction with it. Forgetting the pump clears it, then and after a relaunch.
     @Test func theLogbookSurvivesARelaunch() async {

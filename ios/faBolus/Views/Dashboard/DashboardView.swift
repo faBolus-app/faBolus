@@ -103,6 +103,9 @@ struct DashboardBanners: View {
     /// Counts cancel taps, so only the latest tap's answer and timer change the message.
     @State private var cancelTaps = 0
     @State private var confirmingOnPump = false
+    /// The unknown outcomes on record when "I checked the pump" was tapped: only these are confirmed.
+    @State private var shownOutcomes: [RemoteBolusLedger.Key] = []
+    @State private var confirmingUnreadable = false
 
     /// - Parameter cancelMessage: what the cancel line says at first (the snapshot of a cancel waiting).
     init(model: AppModel, cancelMessage: String? = nil) {
@@ -145,7 +148,25 @@ struct DashboardBanners: View {
                         .buttonStyle(.bordered)
                     }
                     if banner == .unknownBolusOutcome {
-                        Button("I checked the pump") { confirmingOnPump = true }.buttonStyle(.bordered)
+                        Button("I checked the pump") {
+                            Task {
+                                shownOutcomes = await model.unresolvedOutcomes().map(\.key)
+                                if !shownOutcomes.isEmpty {
+                                    confirmingOnPump = true
+                                } else if model.bolusBlock == .ledgerUnreadable {
+                                    // Nothing on record to confirm while the record can't be read: that
+                                    // banner's question is the one to answer.
+                                    confirmingUnreadable = true
+                                } else {
+                                    // Nothing unknown is on record any more: the banner catches up.
+                                    await model.confirmUnknownOutcomesOnPump([])
+                                }
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    if banner == .bolusRecordUnreadable {
+                        Button("I checked the pump") { confirmingUnreadable = true }.buttonStyle(.bordered)
                     }
                 }
             }
@@ -183,12 +204,26 @@ struct DashboardBanners: View {
             "Did you check the pump's history for this bolus?", isPresented: $confirmingOnPump,
             titleVisibility: .visible
         ) {
-            Button("Yes, I checked the pump") { Task { await model.confirmUnknownOutcomesOnPump() } }
+            Button("Yes, I checked the pump") {
+                let shown = shownOutcomes
+                Task { await model.confirmUnknownOutcomesOnPump(shown) }
+            }
             Button("Not yet", role: .cancel) {}
         } message: {
             Text(
                 "faBolus doesn't know how much of the last bolus went in. Confirming lets you bolus again; the "
                     + "outcome stays unknown until the pump's history settles it.")
+        }
+        .confirmationDialog(
+            "Did you check the pump's history for every recent bolus?", isPresented: $confirmingUnreadable,
+            titleVisibility: .visible
+        ) {
+            Button("Yes, I checked the pump") { Task { await model.confirmUnreadableRecordOnPump() } }
+            Button("Not yet", role: .cancel) {}
+        } message: {
+            Text(
+                "faBolus can't read its record of recent boluses, so it doesn't know whether one is unconfirmed. "
+                    + "Confirming starts a new record and lets you bolus again.")
         }
     }
 

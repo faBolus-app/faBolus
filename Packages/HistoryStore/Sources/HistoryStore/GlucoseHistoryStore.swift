@@ -28,7 +28,7 @@ public final class GlucoseHistoryStore {
     private init(_ config: ModelConfiguration, onDisk: Bool) throws {
         container = try ModelContainer(
             for: StoredGlucose.self, StoredBolus.self, StoredCarb.self, StoredDeliveryChange.self,
-            StoredHistoryEvent.self,
+            StoredHistoryEvent.self, StoredBolusRecord.self,
             configurations: config)
         if onDisk { Self.pinFileProtection(storeURL: config.url) }
     }
@@ -102,10 +102,12 @@ public final class GlucoseHistoryStore {
     ///
     /// - Parameter eventLimit: how many of the source's events to keep, newest first; older ones are
     ///   deleted in the same save. All are kept when `nil`.
+    /// - Parameter bolusRecords: the completed boluses among the records, one per pump sequence number,
+    ///   of which the newest `bolusRecordLimit` are kept.
     public func ingestPumpHistory(
         glucose: [GlucoseReading], boluses: [BolusMarker], carbs: [(date: Date, grams: Double)],
-        deliveryChanges: [DeliveryChange] = [], events: [HistoryEvent] = [], eventLimit: Int? = nil, sourceID: String,
-        glucosePriority: Int,
+        deliveryChanges: [DeliveryChange] = [], events: [HistoryEvent] = [], eventLimit: Int? = nil,
+        bolusRecords: [PumpBolusRecord] = [], sourceID: String, glucosePriority: Int,
         recordedAt: Date = Date()
     ) throws {
         let slack: TimeInterval = 2
@@ -168,7 +170,49 @@ public final class GlucoseHistoryStore {
                 }
             }
         }
+        if !bolusRecords.isEmpty {
+            let sequences = bolusRecords.map { Int($0.sequence) }
+            let held = Set(
+                try context.fetch(
+                    FetchDescriptor<StoredBolusRecord>(
+                        predicate: #Predicate { $0.sourceID == sourceID && sequences.contains($0.sequence) })
+                ).map(\.sequence))
+            for r in bolusRecords where !held.contains(Int(r.sequence)) {
+                context.insert(
+                    StoredBolusRecord(
+                        sequence: Int(r.sequence), bolusId: r.bolusId, pumpTime: Int(r.pumpTime),
+                        deliveredUnits: r.deliveredUnits, requestedUnits: r.requestedUnits, sourceID: sourceID))
+            }
+            for r in try context.fetch(Self.newestBolusRecords(sourceID: sourceID)).dropFirst(Self.bolusRecordLimit) {
+                context.delete(r)
+            }
+        }
         try context.save()
+    }
+
+    /// How many completed-bolus records are kept per source: an unknown bolus outcome is settled from one
+    /// only while it's recent, so a few days of boluses is plenty.
+    public static let bolusRecordLimit = 200
+
+    /// The completed boluses held from `sourceID`, newest first.
+    public func bolusRecords(sourceID: String) throws -> [PumpBolusRecord] {
+        try context.fetch(Self.newestBolusRecords(sourceID: sourceID)).map {
+            PumpBolusRecord(
+                sequence: UInt32(clamping: $0.sequence), bolusId: $0.bolusId, pumpTime: UInt32(clamping: $0.pumpTime),
+                deliveredUnits: $0.deliveredUnits, requestedUnits: $0.requestedUnits)
+        }
+    }
+
+    /// Removes the completed-bolus records from `sourceID`, as when the pump they came from is forgotten or
+    /// its log restarts: another log's bolus IDs say nothing about this one's.
+    public func clearBolusRecords(sourceID: String) throws {
+        try context.delete(model: StoredBolusRecord.self, where: #Predicate { $0.sourceID == sourceID })
+        try context.save()
+    }
+
+    private static func newestBolusRecords(sourceID: String) -> FetchDescriptor<StoredBolusRecord> {
+        FetchDescriptor(
+            predicate: #Predicate { $0.sourceID == sourceID }, sortBy: [SortDescriptor(\.sequence, order: .reverse)])
     }
 
     /// The logbook's events from `sourceID`, in `HistoryEvent.newestFirst` order.
@@ -312,6 +356,7 @@ public final class GlucoseHistoryStore {
         try? context.delete(model: StoredCarb.self)
         try? context.delete(model: StoredDeliveryChange.self)
         try? context.delete(model: StoredHistoryEvent.self)
+        try? context.delete(model: StoredBolusRecord.self)
         try? context.save()
     }
 }

@@ -435,7 +435,9 @@ private func deliver(_ rig: Rig, _ dose: ComposedDose, for seconds: Double = 2) 
         rig.transport.drop()
         await rig.settle()
         await rig.run(for: 20, step: 1)
-        #expect(await rig.session.reconcileAttempts == 1)
+        // The connection's first try, and the one the sync finishing asks for if it ends while the first runs:
+        // a try asked for during another isn't dropped.
+        #expect(await (1...2).contains(rig.session.reconcileAttempts))
     }
 }
 
@@ -552,7 +554,7 @@ private func deliver(_ rig: Rig, _ dose: ComposedDose, for seconds: Double = 2) 
         saved.markAccepted(key, bolusId: 10650, pumpKey: "tandem|1693")
         saved.markUnknown(key)
         let rig = Rig(ledger: saved, configure: { $0.unsupportedReads = [] })
-        try await rig.ledger.confirmAllOnPump()
+        try await rig.ledger.confirmOnPump(await rig.ledger.ledger.unresolved.map(\.key))
         #expect(await rig.ledger.block == nil)
         rig.pump.appendHistory(
             typeId: 20,

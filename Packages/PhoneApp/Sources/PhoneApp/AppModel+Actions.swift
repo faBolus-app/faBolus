@@ -69,7 +69,7 @@ extension AppModel {
 
     public func deliver(_ dose: ComposedDose) async -> DeliveryResult {
         let result = await session.deliver(dose)
-        bolusBlock = await ledger.block
+        await refreshBolusBlock()
         if case .started(let key, let outcome) = result {
             latestOutcome = BolusStatus(key: key, outcome: outcome, requestedUnits: dose.units, at: now)
         }
@@ -82,13 +82,35 @@ extension AppModel {
     /// The phone's bolus screen opened: the session tells the pump the user is interacting, as t:connect does.
     public func bolusScreenOpened() async { await session.bolusScreenOpened() }
 
-    /// The user checked the pump: every unknown outcome stops blocking. They stay unknown, and history can
-    /// still settle them (R11).
-    public func confirmUnknownOutcomesOnPump() async {
-        do { try await ledger.confirmAllOnPump(now: now) } catch {
+    /// The user checked the pump: the unknown outcomes they were shown (`shown`, from `unresolvedOutcomes()`
+    /// when they asked to confirm) stop blocking. They stay unknown, and history can still settle them (R11).
+    /// One that became unknown since, or came from a record adopted since, still blocks, to be seen in turn.
+    public func confirmUnknownOutcomesOnPump(_ shown: [RemoteBolusLedger.Key]) async {
+        do { try await ledger.confirmOnPump(shown, now: now) } catch {
             appLog.error("confirm on pump not saved: \(error)")
         }
+        await refreshBolusBlock(tellingAlerts: true)
+    }
+
+    /// The user checked the pump for a bolus record that can't be read: it's replaced by a fresh one, so
+    /// bolusing can go on. A record that reads by now is adopted instead, and its unknown outcomes show to
+    /// be confirmed one by one, as any others.
+    public func confirmUnreadableRecordOnPump() async {
+        do { try await ledger.confirmUnreadableOnPump() } catch {
+            appLog.error("unreadable record not replaced: \(error)")
+        }
+        await refreshBolusBlock(tellingAlerts: true)
+    }
+
+    /// Reads the ledger's block again. Any read of the ledger (by the session too) may adopt a record that
+    /// couldn't be read before, so the alerts are told whenever the record's readability differs from what
+    /// they were last told, whoever's read adopted it: then its unknown outcomes show and block, and the
+    /// unreadable banner goes. `tellingAlerts` tells them whatever changed (the user confirmed on the pump).
+    func refreshBolusBlock(tellingAlerts: Bool = false) async {
         bolusBlock = await ledger.block
+        let unreadable = bolusBlock == .ledgerUnreadable
+        guard tellingAlerts || alertsToldLedgerUnreadable != unreadable else { return }
+        alertsToldLedgerUnreadable = unreadable
         await alerts.ledgerChanged()
     }
 

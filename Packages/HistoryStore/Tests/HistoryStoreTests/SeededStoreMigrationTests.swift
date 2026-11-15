@@ -182,4 +182,32 @@ final class SeededStoreMigrationTests: XCTestCase {
         XCTAssertEqual(carbRows.count, 1, "the carb row must survive the destructive migration")
         XCTAssertEqual(try XCTUnwrap(carbRows.first).grams, 45, accuracy: 1e-9)
     }
+
+    /// A store saved before `StoredBolusRecord` existed opens with it added: what it held is still there,
+    /// and bolus records can be written alongside.
+    func testAStoreFromBeforeBolusRecordsOpensWithItsRows() throws {
+        let url = makeTempStoreURL()
+        defer { removeStoreFiles(at: url) }
+        let t0 = Date(timeIntervalSince1970: 1_700_000_000)
+        do {
+            let container = try ModelContainer(
+                for: StoredGlucose.self, StoredBolus.self, StoredCarb.self, StoredDeliveryChange.self,
+                StoredHistoryEvent.self,
+                configurations: ModelConfiguration(url: url))
+            let context = container.mainContext
+            context.insert(StoredBolus(date: t0, units: 4.5, sourceID: "pump", recordedAt: t0))
+            context.insert(
+                StoredHistoryEvent(
+                    sequence: 7, date: t0, category: "bolus", title: "Bolus delivered", detail: "4.5 U",
+                    sourceID: "pump"))
+            try context.save()
+        }
+        let store = try GlucoseHistoryStore(url: url)
+        XCTAssertEqual(store.boluses(in: t0.addingTimeInterval(-60)...t0.addingTimeInterval(60)).count, 1)
+        XCTAssertEqual(try store.historyEvents(sourceID: "pump", limit: 10).count, 1)
+        let record = PumpBolusRecord(sequence: 8, bolusId: 500, pumpTime: 1_000, deliveredUnits: 1, requestedUnits: 1)
+        try store.ingestPumpHistory(
+            glucose: [], boluses: [], carbs: [], bolusRecords: [record], sourceID: "pump", glucosePriority: 50)
+        XCTAssertEqual(try store.bolusRecords(sourceID: "pump"), [record])
+    }
 }

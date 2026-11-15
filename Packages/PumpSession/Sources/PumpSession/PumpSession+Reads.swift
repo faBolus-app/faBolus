@@ -209,8 +209,11 @@ extension PumpSession {
             due[.history] = now.addingTimeInterval(config.historySyncInterval)
             Task { await self.syncHistory() }
         }
-        if let at = nextReconcileAt, now >= at, onceThisConnection.contains(.settings) {
+        // Left in place while a search runs, so one asked for meanwhile (a bolus that just became unknown)
+        // runs as soon as it ends. `reconciling` is set here, before any suspension.
+        if let at = nextReconcileAt, now >= at, !reconciling, onceThisConnection.contains(.settings) {
             nextReconcileAt = nil
+            reconciling = true
             Task { await self.reconcileUnknownOutcomes() }
         }
     }

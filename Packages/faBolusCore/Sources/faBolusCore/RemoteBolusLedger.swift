@@ -345,17 +345,31 @@ public struct RemoteBolusLedger: Sendable, Codable {
         _ key: Key, to next: BolusOutcome, now: Date, _ update: (inout Entry) -> Void = { _ in }
     ) -> Bool {
         guard var entry = entries[key], entry.outcome.canMove(to: next) else { return false }
-        let wasSent = entry.reachedPump || entry.outcome.mayHaveDelivered
+        let initiateWent = Self.initiateWent(from: entry.outcome, to: next)
         entry.outcome = next
         entry.updatedAt = now
         update(&entry)
         entries[key] = entry
-        if next.isUnknown || (next.isFinal && (wasSent || next.mayHaveDelivered)) {
-            recentDeliveries[recencyKey(key.peerId, entry.request.doseKey)] = now
-        }
+        if initiateWent { recentDeliveries[recencyKey(key.peerId, entry.request.doseKey)] = now }
         // No eviction here: only `begin` grows the ledger, and evicting on a move could drop the entry
         // that just became final while a remote may still resend it.
         return true
+    }
+
+    /// Whether a move from `previous` to `next` means InitiateBolus was handed to the pump, for the
+    /// duplicate index: only then can the dose have gone in. A request given up after permission and before
+    /// InitiateBolus (stopped by bit 31, cancelled before start, a clock read that failed, too long since
+    /// confirming, not sent) fails from `accepted`, which `markFailed` allows only when InitiateBolus never
+    /// went; one refused at permission is refused from `requested`. A refusal from `accepted` is the pump's
+    /// answer to InitiateBolus, and "failed" from `unknown` settles on the absence of a record, which isn't
+    /// knowing, so both still count.
+    static func initiateWent(from previous: BolusOutcome, to next: BolusOutcome) -> Bool {
+        switch next {
+        case .unknown, .delivered, .stopped: return true
+        case .refused: return previous == .accepted
+        case .failed: return previous.isUnknown
+        case .requested, .accepted, .delivering: return false
+        }
     }
 
     // MARK: - Queries
