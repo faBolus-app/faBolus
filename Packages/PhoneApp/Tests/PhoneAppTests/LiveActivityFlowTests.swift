@@ -424,8 +424,19 @@ import faBolusCore
         #expect(going.button == .cancel, "Cancel can be tapped again")
         #expect(going.note != nil, "it says to use the pump")
         r.pump.answers[MessageKey(CancelBolusRequest.self)] = nil
-        #expect(await r.result("Delivered"))
-        await r.tap(.close)
+        // How much of the bolus's 200 s the cancel's real-time retries used depends on the machine, and a
+        // delivered result leaves the card a minute after it settles: so the bolus's end is waited for in the
+        // ledger, and then the card shows it delivered or has already gone back to Bolus, never "Delivering…".
+        #expect(
+            await r.phone.until(r.model) {
+                if case .delivered? = await r.entries().first?.outcome { return true }
+                return false
+            })
+        await r.phone.run(r.model, for: 2)
+        if case .result(let shown) = r.view {
+            #expect(shown.headline == "Delivered")
+            await r.tap(.close)
+        }
         #expect(r.view == .idle(.bolus))
 
         // Cancelled from the card, with no answer, during a bolus from the phone.
