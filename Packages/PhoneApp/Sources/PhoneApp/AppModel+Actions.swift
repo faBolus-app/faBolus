@@ -204,9 +204,27 @@ extension AppModel {
     /// Starts the selected backup source, once per process. Built in launch so CoreBluetooth can hand back
     /// a Bluetooth source's central on a background relaunch.
     func startBackupSource() async {
-        let registry = environment.glucoseSources
-        guard registry.shouldStartSelected(now: now), let source = registry.makeSelected() else { return }
-        await run(source)
+        await changeBackupSource { model in
+            let registry = model.environment.glucoseSources
+            guard model.backupSource == nil, registry.shouldStartSelected(now: model.now),
+                let source = registry.makeSelected()
+            else { return }
+            await model.run(source)
+        }
+    }
+
+    /// Runs one change of the backup source after any before it. Every start, switch and resume goes
+    /// through here, so two can't interleave at their suspensions and leave two sources running (two
+    /// pollers, or two Bluetooth centrals on one transmitter), one of them orphaned.
+    private func changeBackupSource(_ change: @escaping @MainActor (AppModel) async -> Void) async {
+        let previous = backupSwitch
+        let next = Task { [weak self] in
+            await previous?.value
+            guard let self else { return }
+            await change(self)
+        }
+        backupSwitch = next
+        await next.value
     }
 
     private func run(_ source: any GlucoseSource) async {
@@ -237,13 +255,45 @@ extension AppModel {
 
     /// Switches the backup source (`nil` for none). One runs at a time.
     public func selectBackupSource(_ id: String?) async {
-        let previous = backupSwitch
-        let change = Task { [weak self] in
-            await previous?.value
-            await self?.switchBackupSource(to: id)
+        await changeBackupSource { await $0.switchBackupSource(to: id) }
+    }
+
+    /// The source the settings screen shows as chosen: the running one, or the selected one while it's
+    /// held off after repeated unclean starts (then nothing runs, but it's still the choice).
+    public var chosenBackupSourceID: String? { backupSourceID ?? glucoseSources.selectedID }
+
+    /// Until when the chosen source is held off after repeated unclean starts; `nil` while it runs.
+    public var backupHeldOffUntil: Date? {
+        guard backupSourceID == nil, glucoseSources.selectedID != nil, let until = glucoseSources.disabledUntil,
+            until > now
+        else { return nil }
+        return until
+    }
+
+    /// A source picked in settings. Picking the one already chosen changes nothing: in particular it
+    /// doesn't restart a source that is held off, which a new selection would (its crash bookkeeping
+    /// starts over).
+    public func backupSourcePicked(_ id: String?) async {
+        // Judged in turn, after any change already queued: a quick pick back to the source running isn't
+        // dropped because the switch away from it hadn't happened yet.
+        await changeBackupSource { model in
+            guard id != model.chosenBackupSourceID else { return }
+            await model.switchBackupSource(to: id)
         }
-        backupSwitch = change
-        await change.value
+    }
+
+    /// Starts the chosen source if its hold after repeated unclean starts has ended while the app kept
+    /// running; the launch check runs only at launch. Called when the app becomes active and when the
+    /// settings screen opens. Nothing happens while one runs or the hold lasts, nor before launch has
+    /// finished: launch makes its own decision for a hold that ended while the app wasn't running.
+    public func resumeBackupSourceAfterHold() async {
+        guard launched else { return }
+        await changeBackupSource { model in
+            guard model.backupSource == nil, model.glucoseSources.endHoldIfOver(now: model.now),
+                let source = model.glucoseSources.makeSelected()
+            else { return }
+            await model.run(source)
+        }
     }
 
     /// The process is ending in order: the backup source's recovery policy counts this launch as clean.

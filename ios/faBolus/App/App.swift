@@ -19,7 +19,10 @@ struct FaBolusApp: App {
                 .onOpenURL { url in delegate.open(url) }
                 .onChange(of: scenePhase, initial: true) { _, phase in
                     let model = delegate.model
-                    Task { await model.sceneChanged(active: phase == .active) }
+                    Task {
+                        await model.sceneChanged(active: phase == .active)
+                        if phase == .active { await model.resumeBackupSourceAfterHold() }
+                    }
                 }
         }
     }

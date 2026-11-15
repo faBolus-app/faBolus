@@ -27,10 +27,20 @@ struct CgmSettingsView: View {
                     ForEach(registry.descriptors) { Text($0.name).tag($0.id) }
                 }
                 .onChange(of: selection) { _, id in
-                    guard id != (model.backupSourceID ?? "") else { return }
-                    Task { await model.selectBackupSource(id.isEmpty ? nil : id) }
+                    Task { await model.backupSourcePicked(id.isEmpty ? nil : id) }
                 }
-                if let status = model.backup?.status { statusRow(status) }
+                if let until = model.backupHeldOffUntil {
+                    LabeledContent("Status") {
+                        Text(
+                            "Paused after repeated restarts, until \(until.formatted(date: .omitted, time: .shortened))"
+                        )
+                        .foregroundStyle(.orange).multilineTextAlignment(.trailing)
+                    }
+                } else if let status = model.backup?.status {
+                    statusRow(status)
+                } else if model.chosenBackupSourceID != nil {
+                    LabeledContent("Status") { Text("Not running").foregroundStyle(.orange) }
+                }
             } footer: {
                 Text(
                     "An independent glucose feed used when the pump's reading is stale or missing. Old readings are shown marked, never as current."
@@ -46,12 +56,13 @@ struct CgmSettingsView: View {
         }
         .navigationTitle("CGM & backup")
         .onAppear {
-            selection = model.backupSourceID ?? registry.selectedID ?? ""
+            selection = model.chosenBackupSourceID ?? ""
             username = registry.account.username ?? ""
             region = registry.account.region
             transmitterID = registry.settings.g6TransmitterID ?? ""
             test.probe = { [model] in await model.probeBackupSource() }
             test.onStateChanged = { testState = $0 }
+            Task { await model.resumeBackupSourceAfterHold() }
         }
     }
 
