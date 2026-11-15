@@ -52,8 +52,9 @@ While a bolus delivers, tap **Cancel bolus** on the dashboard. faBolus tells you
 - the pump isn't connected or the cancel wasn't confirmed: cancel on the pump.
 
 A cancel is never refused, by read-only mode or anything else. It goes ahead of everything waiting to be
-sent, but waits for the one request already on its way to the pump to be answered (up to 60 s if the pump
-doesn't answer); meanwhile you can stop the bolus on the pump. A bolus that ends with less than asked
+sent except a bolus request already queued, which it follows, and it waits for the one request already on
+its way to the pump to be answered (up to 60 s if the pump doesn't answer); meanwhile you can stop the
+bolus on the pump. A bolus that ends with less than asked
 shows as **stopped**, with the amount the pump reports.
 
 ## If the outcome is unknown

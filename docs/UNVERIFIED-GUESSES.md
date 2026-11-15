@@ -282,8 +282,9 @@ that worked.
 - **Risk:** fails closed for the dose. If a t:slim showed a non-255 icon in normal use, every CGM
   correction from the pump's reading would stop. The mirror has to be read for each dose: a pump that
   never answers it gets no CGM correction at all.
-- **P3:** the icon stayed 255 through normal readings and through a CGM high alert. With the pump carried
-  away from the sensor, CurrentEGVGuiData read 0 mg/dL with status 4.
+- **P3:** the icon stayed 255 through normal readings and through a CGM high alert. Later in the session
+  CurrentEGVGuiData read 0 mg/dL with status 4 for at least two minutes; what the sensor was doing then
+  isn't known.
 - **Verify:** on P1 and P2, run the bench's `cgm` read through a sensor's warm-up, a normal reading and a
   sensor error, and note the alert icon, the trend icon and the EGV status with each.
 
