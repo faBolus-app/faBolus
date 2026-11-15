@@ -190,6 +190,34 @@ import Testing
         #expect(refused(message("config", p)))
     }
 
+    /// Auto-accept corrections is written only when on, so a config without it (every config before the
+    /// field) reads as off, and the watch asks.
+    @Test func autoAcceptCorrectionIsOffUnlessTheConfigSaysSo() {
+        guard case .message(.config(let off)) = RemoteMessage.receive(message("config", payload(of: "config"))),
+            case .message(.config(let on)) = RemoteMessage.receive(
+                message("config", payload(of: "config-auto-correction")))
+        else {
+            Issue.record("a golden config didn't read")
+            return
+        }
+        #expect(!off.autoAcceptCorrection)
+        #expect(on.autoAcceptCorrection)
+        #expect(on.revision != off.revision)
+        guard case .object(let bolus)? = payload(of: "config")["bolus"],
+            case .object(let onBolus)? = payload(of: "config-auto-correction")["bolus"]
+        else {
+            Issue.record("a config has no bolus object")
+            return
+        }
+        #expect(bolus["autoAcceptCorrection"] == nil)
+        #expect(onBolus["autoAcceptCorrection"] == .bool(true))
+        var p = payload(of: "config-auto-correction")
+        guard case .object(var b)? = p["bolus"] else { return }
+        b["autoAcceptCorrection"] = .string("yes")
+        p["bolus"] = .object(b)
+        #expect(refused(message("config", p)))
+    }
+
     @Test func aConfigWithAnImpossibleLayoutIsRefused() {
         var p = payload(of: "config")
         p["screens"] = .object(["order": .array([.string("glance")]), "default": .string("details")])

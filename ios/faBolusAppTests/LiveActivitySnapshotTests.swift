@@ -81,6 +81,13 @@ import faBolusCore
                 .init(
                     mode: .carbs, value: "30 g", canDecrease: true, canIncrease: true, preview: "5.25 U or 3.00 U",
                     message: "Correction asked next", canReview: true)))
+        // Auto-accept corrections on: one dose, the corrected one, and no question to come.
+        card(
+            "carbs-auto",
+            .entry(
+                .init(
+                    mode: .carbs, value: "30 g", canDecrease: true, canIncrease: true, preview: "5.25 U",
+                    message: "Correction added (auto)", canReview: true)))
         card(
             "waiting",
             .entry(
@@ -117,6 +124,10 @@ import faBolusCore
                 "taps-\(taps)",
                 .review(.init(units: "3.00 U", split: "3.00 food · no correction", taps: taps, expiresAt: expires)))
         }
+        // The corrected dose, as the question's yes or Auto-accept corrections gives it.
+        card(
+            "corrected",
+            .review(.init(units: "5.25 U", split: "3.00 food + 2.25 correction", taps: 0, expiresAt: expires)))
         card("expired", .review(.init(units: "0.95 U", taps: 1, expiresAt: Self.now, expired: true)))
         card(
             "confirm",

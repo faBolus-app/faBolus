@@ -20,6 +20,11 @@ experimental and demonstration use.
   what the Dynamic Island and the Mac's menu bar show beside the glucose.
 
 - CarPlay and the Apple Watch's Smart Stack show the recent curve under the glucose.
+- Settings → Bolus & entry → Auto-accept corrections (off by default) answers the calculator's correction
+  question yes: the phone's bolus screen chooses the corrected dose (both still show), and the watch and the
+  Live Activity skip the question. Stale or pump-flagged readings still add no correction, and every other
+  prompt and the final confirmation are unchanged. The watch gets it as the config's
+  `bolus.autoAcceptCorrection`, written only when on.
 
 ### Changed
 

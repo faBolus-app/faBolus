@@ -684,6 +684,9 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 50
+            },
+            "autoAcceptCorrection": {
+              "type": "boolean"
             }
           }
         },

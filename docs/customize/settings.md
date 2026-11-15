@@ -19,8 +19,18 @@ The paired pump's model, name, status and API version, why the link last dropped
 | Unit increment | 0.05, 0.1, 0.5, 1 or 2 U | 0.05 U |
 | Carb increment | 1, 5, 10 or 15 g | 5 g |
 | Show the calculation | A breakdown under the suggested dose | On |
+| Auto-accept corrections | Answer the calculator's correction question yes | Off |
 
 The increments are the steps of the bolus screen, on the phone and the watch.
+
+When BG is above target the calculator asks whether to add a correction, and below it whether to reduce
+the bolus. With **Auto-accept corrections** on, the answer is yes: the phone's bolus screen still shows
+both doses with the corrected one chosen (tap the other to use it), and the watch and the Live Activity
+don't ask. If the pump's reading at Confirm changes the doses, the phone says so before the new dose can be
+confirmed. It answers only that question: a stale CGM reading or one the pump flags still adds no
+correction, under 70 mg/dL the bolus is reduced as always, a dose you type yourself is sent as typed, and
+every other check and the final confirmation are still asked. A watch app older than this setting keeps
+asking.
 
 ## CGM & backup
 

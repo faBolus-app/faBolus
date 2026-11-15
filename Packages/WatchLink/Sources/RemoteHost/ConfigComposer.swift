@@ -27,6 +27,8 @@ public struct WatchPreferences: Sendable, Hashable {
     public var glucosePlotCeilingSmall: Int?
     /// `"dots"` or `"line"`.
     public var glucosePlotStyle = "dots"
+    /// The calculator's correction question is answered yes for the user, so the watch doesn't ask it.
+    public var autoAcceptCorrection = false
 
     public init() {}
 }
@@ -65,7 +67,8 @@ public enum ConfigComposer {
             glucoseHideDelayMinutes: hideDelayMinutes(freshness),
             glucoseIncludableMinutes: minutes(freshness.maxIncludableGlucoseAge, max: 240),
             plotFloorMgdl: plot.floor, plotCeilingMgdl: plot.ceiling,
-            plotStyle: PlotStyleToken(rawValue: p.glucosePlotStyle) ?? .dots)
+            plotStyle: PlotStyleToken(rawValue: p.glucosePlotStyle) ?? .dots,
+            autoAcceptCorrection: p.autoAcceptCorrection)
     }
 
     private static func unique<T: Hashable>(_ values: [T]) -> [T] {

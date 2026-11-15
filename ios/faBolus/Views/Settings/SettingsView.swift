@@ -87,6 +87,15 @@ struct BolusSettingsView: View {
             } footer: {
                 Text("A breakdown under the suggested dose: carbs, correction and active insulin.")
             }
+            Section {
+                Toggle("Auto-accept corrections", isOn: $settings.autoAcceptCorrection)
+            } footer: {
+                Text(
+                    "Answers the calculator's “Add a correction?” and “Reduce the bolus?” with yes. The phone "
+                        + "chooses the corrected dose (tap the other to change it); the watch and the Live Activity "
+                        + "don't ask. A stale or flagged CGM reading still adds no correction, and every other check "
+                        + "is still asked.")
+            }
         }
         .navigationTitle("Bolus & entry")
     }

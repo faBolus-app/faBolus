@@ -40,6 +40,11 @@ public final class BolusFlow {
     private var attempt: PhoneDoseEntry?
     /// The card the user chose, for the question it answered.
     private var correctionAnswer: CorrectionChoice?
+    /// The corrected card the setting chose for the attempt being composed (none when the user tapped one):
+    /// if the pump's fresh read changes the doses, the screen says so before the new one can be confirmed.
+    private var attemptAutoChoice: CorrectionChoice?
+    /// That change, until the user has seen it.
+    private var autoChange: CorrectionChange?
     /// The composer's question from the pump's fresh read at Confirm, ahead of the screen's own: it holds
     /// until the screen's question changes from what it was then.
     private var composerQuestion: ComposerQuestion?
@@ -193,10 +198,23 @@ public final class BolusFlow {
         return screen
     }
 
-    /// The card chosen, while it answers the question showing and the dose wasn't edited since.
+    /// The card chosen, while it answers the question showing and the dose wasn't edited since. With the
+    /// correction answered for the user and no card tapped, the corrected one.
     public var correction: CorrectionChoice? {
-        guard !unitsEdited, let a = correctionAnswer, a.question == correctionQuestion else { return nil }
-        return a
+        guard !unitsEdited else { return nil }
+        guard let a = correctionAnswer else { return autoCorrection }
+        return a.question == correctionQuestion ? a : nil
+    }
+
+    /// The corrected card, chosen by the setting rather than the user: only while the question shows, so a
+    /// reading that's stale, flagged by the pump, under 70 or missing still never fills in a correction. It
+    /// follows the question as the reading changes, as the dose with no question follows the calculator, and
+    /// a card the user tapped (even one that went stale since) is theirs to choose again.
+    public var autoCorrection: CorrectionChoice? {
+        guard model.settings.autoAcceptCorrection, !unitsEdited, correctionAnswer == nil,
+            let q = correctionQuestion
+        else { return nil }
+        return CorrectionChoice(question: q, apply: true)
     }
 
     /// What changed the doses after the user chose, other than their own typing (which just clears the
@@ -223,6 +241,7 @@ public final class BolusFlow {
     /// The change, until the user has seen it: shown as an alert, so a dose that changed under them never
     /// looks like the screen glitched. Once seen, a reminder stays by the cards.
     public var changeAlert: CorrectionChange? {
+        if let autoChange { return autoChange }
         guard let change = correctionChange, let a = correctionAnswer else { return nil }
         return acknowledgedChange == AcknowledgedChange(answer: a, question: correctionQuestion) ? nil : change
     }
@@ -236,6 +255,12 @@ public final class BolusFlow {
 
     /// The alert closed. With no question left, the old choice is dropped and the dose is the calculator's.
     public func acknowledgeChange() {
+        // A dose the setting chose: seen, it is chosen again from the doses now.
+        if autoChange != nil {
+            autoChange = nil
+            entryChanged()
+            return
+        }
         guard let a = correctionAnswer else { return }
         if correctionQuestion == nil {
             correctionAnswer = nil
@@ -251,6 +276,7 @@ public final class BolusFlow {
     public func entryEdited() {
         correctionAnswer = nil
         acknowledgedChange = nil
+        autoChange = nil
         composerQuestion = nil
         entryChanged()
     }
@@ -264,12 +290,14 @@ public final class BolusFlow {
             // On one line, the unit on both values.
             "BG \(unit.format(mgdl: from))\u{00A0}\(Self.mgdl) → \(unit.format(mgdl: to))\u{00A0}\(Self.mgdl)"
         }
+        // The setting chooses again from the new doses: there's nothing for the user to choose.
+        let again = autoChange != nil ? "See the dose" : "Choose again"
         switch change {
         case .glucose(let from, let to):
             // The title says what changed and the button what to do: nothing to add between them.
-            return (went(from, to), "", nil, "Choose again")
+            return (went(from, to), "", nil, again)
         case .doses:
-            return ("Insulin or settings changed", "", nil, "Choose again")
+            return ("Insulin or settings changed", "", nil, again)
         case .noQuestion(let from, let to):
             // No choice now: a low reduces the dose (or takes it all), IOB (or a BG now on target) leaves no
             // correction to add, or there's no current reading.
@@ -306,6 +334,7 @@ public final class BolusFlow {
     public func chooseCorrection(apply: Bool) {
         guard let q = correctionQuestion else { return }
         correctionAnswer = CorrectionChoice(question: q, apply: apply)
+        autoChange = nil
         unitsEdited = false
         entryChanged()
     }
@@ -361,6 +390,7 @@ public final class BolusFlow {
             return
         }
         attempt = entry
+        attemptAutoChoice = correctionAnswer == nil ? correction : nil
         await compose()
     }
 
@@ -403,6 +433,15 @@ public final class BolusFlow {
         switch decision {
         case .deliver(let dose): phase = .review(dose)
         case .confirm(.correction(let mgdl, let target, let apply, let decline)):
+            // A dose the setting chose that the fresh read changed, or a question the screen didn't have that
+            // the setting will now answer: said, as a tapped card's change is, so Confirm never just seems to
+            // change the dose. With no reading on the screen the cards appearing say it.
+            if let auto = attemptAutoChoice {
+                autoChange =
+                    auto.question.mgdl != mgdl ? .glucose(fromMgdl: auto.question.mgdl, toMgdl: mgdl) : .doses
+            } else if model.settings.autoAcceptCorrection, correctionAnswer == nil, let shown = attemptGlucoseMgdl {
+                autoChange = shown != mgdl ? .glucose(fromMgdl: shown, toMgdl: mgdl) : .doses
+            }
             composerQuestion = ComposerQuestion(
                 asked: CorrectionQuestion(mgdl: mgdl, targetMgdl: target, applyUnits: apply, declineUnits: decline),
                 mgdl: mgdl, screen: screenQuestion)
@@ -414,6 +453,7 @@ public final class BolusFlow {
         // correction no longer changes the dose): never "keep" it, as its correction came from the old
         // reading. Back to the screen, which says the question went and shows the dose for now.
         case .confirm(.doseChanged(let mgdl, _, _)) where attempt?.answers.correction != nil:
+            if let auto = attemptAutoChoice { autoChange = .noQuestion(fromMgdl: auto.question.mgdl, toMgdl: mgdl) }
             composerQuestion = ComposerQuestion(asked: nil, mgdl: mgdl, screen: screenQuestion)
             unitsEdited = false
             attempt = nil
@@ -490,9 +530,20 @@ public final class BolusFlow {
         return a.units == b.units && a.correctionGlucoseMgdl == b.correctionGlucoseMgdl && kinds(a) == kinds(b)
     }
 
+    /// The glucose the attempt's dose was computed from on the screen, if any.
+    private var attemptGlucoseMgdl: Int? {
+        guard case .calculator(_, let glucose, _, _)? = attempt?.amount else { return nil }
+        switch glucose {
+        case .none: return nil
+        case .typed(let mgdl): return mgdl
+        case .currentReading(let shown): return shown
+        }
+    }
+
     /// Any prompt or the review cancelled: nothing is sent.
     public func cancel() {
         attempt = nil
+        attemptAutoChoice = nil
         phase = .editing
     }
 
@@ -507,6 +558,8 @@ public final class BolusFlow {
         correctionAnswer = nil
         composerQuestion = nil
         acknowledgedChange = nil
+        attemptAutoChoice = nil
+        autoChange = nil
     }
 
     // MARK: Copy

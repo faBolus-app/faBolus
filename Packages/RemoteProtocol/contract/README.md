@@ -85,7 +85,7 @@ know generically. A cancel is never blocked.
 | Field | Meaning |
 |---|---|
 | `revision` | 16 hex digits of the SHA-256 of the rest of the config's canonical JSON: equal revisions are equal configs, so there's no counter to compare |
-| `bolus` | `enabled` (bolusing from this remote), `readOnly` (remotes read-only), `defaultMode` (`carbs`, `units`), `unitsStepMU`, `carbStepG` |
+| `bolus` | `enabled` (bolusing from this remote), `readOnly` (remotes read-only), `defaultMode` (`carbs`, `units`), `unitsStepMU`, `carbStepG`, `autoAcceptCorrection` (the calculator's correction question is answered yes for the user, so the remote doesn't ask it and doses with the correction; absent: false, and the remote asks) |
 | `screens` | `order`, `default` (`glance`, `glucose`, `clock`, `bolusonly`, `alerts`, `history`, `details`) |
 | `details` | rows in order: `iob`, `reservoir`, `battery`, `cgm`, `lastBolus`, `carbRatio`, `isf`, `target`, `maxBolus`, `maxBasal`, `autoCorrection` (left out while none is known), `sensorStarted` and `lastCalibration` (each left out while its time is unknown) |
 | `chartHours` | ranges the chart cycles through, from 3, 6, 12, 24 |

@@ -18,6 +18,10 @@ public struct WatchConfig: Sendable, Hashable {
     public var unitsStepMilliunits: Int
     /// The step when dialing carbs, grams.
     public var carbStepGrams: Int
+    /// The calculator's correction question is answered yes for the user: the watch doesn't ask whether to
+    /// add a correction or reduce the dose, and doses with it, as the phone does with the same setting. Absent
+    /// on the wire means off, so a watch that predates the field still asks.
+    public var autoAcceptCorrection: Bool
     public var screenOrder: [ScreenToken]
     public var defaultScreen: ScreenToken
     public var detailsOrder: [DetailToken]
@@ -56,7 +60,8 @@ public struct WatchConfig: Sendable, Hashable {
         complicationLabels: Bool, glucoseUnit: GlucoseUnitToken, glucoseStaleMinutes: Int,
         iobStaleMinutes: Int, therapyStaleMinutes: Int, pumpStatusStaleMinutes: Int,
         glucoseHideDelayMinutes: Int?, glucoseIncludableMinutes: Int,
-        plotFloorMgdl: Int, plotCeilingMgdl: Int, plotStyle: PlotStyleToken = .dots
+        plotFloorMgdl: Int, plotCeilingMgdl: Int, plotStyle: PlotStyleToken = .dots,
+        autoAcceptCorrection: Bool = false
     ) {
         self.bolusEnabled = bolusEnabled
         self.readOnly = readOnly
@@ -79,6 +84,7 @@ public struct WatchConfig: Sendable, Hashable {
         self.plotFloorMgdl = plotFloorMgdl
         self.plotCeilingMgdl = plotCeilingMgdl
         self.plotStyle = plotStyle
+        self.autoAcceptCorrection = autoAcceptCorrection
     }
 
     /// Sixteen hex digits of the SHA-256 of the content's canonical JSON.
@@ -96,6 +102,9 @@ public struct WatchConfig: Sendable, Hashable {
         bolus.set("defaultMode", defaultBolusMode.rawValue)
         bolus.set("unitsStepMU", unitsStepMilliunits)
         bolus.set("carbStepG", carbStepGrams)
+        // Written only when on, so a config with it off reads, and digests, exactly as one from a phone that
+        // predates the field.
+        bolus.set("autoAcceptCorrection", autoAcceptCorrection ? true : nil)
         w.set("bolus", bolus.value)
         var screens = FieldWriter()
         screens.set("order", strings: screenOrder.map(\.rawValue))
@@ -140,6 +149,7 @@ public struct WatchConfig: Sendable, Hashable {
         defaultBolusMode = try bolus.token("defaultMode", as: BolusModeToken.self)
         unitsStepMilliunits = try bolus.int("unitsStepMU", in: 10...10_000)
         carbStepGrams = try bolus.int("carbStepG", in: 1...50)
+        autoAcceptCorrection = try bolus.optionalBool("autoAcceptCorrection") ?? false
         let screens = try r.object("screens")
         screenOrder = try Self.tokens(screens, "order", as: ScreenToken.self)
         defaultScreen = try screens.token("default", as: ScreenToken.self)
