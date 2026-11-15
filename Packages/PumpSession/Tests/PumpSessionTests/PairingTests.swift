@@ -350,6 +350,21 @@ import Testing
         #expect(rig.pump.arrivals(of: DismissNotificationRequest.self).isEmpty)
     }
 
+    /// A t:slim at API 4.0 refuses DismissNotification (P3's bench), so with the default table its alerts
+    /// offer no remote clear and the phone sends none.
+    @Test func aTslimAtAPI40OffersNoRemoteClear() async throws {
+        let rig = Rig(configure: {
+            $0.unsupportedReads = []
+            $0.alertBitmap = 1 << 7
+            $0.apiVersion = (major: 4, minor: 0)
+        })
+        await rig.startHeld()
+        let alert = try #require(await rig.session.state.alerts?.value.first)
+        #expect(alert.remoteClear == .unavailable)
+        #expect(await rig.session.dismiss(alert) == .unsupported)
+        #expect(rig.pump.arrivals(of: DismissNotificationRequest.self).isEmpty)
+    }
+
     /// The trial: with nothing known for the class, the phone may try. The reads after its clear decide it
     /// for the unit: an alert still showing after "cleared" is reported as not cleared at once, and once a
     /// routine read after the settle still shows it, the pump's alerts can't be cleared remotely; one that
