@@ -363,7 +363,8 @@ extension AppModel {
             liveActivity.show(
                 content, staleDate: content.staleDate(now: now), appActive: appActive ?? sceneActive ?? false)
             if liveActivity.isRunning { lastLiveActivityUpdate = (content, now) }
-        } else if liveActivity.isRunning {
+        } else if liveActivity.anyListed {
+            // An ended card iOS still shows counts too: switching off takes it off the Lock Screen.
             liveActivity.end()
             lastLiveActivityUpdate = nil
         }
