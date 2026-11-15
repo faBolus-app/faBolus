@@ -42,6 +42,15 @@ import faBolusCore
         )
         .padding()
         check("offThePlot", chart, height: 220)
+        // As a line: the segments that reach a reading off the plot are dotted along its edge, and a 30-minute
+        // gap in the readings isn't joined.
+        let gapped = readings.filter { !(16...20).contains(Int($0.date.timeIntervalSince(now) / 300) + 35) }
+        let line = GlucoseChartView(
+            readings: gapped, windowHours: 3, showIOB: false, showBolusBars: false, floor: 40, ceiling: 250,
+            style: .line, now: now
+        )
+        .padding()
+        check("offThePlot-line", line, height: 220)
     }
 
     @Test func dashboard() async {

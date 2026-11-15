@@ -167,6 +167,29 @@ import Testing
         #expect(refused(message("config", p)))
     }
 
+    /// The plot style is written only when it is a line, so a config without it (every config before the field)
+    /// reads as dots, and an unknown style is refused like any unknown token.
+    @Test func thePlotStyleIsDotsUnlessTheConfigSaysLine() {
+        guard case .message(.config(let dots)) = RemoteMessage.receive(message("config", payload(of: "config"))),
+            case .message(.config(let line)) = RemoteMessage.receive(message("config", payload(of: "config-line")))
+        else {
+            Issue.record("a golden config didn't read")
+            return
+        }
+        #expect(dots.plotStyle == .dots)
+        #expect(line.plotStyle == .line)
+        guard case .object(let glucose)? = payload(of: "config")["glucose"] else {
+            Issue.record("the config has no glucose object")
+            return
+        }
+        #expect(glucose["plotStyle"] == nil)
+        var p = payload(of: "config-line")
+        guard case .object(var g)? = p["glucose"] else { return }
+        g["plotStyle"] = .string("bars")
+        p["glucose"] = .object(g)
+        #expect(refused(message("config", p)))
+    }
+
     @Test func aConfigWithAnImpossibleLayoutIsRefused() {
         var p = payload(of: "config")
         p["screens"] = .object(["order": .array([.string("glance")]), "default": .string("details")])

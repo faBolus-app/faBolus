@@ -43,6 +43,8 @@ public struct WatchConfig: Sendable, Hashable {
     /// The chart's y-axis, mg/dL, already resolved for a small screen.
     public var plotFloorMgdl: Int
     public var plotCeilingMgdl: Int
+    /// Dots or a line. Absent on the wire means dots.
+    public var plotStyle: PlotStyleToken
 
     public static let allowedChartHours = [3, 6, 12, 24]
     public static let maxComplicationSlots = 3
@@ -54,7 +56,7 @@ public struct WatchConfig: Sendable, Hashable {
         complicationLabels: Bool, glucoseUnit: GlucoseUnitToken, glucoseStaleMinutes: Int,
         iobStaleMinutes: Int, therapyStaleMinutes: Int, pumpStatusStaleMinutes: Int,
         glucoseHideDelayMinutes: Int?, glucoseIncludableMinutes: Int,
-        plotFloorMgdl: Int, plotCeilingMgdl: Int
+        plotFloorMgdl: Int, plotCeilingMgdl: Int, plotStyle: PlotStyleToken = .dots
     ) {
         self.bolusEnabled = bolusEnabled
         self.readOnly = readOnly
@@ -76,6 +78,7 @@ public struct WatchConfig: Sendable, Hashable {
         self.glucoseIncludableMinutes = glucoseIncludableMinutes
         self.plotFloorMgdl = plotFloorMgdl
         self.plotCeilingMgdl = plotCeilingMgdl
+        self.plotStyle = plotStyle
     }
 
     /// Sixteen hex digits of the SHA-256 of the content's canonical JSON.
@@ -111,6 +114,9 @@ public struct WatchConfig: Sendable, Hashable {
         glucose.set("includableMinutes", glucoseIncludableMinutes)
         glucose.set("plotFloor", plotFloorMgdl)
         glucose.set("plotCeiling", plotCeilingMgdl)
+        // Written only when it isn't the default, so a config with dots reads, and digests, exactly as one from
+        // a phone that predates the field.
+        glucose.set("plotStyle", plotStyle == .dots ? nil : plotStyle.rawValue)
         w.set("glucose", glucose.value)
         var freshness = FieldWriter()
         freshness.set("iobMinutes", iobStaleMinutes)
@@ -157,6 +163,7 @@ public struct WatchConfig: Sendable, Hashable {
         plotFloorMgdl = try glucose.int("plotFloor", in: 0...400)
         plotCeilingMgdl = try glucose.int("plotCeiling", in: 100...600)
         guard plotFloorMgdl < plotCeilingMgdl else { throw .outOfRange(field: "payload.glucose.plotFloor") }
+        plotStyle = try glucose.optionalToken("plotStyle", as: PlotStyleToken.self) ?? .dots
         let freshness = try r.object("freshness")
         iobStaleMinutes = try freshness.int("iobMinutes", in: 0...60)
         therapyStaleMinutes = try freshness.int("therapyMinutes", in: 0...240)

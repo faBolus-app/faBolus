@@ -25,6 +25,8 @@ public struct WatchPreferences: Sendable, Hashable {
     /// The small-screen override, which a watch uses ahead of the shared bounds.
     public var glucosePlotFloorSmall: Int?
     public var glucosePlotCeilingSmall: Int?
+    /// `"dots"` or `"line"`.
+    public var glucosePlotStyle = "dots"
 
     public init() {}
 }
@@ -62,7 +64,8 @@ public enum ConfigComposer {
             pumpStatusStaleMinutes: minutes(freshness.pumpStatusStaleAfter, max: 240),
             glucoseHideDelayMinutes: hideDelayMinutes(freshness),
             glucoseIncludableMinutes: minutes(freshness.maxIncludableGlucoseAge, max: 240),
-            plotFloorMgdl: plot.floor, plotCeilingMgdl: plot.ceiling)
+            plotFloorMgdl: plot.floor, plotCeilingMgdl: plot.ceiling,
+            plotStyle: PlotStyleToken(rawValue: p.glucosePlotStyle) ?? .dots)
     }
 
     private static func unique<T: Hashable>(_ values: [T]) -> [T] {

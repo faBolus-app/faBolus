@@ -72,6 +72,10 @@ public enum GlucosePlotScale {
         return Placement(mgdl: drawn, isCapped: drawn != mgdl)
     }
 
+    /// A line plot doesn't join two readings further apart than this (a missed reading or two is joined; a
+    /// sensor change isn't), so a gap never draws as readings.
+    public static let maxLineGap: TimeInterval = 15 * 60
+
     /// Maps a secondary-axis unit value (e.g. IOB units) linearly into the glucose domain:
     /// `0 -> floor`, `unitMax -> ceiling`. Used by the iPhone chart's IOB overlay so the overlay's
     /// scale always tracks both the user's floor and ceiling, never a hardcoded pair.

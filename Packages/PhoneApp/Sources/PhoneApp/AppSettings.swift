@@ -45,6 +45,8 @@ public final class AppSettings {
     /// The watch's own chart bounds, ahead of the shared ones; `nil` follows the phone's.
     public var watchPlotFloor: Int? { didSet { set(watchPlotFloor, .watchPlotFloor) } }
     public var watchPlotCeiling: Int? { didSet { set(watchPlotCeiling, .watchPlotCeiling) } }
+    /// Dots or a line, on every plot: the chart, the widgets, the Live Activity and the watch.
+    public var glucosePlotStyle: GlucosePlotStyle { didSet { set(glucosePlotStyle.rawValue, .glucosePlotStyle) } }
     public var showStats: Bool { didSet { set(showStats, .showStats) } }
     /// The phone's Details rows, in order (`DetailsField`). Rows not listed are hidden.
     public var detailsOrder: [String] { didSet { set(detailsOrder, .detailsOrder) } }
@@ -146,6 +148,7 @@ public final class AppSettings {
             watchPlotFloor = nil
             watchPlotCeiling = nil
         }
+        glucosePlotStyle = value(.glucosePlotStyle).flatMap(GlucosePlotStyle.init(rawValue:)) ?? .default
         showStats = value(.showStats) ?? false
         detailsOrder = Self.restoreOrder(
             value(.detailsOrder), allowed: DetailsField.allIDs, fallback: DetailsField.defaultIDs)
@@ -217,6 +220,7 @@ public final class AppSettings {
         case glucosePlotCeiling
         case watchPlotFloor = "glucosePlotFloorSmall"
         case watchPlotCeiling = "glucosePlotCeilingSmall"
+        case glucosePlotStyle
         case showStats, detailsOrder, pillsOrder
         case glucoseStaleMinutes, glucoseHideDelayMinutes, pumpStatusStaleMinutes
         case phoneReadOnly, remotesReadOnly, garminBolusEnabled

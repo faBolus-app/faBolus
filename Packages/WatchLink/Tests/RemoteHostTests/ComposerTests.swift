@@ -253,6 +253,7 @@ import Testing
         p.glucosePlotFloor = 50
         p.glucosePlotFloorSmall = 40
         p.glucosePlotCeilingSmall = 350
+        p.glucosePlotStyle = "bars"
         let c = ConfigComposer.compose(p, access: Self.access, freshness: .standard)
         #expect(c.screenOrder == [.details, .clock])
         #expect(c.defaultScreen == .details)
@@ -262,6 +263,7 @@ import Testing
         #expect(c.defaultBolusMode == .carbs)
         #expect(c.plotFloorMgdl == 40)
         #expect(c.plotCeilingMgdl == 350)
+        #expect(c.plotStyle == .dots)
         #expect(RemoteMessage.receive(RemoteMessage.config(c).wire) == .message(.config(c)))
     }
 

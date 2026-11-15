@@ -62,7 +62,8 @@ struct DashboardView: View {
                 deliveryChanges: model.deliveryChanges, windowHours: windowHours,
                 showGlucose: settings.showGlucoseAxis, showIOB: settings.showIOBAxis,
                 showBolusBars: settings.showBolusBars, showBasal: settings.showBasal,
-                floor: settings.glucosePlotFloor, ceiling: settings.glucosePlotCeiling, unit: settings.glucoseUnit,
+                floor: settings.glucosePlotFloor, ceiling: settings.glucosePlotCeiling,
+                style: settings.glucosePlotStyle, unit: settings.glucoseUnit,
                 showUnitLabel: settings.showGlucoseUnitLabels, now: now)
             Picker("Window", selection: $windowHours) {
                 ForEach(windows, id: \.self) { Text("\($0)h").tag($0) }

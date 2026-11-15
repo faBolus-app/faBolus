@@ -447,7 +447,7 @@ struct SmallActivityView: View {
             if view.snapshot.recent.count > 1 && (headline == nil || view.content.alerts == nil) {
                 Sparkline(
                     points: view.snapshot.recent, stale: view.stale, floor: view.snapshot.plotBounds.floor,
-                    ceiling: view.snapshot.plotBounds.ceiling
+                    ceiling: view.snapshot.plotBounds.ceiling, style: view.snapshot.plotStyle ?? .default
                 )
                 .frame(minHeight: 10, maxHeight: .infinity).layoutPriority(-1)
             }

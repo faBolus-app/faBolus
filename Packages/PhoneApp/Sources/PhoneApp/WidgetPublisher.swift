@@ -20,7 +20,8 @@ public enum WidgetPublisher {
             lastAutoCorrection: lastAutoCorrection,
             connected: display.link.isConnected, publishedAt: now, recent: Array(recent), freshness: freshness,
             unit: settings.glucoseUnit, showUnitLabel: settings.showGlucoseUnitLabels,
-            plotFloorMgdl: settings.glucosePlotFloor, plotCeilingMgdl: settings.glucosePlotCeiling)
+            plotFloorMgdl: settings.glucosePlotFloor, plotCeilingMgdl: settings.glucosePlotCeiling,
+            plotStyle: settings.glucosePlotStyle)
     }
 
     /// The readings of the last `hours`, oldest first.
