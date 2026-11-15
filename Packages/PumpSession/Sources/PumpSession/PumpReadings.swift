@@ -93,6 +93,14 @@ struct PumpAlertLists: Sendable, Equatable {
     var graceEndsAt: Date?
     var asOf: Date?
 
+    /// Moves the grace period's times with the phone's clock, as `PumpState.phoneClockSet(by:)` moves the
+    /// state's: both are phone-clock times, so the next alert reply, stamped on the clock as set, counts the
+    /// time left from the same clock.
+    mutating func phoneClockSet(by seconds: TimeInterval) {
+        graceEndsAt?.addTimeInterval(seconds)
+        asOf?.addTimeInterval(seconds)
+    }
+
     /// The grace period's time left at the latest alert reply, seconds.
     var graceSecondsLeft: Int? {
         guard let graceEndsAt, let asOf else { return nil }
