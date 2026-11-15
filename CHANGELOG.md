@@ -48,6 +48,11 @@ experimental and demonstration use.
 - A bolus record that couldn't be read at launch is no longer overwritten when a watch request is refused or
   a watch cancel is recorded. It was replaced by an empty record, so the next launch forgot any unknown
   bolus it held and stopped blocking new boluses. Only "I checked the pump" writes over it.
+- A second Live Activity no longer appears beside one iOS ended. iOS ends a Live Activity after 8 hours but
+  leaves it frozen on the Lock Screen for up to 4 more, and opening the app then started a new one beside
+  it. Now any card iOS still lists is ended before a new one starts, an extra card is ended on the next
+  update, switching the Live Activity off removes an ended card too, and while the app is open a card is
+  replaced before it reaches 8 hours.
 
 ## [0.4.0] — 2026-11-01
 

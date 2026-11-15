@@ -100,10 +100,16 @@ public struct AppEnvironment {
 /// Starts, updates and ends the Live Activity. The app's implementation uses ActivityKit.
 @MainActor
 public protocol LiveActivityHosting: AnyObject {
-    /// Whether one is showing.
+    /// Whether one is showing and still updated by iOS (active or stale).
     var isRunning: Bool { get }
+    /// Whether iOS lists any, an ended one still on the Lock Screen included.
+    var anyListed: Bool { get }
     /// Shows `content`, starting the Live Activity if there is none. Starting only works with the app in
     /// the foreground; an update works in the background too.
     func show(_ content: LiveActivityContent, staleDate: Date?, appActive: Bool)
     func end()
+}
+
+extension LiveActivityHosting {
+    public var anyListed: Bool { isRunning }
 }
