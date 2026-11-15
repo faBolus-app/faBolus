@@ -70,7 +70,10 @@ extension AppModel {
     public func deliver(_ dose: ComposedDose) async -> DeliveryResult {
         let result = await session.deliver(dose)
         await refreshBolusBlock()
-        if case .started(let key, let outcome) = result {
+        if case .started(let key, let returned) = result {
+            // The session's answer can be older than an outcome its events already recorded (a short bolus
+            // that finished meanwhile): the ledger's is the one shown, never "Delivering" for good.
+            let outcome = await ledger.ledger.outcome(key) ?? returned
             latestOutcome = BolusStatus(key: key, outcome: outcome, requestedUnits: dose.units, at: now)
         }
         return result
@@ -78,6 +81,12 @@ extension AppModel {
 
     /// Never gated (R10).
     public func cancelBolus() async -> CancelResult { await session.cancelBolus() }
+
+    /// A cancel that names the bolus it went to, and for a retry, goes only to `expected`
+    /// (`PumpSession.cancelBolus(onlyIf:)`).
+    func cancelBolus(onlyIf expected: Int?) async -> (result: CancelResult, bolusId: Int?) {
+        await session.cancelBolus(onlyIf: expected)
+    }
 
     /// The phone's bolus screen opened: the session tells the pump the user is interacting, as t:connect does.
     public func bolusScreenOpened() async { await session.bolusScreenOpened() }

@@ -392,6 +392,147 @@ import faBolusCore
         await r.model.shutdown()
     }
 
+    /// A cancel tap, run to the session's last answer. The flow waits between tries in real time, so the
+    /// pump's clock runs until it returns.
+    func cancelToTheEnd(_ r: Rig) async {
+        let model = r.model
+        let screen = r.panel.screen
+        var done = false
+        Task { @MainActor in
+            await model.liveActivityTapped(LiveActivityTap(screen: screen, action: .cancelBolus), unlocked: false)
+            done = true
+        }
+        for _ in 0..<2000 where !done { await r.phone.run(model, for: 0.1, step: 0.1) }
+        #expect(done)
+    }
+
+    /// A cancel the pump never confirms leaves Cancel to tap again, and the bolus isn't shown stopped; once
+    /// the bolus ends, the next one (from the phone, on the card) offers Cancel too, not a held "Cancelling".
+    @Test func aCancelWithNoDefiniteAnswerLeavesCancelTappable() async {
+        let r = await rig { $0.deliveryMilliunitsPerSecond = 10 }
+        await r.units(2000)
+        await r.tap(.review)
+        await r.confirm()
+        #expect(await r.result("Delivering…"))
+        r.pump.answers[MessageKey(CancelBolusRequest.self)] = .error(code: 1, drops: false)
+        await cancelToTheEnd(r)
+        guard case .result(let going) = r.view else {
+            Issue.record("expected the result, got \(r.view)")
+            return
+        }
+        #expect(going.headline == "Delivering…", "not shown as stopped")
+        #expect(going.button == .cancel, "Cancel can be tapped again")
+        #expect(going.note != nil, "it says to use the pump")
+        r.pump.answers[MessageKey(CancelBolusRequest.self)] = nil
+        #expect(await r.result("Delivered"))
+        await r.tap(.close)
+        #expect(r.view == .idle(.bolus))
+
+        // Cancelled from the card, with no answer, during a bolus from the phone.
+        let flow = BolusFlow(model: r.model)
+        flow.mode = .units
+        flow.unitsTyped("2")
+        await r.phone.driving(r.model) { await flow.confirm() }
+        await r.phone.driving(r.model) { await flow.deliver() }
+        #expect(await r.phone.until(r.model) { r.view == .idle(.cancel) })
+        r.pump.answers[MessageKey(CancelBolusRequest.self)] = .error(code: 1, drops: false)
+        await cancelToTheEnd(r)
+        #expect(r.view == .idle(.cancel), "Cancel can be tapped again")
+        r.pump.answers[MessageKey(CancelBolusRequest.self)] = nil
+        #expect(await r.phone.until(r.model) { r.view == .idle(.bolus) })
+        _ = await r.phone.until(r.model) { r.model.bolusBlock == nil }
+        // The next bolus offers Cancel.
+        let next = BolusFlow(model: r.model)
+        next.mode = .units
+        next.unitsTyped("2")
+        await r.phone.driving(r.model) { await next.confirm() }
+        await r.phone.driving(r.model) { await next.deliver() }
+        #expect(await r.phone.until(r.model) { r.view != .idle(.bolus) })
+        #expect(r.view == .idle(.cancel))
+        await r.model.shutdown()
+    }
+
+    /// A bolus that ends while its cancel is still with the session doesn't end that cancel: a tap then is
+    /// folded into the one running (it returns at once) rather than starting a second cancel beside it.
+    @Test func oneCancelAtATimeEvenAfterTheBolusEnds() async throws {
+        let r = await rig { $0.deliveryMilliunitsPerSecond = 10 }
+        await r.units(2000)
+        await r.tap(.review)
+        await r.confirm()
+        #expect(await r.result("Delivering…"))
+        let key = try #require(await r.entries().first?.request.ledgerKey)
+        r.pump.answers[MessageKey(CancelBolusRequest.self)] = .silent
+        let model = r.model
+        let screen = r.panel.screen
+        var firstDone = false
+        Task { @MainActor in
+            await model.liveActivityTapped(LiveActivityTap(screen: screen, action: .cancelBolus), unlocked: false)
+            firstDone = true
+        }
+        #expect(await r.phone.until(model) { r.pump.arrivals(of: CancelBolusRequest.self).count == 1 })
+        #expect(!firstDone)
+        r.flow.outcomeChanged(key, .delivered(units: 2))
+        var secondDone = false
+        let again = LiveActivityTap(screen: r.panel.screen, action: .cancelBolus)
+        Task { @MainActor in
+            await model.liveActivityTapped(again, unlocked: false)
+            secondDone = true
+        }
+        await r.phone.settle(model)
+        #expect(secondDone, "folded into the cancel already running")
+        #expect(!firstDone)
+        r.pump.answers[MessageKey(CancelBolusRequest.self)] = nil
+        for _ in 0..<2000 where !firstDone { await r.phone.run(model, for: 0.1, step: 0.1) }
+        #expect(firstDone)
+        await model.shutdown()
+    }
+
+    /// A cancel left without an answer is tried again only while the bolus it was for is still the one
+    /// going: once that one ends and a newer one starts, the old tap's retries don't stop the newer one.
+    @Test func aCancelsRetryNeverStopsANewerBolus() async {
+        let r = await rig { $0.deliveryMilliunitsPerSecond = 10 }
+        r.pump.startBolus(id: 9001, milliunits: 5000)
+        #expect(await r.phone.until(r.model) { r.view == .idle(.cancel) })
+        r.pump.answers[MessageKey(CancelBolusRequest.self)] = .error(code: 1, drops: false)
+        let model = r.model
+        let screen = r.panel.screen
+        var done = false
+        Task { @MainActor in
+            await model.liveActivityTapped(LiveActivityTap(screen: screen, action: .cancelBolus), unlocked: false)
+            done = true
+        }
+        for _ in 0..<200 where r.pump.arrivals(of: CancelBolusRequest.self).isEmpty {
+            await r.phone.run(model, for: 0.1, step: 0.1)
+        }
+        // The first bolus ends and another starts on the pump; the pump would now act on a cancel.
+        r.pump.stopBolus(completionStatus: 3)
+        r.pump.startBolus(id: 9002, milliunits: 5000)
+        r.pump.answers[MessageKey(CancelBolusRequest.self)] = nil
+        for _ in 0..<2000 where !done { await r.phone.run(model, for: 0.1, step: 0.1) }
+        #expect(done)
+        #expect(r.pump.activeBolus?.id == 9002)
+        #expect(r.pump.activeBolus?.stop == nil, "the newer bolus wasn't stopped")
+        await model.shutdown()
+    }
+
+    /// The session's answer can be older than the dose's outcome already recorded (its events came while the
+    /// result had no key yet): the result shows the recorded outcome, never "Delivering…" for good.
+    @Test func aLateAnswerShowsTheRecordedOutcome() async throws {
+        let r = await rig()
+        await r.units(1000)
+        await r.tap(.review)
+        await r.confirm()
+        #expect(await r.result("Delivered"))
+        let key = try #require(await r.entries().first?.request.ledgerKey)
+        await r.flow.showCurrent(.delivering, key: key, units: 1)
+        guard case .result(let shown) = r.view else {
+            Issue.record("expected the result, got \(r.view)")
+            return
+        }
+        #expect(shown.headline == "Delivered")
+        await r.model.shutdown()
+    }
+
     /// An outcome the app lost track of says to check the pump, and no bolus starts from the Live Activity
     /// until it's settled. The pump acted on the lost reply, so the card offers to cancel what it delivers.
     @Test func anUnknownOutcomeBlocks() async {

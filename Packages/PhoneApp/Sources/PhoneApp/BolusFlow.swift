@@ -18,7 +18,8 @@ public final class BolusFlow {
         /// The dose is ready: the last check before it's sent, with its notices.
         case review(ComposedDose)
         case delivering
-        /// The session's answer. A started dose's later moves come through the model's banner.
+        /// The session's answer, to be acknowledged (`resultText`). A started dose still in flight isn't
+        /// held here: the screen goes back to editing and the model's banner follows it.
         case done(DeliveryResult)
         /// Nothing was sent, and why.
         case refused(String)
@@ -48,6 +49,9 @@ public final class BolusFlow {
     /// The composer's question from the pump's fresh read at Confirm, ahead of the screen's own: it holds
     /// until the screen's question changes from what it was then.
     private var composerQuestion: ComposerQuestion?
+    /// Set when the screen is cleared after a dose: the units aren't filled again until carbs or glucose
+    /// are typed, so a correction never appears by itself from an IOB that may not count the dose yet.
+    private var fillHeld = false
 
     public init(model: AppModel) {
         self.model = model
@@ -111,6 +115,11 @@ public final class BolusFlow {
     /// follow the suggestion, or the card chosen, until edited by hand. With a question and no card chosen
     /// there's no dose yet.
     public func entryChanged() {
+        if fillHeld {
+            let blank = { (t: String) in t.trimmingCharacters(in: .whitespaces).isEmpty }
+            guard !blank(carbsText) || !blank(glucoseText) else { return }
+            fillHeld = false
+        }
         guard mode == .carbs, !unitsEdited else { return }
         if correctionQuestion != nil {
             unitsText = correction.map { Self.unitsField($0.units) } ?? ""
@@ -125,8 +134,10 @@ public final class BolusFlow {
         unitsEdited = true
     }
 
-    /// Back to the calculator's dose (or the cards) after editing it by hand.
+    /// Back to the calculator's dose (or the cards) after editing it by hand. Asked for, so it fills even
+    /// right after a dose.
     public func useCalculatorDose() {
+        fillHeld = false
         unitsEdited = false
         entryChanged()
     }
@@ -517,10 +528,43 @@ public final class BolusFlow {
         phase = .delivering
         switch await model.composePhoneDose(attempt) {
         case .deliver(let fresh) where Self.sameDose(fresh, reviewed):
-            let result = await model.deliver(fresh)
-            phase = .done(result)
-            if case .started = result { reset() }
+            finish(await model.deliver(fresh))
         case let other: show(other)
+        }
+    }
+
+    /// After the session's answer. A dose still in flight goes back to editing with the entry cleared: the
+    /// model's banner follows it, and a new Confirm is a new attempt, never this one again. Every other
+    /// answer is held to be acknowledged, with its text. The entry is cleared whenever insulin may have
+    /// gone in; it's kept only when nothing was delivered, to try again.
+    private func finish(_ result: DeliveryResult) {
+        let outcome: BolusOutcome? =
+            switch result {
+            case .started(_, let o), .alreadyRecorded(let o): o
+            case .notStarted: nil
+            }
+        attempt = nil
+        switch outcome {
+        case .refused?, .failed?, nil: break
+        case .requested?, .accepted?, .delivering?, .delivered?, .stopped?, .unknown?: reset()
+        }
+        if let outcome, outcome.isInFlight {
+            phase = .editing
+        } else {
+            phase = .done(result)
+        }
+    }
+
+    /// What the screen says for a result held in `.done`; `nil` only for a started dose still in flight,
+    /// which the banner shows.
+    public static func resultText(_ result: DeliveryResult) -> String? {
+        switch result {
+        case .started(_, let outcome) where outcome.isInFlight, .alreadyRecorded(let outcome) where outcome.isInFlight:
+            return nil
+        case .started(_, let outcome), .alreadyRecorded(let outcome):
+            let banner = BolusBanner.make(outcome, requestedUnits: nil)
+            return banner.message.isEmpty ? banner.title : "\(banner.title). \(banner.message)"
+        case .notStarted(let refusal): return PumpMessages.text(refusal)
         }
     }
 
@@ -547,10 +591,17 @@ public final class BolusFlow {
         phase = .editing
     }
 
-    public func dismissResult() { phase = .editing }
+    /// The result acknowledged. Only a result: it never moves the flow out of a step under way.
+    public func dismissResult() {
+        switch phase {
+        case .done, .refused: phase = .editing
+        case .editing, .composing, .prompt, .review, .delivering: return
+        }
+    }
 
     private func reset() {
         attempt = nil
+        fillHeld = true
         carbsText = ""
         glucoseText = ""
         unitsText = ""

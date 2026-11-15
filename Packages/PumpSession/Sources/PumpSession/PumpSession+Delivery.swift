@@ -390,8 +390,22 @@ extension PumpSession {
     /// Like Mobi, it cancels by the bolus it already knows: the one it is following or delivering, or else
     /// the one this connection's latest bolus status reported active. Only with none of those does it ask
     /// the pump first.
-    public func cancelBolus() async -> CancelResult {
+    public func cancelBolus() async -> CancelResult { await cancelBolus(onlyIf: nil).result }
+
+    /// `cancelBolus()`, also naming the bolus it cancelled by (`nil` when it sent no cancel).
+    ///
+    /// - Parameter expected: a retry's bolus, as the first try named it. When the bolus found now is another
+    ///   (that one ended and a newer one started), nothing is sent and the answer is `.noBolus`: an old tap
+    ///   never stops a newer bolus.
+    public func cancelBolus(onlyIf expected: Int?) async -> (result: CancelResult, bolusId: Int?) {
+        var named: Int?
+        let result = await runCancel(onlyIf: expected, naming: &named)
+        return (result, named)
+    }
+
+    private func runCancel(onlyIf expected: Int?, naming named: inout Int?) async -> CancelResult {
         if var d = delivery, !d.initiateQueued {
+            if let expected, d.bolusId != expected { return .noBolus }
             d.cancelRequested = true
             delivery = d
             return .stoppedBeforeStart
@@ -431,6 +445,8 @@ extension PumpSession {
             }
         }
         guard let bolusId else { return .noBolus }
+        if let expected, bolusId != expected { return .noBolus }
+        named = bolusId
         let request = CancelBolusRequest(bolusId: bolusId)
         let result = await exchange(request, allowing: request.operationRisk, priority: priority, owner: owner)
         tracked?.lastPollAt = nil

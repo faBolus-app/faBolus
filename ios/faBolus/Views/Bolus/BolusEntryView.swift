@@ -149,7 +149,11 @@ struct BolusEntryView: View {
                 .buttonStyle(.borderedProminent).tint(AppTheme.insulin)
                 .disabled(flow.unavailableReason != nil || flow.phase != .editing)
             }
-            if let status = model.latestOutcome, status.outcome.isInFlight {
+            // A dose handed back to editing is followed here, in flight and for two minutes after it settles, so
+            // a refusal or stop that comes later is seen too.
+            if let status = model.latestOutcome,
+                status.outcome.isInFlight || model.now.timeIntervalSince(status.at) < 120
+            {
                 Section {
                     BolusBannerView(banner: BolusBanner.make(status.outcome, requestedUnits: status.requestedUnits))
                 }
@@ -160,7 +164,7 @@ struct BolusEntryView: View {
                     Button("OK") { flow.dismissResult() }
                 }
             }
-            if case .done(let result) = flow.phase, let message = Self.text(result) {
+            if case .done(let result) = flow.phase, let message = BolusFlow.resultText(result) {
                 Section {
                     Text(message)
                     Button("OK") { flow.dismissResult() }
@@ -477,14 +481,6 @@ struct BolusEntryView: View {
         if flow.phase == .editing, let change = flow.changeAlert { return .change(change) }
         if case .prompt(let p) = flow.phase { return .prompt(p) }
         return nil
-    }
-
-    static func text(_ result: DeliveryResult) -> String? {
-        switch result {
-        case .started: return nil
-        case .alreadyRecorded(let outcome): return BolusBanner.make(outcome, requestedUnits: nil).title
-        case .notStarted(let refusal): return PumpMessages.text(refusal)
-        }
     }
 }
 
