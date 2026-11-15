@@ -571,6 +571,9 @@ import Testing
         let dismiss = Task { await session.dismiss(alert) }
         await rig.run(for: 2)
         #expect(await rig.value(of: dismiss) == .unsupported)
+        // No such command: this unit can't clear remotely, so the clear isn't offered again.
+        #expect(await session.remoteClearTrialResult == .doesNotClear)
+        #expect(await session.state.alerts?.value.first?.remoteClear == .unavailable)
     }
 
     /// The pump answers the clear with a non-zero status: refused, and the alert stays shown.
