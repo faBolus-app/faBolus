@@ -32,8 +32,10 @@ import WidgetContent
     /// A duplicate, however it arose, doesn't stay: the newest live card is kept and the rest end.
     @Test func extraCardsEndAndTheNewestLiveOneIsKept() {
         let plan = LiveActivityPlan.decide(
-            [card("older", live: true, hoursAgo: 3), card("ended", live: false, hoursAgo: 9),
-             card("newest", live: true, hoursAgo: 0.1)],
+            [
+                card("older", live: true, hoursAgo: 3), card("ended", live: false, hoursAgo: 9),
+                card("newest", live: true, hoursAgo: 0.1)
+            ],
             appActive: false, now: now)
         #expect(plan.update == "newest")
         #expect(Set(plan.end) == ["older", "ended"])
@@ -43,7 +45,8 @@ import WidgetContent
     /// While the app is open, a card nearing iOS's 8-hour end is replaced before iOS freezes it.
     @Test func aCardNearingEightHoursIsReplacedInTheForeground() {
         let old = card("a", live: true, hoursAgo: 7.2)
-        #expect(LiveActivityPlan.decide([old], appActive: true, now: now) == .init(update: nil, end: ["a"], start: true))
+        #expect(
+            LiveActivityPlan.decide([old], appActive: true, now: now) == .init(update: nil, end: ["a"], start: true))
         #expect(LiveActivityPlan.decide([old], appActive: false, now: now) == .init(update: "a", end: [], start: false))
         let young = card("b", live: true, hoursAgo: 6.9)
         #expect(LiveActivityPlan.decide([young], appActive: true, now: now).update == "b")

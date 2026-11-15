@@ -44,7 +44,8 @@ public enum LiveActivityPlan {
         let all = listed.map(\.id)
         guard let keep else {
             // Nothing live. An ended card is left up in the background, where nothing can replace it.
-            return appActive ? Decision(update: nil, end: all, start: true) : Decision(update: nil, end: [], start: false)
+            return appActive
+                ? Decision(update: nil, end: all, start: true) : Decision(update: nil, end: [], start: false)
         }
         if appActive, let started = keep.startedAt, now.timeIntervalSince(started) >= replaceAfter {
             return Decision(update: nil, end: all, start: true)
