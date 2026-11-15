@@ -333,7 +333,12 @@ extension PumpSession {
             await settle(bolus.key, .delivered(delivered))
             return
         }
-        if case .completed(let record) = await searchHistory(for: bolus.bolusId, acceptedAt: nil) {
+        // Only a record no older than this bolus's acceptance is its record: an older one with the same ID and
+        // amount is another bolus.
+        if let entry = await ledger.ledger.entry(bolus.key), let earliest = earliestRecordTime(for: entry),
+            case .completed(let record) = await searchHistory(
+                for: bolus.bolusId, acceptedAt: nil, notBefore: earliest)
+        {
             await settle(bolus.key, .delivered(record.deliveredUnits))
             return
         }
@@ -401,7 +406,12 @@ extension PumpSession {
         }
         let owner = delivery?.owner
         let priority: Priority = owner == nil ? .cancel : .delivery
-        var bolusId = tracked?.bolusId ?? delivery?.bolusId ?? activeBolusThisConnection
+        var bolusId = tracked?.bolusId ?? delivery?.bolusId
+        // Whether the pump was just seen delivering this ID: the bolus followed, this delivery's own, or the
+        // pump's answer below. Otherwise (the last routine status read, or the ledger) it may be a bolus that
+        // has ended, so a "not cancelled" can't say the bolus in progress finished.
+        var confirmedActive = bolusId != nil
+        bolusId = bolusId ?? activeBolusThisConnection
         if bolusId == nil {
             // Ask the pump which bolus it is delivering. "No bolus" is said only on its answer; if it can't
             // be asked, the newest bolus that may still be delivering is cancelled by its recorded ID.
@@ -409,9 +419,13 @@ extension PumpSession {
             if case .reply(let reply) = result, let status = reply.message as? CurrentBolusStatusResponse {
                 guard status.isActive else { return .noBolus }
                 bolusId = status.bolusId
+                confirmedActive = true
             } else {
+                // One the user confirmed on the pump is settled as far as the phone goes: not a bolus to cancel.
                 bolusId = await ledger.ledger.allEntries.last {
-                    $0.bolusId != nil && ($0.outcome == .accepted || $0.outcome == .delivering || $0.outcome.isUnknown)
+                    $0.bolusId != nil
+                        && ($0.outcome == .accepted || $0.outcome == .delivering
+                            || ($0.outcome.isUnknown && $0.confirmedOnPumpAt == nil))
                 }?.bolusId
                 guard bolusId != nil else { return state.link.isConnected ? .unconfirmed : .notConnected }
             }
@@ -422,7 +436,9 @@ extension PumpSession {
         tracked?.lastPollAt = nil
         switch result {
         case .reply(let reply):
-            return (reply.message as? CancelBolusResponse)?.wasCancelled == true ? .cancelled : .notCancelled
+            if (reply.message as? CancelBolusResponse)?.wasCancelled == true { return .cancelled }
+            // A refusal for an ID not just seen active may be for a bolus that ended, while another goes on.
+            return confirmedActive ? .notCancelled : .unconfirmed
         case .pumpError:
             // The pump didn't take the request, which says nothing about the bolus: it may still be
             // delivering, so the user is told to check the pump and cancel there.
@@ -495,10 +511,7 @@ extension PumpSession {
         let outcome = await ledger.ledger.outcome(key) ?? .requested
         emit(.bolusOutcome(key, outcome))
         // An outcome that just became unknown is searched for soon, not at the next routine sync.
-        if outcome.isUnknown {
-            let soon = uptime().addingTimeInterval(config.reconcileWhileDelivering)
-            nextReconcileAt = min(nextReconcileAt ?? soon, soon)
-        }
+        if outcome.isUnknown { scheduleReconcile(at: uptime().addingTimeInterval(config.reconcileWhileDelivering)) }
         return outcome
     }
 }

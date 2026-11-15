@@ -78,6 +78,9 @@ public final class AppModel {
     public internal(set) var deliveryChanges: [DeliveryChange] = []
     public internal(set) var iobHistory: [IOBSample] = []
     public internal(set) var bolusBlock: BolusBlock?
+    /// Whether the alerts were last told the bolus record can't be read (`refreshBolusBlock`); `nil` until
+    /// they're first told.
+    @ObservationIgnored var alertsToldLedgerUnreadable: Bool?
     /// The newest bolus outcome this process saw, for the bolus banner.
     public internal(set) var latestOutcome: BolusStatus?
     public internal(set) var lastDismiss: (alert: PumpAlert, outcome: DismissOutcome)?
@@ -182,7 +185,7 @@ public final class AppModel {
         pump = await session.state
         logbook = await session.historyEvents
         historySync = await session.historySync
-        bolusBlock = await ledger.block
+        await refreshBolusBlock()
         reloadHistory()
         recompute()
         launched = true
@@ -198,6 +201,8 @@ public final class AppModel {
                     while !Task.isCancelled {
                         try? await Task.sleep(for: .seconds(60))
                         await self?.updatePrimaryHealth()
+                        // A bolus record that couldn't be read is read again; once it reads, its outcomes block.
+                        await self?.refreshBolusBlock()
                         // The pump's reading may have aged past its window: the backup's takes over now.
                         self?.recompute()
                         self?.publishSurfaces()
@@ -217,7 +222,7 @@ public final class AppModel {
         if active {
             await alerts.tick()
             await updatePrimaryHealth()
-            bolusBlock = await ledger.block
+            await refreshBolusBlock()
         }
         publishSurfaces(appActive: active)
     }
@@ -287,10 +292,10 @@ public final class AppModel {
         case .bolusOutcome(let key, let outcome):
             let entry = await ledger.ledger.entry(key)
             latestOutcome = BolusStatus(key: key, outcome: outcome, requestedUnits: entry?.request.totalUnits, at: now)
-            bolusBlock = await ledger.block
+            await refreshBolusBlock()
             liveActivityFlowStorage?.outcomeChanged(key, outcome)
         case .bolusOutcomesSaved:
-            bolusBlock = await ledger.block
+            await refreshBolusBlock()
         case .pumpFound(let id, let name, let model, let rssi):
             // 127 is CoreBluetooth's "unknown": listed, after every pump with a reading.
             pumpSignal[id] = rssi == 127 ? Int.min : rssi

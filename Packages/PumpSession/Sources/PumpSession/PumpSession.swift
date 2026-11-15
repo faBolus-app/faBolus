@@ -62,6 +62,12 @@ public actor PumpSession {
         public var reconcileMargin: UInt32 = 10 * 60
         public var reconcileInterval: TimeInterval = 2 * 60
         public var reconcileAttemptsPerConnection = 5
+        /// How many times, in all and across launches, the pump's log is searched for one unknown bolus.
+        public var reconcileSearchesPerEntry = 10
+        /// A sync with a request the pump answered with no record isn't counted as synced: it's run again
+        /// after this long, at most this many times in a row, then finishes with that part still missing.
+        public var historyEmptyRetryAfter: TimeInterval = 60
+        public var historyEmptyRetries = 3
         /// How soon an unknown bolus the pump still reports active is looked at again.
         public var reconcileWhileDelivering: TimeInterval = 15
         /// How often a bolus outcome that couldn't be saved is saved again (the old app's interval).
@@ -178,6 +184,8 @@ public actor PumpSession {
     public internal(set) var historySync: HistorySyncState = .idle(lastSynced: nil)
     public internal(set) var historyEvents: [HistoryEvent] = []
     var reconcileAttempts = 0
+    /// Syncs in a row that a request answered with no record kept from finishing.
+    var emptySyncRetries = 0
     var reconciling = false
     var nextReconcileAt: Uptime?
     var nextLedgerSaveAt: Uptime?
@@ -681,6 +689,7 @@ public actor PumpSession {
         connectedAt = started
         onceThisConnection = []
         unanswered = [:]
+        emptySyncRetries = 0
         reconcileAttempts = 0
         nextReconcileAt = started
         for group in ReadGroup.allCases { due[group] = started }

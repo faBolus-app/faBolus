@@ -457,3 +457,22 @@ more.
   `Packages/PumpSession/Sources/PumpSession/PumpReadings.swift` (`PumpAlertLists.graceDetail`).
 - **Risk:** display only. A wrong byte would say the wrong time left, or none.
 - **Verify:** on P2 with a G7, let a session run into its grace period and compare B with the pump's screen.
+
+## 42. A history record is a bolus's only when it is no older than the bolus's acceptance
+
+- **The guess:** a completed-bolus record settles an unknown outcome only when it carries the bolus's ID,
+  states the requested amount (when it states one), is no older than the moment the pump granted the
+  bolus's permission less 10 minutes, and comes from the log the bolus was recorded in (not one that
+  restarted since). With no pump clock recorded at the acceptance, the earliest time is worked out by the
+  clock anchor: 40 minutes (the longest a bolus is followed, plus the margin) before the outcome became
+  unknown, or 10 minutes before the entry's last move. With neither, no record settles it.
+- **Unverified:** whether a pump's bolus IDs restart after a reset, a software update or a pump replaced
+  under the same serial; if they do, an old record with the same ID and a common amount would otherwise
+  read as this bolus's. The 10-minute margin is a guess too.
+- **Where:** `names` and `earliestRecordTime` in
+  `Packages/PumpSession/Sources/PumpSession/PumpSession+History.swift`, and `settleFinished` in
+  `PumpSession+Delivery.swift`.
+- **Risk:** a pump clock set back by more than the margin, or a phone clock set while the outcome was
+  unknown with no pump clock recorded, can make the bolus's own record look too old. The outcome then stays
+  unknown until the user confirms it on the pump: that fails closed.
+- **Verify:** note the bolus IDs before and after a pump reset on P1 and P2.

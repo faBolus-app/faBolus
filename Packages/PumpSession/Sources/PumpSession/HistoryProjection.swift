@@ -1,4 +1,5 @@
 import Foundation
+import HistoryStore
 import TandemMessages
 import faBolusCore
 
@@ -15,6 +16,9 @@ public struct PumpHistoryBatch: Sendable {
     public var events: [HistoryEvent] = []
     /// The sequence numbers the batch holds: every record but those dropped for a time in the future.
     public var sequences: Set<UInt32> = []
+    /// The completed boluses among the records held, by bolus ID, so an unknown outcome can be settled from
+    /// them later without searching the pump's log again.
+    public var completedBoluses: [HistoryBolus] = []
 
     public struct CarbEntry: Sendable, Equatable {
         public let date: Date
@@ -23,6 +27,7 @@ public struct PumpHistoryBatch: Sendable {
 
     public var isEmpty: Bool {
         glucose.isEmpty && boluses.isEmpty && carbs.isEmpty && deliveryChanges.isEmpty && events.isEmpty
+            && completedBoluses.isEmpty
     }
 }
 
@@ -36,20 +41,19 @@ public protocol PumpHistorySink: Sendable {
     /// Forget the logbook's events and the chart's basal changes, when the pump they came from is forgotten
     /// or its log restarts.
     func clearEvents() async
+    /// The completed boluses recorded so far (`PumpHistoryBatch.completedBoluses`), any order. Cleared with
+    /// the logbook.
+    func completedBoluses() async -> [HistoryBolus]
 }
 
 extension PumpHistorySink {
     public func loadEvents(limit: Int) async -> [HistoryEvent] { [] }
     public func clearEvents() async {}
+    public func completedBoluses() async -> [HistoryBolus] { [] }
 }
 
-/// The completed bolus a history record shows, for settling a bolus.
-struct HistoryBolus: Sendable, Equatable {
-    let bolusId: Int
-    let pumpTime: UInt32
-    let deliveredUnits: Double
-    let requestedUnits: Double
-}
+/// The completed bolus a history record shows, for settling a bolus: the same record HistoryStore keeps.
+public typealias HistoryBolus = PumpBolusRecord
 
 enum HistoryProjection {
     /// Decodes raw 26-byte records.
@@ -72,6 +76,7 @@ enum HistoryProjection {
             // A record dropped for its date isn't kept, so it isn't counted as held either.
             guard let d = date(e.pumpTimeSec) else { continue }
             batch.sequences.insert(e.sequenceNum)
+            if let completed = completedBolus(e) { batch.completedBoluses.append(completed) }
             switch e {
             case let m as BolusCompletedHistoryLog where m.insulinDelivered > 0:
                 batch.boluses.append(BolusMarker(date: d, units: Double(m.insulinDelivered)))
@@ -97,19 +102,22 @@ enum HistoryProjection {
 
     /// Completed boluses among `records`.
     static func completedBoluses(_ records: [[UInt8]]) -> [HistoryBolus] {
-        events(records).compactMap {
-            switch $0 {
-            case let m as BolusCompletedHistoryLog:
-                return HistoryBolus(
-                    bolusId: m.bolusId, pumpTime: m.pumpTimeSec, deliveredUnits: Double(m.insulinDelivered),
-                    requestedUnits: Double(m.insulinRequested))
-            case let m as BolexCompletedHistoryLog:
-                return HistoryBolus(
-                    bolusId: m.bolusId, pumpTime: m.pumpTimeSec, deliveredUnits: Double(m.insulinDelivered),
-                    requestedUnits: Double(m.insulinRequested))
-            default:
-                return nil
-            }
+        events(records).compactMap(completedBolus)
+    }
+
+    /// The completed bolus a record shows, if it shows one.
+    static func completedBolus(_ event: any HistoryLogEvent) -> HistoryBolus? {
+        switch event {
+        case let m as BolusCompletedHistoryLog:
+            return HistoryBolus(
+                sequence: m.sequenceNum, bolusId: m.bolusId, pumpTime: m.pumpTimeSec,
+                deliveredUnits: Double(m.insulinDelivered), requestedUnits: Double(m.insulinRequested))
+        case let m as BolexCompletedHistoryLog:
+            return HistoryBolus(
+                sequence: m.sequenceNum, bolusId: m.bolusId, pumpTime: m.pumpTimeSec,
+                deliveredUnits: Double(m.insulinDelivered), requestedUnits: Double(m.insulinRequested))
+        default:
+            return nil
         }
     }
 

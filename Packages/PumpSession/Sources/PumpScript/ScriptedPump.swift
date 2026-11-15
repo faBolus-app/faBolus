@@ -265,6 +265,9 @@ public final class ScriptedPump {
     public private(set) var historyRecords: [[UInt8]] = []
     /// Records per stream frame: t:connect's capture never shows more than 3.
     public var recordsPerFrame = 3
+    /// The most records one history request is answered with: past it the stream ends, as a page cut short
+    /// does, without its oldest records. Nil answers every record asked for.
+    public var historyRecordsPerRequest: Int?
 
     // MARK: What arrived
 
@@ -923,7 +926,7 @@ public final class ScriptedTransport: LinkTransport {
             pump.historyRecords.filter {
                 let seq = Int64(readU32($0, 6))
                 return seq <= Int64(start) && seq >= lowest
-            }.reversed())
+            }.reversed().prefix(pump.historyRecordsPerRequest ?? Int.max))
         var i = 0
         while i < records.count {
             let chunk = Array(records[i..<min(i + pump.recordsPerFrame, records.count)])

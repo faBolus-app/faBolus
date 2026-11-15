@@ -56,8 +56,12 @@ actor RecordingSink: PumpHistorySink {
     }
     func clearEvents() async {
         clears += 1
-        for i in batches.indices { batches[i].events = [] }
+        for i in batches.indices {
+            batches[i].events = []
+            batches[i].completedBoluses = []
+        }
     }
+    func completedBoluses() async -> [HistoryBolus] { batches.flatMap(\.completedBoluses) }
 }
 
 actor EventLog {

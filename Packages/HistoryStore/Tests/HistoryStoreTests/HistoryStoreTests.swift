@@ -70,6 +70,50 @@ final class HistoryStoreTests: XCTestCase {
         XCTAssertEqual(try reopened.historyEvents(sourceID: "other", limit: 10), [older])
     }
 
+    /// The completed boluses from pump history are kept once per sequence number, survive reopening the
+    /// store, and go with their source's clear: another log's bolus IDs say nothing about this one's.
+    func testBolusRecordsPersistOncePerSequenceAndClearBySource() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("history.store")
+        let older = PumpBolusRecord(sequence: 7, bolusId: 500, pumpTime: 1_000, deliveredUnits: 1, requestedUnits: 1)
+        let newer = PumpBolusRecord(sequence: 9, bolusId: 501, pumpTime: 2_000, deliveredUnits: 0.5, requestedUnits: 2)
+        do {
+            let store = try GlucoseHistoryStore(url: url)
+            try store.ingestPumpHistory(
+                glucose: [], boluses: [], carbs: [], bolusRecords: [older, newer], sourceID: "pump",
+                glucosePriority: 50)
+            try store.ingestPumpHistory(
+                glucose: [], boluses: [], carbs: [], bolusRecords: [newer], sourceID: "pump", glucosePriority: 50)
+            try store.ingestPumpHistory(
+                glucose: [], boluses: [], carbs: [], bolusRecords: [older], sourceID: "other", glucosePriority: 50)
+        }
+        let reopened = try GlucoseHistoryStore(url: url)
+        XCTAssertEqual(try reopened.bolusRecords(sourceID: "pump"), [newer, older])
+        try reopened.clearBolusRecords(sourceID: "pump")
+        XCTAssertEqual(try reopened.bolusRecords(sourceID: "pump"), [])
+        XCTAssertEqual(try reopened.bolusRecords(sourceID: "other"), [older])
+        reopened.clear()
+        XCTAssertEqual(try reopened.bolusRecords(sourceID: "other"), [])
+    }
+
+    /// Only the newest `bolusRecordLimit` completed boluses are kept.
+    func testBolusRecordsAreTrimmedToTheLimit() throws {
+        let store = try makeStore()
+        let limit = GlucoseHistoryStore.bolusRecordLimit
+        let records = (1...(limit + 3)).map {
+            PumpBolusRecord(
+                sequence: UInt32($0), bolusId: $0, pumpTime: UInt32($0), deliveredUnits: 1, requestedUnits: 1)
+        }
+        try store.ingestPumpHistory(
+            glucose: [], boluses: [], carbs: [], bolusRecords: records, sourceID: "pump", glucosePriority: 50)
+        let kept = try store.bolusRecords(sourceID: "pump")
+        XCTAssertEqual(kept.count, limit)
+        XCTAssertEqual(kept.first?.sequence, UInt32(limit + 3))
+        XCTAssertEqual(kept.last?.sequence, 4)
+    }
+
     /// A source keeps only its newest `eventLimit` events; records sharing a time come back later record
     /// first, the order the session keeps in memory.
     func testHistoryEventsAreTrimmedToTheLimitAndTiesGoBySequence() throws {

@@ -53,6 +53,22 @@ experimental and demonstration use.
   it. Now any card iOS still lists is ended before a new one starts, an extra card is ended on the next
   update, switching the Live Activity off removes an ended card too, and while the app is open a card is
   replaced before it reaches 8 hours.
+- A bolus record that couldn't be read at launch (a launch before the first unlock) is read again once it
+  can be, and its unknown boluses then show and block as usual. "I checked the pump" confirms only the
+  boluses you were shown, and the "can't read" banner has its own "I checked the pump" for a record that
+  stays unreadable.
+- A pump history record from before a bolus was accepted no longer settles that bolus.
+- Cancelling no longer says a bolus "may have finished" when the pump refused to cancel a bolus that had
+  already ended while another went on, and a bolus you confirmed on the pump is no longer cancelled by its
+  old ID.
+- A dose stopped before it was sent to the pump no longer makes the same dose look like a duplicate.
+- A bolus you confirmed on the pump is no longer searched for in the pump's history after every
+  connection: history the phone already holds settles it first, and the pump is searched a few times at
+  most.
+- A history search asked for while another runs is no longer dropped, a history page cut short no longer
+  ends a search early, and a gap in what arrived never counts as proof a bolus didn't happen.
+- A history sync the pump answered with no records no longer counts as synced: it's tried again a few times,
+  then left for the next routine sync.
 
 ## [0.4.0] — 2026-11-01
 

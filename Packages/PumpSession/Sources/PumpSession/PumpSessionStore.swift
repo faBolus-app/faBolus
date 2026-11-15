@@ -66,6 +66,10 @@ public struct PumpSessionRecord: Sendable, Equatable, Codable {
     /// The unknown boluses from before the pump's history log restarted. The new log can't show they never
     /// started, so history never settles them as absent: they stay unknown until the pump confirms them.
     public var beforeHistoryRestart: Set<RemoteBolusLedger.Key>
+    /// How many times the pump's log has been searched for each unknown bolus, across launches. Past
+    /// `PumpSession.Configuration.reconcileSearchesPerEntry` it isn't searched again: history the phone
+    /// fetches anyway can still settle it, and otherwise it stays unknown for the user to confirm.
+    public var historySearches: [RemoteBolusLedger.Key: Int] = [:]
 
     public init(
         pairing: StoredPairing? = nil, support: SupportMatrix = SupportMatrix(),
@@ -81,11 +85,11 @@ public struct PumpSessionRecord: Sendable, Equatable, Codable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case pairing, support, coverage, lastHistorySync, remoteClearTrials, beforeHistoryRestart
+        case pairing, support, coverage, lastHistorySync, remoteClearTrials, beforeHistoryRestart, historySearches
     }
 
-    /// A record saved before `remoteClearTrials` existed reads as unknown for every unit, and one saved
-    /// before `beforeHistoryRestart` as no restart seen.
+    /// A record saved before `remoteClearTrials` existed reads as unknown for every unit, one saved before
+    /// `beforeHistoryRestart` as no restart seen, and one saved before `historySearches` as no search yet.
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         pairing = try c.decodeIfPresent(StoredPairing.self, forKey: .pairing)
@@ -96,6 +100,8 @@ public struct PumpSessionRecord: Sendable, Equatable, Codable {
             try c.decodeIfPresent([PumpUnit: RemoteClearEvidence].self, forKey: .remoteClearTrials) ?? [:]
         beforeHistoryRestart =
             try c.decodeIfPresent(Set<RemoteBolusLedger.Key>.self, forKey: .beforeHistoryRestart) ?? []
+        historySearches =
+            try c.decodeIfPresent([RemoteBolusLedger.Key: Int].self, forKey: .historySearches) ?? [:]
     }
 }
 

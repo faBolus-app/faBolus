@@ -267,15 +267,47 @@ final class DurableBolusLedgerTests {
         // The corrupt file is left alone until the user acts.
         #expect(try Data(contentsOf: url) == Data("{ not a ledger".utf8))
 
-        try await ledger.confirmAllOnPump()
+        #expect(try await ledger.confirmUnreadableOnPump())
         #expect(await ledger.block == nil)
         #expect(!RemoteBolusLedgerStore(url: url).loadOutcome().failedClosed, "the file was rewritten")
         #expect(try await ledger.begin(Self.request("phone", "p1")) == .proceed)
     }
 
-    /// A file that couldn't be read at launch but can be now (a launch before the first unlock) is read
-    /// again before confirming, so its records aren't replaced by an empty ledger.
-    @Test func confirmingAllReadsAFileThatHasBecomeReadable() async throws {
+    /// A file that couldn't be read at launch (a launch before the first unlock) is adopted as soon as the
+    /// block is read again once it can be, as a launch would adopt it: its unknown outcome blocks, its
+    /// finished request replays, and nothing written meanwhile replaced it.
+    @Test func aFileThatBecomesReadableIsAdoptedWhenTheBlockIsRead() async throws {
+        let url = temporaryURL()
+        let first = DurableBolusLedger(store: RemoteBolusLedgerStore(url: url))
+        _ = try await first.begin(Self.request("garmin", "done"))
+        try await first.markAccepted(Self.key("garmin", "done"), bolusId: 1)
+        try await first.markDelivered(Self.key("garmin", "done"), units: 2)
+        _ = try await first.begin(Self.request("garmin", "lost"))
+        try await first.markAccepted(Self.key("garmin", "lost"), bolusId: 2, now: Self.t0)
+        let saved = try Data(contentsOf: url)
+        try Data("unreadable for now".utf8).write(to: url)
+        let time = SettableClock()
+        let relaunched = DurableBolusLedger(store: RemoteBolusLedgerStore(url: url), clock: time.clock)
+        #expect(await relaunched.block == .ledgerUnreadable)
+        // Nothing this process does while it can't be read writes over it; the refusal is kept in memory.
+        await #expect(throws: LedgerNotSaved.self) {
+            try await relaunched.recordRemoteRefusal(Self.key("garmin", "late"), reason: "too old")
+        }
+        #expect(try Data(contentsOf: url) == Data("unreadable for now".utf8))
+        try saved.write(to: url)  // readable again
+        // Tried again at most every few seconds, not on every read.
+        #expect(await relaunched.block == .ledgerUnreadable)
+        time.pass(DurableBolusLedger.unreadableRetryInterval)
+
+        #expect(await relaunched.block == .unknownOutcome(since: Self.t0))
+        #expect(try await relaunched.begin(Self.request("garmin", "done")) == .replay(.delivered(units: 2)))
+        #expect(await relaunched.ledger.remoteRefusal(Self.key("garmin", "late")) != nil)
+        #expect(await relaunched.ledger.entry(Self.key("garmin", "lost"))?.confirmedOnPumpAt == nil)
+    }
+
+    /// The unreadable record's "I checked the pump", pressed once the file can be read, adopts it and confirms
+    /// nothing in it: the user hadn't seen those outcomes. They block, to be seen and confirmed in turn.
+    @Test func confirmingAnUnreadableFileThatHasBecomeReadableAdoptsItWithoutConfirmingIt() async throws {
         let url = temporaryURL()
         let first = DurableBolusLedger(store: RemoteBolusLedgerStore(url: url))
         _ = try await first.begin(Self.request("garmin", "done"))
@@ -286,16 +318,70 @@ final class DurableBolusLedgerTests {
         let saved = try Data(contentsOf: url)
         try Data("unreadable for now".utf8).write(to: url)
         let relaunched = DurableBolusLedger(store: RemoteBolusLedgerStore(url: url))
-        #expect(await relaunched.block == .ledgerUnreadable)
-        try saved.write(to: url)  // readable again
+        try saved.write(to: url)
 
-        try await relaunched.confirmAllOnPump()
-        #expect(await relaunched.block == nil)
-        // The finished request still replays instead of delivering again.
-        #expect(try await relaunched.begin(Self.request("garmin", "done")) == .replay(.delivered(units: 2)))
+        #expect(try await relaunched.confirmUnreadableOnPump() == false)
         let lost = await relaunched.ledger.entry(Self.key("garmin", "lost"))
         #expect(lost?.outcome == .unknown(since: Self.t0))
-        #expect(lost?.confirmedOnPumpAt != nil)
+        #expect(lost?.confirmedOnPumpAt == nil)
+        #expect(await relaunched.block == .unknownOutcome(since: Self.t0))
+        #expect(try await relaunched.begin(Self.request("garmin", "done")) == .replay(.delivered(units: 2)))
+        // Confirming it with the outcome on screen lifts the block.
+        try await relaunched.confirmOnPump([Self.key("garmin", "lost")])
+        #expect(await relaunched.block == nil)
+    }
+
+    /// "I checked the pump" confirms the unknown outcomes the user was shown, and only those: a file adopted
+    /// after they looked (they were shown nothing from it) still blocks.
+    @Test func confirmingTheShownOutcomesConfirmsNothingElse() async throws {
+        let url = temporaryURL()
+        let first = DurableBolusLedger(store: RemoteBolusLedgerStore(url: url))
+        _ = try await first.begin(Self.request("garmin", "lost"))
+        try await first.markAccepted(Self.key("garmin", "lost"), bolusId: 2, now: Self.t0)
+        let saved = try Data(contentsOf: url)
+        try Data("unreadable for now".utf8).write(to: url)
+        let time = SettableClock()
+        let relaunched = DurableBolusLedger(store: RemoteBolusLedgerStore(url: url), clock: time.clock)
+        let shown = await relaunched.ledger.unresolved.map(\.key)
+        #expect(shown.isEmpty)
+        try saved.write(to: url)
+
+        try await relaunched.confirmOnPump(shown)
+        time.pass(DurableBolusLedger.unreadableRetryInterval)
+        #expect(await relaunched.block == .unknownOutcome(since: Self.t0))
+        try await relaunched.confirmOnPump(await relaunched.ledger.unresolved.map(\.key))
+        #expect(await relaunched.block == nil)
+        let reread = RemoteBolusLedgerStore(url: url).loadOutcome().ledger
+        #expect(reread.entry(Self.key("garmin", "lost"))?.confirmedOnPumpAt != nil, "and the confirmation was saved")
+    }
+
+    /// The unreadable record's own "I checked the pump": a file that still can't be read is replaced, keeping
+    /// the refusals made meanwhile; one that reads by then is adopted instead, nothing replaced or confirmed.
+    @Test func confirmingAnUnreadableRecordReplacesItOnlyWhileItStaysUnreadable() async throws {
+        let url = temporaryURL()
+        let first = DurableBolusLedger(store: RemoteBolusLedgerStore(url: url))
+        _ = try await first.begin(Self.request("garmin", "lost"))
+        try await first.markAccepted(Self.key("garmin", "lost"), bolusId: 2, now: Self.t0)
+        let saved = try Data(contentsOf: url)
+
+        try Data("unreadable for now".utf8).write(to: url)
+        let readable = DurableBolusLedger(store: RemoteBolusLedgerStore(url: url))
+        #expect(await readable.block == .ledgerUnreadable)
+        try saved.write(to: url)
+        #expect(try await readable.confirmUnreadableOnPump() == false)
+        #expect(await readable.block == .unknownOutcome(since: Self.t0))
+        #expect(await readable.ledger.entry(Self.key("garmin", "lost"))?.confirmedOnPumpAt == nil)
+
+        try Data("unreadable for good".utf8).write(to: url)
+        let unreadable = DurableBolusLedger(store: RemoteBolusLedgerStore(url: url))
+        _ = try? await unreadable.recordRemoteRefusal(Self.key("garmin", "next"), reason: "Delivery is locked.")
+        #expect(try await unreadable.confirmUnreadableOnPump())
+        #expect(await unreadable.block == nil)
+        let reread = RemoteBolusLedgerStore(url: url).loadOutcome()
+        #expect(!reread.failedClosed)
+        #expect(reread.ledger.remoteRefusal(Self.key("garmin", "next")) != nil)
+        // With nothing unreadable it does nothing.
+        #expect(try await unreadable.confirmUnreadableOnPump() == false)
     }
 
     /// A watch request refused, or a watch cancel, while the file can't be read records a refusal. Saving it
@@ -327,7 +413,7 @@ final class DurableBolusLedgerTests {
 
     /// Confirming reads the file again; a refusal made meanwhile, held only in memory, is kept, so a late
     /// copy of that request is refused rather than tried.
-    @Test func confirmingAllKeepsARefusalMadeWhileTheFileWasUnreadable() async throws {
+    @Test func confirmingKeepsARefusalMadeWhileTheFileWasUnreadable() async throws {
         let url = temporaryURL()
         let first = DurableBolusLedger(store: RemoteBolusLedgerStore(url: url))
         _ = try await first.begin(Self.request("garmin", "lost"))
@@ -338,10 +424,10 @@ final class DurableBolusLedgerTests {
         _ = try? await relaunched.recordRemoteRefusal(Self.key("garmin", "next"), reason: "Delivery is locked.")
         try saved.write(to: url)
 
-        try await relaunched.confirmAllOnPump()
+        try await relaunched.confirmUnreadableOnPump()
         #expect(await relaunched.ledger.remoteRefusal(Self.key("garmin", "next"))?.reason == "Delivery is locked.")
         let reread = RemoteBolusLedgerStore(url: url).loadOutcome().ledger
-        #expect(reread.remoteRefusal(Self.key("garmin", "next")) != nil, "and it was saved with the confirmation")
+        #expect(reread.remoteRefusal(Self.key("garmin", "next")) != nil, "and it was saved with the adopted file")
     }
 
     @Test func anEmptyLedgerFileIsUnreadableNotEmpty() async throws {
@@ -351,11 +437,11 @@ final class DurableBolusLedgerTests {
         #expect(await ledger.block == .ledgerUnreadable)
     }
 
-    @Test func confirmingAllWhenTheRewriteFailsKeepsTheBlock() async throws {
+    @Test func confirmingAnUnreadableFileWhenTheRewriteFailsKeepsTheBlock() async throws {
         let url = temporaryURL()
         try Data("garbage".utf8).write(to: url)
         let ledger = DurableBolusLedger(store: FaultyStore(url: url, failingSaves: [1]))
-        await #expect(throws: LedgerNotSaved.self) { try await ledger.confirmAllOnPump() }
+        await #expect(throws: LedgerNotSaved.self) { try await ledger.confirmUnreadableOnPump() }
         #expect(await ledger.block == .ledgerUnreadable)
     }
 

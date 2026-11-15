@@ -82,3 +82,42 @@ import SwiftData
         self.sourceID = sourceID
     }
 }
+
+/// A completed bolus from pump history, by the pump's bolus ID, kept so an unknown bolus outcome can be
+/// settled from history the phone already holds rather than by searching the pump's log again.
+@Model public final class StoredBolusRecord {
+    /// The pump's sequence number.
+    public var sequence: Int
+    public var bolusId: Int
+    /// The pump's own clock when the record was written: its seconds since 2008.
+    public var pumpTime: Int
+    public var deliveredUnits: Double
+    public var requestedUnits: Double
+    public var sourceID: String
+    public init(
+        sequence: Int, bolusId: Int, pumpTime: Int, deliveredUnits: Double, requestedUnits: Double, sourceID: String
+    ) {
+        self.sequence = sequence
+        self.bolusId = bolusId
+        self.pumpTime = pumpTime
+        self.deliveredUnits = deliveredUnits
+        self.requestedUnits = requestedUnits
+        self.sourceID = sourceID
+    }
+}
+
+/// A completed bolus as pump history records it (`StoredBolusRecord`).
+public struct PumpBolusRecord: Sendable, Equatable {
+    public let sequence: UInt32
+    public let bolusId: Int
+    public let pumpTime: UInt32
+    public let deliveredUnits: Double
+    public let requestedUnits: Double
+    public init(sequence: UInt32, bolusId: Int, pumpTime: UInt32, deliveredUnits: Double, requestedUnits: Double) {
+        self.sequence = sequence
+        self.bolusId = bolusId
+        self.pumpTime = pumpTime
+        self.deliveredUnits = deliveredUnits
+        self.requestedUnits = requestedUnits
+    }
+}

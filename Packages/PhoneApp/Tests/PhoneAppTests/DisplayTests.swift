@@ -262,7 +262,7 @@ import faBolusCore
         _ = try await model.ledger.markUnknown(key)
         if case .refused = await model.eraseHistory() {} else { Issue.record("erase must be refused") }
         #expect(!model.logbook.isEmpty)
-        try await model.ledger.confirmAllOnPump()
+        try await model.ledger.confirmOnPump(await model.ledger.ledger.unresolved.map(\.key))
         #expect(await model.eraseHistory() == .erased)
         #expect(model.logbook.isEmpty)
         #expect(model.pairing != nil)
