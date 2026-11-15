@@ -203,6 +203,31 @@ import Testing
         #expect(h.transmittedKinds == ["status", "config", "status"])
     }
 
+    /// After a reconnect, a late answer for a send stalled on the last connection doesn't bring back a hold
+    /// from another such send: a bolus outcome on the new connection goes at once.
+    @Test func aLateAnswerAfterAReconnectDoesntHoldTheNextSend() {
+        var h = Harness.ready()
+        h.send(.setStatus(Fixture.status()))
+        let first = h.inFlight ?? -1
+        h.advance(8)
+        // Past the first one's hold, the status goes again and stalls too.
+        h.advance(h.configuration.stalledSendHold - 8 + 1)
+        let second = h.inFlight ?? -1
+        #expect(second != first)
+        h.advance(8)
+        #expect(h.state.stalled.map(\.send) == [first, second])
+        #expect(h.state.stalledHoldUntil != nil)
+        h.send(.deviceStatus(.notConnected))
+        h.send(.deviceStatus(.connected))
+        h.send(.characteristicsDiscovered)
+        h.deliverAll()
+        h.send(.sendCompleted(send: first, .transientFailure("timeout")))
+        #expect(h.state.stalledHoldUntil == nil)
+        h.effects = []
+        h.send(.sendResult(Fixture.outcome("b1", .delivered)))
+        #expect(h.transmittedKinds == ["bolusOutcome"])
+    }
+
     /// Stalled sends the SDK never answers don't pile up: at most one goes per `stalledSendHold`, and the
     /// ones kept for a late answer are capped.
     @Test func unansweredSendsGoAtMostOncePerHold() {

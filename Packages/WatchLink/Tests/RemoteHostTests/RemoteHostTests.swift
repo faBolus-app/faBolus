@@ -641,6 +641,138 @@ import faBolusCore
         await rig.settle()
         #expect(!rig.transport.outcomes.contains { $0.outcome == .failed })
         #expect(rig.transport.outcomes.last?.outcome == .delivering)
+        #expect(await rig.services.delivered.count == 1)
+    }
+
+    /// A damaged copy that arrives first, then a readable copy while the damaged one is still being looked
+    /// up: the readable copy takes the request over and is delivered once, and the damaged copy says
+    /// nothing, so the watch is never told "not delivered" for a dose that goes in.
+    @Test func aReadableCopyTakesOverFromAnUnreadableOneStillLookingUp() async {
+        let rig = HostRig()
+        await rig.services.set(
+            decision: .deliver(composed("b1")),
+            delivery: .started(.init(peerId: "garmin", requestId: "b1"), .delivering),
+            delay: .milliseconds(80))
+        await rig.services.set(refusalLookupDelay: .milliseconds(100))
+        await rig.start()
+        rig.transport.handler?(.received(damagedBolus("b1")))
+        await rig.settle()
+        await rig.services.set(refusalLookupDelay: .zero)
+        rig.transport.handler?(.received(bolus("b1").wire))
+        // A third copy, readable, while the second is worked on: a duplicate.
+        await rig.settle()
+        rig.transport.handler?(.received(bolus("b1").wire))
+        try? await Task.sleep(for: .milliseconds(300))
+        await rig.settle()
+        #expect(await rig.services.composed.count == 1)
+        #expect(await rig.services.delivered.count == 1)
+        #expect(!rig.transport.outcomes.contains { $0.outcome == .failed })
+        #expect(rig.transport.outcomes.last?.outcome == .delivering)
+        #expect(await rig.services.refusals.isEmpty)
+        #expect(await rig.services.ledgerRefusal(.init(peerId: "garmin", requestId: "b1")) == nil)
+    }
+
+    /// Two damaged copies: answered once, as not delivered, and recorded, so a readable copy after that
+    /// answer gets the same refusal and nothing is composed.
+    @Test func twoUnreadableCopiesAreAnsweredOnce() async {
+        let rig = HostRig()
+        await rig.services.set(refusalLookupDelay: .milliseconds(50))
+        await rig.start()
+        rig.transport.handler?(.received(damagedBolus("b1")))
+        rig.transport.handler?(.received(damagedBolus("b1")))
+        try? await Task.sleep(for: .milliseconds(200))
+        await rig.settle()
+        #expect(rig.transport.outcomes.map(\.outcome) == [.failed])
+        #expect(await rig.services.refusals == ["b1"])
+        await rig.services.set(refusalLookupDelay: .zero)
+        await rig.receive(bolus("b1"))
+        #expect(await rig.services.composed.isEmpty)
+        #expect(rig.transport.outcomes.last?.outcome == .failed)
+    }
+
+    /// A different request under an ID the ledger holds for another dose goes to the composer, which judges
+    /// it reused. The answer is "Outcome unknown", with what to check: never "not delivered" (the other dose
+    /// may have gone in), never that dose's own outcome (this one wasn't sent), and no refusal is recorded or
+    /// announced over it. Also when the entry is only found once the composer or the session runs.
+    @Test(arguments: [false, true], [0, 1])
+    func aReusedRequestIdIsUnknown(atDelivery: Bool, hiddenLookups: Int) async {
+        let rig = HostRig()
+        await rig.services.set(entry: entry("b1", delivered: 2))
+        await rig.services.set(entryHiddenLookups: hiddenLookups)
+        if atDelivery {
+            await rig.services.set(decision: .deliver(composed("b1")), delivery: .notStarted(.requestIdReused))
+        } else {
+            await rig.services.set(decision: .refused(.requestIdReused))
+        }
+        await rig.start()
+        await rig.receive(bolus("b1", units: 3000))
+        #expect(await rig.services.composed.count == 1)
+        #expect(!rig.transport.outcomes.contains { $0.outcome == .failed })
+        #expect(rig.transport.outcomes.last?.outcome == .unknown)
+        #expect(rig.transport.outcomes.last?.message == RemoteHost.reusedIdMessage)
+        #expect(await rig.services.refusals.isEmpty)
+        #expect(await rig.services.ledgerRefusal(.init(peerId: "garmin", requestId: "b1")) == nil)
+    }
+
+    /// A reused ID whose entry can't be read: the watch stops waiting on an unknown outcome that says what
+    /// to check, never "not delivered", and nothing is recorded or announced.
+    @Test func aReusedRequestIdWithNoReadableEntryIsUnknown() async {
+        let rig = HostRig()
+        await rig.services.set(decision: .refused(.requestIdReused))
+        await rig.start()
+        await rig.receive(bolus("b1"))
+        #expect(rig.transport.outcomes.map(\.outcome) == [.received, .unknown])
+        #expect(rig.transport.outcomes.last?.message == RemoteHost.reusedIdMessage)
+        #expect(await rig.services.refusals.isEmpty)
+        #expect(await rig.services.ledgerRefusal(.init(peerId: "garmin", requestId: "b1")) == nil)
+    }
+
+    /// While the bolus record can't be read (a launch before the first unlock), a request's ID may be one
+    /// whose dose went in: it's answered "Outcome unknown", with what to check, never "Not delivered", and
+    /// nothing is recorded or announced.
+    @Test func aRequestWhileTheRecordIsUnreadableIsUnknown() async {
+        let rig = HostRig()
+        await rig.services.set(block: .ledgerUnreadable)
+        await rig.services.set(decision: .refused(.blocked(.ledgerUnreadable)))
+        await rig.start()
+        await rig.receive(bolus("b1"))
+        #expect(rig.transport.outcomes.map(\.outcome) == [.unknown])
+        #expect(rig.transport.outcomes.last?.message == RemoteHost.ledgerUnreadableMessage)
+        #expect(await rig.services.composed.isEmpty)
+        #expect(await rig.services.refusals.isEmpty)
+        #expect(await rig.services.ledgerRefusal(.init(peerId: "garmin", requestId: "b1")) == nil)
+    }
+
+    /// The record turned unreadable between the look and the compose (or the delivery): the same answer.
+    @Test(arguments: [true, false])
+    func aBlockForAnUnreadableRecordIsUnknown(atDelivery: Bool) async {
+        let rig = HostRig()
+        if atDelivery {
+            await rig.services.set(
+                decision: .deliver(composed("b1")), delivery: .notStarted(.blocked(.ledgerUnreadable)))
+        } else {
+            await rig.services.set(decision: .refused(.blocked(.ledgerUnreadable)))
+        }
+        await rig.start()
+        await rig.receive(bolus("b1"))
+        #expect(rig.transport.outcomes.map(\.outcome) == [.received, .unknown])
+        #expect(await rig.services.refusals.isEmpty)
+        #expect(await rig.services.ledgerRefusal(.init(peerId: "garmin", requestId: "b1")) == nil)
+    }
+
+    /// A resend of a request the ledger has, as after a relaunch: its outcome goes at once, with no
+    /// "received" first and no pump reads, so a delivered or unknown dose never shows as pending meanwhile.
+    @Test(arguments: [true, false])
+    func aRecordedRequestIsAnsweredBeforeAnyPumpRead(delivered: Bool) async {
+        let rig = HostRig()
+        await rig.services.set(entry: entry("b1", delivered: delivered ? 2 : nil))
+        await rig.services.set(decision: .alreadyRecorded(.delivered(units: 2)), delay: .seconds(30))
+        await rig.start()
+        await rig.receive(bolus("b1"))
+        #expect(await rig.services.composed.isEmpty)
+        #expect(rig.transport.outcomes.map(\.outcome) == [delivered ? .delivered : .failed])
+        #expect(rig.transport.outcomes.first?.requestedMilliunits == 2000)
+        #expect(await rig.services.refusals.isEmpty)
     }
 
     /// Two refreshes overlap and the older finishes last: the newer snapshot stays.
