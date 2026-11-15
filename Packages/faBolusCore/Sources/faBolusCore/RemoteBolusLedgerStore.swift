@@ -234,7 +234,7 @@ public actor DurableBolusLedger {
 
     /// Record a remote request refused before any entry, so its resend gets the same refusal after a
     /// restart. A refusal never blocks a new bolus, so neither does a failed save of one: it's kept in
-    /// memory and goes to disk with the next save.
+    /// memory and goes to disk with the next save. While the file can't be read it isn't saved at all.
     ///
     /// - Throws: `LedgerNotSaved` when it couldn't be saved now.
     @discardableResult
@@ -267,13 +267,14 @@ public actor DurableBolusLedger {
             if !reloaded.failedClosed {
                 var recovered = reloaded.ledger
                 recovered.recoverAfterRestart(now: now)
+                recovered.keepRemoteRefusals(from: stored)
                 stored = recovered
             }
         }
         var next = stored
         for entry in next.unresolved { next.confirmOnPump(entry.key, now: now) }
         stored = next
-        try save(next)
+        try save(next, replacingUnreadable: true)
         ledgerUnreadable = false
     }
 
@@ -296,8 +297,16 @@ public actor DurableBolusLedger {
 
     /// - Parameter blocksOnFailure: whether a failure leaves new boluses blocked. Not for a request or
     ///   an acceptance whose failed save is undone in memory: then nothing unsaved remains.
-    private func save(_ ledger: RemoteBolusLedger, blocksOnFailure: Bool = true) throws {
+    /// - Parameter replacingUnreadable: only the user's "I checked the pump" may write over a file that
+    ///   couldn't be read. Any other save would replace it with the empty ledger held in its place, and the
+    ///   next launch would read that cleanly and forget every unknown outcome the file held.
+    private func save(
+        _ ledger: RemoteBolusLedger, blocksOnFailure: Bool = true, replacingUnreadable: Bool = false
+    ) throws {
         guard let store else { throw LedgerNotSaved(underlying: "No durable store") }
+        guard !ledgerUnreadable || replacingUnreadable else {
+            throw LedgerNotSaved(underlying: "The ledger file couldn't be read; it's kept until the user confirms")
+        }
         do {
             try store.save(ledger)
             outcomeNotSaved = false

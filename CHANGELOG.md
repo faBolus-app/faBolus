@@ -38,6 +38,12 @@ experimental and demonstration use.
 
 - The Live Activity's Bolus button that only opened the app.
 
+### Fixed
+
+- A bolus record that couldn't be read at launch is no longer overwritten when a watch request is refused or
+  a watch cancel is recorded. It was replaced by an empty record, so the next launch forgot any unknown
+  bolus it held and stopped blocking new boluses. Only "I checked the pump" writes over it.
+
 ## [0.4.0] — 2026-11-01
 
 A new app, rebuilt from the ground up. It keeps the earlier app's bundle ID but none of its data. The
