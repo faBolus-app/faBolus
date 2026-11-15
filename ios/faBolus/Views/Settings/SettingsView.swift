@@ -147,7 +147,7 @@ struct DisplaySettingsView: View {
 
     var body: some View {
         Form {
-            Section("Chart") {
+            Section {
                 Toggle("Show glucose", isOn: $settings.showGlucoseAxis)
                 Toggle("Show insulin (IOB) line", isOn: $settings.showIOBAxis)
                 Toggle("Show bolus bars", isOn: $settings.showBolusBars)
@@ -162,7 +162,16 @@ struct DisplaySettingsView: View {
                         Text(GlucosePlotScale.boundLabel($0, unit: settings.glucoseUnit)).tag($0)
                     }
                 }
+                Picker("Plot style", selection: $settings.glucosePlotStyle) {
+                    ForEach(GlucosePlotStyle.allCases, id: \.self) { Text($0.title).tag($0) }
+                }
                 Toggle("Show unit labels", isOn: $settings.showGlucoseUnitLabels)
+            } header: {
+                Text("Chart")
+            } footer: {
+                Text(
+                    "The plot style applies to every plot: this chart, the widgets, the Live Activity and the watch. A "
+                        + "reading past the plot's range is drawn at its edge as a hollow ring or a dotted line.")
             }
             Section {
                 Toggle("Show statistics card", isOn: $settings.showStats)

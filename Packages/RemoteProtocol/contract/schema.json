@@ -859,6 +859,13 @@
               "type": "integer",
               "minimum": 100,
               "maximum": 600
+            },
+            "plotStyle": {
+              "type": "string",
+              "enum": [
+                "dots",
+                "line"
+              ]
             }
           }
         }

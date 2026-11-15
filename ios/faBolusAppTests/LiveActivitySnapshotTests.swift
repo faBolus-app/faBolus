@@ -229,29 +229,41 @@ import faBolusCore
 
     /// CarPlay's tile and the Watch's Smart Stack: the curve alone, beside an alert, and under a bolus and
     /// an alert.
-    /// A high high and a low low on one plot, in every view that draws one: the line stays inside each
-    /// view and keeps its zone colours at both ends.
-    @Test func extremes() {
+    /// A high high and a low low on one plot, in every view that draws one, in the default dots: each view
+    /// keeps its zone colours at both ends, and a reading past the plot is a hollow ring at its edge.
+    @Test func extremes() { checkExtremes(.dots) }
+
+    /// The same as a line: the segments that reach a reading past the plot are dotted along its edge.
+    @Test func extremesAsALine() { checkExtremes(.line) }
+
+    private func checkExtremes(
+        _ style: GlucosePlotStyle, file: StaticString = #filePath, testName: String = #function, line: UInt = #line
+    ) {
         // Over the card's 3 hours: 340 falling to 45 over 70 minutes, then back up to 170.
         let mgdl = (0..<36).map { i in i < 15 ? 340 - i * 295 / 14 : 45 + (i - 14) * 125 / 21 }
         var content = Self.content(.idle(.bolus))
+        content.snapshot.plotStyle = style
         content.snapshot.recent = mgdl.enumerated().map { i, v in
             WidgetSnapshot.Point(t: Self.now.addingTimeInterval(Double(i - 35) * 300), mgdl: v)
         }
         content.snapshot.glucose = Observed(
             PumpGlucose(mgdl: 170, trend: .up), measuredAt: Self.now.addingTimeInterval(-60), receivedAt: Self.now)
-        check("curve", LockScreenView(view: Self.view(content)))
+        check("curve", LockScreenView(view: Self.view(content)), file: file, testName: testName, line: line)
         content.layout.style = .classic
-        check("chips", LockScreenView(view: Self.view(content)))
-        check("small", SmallActivityView(view: Self.view(content)), width: 170, height: 76)
+        check("chips", LockScreenView(view: Self.view(content)), file: file, testName: testName, line: line)
+        check(
+            "small", SmallActivityView(view: Self.view(content)), width: 170, height: 76, file: file,
+            testName: testName, line: line)
         content.layout.style = .fullBleed
-        check("island", GlucoseCurve(view: Self.view(content)).frame(height: 44).padding(.horizontal, 16), height: 60)
+        check(
+            "island", GlucoseCurve(view: Self.view(content)).frame(height: 44).padding(.horizontal, 16), height: 60,
+            file: file, testName: testName, line: line)
         // A low along the bottom, under the chips, fading behind them as the high does behind the glucose.
         content.snapshot.recent = (0..<36).map { i in
             WidgetSnapshot.Point(
                 t: Self.now.addingTimeInterval(Double(i - 35) * 300), mgdl: i < 18 ? 48 + i % 3 * 4 : 60 + (i - 18) * 6)
         }
-        check("curve-low", LockScreenView(view: Self.view(content)))
+        check("curve-low", LockScreenView(view: Self.view(content)), file: file, testName: testName, line: line)
     }
 
     @Test func small() {

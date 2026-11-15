@@ -24,6 +24,13 @@ public enum GoldenFixtures {
         glucoseIncludableMinutes: 15, plotFloorMgdl: 40,
         plotCeilingMgdl: 300)
 
+    /// The same config drawing the chart as a line, the one style written on the wire.
+    public static let configLine: WatchConfig = {
+        var c = config
+        c.plotStyle = .line
+        return c
+    }()
+
     public static let status = StatusPayload(
         sentAt: now, configRevision: config.revision, pumpLink: .connected,
         glucose: Timed(GlucoseReading(mgdl: 142, trend: .rising, backup: false), at: now - 80),
@@ -109,6 +116,7 @@ public enum GoldenFixtures {
         v2("status-temp-rate", .status(statusTempRate)),
         v2("status-basal-iq", .status(statusBasalIQ)),
         v2("config", .config(config)),
+        v2("config-line", .config(configLine)),
         v2("history", .history(history)),
         v2(
             "bolusOutcome-delivering",

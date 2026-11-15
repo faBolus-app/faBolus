@@ -30,7 +30,7 @@ import faBolusCore
     }
 
     /// The dashboard chart with a 40–250 plot, highs above 250 and lows below 40: a reading off the plot is
-    /// left out, never drawn on its edge.
+    /// drawn on its edge as a hollow ring, unlike the filled dot of a reading at the edge.
     @Test func chartOffThePlot() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let mgdl = (0..<36).map { i in i < 12 ? 320 - i * 20 : i < 22 ? 90 - (i - 12) * 6 : 36 + (i - 22) * 10 }
@@ -42,6 +42,15 @@ import faBolusCore
         )
         .padding()
         check("offThePlot", chart, height: 220)
+        // As a line: the segments that reach a reading off the plot are dotted along its edge, and a 30-minute
+        // gap in the readings isn't joined.
+        let gapped = readings.filter { !(16...20).contains(Int($0.date.timeIntervalSince(now) / 300) + 35) }
+        let line = GlucoseChartView(
+            readings: gapped, windowHours: 3, showIOB: false, showBolusBars: false, floor: 40, ceiling: 250,
+            style: .line, now: now
+        )
+        .padding()
+        check("offThePlot-line", line, height: 220)
     }
 
     @Test func dashboard() async {

@@ -86,6 +86,11 @@ public enum GlucoseUnitToken: String, Sendable, Hashable, CaseIterable {
     case mgdl, mmol
 }
 
+/// How the watch's chart draws its readings: a dot each, or a line through them.
+public enum PlotStyleToken: String, Sendable, Hashable, CaseIterable {
+    case dots, line
+}
+
 public enum ScreenToken: String, Sendable, Hashable, CaseIterable {
     case glance, glucose, clock, bolusOnly = "bolusonly", alerts, history, details
 }

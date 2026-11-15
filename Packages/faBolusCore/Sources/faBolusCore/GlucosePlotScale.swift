@@ -49,13 +49,32 @@ public enum GlucosePlotScale {
         return options.min(by: { abs($0 - value) < abs($1 - value) }) ?? def
     }
 
-    /// Whether a reading falls on the plot, bounds included. One rule for every plot: a reading off the
-    /// plot isn't drawn (a chart of points leaves it out; a line runs off the plot's edge and back), never
-    /// pinned to the edge, where it would read as a reading at the edge. Display only: the reading itself
-    /// is never changed.
-    public static func isOnChart(_ mgdl: Int, floor: Int, ceiling: Int) -> Bool {
-        mgdl >= floor && mgdl <= ceiling
+    /// Where a reading is drawn on a plot's glucose axis. One rule for every plot: a reading past the ceiling
+    /// or floor is drawn at that edge and marked capped, so the plot draws it unlike a reading at the edge
+    /// (hollow where a reading's marker is filled, dotted where its line is solid). Display only: the reading
+    /// itself, and any number shown for it, keeps its own value.
+    public struct Placement: Equatable, Sendable {
+        /// The height it is drawn at, mg/dL: the reading's own value, or the edge it is past.
+        public let mgdl: Int
+        /// True when the reading is past the plot's edge, so `mgdl` is the edge, not the reading.
+        public let isCapped: Bool
+
+        public init(mgdl: Int, isCapped: Bool) {
+            self.mgdl = mgdl
+            self.isCapped = isCapped
+        }
     }
+
+    /// A reading's placement on a `[floor, ceiling]` plot, bounds included: a reading at an edge is drawn as
+    /// itself, one past it at the edge, capped.
+    public static func placement(_ mgdl: Int, floor: Int, ceiling: Int) -> Placement {
+        let drawn = min(max(mgdl, floor), ceiling)
+        return Placement(mgdl: drawn, isCapped: drawn != mgdl)
+    }
+
+    /// A line plot doesn't join two readings further apart than this (a missed reading or two is joined; a
+    /// sensor change isn't), so a gap never draws as readings.
+    public static let maxLineGap: TimeInterval = 15 * 60
 
     /// Maps a secondary-axis unit value (e.g. IOB units) linearly into the glucose domain:
     /// `0 -> floor`, `unitMax -> ceiling`. Used by the iPhone chart's IOB overlay so the overlay's

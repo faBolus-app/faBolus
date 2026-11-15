@@ -38,6 +38,8 @@ public struct WidgetSnapshot: Codable, Sendable, Hashable {
     /// The phone's plot range, which every plot draws in; `nil` from a snapshot written before it was sent.
     public var plotFloorMgdl: Int?
     public var plotCeilingMgdl: Int?
+    /// Dots or a line; `nil` from a snapshot written before it was sent, drawn in the default style.
+    public var plotStyle: GlucosePlotStyle?
 
     public init(
         glucose: Observed<PumpGlucose>? = nil, glucoseSourceName: String? = nil,
@@ -46,7 +48,7 @@ public struct WidgetSnapshot: Codable, Sendable, Hashable {
         controlIQ: Observed<ControlIQStatus>? = nil, lastBolus: Observed<Double>? = nil,
         lastAutoCorrection: Date? = nil, connected: Bool = false, publishedAt: Date, recent: [Point] = [],
         freshness: FreshnessThresholds = .standard, unit: GlucoseUnit = .mgdl, showUnitLabel: Bool = false,
-        plotFloorMgdl: Int? = nil, plotCeilingMgdl: Int? = nil
+        plotFloorMgdl: Int? = nil, plotCeilingMgdl: Int? = nil, plotStyle: GlucosePlotStyle? = nil
     ) {
         self.glucose = glucose
         self.glucoseSourceName = glucoseSourceName
@@ -65,6 +67,7 @@ public struct WidgetSnapshot: Codable, Sendable, Hashable {
         self.showUnitLabel = showUnitLabel
         self.plotFloorMgdl = plotFloorMgdl
         self.plotCeilingMgdl = plotCeilingMgdl
+        self.plotStyle = plotStyle
     }
 
     /// The plot range to draw in, made safe; the defaults when the snapshot has none.

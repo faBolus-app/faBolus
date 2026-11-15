@@ -3,7 +3,7 @@ import Foundation
 @testable import faBolusCore
 
 /// Covers `GlucosePlotScale`'s defaults (always floor<ceiling), its discrete preset sets, the
-/// on-chart rule, the scaleUnits/recoverUnits round trip, and boundLabel().
+/// placement rule, the scaleUnits/recoverUnits round trip, and boundLabel().
 struct GlucosePlotScaleTests {
 
     // MARK: - Option sets + defaults
@@ -42,18 +42,24 @@ struct GlucosePlotScaleTests {
         }
     }
 
-    // MARK: - isOnChart() — symmetric, bounds included
+    // MARK: - placement() — symmetric, bounds included
 
-    @Test func aReadingAboveTheCeilingIsOffTheChart() {
-        #expect(!GlucosePlotScale.isOnChart(301, floor: 40, ceiling: 300))
+    @Test func aReadingAboveTheCeilingIsDrawnAtTheCeilingCapped() {
+        let p = GlucosePlotScale.placement(301, floor: 40, ceiling: 300)
+        #expect(p == GlucosePlotScale.Placement(mgdl: 300, isCapped: true))
+        #expect(GlucosePlotScale.placement(450, floor: 40, ceiling: 300).mgdl == 300)
     }
 
-    @Test func aReadingBelowTheFloorIsOffTheChart() {
-        #expect(!GlucosePlotScale.isOnChart(39, floor: 40, ceiling: 300))
+    @Test func aReadingBelowTheFloorIsDrawnAtTheFloorCapped() {
+        let p = GlucosePlotScale.placement(39, floor: 40, ceiling: 300)
+        #expect(p == GlucosePlotScale.Placement(mgdl: 40, isCapped: true))
+        #expect(GlucosePlotScale.placement(20, floor: 50, ceiling: 250) == .init(mgdl: 50, isCapped: true))
     }
 
-    @Test func theBoundsAndBetweenAreOnTheChart() {
-        for v in [40, 120, 300] { #expect(GlucosePlotScale.isOnChart(v, floor: 40, ceiling: 300)) }
+    @Test func theBoundsAndBetweenAreDrawnAsThemselves() {
+        for v in [40, 120, 300] {
+            #expect(GlucosePlotScale.placement(v, floor: 40, ceiling: 300) == .init(mgdl: v, isCapped: false))
+        }
     }
 
     // MARK: - scaleUnits / recoverUnits round trip

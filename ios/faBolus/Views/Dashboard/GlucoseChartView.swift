@@ -19,6 +19,7 @@ struct GlucoseChartView: View {
     var showBasal = true
     var floor = GlucosePlotScale.defaultFloor
     var ceiling = GlucosePlotScale.defaultCeiling
+    var style: GlucosePlotStyle = .default
     var unit: GlucoseUnit = .mgdl
     var showUnitLabel = false
     var now: Date
@@ -30,6 +31,55 @@ struct GlucoseChartView: View {
     private var start: Date { now.addingTimeInterval(-Double(windowHours) * 3600) }
     private var visible: [GlucoseReading] { readings.filter { $0.date >= start && $0.date <= now } }
     private var visibleIOB: [IOBSample] { iob.filter { $0.date >= start } }
+
+    /// A stretch of the glucose line drawn as one series: neighbouring readings, unless a gap parts them, while
+    /// each segment keeps one colour (the reading it ends at) and is dotted or not. A series of its own per
+    /// stretch keeps the dots evenly spaced and the joins clean.
+    private struct LineRun: Identifiable {
+        let id: Int
+        var readings: [GlucoseReading]
+        let color: Color
+        /// The segments reach a reading past the plot's edge, so they are dotted.
+        let isCapped: Bool
+    }
+
+    private var lineRuns: [LineRun] {
+        let readings = visible.sorted { $0.date < $1.date }
+        var runs: [LineRun] = []
+        for (a, b) in zip(readings, readings.dropFirst()) {
+            guard b.date.timeIntervalSince(a.date) <= GlucosePlotScale.maxLineGap else { continue }
+            let capped = [a, b].contains {
+                GlucosePlotScale.placement($0.mgdl, floor: floor, ceiling: ceiling).isCapped
+            }
+            let color = AppTheme.glucoseColor(b.mgdl)
+            if let last = runs.last, last.readings.last?.date == a.date, last.color == color, last.isCapped == capped {
+                runs[runs.count - 1].readings.append(b)
+            } else {
+                runs.append(LineRun(id: runs.count, readings: [a, b], color: color, isCapped: capped))
+            }
+        }
+        return runs
+    }
+
+    /// The readings no line segment reaches.
+    private var unjoined: [GlucoseReading] {
+        let joined = Set(lineRuns.flatMap { $0.readings.map(\.date) })
+        return visible.filter { !joined.contains($0.date) }
+    }
+
+    /// A reading's dot, or a hollow ring at the edge when it is past the plot.
+    @ChartContentBuilder private func dot(_ r: GlucoseReading) -> some ChartContent {
+        let at = GlucosePlotScale.placement(r.mgdl, floor: floor, ceiling: ceiling)
+        let color = AppTheme.glucoseColor(r.mgdl)
+        if at.isCapped {
+            PointMark(x: .value("Time", r.date), y: .value("Glucose", at.mgdl))
+                .symbol { Circle().strokeBorder(color, lineWidth: 1.5).frame(width: 7, height: 7) }
+        } else {
+            PointMark(x: .value("Time", r.date), y: .value("Glucose", at.mgdl))
+                .foregroundStyle(color).symbolSize(24)
+        }
+    }
+
     private var visibleBoluses: [BolusMarker] { boluses.filter { $0.date >= start } }
     private var showUnitsAxis: Bool { showIOB || showBolusBars }
 
@@ -124,10 +174,29 @@ struct GlucoseChartView: View {
                     yStart: .value("Low", GlucoseThresholds.low), yEnd: .value("High", GlucoseThresholds.high)
                 )
                 .foregroundStyle(AppTheme.inRange.opacity(0.12))
-                // A reading off the plot isn't drawn, never pinned to its edge.
-                ForEach(visible.filter { GlucosePlotScale.isOnChart($0.mgdl, floor: floor, ceiling: ceiling) }) { r in
-                    PointMark(x: .value("Time", r.date), y: .value("Glucose", r.mgdl))
-                        .foregroundStyle(AppTheme.glucoseColor(r.mgdl)).symbolSize(24)
+                // A reading past the plot's edge is drawn at it, marked: a hollow ring among dots, a dotted run in a
+                // line. The readout and VoiceOver read `visible`, so they say its own value.
+                switch style {
+                case .dots:
+                    ForEach(visible) { dot($0) }
+                case .line:
+                    ForEach(lineRuns) { run in
+                        ForEach(run.readings, id: \.date) { r in
+                            LineMark(
+                                x: .value("Time", r.date),
+                                y: .value(
+                                    "Glucose", GlucosePlotScale.placement(r.mgdl, floor: floor, ceiling: ceiling).mgdl),
+                                series: .value("Series", "glucose \(run.id)")
+                            )
+                            .foregroundStyle(run.color)
+                            .lineStyle(
+                                run.isCapped
+                                    ? StrokeStyle(lineWidth: 2, lineCap: .round, dash: [0, 4])
+                                    : StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                        }
+                    }
+                    // A reading no segment reaches is still drawn, as a dot.
+                    ForEach(unjoined) { dot($0) }
                 }
             }
             if showBolusBars {

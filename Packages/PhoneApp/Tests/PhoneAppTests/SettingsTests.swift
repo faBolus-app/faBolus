@@ -74,6 +74,7 @@ import faBolusCore
         defer { defaults.removePersistentDomain(forName: suite) }
         let s = AppSettings(defaults: defaults)
         #expect(s.showBasal)
+        #expect(s.glucosePlotStyle == .dots)
         s.bolusIncrement = 0.5
         s.carbIncrement = 10
         s.defaultBolusMode = .units
@@ -88,6 +89,7 @@ import faBolusCore
         s.watchPlotFloor = 50
         s.watchPlotCeiling = 250
         s.showBasal = false
+        s.glucosePlotStyle = .line
         var layout = LiveActivityLayout()
         layout.style = .classic
         layout.fields = [.glucose, .lastAutoCorrection]
@@ -109,6 +111,7 @@ import faBolusCore
         #expect(r.complicationNames)
         #expect(r.watchPlotFloor == 50 && r.watchPlotCeiling == 250)
         #expect(!r.showBasal)
+        #expect(r.glucosePlotStyle == .line)
         #expect(r.liveActivityLayout == layout)
         r.remoteBolusLimitUnits = nil
         #expect(AppSettings(defaults: defaults).remoteBolusLimitUnits == nil)
@@ -161,6 +164,7 @@ import faBolusCore
         model.settings.carbIncrement = 10
         model.settings.bolusIncrement = 0.5
         model.settings.glucosePlotCeiling = 400
+        model.settings.glucosePlotStyle = .line
         model.settings.glucoseStaleMinutes = 10
         model.settings.pumpStatusStaleMinutes = 30
         await phone.settle(model)
@@ -168,12 +172,14 @@ import faBolusCore
         #expect(after.carbStepGrams == 10)
         #expect(after.unitsStepMilliunits == 500)
         #expect(after.plotCeilingMgdl == 400)
+        #expect(after.plotStyle == .line)
         #expect(after.glucoseStaleMinutes == 10)
         #expect(after.pumpStatusStaleMinutes == 30)
         #expect(await model.session.freshness == model.settings.freshness)
         #expect(WidgetStore(defaults: phone.settings).load()?.freshness == model.settings.freshness)
         // The widgets draw in the phone's plot range too.
         #expect(WidgetStore(defaults: phone.settings).load()?.plotBounds.ceiling == 400)
+        #expect(WidgetStore(defaults: phone.settings).load()?.plotStyle == .line)
         await model.shutdown()
     }
 
@@ -187,12 +193,14 @@ import faBolusCore
         s.glucosePlotFloor = 50
         s.glucosePlotCeiling = 350
         s.complicationNames = true
+        s.glucosePlotStyle = .line
         let p = s.watchPreferences
         #expect(p.carbIncrementGrams == 15)
         #expect(p.bolusIncrementUnits == 1)
         #expect(p.glucosePlotFloor == 50 && p.glucosePlotCeiling == 350)
         #expect(p.glucoseDisplayUnit == s.glucoseUnit.wireToken)
         #expect(p.complicationLabels)
+        #expect(p.glucosePlotStyle == "line")
     }
 }
 

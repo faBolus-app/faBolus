@@ -138,7 +138,7 @@ struct StatusWidgetView: View {
                 }
                 Sparkline(
                     points: snapshot.recent, stale: g.stale, floor: snapshot.plotBounds.floor,
-                    ceiling: snapshot.plotBounds.ceiling
+                    ceiling: snapshot.plotBounds.ceiling, style: snapshot.plotStyle ?? .default
                 )
                 .frame(height: 34).padding(.top, 2)
             }
