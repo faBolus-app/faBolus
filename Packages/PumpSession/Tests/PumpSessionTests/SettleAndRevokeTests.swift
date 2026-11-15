@@ -44,6 +44,26 @@ private let key = RemoteBolusLedger.Key(peerId: "phone", requestId: "phone-1")
         #expect(await rig.session.ledger.ledger.outcome(key) == .delivered(units: 1.0))
     }
 
+    /// A cancel that lands before delivery starts leaves C naming the bolus before (P3's bench): a finished
+    /// record for another bolus settles nothing, and history does.
+    @Test func aRecordNamingTheBolusBeforeIsLeftToHistory() async {
+        let rig = Rig(configure: {
+            $0.unsupportedReads = []
+            $0.apiVersion = (major: 4, minor: 0)
+        })
+        await rig.startHeld()
+        var before = [UInt8](repeating: 0, count: 53)
+        before[0] = 1
+        before[1] = 4
+        before.replaceSubrange(2..<4, with: le16(rig.pump.nextBolusId - 1))
+        before.replaceSubrange(10..<14, with: le32(50))
+        rig.pump.answers[MessageKey(LastBolusStatusV3Request.self)] = .cargo(before)
+        _ = await rig.session.deliver(composed(1.0))
+        await rig.run(for: rig.pump.pendingSeconds + 60)
+        #expect(rig.pump.arrivals(of: LastBolusStatusV3Request.self).count == 1)
+        #expect(await rig.session.ledger.ledger.outcome(key) == .delivered(units: 1.0))
+    }
+
     @Test func atAPI2Point5ItIsFormB() async {
         let rig = Rig(configure: { $0.unsupportedReads = [] })
         await rig.startHeld()
@@ -87,7 +107,7 @@ private let key = RemoteBolusLedger.Key(peerId: "phone", requestId: "phone-1")
 }
 
 /// The calculator reply's own reading: placed by the pump clock from its reading time, and only when the
-/// reply marks it valid (guess #36).
+/// reply marks it valid.
 @Suite struct CalculatorReadingReadTests {
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
 
