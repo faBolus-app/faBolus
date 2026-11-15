@@ -91,12 +91,10 @@ struct BolusSettingsView: View {
                 Toggle("Auto-accept corrections", isOn: $settings.autoAcceptCorrection)
             } footer: {
                 Text(
-                    "When BG is above target the calculator asks whether to add a correction, and below it whether "
-                        + "to reduce the bolus. On, the answer is yes: the phone chooses the corrected dose for you "
-                        + "(you can still tap the other), and the watch and the Live Activity don't ask. It answers "
-                        + "only that question: a stale CGM reading or one the pump flags still adds no correction, "
-                        + "under 70 mg/dL the bolus is reduced as always, and every other check and the final "
-                        + "confirmation are still asked.")
+                    "Answers the calculator's “Add a correction?” and “Reduce the bolus?” with yes. The phone "
+                        + "chooses the corrected dose (tap the other to change it); the watch and the Live Activity "
+                        + "don't ask. A stale or flagged CGM reading still adds no correction, and every other check "
+                        + "is still asked.")
             }
         }
         .navigationTitle("Bolus & entry")
