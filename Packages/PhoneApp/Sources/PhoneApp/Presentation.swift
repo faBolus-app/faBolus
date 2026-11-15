@@ -70,9 +70,11 @@ public enum PumpMessages {
     public static func text(_ failure: PumpLinkFailure) -> String {
         switch failure {
         case .pairingRejected: return "The pump rejected the pairing code. Pair again with a new code from the pump."
+        // A t:slim drops the link the same way for a wrong code and for the right one with the pump off its
+        // Pair Device screen (P3's bench), so the message names both.
         case .pairingDropped:
-            return
-                "The pump closed the connection while pairing. The code may be wrong: pair again with a new code from the pump."
+            return "The pump closed the connection while pairing. The code may be wrong, or the pump may not be "
+                + "on its Pair Device screen: open Pair Device on the pump and pair again with the code it shows."
         case .unsupportedModel(let model):
             return model == .mobi
                 ? "This is a Mobi, which faBolus doesn't connect to yet." : "faBolus can't connect to this pump."
