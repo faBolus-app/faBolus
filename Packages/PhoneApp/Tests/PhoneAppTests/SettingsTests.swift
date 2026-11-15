@@ -117,6 +117,17 @@ import faBolusCore
         #expect(AppSettings(defaults: defaults).remoteBolusLimitUnits == nil)
     }
 
+    /// A fields list saved with a field more than once (the settings screen could add one again and again)
+    /// reads back with each field once, so the Live Activity doesn't show it twice.
+    @Test func aLiveActivityFieldSavedTwiceReadsOnce() throws {
+        let suite = "settings-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let s = AppSettings(defaults: defaults)
+        s.liveActivityLayout.fields = [.glucose, .iob, .lastBolus, .lastBolus, .iob, .lastBolus]
+        #expect(AppSettings(defaults: defaults).liveActivityLayout.fields == [.glucose, .iob, .lastBolus])
+    }
+
     /// The defaults a new install starts with: remotes can't bolus, no remote limit, complication names
     /// off, no auto-correction row, no Live Activity and no bolus from it.
     @Test func aNewInstallStartsWithTheSafeDefaults() throws {
