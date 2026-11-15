@@ -1,0 +1,14 @@
+{
+  "kind": "bolus",
+  "payload": {
+    "confirmed": [
+      "bolusLimitsNotChecked"
+    ],
+    "includeStaleGlucose": false,
+    "mU": 2000,
+    "mode": "units",
+    "requestId": "1793534390-16-121720",
+    "sentAt": 1793534390
+  },
+  "version": 2
+}

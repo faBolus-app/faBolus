@@ -195,3 +195,26 @@ struct ShareCredentialsTests {
         await #expect(throws: GlucosePollError.needsSetup) { _ = try await poller.poll() }
     }
 }
+
+@Suite struct GlucoseSourceBufferTests {
+    /// One reading dated hours ahead doesn't hold the latest: correctly dated readings after it still
+    /// become the latest, and it's never in the history or the below-range time.
+    @Test func aReadingDatedAheadIsDropped() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var buffer = GlucoseSourceBuffer()
+        let ahead = try #require(GlucoseSample(mgdl: 140, date: now.addingTimeInterval(3 * 3600), sourceID: "s"))
+        buffer.add([ahead], belowRange: [now.addingTimeInterval(3 * 3600)], now: now)
+        #expect(buffer.latest == nil)
+        #expect(buffer.history.isEmpty)
+        #expect(buffer.belowRangeAt == nil)
+        let next = try #require(GlucoseSample(mgdl: 150, date: now.addingTimeInterval(300), sourceID: "s"))
+        buffer.add([next], now: now.addingTimeInterval(300))
+        #expect(buffer.latest == next)
+        // Within the tolerance a reading is still taken, as a clock a little ahead.
+        let skewed = try #require(
+            GlucoseSample(
+                mgdl: 160, date: now.addingTimeInterval(600 + GlucoseFreshness.futureSkewTolerance), sourceID: "s"))
+        buffer.add([skewed], now: now.addingTimeInterval(600))
+        #expect(buffer.latest == skewed)
+    }
+}

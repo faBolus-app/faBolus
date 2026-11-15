@@ -59,7 +59,8 @@ public enum StatusComposer {
         func at<V>(_ o: Observed<V>?) -> Int? {
             guard let o, o.hasValidTime, o.measuredAt <= now.addingTimeInterval(Observed<V>.futureSkewTolerance)
             else { return nil }
-            return epoch(o.measuredAt)
+            // The time the phone ages it from, so the watch never shows it current longer than the phone.
+            return epoch(o.agedFrom)
         }
         let glucose = pump.glucose.flatMap { g -> Timed<RemoteProtocol.GlucoseReading>? in
             guard WireLimits.glucose.contains(g.value.mgdl) else { return nil }

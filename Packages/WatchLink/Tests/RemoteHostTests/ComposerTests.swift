@@ -393,3 +393,15 @@ import Testing
         #expect(RemoteMessage.receive(RemoteMessage.history(h).wire) == .message(.history(h)))
     }
 }
+
+@Suite struct ConfirmationTokenTests {
+    /// Each confirmation kind has a wire token of its own and comes back as itself: a remote answers by token
+    /// alone, so "limits not checked" and "max hourly bolus" must never share one.
+    @Test func everyConfirmationKindHasItsOwnToken() {
+        let tokens = DoseConfirmation.Kind.allCases.map(ConfirmationToken.init)
+        #expect(Set(tokens).count == DoseConfirmation.Kind.allCases.count)
+        for kind in DoseConfirmation.Kind.allCases { #expect(DoseConfirmation.Kind(ConfirmationToken(kind)) == kind) }
+        #expect(ConfirmationToken(.bolusLimitsNotChecked) == .bolusLimitsNotChecked)
+        #expect(ConfirmationToken(.bolusLimitsNotChecked) != .maxHourlyBolus)
+    }
+}

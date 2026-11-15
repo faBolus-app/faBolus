@@ -154,6 +154,15 @@ public enum GoldenFixtures {
                     deliveredMilliunits: nil,
                     message: "Too many boluses: the pump may not track IOB. Low insulin: 4.00 U left.",
                     confirm: [.tooManyBoluses, .lowInsulin], sentAt: now))),
+        // The pump's count couldn't be read for this dose: the limits go unchecked, a confirmation of its own.
+        v2(
+            "bolusOutcome-confirm-limits-not-checked",
+            .bolusOutcome(
+                BolusOutcomePayload(
+                    requestId: "1793534390-15-121700", outcome: .failed, requestedMilliunits: nil,
+                    deliveredMilliunits: nil,
+                    message: "Bolus limits not checked: the pump's hourly count couldn't be read.",
+                    confirm: [.bolusLimitsNotChecked], sentAt: now))),
         v2(
             "dismissResult",
             .dismissResult(
@@ -201,6 +210,12 @@ public enum GoldenFixtures {
                     requestId: "1793534390-13-121520", sentAt: now - 10,
                     amount: .calculator(carbsGrams: 45, estimateMilliunits: 6000), glucoseMgdl: 142,
                     includeStaleGlucose: false, confirmed: [.tooManyBoluses, .lowInsulin]))),
+        v2(
+            "bolus-units-limits-not-checked-confirmed",
+            .bolus(
+                BolusRequestPayload(
+                    requestId: "1793534390-16-121720", sentAt: now - 10, amount: .units(milliunits: 2000),
+                    glucoseMgdl: nil, includeStaleGlucose: false, confirmed: [.bolusLimitsNotChecked]))),
         // Carbs only: the user declined to correct from the reading named, so the estimate has no correction.
         v2(
             "bolus-carbs-no-correction",

@@ -256,7 +256,7 @@ public actor AlertCoordinator {
         let now = clock()
         let urgentLow = UrgentLowAlarm.isActive(pumpState: pumpState, source: backup, thresholds: thresholds, now: now)
         // Lost when the newest reading from any source is stale; no reading at all is "no data".
-        let newest = [pumpState.glucose?.measuredAt, backup?.latest?.date].compactMap { $0 }.max()
+        let newest = [pumpState.glucose?.agedFrom, backup?.latest?.agedFrom].compactMap { $0 }.max()
         let cgmLost = newest.map { GlucoseFreshness.isStale($0, thresholds: thresholds, now: now) } ?? false
         await run(.glucose(urgentLow: urgentLow, cgmLost: cgmLost))
         return true

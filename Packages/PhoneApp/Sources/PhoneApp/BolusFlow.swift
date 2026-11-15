@@ -595,7 +595,7 @@ public final class BolusFlow {
             let message =
                 reading.map {
                     StaleBolusPrompt.warningMessage(
-                        glucoseMgdl: $0.value.mgdl, glucoseDate: $0.measuredAt, now: now, carbsOff: carbsOff)
+                        glucoseMgdl: $0.value.mgdl, glucoseDate: $0.agedFrom, now: now, carbsOff: carbsOff)
                 }
                 ?? (carbsOff
                     ? "There's no CGM reading, so this dose has no correction. Bolus with no correction, or cancel?"

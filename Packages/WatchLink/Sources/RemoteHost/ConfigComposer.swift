@@ -116,6 +116,7 @@ extension ConfirmationToken {
         switch kind {
         case .tooManyBoluses: self = .tooManyBoluses
         case .maxHourlyBolus: self = .maxHourlyBolus
+        case .bolusLimitsNotChecked: self = .bolusLimitsNotChecked
         case .lowInsulin: self = .lowInsulin
         }
     }
@@ -126,6 +127,7 @@ extension DoseConfirmation.Kind {
         switch token {
         case .tooManyBoluses: self = .tooManyBoluses
         case .maxHourlyBolus: self = .maxHourlyBolus
+        case .bolusLimitsNotChecked: self = .bolusLimitsNotChecked
         case .lowInsulin: self = .lowInsulin
         }
     }

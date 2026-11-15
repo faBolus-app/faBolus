@@ -442,6 +442,24 @@ import Testing
         #expect(dose.request.bgMgdl == nil)
     }
 
+    /// The reading moved from the 180 the screen showed to 181 without changing the dose: the dose goes, and
+    /// it is recorded and sent with the reading it was corrected from, not the screen's.
+    @Test func aReadingThatMovedWithoutChangingTheDoseIsTheOneRecorded() throws {
+        let shown = try #require(compose(F.cgmDose(carbs: 0, recommended: 1.25, entered: 1.25)).dose)
+        #expect(shown.correctionGlucoseMgdl == 180)
+        let context = F.context(pump: F.pump(glucose: 181))
+        let dose = try #require(
+            compose(F.cgmDose(carbs: 0, shown: 180, recommended: 1.25, entered: 1.25), context: context).dose)
+        #expect(dose.units == 1.25)
+        #expect(dose.correctionGlucoseMgdl == 181)
+        #expect(dose.request.bgMgdl == 181)
+        // One that moves the dose is still asked about.
+        let moved = F.context(pump: F.pump(glucose: 200))
+        #expect(
+            compose(F.cgmDose(carbs: 0, shown: 180, recommended: 1.25, entered: 1.25), context: moved).prompt
+                == .doseChanged(mgdl: 200, newUnits: 1.75, enteredUnits: 1.25))
+    }
+
     @Test func differentFromTheCalculatorIsNoticed() throws {
         let dose = try #require(compose(override(entered: 2.5)).dose)
         #expect(dose.notices.contains(.differsFromCalculator(deliveredUnits: 2.5, suggestedUnits: 2.25)))
