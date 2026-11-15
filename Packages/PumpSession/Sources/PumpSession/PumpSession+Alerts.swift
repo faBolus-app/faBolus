@@ -60,8 +60,13 @@ extension PumpSession {
             guard alertLists.classClears == nil, current != nil else { return .cleared }
             return await trialCheck(alert)
         case .pumpError(let error):
-            // BAD_OPCODE says the pump has no such command; the undefined code (0) says nothing definite.
-            if error.isBadOpcode { return .unsupported }
+            // BAD_OPCODE says the pump has no such command; the undefined code (0) says nothing definite. A
+            // pump with no such command can't clear remotely, so this unit isn't offered the trial again: on a
+            // t:slim each refused write also drops the link.
+            if error.isBadOpcode {
+                if alertLists.classClears == nil { recordRemoteClearTrial(.doesNotClear) }
+                return .unsupported
+            }
             return error.errorCodeId == 0 ? .unconfirmed : .refused
         case .notSent(let reason):
             switch reason {

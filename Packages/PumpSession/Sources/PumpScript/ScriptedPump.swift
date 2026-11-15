@@ -227,13 +227,12 @@ public final class ScriptedPump {
         public let completionStatus: Int
     }
 
-    /// The completion status in a bolus's completed record. Only `delivered` is recorded on a t:slim (the
-    /// capture of bolus 3); the others are unconfirmed (docs/UNVERIFIED-GUESSES.md #19), so a test that
-    /// depends on them tests a guess.
+    /// The completion status in a bolus's completed record. `delivered` and `cancelled` are what a t:slim
+    /// at API 4.0 records (P3): `cancelled` for a cancel from the phone or the pump's screen alike. The
+    /// others are unconfirmed (docs/UNVERIFIED-GUESSES.md #19), so a test that depends on them tests a guess.
     public enum CompletionStatus {
         public static let delivered = 3
-        public static let cancelledFromPhone = 4
-        public static let stoppedOnPump = 0
+        public static let cancelled = 0
         public static let alarm = 1
         public static let malfunction = 2
     }
@@ -362,7 +361,7 @@ public final class ScriptedPump {
         append(typeId: IobSnapshotPreBolusHistoryLog.typeId, body: iobSnapshotBody(bolus))
         for (typeId, body) in Self.requestRecords(bolus, at: wallClock) { append(typeId: typeId, body: body) }
         if dropsPendingBolus {
-            activeBolus?.stop = Stop(at: bolus.deliversFrom, completionStatus: CompletionStatus.stoppedOnPump)
+            activeBolus?.stop = Stop(at: bolus.deliversFrom, completionStatus: CompletionStatus.cancelled)
         }
         notice(.bolusChange)
         scheduleBolusSteps()
@@ -395,7 +394,7 @@ public final class ScriptedPump {
         guard clock.now >= end else { return }
         let status =
             end < fullEnd
-            ? (bolus.stop?.completionStatus ?? CompletionStatus.stoppedOnPump) : CompletionStatus.delivered
+            ? (bolus.stop?.completionStatus ?? CompletionStatus.cancelled) : CompletionStatus.delivered
         bolus.ended = Stop(at: end, completionStatus: status)
         activeBolus = nil
         completed.append(bolus)
@@ -897,7 +896,7 @@ public final class ScriptedTransport: LinkTransport {
                 return CancelBolusResponse(cargo: [1] + le16(id) + [2, 0])
             }
             b.stop = ScriptedPump.Stop(
-                at: clock.now, completionStatus: ScriptedPump.CompletionStatus.cancelledFromPhone)
+                at: clock.now, completionStatus: ScriptedPump.CompletionStatus.cancelled)
             pump.activeBolus = b
             pump.settleBolus()
             return CancelBolusResponse(cargo: [0] + le16(id) + [0, 0])

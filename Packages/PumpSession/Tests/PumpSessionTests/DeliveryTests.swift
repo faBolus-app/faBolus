@@ -468,8 +468,8 @@ private func addOldHistory(_ pump: ScriptedPump, count: Int = 20) {
         #expect(completed.completionStatusId == ScriptedPump.CompletionStatus.alarm)
     }
 
-    /// A cancel from the phone is recorded with the phone-cancel completion status, a full delivery with
-    /// the delivered one.
+    /// A cancel from the phone is recorded with the cancelled completion status (0, as P3 records it), a full
+    /// delivery with the delivered one.
     @Test func eachEndIsRecordedWithItsCompletionStatus() async throws {
         let rig = Rig(configure: { $0.unsupportedReads = [] })
         await rig.startHeld()
@@ -478,7 +478,7 @@ private func addOldHistory(_ pump: ScriptedPump, count: Int = 20) {
         #expect(await rig.session.cancelBolus() == .cancelled)
         await rig.run(for: 5)
         let cancelled = BolusCompletedHistoryLog(cargo: try #require(records(rig.pump, 20).last))
-        #expect(cancelled.completionStatusId == ScriptedPump.CompletionStatus.cancelledFromPhone)
+        #expect(cancelled.completionStatusId == ScriptedPump.CompletionStatus.cancelled)
 
         _ = await rig.session.deliver(composed(1.0, id: "phone-2"))
         await rig.run(for: rig.pump.deliverySeconds(milliunits: 1000) + 5)

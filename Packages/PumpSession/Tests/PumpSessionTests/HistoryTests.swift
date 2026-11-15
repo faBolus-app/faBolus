@@ -517,7 +517,7 @@ func readStart(_ cargo: [UInt8]) -> UInt32 {
     /// A bolus cut short is named by why it stopped (the completion status's names in Tandem's apps).
     @Test func aBolusCutShortIsStoppedAndSaysWhy() throws {
         let titles = [
-            0: "Bolus stopped on the pump", 1: "Bolus stopped by an alarm", 2: "Bolus stopped by a malfunction",
+            0: "Bolus cancelled", 1: "Bolus stopped by an alarm", 2: "Bolus stopped by a malfunction",
             4: "Bolus cancelled from a phone", 6: "Bolus stopped for a predicted low"
         ]
         for (status, title) in titles {

@@ -4,8 +4,10 @@ Values and behavior faBolus takes from pumpx2, captures or other references that
 on a real pump or device. If something misbehaves, start here. Each entry gives the guess, where it lives,
 what a wrong guess costs, and how to check it.
 
-Two pumps are named: **P1**, a t:slim X2 at API 2.5 with the 16-character pairing code and no
-cartridge, used on the bench; and **P2**, a t:slim X2 at API 4.0 with the 6-digit code.
+Three pumps are named: **P1**, a t:slim X2 at API 2.5 with the 16-character pairing code and no
+cartridge, used on the bench; **P2**, a t:slim X2 at API 4.0 with the 6-digit code; and **P3**, a t:slim X2
+at API 4.0 with the 6-digit code and a G6, benched with saline on 2026-11-14. What P3's bench confirmed
+has been removed from here.
 
 Entries keep their numbers: code, tests and notes cite them, and a number isn't reused when its entry is
 resolved. Remove an entry once it's confirmed on hardware.
@@ -23,6 +25,9 @@ record of the bolus.
   The BG entry goes first, then the carb entry, then InitiateBolus, with the pump clock read again after
   permission. Both entries carry TimeSinceReset's seconds since boot and the bolus ID, and the BG entry is
   manual and remote (entry type 0, source 1).
+- **Confirmed on P3:** bits 8, 1 (with both entries) and 10 (a correction with a BG entry) are taken and
+  delivered, and the pump's history and screen record the entries. The carb entry's third byte has to be 1,
+  as faBolus sends it: P3 answers 0 with status 1 and the bolus can't go.
 - **Unverified:**
   - the split (bits 3) has only run in Tandem's app;
   - a calculator dose for a correction with no carbs goes as bits 8, like a dose typed in units; no
@@ -45,19 +50,6 @@ record of the bolus.
   `sensorNotFound` or the connection error) and never shows a reading.
 - **Verify:** G6 reads for 24 h on a phone running the Dexcom app, with the pump connected.
 
-## 7. `CurrentActiveIdpValuesResponse.currentTargetBg` is at byte 4
-
-- **The guess:** TandemKit decodes the active profile's target BG with `Bytes.readShort(raw, 4)`. The
-  ground truth is a real capture in pumpx2's tests (`7017000073002c012800`, target 115). The pinned
-  oracle writes the field at byte 5, the opposite of the capture, so this decode has no oracle backing.
-  Byte 4 is confirmed only on one t:slim (Control-IQ+ 7.10.2); the layout may differ by pump family and
-  software version.
-- **Where:** TandemKit `Sources/TandemMessages/Responses/Responses.swift`
-  (`CurrentActiveIdpValuesResponse.currentTargetBg`). faBolus doesn't read it.
-- **Risk:** none today. A future use for dosing must confirm it first.
-- **Verify:** set a known target on the pump, read the response, and confirm byte 4 carries it, on more
-  than one software version.
-
 ## 8. Control-IQ's zone byte: not shown until verified
 
 - **The guess, removed:** the earlier app turned `ControlIQInfoV2Response.controlStateType` (op-179) into
@@ -66,6 +58,7 @@ record of the bolus.
   "suspended for low", which reads the same byte. Control-IQ on or off and its mode are shown.
 - **A verifiable source:** op-57 `HomeScreenMirrorResponse.ApControlStateIcon` is named and mirrors the
   pump's own home-screen icon, if the pump answers op-57.
+- **P3:** the mirror's Control-IQ state reads 0 (on and idle) and 200 (off); the other states are unseen.
 - **Verify before showing a zone:** check op-57 on P1 and P2, and compare its icon with the pump's screen
   in each Control-IQ state.
 
@@ -112,18 +105,6 @@ record of the bolus.
   reading late, so it would look fresher than it is by the delay.
 - **Verify:** in the G7 24 h check, compare faBolus's reading times with the Dexcom app's.
 
-## 12. The battery's charging bit
-
-- **The guess:** `CurrentBatteryV2Response.chargingStatus` (op-145, byte 2) other than 0 means the pump is
-  on its charger, as Mobi reads the byte; pumpx2's `isCharging()` takes only 1, and t:connect doesn't read
-  it. pumpx2's own notes say the bytes after the headline reading often read 0 on a real pump, and nobody
-  has seen the byte on a pump on its charger. Charging is never inferred from a rising percentage.
-- **Where:** `Packages/PumpSession/Sources/PumpSession/PumpReadings.swift` (op-145),
-  `PumpBattery.isCharging`, `Packages/faBolusDesign/Sources/faBolusDesign/BatteryChargingPresentation.swift`,
-  the status message's `battery.charging`, and the watch's Details row.
-- **Risk:** display only; a wrong or missing charging mark, never a dose input.
-- **Verify:** with the pump on its charger, op-145 byte 2 isn't 0; off the charger, it is. On P1 and P2.
-
 ## 13. A bolus is absent from history only when no record shows the pump started it
 
 An unknown outcome becomes "failed, never delivered" when a history search finds no record naming the
@@ -135,8 +116,10 @@ which is exactly the bolus that never started.
 
 - **Evidence:** the capture of bolus 3 in pumpx2's `btsnoop_hci.csv` has the initiate, requested,
   activated, delivery and completed records for a remote bolus, and a 297 record naming it before them.
-- **Unverified:** that every firmware writes at least one of those records for every bolus it starts
-  (P1's older firmware is the one to check), and the 10-minute margin.
+- **Confirmed on P3 (API 4.0):** every bolus writes the requested and initiate records, a link dropped
+  just after the request included. One cancelled before delivery starts writes no activated or delivery
+  record, but its completed record names it.
+- **Unverified:** that P1's older firmware writes them too, and the 10-minute margin.
 - **Verify:** on P1, start a bolus and drop the link, and confirm a requested or activated record appears.
 
 ## 14. One pump clock for status, history and signing
@@ -167,20 +150,6 @@ wire at a time, so a cancel queued behind an InitiateBolus the pump doesn't answ
 the phone says it can be stopped on the pump meanwhile. A routine read the pump leaves unanswered twice in
 a row isn't asked again for one deadline, so a read it never answers can't hold the wire for good and the
 alert reads and history searches still go; that gap is a guess too.
-
-## 16. Which IOB the pump's calculator reply reports
-
-The IOB shown and dosed from is op-109's, by the pump's own IOB model (pumpx2's `getPumpDisplayedIOB`:
-Mudaliar for type 0, Swan 6-hour for type 1, the larger for an unknown type). The dose path cross-checks
-it against op-115's own IOB and, when they differ by more than 0.05 U, treats IOB as unverified and sizes
-from the larger.
-
-- **Unverified:** which model op-115 reports. On a Control-IQ pump (type 1, P2) both are Swan. On a pump
-  using Mudaliar (type 0; P1 runs with Control-IQ off) the two may differ, and then IOB never verifies: a
-  remote carb dose is refused and the phone always asks. That fails closed, but would make P1's dose path
-  unusable.
-- **Where:** `Packages/PumpSession/Sources/PumpSession/PumpReadings.swift`.
-- **Verify:** on P1 with insulin on board, compare op-109's type and both values with op-115's `iob`.
 
 ## 17. Which pump alert bits are CGM alerts
 
@@ -213,8 +182,11 @@ case the pump drops the alert a moment after answering; gone by then records not
 session held when the clear was sent counts, so one already cleared on the pump never reads as a clear
 that worked.
 
-- **Unverified:** whether P1 (API 2.5) and P2 (API 4.0) act on op-184, or answer status 0 and leave the
-  alert, and how soon after answering the pump's alert read reflects a clear.
+- **P3 (API 4.0):** a clear of a CGM alert drew an op-77 and the pump's history logged a TIPS error for
+  op-184 with error 6 (BAD_OPCODE); the pump then dropped the link, and the alert stayed. So a t:slim at
+  API 4.0 refuses the opcode itself, whatever the alert, and `knownClasses` says so.
+- **Unverified:** whether P1 (API 2.5) acts on op-184, and how soon after answering the pump's alert read
+  reflects a clear.
 - **Verify:** on P1 and P2, clear a real alert from the phone and confirm it goes from the pump's screen
   and from the next alert read.
 - **Then finish it:** add a row per class to `RemoteClearing.knownClasses` (`PumpClass(model: .tslim,
@@ -244,12 +216,14 @@ that worked.
   rule: a completion status t:connect counts as cut short (0, 1, 2, 4 or 6) and less delivered than
   requested. It names the cause from the status, with the names Tandem's apps give its values: 0 stopped
   on the pump, 1 by an alarm, 2 by a malfunction, 4 cancelled from a phone, 6 for a predicted low. Which
-  status a t:slim records for each is unverified.
+  status a t:slim records for each was unverified.
+- **P3:** a cancel records 0, from the phone or the pump's screen alike, before delivery starts or part
+  way. 4 was never seen, so the logbook can't tell the two apart and names 0 only as stopped. A dropped
+  link doesn't stop a bolus, so there is no link-drop case. The alarm case is unverified.
 - **Where:** `Packages/faBolusCore/Sources/faBolusCore/BolusOutcome.swift`,
   `Packages/PumpSession/Sources/PumpSession/PumpSession+Delivery.swift`,
   `Packages/PumpSession/Sources/PumpSession/HistoryProjection.swift`.
-- **Verify:** cancel a bolus, let one be stopped by an alarm, and let one be cut off by a link drop, and
-  compare the completion status in each history record with the name the logbook gives it.
+- **Verify:** let a bolus be stopped by an alarm and compare its completion status with the logbook's name.
 
 ## 20. The pump's CGM hardware string is the G6 transmitter ID
 
@@ -274,9 +248,12 @@ that worked.
   which sets the outcome the phone and the watch show.
 - **Risk:** the bolus outcome shows the wrong amount ("Bolus stopped" with a partial amount, or
   "delivered").
-- **Verify:** with a saline cartridge, deliver 1–2 U and compare the request, `LastBolusStatusV2` and the
-  pump screen; then start a 2 U bolus, cancel it partway, and compare the reported amount with the pump
-  screen and t:connect, including a cancel that arrives just as the bolus finishes.
+- **P3:** cancelled part way, from the phone (219 of 1000 mU) and on the pump (89 mU), LastBolusStatus B
+  and C and the history's completed record agree, and the pump's screen shows the amount cut to two
+  decimals (0.08 U). A cancel in the ~15 s before delivery starts puts in 0, and LastBolusStatus then keeps
+  the bolus before; the history's completed record settles it.
+- **Verify:** deliver 1–2 U in full and compare the request, `LastBolusStatusV2` and the pump screen, and a
+  cancel that arrives just as the bolus finishes.
 
 ## 22. The pump's comms-suspended notice (qualifying-event bit 19)
 
@@ -288,38 +265,9 @@ that worked.
 - **Risk:** if the pump really stops answering while the bit is set, a request sent meanwhile waits for its
   60 s deadline (guess #15), and an InitiateBolus that times out is an unknown outcome, which blocks new
   boluses until history settles it. Nothing is sent that a pause would have kept back from the pump.
+- **P3:** never seen, across boluses, cancels, a suspend and resume, a clock change and dropped links.
 - **Verify:** on P1 and P2, record the qualifying events across a bolus, a cancel, a cartridge change and
   a suspend and resume, and note when bit 19 comes and whether a request sent just after it is answered.
-
-## 23. The first bytes of the calculator snapshot and the last-bolus reply
-
-- **The guess:** a calculator snapshot (op-115) is an answer only when its byte 0 is 0, and a
-  `LastBolusStatusV2` reply describes the bolus only when its byte 0 is 1. Every recorded snapshot has 0
-  there and the recorded last-bolus reply has 1, but no recording shows a pump sending anything else, or
-  when it would.
-- **Where:** `Packages/PumpSession/Sources/PumpSession/PumpReadings.swift` (the op-115 case) and
-  `PumpSession+Delivery.swift` (`settleFinished`, and the snapshot read once permission is held).
-- **Risk:** fails closed. If a pump used another value for a good reply, its snapshot would never count
-  (every calculator dose asks about unconfirmed settings, and every bolus is refused at the re-read after
-  permission), or every bolus would settle from history instead of the last-bolus reply.
-- **Verify:** on P1 and P2, run the bench's `snapshot` and `lastbolus` reads and note byte 0, idle, during
-  a bolus and right after one.
-
-## 24. A bolus the pump gives between a dose's reads and its permission
-
-- **The guess:** a t:slim grants bolus permission when its own bolus (from its screen, or Control-IQ)
-  started and finished after faBolus read the dose's inputs, and the IOB in its calculator snapshot then
-  includes that bolus. faBolus reads the snapshot again once permission is held and abandons the bolus
-  (releasing the permission) when its IOB is more than one step above the IOB the dose was decided
-  against. A recording shows the pump answering the snapshot while permission is held; nothing shows what
-  it reports after its own bolus.
-- **Where:** `Packages/PumpSession/Sources/PumpSession/PumpSession+Delivery.swift` (`runDelivery`).
-- **Risk:** if the pump's IOB lags its own bolus, the re-read misses it and the dose goes ahead sized
-  without it. If the IOB moves by more than a step for another reason in those seconds, a bolus is
-  abandoned with nothing delivered.
-- **Verify:** with a saline cartridge, start a bolus on the pump screen, let it finish, then ask for
-  permission from the bench and read the snapshot; and note how far the IOB moves over a few seconds with
-  Control-IQ active.
 
 ## 25. When a t:slim says its CGM reading isn't one to dose from
 
@@ -334,44 +282,24 @@ that worked.
 - **Risk:** fails closed for the dose. If a t:slim showed a non-255 icon in normal use, every CGM
   correction from the pump's reading would stop. The mirror has to be read for each dose: a pump that
   never answers it gets no CGM correction at all.
+- **P3:** the icon stayed 255 through normal readings and through a CGM high alert. Later in the session
+  CurrentEGVGuiData read 0 mg/dL with status 4 for at least two minutes; what the sensor was doing then
+  isn't known.
 - **Verify:** on P1 and P2, run the bench's `cgm` read through a sensor's warm-up, a normal reading and a
   sensor error, and note the alert icon, the trend icon and the EGV status with each.
 
-## 26. The calculator snapshot's auto-fill flag (byte 37)
+## 27. The calculator snapshot's too-many-boluses bytes
 
-- **The guess:** byte 37 of the calculator snapshot says whether the pump lets its CGM reading fill in a
-  correction. faBolus honours it from a snapshot read for the attempt: off means no automatic correction.
-  Both recorded snapshots have it on, beside a reading; nothing shows what clears it.
-- **Where:** `Packages/faBolusCore/Sources/faBolusCore/PumpState.swift` (`glucoseCaution`).
-- **Risk:** fails closed. A pump that cleared it in normal use would turn off every CGM correction.
-- **Verify:** on P1 and P2, run the bench's `snapshot` read with a fresh reading, a stale one, and none,
-  and note byte 37 with each.
-
-## 27. The calculator snapshot's insulin left, last hour and too-many-boluses bytes
-
-- **The guess:** bytes 7-8 of the calculator snapshot are the insulin left in the cartridge in whole units;
-  bytes 20-23 are the insulin bolused in the last hour in milliunits; bytes 24 and 25 are set when the pump
-  says too many boluses were asked for (the hourly limit and IOB). The layout is pumpX2's. The meanings
-  are how Tandem's apps use them; both recorded snapshots read 120 U left, 2.81 U and 0 U in the last hour,
-  and neither flag set. faBolus asks the user to confirm from them, on the phone and on a remote.
+- **The guess:** bytes 24 and 25 of the calculator snapshot are set when the pump says too many boluses
+  were asked for (the hourly limit and IOB). The layout is pumpX2's; P3 never set either. Bytes 7-8 (the
+  insulin left, whole units) and 20-23 (the bolus insulin delivered in the last 60 minutes, milliunits,
+  partial amounts and the pump's own boluses included) are confirmed on P3. faBolus asks the user to confirm
+  from them, on the phone and on a remote.
 - **Where:** `Packages/faBolusCore/Sources/faBolusCore/DoseConfirmation.swift` (`confirmations`);
   `Packages/PumpSession/Sources/PumpSession/PumpReadings.swift`.
 - **Risk:** a wrong reading asks too often or not at all; no confirmation changes or blocks a dose, and
   the pump's own limits still apply.
-- **Verify:** on P1 and P2 with saline, run the bench's `snapshot` read before and after two boluses a
-  few minutes apart, and note bytes 7-8 against the pump's insulin screen, bytes 20-23 against the
-  boluses given, and bytes 24 and 25 when the pump refuses a bolus for its hourly limit.
-
-## 28. A correction glucose of 20-39 or 401-600 mg/dL in the bolus message
-
-- **The guess:** the pump takes a BG from 20 to 600 mg/dL in InitiateBolus's BG field, as Tandem's app
-  sends one in that range. faBolus sent 40-400 only; the calculator now corrects from 20-600 and sends the
-  glucose it corrected from.
-- **Where:** `Packages/PumpSession/Sources/PumpSession/BolusCommands.swift`;
-  `Packages/faBolusCore/Sources/faBolusCore/CalculatorGlucose.swift`.
-- **Risk:** fails closed: a pump that refuses the value refuses the bolus, and nothing is delivered.
-- **Verify:** with saline on P1 and P2, bolus from a typed 30 mg/dL and a typed 450 mg/dL, and note
-  whether each is accepted and what the pump's history records as the BG.
+- **Verify:** with saline, note bytes 24 and 25 when the pump refuses a bolus for its hourly limit.
 
 ## 29. Carbs off on the pump (the calculator snapshot's byte 13)
 
@@ -386,9 +314,10 @@ that worked.
   `Packages/PumpSession/Sources/PumpSession/BolusCommands.swift`.
 - **Risk:** low. A dose with no carbs is what faBolus already sends for a correction or a dose in units;
   an entry typed before carbs were turned on or off is refused, never converted.
-- **Verify:** with saline on P1 and P2, turn carbs off in a profile, run the bench's `snapshot` read and
-  note bytes 13 and 14-17, then bolus from the calculator with insulin entered and a typed BG, and note
-  what the pump's history records.
+- **P3:** with carbs off, byte 13 is 0 and bytes 14-17 still carry the carb ratio. The pump's own
+  calculator then sends the dose as bits 1 (food) with no carb entry.
+- **Verify:** with saline and carbs off, a dose from faBolus's calculator: note that the pump takes it and
+  what its history records.
 
 ## 30. Which bits a t:slim raises, and when
 
@@ -404,6 +333,9 @@ that worked.
   `Packages/PumpSession/Sources/PumpSession/PumpSession.swift` (`qualifyingEvents`).
 - **Risk:** low. The timed reads stay as they are (alerts every 15 s, the rest every 60 s, history every
   15 minutes), so a missed notice costs freshness, not a dose; a dose reads its own inputs fresh.
+- **P3:** bits 5 and 10 come with a bolus, 11 about once a minute while IOB changes, 14 with a BG entry
+  (remote or typed on the pump), 15 with a CGM reading, 16 with the battery, 31 with a revoked permission,
+  and 8, 15 and 20 with a clock change. A cartridge change wasn't recorded.
 - **Verify:** on P1 and P2, record the notices across a bolus, a cancel, a suspend and resume, a CGM
   reading, a cartridge change and a battery change, then lengthen the alert read to 60 s if every alert
   raised its bit.
@@ -420,32 +352,24 @@ that worked.
 - **Where:** TandemKit's `LinkConfiguration` (`cooldown`, `cooldownAfterTimeout`,
   `cooldownAfterFailedConnect`, `pairingScanTimeout`) and `PumpRegistrationState`.
 - **Risk:** low. Reconnecting never stops; a wrong base only makes a reconnect a few seconds early or late.
+- **P3:** at the range edge the link dropped with `CBError` 6 after holding, and came back on the way back.
 - **Verify:** at the range edge, record the drops' errors and how long each connection lasted (BAT-009's
   bench), and on P1 and P2 log the manufacturer data a pump in pairing mode advertises.
 
-## 32. A history request names its page's newest record, and a pump's log can restart
+## 32. A pump's log can restart
 
-- **The guess:** a `HistoryLogRequest`'s start is the newest record wanted, and the pump streams from it
-  down, newest first. t:connect and Mobi both send it that way. In t:connect's capture every request names
-  the pump's newest record and the pump streams down from it, but that capture can't tell this reading from
-  one where the start is the oldest record and the pump stops at its newest; no t:slim has been asked for a
-  page below its newest record. A sync asks for 30 records a request, from the newest record still missing
-  down, until the phone holds the whole log, as Mobi does; a search that settles a bolus asks for pages of
-  at most 250, as t:connect asks. When the pump's newest record is older than one the phone holds,
-  faBolus takes the log as restarted, as Mobi does: it drops what it holds and the logbook, and fetches the
-  log again. The boluses unknown then are from before the
-  restart, and the new log can't show they never started, so history never settles them as absent: they
-  stay unknown until the pump confirms them. No t:slim has been seen restarting its log.
+A `HistoryLogRequest`'s start is the newest record wanted, and the pump streams from it down, newest first:
+confirmed on P3 for a page below the newest record, and 250 and 255 come back whole. When the pump's newest
+record is older than one the phone holds, faBolus takes the log as restarted, as Mobi does: it drops what
+it holds and the logbook, and fetches the log again. The boluses unknown then are from before the restart,
+and the new log can't show they never started, so history never settles them as absent: they stay unknown
+until the pump confirms them. No t:slim has been seen restarting its log.
+
 - **Known limit:** a restarted log that has grown past the newest record the phone holds before the next
   sync isn't noticed (Mobi's check has the same gap): what the phone holds then hides the new records with
   the same numbers, and an unknown bolus from before the restart could be settled as absent.
 - **Where:** `Packages/PumpSession/Sources/PumpSession/PumpSession+History.swift` (`fetchPage`,
-  `runHistorySync`); `historySyncBatch` and `historyPageSize` in `PumpSession.Configuration`.
-- **Risk:** fails closed. If the start were the oldest record, each page would overlap what was asked in
-  one record: a sync would credit almost nothing and an unknown bolus would stay unknown, never settled
-  wrongly.
-- **Verify:** the bench runbook's `history` step on P1 and P2 (`start=last-20 count=5` should come back
-  `top`), and `history cap` for 250 and 255.
+  `runHistorySync`).
 
 ## 33. The chart's basal line comes from Basal Rate Change records
 
@@ -475,6 +399,8 @@ that worked.
 - **Risk:** display only: nothing a dose uses reads the basal state, and the pump itself refuses a bolus
   while suspended. A wrong byte would show a suspension or a temp rate that isn't there, or miss one. A
   Basal-IQ suspension is shown apart from the pump's, as t:connect shows it, since a bolus still goes.
+- **P3:** a 150 % temp rate reads byte 5 = 2, and TempRate active, 150 %, 900 s. The suspended icon wasn't
+  read.
 - **Verify:** on P1 and P2, suspend the pump and read the mirror and CurrentBasalStatus, resume and read
   them again; then set a 150 % temp rate and read the mirror and TempRate. On a Basal-IQ pump, read the
   mirror during a predicted-low suspension.
@@ -497,53 +423,27 @@ that worked.
   CGMStatus cases, `statusIcons`), `Packages/PhoneApp/Sources/PhoneApp/PumpDisplay.swift`.
 - **Risk:** display only: no dose reads any of them. A wrong byte would show a mark, a time left or a time
   that isn't the pump's, or miss one.
+- **P3:** the IOB time left resets to 5 h at each bolus and counts down; CGMStatus's session start and
+  length match the pump's screen; status icon 1 reads 1 with a G6 running. The bolus icons, the calibration
+  drop and the out-of-range icon weren't seen.
 - **Verify:** on P1 and P2, read the mirror with a bolus running, with a calibration due and with the
   transmitter out of range; read ControlIQIOB on P1 (Control-IQ off) after a bolus and compare the time left
   with the pump's IOB screen; read CGMStatus during a G6 session and compare with the pump's CGM info screen.
 
-## 36. The calculator snapshot's reading time and status
+## 37. Whether a granted bolus permission lapses
 
-- **The guess:** BolusCalcDataSnapshot's bytes 26 to 29 are when the pump took the reading at bytes 1 and 2
-  (pump time), bytes 30 to 33 the same moment as seconds since the pump's reset, and byte 34 the reading's
-  status, with CurrentEGVGuiData's ids. pumpX2 leaves bytes 26 to 36 undecoded; Mobi reads them so. In
-  pumpX2's two recorded t:slim snapshots, taken 20 minutes apart, both clocks move by exactly 1200 s and
-  the status is 1.
-- **Where:** `Packages/PumpSession/Sources/PumpSession/PumpReadings.swift` (the snapshot case),
-  `BolusCalculatorSettings.reading` and `PumpState.correctionReading` in
-  `Packages/faBolusCore/Sources/faBolusCore/PumpState.swift`.
-- **Risk:** dose path. The pump's CGM corrects a dose only from this reading, aged from byte 26, as
-  t:connect's calculator takes it. A wrong offset fails closed: a time that can't be placed, or a status
-  that isn't valid, leaves no reading, and the dose is carbs only or corrects from a typed BG. A wrong time
-  that still looks recent would let an old reading correct.
-- **Verify:** the read-only snapshot check on P1 and P2 (BENCH-RUNBOOK): bytes 26 and 30 move with the
-  clock between samples and match the time of the CurrentEGVGuiData reading with the same value; byte 34
-  follows the reading's status.
+Bit 31 is the pump taking back a granted permission, confirmed on P3: it comes when the pump's own bolus
+screen opens while the phone holds a permission, and a release after it answers status 1. A delivery that
+has its permission and hasn't queued InitiateBolus then stops, releases the permission and sends nothing
+more.
 
-## 37. Bit 31 is the pump revoking a granted bolus permission
-
-- **The guess:** qualifying-event bit 31 (pumpX2's `BOLUS_PERMISSION_REVOKED`) means the pump took back
-  the bolus permission it granted. A delivery that has its permission and hasn't queued InitiateBolus then
-  stops, releases the permission and sends nothing more. faBolus doesn't read the reason
-  (BolusPermissionChangeReason), which t:connect decides to read in native code: it waits for the bench.
+- **Unverified:** whether a permission lapses by itself. P3 kept one 120 s, and one 30 s right after its
+  own bolus, without revoking. One held 600 s saw bit 31 0.5 s after the phone's release went out at 600 s,
+  so a 10-minute lapse and a revoke raised by that release can't be told apart.
 - **Where:** `Packages/PumpSession/Sources/PumpSession/PumpSession.swift` (`qualifyingEvents`),
   `Packages/PumpSession/Sources/PumpSession/PumpSession+Delivery.swift` (`DeliveryInProgress.stopReason`).
-- **Risk:** fails closed: a stop before InitiateBolus delivers nothing. Without it, the pump would refuse
-  the InitiateBolus of a revoked permission.
-- **Verify:** on P2, let a granted permission lapse or be taken by the pump's own bolus screen, and see
-  whether bit 31 arrives.
-
-## 38. LastBolusStatus C on a t:slim
-
-- **The guess:** a t:slim at API 3.1 or later answers LastBolusStatus C (0xBA), as t:connect asks it for
-  that form, with pumpX2's 53-byte layout: the standard bolus's status at byte 1 (0 no record, 3 stopping,
-  4 finished), its id at 2, and the units delivered at 10. A finished bolus is settled from it only when
-  the status is 4 and the id is the bolus's; a stopping record may not have its final amount, so it is left
-  to history, as is a refusal.
-- **Where:** `Packages/PumpSession/Sources/PumpSession/PumpSession+Delivery.swift` (`lastBolusDelivered`).
-- **Risk:** dose path, fails closed: a record that doesn't settle the bolus leaves it to history, and an
-  unknown outcome blocks the next bolus until history or the user settles it.
-- **Verify:** on P2 (API 4.0), one form C read after a delivered bolus and one after a cancelled one,
-  against the pump's history.
+- **Risk:** fails closed: a stop before InitiateBolus delivers nothing.
+- **Verify:** hold a permission past 600 s with the pump untouched.
 
 ## 39. CGM status B's grace period time left
 
@@ -557,25 +457,3 @@ that worked.
   `Packages/PumpSession/Sources/PumpSession/PumpReadings.swift` (`PumpAlertLists.graceDetail`).
 - **Risk:** display only. A wrong byte would say the wrong time left, or none.
 - **Verify:** on P2 with a G7, let a session run into its grace period and compare B with the pump's screen.
-
-## 40. UserInteraction on P2
-
-- **The guess:** a t:slim at API 3.0 or later accepts UserInteraction (op 0x84), as t:connect sends it when
-  the bolus screen opens (the owner chose t:connect's table over a bench run, 2026-11-13). P1, at 2.5, refused
-  it with op-77 and a link drop, which fits the table. faBolus sends it only at 3.0 or later, when the
-  phone's bolus screen opens.
-- **Where:** `PumpSession.bolusScreenOpened()` in
-  `Packages/PumpSession/Sources/PumpSession/PumpSession+Reads.swift`.
-- **Risk:** a signed write that changes no delivery. A pump that refuses it may drop the link when the bolus
-  screen opens; the support matrix then records it and stops sending it to that pump.
-- **Verify:** on P2, open the bolus screen and watch for the 0x85 reply.
-
-## 41. A first J-PAKE pairing the pump drops is a wrong code
-
-- **The guess:** a t:slim answers a wrong 6-digit code by dropping the link during authentication, as Mobi
-  reads it. A first J-PAKE pairing whose link drops there twice in a row ends as "the code may be wrong"
-  (one drop is retried, for the radio). A resume from the stored secret keeps the reconnect rule.
-- **Where:** TandemKit's `LinkReducer.dropped` (`LinkFailure.pairingDropped`), and
-  `PumpLinkFailure.pairingDropped` in faBolus.
-- **Risk:** pairing only. A pump that drops for another reason twice would be told its code may be wrong.
-- **Verify:** on P2, enter a wrong code and record what the pump does.

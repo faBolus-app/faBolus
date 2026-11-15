@@ -54,9 +54,8 @@ If the link drops after a bolus starts, faBolus may not know how much was delive
 
 ## Always available
 
-- **Cancel** is never refused: from the dashboard while a bolus delivers, or from the watch. Like every
-  message to the pump, it waits out the 5 seconds after each notice from the pump that its
-  communications are suspended ([guess 22](UNVERIFIED-GUESSES.md)).
+- **Cancel** is never refused: from the dashboard while a bolus delivers, or from the watch. It goes ahead
+  of everything waiting to be sent, after the one request already on its way to the pump.
 - **Read-only mode** hides the Bolus tab on the phone. Cancelling and clearing alerts still work.
 
 ## One controller at a time

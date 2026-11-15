@@ -50,7 +50,8 @@ Common problems, by where you hit them. If yours isn't here, see the [FAQ](faq.m
 
 ??? question "Pairing fails"
     Pair Device shows a new code each time. Enter the code the pump shows now, exactly: the 16-character
-    code is case-sensitive. Then try again.
+    code is case-sensitive. Keep the pump on its Pair Device screen until faBolus says it's paired: once the
+    pump leaves that screen it drops the pairing, as it does a wrong code. Then try again.
 
 ??? question ""Connection unstable" or the pump keeps disconnecting"
     Keep the phone closer to the pump. **Settings → Pump** says why the link last dropped. If it keeps
