@@ -40,6 +40,9 @@ public struct AppEnvironment {
     /// The pump session's monotonic clock, which times its intervals; the scripted pump's in the mock and
     /// tests, so it moves with `clock`.
     public var uptime: @Sendable () -> Double = SessionClock.system.uptime
+    /// Waits this many seconds on the app's clock: real time in the app, the scripted clock in the mock and
+    /// tests, so a retry's wait moves with the pump it waits for.
+    public var wait: @Sendable (Double) async -> Void = { try? await Task.sleep(for: .seconds($0)) }
     /// Turned on by the debug-only mock pump.
     public var isMock = false
 

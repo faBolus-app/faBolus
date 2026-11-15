@@ -542,7 +542,7 @@ final class LiveActivityFlow {
             // No definite answer, or no pump to ask: a bolus may still be going in, so it's asked again.
             while result == .unconfirmed || result == .notConnected, retries > 0 {
                 retries -= 1
-                try? await Task.sleep(for: .seconds(2))
+                await model.environment.wait(2)
                 let retry = await model.cancelBolus(onlyIf: target)
                 result = retry.result
                 target = retry.bolusId ?? target

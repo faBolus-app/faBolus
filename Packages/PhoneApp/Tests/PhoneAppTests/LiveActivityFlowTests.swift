@@ -424,14 +424,19 @@ import faBolusCore
         #expect(going.button == .cancel, "Cancel can be tapped again")
         #expect(going.note != nil, "it says to use the pump")
         r.pump.answers[MessageKey(CancelBolusRequest.self)] = nil
-        // How much of the bolus's 200 s the cancel's real-time retries used depends on the machine, and a
-        // delivered result leaves the card a minute after it settles: so the bolus's end is waited for in the
-        // ledger, and then the card shows it delivered or has already gone back to Bolus, never "Delivering…".
-        #expect(
-            await r.phone.until(r.model) {
-                if case .delivered? = await r.entries().first?.outcome { return true }
-                return false
-            })
+        // The bolus goes on for most of its 200 s (and the pump's wait before it starts) after the cancel's
+        // retries, which wait on the scripted clock. A delivered result leaves the card a minute after it
+        // settles: so the bolus's end is waited for in the ledger, and then the card shows it delivered or has
+        // already gone back to Bolus, never "Delivering…".
+        var delivered = false
+        for _ in 0..<400 where !delivered {
+            if case .delivered? = await r.entries().first?.outcome {
+                delivered = true
+            } else {
+                await r.phone.run(r.model, for: 1)
+            }
+        }
+        #expect(delivered)
         await r.phone.run(r.model, for: 2)
         if case .result(let shown) = r.view {
             #expect(shown.headline == "Delivered")
@@ -450,7 +455,12 @@ import faBolusCore
         await cancelToTheEnd(r)
         #expect(r.view == .idle(.cancel), "Cancel can be tapped again")
         r.pump.answers[MessageKey(CancelBolusRequest.self)] = nil
-        #expect(await r.phone.until(r.model) { r.view == .idle(.bolus) })
+        // Again most of a 200 s bolus to go.
+        var ended = false
+        for _ in 0..<400 where !ended {
+            if r.view == .idle(.bolus) { ended = true } else { await r.phone.run(r.model, for: 1) }
+        }
+        #expect(ended)
         _ = await r.phone.until(r.model) { r.model.bolusBlock == nil }
         // The next bolus offers Cancel.
         let next = BolusFlow(model: r.model)
