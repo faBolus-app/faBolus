@@ -149,10 +149,11 @@ enum HistoryProjection {
     static let abortedCompletionStatuses: Set<Int> = [0, 1, 2, 4, 6]
 
     /// A stopped bolus's entry, named by why it stopped, from the completion status's names in Tandem's
-    /// apps (guess #19).
+    /// apps (guess #19). A t:slim at API 4.0 records 0 for a cancel from the phone and from its own screen
+    /// alike, so 0 doesn't say which.
     static func stoppedTitle(_ status: BolusCompletedHistoryLog.CompletionStatus?) -> String {
         switch status {
-        case .userAborted: return "Bolus stopped on the pump"
+        case .userAborted: return "Bolus cancelled"
         case .terminatedByAlarm: return "Bolus stopped by an alarm"
         case .terminatedByMalfunction: return "Bolus stopped by a malfunction"
         case .abortedViaWirelessLink: return "Bolus cancelled from a phone"
