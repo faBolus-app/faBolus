@@ -3,7 +3,8 @@ import faBolusCore
 
 extension AppSettings {
     /// The watch's preferences, built from the same stored settings the phone's own screens read: the
-    /// glucose unit, the bolus and carb steps, the chart bounds and the plot style are one setting each, on both.
+    /// glucose unit, the bolus and carb steps, the chart bounds, the plot style and the correction answer are one
+    /// setting each, on both.
     public var watchPreferences: WatchPreferences {
         var p = WatchPreferences()
         p.bolusMode = watchDefaultBolusMode.rawValue
@@ -21,6 +22,7 @@ extension AppSettings {
         p.glucosePlotFloorSmall = watchPlotFloor
         p.glucosePlotCeilingSmall = watchPlotCeiling
         p.glucosePlotStyle = glucosePlotStyle.rawValue
+        p.autoAcceptCorrection = autoAcceptCorrection
         return p
     }
 

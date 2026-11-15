@@ -264,7 +264,12 @@ import Testing
         #expect(c.plotFloorMgdl == 40)
         #expect(c.plotCeilingMgdl == 350)
         #expect(c.plotStyle == .dots)
+        #expect(!c.autoAcceptCorrection)
         #expect(RemoteMessage.receive(RemoteMessage.config(c).wire) == .message(.config(c)))
+        p.autoAcceptCorrection = true
+        let on = ConfigComposer.compose(p, access: Self.access, freshness: .standard)
+        #expect(on.autoAcceptCorrection)
+        #expect(RemoteMessage.receive(RemoteMessage.config(on).wire) == .message(.config(on)))
     }
 
     @Test func anEmptyLayoutFallsBackToTheDefault() {

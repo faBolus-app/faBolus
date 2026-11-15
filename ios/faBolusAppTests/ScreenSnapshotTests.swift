@@ -219,6 +219,14 @@ import faBolusCore
         reduce.glucoseText = "90"
         reduce.entryChanged()
         check("reduce", NavigationStack { BolusEntryView(model: model, initialFlow: reduce) })
+        // Auto-accept corrections on: both cards still show, the corrected one chosen for the user.
+        let autoModel = await SnapshotFixture.model()
+        autoModel.settings.autoAcceptCorrection = true
+        let auto = BolusFlow(model: autoModel)
+        auto.carbsText = "45"
+        auto.glucoseText = "220"
+        auto.entryChanged()
+        check("auto-corrected", NavigationStack { BolusEntryView(model: autoModel, initialFlow: auto) })
         // A CGM reading too old to include: the screen says carbs only, and Confirm asks nothing.
         let staleModel = await SnapshotFixture.model { $0.pump.glucose = (180, 30 * 60) }
         let stale = BolusFlow(model: staleModel)

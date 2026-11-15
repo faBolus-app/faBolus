@@ -251,6 +251,75 @@ import faBolusCore
         await r.model.shutdown()
     }
 
+    /// With Auto-accept corrections on, the question isn't asked: the corrected dose goes to the review,
+    /// which shows the correction, and the request names the reading it corrected from.
+    @Test func theCorrectionQuestionIsAnsweredByTheSetting() async {
+        let r = await rig { $0.glucose = (220, 60) }
+        r.model.settings.autoAcceptCorrection = true
+        await r.tap(.startBolus)
+        if case .entry(let e) = r.view, e.mode != .carbs { await r.tap(.switchMode) }
+        for _ in 0..<3 { await r.tap(.adjust(up: true, coarse: true)) }
+        guard case .entry(let entry) = r.view else {
+            Issue.record("expected the entry, got \(r.view)")
+            return
+        }
+        #expect(entry.message == "Correction added (auto)")
+        await r.tap(.review)
+        guard case .review(let review) = r.view else {
+            Issue.record("expected the review with no question, got \(r.view)")
+            return
+        }
+        #expect(review.split?.contains("correction") == true)
+        #expect(review.units == entry.preview)
+        // Back from the review is the entry: there was no question to go back to.
+        await r.tap(.back)
+        guard case .entry = r.view else {
+            Issue.record("expected the entry, got \(r.view)")
+            return
+        }
+        await r.tap(.review)
+        await r.confirm()
+        #expect(await r.phone.until(r.model) { await r.entries().count == 1 })
+        let sent = await r.entries().first
+        #expect(sent?.request.bgMgdl == 220)
+        #expect(sent.map { formatUnits($0.request.totalUnits) } == review.units)
+        await r.model.shutdown()
+    }
+
+    /// A corrected dose over the remote limit is still asked about with the setting on, so the dose without
+    /// the correction can be sent.
+    @Test func aCorrectionOverTheLimitIsStillAsked() async {
+        let r = await rig { $0.glucose = (220, 60) }
+        r.model.settings.autoAcceptCorrection = true
+        r.model.settings.remoteBolusLimitUnits = 4
+        await r.tap(.startBolus)
+        if case .entry(let e) = r.view, e.mode != .carbs { await r.tap(.switchMode) }
+        for _ in 0..<3 { await r.tap(.adjust(up: true, coarse: true)) }
+        await r.tap(.review)
+        guard case .question(let q) = r.view else {
+            Issue.record("expected the correction question, got \(r.view)")
+            return
+        }
+        #expect(q.ask == "Add a correction?")
+        await r.model.shutdown()
+    }
+
+    /// A stale reading is still asked about with the setting on: it answers only the correction question.
+    @Test func aStaleReadingIsStillAskedWithTheSettingOn() async {
+        let r = await rig { $0.glucose = (220, 9 * 60) }
+        r.model.settings.autoAcceptCorrection = true
+        await r.tap(.startBolus)
+        if case .entry(let e) = r.view, e.mode != .carbs { await r.tap(.switchMode) }
+        for _ in 0..<3 { await r.tap(.adjust(up: true, coarse: true)) }
+        await r.tap(.review)
+        guard case .question(let q) = r.view else {
+            Issue.record("expected the stale-reading question, got \(r.view)")
+            return
+        }
+        #expect(q.ask == "Include it?")
+        await r.model.shutdown()
+    }
+
     /// A stale reading the composer may still include is asked about, as the watch asks it: Include sends
     /// the reading it named, and the dose corrected from it is delivered.
     @Test func aStaleReadingIsIncludedOnlyWhenChosen() async {

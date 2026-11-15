@@ -391,7 +391,13 @@ struct BolusEntryView: View {
             case .doses:
                 Label("Doses updated. Choose again.", systemImage: "arrow.triangle.2.circlepath").font(.footnote)
             case .noQuestion, nil:
-                if flow.correction == nil, !flow.unitsEdited {
+                if flow.autoCorrection != nil {
+                    Text(
+                        "\(q.above ? "Corrected" : "Reduced") is chosen for you (Settings → Bolus & entry). Each is "
+                            + "the whole dose; tap the other to use it."
+                    )
+                    .font(.footnote).foregroundStyle(.secondary)
+                } else if flow.correction == nil, !flow.unitsEdited {
                     Text("Each is the whole dose. Choose one.").font(.footnote).foregroundStyle(.secondary)
                 }
             }

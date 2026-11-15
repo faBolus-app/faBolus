@@ -1,0 +1,61 @@
+{
+  "kind": "config",
+  "payload": {
+    "bolus": {
+      "autoAcceptCorrection": true,
+      "carbStepG": 5,
+      "defaultMode": "carbs",
+      "enabled": true,
+      "readOnly": false,
+      "unitsStepMU": 50
+    },
+    "chartHours": [
+      3,
+      6,
+      12,
+      24
+    ],
+    "complication": {
+      "labels": false,
+      "slots": [
+        "iob",
+        "reservoir",
+        "battery"
+      ]
+    },
+    "details": [
+      "iob",
+      "reservoir",
+      "battery",
+      "cgm",
+      "lastBolus",
+      "carbRatio",
+      "isf",
+      "target",
+      "maxBolus"
+    ],
+    "freshness": {
+      "iobMinutes": 5,
+      "pumpStatusMinutes": 15,
+      "therapyMinutes": 15
+    },
+    "glucose": {
+      "includableMinutes": 15,
+      "plotCeiling": 300,
+      "plotFloor": 40,
+      "staleMinutes": 6,
+      "unit": "mgdl"
+    },
+    "revision": "baa76dcacc773707",
+    "screens": {
+      "default": "glance",
+      "order": [
+        "glance",
+        "alerts",
+        "history",
+        "details"
+      ]
+    }
+  },
+  "version": 2
+}

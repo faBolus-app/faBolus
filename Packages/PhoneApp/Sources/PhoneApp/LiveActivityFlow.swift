@@ -329,6 +329,16 @@ final class LiveActivityFlow {
                 with.units > 0, without.units > 0, abs(with.units - without.units) > 1e-9,
                 let target = with.inputs.settings?.value.targetMgdl
             {
+                // Answered yes by the setting, as on the watch: the corrected dose, reviewed as any other. The
+                // reading goes with it, and the composer corrects from its own fresh read, refusing a dose
+                // that read changes. A corrected dose over the remote limit is still asked about, so the dose
+                // without it can be sent.
+                let fits = doseLimitMilliunits.map { with.units * 1000 <= Double($0) + 1e-6 } ?? true
+                if model.settings.autoAcceptCorrection, fits {
+                    return Preview(
+                        units: with.units, glucoseMgdl: mgdl, text: formatUnits(with.units),
+                        message: mgdl > target ? "Correction added (auto)" : "Bolus reduced (auto)")
+                }
                 let q = Question(
                     kind: .correction(above: mgdl > target, targetMgdl: target), entry: entry, mgdl: mgdl,
                     yesUnits: with.units, noUnits: without.units)

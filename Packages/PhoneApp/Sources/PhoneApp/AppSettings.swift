@@ -26,6 +26,11 @@ public final class AppSettings {
     public var carbIncrement: Int { didSet { set(carbIncrement, .carbIncrement) } }
     /// Show the calculator's working on the bolus screen.
     public var showBolusReasoning: Bool { didSet { set(showBolusReasoning, .showBolusReasoning) } }
+    /// The calculator's correction question is answered yes for the user: on the phone the corrected dose is
+    /// chosen for them (both doses still show, and the other can still be tapped); the watch and the Live
+    /// Activity don't ask, and dose with the correction. Off by default. It only answers that question: every
+    /// other prompt and the final confirmation are asked as before.
+    public var autoAcceptCorrection: Bool { didSet { set(autoAcceptCorrection, .autoAcceptCorrection) } }
 
     public static let bolusIncrements: [Double] = [0.05, 0.1, 0.5, 1, 2]
     public static let carbIncrements: [Int] = [1, 5, 10, 15]
@@ -129,6 +134,7 @@ public final class AppSettings {
         bolusIncrement = value(.bolusIncrement).flatMap { Self.bolusIncrements.contains($0) ? $0 : nil } ?? 0.05
         carbIncrement = value(.carbIncrement).flatMap { Self.carbIncrements.contains($0) ? $0 : nil } ?? 5
         showBolusReasoning = value(.showBolusReasoning) ?? true
+        autoAcceptCorrection = value(.autoAcceptCorrection) ?? false
 
         glucoseUnit = value(.glucoseUnit).flatMap(GlucoseUnit.init(rawValue:)) ?? .mgdl
         showGlucoseUnitLabels = value(.showGlucoseUnitLabels) ?? false
@@ -214,7 +220,7 @@ public final class AppSettings {
 
     /// Every key this app stores. `settingsSurviveARelaunch` checks the values come back through them.
     public enum Key: String, CaseIterable, Sendable {
-        case defaultBolusMode, bolusIncrement, carbIncrement, showBolusReasoning
+        case defaultBolusMode, bolusIncrement, carbIncrement, showBolusReasoning, autoAcceptCorrection
         case glucoseUnit = "glucoseDisplayUnit"
         case showGlucoseUnitLabels, showGlucoseAxis, showIOBAxis, showBolusBars, showBasal, glucosePlotFloor
         case glucosePlotCeiling

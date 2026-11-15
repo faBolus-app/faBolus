@@ -87,6 +87,17 @@ struct BolusSettingsView: View {
             } footer: {
                 Text("A breakdown under the suggested dose: carbs, correction and active insulin.")
             }
+            Section {
+                Toggle("Auto-accept corrections", isOn: $settings.autoAcceptCorrection)
+            } footer: {
+                Text(
+                    "When BG is above target the calculator asks whether to add a correction, and below it whether "
+                        + "to reduce the bolus. On, the answer is yes: the phone chooses the corrected dose for you "
+                        + "(you can still tap the other), and the watch and the Live Activity don't ask. It answers "
+                        + "only that question: a stale CGM reading or one the pump flags still adds no correction, "
+                        + "under 70 mg/dL the bolus is reduced as always, and every other check and the final "
+                        + "confirmation are still asked.")
+            }
         }
         .navigationTitle("Bolus & entry")
     }
