@@ -371,19 +371,24 @@ until the pump confirms them. No t:slim has been seen restarting its log.
 - **Where:** `Packages/PumpSession/Sources/PumpSession/PumpSession+History.swift` (`fetchPage`,
   `runHistorySync`).
 
-## 33. The chart's basal line comes from Basal Rate Change records
+## 33. The chart's basal line comes from Basal Delivery records
 
-- **The guess:** the chart draws the basal rate from the pump's Basal Rate Change records (type 3, the
-  commanded rate in U/h), and its suspended spans from Pumping Suspended and Pumping Resumed (types 11 and
-  12). t:connect draws its line from the Basal Delivery records (type 279) instead, whose rate fields
-  TandemKit reads as integers in an unconfirmed unit. Whether a t:slim writes a Basal Rate Change for every
-  Control-IQ and temp-rate change, and not only for profile changes, isn't known.
-- **Where:** `Packages/PumpSession/Sources/PumpSession/HistoryProjection.swift` (`batch`),
+- **The guess:** the chart draws the basal rate from the pump's Basal Delivery records (type 279), written
+  every five minutes, as `commandedRate` in milliunits an hour while the source (bytes 10-11) is 1 to 4
+  (profile, temp rate, Control-IQ, both), and from Basal Rate Change records (type 3, the commanded rate as
+  a float in U/h) too. Suspended spans come from Pumping Suspended and Pumping Resumed (types 11 and 12),
+  and a type 279 with source 0 (suspended) or a rate of 0xFFFF is skipped. The milliunit scale is from
+  pumpX2's fixtures (a temp rate's 1600 beside a profile rate of 1000), not a capture of ours. Whether a
+  type 279's time is the start or end of its five minutes isn't known, so a change may be drawn up to five
+  minutes off.
+- **Why:** with Control-IQ on, the owner's pump drew no basal line at all over three hours after a
+  re-pairing: it writes few Basal Rate Change records for Control-IQ's changes.
+- **Where:** `Packages/PumpSession/Sources/PumpSession/HistoryProjection.swift` (`batch`, `deliveryRate`),
   `Packages/faBolusCore/Sources/faBolusCore/BasalChart.swift`.
-- **Risk:** display only. A rate change with no record leaves the line at the last recorded rate; nothing
-  a dose uses reads it.
-- **Verify:** with Control-IQ on, compare the pump's own basal graph over a few hours with the types 3 and
-  279 records for the same time, and switch to 279 if 3 misses changes.
+- **Risk:** display only. A wrong scale draws the line ten times too high or low; nothing a dose uses
+  reads it.
+- **Verify:** with Control-IQ on, compare the line over a few hours with the pump's own basal graph and the
+  current rate on its home screen.
 
 ## 34. The home screen's basal icon and a temp rate's percent
 

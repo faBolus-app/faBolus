@@ -50,6 +50,11 @@ experimental and demonstration use.
 
 ### Fixed
 
+- The chart's basal line is drawn with Control-IQ on. It came only from the pump's Basal Rate Change
+  records, which the pump writes few of for Control-IQ's changes, so after a re-pairing the line could be
+  missing for hours; it now also comes from the Basal Delivery record the pump writes every five minutes.
+- A swipe that starts on the chart scrolls the dashboard. Pressing and holding the chart still shows the
+  readout, but a finger that moves first no longer gets held by it.
 - The Live Activity's bolus screens answer taps promptly: a second − or + before the card redraws counts,
   every tap updates the card (so iOS's pending look always clears), the app waits for the update before
   the tap's action ends, only the changing number shows as pending rather than the whole card, the entry
