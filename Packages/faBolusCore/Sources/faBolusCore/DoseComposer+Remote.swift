@@ -54,7 +54,7 @@ public struct RemoteDoseRequest: Sendable, Equatable {
 
     /// Whether `recorded` is this same request, by what the remote sent rather than what the phone
     /// computed from it.
-    func isSameRequest(as recorded: DoseRequest) -> Bool {
+    public func isSameRequest(as recorded: DoseRequest) -> Bool {
         guard recorded.ledgerKey == ledgerKey, recorded.bgMgdl == glucoseMgdl else { return false }
         switch amount {
         case .units(let units): return recorded.carbsGrams == nil && recorded.shape == .now(units: units)

@@ -103,6 +103,16 @@ experimental and demonstration use.
 - A lost alert-state file no longer leaves old notifications showing, and one that can't be read yet (before
   the first unlock) is never overwritten: it's read once it can be, and what happened meanwhile is applied
   to it at the times it happened, so nothing is posted twice.
+- A watch bolus whose request id was already used now shows what happened to that dose, or "Outcome
+  unknown" with what to check when its record can't be read, never "Not delivered" for one that may have
+  gone in; a watch request while the bolus record can't be read is answered the same way, and none of these
+  posts a "Remote bolus refused" notification or records anything.
+- A damaged copy of a watch bolus request no longer reports "Not delivered" while a good copy of the same
+  request is delivered; a good copy that arrives while the damaged one is being answered is delivered once.
+- After the phone relaunches, a watch waiting on a bolus gets its outcome at once instead of showing it
+  pending while the pump is read.
+- Bolus answers no longer wait behind a send stuck from before the phone slept, or from an earlier watch
+  connection.
 
 ## [0.4.0] — 2026-11-01
 

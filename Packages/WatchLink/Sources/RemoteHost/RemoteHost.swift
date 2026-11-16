@@ -84,6 +84,12 @@ public actor RemoteHost {
     /// these (it has no bolus yet), so it stops them here.
     private var composing: Set<String> = []
     private var cancelledBeforeStart: Set<String> = []
+    /// Damaged copies whose answer is still being looked up, each with its own claim number. A readable
+    /// copy that arrives meanwhile takes the request over (`accept`) by removing the claim; the damaged
+    /// copy's handler then answers nothing. Once that handler commits to an answer it removes the claim
+    /// itself, and a readable copy after that is a duplicate.
+    private var unreadableClaims: [String: Int] = [:]
+    private var nextUnreadableClaim = 0
     /// Orders status refreshes: one that started earlier and finished later is dropped.
     private var statusTicket = 0
     private var lastStatus: StatusPayload?
@@ -199,6 +205,14 @@ public actor RemoteHost {
     func accept(_ request: HostRequest) {
         switch request {
         case .bolus(let p):
+            // A damaged copy that hasn't answered yet gives way: this readable copy is the request, worked on
+            // once, here. The damaged copy's handler finds its claim gone and says nothing.
+            if unreadableClaims.removeValue(forKey: p.requestId) != nil {
+                boluses[p.requestId] = .received
+                composing.insert(p.requestId)
+                Task { await self.bolus(p) }
+                return
+            }
             if let current = boluses[p.requestId] {
                 Task { await self.answerDuplicate(p.requestId, current) }
                 return
@@ -213,7 +227,8 @@ public actor RemoteHost {
             // What this cancel stops before it reaches the session: every request being composed, and the
             // one it names if that hasn't arrived.
             var stopped = composing
-            if let id = p.bolusRequestId, boluses[id] == nil { stopped.insert(id) }
+            // Only a damaged copy of the one it names has arrived: a readable copy may still take it over.
+            if let id = p.bolusRequestId, boluses[id] == nil || unreadableClaims[id] != nil { stopped.insert(id) }
             for id in stopped.sorted() where !cancelledRequests.contains(id) {
                 cancelledRequests.append(id)
                 if cancelledRequests.count > Self.maxCancelledRequests { cancelledRequests.removeFirst() }
@@ -247,7 +262,15 @@ public actor RemoteHost {
                 await self.refreshStatus()
             }
         case .unreadableBolus(let id):
-            Task { await self.unreadable(id) }
+            // A copy being worked on, readable or damaged, answers for itself. Otherwise the ID is claimed
+            // here, before any wait, so a readable copy that arrives while this one is looked up takes it over
+            // rather than run beside it: never a "not delivered" for an ID whose dose goes in.
+            guard boluses[id] == nil else { return }
+            boluses[id] = .received
+            nextUnreadableClaim += 1
+            unreadableClaims[id] = nextUnreadableClaim
+            let claim = nextUnreadableClaim
+            Task { await self.unreadable(id, claim: claim) }
         }
     }
 
@@ -257,11 +280,28 @@ public actor RemoteHost {
             composing.remove(p.requestId)
             cancelledBeforeStart.remove(p.requestId)
         }
-        // A request the ledger has an entry for is answered from it, below. One it holds as refused before,
-        // perhaps by the phone's last run, gets the same answer again, never a second attempt; the composer
-        // would refuse it too, but this skips the pump reads and the "received". One a cancel named before it
-        // arrived is refused, but only without an entry: a delivery that started stays its own answer.
-        if await services.ledgerEntry(key(p.requestId)) == nil {
+        let request = RemoteDoseRequest(v2: p, peerId: peerId, surface: .garmin)
+        // A resend of a request the ledger has an entry for gets the entry's outcome at once, with no
+        // "received" and no pump reads first: after a relaunch a delivered or unknown dose must not show as
+        // pending on the watch while the composer reads the pump only to say the same. A different request
+        // under a used ID is the composer's to judge, below. One the ledger holds as refused before, perhaps
+        // by the phone's last run, gets the same answer again, never a second attempt. One a cancel named
+        // before it arrived is refused, but only without an entry: a delivery that started stays its own
+        // answer.
+        let ledgerUnreadable = await services.bolusBlock() == .ledgerUnreadable
+        let entry = await services.ledgerEntry(key(p.requestId))
+        if let entry, request.isSameRequest(as: entry.request) {
+            await sendEntry(entry)
+            await refreshStatus()
+            return
+        }
+        // With the bolus record unreadable, this ID may be one whose dose went in before the phone
+        // relaunched: never "Not delivered", and nothing recorded.
+        if entry == nil, ledgerUnreadable {
+            await answerUnknown(p.requestId, Self.ledgerUnreadableMessage)
+            return
+        }
+        if entry == nil {
             if let refusal = await services.ledgerRefusal(key(p.requestId)) {
                 await sendRefusal(p.requestId, refusal)
                 return
@@ -276,7 +316,6 @@ public actor RemoteHost {
             BolusOutcomePayload(
                 requestId: p.requestId, outcome: .received, requestedMilliunits: nil, deliveredMilliunits: nil,
                 message: nil, sentAt: now))
-        let request = RemoteDoseRequest(v2: p, peerId: peerId, surface: .garmin)
         let decision = await services.compose(
             request, access: settings.access, remoteSizeLimitUnits: settings.remoteSizeLimitUnits)
         switch decision {
@@ -286,6 +325,11 @@ public actor RemoteHost {
             } else {
                 await sendRefusal(p.requestId, reason)
             }
+        case .refused(.requestIdReused):
+            // Before any other refusal, a cancel included: the ID has an entry, which may have gone in.
+            await answerReused(p.requestId)
+        case .refused(.blocked(.ledgerUnreadable)):
+            await answerUnknown(p.requestId, Self.ledgerUnreadableMessage)
         case .refused where cancelledBeforeStart.contains(p.requestId):
             // The user cancelled it first: that's the answer, now and to a copy after a relaunch, which the
             // cancel's record gives.
@@ -313,11 +357,40 @@ public actor RemoteHost {
                         sentAt: now))
             case .alreadyRecorded(let outcome):
                 await sendRecorded(p.requestId, outcome)
+            case .notStarted(.requestIdReused):
+                await answerReused(p.requestId)
+            case .notStarted(.blocked(.ledgerUnreadable)):
+                await answerUnknown(p.requestId, Self.ledgerUnreadableMessage)
             case .notStarted(let refusal):
                 await refused(p.requestId, Self.message(refusal))
             }
         }
         await refreshStatus()
+    }
+
+    /// The ledger already holds an entry under this request ID, for another dose. That entry may have gone
+    /// in, so "not delivered", a refusal on record or a "Remote bolus refused" would each tell the user
+    /// otherwise; and its own outcome isn't this request's, so "Delivered" would hide that this one wasn't
+    /// sent. The watch is told the outcome is unknown, with what to check. Nothing is recorded.
+    private func answerReused(_ id: String) async {
+        hostLog.error("watch request id reused for another dose")
+        await answerUnknown(id, Self.reusedIdMessage)
+    }
+
+    /// "Outcome unknown", with what to check: the phone can't say whether this ID's dose went in. Nothing
+    /// is recorded and nothing is announced: it isn't a refusal.
+    private func answerUnknown(_ id: String, _ message: String) async {
+        await sendOutcome(
+            BolusOutcomePayload(
+                requestId: id, outcome: .unknown, requestedMilliunits: nil, deliveredMilliunits: nil,
+                message: message, sentAt: now))
+    }
+
+    private func sendEntry(_ entry: RemoteBolusLedger.Entry) async {
+        await sendOutcome(
+            BolusOutcomePayload(
+                requestId: entry.key.requestId, outcome: entry.outcome, requestedUnits: entry.request.totalUnits,
+                sentAt: now))
     }
 
     private func answerDuplicate(_ id: String, _ current: OutcomeToken) async {
@@ -348,19 +421,29 @@ public actor RemoteHost {
         }
     }
 
-    private func unreadable(_ id: String) async {
-        if let entry = await services.ledgerEntry(.init(peerId: peerId, requestId: id)) {
-            await sendRecorded(id, entry.outcome)
-            return
-        }
-        // A readable copy of this request is being worked on (or was refused): that one answers. A damaged
-        // duplicate must not call it failed.
-        if boluses[id] != nil { return }
-        if let refusal = await services.ledgerRefusal(key(id)) {
+    /// The ID is claimed (`accept`) while this looks up the answer. A readable copy that arrives meanwhile
+    /// takes the request over, and this then answers nothing: the readable copy is worked on and answers.
+    /// Otherwise the claim becomes this copy's commitment, with no wait between the check and taking it, so
+    /// a readable copy from then on is a duplicate and nothing is composed under an ID answered "not
+    /// delivered". One accepted before the claim has finished, and left its answer in the ledger, read here.
+    private func unreadable(_ id: String, claim: Int) async {
+        // The block first: reading it may adopt a record that has just become readable, which the entry and
+        // refusal lookups after it then see.
+        let ledgerUnreadable = await services.bolusBlock() == .ledgerUnreadable
+        let entry = await services.ledgerEntry(key(id))
+        let refusal = entry == nil ? await services.ledgerRefusal(key(id)) : nil
+        guard unreadableClaims[id] == claim else { return }
+        unreadableClaims[id] = nil
+        defer { boluses[id] = nil }
+        if let entry {
+            await sendEntry(entry)
+        } else if let refusal {
             await sendRefusal(id, refusal)
-            return
+        } else if ledgerUnreadable {
+            await answerUnknown(id, Self.ledgerUnreadableMessage)
+        } else {
+            await refused(id, "The phone couldn't read this request. Nothing was delivered — update the watch app.")
         }
-        await refused(id, "The phone couldn't read this request. Nothing was delivered — update the watch app.")
     }
 
     /// - Parameter announce: post the "Remote bolus refused" notification; not for one the user cancelled.
@@ -499,6 +582,15 @@ public actor RemoteHost {
     func setCancelRetryDelay(_ delay: Duration) { cancelRetryDelay = delay }
 
     public static let cancelledMessage = "Cancelled before it started. Nothing was delivered."
+    /// A reused request ID whose entry can't be read: it may have delivered, so never "nothing was".
+    /// A request while the bolus record can't be read: its ID may be one whose dose went in.
+    public static let ledgerUnreadableMessage =
+        "The phone can't read its bolus record, so it can't tell whether this request was delivered — check the "
+        + "pump and the phone before dosing again."
+    /// A request under an ID already used for another dose: that one may have gone in, and this one wasn't sent.
+    public static let reusedIdMessage =
+        "This request's ID was already used for another bolus, so this one wasn't sent — check the pump and the "
+        + "phone before dosing again."
 
     /// The session's refusal in the words a remote shows.
     public static func message(_ refusal: DeliveryRefusal) -> String {

@@ -294,7 +294,10 @@ private struct Step {
     private mutating func lateCompletion(send: Int, _ result: WatchSendResult, _ state: inout WatchLinkState) {
         guard let i = state.stalled.firstIndex(where: { $0.send == send }) else { return }
         let s = state.stalled.remove(at: i)
-        if let until = state.stalled.last?.holdUntil, until > now {
+        // Only a hold still running moves to the newest stalled send left. One already ended, by a new
+        // connection or by running out, stays ended: a send stalled on the last connection mustn't hold up
+        // this one's.
+        if state.stalledHoldUntil != nil, let until = state.stalled.last?.holdUntil, until > now {
             state.stalledHoldUntil = until
         } else {
             state.stalledHoldUntil = nil
@@ -320,9 +323,11 @@ private struct Step {
         reason = "ready"
         state.backoffUntil = nil
         state.backoffLevel = 0
-        // A new connection or registration: a send stalled on the last one doesn't hold this one up. It's
-        // still kept, so a late answer that it got there settles it.
+        // A new connection or registration: a send stalled on the last one doesn't hold this one up, now or
+        // when a later send's late answer moves the hold to the newest stalled one. It's still kept, so a late
+        // answer that it got there settles it.
         state.stalledHoldUntil = nil
+        for i in state.stalled.indices { state.stalled[i].holdUntil = min(state.stalled[i].holdUntil, now) }
         if state.config != nil { setDue(.config, &state) }
         if state.status != nil { setDue(.status, &state) }
     }
