@@ -48,7 +48,7 @@ Turn it on in **Settings → Live Activity**. It starts the next time you open t
 
 The steps are the watch's:
 
-1. Tap **Bolus**. iOS asks you to unlock first.
+1. Tap **Bolus**. Choosing the dose works with the phone locked; iOS asks you to unlock at **1**, **2**, **3**.
 2. Choose **Units** or **Carbs** with the mode button, and set the amount with − and + (by the phone's
    increment) or −1/+1 U, −10/+10 g.
 3. Tap **Review**. In carbs mode, a current glucose that changes the dose asks whether to correct, and a
@@ -60,6 +60,7 @@ The steps are the watch's:
    unknown. An unknown outcome blocks new boluses until it's settled, as everywhere else.
 
 **Cancel** shows on the card whenever the pump has a bolus going, from any source, and needs no unlock.
+**Go on** and **Clear on pump** ask for an unlock too, as they change what the pump does.
 The Dynamic Island shows where a bolus stands, with Cancel; the steps themselves are on the Lock Screen
 card and the Mac's. CarPlay and the Apple Watch show the Live Activity without buttons.
 

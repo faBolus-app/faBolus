@@ -6,16 +6,18 @@ import faBolusCore
 import faBolusDesign
 
 /// The glucose Live Activity: the Lock Screen card in either style, the Dynamic Island, and a small layout
-/// for CarPlay and the Apple Watch. A tap outside a button opens the app. Its buttons (the bolus, the
+/// for CarPlay and the Apple Watch. A tap outside a button opens the app, but not while a bolus or alert
+/// screen is up. Its buttons (the bolus, the
 /// alerts, Cancel) send their taps to the app, which decides everything (`LiveActivityPanelView`). Once
 /// the system marks the activity stale (its glucose passed the window, or the app stopped updating it),
 /// everything greys.
 struct GlucoseLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: GlucoseActivityAttributes.self) { context in
-            ActivityCard(view: LAView(content: context.state, systemStale: context.isStale, now: Date()))
+            let v = LAView(content: context.state, systemStale: context.isStale, now: Date())
+            ActivityCard(view: v)
                 .activityBackgroundTint(Color(.systemBackground).opacity(0.85))
-                .widgetURL(DeepLink.open)
+                .widgetURL(Self.openURL(v))
         } dynamicIsland: { context in
             let v = LAView(content: context.state, systemStale: context.isStale, now: Date())
             return DynamicIsland {
@@ -52,10 +54,14 @@ struct GlucoseLiveActivity: Widget {
                 Text(v.glucoseValue).font(.system(.caption, design: .rounded).weight(.bold)).foregroundStyle(
                     v.glucoseColor)
             }
-            .widgetURL(DeepLink.open)
+            .widgetURL(Self.openURL(v))
         }
         .supplementalActivityFamilies([.small])
     }
+
+    /// A tap outside a button opens the app, except while a bolus or alert screen is up: a tap that just
+    /// misses a step there would open the app (and, locked, ask for Face ID) instead of doing nothing.
+    static func openURL(_ view: LAView) -> URL? { view.activePanel == nil ? DeepLink.open : nil }
 }
 
 /// The Lock Screen card (and the Mac menu bar's), or the small layout where buttons don't work.

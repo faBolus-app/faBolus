@@ -9,10 +9,15 @@ public struct LiveActivityPanel: Codable, Sendable, Hashable {
     /// The screen's ID, new for each screen. Unique to one run of the app.
     public var screen: String
     public var view: Screen
+    /// How many taps the app has answered. iOS shows a tapped Live Activity as pending until its next
+    /// update; a tap that changes nothing on screen (one from a screen just replaced) still needs one, or the
+    /// card stays pending. Optional so a panel saved before it existed still reads.
+    public var answeredTaps: Int?
 
-    public init(screen: String, view: Screen) {
+    public init(screen: String, view: Screen, answeredTaps: Int? = nil) {
         self.screen = screen
         self.view = view
+        self.answeredTaps = answeredTaps
     }
 
     public enum Screen: Codable, Sendable, Hashable {
@@ -240,12 +245,17 @@ public enum LiveActivityAction: Codable, Sendable, Hashable {
     /// The chart's next span.
     case cycleSpan
 
-    /// Whether the action may lead to insulin or changes the pump: those need an unlocked device. Cancel
-    /// stops insulin and is never gated; leaving a screen or showing one changes nothing.
+    /// Whether the action sends insulin or changes the pump: the 1 → 2 → 3 confirm, going on from a
+    /// confirmation the phone asked (back to that confirm), and clearing an alert on the pump. Those need an
+    /// unlocked device. Choosing the dose (starting, the mode, − and +, the review, the calculator's answers)
+    /// sends nothing, so a locked phone doesn't ask for Face ID at every step; 1 → 2 → 3 still does before
+    /// anything goes. Cancel stops insulin and is never gated.
     public var needsUnlock: Bool {
         switch self {
-        case .startBolus, .switchMode, .adjust, .review, .answer, .tap, .goOn, .clearAlert: true
-        case .back, .close, .cancelBolus, .showAlerts, .nextAlert, .cycleSpan: false
+        case .tap, .goOn, .clearAlert: true
+        case .startBolus, .switchMode, .adjust, .review, .answer, .back, .close, .cancelBolus, .showAlerts,
+            .nextAlert, .cycleSpan:
+            false
         }
     }
 }

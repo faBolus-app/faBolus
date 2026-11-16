@@ -12,7 +12,8 @@ experimental and demonstration use.
 
 - Bolus from the Live Activity, off until allowed in Settings → Live Activity: the watch's steps (the
   amount with − and +, the calculator's questions, a review, 1 → 2 → 3, the pump's confirmations, the
-  result with Cancel), checked by the phone as a remote's request. iOS asks for an unlock first. Works on
+  result with Cancel), checked by the phone as a remote's request. iOS asks for an unlock at 1 → 2 → 3 and to clear an alert on
+  the pump; choosing the dose works with the phone locked. Works on
   the Lock Screen, in the Dynamic Island and from the Mac's menu bar; CarPlay and the Apple Watch show it
   without buttons.
 - The Live Activity shows the open pump alerts and clears one on the pump where the watch could, cancels a
@@ -45,6 +46,11 @@ experimental and demonstration use.
 
 ### Fixed
 
+- The Live Activity's bolus screens answer taps promptly: a second − or + before the card redraws counts,
+  every tap updates the card (so iOS's pending look always clears), the app waits for the update before
+  the tap's action ends, only the changing number shows as pending rather than the whole card, the entry
+  screen keeps its size when switching mode, the steps are larger targets, and a tap that misses a button
+  while a bolus or alert screen is up no longer opens the app.
 - A bolus record that couldn't be read at launch is no longer overwritten when a watch request is refused or
   a watch cancel is recorded. It was replaced by an empty record, so the next launch forgot any unknown
   bolus it held and stopped blocking new boluses. Only "I checked the pump" writes over it.

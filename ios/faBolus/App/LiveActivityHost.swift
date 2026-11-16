@@ -1,5 +1,6 @@
 import ActivityKit
 import Foundation
+import os
 import PhoneApp
 import WidgetContent
 
@@ -9,6 +10,8 @@ import WidgetContent
 @MainActor
 final class LiveActivityHost: LiveActivityHosting {
     private var lastContent: LiveActivityContent?
+    private var lastUpdate: Task<Void, Never>?
+    private nonisolated static let log = Logger(subsystem: "com.fabolus.app", category: "LiveActivity")
     private let starts = StartTimes()
 
     private static var listed: [Activity<GlucoseActivityAttributes>] { Activity<GlucoseActivityAttributes>.activities }
@@ -37,7 +40,12 @@ final class LiveActivityHost: LiveActivityHosting {
             guard content != lastContent || !plan.end.isEmpty else { return }
             lastContent = content
             // Looked up again off the main actor: an `Activity` can't be handed across.
-            Task.detached { await Self.find(id)?.update(update) }
+            let previous = lastUpdate
+            lastUpdate = Task.detached {
+                await previous?.value
+                await Self.find(id)?.update(update)
+                Self.log.info("updated \(id, privacy: .public)")
+            }
             return
         }
         guard plan.start else { return }
@@ -51,6 +59,8 @@ final class LiveActivityHost: LiveActivityHosting {
             NSLog("Live Activity not started: %@", String(describing: error))
         }
     }
+
+    func flush() async { await lastUpdate?.value }
 
     func end() {
         lastContent = nil

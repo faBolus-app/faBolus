@@ -60,9 +60,6 @@ struct PanelScreenView: View {
             case .alert(let a): AlertScreen(screen: panel.screen, alert: a)
             }
         }
-        // From a tap until the app's answer arrives (slower from the Mac), the screen shows as pending, so a
-        // tap that seems to do nothing isn't repeated.
-        .invalidatableContent()
     }
 }
 
@@ -100,7 +97,6 @@ struct IslandPanelView: View {
                 CloseButton(screen: panel.screen)
             }
         }
-        .invalidatableContent()
     }
 
     private func color(_ tone: LiveActivityPanel.Result.Tone) -> Color {
@@ -140,25 +136,33 @@ struct EntryScreen: View {
                 Spacer()
                 CloseButton(screen: screen)
             }
-            HStack(spacing: 8) {
+            // The steps touch, each a wider target than its circle, so a tap between two lands on one rather
+            // than on the card (which would open the app).
+            HStack(spacing: 0) {
                 step("−\(coarse)", up: false, coarse: true, enabled: entry.canDecrease)
                 step("−", up: false, coarse: false, enabled: entry.canDecrease)
+                // Only what a tap changes shows as pending until the app answers, not the whole card.
                 Text(entry.value).font(.system(size: 28, weight: .bold, design: .rounded))
                     .foregroundStyle(entry.mode == .carbs ? AppTheme.carbs : AppTheme.insulin)
                     .frame(minWidth: 96).lineLimit(1).minimumScaleFactor(0.6)
                     .contentTransition(.numericText())
+                    .invalidatableContent()
                 step("+", up: true, coarse: false, enabled: entry.canIncrease)
                 step("+\(coarse)", up: true, coarse: true, enabled: entry.canIncrease)
             }
+            // The row is always there, empty in units, so switching mode or a new preview doesn't resize the
+            // card: iOS blurs everything that moves.
             HStack(spacing: 6) {
                 if let preview = entry.preview {
-                    Text(preview).font(.caption.weight(.semibold))
+                    Text(preview).font(.caption.weight(.semibold)).contentTransition(.numericText())
                 }
                 if let message = entry.message {
                     Text(message).font(.caption).foregroundStyle(AppTheme.high)
                 }
+                if entry.preview == nil && entry.message == nil { Text(" ").font(.caption) }
             }
             .lineLimit(1).minimumScaleFactor(0.7)
+            .invalidatableContent()
             PanelButton(screen: screen, action: .review) {
                 Pill(text: "Review", enabled: entry.canReview, prominent: true)
             }
@@ -182,6 +186,8 @@ struct EntryScreen: View {
                 .foregroundStyle(enabled ? AppTheme.insulin : .secondary)
                 .frame(width: coarse ? 38 : 40, height: 40)
                 .background((enabled ? AppTheme.insulin : .secondary).opacity(0.18), in: Circle())
+                .frame(width: 48, height: 44)
+                .contentShape(Rectangle())
         }
         .disabled(!enabled)
         .accessibilityLabel(

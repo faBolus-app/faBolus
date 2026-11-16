@@ -81,7 +81,7 @@ struct LiveActivitySettingsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text(
-                "This lets you deliver real insulin from the Live Activity on the Lock Screen, in the Dynamic Island and on a Mac that shows your iPhone's Live Activities. iOS asks you to unlock first, and every bolus still needs 1 → 2 → 3 on the Live Activity. You can turn this off any time."
+                "This lets you deliver real insulin from the Live Activity on the Lock Screen, in the Dynamic Island and on a Mac that shows your iPhone's Live Activities. Every bolus needs 1 → 2 → 3 on the Live Activity, and iOS asks you to unlock before it goes. You can turn this off any time."
             )
         }
     }

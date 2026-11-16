@@ -479,6 +479,9 @@ extension AppModel {
     /// - Parameter unlocked: it came through the intent that needs an unlocked device.
     public func liveActivityTapped(_ tap: LiveActivityTap, unlocked: Bool) async {
         await liveActivityFlow.handle(tap, unlocked: unlocked)
+        // The intent's `perform` returns when this does, and iOS may suspend the app then: the update it
+        // published has to land first, or the card waits for the next wake.
+        await environment.liveActivity?.flush()
     }
 }
 
