@@ -146,17 +146,14 @@ public struct LiveActivityContent: Codable, Sendable, Hashable {
         return LiveActivityContent(snapshot: trimmed, layout: layout, panel: panel, alerts: alerts)
     }
 
-    /// When this update stops being current: the first moment any value it shows passes its window, or the
-    /// app has stopped publishing long enough that the pump link can't be believed (already past for a
-    /// stale reading, so it shows stale at once). The system re-renders and marks the Live Activity stale
-    /// then, the only render it gets while the app isn't running, so a value like IOB, whose window is
-    /// shorter than glucose's, is never shown current past it.
+    /// When this update stops being current: the next moment any value it shows passes its window, or the
+    /// app has stopped publishing long enough that the pump link can't be believed. The system re-renders
+    /// and marks the Live Activity stale then, the only render it gets while the app isn't running, so a
+    /// value like IOB, whose window is shorter than glucose's, is never shown current past it. A crossing
+    /// already past isn't the answer: a reading already stale is drawn stale from its measurement time, and
+    /// stopping there would skip the later crossings, leaving IOB or the reservoir shown current for hours.
     public func staleDate(now: Date) -> Date? {
-        if let glucose = snapshot.glucose {
-            guard glucose.age(now: now) != nil else { return now }
-            let glucoseStale = glucose.agedFrom.addingTimeInterval(snapshot.freshness.glucoseStaleAfter)
-            if glucoseStale <= now { return glucoseStale }
-        }
+        if let glucose = snapshot.glucose, glucose.age(now: now) == nil { return now }
         let publisherStale = snapshot.publishedAt.addingTimeInterval(WidgetSnapshot.publisherStaleAfter)
         return (snapshot.decayCrossings(asOf: now) + [publisherStale]).min()
     }

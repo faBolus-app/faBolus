@@ -81,6 +81,14 @@ experimental and demonstration use.
   for the dose.
 - The calculator snapshot is read once after each new CGM reading, so the reading a correction comes from
   is the new one within seconds rather than up to a minute later.
+- After a bolus from the phone, the bolus screen is ready for the next one, without a relaunch, and no
+  longer fills in a correction on its own; a result that needs attention stays until you tap OK.
+- On the Live Activity, Cancel can be tapped again after a cancel the pump didn't confirm, the next bolus
+  shows Cancel instead of a stuck "Cancelling", a second tap joins the cancel already going instead of
+  starting another, and a cancel's retry never stops a newer bolus.
+- The Live Activity no longer stays on "Delivering…" after a short bolus has finished.
+- With the app suspended, the Lock Screen marks active insulin, reservoir and the pump link stale on time,
+  even when glucose was already stale.
 
 ## [0.4.0] — 2026-11-01
 

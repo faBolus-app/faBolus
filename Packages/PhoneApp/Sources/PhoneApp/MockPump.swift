@@ -69,6 +69,10 @@ public final class MockPump {
         env.runsTimers = runsTimers
         env.clock = { clock.date }
         env.uptime = { clock.elapsed }
+        env.wait = { seconds in
+            let end = clock.elapsed + seconds
+            while clock.elapsed < end, !Task.isCancelled { try? await Task.sleep(for: .milliseconds(1)) }
+        }
         env.isMock = true
         return env
     }
