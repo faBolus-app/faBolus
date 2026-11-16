@@ -24,9 +24,31 @@ final class MemoryAlertStore: AlertPersisting, @unchecked Sendable {
     /// Every state saved, in order, so a test can look at what was on disk before an effect ran.
     private(set) var history: [AlertEngine.State] = []
 
-    func loadState() -> AlertEngine.State? { lock.withLock { state } }
-    func saveState(_ state: AlertEngine.State) throws {
+    /// The state file is there but can't be read, as before the first unlock.
+    var locked: Bool {
+        get { lock.withLock { isLocked } }
+        set { lock.withLock { isLocked = newValue } }
+    }
+    private var isLocked = false
+    /// The state file is there but can't be decoded.
+    var corrupt: Bool {
+        get { lock.withLock { isCorrupt } }
+        set { lock.withLock { isCorrupt = newValue } }
+    }
+    private var isCorrupt = false
+
+    func loadState() -> AlertEngine.State? { lock.withLock { isLocked ? nil : state } }
+    func loadStateOutcome() -> AlertStateLoad {
         lock.withLock {
+            if isLocked { return .notYetReadable }
+            if isCorrupt { return .none }
+            return state.map(AlertStateLoad.loaded) ?? .none
+        }
+    }
+    func saveState(_ state: AlertEngine.State) throws {
+        try lock.withLock {
+            // A protected file can't be written before the first unlock either.
+            if isLocked { throw CocoaError(.fileWriteNoPermission) }
             self.state = state
             history.append(state)
         }
@@ -41,6 +63,7 @@ actor FakeScheduler: NotificationScheduling {
     enum Call: Equatable {
         case add(AlertRequest)
         case remove([String])
+        case removeAll
     }
     private(set) var calls: [Call] = []
     private(set) var held: [String: AlertRequest] = [:]
@@ -71,6 +94,7 @@ actor FakeScheduler: NotificationScheduling {
     private(set) var removedAll = 0
     func removeAll() async {
         removedAll += 1
+        calls.append(.removeAll)
         held = [:]
     }
     /// Notifications the OS holds before the app runs (left by an earlier app or process).

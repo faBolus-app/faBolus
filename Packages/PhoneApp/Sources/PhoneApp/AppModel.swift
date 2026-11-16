@@ -203,6 +203,9 @@ public final class AppModel {
                         await self?.updatePrimaryHealth()
                         // A bolus record that couldn't be read is read again; once it reads, its outcomes block.
                         await self?.refreshBolusBlock()
+                        // A backup source held after unclean starts starts again once its hold ends, the app
+                        // in the background too.
+                        await self?.resumeBackupSourceAfterHold()
                         // The pump's reading may have aged past its window: the backup's takes over now.
                         self?.recompute()
                         self?.publishSurfaces()

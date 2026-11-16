@@ -148,7 +148,7 @@ import faBolusCore
         let h = await Harness.launch(clock: clock, reportNoBackup: false) { await $0.backupGlucoseChanged(low) }
         #expect(await h.scheduler.held[UrgentLowAlarm.dedupeKey] != nil)
         let calls = await h.scheduler.calls
-        #expect(calls.first.map { if case .remove = $0 { return true } else { return false } } == true)
+        #expect(calls.first == .removeAll)
     }
 
     /// A state file a later build wrote with a field this one doesn't know, or missing one it expects,
@@ -185,13 +185,132 @@ import faBolusCore
         #expect(await h.scheduler.held.isEmpty)
     }
 
-    /// With no state file the earlier process's scheduled notices aren't known, so the fixed ones are
-    /// withdrawn at start rather than left to fire.
-    @Test func withNoStateFileTheFixedNoticesAreWithdrawnAtStart() async {
-        let h = await Harness.launch()
-        let removed = await h.scheduler.removed
-        for id in DisconnectEscalation.allIds + [AlertEngine.connectionUnstableId, UrgentLowAlarm.dedupeKey] {
-            #expect(removed.contains(id))
+    /// With no state file the earlier process's notices aren't known, so every one is withdrawn at start
+    /// rather than left to fire or linger: the fixed ones, and a per-request "outcome unknown" and an old
+    /// pump alert, whose identifiers can't be named.
+    @Test func withNoStateFileEveryOldNoticeIsWithdrawnAtStart() async {
+        let scheduler = FakeScheduler()
+        let old = AlertRequest(
+            identifier: AlertEngine.bolusIdentifier(key), category: .bolusReconciliation, severity: .warning,
+            level: .timeSensitive, title: "Bolus outcome unknown", body: "", fireDate: nil)
+        await scheduler.preload(old)
+        let h = await Harness.launch(scheduler: scheduler)
+        #expect(await scheduler.removedAll == 1)
+        #expect(await h.scheduler.held[old.identifier] == nil, "the ledger holds no such request any more")
+    }
+
+    /// A state that couldn't be read at launch turns out corrupt once it can be: what the earlier process
+    /// posted is withdrawn then, and what is true now is posted again.
+    @Test func aStateThatTurnsOutCorruptWithdrawsTheOldNotices() async throws {
+        let store = MemoryAlertStore()
+        let h = await Harness.launch(store: store)
+        let old = AlertRequest(
+            identifier: AlertEngine.bolusIdentifier(key), category: .bolusReconciliation, severity: .warning,
+            level: .timeSensitive, title: "Bolus outcome unknown", body: "", fireDate: nil)
+        await h.scheduler.preload(old)
+        store.locked = true
+        let next = await h.relaunch()
+        await next.send(.alertsChanged([PumpAlert(id: 0, kind: .alert, title: "Low insulin")]))
+        #expect(await next.scheduler.held[old.identifier] != nil, "nothing withdrawn while it can't be read")
+        store.locked = false
+        store.corrupt = true
+        await next.coordinator.tick()
+        #expect(await next.scheduler.held[old.identifier] == nil)
+        #expect(await next.scheduler.held.values.contains { $0.title == "Low insulin" })
+    }
+
+    /// A launch before the first unlock can't read the saved state. It withdraws nothing and writes nothing
+    /// over it; once the file reads, it is adopted, so a notice it records as posted isn't posted again.
+    @Test func aStateThatCantBeReadYetIsAdoptedNotOverwritten() async throws {
+        let store = MemoryAlertStore()
+        let h = await Harness.launch(store: store)
+        await h.send(.alertsChanged([PumpAlert(id: 0, kind: .alert, title: "Low insulin")]))
+        let saved = try #require(store.savedState)
+        store.locked = true
+        await h.scheduler.clearCalls()
+        let next = await h.relaunch()
+        #expect(await !next.scheduler.calls.contains(.removeAll))
+        #expect(await next.scheduler.removed.isEmpty)
+        store.locked = false
+        #expect(store.savedState == saved, "not written over while it couldn't be read")
+        await next.send(.alertsChanged([PumpAlert(id: 0, kind: .alert, title: "Low insulin")]))
+        #expect(await next.coordinator.engine.state.posted == saved.posted)
+        #expect(store.savedState?.posted == saved.posted)
+    }
+
+    /// A notice this process posted while the saved state couldn't be read isn't posted again when the
+    /// state is adopted, though the saved state never had it.
+    @Test func whatWasPostedWhileLockedIsntPostedAgainOnAdoption() async throws {
+        let store = MemoryAlertStore()
+        let h = await Harness.launch(store: store)
+        await h.send(.disconnected(.linkLost(code: nil)))
+        await h.send(.linkChanged(.connected))
+        _ = try #require(store.savedState)
+        store.locked = true
+        let next = await h.relaunch()
+        let alert = PumpAlert(id: 0, kind: .alert, title: "Low insulin")
+        await next.send(.alertsChanged([alert]))
+        let id = try #require(await next.scheduler.held.values.first { $0.title == "Low insulin" }?.identifier)
+        store.locked = false
+        await next.coordinator.tick()
+        await next.send(.alertsChanged([alert]))
+        #expect(await next.scheduler.adds.filter { $0.identifier == id }.count == 1)
+        #expect(store.savedState?.posted[id] != nil, "the adopted state knows it's posted")
+    }
+
+    /// Inputs held while locked are applied to the saved state at the time they happened: a drop is down
+    /// from when it happened, not from the unlock.
+    @Test func heldInputsKeepTheirOwnTime() async {
+        let store = MemoryAlertStore()
+        let clock = TestClock()
+        let h = await Harness.launch(store: store, clock: clock)
+        await h.send(.disconnected(.linkLost(code: nil)))
+        await h.send(.linkChanged(.connected))
+        #expect(store.savedState != nil)
+        store.locked = true
+        let next = await h.relaunch()
+        let droppedAt = clock.now
+        await next.send(.disconnected(.linkLost(code: nil)))
+        clock.advance(3600)
+        store.locked = false
+        await next.coordinator.tick()
+        #expect(await next.coordinator.engine.state.linkDownSince == droppedAt)
+    }
+
+    /// The unlock brings several inputs at once: each runs the adoption, which happens once, and none of
+    /// their effects is lost to a second copy adopted over the first.
+    @Test func concurrentInputsAdoptTheStateOnce() async {
+        let store = MemoryAlertStore()
+        let h = await Harness.launch(store: store)
+        await h.send(.disconnected(.linkLost(code: nil)))
+        await h.send(.linkChanged(.connected))
+        #expect(store.savedState != nil)
+        store.locked = true
+        let next = await h.relaunch()
+        store.locked = false
+        let alert = PumpAlert(id: 0, kind: .alert, title: "Low insulin")
+        async let ledger: () = next.coordinator.ledgerChanged()
+        async let pump: () = next.send(.alertsChanged([alert]))
+        async let tick: () = next.coordinator.tick()
+        _ = await (ledger, pump, tick)
+        #expect(await next.coordinator.engine.state.pumpAlerts == [alert])
+        #expect(await next.scheduler.held.values.contains { $0.title == "Low insulin" })
+        #expect(await next.coordinator.heldInputCount == 0)
+    }
+
+    /// While the state can't be read the held inputs stay bounded: one kept per latest-only kind, and a cap
+    /// on the rest.
+    @Test func heldInputsAreBounded() async {
+        let store = MemoryAlertStore()
+        let h = await Harness.launch(store: store)
+        store.locked = true
+        let next = await h.relaunch()
+        let before = await next.coordinator.heldInputCount
+        for n in 0..<50 { await next.send(.alertsChanged([PumpAlert(id: 0, kind: .alert, title: "A\(n)")])) }
+        #expect(await next.coordinator.heldInputCount == before + 1)
+        for n in 0..<(AlertCoordinator.deferredInputsCap + 20) {
+            await next.coordinator.remoteBolusRefused(peerId: "garmin", requestId: "r\(n)", reason: "no")
         }
+        #expect(await next.coordinator.heldInputCount == AlertCoordinator.deferredInputsCap)
     }
 }

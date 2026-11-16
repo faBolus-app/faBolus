@@ -225,3 +225,80 @@ import faBolusCore
         await model.shutdown()
     }
 }
+
+@MainActor
+@Suite struct BackupSourceHeldOffTests {
+    /// A source held off after repeated unclean starts stays held off when the settings screen opens: the
+    /// screen picks the source already chosen, which restarts nothing and keeps the hold, and says until when.
+    @Test func openingSettingsDoesntRestartAHeldOffSource() async throws {
+        let phone = Phone()
+        let until = phone.mock.clock.date.addingTimeInterval(30 * 60)
+        phone.settings.set(GlucoseSourceRegistry.shareID, forKey: "cgm.selectedSource")
+        let held = GlucoseSourceRecoveryState(
+            uncleanStartCount: 3, lastUncleanStartAt: phone.mock.clock.date, disabledUntil: until)
+        phone.settings.set(try JSONEncoder().encode(held), forKey: "cgm.recoveryState")
+        let model = await phone.launch()
+        #expect(model.backupSourceID == nil, "held off at launch")
+        #expect(model.chosenBackupSourceID == GlucoseSourceRegistry.shareID)
+        #expect(model.backupHeldOffUntil == until)
+        await model.backupSourcePicked(model.chosenBackupSourceID)
+        #expect(model.backupSourceID == nil, "not restarted")
+        #expect(phone.registry.disabledUntil == until, "the hold is kept")
+        // Still held: nothing starts.
+        await model.resumeBackupSourceAfterHold()
+        #expect(model.backupSourceID == nil)
+        // Choosing another source is a new selection, which starts it.
+        await model.backupSourcePicked(nil)
+        await model.backupSourcePicked(GlucoseSourceRegistry.shareID)
+        #expect(model.backupSourceID == GlucoseSourceRegistry.shareID)
+        #expect(model.backupHeldOffUntil == nil)
+        await model.shutdown()
+    }
+
+    /// The hold ends while the app keeps running: the next resume (the app becoming active, the settings
+    /// screen opening) starts the chosen source, and the hold is gone.
+    @Test func aHeldOffSourceStartsOnceItsHoldEnds() async throws {
+        let phone = Phone()
+        let until = phone.mock.clock.date.addingTimeInterval(10 * 60)
+        phone.settings.set(GlucoseSourceRegistry.shareID, forKey: "cgm.selectedSource")
+        let held = GlucoseSourceRecoveryState(
+            uncleanStartCount: 3, lastUncleanStartAt: phone.mock.clock.date, disabledUntil: until)
+        phone.settings.set(try JSONEncoder().encode(held), forKey: "cgm.recoveryState")
+        let model = await phone.launch()
+        #expect(model.backupSourceID == nil)
+        phone.mock.clock.advance(by: 11 * 60)
+        #expect(model.backupHeldOffUntil == nil)
+        await model.resumeBackupSourceAfterHold()
+        #expect(model.backupSourceID == GlucoseSourceRegistry.shareID)
+        #expect(phone.registry.disabledUntil == nil)
+        await model.shutdown()
+    }
+
+    /// The app becoming active while launch is still under way (its hold ended while the app wasn't
+    /// running) starts nothing of its own: launch starts the one source, and no later start replaces it.
+    @Test func aResumeDuringLaunchStartsNoSecondSource() async throws {
+        let phone = Phone()
+        phone.settings.set(GlucoseSourceRegistry.shareID, forKey: "cgm.selectedSource")
+        let held = GlucoseSourceRecoveryState(
+            uncleanStartCount: 3, lastUncleanStartAt: phone.mock.clock.date.addingTimeInterval(-3600),
+            disabledUntil: phone.mock.clock.date.addingTimeInterval(-60))
+        phone.settings.set(try JSONEncoder().encode(held), forKey: "cgm.recoveryState")
+        let env = phone.mock.environment(
+            directory: phone.directory, settings: phone.settings, paired: true, historyStoreURL: phone.historyURL,
+            wipe: nil, notifications: phone.notifications, glucoseSources: phone.registry,
+            watchTransport: phone.watch, watchClock: StoppedClock(), reloadWidgets: {}, liveActivity: nil)
+        let model = AppModel(environment: env)
+        await model.resumeBackupSourceAfterHold()
+        #expect(model.backupSource == nil, "nothing starts before launch")
+        let launching = Task { await model.launch(appActive: true) }
+        await model.resumeBackupSourceAfterHold()
+        await launching.value
+        await phone.settle(model)
+        let first = try #require(model.backupSource)
+        await model.resumeBackupSourceAfterHold()
+        await model.startBackupSource()
+        #expect(model.backupSource === first, "still the one source")
+        #expect(model.backupSourceID == GlucoseSourceRegistry.shareID)
+        await model.shutdown()
+    }
+}

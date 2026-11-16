@@ -66,6 +66,25 @@ struct GlucoseSourceRegistryTests {
         #expect(registry.shouldStartSelected(now: now))
     }
 
+    @Test("a hold that ends while the app runs is cleared then, and not before")
+    func holdEndsWhileRunning() throws {
+        let registry = registry()
+        #expect(!registry.endHoldIfOver(now: t0), "nothing selected, nothing held")
+        registry.select("dexcom-g6")
+        #expect(!registry.endHoldIfOver(now: t0), "nothing held")
+        var now = t0
+        for _ in 0..<GlucoseSourceRecoveryPolicy.maxUncleanStartsBeforeDisable {
+            _ = registry.shouldStartSelected(now: now)
+            now.addTimeInterval(60)
+        }
+        let until = try #require(registry.disabledUntil)
+        #expect(!registry.endHoldIfOver(now: until.addingTimeInterval(-1)))
+        #expect(registry.disabledUntil == until)
+        #expect(registry.endHoldIfOver(now: until))
+        #expect(registry.disabledUntil == nil)
+        #expect(registry.recoveryState == GlucoseSourceRecoveryState(), "the tally starts over")
+    }
+
     @Test("a clean shutdown keeps the next launch counted as clean")
     func cleanShutdown() {
         let registry = registry()

@@ -612,3 +612,90 @@ public struct ActiveAlert: Sendable, Hashable {
         watchIntent = Swift.min(phoneIntent, .alert)
     }
 }
+
+// MARK: - A saved state read late
+
+extension AlertEngine {
+    /// An input held back while the saved state couldn't be read, with the time it happened.
+    struct HeldInput: Sendable {
+        var input: AlertInput
+        var at: Date
+    }
+
+    /// The saved state, read only now (a launch before the first unlock couldn't), taking over from
+    /// `current`, the engine this process ran from an empty state meanwhile.
+    ///
+    /// The held inputs are applied to the saved state at the times they happened, so a drop at 02:00 is
+    /// down from 02:00 and its notices come when they should. What the OS holds now is the earlier process's
+    /// notifications, less posts it still owed, plus this process's own; the diff against that posts only
+    /// what is missing and withdraws what is no longer true, so nothing this process already delivered is
+    /// delivered again. Announcements the replay makes are kept only when this process didn't make them.
+    static func adopting(
+        saved: State, policy: AlertPolicy, held: [HeldInput], over current: AlertEngine, ledger: LedgerView,
+        now: Date
+    ) -> AlertEngine {
+        var adopted = AlertEngine(state: saved, policy: policy)
+        for h in held { adopted.handle(h.input, now: h.at) }
+        let conditions = Set(adopted.state.posted.keys)
+        let announcedHere = Set(current.state.recentlyAnnounced)
+        let replayAnnouncements = adopted.state.outbox.compactMap { pending -> AlertRequest? in
+            guard case .post(let request) = pending.effect, !conditions.contains(request.identifier),
+                !announcedHere.contains(request.identifier)
+            else { return nil }
+            return request
+        }
+
+        var holds = saved.posted
+        for pending in saved.outbox {
+            if case .post(let request) = pending.effect { holds[request.identifier] = nil }
+        }
+        holds.merge(current.state.posted) { $1 }
+        adopted.state.posted = holds
+
+        // Still owed: this process's effects not yet performed (with their own sequence numbers, which a
+        // drain under way acknowledges), the earlier process's withdrawals of what this process didn't post
+        // again, and the replay's announcements this process didn't make.
+        var next = max(saved.nextSequence, current.state.nextSequence)
+        var outbox = current.state.outbox
+        for pending in saved.outbox {
+            guard case .withdraw(let ids) = pending.effect else { continue }
+            let stale = ids.filter { current.state.posted[$0] == nil }
+            guard !stale.isEmpty else { continue }
+            outbox.append(Pending(sequence: next, effect: .withdraw(stale)))
+            next += 1
+        }
+        for request in replayAnnouncements {
+            outbox.append(Pending(sequence: next, effect: .post(request)))
+            next += 1
+        }
+        adopted.state.outbox = outbox
+        adopted.state.nextSequence = next
+        adopted.state.refused.merge(current.state.refused) { $1 }
+        for id in current.state.recentlyAnnounced { adopted.remember(id) }
+        adopted.handle(.ledger(ledger), now: now)
+        return adopted
+    }
+
+    /// The saved state turned out lost (corrupt): this process's inputs, at their times, from an empty
+    /// state, numbered after `current`'s effects so a drain under way can't acknowledge one of these.
+    static func rebuilt(
+        policy: AlertPolicy, held: [HeldInput], over current: AlertEngine, ledger: LedgerView, now: Date
+    ) -> AlertEngine {
+        var state = State()
+        state.nextSequence = current.state.nextSequence
+        var fresh = AlertEngine(state: state, policy: policy)
+        for h in held { fresh.handle(h.input, now: h.at) }
+        for id in current.state.recentlyAnnounced { fresh.remember(id) }
+        fresh.handle(.ledger(ledger), now: now)
+        return fresh
+    }
+
+    /// The OS was told to remove everything: nothing is held, so the next run posts all that holds.
+    mutating func forgetPosted() {
+        state.posted = [:]
+        state.outbox.removeAll {
+            if case .withdraw = $0.effect { return true }
+            return false
+        }
+    }
+}

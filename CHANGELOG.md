@@ -97,6 +97,12 @@ experimental and demonstration use.
   whose rejection can drop the link just before a dose.
 - Clearing a pump alert from its notification waits for this connection's alert read, not the list the last
   connection left.
+- A backup CGM paused after repeated restarts starts again once the pause ends while the app runs, CGM
+  settings shows until when it's paused, picking it again there doesn't restart it early, and it no longer
+  starts twice when the app opens just as its pause ends.
+- A lost alert-state file no longer leaves old notifications showing, and one that can't be read yet (before
+  the first unlock) is never overwritten: it's read once it can be, and what happened meanwhile is applied
+  to it at the times it happened, so nothing is posted twice.
 
 ## [0.4.0] — 2026-11-01
 
