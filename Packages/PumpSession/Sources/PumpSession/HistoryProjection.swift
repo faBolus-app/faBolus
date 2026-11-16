@@ -63,6 +63,9 @@ enum HistoryProjection {
 
     static func batch(_ records: [[UInt8]], anchor: PumpClockAnchor, now: Date) -> PumpHistoryBatch {
         var batch = PumpHistoryBatch()
+        // The last basal rate kept, from either record, so the pump's Basal Delivery record every five
+        // minutes adds a change only when it differs from the rate the line is at.
+        var lastRate: (date: Date, unitsPerHour: Double)?
         func date(_ pumpTime: UInt32) -> Date? {
             let d = anchor.date(forPumpTime: pumpTime)
             return d <= now.addingTimeInterval(GlucoseFreshness.futureSkewTolerance) ? d : nil
@@ -85,8 +88,17 @@ enum HistoryProjection {
             case let m as CarbEnteredHistoryLog where m.carbs > 0:
                 batch.carbs.append(.init(date: d, grams: Double(m.carbs)))
             case let m as BasalRateChangeHistoryLog:
-                batch.deliveryChanges.append(
-                    DeliveryChange(date: d, kind: .basalRate, unitsPerHour: Double(m.commandBasalRate)))
+                let rate = Double(m.commandBasalRate)
+                if lastRate.map({ $0.date <= d }) ?? true { lastRate = (d, rate) }
+                batch.deliveryChanges.append(DeliveryChange(date: d, kind: .basalRate, unitsPerHour: rate))
+            case let m as BasalDeliveryHistoryLog:
+                // With Control-IQ the rate changes every few minutes, and the pump writes few Basal Rate
+                // Change records for it; the Basal Delivery record it writes every five minutes carries the
+                // rate it commanded. Suspended (source 0) is left to the suspend and resume records.
+                guard let rate = deliveryRate(m) else { break }
+                if let last = lastRate, last.date <= d, abs(last.unitsPerHour - rate) < 0.0005 { break }
+                lastRate = (d, rate)
+                batch.deliveryChanges.append(DeliveryChange(date: d, kind: .basalRate, unitsPerHour: rate))
             case is PumpingSuspendedHistoryLog:
                 batch.deliveryChanges.append(DeliveryChange(date: d, kind: .suspended))
             case is PumpingResumedHistoryLog:
@@ -98,6 +110,14 @@ enum HistoryProjection {
         }
         batch.events.sort { $0.date > $1.date }
         return batch
+    }
+
+    /// The rate a Basal Delivery record says the pump commanded, U/h: `commandedRate` in milliunits an hour
+    /// (pumpX2's records: a temp rate's 1600 beside a profile's 1000). Nil while suspended, for a source
+    /// pumpX2 doesn't name, and for the 0xFFFF a rate field holds when it doesn't apply.
+    static func deliveryRate(_ m: BasalDeliveryHistoryLog) -> Double? {
+        guard (1...4).contains(m.commandedRateSource), m.commandedRate != 0xFFFF else { return nil }
+        return Double(m.commandedRate) / 1000
     }
 
     /// Completed boluses among `records`.

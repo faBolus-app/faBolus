@@ -1,6 +1,7 @@
 import Charts
 import PhoneApp
 import SwiftUI
+import UIKit
 import faBolusCore
 import faBolusDesign
 
@@ -280,21 +281,22 @@ struct GlucoseChartView: View {
     }
 
     @ViewBuilder private func scrubber(proxy: ChartProxy, size: CGSize, lane: BasalLane) -> some View {
-        let scrub = LongPressGesture(minimumDuration: 0.3)
-            .sequenced(before: DragGesture(minimumDistance: 0))
-            .onChanged { value in
-                guard case .second(true, let drag?) = value else { return }
-                let x = min(max(drag.location.x, 0), size.width)
-                scrubX = x
-                if let date: Date = proxy.value(atX: x) {
-                    scrubbedDate =
-                        ChartReadout.nearest(to: date, in: visible, key: \.date, within: ChartReadout.tolerance)?.date
-                }
-            }
-            .onEnded { _ in
+        // A press held still for 0.3 s scrubs; a finger that moves first is a scroll, which the press gives up
+        // to the dashboard's scroll view at once (a SwiftUI long press sequenced before a drag could hold the
+        // swipe, so the page sometimes wouldn't scroll from the chart).
+        let scrub = ScrubPress { x in
+            guard let x else {
                 scrubX = nil
                 scrubbedDate = nil
+                return
             }
+            let clamped = min(max(x, 0), size.width)
+            scrubX = clamped
+            if let date: Date = proxy.value(atX: clamped) {
+                scrubbedDate =
+                    ChartReadout.nearest(to: date, in: visible, key: \.date, within: ChartReadout.tolerance)?.date
+            }
+        }
         ZStack(alignment: .topLeading) {
             Rectangle().fill(Color.clear).contentShape(Rectangle()).gesture(scrub)
                 .accessibilityElement()
@@ -371,6 +373,28 @@ struct ReadoutCard: View {
             Text(label).font(.caption).foregroundStyle(.secondary)
             Spacer(minLength: 12)
             Text(value ?? PumpDisplay.unknown).font(.body).monospacedDigit().foregroundStyle(tint ?? .secondary)
+        }
+    }
+}
+
+/// The chart's scrub: UIKit's long press, which fails as soon as the finger moves more than a few points
+/// before it's held long enough, so a swipe that starts on the chart scrolls the page. Once it has begun it
+/// follows the finger, and the scroll view doesn't take the drag. `onChange` gets the finger's x in the
+/// view, and nil when it lifts or the press is cancelled.
+private struct ScrubPress: UIGestureRecognizerRepresentable {
+    let onChange: (CGFloat?) -> Void
+
+    func makeUIGestureRecognizer(context: Context) -> UILongPressGestureRecognizer {
+        let press = UILongPressGestureRecognizer()
+        press.minimumPressDuration = 0.3
+        press.allowableMovement = 10
+        return press
+    }
+
+    func handleUIGestureRecognizerAction(_ recognizer: UILongPressGestureRecognizer, context: Context) {
+        switch recognizer.state {
+        case .began, .changed: onChange(context.converter.localLocation.x)
+        default: onChange(nil)
         }
     }
 }
