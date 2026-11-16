@@ -224,28 +224,50 @@ struct CustomizeListView: View {
     /// A delete that would leave no item is refused: every customizable list keeps at least one.
     static func canDelete(currentCount: Int, removingCount: Int) -> Bool { currentCount > removingCount }
 
+    /// Each id once, in order: a list saved with a repeat shows and keeps it once.
+    static func unique(_ ids: [String]) -> [String] {
+        ids.reduce(into: []) { if !$0.contains($1) { $0.append($1) } }
+    }
+
+    /// `ids` with `id` shown last, once, however often it's added.
+    static func adding(_ id: String, to ids: [String]) -> [String] { unique(ids + [id]) }
+
+    /// A hidden row, kept apart from the shown row of the same id. With one identity for both, adding an
+    /// item moved its button row into "Shown", where it had no controls and every tap added it again.
+    private struct HiddenRow: Identifiable {
+        let item: String
+        var id: String { "hidden." + item }
+    }
+
     var body: some View {
+        let shown = Self.unique(order)
         List {
             Section {
-                ForEach(order, id: \.self) { Text(label($0)) }
-                    .onMove { order.move(fromOffsets: $0, toOffset: $1) }
+                ForEach(shown, id: \.self) { Text(label($0)) }
+                    .onMove { from, to in
+                        var next = shown
+                        next.move(fromOffsets: from, toOffset: to)
+                        order = next
+                    }
                     .onDelete { offsets in
-                        guard Self.canDelete(currentCount: order.count, removingCount: offsets.count) else { return }
-                        order.remove(atOffsets: offsets)
+                        guard Self.canDelete(currentCount: shown.count, removingCount: offsets.count) else { return }
+                        var next = shown
+                        next.remove(atOffsets: offsets)
+                        order = next
                     }
             } header: {
                 Text("Shown")
             } footer: {
                 Text(footer + " Drag to reorder, swipe to hide.")
             }
-            let hidden = allIDs.filter { !order.contains($0) }
+            let hidden = allIDs.filter { !shown.contains($0) }.map(HiddenRow.init)
             if !hidden.isEmpty {
                 Section("Hidden") {
-                    ForEach(hidden, id: \.self) { id in
+                    ForEach(hidden) { row in
                         Button {
-                            order.append(id)
+                            order = Self.adding(row.item, to: shown)
                         } label: {
-                            Label(label(id), systemImage: "plus.circle.fill")
+                            Label(label(row.item), systemImage: "plus.circle.fill")
                         }
                     }
                 }

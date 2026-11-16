@@ -199,6 +199,8 @@ public final class AppSettings {
             ?? LiveActivityLayout()
         // A span from before the current options becomes the nearest of them.
         layout.plotRangeHours = LiveActivityLayout.plotRange(layout.plotRangeHours)
+        // The fields list could be saved with a field more than once; each shows once.
+        layout.fields = layout.fields.reduce(into: []) { if !$0.contains($1) { $0.append($1) } }
         liveActivityLayout = layout
 
         hasCompletedOnboarding = value(.hasCompletedOnboarding) ?? false

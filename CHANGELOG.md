@@ -119,6 +119,9 @@ experimental and demonstration use.
   pending while the pump is read.
 - Bolus answers no longer wait behind a send stuck from before the phone slept, or from an earlier watch
   connection.
+- Settings lists you arrange (the Live Activity's fields, the watch's screens and details rows, the
+  complications): adding a hidden item could leave its row in "Shown" without controls, and each tap on it
+  added the item again. Each item now shows once, and a list saved with repeats reads back with each once.
 
 ## [0.4.0] — 2026-11-01
 
