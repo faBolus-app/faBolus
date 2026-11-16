@@ -89,13 +89,19 @@ On or off, its style, fields and chart. See [Widgets and Live Activity](../remot
 | Section | What's there |
 | --- | --- |
 | **Garmin watch** | The chosen watch and the link's state; **Choose watch in Garmin Connect**; **How to install the watch app** (opens the build guide's [Garmin watch](../build/garmin-build.md) page); **Forget watch**. A build without Garmin's SDK says so here. |
-| **Bolusing** | **Read-only (view only)**; **Allow bolusing from the watch** (off by default, and it asks you to confirm each time you turn it on); **Limit remote bolus size**, from 1 to 20 U a dose. |
+| **Bolusing** | **Read-only (view only)**; **Allow bolusing from the watch** (off by default, and it asks you to confirm each time you turn it on); **Say when the phone can't hear the watch** (on by default; see below); **Limit remote bolus size**, from 1 to 20 U a dose. |
 | **Watch bolus screen** | Default mode, Carbs or Units. The increments are the phone's. |
 | **Watch layout** | The watch's screens and their swipe order, the screen it opens on, its Details rows, the chart ranges a tap steps through (3, 6, 12, 24 hours), and optional chart bounds of its own. |
 | **Complications** | Up to three values besides glucose (active insulin, reservoir, pump battery, basal rate), and whether they show names such as "IOB 1.25". Names are off by default. |
 
 Changes reach the watch at once if it's connected, or the next time it connects. See
 [Garmin watch](../remotes/garmin.md).
+
+The watch's messages can stop reaching the phone while the phone's still reach the watch (it happened
+after installing the watch app over USB, until the watch was restarted). The watch notices when the phone
+doesn't answer what it always answers, holds its bolus button with "Phone can't hear watch. Restart watch.",
+and says to restart the watch under a bolus on its way. **Say when the phone can't hear the watch** off
+turns that notice and the hold off. A watch app older than this setting always shows it.
 
 ## Safety {#safety}
 

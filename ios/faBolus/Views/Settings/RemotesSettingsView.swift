@@ -42,6 +42,7 @@ struct RemotesSettingsView: View {
                 Toggle("Read-only (view only)", isOn: $settings.remotesReadOnly)
                 Toggle("Allow bolusing from the watch", isOn: bolusBinding)
                 if settings.garminBolusEnabled {
+                    Toggle("Say when the phone can't hear the watch", isOn: oneWayNotice)
                     Toggle("Limit remote bolus size", isOn: limitOn)
                     if let limit = settings.remoteBolusLimitUnits {
                         Picker("Max per remote bolus", selection: limitValue(limit)) {
@@ -165,6 +166,11 @@ struct RemotesSettingsView: View {
         Binding(
             get: { settings.garminBolusEnabled },
             set: { on in if on { confirmBolus = true } else { settings.garminBolusEnabled = false } })
+    }
+
+    /// On is the notice shown; the setting stores the mute.
+    private var oneWayNotice: Binding<Bool> {
+        Binding(get: { !settings.muteWatchOneWayNotice }, set: { settings.muteWatchOneWayNotice = !$0 })
     }
 
     private var limitOn: Binding<Bool> {

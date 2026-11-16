@@ -218,6 +218,34 @@ import Testing
         #expect(refused(message("config", p)))
     }
 
+    /// The one-way notice's mute is written only when on, so a config without it (every config before the
+    /// field) reads as not muted, and the watch says when the phone can't hear it.
+    @Test func theOneWayNoticeIsShownUnlessTheConfigMutesIt() {
+        guard case .message(.config(let shown)) = RemoteMessage.receive(message("config", payload(of: "config"))),
+            case .message(.config(let muted)) = RemoteMessage.receive(
+                message("config", payload(of: "config-mute-one-way")))
+        else {
+            Issue.record("a golden config didn't read")
+            return
+        }
+        #expect(!shown.muteOneWayNotice)
+        #expect(muted.muteOneWayNotice)
+        #expect(muted.revision != shown.revision)
+        guard case .object(let bolus)? = payload(of: "config")["bolus"],
+            case .object(let mutedBolus)? = payload(of: "config-mute-one-way")["bolus"]
+        else {
+            Issue.record("a config has no bolus object")
+            return
+        }
+        #expect(bolus["muteOneWayNotice"] == nil)
+        #expect(mutedBolus["muteOneWayNotice"] == .bool(true))
+        var p = payload(of: "config-mute-one-way")
+        guard case .object(var b)? = p["bolus"] else { return }
+        b["muteOneWayNotice"] = .int(1)
+        p["bolus"] = .object(b)
+        #expect(refused(message("config", p)))
+    }
+
     @Test func aConfigWithAnImpossibleLayoutIsRefused() {
         var p = payload(of: "config")
         p["screens"] = .object(["order": .array([.string("glance")]), "default": .string("details")])

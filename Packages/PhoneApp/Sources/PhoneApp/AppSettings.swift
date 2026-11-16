@@ -88,6 +88,9 @@ public final class AppSettings {
     public var remotesReadOnly: Bool { didSet { set(remotesReadOnly, .remotesReadOnly) } }
     /// The watch may send boluses. Off by default.
     public var garminBolusEnabled: Bool { didSet { set(garminBolusEnabled, .garminBolusEnabled) } }
+    /// The watch doesn't say when the phone can't hear it (its messages stopped reaching the phone while the
+    /// phone's still arrive), and doesn't hold its bolus button for it. Off by default: the notice shows.
+    public var muteWatchOneWayNotice: Bool { didSet { set(muteWatchOneWayNotice, .muteWatchOneWayNotice) } }
     /// The largest bolus a remote may request; `nil` is no limit beyond the pump's.
     public var remoteBolusLimitUnits: Double? { didSet { set(remoteBolusLimitUnits, .remoteBolusLimitUnits) } }
 
@@ -171,6 +174,7 @@ public final class AppSettings {
         phoneReadOnly = value(.phoneReadOnly) ?? false
         remotesReadOnly = value(.remotesReadOnly) ?? false
         garminBolusEnabled = value(.garminBolusEnabled) ?? false
+        muteWatchOneWayNotice = value(.muteWatchOneWayNotice) ?? false
         remoteBolusLimitUnits = value(.remoteBolusLimitUnits).flatMap { (v: Double) in v.isFinite && v > 0 ? v : nil }
 
         watchDefaultBolusMode = value(.watchDefaultBolusMode).flatMap(BolusEntryMode.init(rawValue:)) ?? .carbs
@@ -231,7 +235,7 @@ public final class AppSettings {
         case glucosePlotStyle
         case showStats, detailsOrder, pillsOrder
         case glucoseStaleMinutes, glucoseHideDelayMinutes, pumpStatusStaleMinutes
-        case phoneReadOnly, remotesReadOnly, garminBolusEnabled
+        case phoneReadOnly, remotesReadOnly, garminBolusEnabled, muteWatchOneWayNotice
         case remoteBolusLimitUnits = "remoteBolusCeiling"
         case watchDefaultBolusMode
         case watchScreenOrder = "garminScreenOrder"

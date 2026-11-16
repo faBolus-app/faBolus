@@ -38,6 +38,13 @@ public enum GoldenFixtures {
         return c
     }()
 
+    /// The same config with the watch's "phone can't hear the watch" notice muted, the one value written.
+    public static let configMuteOneWay: WatchConfig = {
+        var c = config
+        c.muteOneWayNotice = true
+        return c
+    }()
+
     public static let status = StatusPayload(
         sentAt: now, configRevision: config.revision, pumpLink: .connected,
         glucose: Timed(GlucoseReading(mgdl: 142, trend: .rising, backup: false), at: now - 80),
@@ -125,6 +132,7 @@ public enum GoldenFixtures {
         v2("config", .config(config)),
         v2("config-line", .config(configLine)),
         v2("config-auto-correction", .config(configAutoCorrection)),
+        v2("config-mute-one-way", .config(configMuteOneWay)),
         v2("history", .history(history)),
         v2(
             "bolusOutcome-delivering",
