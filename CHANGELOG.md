@@ -89,6 +89,14 @@ experimental and demonstration use.
 - The Live Activity no longer stays on "Delivering…" after a short bolus has finished.
 - With the app suspended, the Lock Screen marks active insulin, reservoir and the pump link stale on time,
   even when glucose was already stale.
+- The G7 grace time left stays right after the phone's clock is set, and is asked for again when its read
+  is lost or the link drops.
+- A pump notice no longer asks again for a read that is resting after the pump left it unanswered, nor for
+  a routine bolus status while a bolus is being followed.
+- faBolus no longer sends UserInteraction when the bolus screen opens to a pump suspected of rejecting it,
+  whose rejection can drop the link just before a dose.
+- Clearing a pump alert from its notification waits for this connection's alert read, not the list the last
+  connection left.
 
 ## [0.4.0] — 2026-11-01
 

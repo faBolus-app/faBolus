@@ -177,10 +177,13 @@ extension PumpSession {
 
     /// The phone's bolus screen opened. t:connect then sends UserInteraction at API 3.0 or later, which
     /// resets the pump's inactivity timer. A signed write that changes no delivery, sent behind any dose
-    /// step and waited on by nothing.
+    /// step and waited on by nothing. Not sent while this pump's class is suspected of rejecting it: a
+    /// rejection can draw op-77 and drop the link just as a dose's input reads are about to go.
     public func bolusScreenOpened() async {
         guard state.link.isConnected, identityTrusted, let api = identity?.apiVersion, api >= .v3 else { return }
-        _ = await exchange(UserInteractionRequest(), allowing: .settings, priority: .user)
+        let write = UserInteractionRequest()
+        guard !isSuspected(write) else { return }
+        _ = await exchange(write, allowing: .settings, priority: .user)
     }
 
     /// Reads the pump's CGM glucose now, ahead of the routine schedule.

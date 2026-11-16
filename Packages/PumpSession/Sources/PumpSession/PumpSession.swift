@@ -132,8 +132,12 @@ public actor PumpSession {
     var identity: TandemLink.PumpIdentity?
     /// The connection's identity checks passed: a t:slim X2 with the trusted serial.
     var identityTrusted = false
-    /// The grace-period read was asked for the alert 32 now raised.
+    /// The grace-period read was asked for the alert 32 now raised. Cleared when the alert goes and when the
+    /// link drops; a read the pump left unanswered is asked again once it's no longer resting.
     var graceReadAsked = false
+    /// The alert kinds read on this connection: a clear waiting for the pump is judged against these, never
+    /// against a list kept from an earlier connection.
+    var alertKindsReadThisConnection: Set<PumpAlertKind> = []
     var pendingPairing: PendingPairing?
     var retriedRejectedPairing = false
     /// Whether the app is in the foreground, as last told.
@@ -179,7 +183,8 @@ public actor PumpSession {
     var historyBusy = false
     var historyWaiters: [(sync: Bool, continuation: CheckedContinuation<Void, Never>)] = []
     /// Clears waiting for the pump to be reachable, each until its deadline.
-    var linkWaiters: [(deadline: Uptime, continuation: CheckedContinuation<Void, Never>)] = []
+    typealias LinkWaiter = (kind: PumpAlertKind, deadline: Uptime, continuation: CheckedContinuation<Void, Never>)
+    var linkWaiters: [LinkWaiter] = []
     var page: PageCollector?
     public internal(set) var historySync: HistorySyncState = .idle(lastSynced: nil)
     public internal(set) var historyEvents: [HistoryEvent] = []
@@ -406,6 +411,7 @@ public actor PumpSession {
         sessionLog.log("phone clock set by \(step, privacy: .public) s")
         state.phoneClockSet(by: step)
         basalParts.phoneClockSet(by: step)
+        alertLists.phoneClockSet(by: step)
         snapshotReadForReading?.addTimeInterval(step)
         // The readings themselves didn't change, so no alerts-changed event: only their times did.
         emit(.readingsChanged(Set(PumpState.Reading.allCases), state))
@@ -591,6 +597,10 @@ public actor PumpSession {
         readGracePeriodIfRaised(after: message)
         if message is CurrentEGVGuiDataResponse, changed.contains(.glucose) { readSnapshotForNewReading() }
         settleRemoteClearTrial(after: message, now: uptime())
+        if let kind = Self.statusKind(of: message) {
+            alertKindsReadThisConnection.insert(kind)
+            resumeLinkWaiters()
+        }
     }
 
     /// Readings closer together than this are the same sensor reading: the CGM status and the calculator
@@ -631,9 +641,13 @@ public actor PumpSession {
             graceReadAsked = false
             return
         }
-        guard !graceReadAsked, let api = identity?.apiVersion, api < ApiVersion(major: 4, minor: 1) else { return }
-        graceReadAsked = true
         let read = CgmStatusV2Request()
+        // Asked, and lost: its last try went unanswered and nothing is waiting to ask it again.
+        let lost = unanswered[MessageKey(read)] != nil && !isQueued(CgmStatusV2Request.self)
+        guard !graceReadAsked || lost, let api = identity?.apiVersion, api < ApiVersion(major: 4, minor: 1),
+            !restingAfterNoAnswer(read, now: uptime())
+        else { return }
+        graceReadAsked = true
         if !isQueued(CgmStatusV2Request.self) { enqueue([read], priority: isSuspected(read) ? .probe : .status) }
     }
 
@@ -724,6 +738,7 @@ public actor PumpSession {
         refreshRemoteClear()
         connectedAt = started
         onceThisConnection = []
+        alertKindsReadThisConnection = []
         unanswered = [:]
         emptySyncRetries = 0
         reconcileAttempts = 0
@@ -791,6 +806,8 @@ public actor PumpSession {
         identityTrusted = false
         connectedAt = nil
         pendingTrial = nil
+        graceReadAsked = false
+        alertKindsReadThisConnection = []
         failQueued()
         emit(.disconnected(Self.reason(reason)))
         deliveryLinkDropped()
@@ -809,8 +826,13 @@ public actor PumpSession {
         // Before the link is ready nothing can be read; becoming ready reads everything.
         guard identity != nil else { return }
         // What each bit names is read now, as t:connect does, rather than waiting for its timed group.
+        // The same filters as the timed reads: not one already waiting, not one resting after the pump left
+        // it unanswered (each would hold the wire a whole deadline ahead of a cancel or a dose step), and no
+        // routine bolus status while a bolus is followed, whose own polls read it every second.
         for (read, priority) in NoticeReads.reads(for: events)
-        where !queue.contains(where: { MessageKey($0.message) == MessageKey(read) }) {
+        where !queue.contains(where: { MessageKey($0.message) == MessageKey(read) })
+            && !restingAfterNoAnswer(read, now: now) && !(tracked != nil && read is CurrentBolusStatusRequest)
+        {
             enqueue([read], priority: isSuspected(read) ? .probe : priority)
         }
         // t:connect reads a profile change's ProfileStatus, which faBolus doesn't send; the settings

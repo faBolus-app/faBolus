@@ -12,21 +12,26 @@ extension PumpSession {
     /// - Parameter wait: how long a clear asked for before the pump is reachable (a notification's Clear
     ///   that launched the app) waits for it: connected, identified and its alerts read, so the clear is
     ///   judged, and a remote-clear trial recorded, exactly as from the app. Past it, the clear goes the
-    ///   same way it would have at once: `.unconfirmed` with no link.
+    ///   same way it would have at once: `.unconfirmed` with no link, and `.unconfirmed` with nothing sent
+    ///   while this connection hasn't read its kind (the list kept from an earlier one says nothing now).
     public func dismiss(_ alert: PumpAlert, waitingForLinkUpTo wait: TimeInterval = 0) async -> DismissOutcome {
-        if wait > 0 { await waitForReachablePump(until: uptime().addingTimeInterval(wait)) }
-        let outcome = await sendDismiss(alert)
+        var outcome = DismissOutcome.unconfirmed
+        if wait > 0 { await waitForReachablePump(for: alert.kind, until: uptime().addingTimeInterval(wait)) }
+        if wait <= 0 || pumpReachable(for: alert.kind) || !state.link.isConnected { outcome = await sendDismiss(alert) }
         due[.alerts] = uptime()
         emit(.alertDismissed(alert, outcome))
         return outcome
     }
 
-    /// Connected, identified and its alerts read in this process.
-    var pumpReachable: Bool { state.link.isConnected && identity != nil && state.alerts != nil }
+    /// Connected, identified, and `kind`'s alerts read on this connection: a list kept from an earlier
+    /// connection says nothing about what the pump shows now.
+    func pumpReachable(for kind: PumpAlertKind) -> Bool {
+        state.link.isConnected && identity != nil && alertKindsReadThisConnection.contains(kind)
+    }
 
-    private func waitForReachablePump(until deadline: Uptime) async {
-        guard !pumpReachable, uptime() < deadline else { return }
-        await withCheckedContinuation { linkWaiters.append((deadline, $0)) }
+    private func waitForReachablePump(for kind: PumpAlertKind, until deadline: Uptime) async {
+        guard !pumpReachable(for: kind), uptime() < deadline else { return }
+        await withCheckedContinuation { linkWaiters.append((kind, deadline, $0)) }
     }
 
     /// Lets the waiting clears go once the pump is reachable or their deadline has passed (`all`: the
@@ -34,11 +39,10 @@ extension PumpSession {
     func resumeLinkWaiters(all: Bool = false) {
         guard !linkWaiters.isEmpty else { return }
         let now = uptime()
-        let release = all || pumpReachable
-        let (go, stay) = (
-            linkWaiters.filter { release || now >= $0.deadline },
-            linkWaiters.filter { !(release || now >= $0.deadline) }
-        )
+        let goes = { (waiter: LinkWaiter) in
+            all || now >= waiter.deadline || self.pumpReachable(for: waiter.kind)
+        }
+        let (go, stay) = (linkWaiters.filter(goes), linkWaiters.filter { !goes($0) })
         linkWaiters = stay
         for waiter in go { waiter.continuation.resume() }
     }
@@ -149,7 +153,7 @@ extension PumpSession {
         refreshRemoteClear()
     }
 
-    private static func statusKind(of message: any TandemMessages.Message) -> PumpAlertKind? {
+    static func statusKind(of message: any TandemMessages.Message) -> PumpAlertKind? {
         switch message {
         case is AlertStatusResponse: return .alert
         case is AlarmStatusResponse: return .alarm
