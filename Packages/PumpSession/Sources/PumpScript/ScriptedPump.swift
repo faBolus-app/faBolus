@@ -489,6 +489,9 @@ public final class ScriptedTransport: LinkTransport {
     public let clock: ScriptClock
     public private(set) var commands: [TransportCommand] = []
     private var pendingConnect = false
+    /// A delayed connect's start: it doesn't complete before then, pump in range or not.
+    private var connectNotBefore: Double?
+    private var startDelayTimer: (any LinkClockToken)?
     private var ended = false
     private var reassembly: [Characteristic: PacketReassembler] = [:]
     /// The signing key: the legacy code's bytes, or the key the connection's J-PAKE handshake derived.
@@ -524,9 +527,22 @@ public final class ScriptedTransport: LinkTransport {
             }
         case .connect(let id) where id == ScriptedPump.peripheralID:
             pendingConnect = true
+            clearStartDelay()
             completeConnectIfPossible()
+        case .delayedConnect(let id, let startDelay) where id == ScriptedPump.peripheralID:
+            // The system holds the delay; this clock stands in for it.
+            pendingConnect = true
+            clearStartDelay()
+            connectNotBefore = clock.now + Double(startDelay)
+            startDelayTimer = clock.schedule(after: Double(startDelay)) { [weak self] in
+                self?.completeConnectIfPossible()
+            }
+        case .cancelPendingConnect(let id) where id == ScriptedPump.peripheralID:
+            pendingConnect = false
+            clearStartDelay()
         case .cancelConnection:
             pendingConnect = false
+            clearStartDelay()
             if pump.linked {
                 endLink()
                 report?(.disconnected(peripheralID: ScriptedPump.peripheralID, nil))
@@ -551,9 +567,17 @@ public final class ScriptedTransport: LinkTransport {
         jpake = nil
     }
 
+    private func clearStartDelay() {
+        startDelayTimer?.cancel()
+        startDelayTimer = nil
+        connectNotBefore = nil
+    }
+
     private func completeConnectIfPossible() {
         guard pendingConnect, pump.inRange, pump.poweredOn, !pump.linked else { return }
+        if let start = connectNotBefore, clock.now < start { return }
         pendingConnect = false
+        clearStartDelay()
         pump.linked = true
         report?(.connected(peripheralID: ScriptedPump.peripheralID, name: pump.name))
     }

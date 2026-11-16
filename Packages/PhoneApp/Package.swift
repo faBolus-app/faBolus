@@ -26,7 +26,7 @@ let package = Package(
         .package(path: "../RemoteProtocol"),
         .package(path: "../WatchLink"),
         .package(
-            url: "https://github.com/faBolus-app/TandemKit.git", exact: "0.13.0")
+            url: "https://github.com/faBolus-app/TandemKit.git", exact: "0.14.0")
     ],
     targets: [
         .target(name: "WidgetContent", dependencies: ["faBolusCore"]),
