@@ -1,6 +1,7 @@
 import AppIntents
 import SwiftUI
 import WidgetContent
+import faBolusCore
 import faBolusDesign
 
 // The Live Activity's bolus and alert screens. They draw what the app sent (`LiveActivityPanel`) and send
@@ -438,9 +439,12 @@ struct IdleRow: View {
 struct SmallActivityView: View {
     let view: LAView
 
+    /// A Live Activity bolus's result, else a bolus going from any surface: CarPlay and the Smart Stack show
+    /// this layout, so someone in the car can see a bolus is going.
     private var headline: (text: String, color: Color)? {
-        guard case .result(let r)? = view.content.panel?.view else { return nil }
-        return (r.headline, LAView.look(r.tone).color)
+        if case .result(let r)? = view.content.panel?.view { return (r.headline, LAView.look(r.tone).color) }
+        guard let bolus = view.runningBolus else { return nil }
+        return ("Bolusing \(formatUnits(bolus.units))", AppTheme.insulin)
     }
 
     var body: some View {

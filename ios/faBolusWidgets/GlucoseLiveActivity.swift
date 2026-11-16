@@ -24,7 +24,11 @@ struct GlucoseLiveActivity: Widget {
                 DynamicIslandExpandedRegion(.leading) {
                     VStack(alignment: .leading, spacing: 6) {
                         v.ageText.font(.caption2).foregroundStyle(v.stale ? .orange : .secondary)
-                        if let chip = v.chips().first { ChipView(chip: chip) }
+                        if v.runningBolus != nil {
+                            v.bolusLine
+                        } else if let chip = v.chips().first {
+                            ChipView(chip: chip)
+                        }
                     }
                 }
                 DynamicIslandExpandedRegion(.trailing) {
@@ -128,11 +132,27 @@ struct LAView {
         return panel
     }
 
-    /// A Live Activity bolus's result in a few characters, while it shows.
+    /// A Live Activity bolus's result in a few characters, while it shows; else a bolus going from any
+    /// surface, as its dose.
     var compactStatus: (text: String, icon: String, color: Color)? {
-        guard case .result(let r)? = content.panel?.view, let text = r.compact else { return nil }
-        let look = Self.look(r.tone)
-        return (text, look.icon, look.color)
+        if case .result(let r)? = content.panel?.view, let text = r.compact {
+            let look = Self.look(r.tone)
+            return (text, look.icon, look.color)
+        }
+        guard let bolus = runningBolus else { return nil }
+        return (formatUnits(bolus.units), "drop.fill", AppTheme.insulin)
+    }
+
+    /// A bolus the pump is delivering, from any surface, while its read is recent.
+    var runningBolus: RunningBolus? { snapshot.runningBolus(asOf: now) }
+
+    /// "Bolusing 1.20 U" under the glucose, so anyone who can see the card (in a car, on CarPlay) can tell a
+    /// bolus is going.
+    @ViewBuilder var bolusLine: some View {
+        if let bolus = runningBolus {
+            Label("Bolusing \(formatUnits(bolus.units))", systemImage: "drop.fill")
+                .font(.caption.weight(.semibold)).foregroundStyle(AppTheme.insulin).lineLimit(1)
+        }
     }
 
     /// A result's icon and colour for its tone.
@@ -199,7 +219,7 @@ struct LAView {
     var ageText: Text {
         guard let at = snapshot.glucose?.measuredAt else { return Text("No reading") }
         guard ticking else { return Text(LiveActivityMetrics.shortAge(at, now: now)) }
-        return Text(at, style: .relative)
+        return liveAge(at)
     }
 
     func glucose(size: CGFloat) -> some View {
@@ -329,6 +349,7 @@ struct LockScreenView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     view.glucose(size: 34).overCurve()
                     view.ageText.font(.caption2).foregroundStyle(view.stale ? .orange : .secondary).overCurve()
+                    view.bolusLine.overCurve()
                 }
                 Spacer()
                 if let corner = view.topRight {
@@ -377,7 +398,11 @@ struct LockScreenView: View {
                 view.glucose(size: 28)
                 view.ageText.font(.caption2).foregroundStyle(view.stale ? .orange : .secondary)
                 Spacer()
-                ForEach(view.chips(besideCorner: false).prefix(2), id: \.self) { ChipView(chip: $0) }
+                if view.runningBolus != nil {
+                    view.bolusLine
+                } else {
+                    ForEach(view.chips(besideCorner: false).prefix(2), id: \.self) { ChipView(chip: $0) }
+                }
             }
             view.idleRow
         }
@@ -391,6 +416,7 @@ struct LockScreenView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     view.glucose(size: 40)
                     view.ageText.font(.caption2).foregroundStyle(view.stale ? .orange : .secondary)
+                    view.bolusLine
                 }
                 Spacer()
                 // Two rows at most, so the bottom row still fits in the Lock Screen's 160 points.
@@ -606,4 +632,10 @@ extension View {
 
 extension String {
     var nonEmpty: String? { isEmpty ? nil : self }
+}
+
+/// A reading's age that counts on by itself in whole minutes ("4 min ago"), never seconds: a seconds count
+/// on the Lock Screen or CarPlay reads as busier than the reading is.
+func liveAge(_ at: Date) -> Text {
+    Text(.currentDate, format: .reference(to: at, allowedFields: [.day, .hour, .minute], maxFieldCount: 1))
 }

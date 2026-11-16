@@ -17,6 +17,10 @@ public enum WidgetPublisher {
             insulinOnBoard: display.insulinOnBoard, reservoirUnits: display.reservoirUnits,
             battery: display.battery, basal: display.basalDeliveryState, controlIQ: display.controlIQ,
             lastBolus: display.lastBolus.map { $0.map { $0.deliveredUnits ?? $0.programmedUnits } },
+            runningBolus: display.bolusState.flatMap { o in
+                guard case .inProgress(let entry) = o.value else { return nil }
+                return o.map { _ in RunningBolus(units: entry.programmedUnits) }
+            },
             lastAutoCorrection: lastAutoCorrection,
             connected: display.link.isConnected, publishedAt: now, recent: Array(recent), freshness: freshness,
             unit: settings.glucoseUnit, showUnitLabel: settings.showGlucoseUnitLabels,
@@ -41,6 +45,9 @@ public enum WidgetPublisher {
         let elapsed = now.timeIntervalSince(last.at)
         if elapsed >= 5 * 60 { return true }
         if snapshot.glucose?.withoutReceiveTime != last.snapshot.glucose?.withoutReceiveTime { return true }
+        // A bolus starting, ending or changing shows at once: the Live Activity says so to anyone who can see
+        // it, and a short bolus could be over within the minute.
+        if snapshot.runningBolus?.value != last.snapshot.runningBolus?.value { return true }
         return elapsed >= 60 && snapshot.drawn != last.snapshot.drawn
     }
 

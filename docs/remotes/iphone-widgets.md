@@ -28,6 +28,14 @@ iPhone's Live Activities: the Mac's menu bar, CarPlay and the Apple Watch Smart 
   <figcaption>Settings → Live Activity</figcaption>
 </figure>
 
+The reading's age counts on in whole minutes ("now", "2 minutes ago"), never seconds. While the pump
+delivers a bolus, from any source (its own screen, the phone, the watch or the Live Activity), the card says
+"Bolusing 2.40 U" under the glucose, the Dynamic Island and the Mac's pill show the dose beside it, and
+CarPlay and the Apple Watch show it under the curve, so someone in the car can see a bolus is going. The
+pump reports the dose, not how much has gone in yet. It shows for up to 3 minutes after faBolus last read
+the pump's bolus status (about once a minute while connected), so a bolus that ended while the phone lost
+the pump doesn't stay up.
+
 Turn it on in **Settings → Live Activity**. It starts the next time you open the app. There you choose:
 
 - **Style**: **Curve** (a full-width glucose curve, with a value of your choice in the top right),
