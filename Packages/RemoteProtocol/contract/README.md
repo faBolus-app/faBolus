@@ -149,6 +149,7 @@ Before a dose goes, the phone may need the user to confirm something about the p
 |---|---|
 | `tooManyBoluses` | the pump says too many boluses were asked for in a short time, so it may not track IOB or its hourly limit |
 | `maxHourlyBolus` | the dose and the last hour's boluses come to more than 1.5 × the pump's max bolus (in whole units) |
+| `bolusLimitsNotChecked` | the pump's calculator snapshot couldn't be read for this dose, so the last hour's boluses and the too-many-boluses flags aren't known and neither check above can be made; never answered by `maxHourlyBolus` |
 | `lowInsulin` | the dose is more than the insulin left, or under 2 U is left |
 
 A request without them is answered `failed`, with a `message` saying what to confirm and `confirm` naming

@@ -78,6 +78,9 @@ public enum ConfirmationToken: String, Sendable, Hashable, CaseIterable {
     case tooManyBoluses
     /// This dose and the last hour's boluses come to more than the max hourly bolus.
     case maxHourlyBolus
+    /// The pump's count of the last hour's boluses couldn't be read for this dose, so neither the max hourly
+    /// bolus nor too many boluses can be checked. Never answered by `maxHourlyBolus`.
+    case bolusLimitsNotChecked
     /// The dose is more than the insulin left, or little is left.
     case lowInsulin
 }

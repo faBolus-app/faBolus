@@ -154,7 +154,7 @@ public struct LiveActivityContent: Codable, Sendable, Hashable {
     public func staleDate(now: Date) -> Date? {
         if let glucose = snapshot.glucose {
             guard glucose.age(now: now) != nil else { return now }
-            let glucoseStale = glucose.measuredAt.addingTimeInterval(snapshot.freshness.glucoseStaleAfter)
+            let glucoseStale = glucose.agedFrom.addingTimeInterval(snapshot.freshness.glucoseStaleAfter)
             if glucoseStale <= now { return glucoseStale }
         }
         let publisherStale = snapshot.publishedAt.addingTimeInterval(WidgetSnapshot.publisherStaleAfter)

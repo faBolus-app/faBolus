@@ -69,6 +69,18 @@ experimental and demonstration use.
   ends a search early, and a gap in what arrived never counts as proof a bolus didn't happen.
 - A history sync the pump answered with no records no longer counts as synced: it's tried again a few times,
   then left for the next routine sync.
+- A dose whose pump bolus limits couldn't be checked (the calculator snapshot couldn't be read again for
+  it) now asks you to go on knowing that, on the phone, the Live Activity and the watch, instead of going
+  without a word. It's its own question: going on past the max hourly bolus doesn't answer it.
+- A CGM reading dated ahead of the phone's clock, from the pump or a backup CGM, no longer stays current
+  longer than it should: it ages from when it arrived when that was earlier. One backup reading dated far in
+  the future no longer hides the readings after it, nor holds off the urgent-low alarm.
+- A dose is recorded with the reading it was corrected from when the reading moved without changing the
+  dose.
+- A phone clock set while a dose's pump reads wait no longer lets a reading from before them count as read
+  for the dose.
+- The calculator snapshot is read once after each new CGM reading, so the reading a correction comes from
+  is the new one within seconds rather than up to a minute later.
 
 ## [0.4.0] — 2026-11-01
 

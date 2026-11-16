@@ -1,0 +1,13 @@
+{
+  "kind": "bolusOutcome",
+  "payload": {
+    "confirm": [
+      "bolusLimitsNotChecked"
+    ],
+    "message": "Bolus limits not checked: the pump's hourly count couldn't be read.",
+    "outcome": "failed",
+    "requestId": "1793534390-15-121700",
+    "sentAt": 1793534400
+  },
+  "version": 2
+}

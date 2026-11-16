@@ -143,7 +143,10 @@ extension PumpSession {
     /// not read for this dose.
     public func prepareDose() async -> DosePreparation {
         followPhoneClock()
-        let requestedAt = clock()
+        let askedAt = uptime()
+        let askedClock = clock()
+        preparingDose += 1
+        defer { preparingDose -= 1 }
         if state.link.isConnected {
             for read: any TandemMessages.Message in [
                 BolusCalcDataSnapshotRequest(), ControlIQIOBRequest(), CurrentEGVGuiDataRequest(),
@@ -151,7 +154,21 @@ extension PumpSession {
             ] {
                 _ = await exchange(read, priority: .doseInputs)
             }
+            // The CGM read brought a newer reading than the snapshot carries: the dose corrects from the
+            // snapshot's reading, so it's read again now rather than after the dose.
+            if snapshotLagsReading() {
+                snapshotReadForReading = state.glucose?.measuredAt
+                _ = await exchange(BolusCalcDataSnapshotRequest(), priority: .doseInputs)
+            }
         }
+        // When the reads were asked for, on the phone's clock as it reads now: the reads can wait minutes, and
+        // a phone clock set meanwhile moves the readings' stamps, so this moves with them. A reading from
+        // before the ask then never counts as read for this dose, whichever way the clock was set. A move
+        // smaller than a set (drift, a small network correction) moves no stamp, and so doesn't move this.
+        followPhoneClock()
+        let sinceAsk = clock().addingTimeInterval(-uptime().timeIntervalSince(askedAt))
+        let requestedAt =
+            abs(sinceAsk.timeIntervalSince(askedClock)) < SessionClock.stepTolerance ? askedClock : sinceAsk
         return DosePreparation(
             pump: state, inputsRequestedAt: requestedAt, lastDeliveryAt: lastDeliveryAt,
             lastDeliveryPeerId: lastDelivery?.peerId, ledger: await ledger.ledger,

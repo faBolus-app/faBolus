@@ -115,4 +115,46 @@ final class GlucoseArbiterTests: XCTestCase {
             UrgentLowAlarm.isActive(mgdl: nil, provenance: failover),
             "no live value at all is never 'urgent low'")
     }
+
+    /// A backup reading dated 4 minutes ahead of its arrival (a sensor clock ahead of the phone's) that
+    /// arrived 7 minutes ago is 7 minutes old, past the 6-minute window: no failover, and no current value.
+    func testBackupDatedAheadAgesFromItsArrival() throws {
+        let arrived = now.addingTimeInterval(-7 * 60)
+        let ahead = try XCTUnwrap(
+            GlucoseSample(mgdl: 120, date: arrived.addingTimeInterval(4 * 60), sourceID: "mock", receivedAt: arrived))
+        XCTAssertTrue(ahead.isStale(thresholds: .standard, now: now))
+        let (state, _, prov) = GlucoseArbiter.merge(
+            pumpState: pumpState(glucose: nil, ageSec: 0), pumpHistory: [], source: source(ahead),
+            thresholds: .standard, now: now)
+        XCTAssertNil(state.glucose)
+        XCTAssertEqual(prov, .pump)
+    }
+
+    /// A reading that arrived after it was measured ages from its measurement, exactly as before.
+    func testBackupArrivingAfterMeasurementAgesFromMeasurement() throws {
+        let measured = now.addingTimeInterval(-5 * 60)
+        let sample = try XCTUnwrap(
+            GlucoseSample(mgdl: 120, date: measured, sourceID: "mock", receivedAt: measured.addingTimeInterval(30)))
+        XCTAssertEqual(sample.agedFrom, measured)
+        let (state, _, prov) = GlucoseArbiter.merge(
+            pumpState: pumpState(glucose: nil, ageSec: 0), pumpHistory: [], source: source(sample),
+            thresholds: .standard, now: now)
+        XCTAssertEqual(prov, .failover(sourceID: "mock", reason: .pumpMissing))
+        XCTAssertEqual(state.glucose?.measuredAt, measured)
+        XCTAssertEqual(try XCTUnwrap(state.glucose?.age(now: now)), 5 * 60, accuracy: 0.001)
+        XCTAssertNotNil(state.glucose?.valueIfFresh(within: 6 * 60, now: now))
+        XCTAssertNil(state.glucose?.valueIfFresh(within: 6 * 60, now: now.addingTimeInterval(61)))
+    }
+
+    /// A sample with no arrival time (never received by a source, as after a relaunch) ages from its
+    /// measurement, never from the merge: it isn't treated as just arrived.
+    func testBackupWithoutArrivalAgesFromMeasurement() throws {
+        let measured = now.addingTimeInterval(-5 * 60)
+        let sample = try XCTUnwrap(GlucoseSample(mgdl: 120, date: measured, sourceID: "mock"))
+        let (state, _, _) = GlucoseArbiter.merge(
+            pumpState: pumpState(glucose: nil, ageSec: 0), pumpHistory: [], source: source(sample),
+            thresholds: .standard, now: now)
+        XCTAssertEqual(state.glucose?.measuredAt, measured)
+        XCTAssertNil(state.glucose?.valueIfFresh(within: 6 * 60, now: now.addingTimeInterval(61)))
+    }
 }

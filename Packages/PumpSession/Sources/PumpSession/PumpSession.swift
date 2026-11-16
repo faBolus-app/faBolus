@@ -187,6 +187,11 @@ public actor PumpSession {
     /// Syncs in a row that a request answered with no record kept from finishing.
     var emptySyncRetries = 0
     var reconciling = false
+    /// The CGM reading the calculator snapshot was last read again for (`readSnapshotForNewReading`).
+    var snapshotReadForReading: Date?
+    /// Dose preparations under way: each reads the snapshot again itself when its CGM read brings a new
+    /// reading, so none is queued behind it meanwhile.
+    var preparingDose = 0
     var nextReconcileAt: Uptime?
     var nextLedgerSaveAt: Uptime?
     var savingLedger = false
@@ -401,6 +406,7 @@ public actor PumpSession {
         sessionLog.log("phone clock set by \(step, privacy: .public) s")
         state.phoneClockSet(by: step)
         basalParts.phoneClockSet(by: step)
+        snapshotReadForReading?.addTimeInterval(step)
         // The readings themselves didn't change, so no alerts-changed event: only their times did.
         emit(.readingsChanged(Set(PumpState.Reading.allCases), state))
     }
@@ -583,7 +589,37 @@ public actor PumpSession {
             enqueue([read], priority: isSuspected(read) ? .probe : .status)
         }
         readGracePeriodIfRaised(after: message)
+        if message is CurrentEGVGuiDataResponse, changed.contains(.glucose) { readSnapshotForNewReading() }
         settleRemoteClearTrial(after: message, now: uptime())
+    }
+
+    /// Readings closer together than this are the same sensor reading: the CGM status and the calculator
+    /// snapshot place one reading through anchors that may differ by a moment, and a CGM sends a new one only
+    /// every 5 minutes.
+    static let snapshotReadingSlack: TimeInterval = 30
+
+    /// A CGM read brought a reading newer than the one the calculator snapshot carries: the snapshot is read
+    /// right after it, once per reading, so the two agree within seconds. The correction a remote is offered,
+    /// and the dose the composer checks, come from the snapshot's reading; read only every minute, it would
+    /// lag each new reading by up to that long. A repeat of the same reading, a snapshot already as new, a
+    /// read already waiting or resting after the pump left it unanswered, and a bolus being delivered or
+    /// followed (its dose already read the snapshot) ask nothing.
+    private func readSnapshotForNewReading() {
+        guard preparingDose == 0, let glucose = state.glucose, snapshotLagsReading() else { return }
+        snapshotReadForReading = glucose.measuredAt
+        let read = BolusCalcDataSnapshotRequest()
+        guard tracked == nil, delivery == nil, !isQueued(BolusCalcDataSnapshotRequest.self),
+            !restingAfterNoAnswer(read, now: uptime())
+        else { return }
+        enqueue([read], priority: isSuspected(read) ? .probe : .status)
+    }
+
+    /// The pump's CGM reading is newer, by more than the slack, than the one the calculator snapshot carries
+    /// and than the one it was last read again for.
+    func snapshotLagsReading() -> Bool {
+        guard let glucose = state.glucose, glucose.source == .pump else { return false }
+        let known = [state.bolusCalculator?.value.reading?.measuredAt, snapshotReadForReading].compactMap { $0 }
+        return known.allSatisfy { glucose.measuredAt.timeIntervalSince($0) > Self.snapshotReadingSlack }
     }
 
     /// When CGM alert 32 (the G7 grace period ending) is raised, t:connect reads the CGM status for the time

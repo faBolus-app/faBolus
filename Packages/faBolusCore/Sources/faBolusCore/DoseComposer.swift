@@ -469,7 +469,7 @@ extension DoseComposer {
         guard let reading = context.pump.correctionReading, reading.hasValidTime,
             CalculatorGlucose.isValid(mgdl: reading.value.mgdl),
             StaleBolusPrompt.mayOfferInclude(
-                glucoseMgdl: reading.value.mgdl, glucoseDate: reading.measuredAt, thresholds: context.freshness,
+                glucoseMgdl: reading.value.mgdl, glucoseDate: reading.agedFrom, thresholds: context.freshness,
                 now: context.now)
         else { return nil }
         return reading

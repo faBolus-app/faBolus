@@ -64,6 +64,81 @@ import Testing
         #expect(Self.needed(7.25, Self.pump { $0.bolusedLastHourUnits = nil }).isEmpty)
     }
 
+    /// A calculator reply older than the IOB window (its read for the dose went unanswered) can't say what the
+    /// last hour's boluses come to now, nor whether the pump flags too many: the user is asked to go on
+    /// knowing that, whatever the old reply said, under the limits-not-checked kind of its own.
+    @Test func aStaleCalculatorReplyAsksThatTheLimitsCantBeChecked() {
+        for lastHour in [0, 30.3] {
+            var pump = Self.pump {
+                $0.bolusedLastHourUnits = lastHour
+                $0.tooManyBoluses = .init(hourlyLimit: false, insulinOnBoard: false)
+            }
+            pump.bolusCalculator = F.observed(pump.bolusCalculator!.value, age: 40 * 60)
+            let needed = Self.needed(2, pump)
+            #expect(needed == [.bolusLimitsNotChecked(doseUnits: 2, limitUnits: 37.5)])
+            #expect(needed.first?.kind == .bolusLimitsNotChecked)
+        }
+        // Inside the window it is checked as usual.
+        var fresh = Self.pump { $0.bolusedLastHourUnits = 0 }
+        fresh.bolusCalculator = F.observed(fresh.bolusCalculator!.value, age: 4 * 60)
+        #expect(Self.needed(2, fresh).isEmpty)
+    }
+
+    /// A reply read before the last bolus the phone delivered doesn't count that bolus, however young: the
+    /// limits can't be checked from it.
+    @Test func aReplyFromBeforeTheLastDeliveryCantCheckTheLimits() {
+        let pump = Self.pump { $0.bolusedLastHourUnits = 0 }
+        let reply = pump.bolusCalculator!.measuredAt
+        var context = F.context(pump: pump)
+        context.lastDeliveryAt = reply.addingTimeInterval(1)
+        #expect(DoseComposer.confirmations(units: 2, context: context).map(\.kind) == [.bolusLimitsNotChecked])
+        context.lastDeliveryAt = reply.addingTimeInterval(-1)
+        #expect(DoseComposer.confirmations(units: 2, context: context).isEmpty)
+    }
+
+    /// On the phone the whole confirmation is compared: going on from "over the max hourly bolus" doesn't
+    /// answer "the limits can't be checked", nor the other way round.
+    @Test func thePhoneTellsTheMaxHourlyAndLimitsNotCheckedApart() {
+        var stale = Self.pump { $0.bolusedLastHourUnits = 36 }
+        stale.bolusCalculator = F.observed(stale.bolusCalculator!.value, age: 40 * 60)
+        let fresh = Self.pump { $0.bolusedLastHourUnits = 36 }
+        let over = DoseConfirmation.maxHourlyBolus(doseUnits: 2, lastHourUnits: 36, limitUnits: 37.5)
+        let unchecked = DoseConfirmation.bolusLimitsNotChecked(doseUnits: 2, limitUnits: 37.5)
+        func compose(_ pump: PumpState, answering confirmation: DoseConfirmation) -> PhoneDoseDecision {
+            DoseComposer.composePhone(
+                F.phone(
+                    .units(2), answers: PhoneDoseAnswers(confirmed: [confirmation.kind: .init(confirmation, units: 2)])),
+                context: F.context(pump: pump))
+        }
+        #expect(compose(stale, answering: over).prompt == .confirmation(unchecked, units: 2))
+        #expect(compose(stale, answering: unchecked).dose != nil)
+        #expect(compose(fresh, answering: unchecked).prompt == .confirmation(over, units: 2))
+        #expect(compose(fresh, answering: over).dose != nil)
+    }
+
+    /// A remote's answer names only the kind, so the two kinds must never answer each other: a remote that
+    /// went on from the max hourly bolus is asked about the limits not being checked, and the other way
+    /// round; each goes once its own kind is confirmed.
+    @Test func aRemoteMustConfirmTheLimitsNotCheckedByItsOwnKind() {
+        var stale = Self.pump { $0.bolusedLastHourUnits = 36 }
+        stale.bolusCalculator = F.observed(stale.bolusCalculator!.value, age: 40 * 60)
+        let fresh = Self.pump { $0.bolusedLastHourUnits = 36 }
+        func compose(_ pump: PumpState, confirming kinds: Set<DoseConfirmation.Kind>) -> RemoteDoseDecision {
+            var request = F.remote(.units(2))
+            request.confirmed = kinds
+            return DoseComposer.composeRemote(request, ledger: RemoteBolusLedger(), context: F.context(pump: pump))
+        }
+        func asked(_ decision: RemoteDoseDecision) -> [DoseConfirmation.Kind]? {
+            guard case .needsConfirmation(let needed, _)? = decision.refusal else { return nil }
+            return needed.map(\.kind)
+        }
+        #expect(asked(compose(stale, confirming: [.maxHourlyBolus])) == [.bolusLimitsNotChecked])
+        #expect(compose(stale, confirming: [.bolusLimitsNotChecked]).dose != nil)
+        #expect(asked(compose(fresh, confirming: [.bolusLimitsNotChecked])) == [.maxHourlyBolus])
+        #expect(compose(fresh, confirming: [.maxHourlyBolus]).dose != nil)
+        #expect(DoseConfirmation.Kind.bolusLimitsNotChecked.rawValue != DoseConfirmation.Kind.maxHourlyBolus.rawValue)
+    }
+
     /// Tandem's app takes the max bolus in whole units here: a 12.5 U max gives an 18 U hourly limit.
     @Test func theMaxBolusIsTakenInWholeUnits() {
         let pump = Self.pump {

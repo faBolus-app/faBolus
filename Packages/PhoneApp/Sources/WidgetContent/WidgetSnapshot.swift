@@ -131,7 +131,7 @@ public struct WidgetSnapshot: Codable, Sendable, Hashable {
     public func decayCrossings(asOf now: Date) -> [Date] {
         func crossing<V>(_ o: Observed<V>?, _ window: TimeInterval) -> Date? {
             guard let o, o.age(now: now) != nil, window.isFinite else { return nil }
-            return o.measuredAt.addingTimeInterval(window)
+            return o.agedFrom.addingTimeInterval(window)
         }
         var out = [
             crossing(glucose, freshness.glucoseStaleAfter),

@@ -13,8 +13,16 @@ struct GlucoseSourceBuffer: Sendable, Equatable {
 
     /// Adds a batch. `latest` only moves forward in time: a late or repeated poll can't step it back,
     /// and an equal time doesn't replace it. History keeps one reading per 5-minute bucket, the
-    /// newest batch winning, for the last 24 hours.
+    /// newest batch winning, for the last 24 hours. A reading dated further ahead than the clock-skew
+    /// tolerance is dropped: kept, it would hold `latest` and hide every correctly dated reading after it
+    /// until its time came.
     mutating func add(_ samples: [GlucoseSample], belowRange: [Date] = [], now: Date) {
+        let limit = now.addingTimeInterval(GlucoseFreshness.futureSkewTolerance)
+        // Each sample is stamped with its arrival, so it ages from whichever of its date and arrival is
+        // earlier. `latest` is only replaced by a newer reading, so a repeated poll keeps the first arrival.
+        let samples = samples.filter { $0.date <= limit }.map { $0.received(at: now) }
+        // A LOW has no arrival time of its own: one dated ahead (within the tolerance) is placed at now.
+        let belowRange = belowRange.filter { $0 <= limit }.map { min($0, now) }
         if let newest = samples.max(by: { $0.date < $1.date }), latest.map({ newest.date > $0.date }) ?? true {
             latest = newest
         }
@@ -80,7 +88,7 @@ struct GlucoseSourceUpdates: Sendable {
 /// missed a reading, whatever the user chose for showing glucose as stale.
 func reportedStatus(_ buffer: GlucoseSourceBuffer, link: GlucoseSourceStatus, now: Date) -> GlucoseSourceStatus {
     if case .unavailable = link { return link }
-    let newest = [buffer.latest?.date, buffer.belowRangeAt].compactMap { $0 }.max()
+    let newest = [buffer.latest?.agedFrom, buffer.belowRangeAt].compactMap { $0 }.max()
     if let newest, !GlucoseFreshness.isStale(newest, thresholds: .standard, now: now) { return .connected }
     return link == .connected ? .stale : link
 }

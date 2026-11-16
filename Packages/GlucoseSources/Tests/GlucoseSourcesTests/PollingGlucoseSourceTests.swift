@@ -114,6 +114,37 @@ struct PollingGlucoseSourceTests {
         #expect(await source.state.latest?.mgdl == 130)
     }
 
+    @Test("a reading dated ahead of the phone ages from when it arrived, and a repeated poll doesn't renew that")
+    func readingDatedAheadAgesFromArrival() async throws {
+        let clock = TestClock(t0)
+        let source = source(clock: clock, sleep: RecordingSleep())
+        let ahead = sample(120, t0.addingTimeInterval(4 * 60))
+        await source.ingest(GlucosePoll(samples: [ahead]))
+        #expect(await source.state.latest?.receivedAt == t0)
+        clock.advance(7 * 60)
+        await source.ingest(GlucosePoll(samples: [ahead]))
+        let state = await source.state
+        #expect(state.latest?.receivedAt == t0)
+        #expect(state.latest?.isStale(thresholds: .standard, now: clock.now) == true)
+        #expect(state.status == .stale)
+        let (merged, _, provenance) = GlucoseArbiter.merge(
+            pumpState: PumpState(), pumpHistory: [], source: state, thresholds: .standard, now: clock.now)
+        #expect(merged.glucose == nil)
+        #expect(provenance == .pump)
+    }
+
+    @Test("a reading that arrives after it was measured ages from its measurement")
+    func normalReadingAgesFromMeasurement() async throws {
+        let clock = TestClock(t0)
+        let source = source(clock: clock, sleep: RecordingSleep())
+        let measured = t0.addingTimeInterval(-60)
+        await source.ingest(GlucosePoll(samples: [sample(120, measured)]))
+        let latest = try #require(await source.state.latest)
+        #expect(latest.agedFrom == measured)
+        #expect(!latest.isStale(thresholds: .standard, now: measured.addingTimeInterval(6 * 60)))
+        #expect(latest.isStale(thresholds: .standard, now: measured.addingTimeInterval(6 * 60 + 1)))
+    }
+
     @Test("a LOW reading is reported apart and never becomes latest, so the arbiter keeps the pump's value")
     func lowNeverLatest() async {
         let source = source(sleep: RecordingSleep())

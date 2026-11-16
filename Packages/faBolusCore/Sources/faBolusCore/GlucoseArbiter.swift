@@ -56,8 +56,8 @@ public enum UrgentLowAlarm {
     /// range). A LOW is never a `GlucoseSample`, so it never becomes the failover value and merge reports
     /// `.pump` provenance even though the low is real; without the second rule a below-range low with no
     /// pump reading would go unannounced. A LOW counts only while it is the backup's newest reading: an
-    /// in-range reading after it ends it. Every age is from the measurement time, never from when the
-    /// value arrived.
+    /// in-range reading after it ends it. Every age is from the measurement time, or from the arrival when
+    /// that came first (a clock ahead of the phone's), never later than the measurement.
     public static func isActive(
         pumpState: PumpState, source: GlucoseSourceState?, thresholds: FreshnessThresholds, now: Date
     ) -> Bool {
@@ -90,16 +90,19 @@ public enum GlucoseArbiter {
     ) -> (PumpState, [GlucoseReading], GlucoseProvenance) {
         let pumpFresh = pumpState.glucoseIfFresh(thresholds: thresholds, now: now) != nil
         guard !pumpFresh, let source, let sample = source.latest,
-            !GlucoseFreshness.isStale(sample.date, thresholds: thresholds, now: now)
+            !sample.isStale(thresholds: thresholds, now: now)
         else {
             // Pump is fresh, or there is no usable failover — publish pump data unchanged.
             return (pumpState, pumpHistory, .pump)
         }
         var state = pumpState
-        // A source that reports no trend yields no arrow, not a flat one.
+        // A source that reports no trend yields no arrow, not a flat one. The value is received when the
+        // sample first arrived: stamped at this merge, a reading dated ahead of the phone's clock would
+        // count as just received on every merge and stay current too long. With no arrival time it is
+        // never received before it was measured, so it ages from its measurement time.
         state.glucose = Observed(
-            PumpGlucose(mgdl: sample.mgdl, trend: sample.trend), measuredAt: sample.date, receivedAt: now,
-            source: .glucoseSource(id: sample.sourceID))
+            PumpGlucose(mgdl: sample.mgdl, trend: sample.trend), measuredAt: sample.date,
+            receivedAt: sample.receivedAt ?? max(sample.date, now), source: .glucoseSource(id: sample.sourceID))
         let reason: GlucoseProvenance.Reason = (pumpState.glucose == nil) ? .pumpMissing : .pumpStale
         return (
             state, mergeHistory(pump: pumpHistory, source: source.history),
