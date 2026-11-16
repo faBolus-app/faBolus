@@ -238,6 +238,39 @@ import faBolusCore
             height: 60)
     }
 
+    /// A bolus going from any surface (here one started on the pump, so the card has no bolus screen): each
+    /// style says so under the glucose, the compact view shows its dose, and CarPlay's tile its headline.
+    @Test func runningBolus() {
+        func running(_ style: LiveActivityLayout.Style, button: LiveActivityPanel.IdleButton = .none)
+            -> LiveActivityContent
+        {
+            var content = Self.content(.idle(button))
+            content.layout.style = style
+            content.snapshot.runningBolus = Observed(
+                RunningBolus(units: 2.4), measuredAt: Self.now.addingTimeInterval(-30), receivedAt: Self.now)
+            return content
+        }
+        check("full-bleed", LockScreenView(view: Self.view(running(.fullBleed, button: .cancel))))
+        check("classic", LockScreenView(view: Self.view(running(.classic))))
+        check("slim", LockScreenView(view: Self.view(running(.slim))), height: 80)
+        check("small", SmallActivityView(view: Self.view(running(.fullBleed))), width: 170, height: 76)
+        let v = Self.view(running(.fullBleed))
+        check(
+            "pill",
+            HStack(spacing: 8) {
+                CompactLeading(view: v)
+                CompactTrailing(view: v)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 4)
+            .background(Color.black.opacity(0.85), in: Capsule())
+            .environment(\.colorScheme, .dark), width: 180, height: 32)
+        // A read older than the phone's pump reads would allow: the bolus may have ended, so it isn't shown.
+        var old = running(.classic)
+        let readAt = Self.now.addingTimeInterval(-WidgetSnapshot.runningBolusShownFor - 1)
+        old.snapshot.runningBolus = Observed(RunningBolus(units: 2.4), measuredAt: readAt, receivedAt: readAt)
+        #expect(Self.view(old).runningBolus == nil)
+    }
+
     /// CarPlay's tile and the Watch's Smart Stack: the curve alone, beside an alert, and under a bolus and
     /// an alert.
     /// A high high and a low low on one plot, in every view that draws one, in the default dots: each view

@@ -47,6 +47,57 @@ import faBolusCore
 }
 
 /// Widget reloads follow what the widgets draw, not routine re-reads.
+/// A bolus the pump is delivering, from any surface, reaches the widgets' snapshot for the Live Activity.
+@MainActor
+@Suite struct RunningBolusPublishTests {
+    let t0 = Date(timeIntervalSince1970: 1_000_000)
+
+    func publish(_ bolus: PumpBolusState?) throws -> WidgetSnapshot {
+        let suite = "running-bolus-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var pump = PumpState()
+        pump.bolusState = bolus.map { Observed($0, measuredAt: t0, receivedAt: t0) }
+        return WidgetPublisher.snapshot(
+            display: pump, provenance: .pump, sourceName: nil, history: [], lastAutoCorrection: nil,
+            settings: AppSettings(defaults: defaults), freshness: .standard, now: t0)
+    }
+
+    @Test func aBolusInProgressIsPublishedWithItsReadTime() throws {
+        let entry = DoseEntry(startDate: t0, programmedUnits: 2.4, syncIdentifier: "7")
+        let s = try publish(.inProgress(entry))
+        #expect(s.runningBolus?.value == RunningBolus(units: 2.4))
+        #expect(s.runningBolus?.measuredAt == t0)
+        #expect(s.runningBolus(asOf: t0.addingTimeInterval(WidgetSnapshot.runningBolusShownFor)) != nil)
+        #expect(s.runningBolus(asOf: t0.addingTimeInterval(WidgetSnapshot.runningBolusShownFor + 1)) == nil)
+        #expect(try publish(.noBolus).runningBolus == nil)
+        #expect(try publish(nil).runningBolus == nil)
+    }
+
+    /// A bolus starting or ending updates at once, not on the once-a-minute rule; a re-read of the same
+    /// bolus waits for it.
+    @Test func aBolusStartingOrEndingUpdatesAtOnce() throws {
+        let entry = DoseEntry(startDate: t0, programmedUnits: 2.4, syncIdentifier: "7")
+        let none = try publish(.noBolus)
+        let going = try publish(.inProgress(entry))
+        #expect(WidgetPublisher.needsReload(going, last: (none, t0), now: t0.addingTimeInterval(5)))
+        #expect(WidgetPublisher.needsReload(none, last: (going, t0), now: t0.addingTimeInterval(5)))
+        var reread = going
+        reread.runningBolus?.measuredAt = t0.addingTimeInterval(30)
+        #expect(!WidgetPublisher.needsReload(reread, last: (going, t0), now: t0.addingTimeInterval(30)))
+    }
+
+    /// A snapshot written before the field existed still reads, with no bolus.
+    @Test func aSnapshotFromBeforeTheFieldReads() throws {
+        var s = try publish(nil)
+        s.runningBolus = nil
+        var json = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(s)) as? [String: Any])
+        json.removeValue(forKey: "runningBolus")
+        let read = try JSONDecoder().decode(WidgetSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
+        #expect(read.runningBolus == nil)
+    }
+}
+
 @Suite struct WidgetReloadTests {
     let t0 = Date(timeIntervalSince1970: 1_000_000)
 

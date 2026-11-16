@@ -10,6 +10,10 @@ experimental and demonstration use.
 
 ### Added
 
+- The Live Activity shows a bolus going from any source ("Bolusing 2.40 U" under the glucose, the dose
+  beside it in the Dynamic Island and the Mac's pill, and under the curve on CarPlay and the Apple Watch),
+  so someone in the car can see a bolus is happening. It shows for up to 3 minutes after the pump's bolus
+  status was last read.
 - Bolus from the Live Activity, off until allowed in Settings → Live Activity: the watch's steps (the
   amount with − and +, the calculator's questions, a review, 1 → 2 → 3, the pump's confirmations, the
   result with Cancel), checked by the phone as a remote's request. iOS asks for an unlock at 1 → 2 → 3 and to clear an alert on
@@ -55,6 +59,8 @@ experimental and demonstration use.
   missing for hours; it now also comes from the Basal Delivery record the pump writes every five minutes.
 - A swipe that starts on the chart scrolls the dashboard. Pressing and holding the chart still shows the
   readout, but a finger that moves first no longer gets held by it.
+- The reading's age on the Live Activity, CarPlay, the Apple Watch's Smart Stack and the Home Screen widgets
+  counts on in whole minutes ("2 minutes ago"), without a seconds count.
 - The Live Activity's bolus screens answer taps promptly: a second − or + before the card redraws counts,
   every tap updates the card (so iOS's pending look always clears), the app waits for the update before
   the tap's action ends, only the changing number shows as pending rather than the whole card, the entry

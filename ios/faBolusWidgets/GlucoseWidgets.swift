@@ -99,7 +99,7 @@ struct GlucoseWidgetView: View {
                     Label(iob, systemImage: "syringe").font(.caption2).foregroundStyle(.secondary)
                     Spacer()
                     if let at = g.measuredAt {
-                        Text(at, style: .relative).font(.caption2).foregroundStyle(g.stale ? .orange : .secondary)
+                        liveAge(at).font(.caption2).foregroundStyle(g.stale ? .orange : .secondary)
                     }
                 }
             }
@@ -134,7 +134,7 @@ struct StatusWidgetView: View {
                 }
                 .accessibilityElement(children: .ignore).accessibilityLabel(g.spoken)
                 if let at = g.measuredAt {
-                    Text(at, style: .relative).font(.caption2).foregroundStyle(g.stale ? .orange : .secondary)
+                    liveAge(at).font(.caption2).foregroundStyle(g.stale ? .orange : .secondary)
                 }
                 Sparkline(
                     points: snapshot.recent, stale: g.stale, floor: snapshot.plotBounds.floor,

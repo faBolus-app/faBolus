@@ -25,6 +25,9 @@ public struct WidgetSnapshot: Codable, Sendable, Hashable {
     public var basal: Observed<BasalDeliveryState>?
     public var controlIQ: Observed<ControlIQStatus>?
     public var lastBolus: Observed<Double>?
+    /// A bolus the pump is delivering, from any surface (its own screen, the phone, a remote), when it was
+    /// last read; `nil` when none is, or from a snapshot written before it was sent.
+    public var runningBolus: Observed<RunningBolus>?
     /// When Control-IQ last auto-corrected, from the pump's history; `nil` when none is known.
     public var lastAutoCorrection: Date?
     /// The pump link was up when this was published.
@@ -46,7 +49,8 @@ public struct WidgetSnapshot: Codable, Sendable, Hashable {
         insulinOnBoard: Observed<Double>? = nil, reservoirUnits: Observed<Double>? = nil,
         battery: Observed<PumpBattery>? = nil, basal: Observed<BasalDeliveryState>? = nil,
         controlIQ: Observed<ControlIQStatus>? = nil, lastBolus: Observed<Double>? = nil,
-        lastAutoCorrection: Date? = nil, connected: Bool = false, publishedAt: Date, recent: [Point] = [],
+        runningBolus: Observed<RunningBolus>? = nil, lastAutoCorrection: Date? = nil, connected: Bool = false,
+        publishedAt: Date, recent: [Point] = [],
         freshness: FreshnessThresholds = .standard, unit: GlucoseUnit = .mgdl, showUnitLabel: Bool = false,
         plotFloorMgdl: Int? = nil, plotCeilingMgdl: Int? = nil, plotStyle: GlucosePlotStyle? = nil
     ) {
@@ -58,6 +62,7 @@ public struct WidgetSnapshot: Codable, Sendable, Hashable {
         self.basal = basal
         self.controlIQ = controlIQ
         self.lastBolus = lastBolus
+        self.runningBolus = runningBolus
         self.lastAutoCorrection = lastAutoCorrection
         self.connected = connected
         self.publishedAt = publishedAt
@@ -173,6 +178,25 @@ public struct WidgetSnapshot: Codable, Sendable, Hashable {
     }
 }
 
+/// A bolus the pump is delivering. The pump's bolus status gives the dose, not how much has gone in yet.
+public struct RunningBolus: Codable, Sendable, Hashable {
+    public var units: Double
+    public init(units: Double) { self.units = units }
+}
+
+extension WidgetSnapshot {
+    /// How long after it was read a running bolus is shown. The phone reads the pump's bolus status about
+    /// every minute while connected, so a read this old means the phone stopped hearing from the pump, and
+    /// the bolus may have ended since.
+    public static let runningBolusShownFor: TimeInterval = 3 * 60
+
+    /// The bolus going at `now`, if one was read recently enough to say so.
+    public func runningBolus(asOf now: Date) -> RunningBolus? {
+        guard let b = runningBolus, let age = b.age(now: now), age <= Self.runningBolusShownFor else { return nil }
+        return b.value
+    }
+}
+
 extension WidgetSnapshot {
     /// What a widget or the Live Activity draws from the snapshot: without the times values were received
     /// or the snapshot was published, so a re-read of an unchanged value isn't a change.
@@ -185,6 +209,7 @@ extension WidgetSnapshot {
         s.basal = basal?.withoutReceiveTime
         s.controlIQ = controlIQ?.withoutReceiveTime
         s.lastBolus = lastBolus?.withoutReceiveTime
+        s.runningBolus = runningBolus?.withoutReceiveTime
         s.publishedAt = .distantPast
         return s
     }
