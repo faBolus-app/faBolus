@@ -23,6 +23,7 @@ extension AppSettings {
         p.glucosePlotCeilingSmall = watchPlotCeiling
         p.glucosePlotStyle = glucosePlotStyle.rawValue
         p.autoAcceptCorrection = autoAcceptCorrection
+        p.muteOneWayNotice = muteWatchOneWayNotice
         return p
     }
 

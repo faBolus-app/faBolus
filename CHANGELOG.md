@@ -21,6 +21,10 @@ experimental and demonstration use.
   what the Dynamic Island and the Mac's menu bar show beside the glucose.
 
 - CarPlay and the Apple Watch's Smart Stack show the recent curve under the glucose.
+- Settings → Watch → Say when the phone can't hear the watch (on by default). The watch notices when its
+  messages stop reaching the phone while the phone's still arrive, holds its bolus button and says to
+  restart the watch; turning this off mutes that. It reaches the watch as the config's
+  `bolus.muteOneWayNotice`, written only when muted. New golden fixture config-mute-one-way.
 - Settings → Bolus & entry → Auto-accept corrections (off by default) answers the calculator's correction
   question yes: the phone's bolus screen chooses the corrected dose (both still show), and the watch and the
   Live Activity skip the question. Stale or pump-flagged readings still add no correction, and every other

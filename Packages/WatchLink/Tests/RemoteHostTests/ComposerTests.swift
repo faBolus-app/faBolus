@@ -270,6 +270,11 @@ import Testing
         let on = ConfigComposer.compose(p, access: Self.access, freshness: .standard)
         #expect(on.autoAcceptCorrection)
         #expect(RemoteMessage.receive(RemoteMessage.config(on).wire) == .message(.config(on)))
+        #expect(!on.muteOneWayNotice)
+        p.muteOneWayNotice = true
+        let muted = ConfigComposer.compose(p, access: Self.access, freshness: .standard)
+        #expect(muted.muteOneWayNotice)
+        #expect(RemoteMessage.receive(RemoteMessage.config(muted).wire) == .message(.config(muted)))
     }
 
     @Test func anEmptyLayoutFallsBackToTheDefault() {

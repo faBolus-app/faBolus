@@ -687,6 +687,9 @@
             },
             "autoAcceptCorrection": {
               "type": "boolean"
+            },
+            "muteOneWayNotice": {
+              "type": "boolean"
             }
           }
         },

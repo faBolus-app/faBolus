@@ -22,6 +22,9 @@ public struct WatchConfig: Sendable, Hashable {
     /// add a correction or reduce the dose, and doses with it, as the phone does with the same setting. Absent
     /// on the wire means off, so a watch that predates the field still asks.
     public var autoAcceptCorrection: Bool
+    /// The watch doesn't say when the phone can't hear it, nor hold its bolus button for it. Absent on the
+    /// wire means off, so the notice shows.
+    public var muteOneWayNotice: Bool
     public var screenOrder: [ScreenToken]
     public var defaultScreen: ScreenToken
     public var detailsOrder: [DetailToken]
@@ -61,7 +64,7 @@ public struct WatchConfig: Sendable, Hashable {
         iobStaleMinutes: Int, therapyStaleMinutes: Int, pumpStatusStaleMinutes: Int,
         glucoseHideDelayMinutes: Int?, glucoseIncludableMinutes: Int,
         plotFloorMgdl: Int, plotCeilingMgdl: Int, plotStyle: PlotStyleToken = .dots,
-        autoAcceptCorrection: Bool = false
+        autoAcceptCorrection: Bool = false, muteOneWayNotice: Bool = false
     ) {
         self.bolusEnabled = bolusEnabled
         self.readOnly = readOnly
@@ -85,6 +88,7 @@ public struct WatchConfig: Sendable, Hashable {
         self.plotCeilingMgdl = plotCeilingMgdl
         self.plotStyle = plotStyle
         self.autoAcceptCorrection = autoAcceptCorrection
+        self.muteOneWayNotice = muteOneWayNotice
     }
 
     /// Sixteen hex digits of the SHA-256 of the content's canonical JSON.
@@ -105,6 +109,7 @@ public struct WatchConfig: Sendable, Hashable {
         // Written only when on, so a config with it off reads, and digests, exactly as one from a phone that
         // predates the field.
         bolus.set("autoAcceptCorrection", autoAcceptCorrection ? true : nil)
+        bolus.set("muteOneWayNotice", muteOneWayNotice ? true : nil)
         w.set("bolus", bolus.value)
         var screens = FieldWriter()
         screens.set("order", strings: screenOrder.map(\.rawValue))
@@ -150,6 +155,7 @@ public struct WatchConfig: Sendable, Hashable {
         unitsStepMilliunits = try bolus.int("unitsStepMU", in: 10...10_000)
         carbStepGrams = try bolus.int("carbStepG", in: 1...50)
         autoAcceptCorrection = try bolus.optionalBool("autoAcceptCorrection") ?? false
+        muteOneWayNotice = try bolus.optionalBool("muteOneWayNotice") ?? false
         let screens = try r.object("screens")
         screenOrder = try Self.tokens(screens, "order", as: ScreenToken.self)
         defaultScreen = try screens.token("default", as: ScreenToken.self)
